@@ -67,7 +67,7 @@ from __future__ import annotations
 import ast
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from .ir import (
     ContractDecl,
@@ -127,6 +127,8 @@ class Layer2Output:
     value_scope_skipped: int = 0
     mixed_body_lifted: int = 0
     mixed_body_skipped: int = 0
+    raises_lifted: int = 0
+    raises_skipped: int = 0
     implications: List["ImplicationDecl"] = field(default_factory=list)
 
 
@@ -350,6 +352,12 @@ def _classify_and_lift(
         return
 
     if _classify_value_scope(body, test_name, source_path, out):
+        return
+
+    # PATTERN 7: pytest.raises blocks — must fire before mixed-body so any
+    # With-bearing body is claimed (either lifted or loudly refused) rather
+    # than falling through to Layer 0 silently.
+    if _classify_raises_body(body, test_name, source_path, out):
         return
 
     if _classify_mixed_body(body, test_name, source_path, out):
@@ -2117,6 +2125,280 @@ def _unparse(node: ast.AST) -> str:
 
 
 # ---------------------------------------------------------------------------
+# PATTERN 7: pytest.raises blocks
+# ---------------------------------------------------------------------------
+#
+# Handles test functions whose body contains ``with pytest.raises(ExcType):``
+# blocks.  The CONSISTENCY-LEVEL model:
+#
+#   ``with pytest.raises(ExcType): <body-call>``
+#   lifts to: ``eq(ctor("raised_exc_a1", [call_term]), str_const(ExcType_name))``
+#
+# This models the RAISED EXCEPTION TYPE as a function-valued term keyed on
+# the callsite, exactly mirroring the ``callval`` method-call-result encoding
+# (Pattern 3 / Form 3).  DISCRIMINATION follows automatically:
+#
+#   same callsite + two DIFFERENT ExcType names
+#     -> ``eq(g, str_const("ValueError")) ∧ eq(g, str_const("KeyError"))``
+#     -> same term g equated to two distinct str-constants
+#     -> UNSAT by EUF / congruence (no axioms needed)
+#     -> REFUSED
+#
+#   same callsite + same ExcType twice -> SAT -> PROVEN
+#
+# SOUNDNESS RULES:
+#   - ExcType must be a simple Name (not a dotted attr, not a Tuple).
+#     Tuples (``raises((ValueError, KeyError))``) mean "one of" — cannot be
+#     modelled as a single string constant soundly; LOUD REFUSE.
+#   - ``as exc_info`` clause (``optional_vars`` present): LOUD REFUSE — we
+#     cannot soundly model the captured exception object.
+#   - ``match=`` or any keyword on pytest.raises: LOUD REFUSE — regex-matching
+#     the exception message is a softer assertion; deferred to production-bridge.
+#   - Body must be exactly ONE statement.  Multi-statement bodies cannot be
+#     reduced to one callsite term; LOUD REFUSE.
+#   - The single body statement must be an ``ast.Expr`` (bare call expression)
+#     whose call translates via ``_translate_term``.  Assignments, assertions,
+#     and other statement kinds inside the with-body: LOUD REFUSE.
+#   - The test body must contain ONLY ``with pytest.raises(...)`` blocks (and
+#     optionally ``ast.Pass``).  Any other statement kind makes the test body
+#     more complex than the raises-only shape — LOUD REFUSE with reason.
+#     (Mixed binding+raises bodies are deliberately out of scope for v0;
+#     the raises-only restriction prevents SSA-scope issues.)
+#
+# TEETH (deferred):
+#   Whether the body ACTUALLY raises (i.e. a ``with pytest.raises`` around a
+#   call that provably CANNOT raise = a provably-wrong test) requires
+#   production-bridge reasoning (callsite postconditions / exception
+#   specifications).  This is explicitly deferred to the production-bridge
+#   discharge path.  The consistency-level lift here only checks that the
+#   RAISE CLAIM is internally consistent (no contradictory exception types
+#   for the same callsite within the same test).
+#
+# GATE: fires when the body contains AT LEAST ONE ``ast.With`` node.
+
+
+def _is_pytest_raises_func(func: ast.expr) -> bool:
+    """Return True iff ``func`` is ``pytest.raises`` or bare ``raises``."""
+    # bare: ``raises(ExcType)``
+    if isinstance(func, ast.Name) and func.id == "raises":
+        return True
+    # ``pytest.raises(ExcType)``
+    if (
+        isinstance(func, ast.Attribute)
+        and func.attr == "raises"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "pytest"
+    ):
+        return True
+    return False
+
+
+def _parse_raises_exc_name(node: ast.expr) -> Optional[str]:
+    """Extract the exception type name from a simple ``Name`` node.
+
+    Returns the name string (e.g. ``"ValueError"``) or None if the shape
+    is not a simple Name (e.g. a Tuple or attribute chain).  The caller
+    must LOUDLY REFUSE on None.
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    return None
+
+
+def _lift_raises_block(
+    stmt: ast.With,
+    source_path: str,
+    test_name: str,
+) -> "Union[Formula, str]":
+    """Try to lift a single ``with pytest.raises(ExcType): <call>`` block.
+
+    Returns:
+      - A ``Formula`` (the raised-exc eq atom) on success.
+      - A ``str`` loud-refuse reason on any unsupported shape.
+
+    Callers must treat a str return as a LOUD REFUSE (claim, warn, no contract).
+    """
+    # Must be exactly one withitem.
+    if len(stmt.items) != 1:
+        return (
+            f"pytest.raises: expected exactly 1 withitem, got {len(stmt.items)}; "
+            "multi-target with-clause is not liftable"
+        )
+    item = stmt.items[0]
+
+    # No ``as exc_info`` clause.
+    if item.optional_vars is not None:
+        return (
+            "pytest.raises: ``as exc_info`` clause is not soundly liftable "
+            "(captured exception object inspection is deferred to production-bridge)"
+        )
+
+    ce = item.context_expr
+    # context_expr must be a Call whose func is pytest.raises / raises.
+    if not isinstance(ce, ast.Call) or not _is_pytest_raises_func(ce.func):
+        return (
+            f"With statement context manager is not pytest.raises / raises: "
+            f"`{_unparse(ce)[:60]}`; only pytest.raises is in scope for this lifter"
+        )
+
+    # No keyword args (e.g. match=).
+    if ce.keywords:
+        kw_names = [k.arg for k in ce.keywords]
+        return (
+            f"pytest.raises: keyword arguments {kw_names!r} are not soundly liftable "
+            "(match= regex and other kwargs are deferred to production-bridge)"
+        )
+
+    # Must have exactly one positional arg: the exception type.
+    if len(ce.args) != 1:
+        return (
+            f"pytest.raises: expected exactly 1 exception type argument, "
+            f"got {len(ce.args)}"
+        )
+
+    exc_arg = ce.args[0]
+    exc_name = _parse_raises_exc_name(exc_arg)
+    if exc_name is None:
+        return (
+            f"pytest.raises: exception type argument must be a simple Name "
+            f"(e.g. ValueError), got `{_unparse(exc_arg)[:60]}`; "
+            "Tuple exception types (raises((A,B))) are not soundly liftable "
+            "as a single constant"
+        )
+
+    # Body must be exactly one statement.
+    if len(stmt.body) != 1:
+        return (
+            f"pytest.raises: body must be exactly 1 statement "
+            f"(got {len(stmt.body)}); multi-statement bodies cannot be reduced "
+            "to a single callsite term soundly"
+        )
+
+    body_stmt = stmt.body[0]
+    # Body statement must be a bare ``ast.Expr`` (expression statement, i.e. a call).
+    if not isinstance(body_stmt, ast.Expr):
+        return (
+            f"pytest.raises: body statement must be a bare call expression "
+            f"(ast.Expr), got `{type(body_stmt).__name__}`; "
+            "assignments, assertions, and other statement kinds inside raises "
+            "body are not soundly liftable"
+        )
+
+    call_expr = body_stmt.value
+    # Translate the call expression as a term.
+    try:
+        call_term = _translate_term(call_expr)
+    except ValueError as e:
+        return (
+            f"pytest.raises: body call not translatable as a term: {e}"
+        )
+
+    # Build: eq(ctor("raised_exc_a1", [call_term]), str_const(exc_name))
+    # "raised_exc_a1" = "the exception raised by this call" as a function-valued
+    # term.  Arity suffix "_a1" encodes arity=1 (one arg: the call term).
+    raised_term = ctor("raised_exc_a1", [call_term])
+    exc_const = str_const(exc_name)
+    return eq(raised_term, exc_const)
+
+
+def _classify_raises_body(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 7: bodies containing ``with pytest.raises(...)`` blocks.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body contains NO ``ast.With`` nodes (caller tries next pattern).
+
+    Strategy:
+      - If no With nodes in body: return False (not our pattern).
+      - Claim the test immediately (so Layer 0 does not silently retry it).
+      - Check all non-With stmts: only ``ast.Pass`` is permitted alongside
+        raises blocks in v0.  Any other stmt kind → LOUD REFUSE for entire body.
+      - For each With node: attempt lift.  Loud-refuse reason → LOUD REFUSE
+        for entire body (claim, warn, zero contracts).  Successful formula
+        → accumulate atom.
+      - If all With nodes lifted successfully AND no other stmts: conjoin atoms
+        into ONE contract (Pattern-3 shape); emit as ContractDecl.
+    """
+    # Gate: only fire if body has at least one pytest.raises With block.
+    # Non-pytest.raises With bodies fall through to mixed-body, which
+    # explicitly loud-refuses any With statement it encounters.
+    has_raises_with = any(
+        isinstance(s, ast.With)
+        and len(s.items) == 1
+        and isinstance(s.items[0].context_expr, ast.Call)
+        and _is_pytest_raises_func(s.items[0].context_expr.func)
+        for s in body
+    )
+    if not has_raises_with:
+        return False
+
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    # Check non-With statements: only Pass is allowed alongside raises blocks.
+    for stmt in body:
+        if isinstance(stmt, (ast.With, ast.Pass)):
+            continue
+        # Any other statement kind (binding, assert, for, try, etc.) is out of scope.
+        out.raises_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                f"layer2 pytest.raises: LOUD REFUSAL — body contains a "
+                f"`{type(stmt).__name__}` statement alongside raises block(s); "
+                "only pure raises-block bodies (with optional pass) are liftable "
+                "in v0; mixed binding+raises bodies are out of scope",
+            )
+        )
+        return True
+
+    # Try to lift each With block.
+    atoms: List[Formula] = []
+    for stmt in body:
+        if isinstance(stmt, ast.Pass):
+            continue
+        # All remaining stmts are With (checked above).
+        result = _lift_raises_block(stmt, source_path, test_name)
+        if isinstance(result, str):
+            # Loud refuse.
+            out.raises_skipped += 1
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 pytest.raises: LOUD REFUSAL — {result}",
+                )
+            )
+            return True
+        atoms.append(result)
+
+    if not atoms:
+        # Body was all Pass — vacuous; loud refuse.
+        out.raises_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                "layer2 pytest.raises: LOUD REFUSAL — body contains no liftable "
+                "raises blocks (only pass statements)",
+            )
+        )
+        return True
+
+    # All blocks lifted successfully.
+    inv = atoms[0] if len(atoms) == 1 else and_(atoms)
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.raises_lifted += 1
+    return True
+
+
+# ---------------------------------------------------------------------------
 # PATTERN 6: mixed-body (opaque bindings + multiple asserts)
 # ---------------------------------------------------------------------------
 #
@@ -2191,6 +2473,15 @@ def _mixed_body_unsupported_stmt(stmt: ast.stmt) -> Optional[str]:
                 f"non-simple annotated-assignment target `{_unparse(stmt.target)[:60]}`"
             )
         return None
+    if isinstance(stmt, ast.With):
+        # With statements (including pytest.raises) are handled by Pattern 7
+        # (_classify_raises_body) which runs before mixed-body.  If a With
+        # survives to here it is an unsupported context manager — loudly refuse.
+        return (
+            "With statement (context manager) in mixed-body test is not soundly "
+            "liftable — use pytest.raises blocks only at top-level of a raises-only "
+            "test body; other context managers are out of scope"
+        )
     # Anything else is unsupported.
     kind = type(stmt).__name__
     return f"unsupported statement kind `{kind}` in mixed-body test"

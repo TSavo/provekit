@@ -2069,3 +2069,323 @@ def test_method_call_result_keyword_args_loudly_refused():
                for w in out.warnings), (
         f"expected warning about keyword args, got: {[w.reason for w in out.warnings]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 7: pytest.raises blocks
+# ---------------------------------------------------------------------------
+#
+# Census row: ``with pytest.raises(ExcType): <body-call>``
+# Encoding: ``eq(ctor("raised_exc_a1", [call_term]), str_const(ExcType_name))``
+#
+# Models the RAISED EXCEPTION TYPE as a function-valued term keyed on the
+# callsite, exactly mirroring the callval method-call-result encoding (Pattern 3
+# / Form 3).  DISCRIMINATION is automatic:
+#
+#   same callsite + same exc type  → same raised_exc_a1(call_term) = same const
+#     → SAT → PROVEN (consistent)
+#   same callsite + different exc types
+#     → raised_exc_a1(g) = c1  ∧  raised_exc_a1(g) = c2,  c1 ≠ c2
+#     → same term equated to two distinct str-constants
+#     → UNSAT by EUF/congruence (no extra axioms needed)
+#     → REFUSED
+#
+# TEETH (deferred): whether <body-call> actually raises is a production-bridge
+# obligation (requires callsite postconditions / exception specifications) and
+# is NOT claimed here.  The consistency-level lift only checks that the RAISE
+# CLAIM is internally consistent within a single test function.
+#
+# Loud-refuse cases (each has an explicit test below):
+#   - ``as exc_info`` clause
+#   - ``match=`` or other keyword args on pytest.raises
+#   - Tuple exception type (``pytest.raises((A, B))``)
+#   - Multi-statement body inside the with-block
+#   - Non-translatable call in body
+#   - Non-pure body (binding/assert alongside raises blocks)
+#
+# ---------------------------------------------------------------------------
+
+
+def test_raises_simple_lifts():
+    # POSITIVE: ``with pytest.raises(ValueError): f(x)``
+    # lifts to ``eq(raised_exc_a1(f(x)), str_const("ValueError"))``
+    out = _lift("""
+        import pytest
+        def test_pure_raises():
+            with pytest.raises(ValueError):
+                f(x)
+    """)
+    assert out.raises_lifted == 1, f"expected 1 raises lift; warnings: {[w.reason for w in out.warnings]}"
+    assert out.lifted == 1
+    assert "test_pure_raises" in out.claimed_tests
+    assert len(out.decls) == 1
+    inv = out.decls[0].inv
+    # Must be eq(raised_exc_a1(call_term), str_const("ValueError"))
+    assert isinstance(inv, _Atomic) and inv.name == "=", f"expected eq atom, got: {inv!r}"
+    lhs = inv.args[0]
+    rhs = inv.args[1]
+    assert isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1", (
+        f"LHS must be raised_exc_a1 ctor, got: {lhs!r}"
+    )
+    assert len(lhs.args) == 1, f"raised_exc_a1 must have 1 arg (the call term), got: {lhs.args}"
+    assert isinstance(rhs, _ConstStr) and rhs.value == "ValueError", (
+        f"RHS must be str_const('ValueError'), got: {rhs!r}"
+    )
+
+
+def test_raises_bare_raises_name_lifts():
+    # POSITIVE: ``with raises(ValueError): f(x)`` (bare ``raises``, no ``pytest.``)
+    # lifts exactly as pytest.raises does.
+    out = _lift("""
+        def test_bare_raises():
+            with raises(ValueError):
+                f(x)
+    """)
+    assert out.raises_lifted == 1, f"expected 1 raises lift; warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Atomic) and inv.name == "="
+    rhs = inv.args[1]
+    assert isinstance(rhs, _ConstStr) and rhs.value == "ValueError"
+
+
+def test_raises_discrimination_same_call_different_exc_contradicts():
+    # DISCRIMINATION (unsafe twin): same callsite, different exc types.
+    # ``with pytest.raises(ValueError): f(x)`` AND
+    # ``with pytest.raises(KeyError):   f(x)``
+    # lifts to:
+    #   eq(raised_exc_a1(f(x)), str_const("ValueError"))
+    #   ∧ eq(raised_exc_a1(f(x)), str_const("KeyError"))
+    # Both LHS terms are EQUAL (same ctor, same arg → same term).
+    # RHS constants are DISTINCT.
+    # → same term equated to two distinct consts → UNSAT → REFUSED.
+    out = _lift("""
+        import pytest
+        def test_contradictory_exc():
+            with pytest.raises(ValueError):
+                f(x)
+            with pytest.raises(KeyError):
+                f(x)
+    """)
+    assert out.raises_lifted == 1, (
+        f"contradictory raises must LIFT (not silently skip); warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert len(out.decls) == 1
+    inv = out.decls[0].inv
+    # Must be a conjunction of two eq atoms.
+    assert isinstance(inv, _Connective) and inv.kind == "and", (
+        f"expected and-conjunction for contradictory raises, got: {inv!r}"
+    )
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert len(eq_atoms) == 2, f"expected 2 eq atoms, got: {eq_atoms}"
+    # LHS: raised_exc_a1(call_term) — MUST be EQUAL (same call → same ctor → UNSAT).
+    lhs0 = eq_atoms[0].args[0]
+    lhs1 = eq_atoms[1].args[0]
+    assert isinstance(lhs0, _Ctor) and lhs0.name == "raised_exc_a1"
+    assert isinstance(lhs1, _Ctor) and lhs1.name == "raised_exc_a1"
+    assert lhs0 == lhs1, (
+        f"same call must produce equal raised_exc_a1 ctor for contradiction to fire; "
+        f"got lhs0={lhs0!r}, lhs1={lhs1!r} (falsePass regression if different)"
+    )
+    # RHS: str_const — MUST be DISTINCT.
+    rhs0 = eq_atoms[0].args[1]
+    rhs1 = eq_atoms[1].args[1]
+    assert isinstance(rhs0, _ConstStr) and isinstance(rhs1, _ConstStr)
+    assert rhs0 != rhs1, (
+        f"different exc types must produce distinct str_const RHS; "
+        f"got rhs0={rhs0!r}, rhs1={rhs1!r}"
+    )
+
+
+def test_raises_discrimination_same_exc_same_call_consistent():
+    # POSITIVE (safe twin): same callsite, same exc type.
+    # eq(g, c) ∧ eq(g, c) is SAT → PROVEN (consistent).
+    out = _lift("""
+        import pytest
+        def test_consistent_exc():
+            with pytest.raises(ValueError):
+                f(x)
+            with pytest.raises(ValueError):
+                f(x)
+    """)
+    assert out.raises_lifted == 1, (
+        f"consistent raises must LIFT; warnings: {[w.reason for w in out.warnings]}"
+    )
+    inv = out.decls[0].inv
+    # Conjunction of two eq atoms.
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert len(eq_atoms) == 2
+    # Both LHS must be equal AND both RHS must be equal.
+    lhs0 = eq_atoms[0].args[0]
+    lhs1 = eq_atoms[1].args[0]
+    rhs0 = eq_atoms[0].args[1]
+    rhs1 = eq_atoms[1].args[1]
+    assert lhs0 == lhs1, "same call → equal LHS"
+    assert rhs0 == rhs1, "same exc type → equal RHS (consistent → SAT)"
+
+
+def test_raises_discrimination_different_calls_independent():
+    # INDEPENDENT: different callsites, different exc types.
+    # eq(raised_exc_a1(f(x)), c1) ∧ eq(raised_exc_a1(g(y)), c2)
+    # LHS terms are DIFFERENT (different inner call terms) → independent → SAT.
+    out = _lift("""
+        import pytest
+        def test_independent_exc():
+            with pytest.raises(ValueError):
+                f(x)
+            with pytest.raises(KeyError):
+                g(y)
+    """)
+    assert out.raises_lifted == 1, (
+        f"independent raises must LIFT; warnings: {[w.reason for w in out.warnings]}"
+    )
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert len(eq_atoms) == 2
+    lhs0 = eq_atoms[0].args[0]
+    lhs1 = eq_atoms[1].args[0]
+    # Different inner call terms → different LHS ctors → independent.
+    assert lhs0 != lhs1, (
+        f"different calls must produce DIFFERENT raised_exc_a1 ctor terms so they "
+        f"remain independent (not a contradiction); got same {lhs0!r}"
+    )
+
+
+def test_raises_as_clause_loudly_refused():
+    # LOUD REFUSE: ``with pytest.raises(ValueError) as exc_info: f(x)``
+    # exc_info inspection is not soundly liftable.
+    out = _lift("""
+        import pytest
+        def test_as_clause():
+            with pytest.raises(ValueError) as exc_info:
+                f(x)
+    """)
+    assert out.raises_lifted == 0, (
+        f"as-clause raises must NOT lift; got {[d.name for d in out.decls]}"
+    )
+    assert out.raises_skipped == 1
+    assert out.lifted == 0
+    assert "test_as_clause" in out.claimed_tests, "must be claimed (not silently skipped)"
+    assert any("exc_info" in w.reason or "as" in w.reason for w in out.warnings), (
+        f"expected warning about as-clause; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings)
+
+
+def test_raises_match_kwarg_loudly_refused():
+    # LOUD REFUSE: ``with pytest.raises(ValueError, match="foo"): f(x)``
+    # match= is a regex string assertion, deferred to production-bridge.
+    out = _lift("""
+        import pytest
+        def test_match_raises():
+            with pytest.raises(ValueError, match="foo"):
+                f(x)
+    """)
+    assert out.raises_lifted == 0
+    assert out.raises_skipped == 1
+    assert "test_match_raises" in out.claimed_tests
+    assert any("match" in w.reason.lower() or "keyword" in w.reason.lower() for w in out.warnings), (
+        f"expected warning about match= kwarg; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings)
+
+
+def test_raises_tuple_exception_type_loudly_refused():
+    # LOUD REFUSE: ``with pytest.raises((ValueError, KeyError)): f(x)``
+    # Tuple exception types mean "one of A or B" — cannot model as a single
+    # string constant soundly (would require a disjunction axiom).
+    out = _lift("""
+        import pytest
+        def test_tuple_exc():
+            with pytest.raises((ValueError, KeyError)):
+                f(x)
+    """)
+    assert out.raises_lifted == 0
+    assert out.raises_skipped == 1
+    assert "test_tuple_exc" in out.claimed_tests
+    assert any("Tuple" in w.reason or "tuple" in w.reason.lower() or "simple Name" in w.reason
+               for w in out.warnings), (
+        f"expected warning about tuple exception type; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings)
+
+
+def test_raises_multi_statement_body_loudly_refused():
+    # LOUD REFUSE: multi-statement body inside the raises block.
+    # Cannot reduce to one callsite term.
+    out = _lift("""
+        import pytest
+        def test_multi_body():
+            with pytest.raises(ValueError):
+                f(x)
+                g(y)
+    """)
+    assert out.raises_lifted == 0
+    assert out.raises_skipped == 1
+    assert "test_multi_body" in out.claimed_tests
+    assert any("1 statement" in w.reason or "multi" in w.reason.lower() for w in out.warnings), (
+        f"expected warning about multi-statement body; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings)
+
+
+def test_raises_mixed_body_binding_loudly_refused():
+    # LOUD REFUSE: binding statement alongside pytest.raises block.
+    # Mixed binding+raises bodies are out of scope for v0.
+    out = _lift("""
+        import pytest
+        def test_mixed():
+            x = setup()
+            with pytest.raises(ValueError):
+                f(x)
+    """)
+    assert out.raises_lifted == 0
+    assert out.raises_skipped == 1
+    assert "test_mixed" in out.claimed_tests
+    assert any("Assign" in w.reason or "binding" in w.reason.lower() or
+               "mixed" in w.reason.lower() for w in out.warnings), (
+        f"expected warning about mixed body; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings)
+
+
+def test_raises_call_in_body_translated_as_term():
+    # POSITIVE structural: verify the body call is translated correctly.
+    # ``f(42)`` → ctor("f", [num(42)]) as the inner term.
+    out = _lift("""
+        import pytest
+        def test_call_with_literal():
+            with pytest.raises(TypeError):
+                parse(42)
+    """)
+    assert out.raises_lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Atomic) and inv.name == "="
+    lhs = inv.args[0]
+    assert isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1"
+    inner = lhs.args[0]
+    # Inner should be ctor("parse", [num(42)])
+    assert isinstance(inner, _Ctor) and inner.name == "parse", (
+        f"inner call term must be ctor('parse', ...), got: {inner!r}"
+    )
+
+
+def test_raises_silent_gap_closed_pure_body_is_claimed():
+    # REGRESSION guard for the Δ>0 gap: a pure with-raises body (no binding,
+    # no top-level assert) was previously silently skipped (not claimed, no
+    # warning).  After Pattern 7, the test is always claimed.
+    out = _lift("""
+        import pytest
+        def test_previously_silent():
+            with pytest.raises(RuntimeError):
+                risky_operation()
+    """)
+    assert "test_previously_silent" in out.claimed_tests, (
+        "with pytest.raises body must be CLAIMED (not silently fall through to Layer 0)"
+    )
+    # No silent fall-through: must be either lifted or loudly-refused.
+    assert out.raises_lifted + out.raises_skipped >= 1, (
+        "must be either lifted or loud-refused; silent skip is a Δ>0 gap"
+    )
