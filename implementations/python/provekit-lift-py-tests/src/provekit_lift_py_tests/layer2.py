@@ -516,6 +516,65 @@ def _ssa_dotted_attr_path(node: ast.Attribute, scope: "_ValueScope") -> Optional
     return f"{ssa_base}{suffix}"
 
 
+def _subscript_key_term(key_node: ast.expr) -> Term:
+    """Translate a subscript key to a Term, for use in the ``subscript`` Ctor.
+
+    ONLY literal keys are supported: string, integer, bool, None.  A
+    non-literal / computed key (``parsed[i]``, ``parsed[CONST]``) raises
+    ValueError with an explicit message — these must LOUDLY REFUSE because
+    we cannot soundly establish that two subscript expressions refer to the
+    same slot without knowing the key's value.
+
+    Design: literal string keys produce ``str_const(s)`` (encoded as
+    ``strlit_<hash>`` in SMT, sort-safe Int constant).  Integer and bool keys
+    produce ``num``/``bool_const`` concrete Int values.  None produces the
+    ``None`` nullary ctor.  All of these reuse the existing literal-encoding
+    machinery, so cross-type distinctness axioms are emitted correctly.
+    """
+    if isinstance(key_node, ast.Constant):
+        v = key_node.value
+        if isinstance(v, bool):
+            return bool_const(v)
+        if isinstance(v, int):
+            return num(v)
+        if isinstance(v, str):
+            return str_const(v)
+        if v is None:
+            return ctor("None", [])
+        raise ValueError(
+            f"subscript-index: non-literal key type {type(v)!r} is not liftable"
+        )
+    if isinstance(key_node, ast.UnaryOp) and isinstance(key_node.op, ast.USub):
+        if (
+            isinstance(key_node.operand, ast.Constant)
+            and isinstance(key_node.operand.value, int)
+            and not isinstance(key_node.operand.value, bool)
+        ):
+            return num(-key_node.operand.value)
+    # Non-literal key: LOUD REFUSE.  We cannot establish slot identity.
+    raise ValueError(
+        "subscript-index: non-literal key (computed key or variable) is not "
+        "soundly liftable — cannot establish that two subscript expressions "
+        "refer to the same slot without knowing the key value at lift time"
+    )
+
+
+def _translate_subscript_term(node: ast.Subscript, base_term: Term) -> Term:
+    """Build ``ctor('subscript', [base_term, key_term])`` for a subscript node.
+
+    The ``subscript`` Ctor is an uninterpreted 2-arg function in SMT.
+    Sound because:
+      - same base + same key  -> same Ctor term -> same-subject contradictions fire UNSAT
+      - different key or base -> distinct Ctor terms -> independent facts
+      - attribute ``obj.attr`` and subscript ``obj['attr']`` NEVER share a term
+        (attribute uses a raw Var; subscript uses a Ctor) — no accidental aliasing.
+
+    Non-literal keys raise ValueError (LOUD REFUSE); see ``_subscript_key_term``.
+    """
+    key_term = _subscript_key_term(node.slice)
+    return ctor("subscript", [base_term, key_term])
+
+
 def _translate_term(node: ast.expr) -> Term:
     """Whitelist:
       - identifier (Var)
@@ -523,6 +582,7 @@ def _translate_term(node: ast.expr) -> Term:
       - unary-neg of an integer literal
       - single-arg call (Ctor with one arg)
       - attribute access (Var named by dotted path, e.g. ``obj.attr``)
+      - subscript-index with a literal key (``obj['key']``, ``obj[0]``)
     Everything else raises ValueError.
     """
     if isinstance(node, ast.Name):
@@ -573,6 +633,14 @@ def _translate_term(node: ast.expr) -> Term:
                 "attribute access on a non-name/non-attribute subject is not liftable"
             )
         return make_var(obj_name)
+    if isinstance(node, ast.Subscript):
+        # Subscript-index (``obj['key']``, ``obj[0]``): lift as
+        # ``ctor('subscript', [base_term, key_term])``.  The base is
+        # recursively translated so nested subscripts (``a['b']['c']``) and
+        # attribute-then-subscript (``a.b['c']``) chain naturally.
+        # Non-literal keys LOUDLY REFUSE via ``_subscript_key_term``.
+        base_term = _translate_term(node.value)
+        return _translate_subscript_term(node, base_term)
     raise ValueError("expression shape not in v0 lift whitelist")
 
 
@@ -1721,6 +1789,17 @@ def _translate_term_scoped(
             return make_var(ssa_attr_name)
         # Fall through: base not in scope → opaque free var by raw path.
         return _translate_term(node)
+    if isinstance(node, ast.Subscript):
+        # Subscript-index in value-scope context.  SSA-key the base: translate
+        # the base expression under the scope so that if the base var has been
+        # SSA-renamed (``parsed = f(); … parsed = g(); …``), the subscript Ctors
+        # for the two generations are distinct (``subscript(parsed$0, k)`` vs
+        # ``subscript(parsed$1, k)``).  This mirrors the SSA treatment of
+        # attribute access: same-generation base + same key = same term = UNSAT
+        # on contradiction; different generation = distinct terms = PROVEN.
+        # Non-literal keys LOUDLY REFUSE via ``_subscript_key_term``.
+        base_term = _translate_term_scoped(node.value, scope, call_vars)
+        return _translate_subscript_term(node, base_term)
     raise ValueError("expression shape not in value-scope lift whitelist")
 
 

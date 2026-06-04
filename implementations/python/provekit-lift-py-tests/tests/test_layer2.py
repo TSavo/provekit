@@ -1150,16 +1150,249 @@ def test_mixed_body_unliftable_assert_warned_but_rest_lifts():
 
 
 def test_mixed_body_pure_opaque_all_unliftable_claims_with_warning():
-    # When ALL asserts are unliftable (e.g. all are method-calls or subscript
-    # comparisons), zero contracts are produced but the test is still CLAIMED
-    # so Layer 0 can pick it up. A warning is emitted explaining the skip.
+    # When ALL asserts are unliftable (e.g. all are method-calls that have a
+    # non-simple-name call target), zero contracts are produced but the test is
+    # still CLAIMED so Layer 0 can pick it up.  A warning is emitted explaining
+    # the skip.
+    #
+    # NOTE: ``parsed['key'] == 'value'`` is now LIFTABLE (subscript-index
+    # support).  Use a method-call assert (``parsed.keys()`` is a call with an
+    # attribute func, not liftable) to keep this test exercising the all-
+    # unliftable path.
     out = _lift("""
         def test_all_unliftable():
             parsed = json_parse(raw)
-            assert parsed['key'] == 'value'
+            assert parsed.keys() == {'a', 'b'}
     """)
     # Nothing liftable → 0 contracts but claimed + warned.
     assert out.mixed_body_lifted == 0, f"unexpected lift, decls: {[d.name for d in out.decls]}"
     assert out.mixed_body_skipped == 1
     assert "test_all_unliftable" in out.claimed_tests
     assert any("releasing claim to Layer 0" in w.reason for w in out.warnings)
+
+
+# ---------------------------------------------------------------------------
+# SUBSCRIPT-INDEX discrimination tests (permanent regression fixtures)
+# ---------------------------------------------------------------------------
+#
+# Three properties per the brief:
+#   (1) POSITIVE: literal subscript lifts and produces a ContractDecl.
+#   (2) DISCRIMINATION: same-subscript contradictory conjoins into one inv so
+#       the consistency pass can detect UNSAT; different-key/base stays independent.
+#   (3) STRUCTURAL: SSA reassignment of the base produces a PROVEN (not false-refused).
+#
+# Non-literal key LOUDLY REFUSES (ValueError routed to warn-and-skip).
+
+
+def test_subscript_literal_string_key_lifts_positive():
+    # POSITIVE: ``parsed['key'] == 'value'`` is a liftable subscript-index.
+    # Use Pattern 3 (all asserts, >= 2 atoms) so there's no call-result and
+    # the subscript assert is the direct subject.
+    out = _lift("""
+        def test_subscript(parsed):
+            assert parsed['kind'] == 'contract'
+            assert parsed['name'] == 'demo'
+    """)
+    # Pattern 3 (characterization): two subscript asserts conjoined.
+    assert out.characterization_lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    assert out.lifted == 1
+    assert len(out.decls) == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2, f"expected 2 atoms: {atoms}"
+    # First atom: subscript(parsed, 'kind') == 'contract'
+    atom0 = atoms[0]
+    assert isinstance(atom0, _Atomic) and atom0.name == "="
+    lhs = atom0.args[0]
+    assert isinstance(lhs, _Ctor), f"LHS must be a Ctor: {lhs!r}"
+    assert lhs.name == "subscript", f"LHS Ctor name must be 'subscript': {lhs.name!r}"
+    assert len(lhs.args) == 2, f"subscript Ctor must have 2 args: {lhs.args}"
+    # First arg is the base var (parsed).
+    assert isinstance(lhs.args[0], _Var), f"base must be a Var: {lhs.args[0]!r}"
+    # Second arg is the key (a string const).
+    assert isinstance(lhs.args[1], _ConstStr), f"key must be a ConstStr: {lhs.args[1]!r}"
+    assert lhs.args[1].value == "kind", f"key value must be 'kind': {lhs.args[1].value!r}"
+
+
+def test_subscript_literal_int_key_lifts_positive():
+    # POSITIVE: integer literal key also lifts.
+    # Use Pattern 3 (all asserts, 2 atoms) with a parameter base to avoid
+    # Pattern 5 claiming the body.
+    out = _lift("""
+        def test_subscript_int_key(items):
+            assert items[0] == 42
+            assert items[1] == 43
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    atoms = _flatten_and(out.decls[0].inv)
+    atom0 = atoms[0]
+    assert isinstance(atom0, _Atomic) and atom0.name == "="
+    lhs = atom0.args[0]
+    assert isinstance(lhs, _Ctor)
+    assert lhs.name == "subscript"
+    # Key is an integer const.
+    assert isinstance(lhs.args[1], _ConstInt), f"key must be ConstInt: {lhs.args[1]!r}"
+    assert lhs.args[1].value == 0
+
+
+def test_subscript_same_key_same_base_conjoined():
+    # DISCRIMINATION: two asserts about the same subscript subject conjoin.
+    # ``parsed['k'] == 'a'; parsed['k'] == 'b'`` -> single inv with 2 atoms.
+    # Same subscript Ctor in both atoms (same base var, same key) -> if 'a' ≠ 'b'
+    # this is UNSAT; the consistency pass detects it.  Here we just verify the
+    # two atoms land in ONE ContractDecl (Pattern 3 conjunction).
+    out = _lift("""
+        def test_same_subscript_two_asserts(parsed):
+            assert parsed['k'] == 'a'
+            assert parsed['k'] == 'b'
+    """)
+    # Pattern 3 (all asserts, >= 2): one conjoined decl.
+    assert out.characterization_lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    assert len(out.decls) == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2, f"expected 2 atoms: {atoms}"
+    # Both atoms must have the SAME subscript Ctor as their LHS.
+    def _lhs_ctor(atom):
+        assert isinstance(atom, _Atomic) and atom.name == "="
+        return atom.args[0]
+    lhs0 = _lhs_ctor(atoms[0])
+    lhs1 = _lhs_ctor(atoms[1])
+    assert isinstance(lhs0, _Ctor) and lhs0.name == "subscript"
+    assert isinstance(lhs1, _Ctor) and lhs1.name == "subscript"
+    # Same base var name and same key.
+    assert lhs0.args[0] == lhs1.args[0], "base var must match (same SSA)"
+    assert lhs0.args[1] == lhs1.args[1], "key term must match"
+
+
+def test_subscript_different_keys_independent():
+    # DISCRIMINATION: ``parsed['a'] == 1; parsed['b'] == 1`` — different keys
+    # -> different Ctor args -> independent atoms (no sharing).
+    out = _lift("""
+        def test_different_keys(parsed):
+            assert parsed['a'] == 1
+            assert parsed['b'] == 1
+    """)
+    assert out.characterization_lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2
+    lhs0 = atoms[0].args[0]
+    lhs1 = atoms[1].args[0]
+    assert isinstance(lhs0, _Ctor) and lhs0.name == "subscript"
+    assert isinstance(lhs1, _Ctor) and lhs1.name == "subscript"
+    # Different keys.
+    assert lhs0.args[1] != lhs1.args[1], "different keys must produce different key terms"
+
+
+def test_subscript_different_bases_independent():
+    # DISCRIMINATION: ``a['k'] == 1; b['k'] == 1`` — different bases -> different Ctors.
+    out = _lift("""
+        def test_different_bases(a, b):
+            assert a['k'] == 1
+            assert b['k'] == 1
+    """)
+    assert out.characterization_lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2
+    lhs0 = atoms[0].args[0]
+    lhs1 = atoms[1].args[0]
+    assert isinstance(lhs0, _Ctor) and lhs0.name == "subscript"
+    assert isinstance(lhs1, _Ctor) and lhs1.name == "subscript"
+    # Different base vars.
+    assert lhs0.args[0] != lhs1.args[0], "different bases must produce different base terms"
+
+
+def test_subscript_ssa_reassign_produces_distinct_base():
+    # STRUCTURAL (SSA): reassigning the base variable between two subscript
+    # asserts must produce DISTINCT base terms so the atoms are independent
+    # (not a false contradiction).
+    #   parsed = f()            -> parsed$0
+    #   assert parsed['k'] == 1 -> subscript(parsed$0, k) == 1
+    #   parsed = g()            -> parsed$1
+    #   assert parsed['k'] == 2 -> subscript(parsed$1, k) == 2
+    # The two base vars (parsed$0 vs parsed$1) are distinct -> independent atoms.
+    #
+    # Note: ``f()`` and ``g()`` are translatable calls so Pattern 5 (value-scope)
+    # claims this body and emits one ``::assertion`` contract per call-site base.
+    # The two assertion contracts must have DIFFERENT base SSA vars in their
+    # subscript Ctors.
+    out = _lift("""
+        def test_ssa_reassign():
+            parsed = f()
+            assert parsed['k'] == 1
+            parsed = g()
+            assert parsed['k'] == 2
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    # Extract the two ::assertion decls and check their subscript base vars.
+    assertion_decls = [d for d in out.decls if d.name.endswith("::assertion")]
+    assert len(assertion_decls) == 2, (
+        f"expected 2 assertion decls, got {[d.name for d in assertion_decls]}"
+    )
+    def _subscript_base_name(decl):
+        inv = decl.inv
+        assert isinstance(inv, _Atomic) and inv.name == "="
+        lhs = inv.args[0]
+        assert isinstance(lhs, _Ctor) and lhs.name == "subscript", (
+            f"expected subscript Ctor in {decl.name}: {lhs!r}"
+        )
+        base = lhs.args[0]
+        assert isinstance(base, _Var), f"base must be Var: {base!r}"
+        return base.name
+    base0 = _subscript_base_name(assertion_decls[0])
+    base1 = _subscript_base_name(assertion_decls[1])
+    assert base0 != base1, (
+        f"SSA-reassigned base must produce distinct var names: "
+        f"{base0!r} vs {base1!r}"
+    )
+    # Both decls must use the same literal key term.
+    def _subscript_key(decl):
+        return decl.inv.args[0].args[1]
+    assert _subscript_key(assertion_decls[0]) == _subscript_key(assertion_decls[1]), (
+        "same literal key 'k' must produce equal key terms in both decls"
+    )
+
+
+def test_subscript_non_literal_key_loudly_refused():
+    # Non-literal key (variable key ``parsed[i]``) LOUDLY REFUSES: emits a
+    # warning and produces no contract for this assert.  The test body has a
+    # binding (making it mixed-body); the unliftable assert causes a skip+warn.
+    out = _lift("""
+        def test_non_literal_key():
+            parsed = json_parse(raw)
+            assert parsed[i] == 1
+    """)
+    # The assert is unliftable (non-literal key) -> 0 lifted atoms -> mixed-body skipped.
+    assert out.mixed_body_lifted == 0, f"unexpected lift: {[d.name for d in out.decls]}"
+    assert out.mixed_body_skipped == 1
+    # A warning must explain why (non-literal key / not soundly liftable).
+    assert any(
+        "non-literal key" in w.reason.lower()
+        or "subscript" in w.reason.lower()
+        or "not soundly liftable" in w.reason.lower()
+        for w in out.warnings
+    ), f"expected non-literal-key warning, got: {[w.reason for w in out.warnings]}"
+
+
+def test_subscript_nested_two_levels_lifts():
+    # Nested subscript (``parsed['header']['kind']``) lifts as nested Ctors:
+    #   subscript(subscript(parsed, 'header'), 'kind') == 'contract'
+    # Use Pattern 3 (parameter base, 2 asserts) to stay out of Pattern 5.
+    out = _lift("""
+        def test_nested(parsed):
+            assert parsed['header']['kind'] == 'contract'
+            assert parsed['header']['name'] == 'demo'
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    atoms = _flatten_and(out.decls[0].inv)
+    atom0 = atoms[0]
+    assert isinstance(atom0, _Atomic) and atom0.name == "="
+    lhs = atom0.args[0]
+    # Outer subscript.
+    assert isinstance(lhs, _Ctor) and lhs.name == "subscript"
+    # Inner subscript as first arg of outer.
+    inner = lhs.args[0]
+    assert isinstance(inner, _Ctor) and inner.name == "subscript", (
+        f"nested subscript outer-base must also be a subscript Ctor: {inner!r}"
+    )
+    # Outer key is 'kind', inner key is 'header'.
+    assert isinstance(lhs.args[1], _ConstStr) and lhs.args[1].value == "kind"
+    assert isinstance(inner.args[1], _ConstStr) and inner.args[1].value == "header"
