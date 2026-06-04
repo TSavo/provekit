@@ -2389,3 +2389,290 @@ def test_raises_silent_gap_closed_pure_body_is_claimed():
     assert out.raises_lifted + out.raises_skipped >= 1, (
         "must be either lifted or loud-refused; silent skip is a Δ>0 gap"
     )
+
+
+# ---------------------------------------------------------------------------
+# pytest.approx — census form: ``assert x == pytest.approx(target)``
+#
+# SOUND MODEL (conservative uninterpreted predicate, never falsePass):
+#   ``x == approx(t)`` -> ``atomic("approx_eq", [x_term, target_term])``
+#   ``x != approx(t)`` -> ``not_(atomic("approx_eq", [x_term, target_term]))``
+#
+# DISCRIMINATION: same-target P ^ not-P is UNSAT -> REFUSED.
+# CONSERVATIVE UNDER-REFUSAL (documented, acceptable):
+#   Different targets are treated as independent -> PROVEN.  This misses a
+#   real contradiction for DISJOINT tolerance intervals, but never
+#   falsely refuses OVERLAPPING ranges (no falsePass).
+#
+# LOUD REFUSE: kwargs (rel=/abs=), non-literal target, list/dict target,
+#   approx on both sides, approx-as-sub-term.
+# ---------------------------------------------------------------------------
+
+
+def test_approx_eq_float_lifts_to_atomic():
+    # POSITIVE: ``x == pytest.approx(1.5)`` -> approx_eq atomic.
+    # Two asserts are needed to trigger Pattern 3 (characterization).
+    out = _lift("""
+        def test_approx_float_eq(x, y):
+            assert x == pytest.approx(1.5)
+            assert y == pytest.approx(2.5)
+    """)
+    assert out.lifted == 1, f"expected lift, warnings: {out.warnings}"
+    atoms = _flatten_and(out.decls[0].inv)
+    approx_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    assert len(approx_atoms) == 2, f"expected 2 approx_eq atoms (one per assert), got: {atoms}"
+    # First atom: x is the value side (first arg), target is str_const (second arg).
+    val_arg = approx_atoms[0].args[0]
+    assert isinstance(val_arg, _Var) and val_arg.name == "x", (
+        f"value side must be Var('x'), got: {val_arg!r}"
+    )
+    target_arg = approx_atoms[0].args[1]
+    assert isinstance(target_arg, _ConstStr), (
+        f"target must be str_const (encoded float), got: {target_arg!r}"
+    )
+
+
+def test_approx_eq_int_lifts_to_atomic():
+    # POSITIVE: ``x == pytest.approx(42)`` -> approx_eq atomic.
+    out = _lift("""
+        def test_approx_int_eq(x, y):
+            assert x == pytest.approx(42)
+            assert y == pytest.approx(99)
+    """)
+    assert out.lifted == 1, f"expected lift, warnings: {out.warnings}"
+    atoms = _flatten_and(out.decls[0].inv)
+    approx_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    assert len(approx_atoms) == 2, f"expected 2 approx_eq atoms, got: {atoms}"
+
+
+def test_approx_bare_name_lifts_to_atomic():
+    # POSITIVE: bare ``approx(...)`` (imported as ``from pytest import approx``).
+    out = _lift("""
+        def test_bare_approx(x, y):
+            assert x == approx(0.5)
+            assert y == approx(0.5)
+    """)
+    assert out.lifted == 1, f"expected lift, warnings: {out.warnings}"
+    atoms = _flatten_and(out.decls[0].inv)
+    approx_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    assert len(approx_atoms) == 2, f"expected 2 approx_eq atoms for bare approx, got: {atoms}"
+
+
+def test_approx_ne_lifts_as_negation():
+    # POSITIVE: ``x != pytest.approx(1.5)`` -> not_(approx_eq(...)).
+    out = _lift("""
+        def test_approx_ne(x, y):
+            assert x != pytest.approx(1.5)
+            assert y != pytest.approx(1.5)
+    """)
+    assert out.lifted == 1, f"expected lift, warnings: {out.warnings}"
+    inv = out.decls[0].inv
+    nots = [
+        o for o in _flatten_and(inv)
+        if isinstance(o, _Connective) and o.kind == "not"
+    ]
+    assert len(nots) >= 1, f"expected not_ wrapper for !=, got inv={inv}"
+    for n in nots:
+        inner = n.operands[0]
+        assert isinstance(inner, _Atomic) and inner.name == "approx_eq", (
+            f"not-approx must wrap approx_eq atom, got: {inner!r}"
+        )
+
+
+def test_approx_eq_ne_same_target_is_discriminating_contradiction():
+    # DISCRIMINATION: ``x == approx(t); x != approx(t)``
+    # -> ``approx_eq(x,t) ^ not_(approx_eq(x,t))`` -> UNSAT -> REFUSED.
+    # This is the core discrimination test: the same-subject P ^ not-P pattern.
+    out = _lift("""
+        def test_approx_contradiction(x):
+            assert x == pytest.approx(1.5)
+            assert x != pytest.approx(1.5)
+    """)
+    assert out.lifted == 1, f"expected lift (for REFUSED check), warnings: {out.warnings}"
+    inv = out.decls[0].inv
+    flat = _flatten_and(inv)
+    atoms = [a for a in flat if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    nots = [
+        o for o in flat
+        if isinstance(o, _Connective) and o.kind == "not"
+        and isinstance(o.operands[0], _Atomic)
+        and o.operands[0].name == "approx_eq"
+    ]
+    assert atoms, f"expected positive approx_eq atom, got inv={inv}"
+    assert nots, f"expected not_(approx_eq) atom, got inv={inv}"
+    # The two atoms must refer to the same target (same str_const value).
+    pos_target = atoms[0].args[1]
+    neg_target = nots[0].operands[0].args[1]
+    assert pos_target == neg_target, (
+        f"discrimination requires same target; pos={pos_target!r} neg={neg_target!r}"
+    )
+
+
+def test_approx_eq_twice_same_target_is_consistent():
+    # POSITIVE: ``x == approx(t); x == approx(t)`` -> two identical approx_eq
+    # atoms -> PROVEN (CONSISTENT).
+    # Both asserts use the same x and same target -> same atom twice -> SAT.
+    out = _lift("""
+        def test_approx_consistent(x):
+            assert x == pytest.approx(1.5)
+            assert x == pytest.approx(1.5)
+    """)
+    assert out.lifted == 1, f"expected lift, warnings: {out.warnings}"
+    flat = _flatten_and(out.decls[0].inv)
+    atoms = [a for a in flat if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    assert len(atoms) == 2, f"expected 2 approx_eq atoms (one per assert), got: {flat}"
+    # Both must share the same target (same str_const).
+    assert atoms[0].args[1] == atoms[1].args[1], (
+        f"both atoms must share the same target term; got {atoms[0].args[1]!r} vs {atoms[1].args[1]!r}"
+    )
+    # Both must share the same value var (x).
+    assert atoms[0].args[0] == atoms[1].args[0], (
+        f"both atoms must refer to the same value var; got {atoms[0].args[0]!r} vs {atoms[1].args[0]!r}"
+    )
+
+
+def test_approx_different_targets_are_independent_conservative_under_refusal():
+    # CONSERVATIVE UNDER-REFUSAL: ``x == approx(5.0); x == approx(99.0)``
+    # -> two DIFFERENT approx_eq atoms -> treated as INDEPENDENT -> PROVEN.
+    # This is the conservative under-refusal guard: disjoint targets that
+    # cannot overlap are NOT refused (we never assert target distinctness —
+    # doing so would falsePass overlapping ranges).
+    out = _lift("""
+        def test_approx_different_targets(x):
+            assert x == pytest.approx(5.0)
+            assert x == pytest.approx(99.0)
+    """)
+    assert out.lifted == 1, f"expected lift, warnings: {out.warnings}"
+    flat = _flatten_and(out.decls[0].inv)
+    atoms = [a for a in flat if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    assert len(atoms) == 2, f"expected 2 approx_eq atoms, got: {flat}"
+    # Targets must be different str_const values (encoding 5.0 vs 99.0).
+    assert atoms[0].args[1] != atoms[1].args[1], (
+        f"different targets must produce different str_const terms; "
+        f"got {atoms[0].args[1]!r} and {atoms[1].args[1]!r}"
+    )
+
+
+def test_approx_kwargs_rel_loudly_refused():
+    # LOUD REFUSE: ``rel=`` kwarg on pytest.approx.
+    # Different rel= values produce different effective intervals;
+    # collapsing them to the same atom would hide the distinction.
+    out = _lift("""
+        def test_approx_rel(x):
+            assert x == pytest.approx(1.5, rel=1e-3)
+            assert x == pytest.approx(1.5, rel=1e-3)
+    """)
+    # The test must not silently lift: either 0 decls (warning emitted) or
+    # a loud-refuse warning present.
+    approx_warns = [w for w in out.warnings if "approx" in w.reason.lower()]
+    assert approx_warns or out.lifted == 0, (
+        "rel= kwarg must produce a loud-refuse warning or 0 lifts; "
+        f"got lifted={out.lifted}, warnings={out.warnings}"
+    )
+
+
+def test_approx_kwargs_abs_loudly_refused():
+    # LOUD REFUSE: ``abs=`` kwarg on pytest.approx.
+    out = _lift("""
+        def test_approx_abs(x):
+            assert x == pytest.approx(1.5, abs=0.1)
+            assert x == pytest.approx(1.5, abs=0.1)
+    """)
+    approx_warns = [w for w in out.warnings if "approx" in w.reason.lower()]
+    assert approx_warns or out.lifted == 0, (
+        "abs= kwarg must produce a loud-refuse warning or 0 lifts; "
+        f"got lifted={out.lifted}, warnings={out.warnings}"
+    )
+
+
+def test_approx_list_target_loudly_refused():
+    # LOUD REFUSE: ``pytest.approx([1.0, 2.0])`` — list target is out of scope.
+    out = _lift("""
+        def test_approx_list(x):
+            assert x == pytest.approx([1.0, 2.0])
+    """)
+    approx_warns = [w for w in out.warnings if "approx" in w.reason.lower()]
+    assert approx_warns or out.lifted == 0, (
+        "list approx target must produce a loud-refuse warning or 0 lifts; "
+        f"got lifted={out.lifted}, warnings={out.warnings}"
+    )
+
+
+def test_approx_variable_target_loudly_refused():
+    # LOUD REFUSE: computed / variable target cannot be content-addressed.
+    out = _lift("""
+        def test_approx_var_target(x, expected):
+            assert x == pytest.approx(expected)
+    """)
+    approx_warns = [w for w in out.warnings if "approx" in w.reason.lower()]
+    assert approx_warns or out.lifted == 0, (
+        "variable target must produce a loud-refuse warning or 0 lifts; "
+        f"got lifted={out.lifted}, warnings={out.warnings}"
+    )
+
+
+def test_approx_negative_float_target_lifts():
+    # POSITIVE: unary-neg float literal (``-1.5``) is a valid target.
+    out = _lift("""
+        def test_approx_neg_float(x, y):
+            assert x == pytest.approx(-1.5)
+            assert y == pytest.approx(-1.5)
+    """)
+    assert out.lifted == 1, f"expected lift for negative float target, warnings: {out.warnings}"
+    flat = _flatten_and(out.decls[0].inv)
+    atoms = [a for a in flat if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    assert len(atoms) == 2, f"expected 2 approx_eq atoms, got: {flat}"
+
+
+def test_approx_lhs_position_lifts():
+    # POSITIVE: approx on the LEFT side (``pytest.approx(1.5) == x``).
+    # Python allows this; x is still the value side.
+    out = _lift("""
+        def test_approx_lhs(x, y):
+            assert pytest.approx(1.5) == x
+            assert pytest.approx(1.5) == y
+    """)
+    assert out.lifted == 1, f"expected lift for approx on LHS, warnings: {out.warnings}"
+    flat = _flatten_and(out.decls[0].inv)
+    atoms = [a for a in flat if isinstance(a, _Atomic) and a.name == "approx_eq"]
+    assert len(atoms) == 2, f"expected 2 approx_eq atoms, got: {flat}"
+    # x is the value side of the first atom (first arg).
+    val_arg = atoms[0].args[0]
+    assert isinstance(val_arg, _Var) and val_arg.name == "x", (
+        f"value side must be Var('x'), got: {val_arg!r}"
+    )
+
+
+def test_approx_as_subterm_in_nested_call_loudly_refused():
+    # LOUD REFUSE: approx nested inside another call position (not direct comparand).
+    # e.g. ``assert f(pytest.approx(1.5)) == 0`` — approx is a sub-term, not
+    # the direct comparand of == or !=.
+    out = _lift("""
+        def test_approx_subterm(x):
+            assert x == f(pytest.approx(1.5))
+    """)
+    # Must not silently lift approx as a ctor sub-term.
+    approx_warns = [w for w in out.warnings if "approx" in w.reason.lower()]
+    assert approx_warns or out.lifted == 0, (
+        "approx as sub-term must produce a loud-refuse warning or 0 lifts; "
+        f"got lifted={out.lifted}, warnings={out.warnings}"
+    )
+
+
+def test_approx_in_value_scope_pattern_lifts():
+    # POSITIVE: approx in a value-scope (mixed-body / scoped) pattern.
+    # ``actual = compute(); assert actual == pytest.approx(1.5)``
+    out = _lift("""
+        def test_approx_value_scope():
+            actual = compute()
+            assert actual == pytest.approx(1.5)
+    """)
+    # Should lift (not silently refuse) — the scoped path also intercepts approx.
+    assert out.lifted >= 1 or any("approx" in w.reason.lower() for w in out.warnings), (
+        "approx in value-scope must be either lifted or loudly-refused (not silent); "
+        f"lifted={out.lifted}, warnings={out.warnings}"
+    )
+    # No silent skip: must be claimed.
+    assert "test_approx_value_scope" in out.claimed_tests, (
+        "test must be CLAIMED (not silently fall through to Layer 0)"
+    )

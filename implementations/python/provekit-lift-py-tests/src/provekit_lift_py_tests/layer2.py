@@ -715,6 +715,21 @@ def _translate_term(node: ast.expr) -> Term:
         # Non-literal contents → ValueError (LOUD REFUSE at call site).
         return _translate_dict_set_literal_term(node)
     if isinstance(node, ast.Call):
+        # pytest.approx as a sub-term: LOUD REFUSE.  approx calls must be
+        # intercepted at the comparison level (_lift_approx_comparison); if
+        # they reach here they are in an unsupported position (e.g. nested
+        # inside another call, or on a non-Eq/NotEq comparison side).
+        # Silently lifting them as a ctor would create a term that looks like
+        # a plain function call — ``x == approx(5); x == approx(99)`` would
+        # become ``eq(x, ctor(approx,5)) ^ eq(x, ctor(approx,99))`` — UNSAT
+        # — REFUSED — a falsePass on overlapping ranges.  Always refuse here.
+        if _is_pytest_approx_call(node):
+            raise ValueError(
+                "approx: pytest.approx(...) in an unsupported position — "
+                "approx is only liftable as the comparand of == or != "
+                "(e.g. `assert x == pytest.approx(target)`); "
+                "use it in a direct == or != comparison at the top level of an assert"
+            )
         if isinstance(node.func, ast.Attribute):
             # Method call: ``recv.method(args)`` → callval ctor.
             # LOUD REFUSE on keyword args: cannot order-stably translate.
@@ -823,6 +838,188 @@ def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     if sym is None:
         raise ValueError(f"unsupported comparison op: {type(op).__name__}")
     return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
+
+
+def _is_pytest_approx_call(node: ast.expr) -> bool:
+    """Return True iff ``node`` is ``pytest.approx(...)`` or bare ``approx(...)``.
+
+    Both forms are in scope; this check is purely syntactic.
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    # bare: ``approx(target)``
+    if isinstance(func, ast.Name) and func.id == "approx":
+        return True
+    # ``pytest.approx(target)``
+    if (
+        isinstance(func, ast.Attribute)
+        and func.attr == "approx"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "pytest"
+    ):
+        return True
+    return False
+
+
+def _lift_approx_comparison(
+    op: ast.cmpop,
+    left_node: ast.expr,
+    right_node: ast.expr,
+    term_fn,  # callable: ast.expr -> Term
+) -> Optional[Formula]:
+    """Try to lift ``x == pytest.approx(target)`` / ``x != pytest.approx(target)``.
+
+    SOUND MODEL: conservative uninterpreted predicate.
+      ``x == approx(t)`` -> ``atomic("approx_eq", [x_term, target_term])``
+      ``x != approx(t)`` -> ``not_(atomic("approx_eq", [x_term, target_term]))``
+
+    This catches ``x == approx(t); x != approx(t)`` (SAME x, SAME t) ->
+    ``P ^ not P`` -> UNSAT -> REFUSED.  Different x or different t -> independent
+    atoms -> PROVEN.
+
+    DOCUMENTED LIMITATION (conservative under-refusal, never falsePass):
+      Two assertions with DISJOINT approx targets (``x == approx(5.0); x ==
+      approx(99.0)``) are treated as INDEPENDENT -> consistent -> PROVEN.
+      This misses a real contradiction when the tolerance intervals don't overlap,
+      but because we NEVER assert target distinctness, overlapping ranges are
+      never falsely refused.  The under-refusal is acceptable and explicitly
+      documented.
+
+    LOUD REFUSE (raises ValueError) when:
+      - op is not Eq or NotEq (``x < approx(5)`` is meaningless for tolerance)
+      - kwargs (``rel=``, ``abs=``) present on the approx call — different
+        tolerances produce different effective intervals; treating them as the
+        same atom with the same target would model them identically, hiding the
+        fact that the user specified different tolerances (potential for subtle
+        falsePass if we ever extend the model)
+      - the target is not a translatable numeric literal (computed / variable
+        target cannot be content-addressed)
+      - the approx arg is a list or dict (approx-of-collection is a different
+        shape not modelled here)
+      - approx appears on BOTH sides of the comparison (``approx(a) == approx(b)``
+        is meaningless for our model)
+
+    Returns None if neither side is a pytest.approx call (not our pattern).
+    """
+    left_is_approx = _is_pytest_approx_call(left_node)
+    right_is_approx = _is_pytest_approx_call(right_node)
+
+    if not left_is_approx and not right_is_approx:
+        return None  # Not an approx comparison; caller falls through.
+
+    if left_is_approx and right_is_approx:
+        raise ValueError(
+            "approx: both sides of comparison are pytest.approx calls; "
+            "this shape is not soundly liftable"
+        )
+
+    # Only Eq and NotEq are meaningful for tolerance comparisons.
+    if not isinstance(op, (ast.Eq, ast.NotEq)):
+        raise ValueError(
+            f"approx: operator {type(op).__name__!r} with pytest.approx is not "
+            "soundly liftable — only == and != are in scope for the approx lifter"
+        )
+
+    # Identify the value side and the approx call.
+    if right_is_approx:
+        val_node = left_node
+        approx_call = right_node
+    else:
+        val_node = right_node
+        approx_call = left_node
+
+    assert isinstance(approx_call, ast.Call)  # guaranteed by _is_pytest_approx_call
+
+    # kwargs (rel=, abs=) -> LOUD REFUSE.
+    if approx_call.keywords:
+        kw_names = [k.arg or "**" for k in approx_call.keywords]
+        raise ValueError(
+            f"approx: keyword arguments {kw_names!r} on pytest.approx are not "
+            "soundly liftable — different rel=/abs= tolerances produce different "
+            "effective intervals; refusing rather than silently collapsing them"
+        )
+
+    # Must have exactly one positional arg: the target.
+    if len(approx_call.args) != 1:
+        raise ValueError(
+            f"approx: expected exactly 1 positional argument (the target), "
+            f"got {len(approx_call.args)}"
+        )
+
+    target_node = approx_call.args[0]
+
+    # LOUD REFUSE for list/dict targets (approx-of-collection).
+    if isinstance(target_node, (ast.List, ast.Tuple, ast.Dict, ast.Set)):
+        raise ValueError(
+            "approx: list/tuple/dict/set target is not soundly liftable — "
+            "pytest.approx of a collection requires element-wise tolerance "
+            "comparison which is out of scope for the approx lifter"
+        )
+
+    # Target must be a numeric literal (int or float) or unary-neg thereof.
+    # We encode it as str_const(canonical_repr) so that:
+    #   - int AND float targets work uniformly (num() is Int-only)
+    #   - same literal -> same str_const -> same atom -> discrimination fires
+    #   - different literals -> different str_const -> different atoms -> independent
+    target_repr = _approx_target_repr(target_node)
+    if target_repr is None:
+        raise ValueError(
+            "approx: target is not a translatable numeric literal (int or float); "
+            "computed / variable targets cannot be content-addressed at lift time — "
+            "refusing soundly rather than silently lifting an unstable term"
+        )
+
+    # Translate the value side using the caller's term function.
+    try:
+        val_term = term_fn(val_node)
+    except ValueError as e:
+        raise ValueError(f"approx: value side not liftable: {e}")
+
+    target_term = str_const(target_repr)
+    atom = atomic("approx_eq", [val_term, target_term])
+
+    if isinstance(op, ast.NotEq):
+        return not_(atom)
+    return atom
+
+
+def _approx_target_repr(node: ast.expr) -> Optional[str]:
+    """Return a canonical string representation for a numeric literal target,
+    or None if the node is not a liftable numeric literal.
+
+    Accepted: int literal, float literal, unary-neg of int or float literal.
+    Rejected: bool literals (bool is a subtype of int; approx(True) is
+              semantically approx(1) but not a meaningful test value — refuse).
+              Non-literal expressions (names, calls, etc.).
+
+    The repr is chosen to be:
+      - stable across Python versions for the same value
+      - distinct for distinct numeric values
+      - shared for identical numeric values
+
+    We use ``repr(value)`` which is deterministic for int and float.
+    """
+    if isinstance(node, ast.Constant):
+        v = node.value
+        if isinstance(v, bool):
+            return None  # Bool is subtype of int; refuse for approx context.
+        if isinstance(v, int):
+            return repr(v)
+        if isinstance(v, float):
+            return repr(v)
+        return None  # str, None, etc.
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        inner = node.operand
+        if isinstance(inner, ast.Constant):
+            v = inner.value
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, int):
+                return repr(-v)
+            if isinstance(v, float):
+                return repr(-v)
+    return None
 
 
 def _truthiness_call_head(callee: str, arity: int) -> str:
@@ -957,6 +1154,13 @@ def _translate_bool_expr(node: ast.expr) -> Formula:
     """
     if isinstance(node, ast.Compare):
         if len(node.ops) == 1:
+            # pytest.approx interception: must happen BEFORE generic term
+            # translation so approx calls are never silently lifted as ctor terms.
+            approx_formula = _lift_approx_comparison(
+                node.ops[0], node.left, node.comparators[0], _translate_term
+            )
+            if approx_formula is not None:
+                return approx_formula
             l = _translate_term(node.left)
             r = _translate_term(node.comparators[0])
             return _comparison_from_ast_op(node.ops[0], l, r)
@@ -1976,6 +2180,13 @@ def _translate_bool_expr_scoped(
         def _scoped_term_fn(n: ast.expr) -> Term:
             return _translate_term_scoped(n, scope, call_vars)
         if len(node.ops) == 1:
+            # pytest.approx interception: must happen BEFORE generic term
+            # translation so approx calls are never silently lifted as ctor terms.
+            approx_formula = _lift_approx_comparison(
+                node.ops[0], node.left, node.comparators[0], _scoped_term_fn
+            )
+            if approx_formula is not None:
+                return approx_formula
             return _comparison_from_ast_op(
                 node.ops[0],
                 _scoped_term_fn(node.left),
@@ -2028,6 +2239,15 @@ def _translate_term_scoped(
         # itself (its content is fully determined at lift time).
         return _translate_dict_set_literal_term(node)
     if isinstance(node, ast.Call):
+        # pytest.approx as a sub-term in value-scope: LOUD REFUSE (same
+        # reasoning as in _translate_term — see that guard for details).
+        if _is_pytest_approx_call(node):
+            raise ValueError(
+                "approx: pytest.approx(...) in an unsupported position — "
+                "approx is only liftable as the comparand of == or != "
+                "(e.g. `assert x == pytest.approx(target)`); "
+                "use it in a direct == or != comparison at the top level of an assert"
+            )
         if isinstance(node.func, ast.Attribute):
             # Method call as a TERM: ``recv.method(args)`` → callval ctor.
             # SSA-key the receiver through the current scope so that
