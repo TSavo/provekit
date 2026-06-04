@@ -604,7 +604,13 @@ def test_pattern5_direct_call_assertion_lifts_to_callsite_contracts():
     assert "test_direct_parse" in out.claimed_tests
     names = {d.name for d in out.decls}
     assert len(names) == 2
-    assert all(name.startswith("parse_int@t.py:") for name in names)
+    # ARGUMENT-CARRYING EUF: the bare call-result base is now argument-keyed
+    # (``parse_int#euf#<arg_sig>``) rather than location-keyed, so the SAME
+    # (callee, args) collapses to one base across functions/files (which is
+    # what lets cross-location contradictions coalesce + fire at prove time).
+    # The contract is still test-name-free (the test only describes the
+    # callsite contract; it does not own the contract name).
+    assert all(name.startswith("parse_int#euf#") for name in names)
     assert all("test_direct_parse" not in name for name in names)
     assert len([name for name in names if name.endswith("::facts")]) == 1
     assert len([name for name in names if name.endswith("::assertion")]) == 1
@@ -623,6 +629,122 @@ def test_pattern5_mints_every_callsite_implication_in_one_assertion():
     assert len(out.implications) == 2
     assert all(imp.antecedent.endswith("::facts") for imp in out.implications)
     assert all(imp.consequent.endswith("::assertion") for imp in out.implications)
+
+
+# --- ARGUMENT-CARRYING EUF: cross-location call-result discrimination --------
+#
+# The bare call-result subject is ARGUMENT-keyed (``callresult_<callee>_a<n>``)
+# not LOCATION-keyed.  Two SEPARATE test functions calling the SAME callee with
+# the SAME arg-term must coalesce (file-level) into ONE ``::assertion`` inv so a
+# cross-location contradiction (``f(x)==1`` / ``f(x)==2``) is visible to z3.
+# DIFFERENT args must stay INDEPENDENT (two ``::assertion`` decls).
+#
+# Prove-level receipts (mint+prove) live in
+# examples/python-consistency-dummy/test_euf_crosslocation_*.py:
+#   same args      -> REFUSED   (z3 unsat, conjoined inv contradictory)
+#   different args  -> PROVEN    (z3 sat, two independent invs)
+
+
+def _euf_assertion_decls(out):
+    return [d for d in out.decls if d.name.endswith("::assertion")]
+
+
+def test_euf_cross_location_same_args_coalesce_to_one_contradictory_assertion():
+    # Two functions, SAME callee + SAME arg ``x``, contradictory values.
+    out = _lift("""
+        def test_a(x):
+            assert make_value(x) == 1
+        def test_b(x):
+            assert make_value(x) == 2
+    """)
+    assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
+    asserts = _euf_assertion_decls(out)
+    # FILE-LEVEL COALESCING: both functions emit the SAME argument-keyed base
+    # name, which is merged into ONE ::assertion decl whose inv conjoins both.
+    assert len(asserts) == 1, (
+        f"expected ONE coalesced ::assertion, got {len(asserts)}: "
+        f"{[d.name for d in asserts]}"
+    )
+    name = asserts[0].name
+    assert name.startswith("make_value#euf#"), name
+    # The coalesced inv must be a conjunction (and) of the two equalities so
+    # =(cr(x),1) ∧ =(cr(x),2) lands in a single obligation -> z3 UNSAT.
+    inv = asserts[0].inv
+    atoms = [a for a in _flatten_and(inv) if isinstance(a, _Atomic)]
+    eqs = [a for a in atoms if a.name == "="]
+    assert len(eqs) == 2, f"expected 2 conjoined equalities, got {atoms!r}"
+    # Both equalities must be over the SAME callresult ctor term (same subject)
+    # with DISTINCT int constants (1 and 2) -> contradiction.
+    subjects = [a.args[0] for a in eqs]
+    assert isinstance(subjects[0], _Ctor) and "callresult" in subjects[0].name
+    assert subjects[0] == subjects[1], (
+        f"EUF subjects must be the SAME ctor (cross-location unify); "
+        f"got {subjects[0]!r} != {subjects[1]!r}"
+    )
+    consts = sorted(a.args[1].value for a in eqs if isinstance(a.args[1], _ConstInt))
+    assert consts == [1, 2], f"expected distinct constants 1,2; got {consts}"
+
+
+def test_euf_cross_location_different_args_stay_independent():
+    # Two functions, SAME callee but DIFFERENT args (x vs y) -> NO coalesce.
+    out = _lift("""
+        def test_a(x, y):
+            assert make_value(x) == 1
+        def test_b(x, y):
+            assert make_value(y) == 2
+    """)
+    assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
+    asserts = _euf_assertion_decls(out)
+    # DIFFERENT arg_sig -> DIFFERENT base name -> two independent ::assertion
+    # decls (the discrimination guard: a contradiction must NOT spuriously fire
+    # across distinct arguments).
+    assert len(asserts) == 2, (
+        f"expected TWO independent ::assertion decls (different args), got "
+        f"{len(asserts)}: {[d.name for d in asserts]}"
+    )
+    names = sorted(d.name for d in asserts)
+    assert names[0] != names[1], "different-arg bases must be distinct names"
+    assert all(n.startswith("make_value#euf#") for n in names), names
+    # Each inv is a single equality (no cross-contamination).
+    for d in asserts:
+        atoms = [a for a in _flatten_and(d.inv) if isinstance(a, _Atomic)]
+        eqs = [a for a in atoms if a.name == "="]
+        assert len(eqs) == 1, f"{d.name}: expected one equality, got {atoms!r}"
+
+
+def test_euf_reassigned_arg_yields_fresh_term_no_false_refuse():
+    # Within ONE function: arg ``x`` is reassigned between the two calls.  SSA
+    # must give the second call a FRESH arg term so the two call-results do NOT
+    # unify (which would be a spurious cross-location-style false-refuse).
+    out = _lift("""
+        def test_reassign(x):
+            assert make_value(x) == 1
+            x = other()
+            assert make_value(x) == 2
+    """)
+    # The two make_value(x) calls have DIFFERENT SSA arg terms (x param vs x$0)
+    # -> different argument-keyed bases -> NOT coalesced -> independent.  (A
+    # third ::assertion for the ``x = other()`` binding callsite is also emitted;
+    # it is unrelated.)  The CRITICAL property is SSA freshness: the two
+    # make_value EUF bases must be DISTINCT (v:x) vs (v:x$0), so the reassigned
+    # call does NOT spuriously unify with the first -> no false-refuse.
+    make_value_asserts = [
+        d for d in _euf_assertion_decls(out)
+        if d.name.startswith("make_value#euf#")
+    ]
+    assert len(make_value_asserts) == 2, (
+        f"reassigned arg must yield TWO DISTINCT make_value EUF ::assertion "
+        f"decls (SSA freshness), got {len(make_value_asserts)}: "
+        f"{[d.name for d in make_value_asserts]}"
+    )
+    names = {d.name for d in make_value_asserts}
+    assert len(names) == 2, (
+        f"the two make_value calls must have DISTINCT argument-keyed bases "
+        f"after reassignment (no false-refuse), got {names}"
+    )
+    # One base keys on the raw param (v:x), the other on the SSA-bumped (v:x$0).
+    assert any("(v:x)" in n for n in names), names
+    assert any("(v:x$0)" in n for n in names), names
 
 
 def test_pattern5_non_none_identity_assertion_is_not_lifted_as_value_equality():

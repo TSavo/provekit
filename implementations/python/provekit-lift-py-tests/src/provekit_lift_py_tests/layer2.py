@@ -159,6 +159,15 @@ class _CallOrigin:
     callee: str
     lineno: int
     col: int
+    # ARGUMENT-CARRYING EUF: when the call result was lifted to an
+    # argument-keyed ctor (``callresult_<callee>_a<n>``), ``arg_sig`` holds a
+    # deterministic canonical signature of the SSA-resolved arg-terms.  This
+    # makes the callsite contract base argument-keyed (``<callee>#<arg_sig>``)
+    # instead of location-keyed, so mint's coalesce-by-name conjoins TWO
+    # cross-location assertions about the SAME (callee, args) into a single
+    # ``::assertion`` inv → the contradiction fires UNSAT.  None when the call
+    # fell back to the location-keyed free var (no cross-location unification).
+    arg_sig: Optional[str] = None
 
 
 @dataclass
@@ -197,7 +206,85 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
     test_fns = list(_iter_test_functions(tree))
     for fn, class_name in test_fns:
         _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
+
+    _coalesce_same_named_decls(out)
     return out
+
+
+def _coalesce_same_named_decls(out: Layer2Output) -> None:
+    """FILE-LEVEL coalescing for ARGUMENT-CARRYING EUF cross-FUNCTION
+    contradictions.
+
+    ``_classify_value_scope`` conjoins assertions about the same call-site base
+    WITHIN one test function (its per-base ``assertion_atoms_by_base`` dict).
+    But each test function is classified independently, so two DIFFERENT
+    functions that assert about the SAME argument-keyed EUF base
+    (``make_value#euf#...::assertion``) emit TWO separate ``ContractDecl``s with
+    the SAME name and DIFFERENT invs (``=(cr(x),1)`` and ``=(cr(x),2)``).
+
+    The verifier's load path treats two same-name / different-CID contracts as a
+    DUPLICATE-NAME error and keeps one, dropping the other — so the cross-
+    function contradiction would silently vanish (each survivor is a single,
+    non-contradictory assertion → spurious PROVEN).  To make the contradiction
+    visible, we conjoin same-named ``inv``-bearing decls HERE, at file scope,
+    into ONE decl whose inv is ``and_([inv_0, inv_1, ...])``.  Then
+    ``=(cr(x),1) ∧ =(cr(x),2)`` lands in a single inv → z3 UNSAT → REFUSED.
+
+    SCOPE: this only ever merges decls that actually share a name.  Location-
+    keyed bases embed ``line:col`` and are therefore unique per call site, so
+    they NEVER collide and are left untouched.  Only the argument-keyed
+    (``#euf#``) bases — which intentionally drop line:col so identical
+    (callee, args) collapse — can collide, and merging them is exactly the
+    cross-function unification we want.
+
+    SOUNDNESS: conjoining ``A: f(x)=1`` with ``B: f(x)=2`` on the shared bare
+    parameter name ``x`` treats the two independently-bound parameters as the
+    same input.  That is the CONSERVATIVE direction — it can only OVER-REFUSE
+    (the two ``x``s could differ at runtime), never produce a falsePass.  It is
+    consistent with the EUF purity assumption documented at the call site.
+
+    Order is preserved (first-seen name order; invs in append order) for
+    deterministic, content-addressable output.
+    """
+    decls = out.decls
+    # Group indices by name, preserving first-seen order.
+    order: List[str] = []
+    by_name: Dict[str, List[int]] = {}
+    for i, d in enumerate(decls):
+        if d.name not in by_name:
+            by_name[d.name] = []
+            order.append(d.name)
+        by_name[d.name].append(i)
+
+    # Nothing to do if every name is unique.
+    if all(len(idxs) == 1 for idxs in by_name.values()):
+        return
+
+    new_decls: List[ContractDecl] = []
+    for name in order:
+        idxs = by_name[name]
+        if len(idxs) == 1:
+            new_decls.append(decls[idxs[0]])
+            continue
+        group = [decls[i] for i in idxs]
+        # Only coalesce when EVERY member is a pure ``inv`` contract (the shape
+        # the value-scope ::assertion path emits).  If any member carries
+        # pre/post/evidence (not produced by this path), fall back to keeping
+        # the FIRST decl unchanged rather than risk merging incompatible shapes.
+        if not all(
+            d.inv is not None
+            and d.pre is None
+            and d.post is None
+            and d.evidence is None
+            for d in group
+        ):
+            new_decls.append(group[0])
+            continue
+        invs = [d.inv for d in group]
+        merged_inv = invs[0] if len(invs) == 1 else and_(invs)
+        new_decls.append(ContractDecl(name=name, inv=merged_inv))
+
+    out.decls = new_decls
 
 
 # ---------------------------------------------------------------------------
@@ -2087,23 +2174,72 @@ def _assertion_callsite_context(
     scope: _ValueScope,
 ) -> Optional[Tuple[List[_CallOrigin], List[Formula], Formula]]:
     direct_calls = _collect_assertion_calls(stmt)
+    # ARGUMENT-CARRYING EUF (the "for input x" model).  A bare call result
+    # (``f(x)`` appearing directly in an assertion) is keyed on
+    # (callee, SSA-resolved arg-terms) via ``_call_result_term`` rather than on
+    # source LOCATION.  Two assertions in DIFFERENT functions / lines that call
+    # the SAME callee with the SAME argument terms therefore produce the SAME
+    # ctor term, so a cross-location contradiction (``f(x) == 1`` at line N and
+    # ``f(x) == 2`` at line M) unifies and fires UNSAT → REFUSED.  Different
+    # args (``f(x)`` vs ``f(y)``) → different terms → independent → PROVEN.
+    #
+    # The arg-terms are SSA-resolved through ``scope``, so a reassigned arg
+    # (``x = ...; x = ...`` → ``x$0`` then ``x$1``) yields a fresh term and
+    # never produces a false-refuse.
+    #
+    # PURITY ASSUMPTION (loud — identical to the Form-3 ``callval`` tradeoff):
+    #   same callee + same args → same value ASSUMES the callee is
+    #   DETERMINISTIC / pure.  A STATEFUL callee (counter, generator, RNG)
+    #   called twice with the same args could legitimately return different
+    #   values; unifying them here can only ever produce a CONSERVATIVE
+    #   FALSE-REFUSAL (we over-refuse a test that is actually fine).  It can
+    #   NEVER produce a falsePass: we only ever ADD an equality between two
+    #   syntactically identical call expressions, which is sound for pure fns
+    #   and merely conservative for impure ones.  This is the same tradeoff
+    #   the method-call-result (Form 3) and raises (Pattern 7) forms already
+    #   made; EUF extends it to the bare call-result subject.
+    #
+    # FALLBACK: if an argument is not soundly translatable, ``_call_result_term``
+    # returns None and we fall back to the LOCATION-keyed free var so the
+    # callsite still anchors a ::facts/::assertion contract without over-claiming
+    # argument identity (no cross-location unification, but no regression).
     call_vars: Dict[Tuple[int, int], Term] = {}
+    euf_origins: Dict[Tuple[int, int], _CallOrigin] = {}
     for call in direct_calls:
         origin = _call_origin_from_expr(call)
         if origin is not None:
-            call_vars[_call_key(call)] = make_var(_call_result_var_name(origin))
+            euf_term = _call_result_term(call, origin, scope, call_vars)
+            if euf_term is not None:
+                call_vars[_call_key(call)] = euf_term
+                # Argument-key the origin so the callsite contract base
+                # collapses to the same name across locations for same args.
+                assert isinstance(euf_term, _Ctor)
+                origin.arg_sig = _canonical_term_sig(euf_term)
+            else:
+                call_vars[_call_key(call)] = make_var(_call_result_var_name(origin))
+            euf_origins[_call_key(call)] = origin
 
     transient_facts: List[Formula] = []
     direct_origins: List[_CallOrigin] = []
     for call in direct_calls:
-        origin = _call_origin_from_expr(call)
+        origin = euf_origins.get(_call_key(call))
         if origin is None:
+            continue
+        var_term = call_vars[_call_key(call)]
+        if origin.arg_sig is not None:
+            # EUF subject: the ctor IS the value.  A reflexive ``eq(t, t)`` fact
+            # would be vacuous, so we anchor the callsite via a tautological
+            # fact only to keep the ::facts contract non-empty (the implication
+            # antecedent must exist).  The cross-location contradiction fires
+            # because the SAME ctor term ``t`` lands in the (mint-coalesced)
+            # conjoined ::assertion inv — see _callsite_contract_base.
+            transient_facts.append(eq(var_term, var_term))
+            direct_origins.append(origin)
             continue
         try:
             rhs = _translate_call_rhs(call, scope, call_vars)
         except ValueError:
             continue
-        var_term = call_vars[_call_key(call)]
         transient_facts.append(eq(var_term, rhs))
         direct_origins.append(origin)
 
@@ -2137,11 +2273,99 @@ def _unique_contract_name(name: str, used_names: Set[str]) -> str:
 
 def _callsite_contract_base(origin: _CallOrigin, source_path: str) -> str:
     file_name = os.path.basename(source_path) or source_path or "<unknown>"
+    if origin.arg_sig is not None:
+        # ARGUMENT-KEYED base (EUF).  Same callee + same SSA-resolved arg-terms
+        # → same base → mint's coalesce-by-name conjoins the two cross-location
+        # ``::assertion`` decls into one inv, so ``eq(t,1) ∧ eq(t,2)`` lands in
+        # a single obligation and fires UNSAT.  Deliberately DROPS line:col and
+        # the file name so the base is identical across functions AND files for
+        # the same (callee, args) — that is exactly the cross-location unify we
+        # want.  Different args → different arg_sig → different base → PROVEN.
+        return f"{origin.callee}#euf#{origin.arg_sig}"
     return f"{origin.callee}@{file_name}:{origin.lineno}:{origin.col}"
 
 
 def _call_result_var_name(origin: _CallOrigin) -> str:
     return f"{origin.callee}$call${origin.lineno}${origin.col}"
+
+
+def _call_result_head(callee: str, arity: int) -> str:
+    """ASCII-safe, arity-stable ctor head for a bare call-result EUF term.
+
+    Shape: ``callresult_<callee>_a<arity>`` — mirrors the Form-3 ``callval_``
+    and truthiness ``call_`` heads.  Encoding arity in the head guarantees the
+    SMT emitter never sees the same head at two different arities (``f()`` vs
+    ``f(x)``), which would otherwise silently adopt the first arity and produce
+    ill-sorted applications.
+    """
+    safe = "".join(c if (c.isascii() and c.isalnum()) else "_" for c in callee)
+    return f"callresult_{safe}_a{arity}"
+
+
+def _call_result_term(
+    call: ast.Call,
+    origin: _CallOrigin,
+    scope: _ValueScope,
+    call_vars: Dict[Tuple[int, int], Term],
+) -> Optional[Term]:
+    """Build the ARGUMENT-CARRYING EUF term for a bare call result.
+
+    ``f(x)`` → ``ctor("callresult_f_a1", [x_term])`` where ``x_term`` is the
+    SSA-resolved translation of ``x`` through ``scope``.  Same callee + same
+    (SSA-resolved) arg-terms → SAME ctor, regardless of source line; this is
+    what lets a cross-location contradiction (``f(x)==1`` / ``f(x)==2`` in two
+    different functions) unify and fire UNSAT.
+
+    Returns None (caller falls back to a LOCATION-keyed free var) when:
+      - the func is not a simple Name (handled by the origin filter already),
+      - there are keyword args (cannot order-stably translate),
+      - any argument is not soundly translatable as a term.
+
+    NOTE on the ``callresult_`` head vs the bare ``ctor(callee, ...)`` that
+    ``_translate_call_rhs`` builds: they are DELIBERATELY distinct heads.  The
+    EUF subject must be a single dedicated function symbol so two cross-location
+    assertions about the same call unify on it; the arity suffix keeps it
+    sort-stable.  The two share the same args, so identical calls still collapse.
+    """
+    if not isinstance(call.func, ast.Name):
+        return None
+    if call.keywords:
+        return None
+    try:
+        arg_terms = [
+            _translate_term_scoped(arg, scope, call_vars) for arg in call.args
+        ]
+    except ValueError:
+        return None
+    head = _call_result_head(origin.callee, len(arg_terms))
+    return ctor(head, arg_terms)
+
+
+def _canonical_term_sig(term: Term) -> str:
+    """Deterministic canonical signature for a Term, used to argument-key the
+    callsite contract base so mint's coalesce-by-name conjoins cross-location
+    assertions about the SAME (callee, args) into one ``::assertion`` inv.
+
+    Stable across process invocations (no hash randomization): we recurse
+    structurally over the frozen Term dataclasses and emit a fixed textual
+    encoding.  Same structure → same string → same base → mint coalesces →
+    contradiction fires.  Different structure → different string → distinct
+    base → independent (PROVEN).
+    """
+    from .ir import _Var as _IrVar, _ConstInt, _ConstStr, _ConstBool
+
+    if isinstance(term, _IrVar):
+        return f"v:{term.name}"
+    if isinstance(term, _ConstInt):
+        return f"i:{term.value}"
+    if isinstance(term, _ConstStr):
+        return f"s:{term.value!r}"
+    if isinstance(term, _ConstBool):
+        return f"b:{term.value}"
+    if isinstance(term, _Ctor):
+        inner = ",".join(_canonical_term_sig(a) for a in term.args)
+        return f"c:{term.name}({inner})"
+    return f"?:{term!r}"
 
 
 def _call_key(call: ast.Call) -> Tuple[int, int]:
