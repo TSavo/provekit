@@ -468,6 +468,52 @@ def _classify_and_lift(
             )
         return
 
+    # FIX 2a — LOUD-REFUSE CATCH-ALL (Δ=0 coverage):
+    # If the test body contains ANY assert statement but no pattern above claimed
+    # it, the assert is SILENTLY dropped — a Δ>0 gap.  Common cases:
+    #   - asserts nested inside a for/with/if body (has_assert/has_binding
+    #     pre-screen in _classify_mixed_body only checks TOP-LEVEL stmts)
+    #   - FunctionDef+assert inside the test body
+    #   - single assert with no binding and no qualifying condition for P3
+    #
+    # Rather than silently leaving these for Layer 0 (which produces ZERO
+    # contracts with ZERO warnings), we CLAIM the test and emit a LOUD warning
+    # naming the construct.  Zero contracts are produced — this is a valid
+    # loudly-refused outcome and satisfies per-lifter Δ=0.
+    has_any_assert = any(isinstance(s, ast.Assert) for s in ast.walk(fn))
+    if has_any_assert:
+        out.claimed_tests.add(test_name)
+        out.seen += 1
+        # Find the first construct that caused the fall-through.
+        reasons: List[str] = []
+        for s in fn.body:
+            if isinstance(s, (ast.For, ast.While, ast.With, ast.If)):
+                nested_asserts = [n for n in ast.walk(s) if isinstance(n, ast.Assert)]
+                if nested_asserts:
+                    kind = type(s).__name__
+                    reasons.append(
+                        f"asserts nested in {kind.lower()}-body not lifted "
+                        f"(construct: {_unparse(s)[:60]})"
+                    )
+            elif isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                nested_asserts = [n for n in ast.walk(s) if isinstance(n, ast.Assert)]
+                if nested_asserts:
+                    reasons.append(
+                        f"asserts nested in inner FunctionDef `{s.name}` not lifted"
+                    )
+        if not reasons:
+            # Single assert, no binding, and no call-result scope — residual case.
+            reasons.append("single assert with no recognized binding or call-result scope; not lifted in v0")
+        for reason in reasons:
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 loud-refuse: assert present but pattern unclaimed — {reason}",
+                )
+            )
+        return
+
     # No Layer 2 pattern claimed it. Leave for Layer 0.
 
 
@@ -1985,6 +2031,24 @@ def _classify_value_scope(
                 continue
             if not decls:
                 return False
+            # FIX 2b — LOUD WARNING on silent value-scope assertion drop:
+            # ``pairs == 0`` but ``decls`` is non-empty means a prior assertion
+            # in this test produced callsite facts (so value_scope will claim
+            # the test and return True), but THIS assertion has no tracked
+            # call-origin in scope — e.g. ``assert MODULE_CONST == 5`` after
+            # ``result = parse_int(...)`` — and the bare ``continue`` would
+            # silently drop it.  Value_scope will claim the test so the Fix 2a
+            # catch-all never fires; the drop is only visible here.
+            # Emit a warning so nothing is silent (Δ=0).
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 value-scope: assertion produced no callsite facts; "
+                    f"not lifted (no tracked call-origin in scope): "
+                    f"`{_unparse(stmt)[:80]}`",
+                )
+            )
             continue
 
         next_scopes = _apply_value_scope_statement(stmt, scopes, versions)
@@ -2209,7 +2273,20 @@ def _assertion_callsite_context(
         origin = _call_origin_from_expr(call)
         if origin is not None:
             euf_term = _call_result_term(call, origin, scope, call_vars)
-            if euf_term is not None:
+            if euf_term is not None and _euf_args_all_concrete(euf_term):
+                # VALUE-AWARE EUF UNIFICATION (FIX 1 / soundness):
+                # Use the argument-keyed base ONLY when EVERY argument of the
+                # call-result ctor is a CONCRETE LITERAL (int / str / bool /
+                # None constant).  Concrete literals denote the same value
+                # regardless of call-site location, so ``f(5)`` in function A
+                # and ``f(5)`` in function B genuinely refer to the same input
+                # and cross-location unification is sound.
+                #
+                # When ANY argument is SYMBOLIC (a _Var / param / non-literal
+                # _Ctor), the argument may be bound to different values at each
+                # call site; unifying them is UNSOUND (causes false-refusals).
+                # Fall back to the LOCATION-keyed free var (same branch as
+                # ``euf_term is None``) — no cross-location unification.
                 call_vars[_call_key(call)] = euf_term
                 # Argument-key the origin so the callsite contract base
                 # collapses to the same name across locations for same args.
@@ -2339,6 +2416,38 @@ def _call_result_term(
         return None
     head = _call_result_head(origin.callee, len(arg_terms))
     return ctor(head, arg_terms)
+
+
+def _euf_args_all_concrete(euf_term: "_Ctor") -> bool:
+    """Return True iff every immediate argument of the EUF call-result ctor is
+    a CONCRETE LITERAL (int / str / bool / None constant).
+
+    FIX 1 — VALUE-AWARE EUF SOUNDNESS:
+    Cross-location unification is only sound when the argument IS the same
+    value at every call site.  Concrete literals (``5``, ``"hello"``, True,
+    None) have a fixed value known at lift time — ``f(5)`` in function A and
+    ``f(5)`` in function B call f with the SAME input, so a cross-location
+    contradiction is genuine.
+
+    A SYMBOLIC argument (_Var from a param/local, or a nested non-literal
+    _Ctor) has a value that depends on the binding environment — ``f(x)`` in
+    function A and ``f(x)`` in function B bind ``x`` independently; they may
+    refer to DIFFERENT values at runtime.  Unifying them produces a spurious
+    UNSAT (false-refusal) when f(x)==1 and f(x)==2 happen to share the same
+    SSA name despite being independent.
+
+    The check is over IMMEDIATE args only (no recursion): a nested ctor arg
+    is by definition non-literal (it encodes a computed sub-expression), so
+    the first level is sufficient.
+    """
+    from .ir import _ConstInt, _ConstStr, _ConstBool
+    for arg in euf_term.args:
+        if isinstance(arg, (_ConstInt, _ConstStr, _ConstBool)):
+            continue
+        if _is_none_term(arg):
+            continue
+        return False
+    return True
 
 
 def _canonical_term_sig(term: Term) -> str:

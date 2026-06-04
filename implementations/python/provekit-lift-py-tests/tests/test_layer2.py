@@ -649,26 +649,28 @@ def _euf_assertion_decls(out):
     return [d for d in out.decls if d.name.endswith("::assertion")]
 
 
-def test_euf_cross_location_same_args_coalesce_to_one_contradictory_assertion():
-    # Two functions, SAME callee + SAME arg ``x``, contradictory values.
+def test_euf_cross_location_same_concrete_args_coalesce_to_one_contradictory_assertion():
+    # FIX 1: EUF cross-location unification is ONLY sound for CONCRETE LITERAL
+    # arguments.  Two functions calling the SAME callee with the SAME CONCRETE
+    # arg (5) and contradictory return values must coalesce -> REFUSED.
     out = _lift("""
-        def test_a(x):
-            assert make_value(x) == 1
-        def test_b(x):
-            assert make_value(x) == 2
+        def test_a():
+            assert make_value(5) == 1
+        def test_b():
+            assert make_value(5) == 2
     """)
     assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
     asserts = _euf_assertion_decls(out)
-    # FILE-LEVEL COALESCING: both functions emit the SAME argument-keyed base
-    # name, which is merged into ONE ::assertion decl whose inv conjoins both.
+    # FILE-LEVEL COALESCING: concrete arg (5 = _ConstInt) -> EUF base is
+    # argument-keyed -> same base in both fns -> ONE coalesced ::assertion.
     assert len(asserts) == 1, (
-        f"expected ONE coalesced ::assertion, got {len(asserts)}: "
+        f"expected ONE coalesced ::assertion (concrete arg), got {len(asserts)}: "
         f"{[d.name for d in asserts]}"
     )
     name = asserts[0].name
     assert name.startswith("make_value#euf#"), name
     # The coalesced inv must be a conjunction (and) of the two equalities so
-    # =(cr(x),1) ∧ =(cr(x),2) lands in a single obligation -> z3 UNSAT.
+    # =(cr(5),1) ∧ =(cr(5),2) lands in a single obligation -> z3 UNSAT.
     inv = asserts[0].inv
     atoms = [a for a in _flatten_and(inv) if isinstance(a, _Atomic)]
     eqs = [a for a in atoms if a.name == "="]
@@ -685,25 +687,62 @@ def test_euf_cross_location_same_args_coalesce_to_one_contradictory_assertion():
     assert consts == [1, 2], f"expected distinct constants 1,2; got {consts}"
 
 
-def test_euf_cross_location_different_args_stay_independent():
-    # Two functions, SAME callee but DIFFERENT args (x vs y) -> NO coalesce.
+def test_euf_symbolic_param_arg_cross_function_is_not_unified_no_false_refuse():
+    # FIX 1 DISCRIMINATION TEST: two functions with the SAME callee and a
+    # SYMBOLIC (param) arg must NOT unify cross-location — the params ``x``
+    # are INDEPENDENTLY bound in each function and may have DIFFERENT runtime
+    # values.  Unifying them would produce a spurious UNSAT (false-refusal).
+    #
+    # After Fix 1: symbolic args -> location-keyed fallback -> two INDEPENDENT
+    # ::assertion decls -> each is a single equality -> each is SAT -> PROVEN.
+    # The test name-prefixes must be location-keyed (NOT ``#euf#``).
     out = _lift("""
-        def test_a(x, y):
-            assert make_value(x) == 1
-        def test_b(x, y):
-            assert make_value(y) == 2
+        def test_a(x):
+            assert make_value_sym(x) == 1
+        def test_b(x):
+            assert make_value_sym(x) == 2
     """)
     assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
     asserts = _euf_assertion_decls(out)
-    # DIFFERENT arg_sig -> DIFFERENT base name -> two independent ::assertion
-    # decls (the discrimination guard: a contradiction must NOT spuriously fire
-    # across distinct arguments).
+    # TWO independent ::assertion decls (one per function) — NOT coalesced.
     assert len(asserts) == 2, (
-        f"expected TWO independent ::assertion decls (different args), got "
+        f"symbolic-arg cross-function: expected TWO independent ::assertion decls "
+        f"(no false-refuse), got {len(asserts)}: {[d.name for d in asserts]}"
+    )
+    # Location-keyed bases contain '@' not '#euf#'.
+    for d in asserts:
+        assert "#euf#" not in d.name, (
+            f"symbolic arg must use location-keyed base (no #euf#), got: {d.name}"
+        )
+    # Each inv is a single equality (no cross-contamination).
+    for d in asserts:
+        atoms = [a for a in _flatten_and(d.inv) if isinstance(a, _Atomic)]
+        eqs = [a for a in atoms if a.name == "="]
+        assert len(eqs) == 1, (
+            f"{d.name}: symbolic-arg must give ONE independent equality, got {atoms!r}"
+        )
+
+
+def test_euf_cross_location_different_concrete_args_stay_independent():
+    # FIX 1: DISCRIMINATION GUARD — two functions with the SAME callee but
+    # DIFFERENT CONCRETE LITERAL args (3 vs 7) must NOT coalesce.  Different
+    # concrete values -> different arg_sig -> different EUF base -> two
+    # independent ::assertion decls -> each is SAT -> PROVEN.
+    out = _lift("""
+        def test_a():
+            assert make_value(3) == 1
+        def test_b():
+            assert make_value(7) == 2
+    """)
+    assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
+    asserts = _euf_assertion_decls(out)
+    # DIFFERENT concrete arg_sig -> DIFFERENT EUF base -> two independent decls.
+    assert len(asserts) == 2, (
+        f"expected TWO independent ::assertion decls (different concrete args), got "
         f"{len(asserts)}: {[d.name for d in asserts]}"
     )
     names = sorted(d.name for d in asserts)
-    assert names[0] != names[1], "different-arg bases must be distinct names"
+    assert names[0] != names[1], "different-concrete-arg bases must be distinct names"
     assert all(n.startswith("make_value#euf#") for n in names), names
     # Each inv is a single equality (no cross-contamination).
     for d in asserts:
@@ -712,39 +751,37 @@ def test_euf_cross_location_different_args_stay_independent():
         assert len(eqs) == 1, f"{d.name}: expected one equality, got {atoms!r}"
 
 
-def test_euf_reassigned_arg_yields_fresh_term_no_false_refuse():
-    # Within ONE function: arg ``x`` is reassigned between the two calls.  SSA
-    # must give the second call a FRESH arg term so the two call-results do NOT
-    # unify (which would be a spurious cross-location-style false-refuse).
+def test_euf_reassigned_concrete_arg_yields_fresh_term_no_false_refuse():
+    # FIX 1: SSA freshness test using CONCRETE LITERAL args so that EUF
+    # unification is in play.  Within ONE function, x is initially 5 (concrete),
+    # then reassigned to a call result (opaque).  The first make_value(5) uses
+    # a concrete arg -> EUF-keyed.  The second make_value(x) uses the SSA-bumped
+    # x (now tracking `other()` — an opaque var, not a literal) -> symbolic ->
+    # location-keyed (not EUF-keyed).  The two bases MUST be distinct so they
+    # are independent -> no false-refuse.
     out = _lift("""
-        def test_reassign(x):
+        def test_reassign():
+            x = 5
             assert make_value(x) == 1
             x = other()
             assert make_value(x) == 2
     """)
-    # The two make_value(x) calls have DIFFERENT SSA arg terms (x param vs x$0)
-    # -> different argument-keyed bases -> NOT coalesced -> independent.  (A
-    # third ::assertion for the ``x = other()`` binding callsite is also emitted;
-    # it is unrelated.)  The CRITICAL property is SSA freshness: the two
-    # make_value EUF bases must be DISTINCT (v:x) vs (v:x$0), so the reassigned
-    # call does NOT spuriously unify with the first -> no false-refuse.
-    make_value_asserts = [
-        d for d in _euf_assertion_decls(out)
-        if d.name.startswith("make_value#euf#")
-    ]
+    # The first make_value(x$0) where x$0 = 5 (concrete ConstInt) -> EUF-keyed.
+    # The second make_value(x$1) where x$1 is other() (opaque var) -> location-keyed.
+    # Both must be captured (value_scope_lifted >= 1); the two make_value
+    # assertion decls must have DISTINCT names (no false-refuse).
+    all_asserts = _euf_assertion_decls(out)
+    make_value_asserts = [d for d in all_asserts if "make_value" in d.name]
     assert len(make_value_asserts) == 2, (
-        f"reassigned arg must yield TWO DISTINCT make_value EUF ::assertion "
+        f"reassigned-concrete-arg must yield TWO DISTINCT make_value ::assertion "
         f"decls (SSA freshness), got {len(make_value_asserts)}: "
         f"{[d.name for d in make_value_asserts]}"
     )
     names = {d.name for d in make_value_asserts}
     assert len(names) == 2, (
-        f"the two make_value calls must have DISTINCT argument-keyed bases "
-        f"after reassignment (no false-refuse), got {names}"
+        f"the two make_value calls must have DISTINCT bases after reassignment "
+        f"(no false-refuse), got {names}"
     )
-    # One base keys on the raw param (v:x), the other on the SSA-bumped (v:x$0).
-    assert any("(v:x)" in n for n in names), names
-    assert any("(v:x$0)" in n for n in names), names
 
 
 def test_pattern5_non_none_identity_assertion_is_not_lifted_as_value_equality():
@@ -816,13 +853,46 @@ def test_pattern5_unittest_identity_not_none_assertion_emits_substrate_guard_fac
 # --- No pattern fires ----------------------------------------------------
 
 
-def test_single_literal_assert_test_falls_through_to_layer0():
+def test_single_literal_assert_test_is_loudly_refused_not_silent():
+    # FIX 2a regression guard: a single assert with no binding and no call-result
+    # scope previously fell through to Layer 0 SILENTLY (not claimed, no warning).
+    # After Fix 2a the test is CLAIMED and a warning is emitted naming the
+    # construct — zero contracts, but NOT silent (Δ=0 requires no silent drops).
     out = _lift("""
         def test_one():
             assert 1 == 1
     """)
     assert out.lifted == 0
-    assert not out.claimed_tests
+    assert "test_one" in out.claimed_tests, (
+        "single-assert test must be CLAIMED (loudly refused), not silently dropped"
+    )
+    assert any("loud-refuse" in w.reason for w in out.warnings), (
+        f"expected a loud-refuse warning; got: {[w.reason for w in out.warnings]}"
+    )
+
+
+def test_value_scope_trailing_assert_no_callsite_emits_warning_not_silent():
+    # FIX 2b regression guard: value_scope with a prior assertion that produces
+    # callsite facts (so decls is non-empty) followed by an assertion that has
+    # NO tracked call-origin (e.g. ``assert MODULE_CONST == 5`` with no prior
+    # binding of MODULE_CONST) previously silently dropped the second assert.
+    # value_scope claimed the test and returned True — so the Fix 2a catch-all
+    # never saw it — and the second assert vanished with no warning.
+    # After Fix 2b: a LiftWarning is emitted for the no-facts assertion.
+    out = _lift("""
+        def test_mixed():
+            result = parse_int("42")
+            assert result == 42
+            assert SOME_CONST == 5
+    """)
+    # value_scope must claim the test (it produces facts for parse_int).
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    assert "test_mixed" in out.claimed_tests
+    # A warning must name the no-callsite assertion so it is NOT silent.
+    warn_reasons = [w.reason for w in out.warnings]
+    assert any("no callsite facts" in r or "value-scope" in r for r in warn_reasons), (
+        f"FIX 2b: expected a value-scope no-callsite-facts warning; got: {warn_reasons}"
+    )
 
 
 # --- Attribute-access term lifting (obj.attr as opaque Var) ---------------
