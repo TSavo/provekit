@@ -2634,22 +2634,37 @@ def _classify_parametrize(
     out.claimed_tests.add(test_name)
     out.seen += 1
 
-    # Body must reduce to a single liftable assertion. Multi-stmt bodies skip.
-    if len(body) != 1 or not _is_assertion_stmt(body[0]):
+    # Body must be ONE OR MORE liftable assertion statements (all asserts; bare
+    # ``assert`` or unittest ``self.assertX``).  A non-assert statement (setup /
+    # binding / loop) makes this a MIXED body — out of scope for the parametrize
+    # pattern (that is Pattern-6 work) — so we loudly refuse.
+    if not body or not all(_is_assertion_stmt(s) for s in body):
         out.parametrize_skipped += 1
         out.warnings.append(
             LiftWarning(source_path, test_name,
-                        "layer2 parametrize: body must be a single liftable assertion in v0")
+                        "layer2 parametrize: body must be one or more liftable "
+                        "assertions in v0 (a non-assert statement is a mixed "
+                        "body, not lifted)")
         )
         return
 
-    try:
-        raw = _lift_assertion_stmt(body[0])
-    except ValueError as e:
+    # Lift each assertion.  Unliftable asserts are recorded (partial lift): we
+    # still lift the liftable SUBSET — a WEAKER but sound claim, since we never
+    # assert more than we lifted — and emit a loud warning naming the skipped.
+    atoms: List[Formula] = []
+    skipped: List[str] = []
+    for i, stmt in enumerate(body):
+        try:
+            atoms.append(_lift_assertion_stmt(stmt))
+        except ValueError as e:
+            skipped.append(f"#{i}: {e}")
+
+    if not atoms:
         out.parametrize_skipped += 1
+        skip_detail = f"; skipped: {'; '.join(skipped)}" if skipped else ""
         out.warnings.append(
             LiftWarning(source_path, test_name,
-                        f"layer2 parametrize: body assertion not liftable: {e}")
+                        f"layer2 parametrize: no liftable assertion in body{skip_detail}")
         )
         return
 
@@ -2661,21 +2676,21 @@ def _classify_parametrize(
         )
         return
 
-    # SOUNDNESS: emit ONE contract per row, each checked independently.
-    #
-    # Each parametrize row is an INDEPENDENT test instance in pytest: pytest
-    # invokes the test function once per row with that row's values substituted
-    # for the parameters.  Conjoining row-substituted formulas into a single
-    # contract is UNSOUND: a body that references a free non-param variable k
-    # with `assert k == v` produces eq(k,1) ^ eq(k,2) across rows v=1,v=2,
-    # which is UNSAT (a false-refuse on a consistent test case).
-    #
-    # Correct model: substitute each row's values independently, emit one
-    # ContractDecl per row named ``<test>::parametrize::<params>::row<i>``.
-    # The verifier checks each row's contract independently; a row whose
-    # substituted formula is UNSAT is REFUSED (that row's test is wrong),
-    # but other rows remain unaffected.
+    # WITHIN-ROW conjunction is SOUND: every assert in the body runs in the SAME
+    # pytest instance for a given row, so they must all hold simultaneously ->
+    # conjoin them.  A single surviving atom stays RAW (byte-stable with the v0
+    # single-assert path); >=2 atoms are wrapped in ``and_``.
+    raw = atoms[0] if len(atoms) == 1 else and_(atoms)
+
+    # CROSS-ROW independence is preserved: each parametrize row is an INDEPENDENT
+    # test instance, so we substitute each row into the (conjoined) template
+    # independently and emit ONE ContractDecl per row named
+    # ``<test>::parametrize::<params>::row<i>``.  A free non-param variable k is
+    # NOT tied across rows (eq(k,1) and eq(k,2) live in separate decls), so the
+    # verifier never false-refuses a consistent test.  Decls are staged locally
+    # and committed only once every row substitutes cleanly (no partial emit).
     suffix = "_".join(pmark.param_names)
+    row_decls: List[ContractDecl] = []
     for row_idx, row in enumerate(pmark.rows):
         f = raw
         failed = False
@@ -2694,10 +2709,17 @@ def _classify_parametrize(
         if failed:
             return
         memento_name = f"{test_name}::parametrize::{suffix}::row{row_idx}"
-        out.decls.append(ContractDecl(name=memento_name, inv=f))
+        row_decls.append(ContractDecl(name=memento_name, inv=f))
 
+    out.decls.extend(row_decls)
     out.lifted += 1
     out.parametrize_lifted += 1
+    if skipped:
+        out.warnings.append(
+            LiftWarning(source_path, test_name,
+                        f"layer2 parametrize: {len(skipped)} assert(s) skipped "
+                        f"from per-row conjunction: {'; '.join(skipped)}")
+        )
 
 
 # ---------------------------------------------------------------------------

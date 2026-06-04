@@ -508,6 +508,114 @@ def test_pattern4_per_row_multi_param_yields_per_row_decls():
     assert "test_distinct::parametrize::a_b::row1" in names, names
 
 
+# --- Pattern 4: multi-assertion parametrize bodies (Δ=0 low-hanging fruit) ---
+#
+# A parametrize body with MULTIPLE assertion statements runs all asserts in the
+# SAME pytest instance per row, so within-row conjunction is sound.  Cross-row
+# independence is still preserved (one decl per row).  Mixed bodies with a
+# non-assert statement (setup/binding) stay refused — that is Pattern-6 work.
+
+
+def test_pattern4_parametrize_multi_assert_body_conjoins_per_row():
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1, 2])
+        def test_range(v):
+            assert v >= 0
+            assert v < 10
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    assert len(out.decls) == 2, [d.name for d in out.decls]
+    for i, d in enumerate(out.decls):
+        assert d.name == f"test_range::parametrize::v::row{i}", d.name
+        # Within-row conjunction: each row inv is an `and` of the two atoms.
+        assert isinstance(d.inv, _Connective) and d.inv.kind == "and", type(d.inv)
+        assert len(d.inv.operands) == 2, d.inv.operands
+        assert d.inv.operands[0].name == "≥"
+        assert all(isinstance(op, _Atomic) for op in d.inv.operands)
+
+
+def test_pattern4_parametrize_multi_assert_within_row_contradiction_preserved():
+    # SOUNDNESS (teeth): two asserts in one row that contradict after
+    # substitution -> the row inv is a conjunction containing both, which the
+    # verifier discharges as UNSAT (refused).  Within-row conjunction is what
+    # makes the contradiction visible.
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1])
+        def test_contra(v):
+            assert v == 1
+            assert v == 2
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    assert len(out.decls) == 1, [d.name for d in out.decls]
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective) and inv.kind == "and"
+    # second operand is the contradictory `= (1, 2)` after v->1 substitution.
+    second = inv.operands[1]
+    assert isinstance(second, _Atomic) and second.name == "="
+    assert isinstance(second.args[0], _ConstInt) and second.args[0].value == 1
+    assert isinstance(second.args[1], _ConstInt) and second.args[1].value == 2
+
+
+def test_pattern4_parametrize_multi_assert_cross_row_independence():
+    # DISCRIMINATION (false-refuse gate): free non-param var k across rows.
+    # If multi-assert conjoined ACROSS rows, eq(k,1) ^ eq(k,2) -> UNSAT (false
+    # refuse).  Correct: one conjoined decl per row, k untied between rows.
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1, 2])
+        def test_kv(v):
+            assert k == v
+            assert v >= 0
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    assert len(out.decls) == 2, [d.name for d in out.decls]
+    names = {d.name for d in out.decls}
+    assert "test_kv::parametrize::v::row0" in names, names
+    assert "test_kv::parametrize::v::row1" in names, names
+    for d in out.decls:
+        assert isinstance(d.inv, _Connective) and d.inv.kind == "and"
+
+
+def test_pattern4_parametrize_multi_assert_partial_lift_warns():
+    # PARTIAL: one liftable assert + one unliftable (method call w/ kwargs).
+    # Lift the liftable subset (loud warning records the skipped atom).  A
+    # single surviving atom stays a raw _Atomic (byte-stable with the v0 path).
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1])
+        def test_partial(v):
+            assert v == 1
+            assert obj.meth(v, kw=2)
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    assert len(out.decls) == 1, [d.name for d in out.decls]
+    assert isinstance(out.decls[0].inv, _Atomic), type(out.decls[0].inv)
+    assert any("skipped" in w.reason for w in out.warnings), out.warnings
+
+
+def test_pattern4_parametrize_mixed_body_with_assign_still_refused():
+    # Pattern-6 boundary: a non-assert (Assign) makes this a mixed body — out
+    # of scope for the parametrize pattern.  Must stay LOUDLY refused.
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1])
+        def test_mixed(v):
+            x = v + 1
+            assert x == 2
+    """)
+    assert out.parametrize_lifted == 0
+    assert "test_mixed" in out.claimed_tests
+    assert any("parametrize" in w.reason for w in out.warnings), out.warnings
+    assert len(out.decls) == 0
+
+
 # --- Pattern 5: value-scope assertions -----------------------------------
 
 
