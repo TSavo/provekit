@@ -121,6 +121,12 @@ class Layer2Output:
     claimed_tests: Set[str] = field(default_factory=set)
     bounded_loop_lifted: int = 0
     bounded_loop_skipped: int = 0
+    embedded_for_lifted: int = 0
+    embedded_for_skipped: int = 0
+    if_guarded_lifted: int = 0
+    if_guarded_skipped: int = 0
+    with_body_lifted: int = 0
+    with_body_skipped: int = 0
     helper_inlined_lifted: int = 0
     helper_inlined_skipped: int = 0
     characterization_lifted: int = 0
@@ -452,6 +458,23 @@ def _classify_and_lift(
         return
 
     if _classify_mixed_body(body, test_name, source_path, out):
+        return
+
+    # PATTERN 1c: mixed body with a terminal For[literal-iter, assert-only-body].
+    # Must fire BEFORE the catch-all so nested asserts in an embedded literal-iter
+    # For are lifted (or loudly refused with a useful message) rather than hitting
+    # the generic catch-all.
+    if _classify_embedded_for(body, test_name, source_path, out):
+        return
+
+    # PATTERN 8: if-guarded assertions — `if cond: assert P` lifts as implies(cond,P).
+    # Must fire BEFORE the catch-all so nested asserts inside if-bodies are claimed.
+    if _classify_if_guarded(body, test_name, source_path, out):
+        return
+
+    # PATTERN 9: with-body assertions — `with <non-suppressing-CM>: assert P`.
+    # Must fire BEFORE the catch-all so nested asserts inside with-bodies are claimed.
+    if _classify_with_body(body, test_name, source_path, out):
         return
 
     unsupported_unittest_asserts = _unsupported_unittest_assertions(body)
@@ -1564,8 +1587,12 @@ def _classify_for_loop(
         out.bounded_loop_lifted += 1
         return
 
-    if isinstance(iter_node, ast.List):
-        # for v in [1, 2, 3]: assert phi(v)  ->  and_( phi[v_i] )
+    if isinstance(iter_node, (ast.List, ast.Tuple)):
+        # for v in [1, 2, 3]: assert phi(v)   ->  and_( phi[v_i] )
+        # for v in (1, 2, 3): assert phi(v)   ->  same (Tuple literal is identical semantics)
+        # SOUNDNESS: each element is a CONCRETE literal value; substituting it into phi
+        # produces a closed formula with no free occurrence of v.  The conjunction of
+        # all per-element formulas is EXACTLY the semantics of the bounded loop.
         elements: List[Term] = []
         for el in iter_node.elts:
             try:
@@ -1574,14 +1601,14 @@ def _classify_for_loop(
                 out.bounded_loop_skipped += 1
                 out.warnings.append(
                     LiftWarning(source_path, test_name,
-                                f"layer2 bounded-loop: list element not liftable: {e}")
+                                f"layer2 bounded-loop: list/tuple element not liftable: {e}")
                 )
                 return
         if not elements:
             out.bounded_loop_skipped += 1
             out.warnings.append(
                 LiftWarning(source_path, test_name,
-                            "layer2 bounded-loop: empty list iterator yields a vacuous conjunction; skipping")
+                            "layer2 bounded-loop: empty list/tuple iterator yields a vacuous conjunction; skipping")
             )
             return
         try:
@@ -1604,8 +1631,686 @@ def _classify_for_loop(
     out.bounded_loop_skipped += 1
     out.warnings.append(
         LiftWarning(source_path, test_name,
-                    "layer2 bounded-loop: iterator is not a literal-bounded numeric range or literal list")
+                    "layer2 bounded-loop: iterator is not a literal-bounded numeric range, list, or tuple")
     )
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 1c: embedded for-loop (assignments + terminal For[literal-iter])
+# ---------------------------------------------------------------------------
+#
+# Handles test bodies of the shape:
+#
+#     def test_x():
+#         a = setup(...)          # zero or more simple assignments
+#         b = other(a)
+#         for v in (x1, x2, ...):   # literal list OR tuple; simple-Name target
+#             assert phi(v, a, b)   # one or more assertions (no bindings in body)
+#
+# The For MUST be the last statement in the test body.  All preceding statements
+# MUST be simple assignments (simple-Name target) or Pass; the same allowlist as
+# Pattern 6 (mixed-body).
+#
+# SOUNDNESS: the loop is enumerated element-by-element (identical to Pattern 1b).
+# Each element is a CONCRETE literal; substituting it into the body formula yields
+# a closed formula.  Preceding bindings establish SSA vars that are used in the
+# body assertions — they are opaque free vars (same as mixed-body), so no false
+# values are ascribed to them.  The outer SSA scope is built ONCE and reused for
+# every iteration (the assignments are NOT re-executed per iteration — they are
+# shared outer bindings), which is correct: Python evaluates the outer assignments
+# once before the loop runs.
+#
+# Multi-assert bodies: each assert in the For body is lifted independently under
+# the current SSA scope + loop-var substitution.  Unliftable asserts are
+# warn-and-skipped (partial lift, same policy as mixed-body).  If NO assert
+# lifts for ANY iteration, the pattern loud-refuses.
+#
+# GATE: fires ONLY when:
+#   - body[-1] is a For
+#   - For target is a simple Name
+#   - For iterator is ast.List or ast.Tuple with at least one liftable element
+#   - For body contains at least one ast.Assert
+#   - For body contains NO bindings (Assign/AnnAssign) — only Asserts + Pass
+#     (bindings INSIDE the loop body would need per-iteration SSA versioning,
+#     which is a separate pattern; keep loud-refused for now)
+#   - All preceding stmts are simple assignments or Pass (no For/With/If/While)
+#
+# If the gate fires but a soundness check fails, the pattern CLAIMS the test and
+# emits a LOUD REFUSAL (never silent).
+
+
+def _classify_embedded_for(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 1c: mixed body with a terminal For[literal-iter, assert-only-body].
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body does not match the embedded-for shape (caller tries next).
+    """
+    # Gate: last statement must be a For.
+    if not body or not isinstance(body[-1], ast.For):
+        return False
+
+    fl = body[-1]
+
+    # Gate: For target must be a simple Name.
+    if not isinstance(fl.target, ast.Name):
+        return False
+    var_name = fl.target.id
+
+    # Gate: For iterator must be a literal List or Tuple.
+    iter_node = fl.iter
+    if not isinstance(iter_node, (ast.List, ast.Tuple)):
+        return False
+
+    # Gate: For body must contain at least one Assert.
+    if not any(isinstance(s, ast.Assert) for s in fl.body):
+        return False
+
+    # Gate: For body must NOT contain bindings (Assign/AnnAssign) — those would
+    # need per-iteration SSA versioning which is out of scope for v0.
+    # SOUNDNESS: if bindings exist in the loop body, they are re-executed each
+    # iteration and may be loop-var-dependent (e.g. ``val = f(v)``).  We cannot
+    # soundly substitute the outer SSA scope into those bindings without
+    # per-iteration versioning.  Keep loud-refused for this shape.
+    for s in fl.body:
+        if isinstance(s, (ast.Assign, ast.AnnAssign)):
+            return False
+
+    # Gate: For body must not have unsupported stmt kinds (For, With, If, etc.).
+    for s in fl.body:
+        if not isinstance(s, (ast.Assert, ast.Pass)):
+            return False
+
+    # Gate: For/else clause is not liftable.
+    if fl.orelse:
+        return False
+
+    # Gate: preceding statements (body[:-1]) must all be simple assignments or Pass.
+    # Any unsupported kind (For, With, If, While, etc.) → not our pattern; let
+    # catch-all handle it.
+    for s in body[:-1]:
+        if isinstance(s, ast.Pass):
+            continue
+        if isinstance(s, ast.Assign):
+            if len(s.targets) != 1 or not isinstance(s.targets[0], ast.Name):
+                return False
+            continue
+        if isinstance(s, ast.AnnAssign):
+            if not isinstance(s.target, ast.Name):
+                return False
+            continue
+        # Docstring (Expr with a string constant at index 0) — skip.
+        if isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant) and isinstance(s.value.value, str):
+            continue
+        return False
+
+    # --- Pattern claimed: all gates passed ---
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    # Translate iterator elements.
+    elements: List[Term] = []
+    for el in iter_node.elts:
+        try:
+            elements.append(_translate_term(el))
+        except ValueError as e:
+            out.embedded_for_skipped += 1
+            out.warnings.append(
+                LiftWarning(
+                    source_path, test_name,
+                    f"layer2 embedded-for: LOUD REFUSAL — iterator element not liftable: {e}",
+                )
+            )
+            return True
+    if not elements:
+        out.embedded_for_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 embedded-for: LOUD REFUSAL — empty iterator yields a vacuous conjunction",
+            )
+        )
+        return True
+
+    # Build outer SSA scope from preceding bindings (opaque free vars — same as
+    # mixed-body: no value constraints on non-translatable RHS bindings).
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+    for s in body[:-1]:
+        if isinstance(s, (ast.Pass, ast.Expr)):
+            continue
+        if isinstance(s, ast.Assign):
+            target_name = s.targets[0].id  # simple name guaranteed by gate
+            value_node = s.value
+        else:  # AnnAssign
+            target_name = s.target.id
+            value_node = s.value
+            if value_node is None:
+                # Bare annotation (no value) — just bump the SSA version.
+                version = ssa_versions.get(target_name, 0)
+                ssa_versions[target_name] = version + 1
+                ssa_current[target_name] = make_var(f"{target_name}${version}")
+                continue
+
+        version = ssa_versions.get(target_name, 0)
+        ssa_versions[target_name] = version + 1
+        ssa_name = f"{target_name}${version}"
+        ssa_current[target_name] = make_var(ssa_name)
+
+    # Per element: substitute loop var, translate assertions under SSA scope.
+    # ALL per-element, per-assert atoms are collected into ONE flat list and
+    # conjoined into a SINGLE ContractDecl named ``<test>::loop::<var>``.
+    #
+    # SOUNDNESS: the for-loop iterations share the SAME Python environment —
+    # only the loop variable changes; outer bindings (encoded as SSA vars) are
+    # evaluated ONCE before the loop and are shared across all iterations.
+    # Therefore a free var ``enc$0`` that appears in assertions from two
+    # different iterations refers to the SAME object; constraining it to two
+    # different values in separate contracts would make each contract
+    # independently SAT (enc$0==1 alone is consistent, enc$0==2 alone is
+    # consistent) — a falsePass.  Conjoining all atoms into one contract
+    # ``enc$0==1 ∧ enc$0==2`` correctly reflects the full constraint set and
+    # fires UNSAT → REFUSED when a genuine contradiction exists.
+    #
+    # This is the same model as Pattern 1b (list literal) and Pattern 1 (range),
+    # which already conjoin all per-element substituted atoms into one formula.
+    #
+    # CONTRAST with Pattern 4 (parametrize): pytest.mark.parametrize rows ARE
+    # independent test INSTANCES (pytest invokes the function once per row with
+    # fresh local bindings); per-row contracts are correct there.  A for-loop
+    # body is NOT independently re-invoked; it shares the outer scope.
+    all_atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for elem_idx, elem_term in enumerate(elements):
+        # Build scope for this iteration: outer SSA + loop var bound to element.
+        iter_scope_current = dict(ssa_current)
+        iter_scope_current[var_name] = elem_term
+        scope = _ValueScope(current=iter_scope_current)
+
+        for s in fl.body:
+            if not isinstance(s, ast.Assert):
+                continue
+            try:
+                atom = _lift_assertion_stmt_scoped(s, scope)
+                all_atoms.append(atom)
+            except ValueError as e:
+                skip_reasons.append(
+                    f"elem {elem_idx} `{_unparse(s)[:60]}`: {e}"
+                )
+
+    if not all_atoms:
+        # No atom lifted from any element — loud refuse.
+        out.embedded_for_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 embedded-for: LOUD REFUSAL — 0 atoms lifted across all elements "
+                "(all assert bodies failed to lift — likely f-strings or unsupported "
+                f"expressions in assert conditions; skipped: {'; '.join(skip_reasons[:3])})",
+            )
+        )
+        return True
+
+    inv = all_atoms[0] if len(all_atoms) == 1 else and_(all_atoms)
+    memento_name = f"{test_name}::loop::{var_name}"
+    out.decls.append(ContractDecl(name=memento_name, inv=inv))
+    out.lifted += 1
+    out.embedded_for_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                f"layer2 embedded-for: {len(skip_reasons)} assert(s) skipped "
+                f"(unliftable): {'; '.join(skip_reasons[:3])}",
+            )
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 8: if-guarded assertions — ``if cond: assert P``
+# ---------------------------------------------------------------------------
+#
+# Handles test bodies where asserts are nested under ``if`` guards.  Each
+# ``if cond: assert P`` is lifted as ``implies(cond_formula, P_formula)``
+# where ``cond_formula`` is translated via ``_translate_bool_expr_scoped``
+# (supports comparison / membership / truthiness / BoolOp / not).
+#
+# SOUNDNESS RULES:
+#   - The guard is lifted via ``_translate_bool_expr_scoped``.  We do NOT
+#     use ``_lift_branch_guard`` because its ``python_branch_condition``
+#     opaque fallback turns any unliftable condition into an always-SAT
+#     atom, making the implication vacuously hold — a falsePass.  If the
+#     condition is not soundly liftable, the branch LOUDLY REFUSES.
+#   - ``if cond: assert P`` → ``implies(cond, P)`` — the assert only claims
+#     P holds WHEN cond.  Lifting P unconditionally would be a falsePass
+#     (P may only hold under cond).
+#   - ``else`` branch: if ``orelse`` contains an ``assert Q``, it is guarded
+#     by ``not_(cond)`` → ``implies(not_(cond), Q)``.  This correctly models
+#     the else-branch condition.
+#   - Tautology: ``if True: assert P`` — ``True``/``False`` are ast.Constant,
+#     rejected by ``_translate_bool_expr_scoped`` (not a Compare/Call/BoolOp).
+#     We map bare ``ast.Constant(True)`` to ``bool_const(True)`` and
+#     ``ast.Constant(False)`` to ``bool_const(False)`` as special cases so
+#     tautological guards reduce correctly in z3 (implies(true, P) = P).
+#   - A ``tautological`` guard (cond = bool_const(True)) makes the implication
+#     equivalent to P, so ``if 1==1: assert x==1`` + ``assert x==2`` produces
+#     ``and_(implies(eq(1,1),eq(x,1)), eq(x,2))`` which z3 sees as
+#     ``eq(x,1) ∧ eq(x,2)`` → UNSAT → REFUSED.  This is the correct model.
+#   - FALSE-REFUSAL GUARD: ``implies(cond,x==1) ∧ implies(cond,x==2)`` is SAT
+#     (set cond=False) so two if-guarded contradictory asserts on the same var
+#     are CONSISTENTLY PROVEN, not refused — the guard absorbs the contradiction.
+#
+# GATE:
+#   - Body contains at least one ``ast.If`` whose nested assert count > 0.
+#   - All non-If, non-Assert, non-Pass, non-binding stmts → LOUD REFUSE.
+#   - Bindings (Assign/AnnAssign) at the top level are allowed (SSA scoping
+#     same as mixed-body); bindings INSIDE the if-body → LOUD REFUSE for that
+#     branch (only asserts + pass allowed in branch bodies).
+#
+# INTEGRATION with sibling asserts:
+#   Top-level asserts alongside ``if`` guards are lifted as plain atoms and
+#   conjoined with the implication atoms into ONE contract (same as mixed-body's
+#   partial-lift model for unliftable assertions).
+
+
+_TAUTOLOGY_BOOLCONST: Dict[object, object] = {True: True, False: False}
+
+
+def _lift_if_cond(node: ast.expr, scope: "_ValueScope") -> Formula:
+    """Translate an ``if`` condition to a Formula for use as a guard.
+
+    Supports everything ``_translate_bool_expr_scoped`` supports, PLUS
+    bare ``ast.Constant(True)`` and ``ast.Constant(False)`` literals which
+    the generic translator rejects (they are not Compare/Call/BoolOp nodes).
+
+    Raises ValueError for any unliftable condition so the caller can LOUD REFUSE
+    that branch (and never emit a vacuous always-SAT guard).
+    """
+    if isinstance(node, ast.Constant):
+        if node.value is True:
+            return eq(bool_const(True), bool_const(True))   # tautology: z3 reduces to true
+        if node.value is False:
+            return eq(bool_const(False), bool_const(True))  # contradiction: z3 reduces to false
+    return _translate_bool_expr_scoped(node, scope)
+
+
+def _if_branch_only_asserts_and_pass(stmts: Sequence[ast.stmt]) -> bool:
+    """Return True iff every stmt in the branch is an Assert or Pass."""
+    return all(isinstance(s, (ast.Assert, ast.Pass)) for s in stmts)
+
+
+def _classify_if_guarded(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 8: test body containing ``if cond: assert P`` guards.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body has no If statement at the top level (caller tries next).
+    """
+    # Gate: at least one top-level If with a nested assert.
+    has_if_with_assert = any(
+        isinstance(s, ast.If)
+        and any(isinstance(n, ast.Assert) for n in ast.walk(s))
+        for s in body
+    )
+    if not has_if_with_assert:
+        return False
+
+    # Gate: every top-level stmt must be one of the allowed kinds.
+    # Allowed: Assert, Pass, Assign (simple name), AnnAssign (simple name),
+    #          Expr (docstring or bare call), If.
+    # NOT allowed: For, While, With, Try, FunctionDef, etc.
+    for s in body:
+        if isinstance(s, (ast.Assert, ast.Pass, ast.If)):
+            continue
+        if isinstance(s, ast.Assign):
+            if all(isinstance(t, ast.Name) for t in s.targets):
+                continue
+        if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
+            continue
+        if isinstance(s, ast.Expr):
+            continue
+        # Unsupported stmt kind — not our pattern.
+        return False
+
+    # --- Pattern claimed ---
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    # Build SSA scope from top-level bindings.
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+    all_atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for s in body:
+        if isinstance(s, ast.Pass):
+            continue
+        if isinstance(s, ast.Expr):
+            continue
+
+        if isinstance(s, (ast.Assign, ast.AnnAssign)):
+            if isinstance(s, ast.Assign):
+                target_name = s.targets[0].id
+                value_node = s.value
+            else:
+                target_name = s.target.id
+                value_node = s.value
+            version = ssa_versions.get(target_name, 0)
+            ssa_versions[target_name] = version + 1
+            ssa_current[target_name] = make_var(f"{target_name}${version}")
+            continue
+
+        if isinstance(s, ast.Assert):
+            # Top-level assert — lift as plain atom under current scope.
+            scope = _ValueScope(current=dict(ssa_current))
+            try:
+                atom = _lift_assertion_stmt_scoped(s, scope)
+                all_atoms.append(atom)
+            except ValueError as e:
+                skip_reasons.append(f"top-level assert `{_unparse(s)[:60]}`: {e}")
+            continue
+
+        if isinstance(s, ast.If):
+            scope = _ValueScope(current=dict(ssa_current))
+
+            # Try to lift the condition.
+            try:
+                cond_formula = _lift_if_cond(s.test, scope)
+            except ValueError as e:
+                skip_reasons.append(
+                    f"if-cond `{_unparse(s.test)[:60]}` not liftable: {e}"
+                )
+                continue
+
+            # Validate then-branch: only Asserts + Pass allowed.
+            if not _if_branch_only_asserts_and_pass(s.body):
+                skip_reasons.append(
+                    f"if-body has non-assert stmts (bindings/for/with in branch not supported)"
+                )
+                continue
+
+            # Validate else-branch: only Asserts + Pass allowed (or empty).
+            else_stmts = s.orelse
+            if else_stmts and not _if_branch_only_asserts_and_pass(else_stmts):
+                skip_reasons.append(
+                    f"else-body has non-assert stmts (bindings/for/with in branch not supported)"
+                )
+                continue
+
+            # Lift then-branch asserts as implies(cond, P).
+            for branch_stmt in s.body:
+                if not isinstance(branch_stmt, ast.Assert):
+                    continue
+                try:
+                    p = _lift_assertion_stmt_scoped(branch_stmt, scope)
+                    all_atoms.append(implies(cond_formula, p))
+                except ValueError as e:
+                    skip_reasons.append(
+                        f"if-body assert `{_unparse(branch_stmt)[:60]}` not liftable: {e}"
+                    )
+
+            # Lift else-branch asserts as implies(not_(cond), Q).
+            for else_stmt in else_stmts:
+                if not isinstance(else_stmt, ast.Assert):
+                    continue
+                try:
+                    q = _lift_assertion_stmt_scoped(else_stmt, scope)
+                    all_atoms.append(implies(not_(cond_formula), q))
+                except ValueError as e:
+                    skip_reasons.append(
+                        f"else-body assert `{_unparse(else_stmt)[:60]}` not liftable: {e}"
+                    )
+            continue
+
+    if not all_atoms:
+        out.if_guarded_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 if-guarded: LOUD REFUSAL — 0 atoms lifted from if-guarded body "
+                f"(skipped: {'; '.join(skip_reasons[:3])})",
+            )
+        )
+        return True
+
+    inv = all_atoms[0] if len(all_atoms) == 1 else and_(all_atoms)
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.if_guarded_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                f"layer2 if-guarded: {len(skip_reasons)} atom(s) skipped: "
+                f"{'; '.join(skip_reasons[:3])}",
+            )
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 9: with-body assertions — ``with <non-suppressing-CM>: assert P``
+# ---------------------------------------------------------------------------
+#
+# Handles test bodies where asserts are inside a ``with`` block backed by a
+# non-suppressing context manager (e.g., ``open(...)``).
+#
+# SOUNDNESS RULES:
+#   - ``pytest.raises`` is Pattern 7 — already handled; Pattern 9 must NOT
+#     fire for raises blocks (the gate excludes them).
+#   - ``contextlib.suppress`` and ``contextlib.ExitStack`` can swallow
+#     exceptions, making the body asserts non-load-bearing; LOUD REFUSE.
+#   - Unknown / user-defined context managers: LOUD REFUSE.  We cannot
+#     know whether they suppress assertions.
+#   - ALLOWLIST of non-suppressing CMs: ``open``, ``tempfile.NamedTemp-
+#     oraryFile``, ``tempfile.TemporaryDirectory``, ``io.StringIO``,
+#     ``io.BytesIO``.  The ``as`` target (if present) becomes an opaque
+#     free var (no value constraint — we treat it as an unknown but known-
+#     non-None reference).
+#   - Body asserts are lifted as plain facts (NOT guarded by the CM) because
+#     the CM does not suppress them — the assert holds unconditionally if
+#     control reaches it.
+#   - Body may contain Pass statements alongside asserts.
+#   - Multi-statement bodies with bindings inside the with-body:
+#     LOUD REFUSE (would need per-with-body SSA versioning).
+#
+# GATE:
+#   - Body contains at least one ``ast.With`` that is NOT a pytest.raises block.
+#   - All With items must be single-item with the CM in the allowlist.
+#   - Mixed with-body (binding + assert) → LOUD REFUSE for that block.
+
+_WITH_CM_ALLOWLIST: Set[str] = {
+    "open",
+    "NamedTemporaryFile",
+    "TemporaryDirectory",
+    "StringIO",
+    "BytesIO",
+}
+
+
+def _with_cm_name(ce: ast.expr) -> Optional[str]:
+    """Extract the CM call name from a withitem context_expr.
+
+    Accepts:
+      - ``open(...)`` → ``"open"``
+      - ``tempfile.NamedTemporaryFile(...)`` → ``"NamedTemporaryFile"``
+      - ``io.StringIO(...)`` → ``"StringIO"``
+    Returns None for any other shape.
+    """
+    if isinstance(ce, ast.Call):
+        func = ce.func
+        if isinstance(func, ast.Name):
+            return func.id
+        if isinstance(func, ast.Attribute):
+            return func.attr
+    return None
+
+
+def _classify_with_body(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 9: test bodies containing non-suppressing with-blocks with asserts.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body has no eligible With statement (caller tries next).
+    """
+    # Gate: at least one top-level With that is NOT a pytest.raises block and
+    # has a nested assert.
+    def _is_raises_with(s: ast.With) -> bool:
+        return (
+            len(s.items) == 1
+            and isinstance(s.items[0].context_expr, ast.Call)
+            and _is_pytest_raises_func(s.items[0].context_expr.func)
+        )
+
+    eligible_withs = [
+        s for s in body
+        if isinstance(s, ast.With)
+        and not _is_raises_with(s)
+        and any(isinstance(n, ast.Assert) for n in ast.walk(s))
+    ]
+    if not eligible_withs:
+        return False
+
+    # Gate: all top-level stmts must be allowed kinds.
+    for s in body:
+        if isinstance(s, (ast.Assert, ast.Pass, ast.Expr, ast.With)):
+            continue
+        if isinstance(s, ast.Assign) and all(isinstance(t, ast.Name) for t in s.targets):
+            continue
+        if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
+            continue
+        return False
+
+    # --- Pattern claimed ---
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+    all_atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for s in body:
+        if isinstance(s, ast.Pass):
+            continue
+        if isinstance(s, ast.Expr):
+            continue
+
+        if isinstance(s, (ast.Assign, ast.AnnAssign)):
+            if isinstance(s, ast.Assign):
+                target_name = s.targets[0].id
+            else:
+                target_name = s.target.id
+            version = ssa_versions.get(target_name, 0)
+            ssa_versions[target_name] = version + 1
+            ssa_current[target_name] = make_var(f"{target_name}${version}")
+            continue
+
+        if isinstance(s, ast.Assert):
+            scope = _ValueScope(current=dict(ssa_current))
+            try:
+                atom = _lift_assertion_stmt_scoped(s, scope)
+                all_atoms.append(atom)
+            except ValueError as e:
+                skip_reasons.append(f"top-level assert `{_unparse(s)[:60]}`: {e}")
+            continue
+
+        if isinstance(s, ast.With):
+            # Check: single withitem.
+            if len(s.items) != 1:
+                skip_reasons.append(
+                    f"with multi-item clause is not soundly liftable"
+                )
+                continue
+
+            item = s.items[0]
+            ce = item.context_expr
+            cm_name = _with_cm_name(ce)
+
+            if cm_name is None or cm_name not in _WITH_CM_ALLOWLIST:
+                # Unknown or suppressing CM — LOUD REFUSE the entire pattern.
+                out.with_body_skipped += 1
+                out.warnings.append(
+                    LiftWarning(
+                        source_path, test_name,
+                        f"layer2 with-body: LOUD REFUSAL — context manager "
+                        f"`{_unparse(ce)[:60]}` is not in the non-suppressing allowlist "
+                        "(only open/NamedTemporaryFile/TemporaryDirectory/StringIO/BytesIO "
+                        "are soundly liftable; other CMs may suppress assertions)",
+                    )
+                )
+                return True
+
+            # with-body must contain only Asserts + Pass (no bindings inside).
+            if not _if_branch_only_asserts_and_pass(s.body):
+                skip_reasons.append(
+                    f"with-body has non-assert stmts (bindings inside with are not supported)"
+                )
+                continue
+
+            # Bind the ``as`` target as an opaque free var if present.
+            scope_current = dict(ssa_current)
+            if item.optional_vars is not None and isinstance(item.optional_vars, ast.Name):
+                as_name = item.optional_vars.id
+                version = ssa_versions.get(as_name, 0)
+                ssa_versions[as_name] = version + 1
+                scope_current[as_name] = make_var(f"{as_name}${version}")
+
+            scope = _ValueScope(current=scope_current)
+
+            for branch_stmt in s.body:
+                if not isinstance(branch_stmt, ast.Assert):
+                    continue
+                try:
+                    atom = _lift_assertion_stmt_scoped(branch_stmt, scope)
+                    all_atoms.append(atom)
+                except ValueError as e:
+                    skip_reasons.append(
+                        f"with-body assert `{_unparse(branch_stmt)[:60]}`: {e}"
+                    )
+            continue
+
+    if not all_atoms:
+        out.with_body_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 with-body: LOUD REFUSAL — 0 atoms lifted from with-body "
+                f"(skipped: {'; '.join(skip_reasons[:3])})",
+            )
+        )
+        return True
+
+    inv = all_atoms[0] if len(all_atoms) == 1 else and_(all_atoms)
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.with_body_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                f"layer2 with-body: {len(skip_reasons)} atom(s) skipped: "
+                f"{'; '.join(skip_reasons[:3])}",
+            )
+        )
+    return True
 
 
 def _is_range_call(node: ast.expr) -> bool:

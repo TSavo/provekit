@@ -7,6 +7,7 @@ import textwrap
 from provekit_lift_py_tests import lift_file_layer2
 from provekit_lift_py_tests.ir import (
     _Atomic,
+    _ConstBool,
     _ConstInt,
     _ConstStr,
     _Connective,
@@ -3217,3 +3218,584 @@ def test_isinstance_int_and_bool_same_subject_is_consistent():
     assert "pytype_int" in type_names and "pytype_bool" in type_names, (
         f"must have both pytype_int and pytype_bool; got {type_names}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Pattern 1 Tuple extension (Variant 1b accepts ast.Tuple alongside ast.List)
+# ---------------------------------------------------------------------------
+
+
+def test_pattern1_tuple_iter_single_assert_lifts_enumerated_conjunction():
+    # SOUND: for v in ('a', 'b'): assert P(v)  =>  P('a') ∧ P('b')
+    # The Tuple literal is semantically identical to a List literal; each element
+    # is a concrete constant, so substituting into the assertion is sound.
+    out = _lift("""
+        def test_tuple_values():
+            for v in ('a', 'b'):
+                assert v != None
+    """)
+    assert out.bounded_loop_lifted == 1, (
+        f"for-v-in-(tuple): single-assert body must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert "test_tuple_values" in out.claimed_tests
+    assert out.decls[0].name == "test_tuple_values::loop::v"
+    # The inv is and_([ne(str_const('a'), None), ne(str_const('b'), None)])
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2, f"expected 2 substituted atoms, got {atoms}"
+
+
+def test_pattern1_tuple_iter_consistent_membership_lifts():
+    # SOUND: for required in ('k1', 'k2'): assert required in enc
+    # After substituting each string literal: member(str_const('k1'), enc) ∧ ...
+    # The two atoms are independent (different subjects) -> SAT -> PROVEN.
+    out = _lift("""
+        def test_membership_tuple():
+            for required in ('"kind":"bridge"', '"name":"foo"'):
+                assert required in enc
+    """)
+    assert out.bounded_loop_lifted == 1, (
+        f"for-required-in-(str-tuple) must lift as membership conj; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    # Each atom should be member(str_const(...), enc)
+    membership = [a for a in atoms if isinstance(a, _Atomic) and a.name == "member"]
+    assert len(membership) == 2, f"expected 2 member atoms, got {atoms}"
+    lhs_vals = {a.args[0].value for a in membership if isinstance(a.args[0], _ConstStr)}
+    assert '"kind":"bridge"' in lhs_vals and '"name":"foo"' in lhs_vals, (
+        f"substituted string constants must be in lhs_vals; got {lhs_vals}"
+    )
+
+
+def test_pattern1_tuple_iter_contradictory_row_is_refused():
+    # DISCRIMINATION: for v in (1, 2): assert v == 1
+    # => and_(eq(num(1), num(1)), eq(num(2), num(1)))
+    # => and_(True, False) => UNSAT => REFUSED at verify time.
+    # Layer 2 MUST lift (not loud-refuse) this; the contradiction is for z3 to find.
+    out = _lift("""
+        def test_tuple_contradiction():
+            for v in (1, 2):
+                assert v == 1
+    """)
+    assert out.bounded_loop_lifted == 1, (
+        f"contradictory tuple-loop must LIFT (not refuse) — z3 detects the UNSAT; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert len(eq_atoms) == 2, f"expected 2 equality atoms (one per row), got {atoms}"
+    # Row 0: eq(1,1) -> tautology; Row 1: eq(2,1) -> contradiction
+    lhs_values = [a.args[0].value for a in eq_atoms if isinstance(a.args[0], _ConstInt)]
+    assert 1 in lhs_values and 2 in lhs_values, (
+        f"expected lhs values 1 and 2 after substitution; got {lhs_values}"
+    )
+
+
+def test_pattern1_tuple_iter_consistent_pair_is_proven():
+    # DISCRIMINATION counterpart: for v in (1, 2): assert v >= 0
+    # => and_(gte(1,0), gte(2,0)) => SAT => PROVEN
+    # Both substituted values satisfy the assertion -> consistent.
+    out = _lift("""
+        def test_tuple_consistent():
+            for v in (1, 2):
+                assert v >= 0
+    """)
+    assert out.bounded_loop_lifted == 1, (
+        f"consistent tuple-loop must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    gte_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "≥"]
+    assert len(gte_atoms) == 2, f"expected 2 gte atoms (v=1 and v=2), got {atoms}"
+
+
+def test_pattern1_tuple_iter_empty_is_loudly_refused():
+    # SOUNDNESS: empty tuple -> vacuous conjunction -> loud-refuse.
+    out = _lift("""
+        def test_empty_tuple():
+            for v in ():
+                assert v >= 0
+    """)
+    assert out.bounded_loop_lifted == 0
+    assert out.lifted == 0
+    assert "test_empty_tuple" in out.claimed_tests
+    assert any("empty" in w.reason.lower() for w in out.warnings), (
+        f"expected warning about empty iterator; got {[w.reason for w in out.warnings]}"
+    )
+
+
+def test_pattern1_tuple_iter_var_element_lifts_as_free_var():
+    # NOTE: a bare Name in the tuple (e.g. x) translates as a free Var term —
+    # _translate_term(Name('x')) = make_var('x').  This is SOUND: the assert body
+    # claims 'v >= 0' for each element including the free var x, producing
+    # gte(num(1), num(0)) ∧ gte(var('x'), num(0)).  The second atom is an open
+    # formula (undecidable without a value for x) — the verifier handles that as
+    # an undecidable result, not a falsePass.
+    # The key invariant: Pattern 1 lifts it (no loud-refuse) and the lifted formula
+    # contains both atoms.
+    out = _lift("""
+        def test_tuple_var_element():
+            for v in (1, x):
+                assert v >= 0
+    """)
+    assert out.bounded_loop_lifted == 1, (
+        f"tuple with var element should lift (var translates as free Var term); "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2, f"expected 2 atoms (one per element), got {atoms}"
+
+
+# ---------------------------------------------------------------------------
+# Pattern 1c: embedded For (assignments + terminal For[literal-iter, assert-only-body])
+# ---------------------------------------------------------------------------
+
+
+def test_embedded_for_literal_tuple_iter_lifts_one_conjoined_contract():
+    # SOUND: assignments before a terminal for-loop, literal tuple iter, assertion body.
+    # The outer bindings establish opaque SSA vars.  ALL per-element atoms are
+    # conjoined into ONE contract named ``<test>::loop::<var>`` — the shared
+    # outer binding (enc$0) must be in the SAME contract so a contradiction
+    # across iterations (enc$0==1 ∧ enc$0==2) fires UNSAT.
+    out = _lift("""
+        def test_embedded_for():
+            enc = encode_jcs(build_bridge())
+            for required in ('"kind":"bridge"', '"name":"foo"'):
+                assert required in enc
+    """)
+    assert out.embedded_for_lifted == 1, (
+        f"embedded-for with literal tuple iter must lift; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert "test_embedded_for" in out.claimed_tests
+    assert len(out.decls) == 1, f"expected 1 conjoined contract; got {[d.name for d in out.decls]}"
+    assert out.decls[0].name == "test_embedded_for::loop::required", out.decls[0].name
+    # The inv is a conjunction of two member atoms (one per element).
+    atoms = _flatten_and(out.decls[0].inv)
+    member_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "member"]
+    assert len(member_atoms) == 2, f"expected 2 member atoms (one per element); got {atoms}"
+    lhs_vals = {a.args[0].value for a in member_atoms if isinstance(a.args[0], _ConstStr)}
+    assert '"kind":"bridge"' in lhs_vals and '"name":"foo"' in lhs_vals, (
+        f"substituted string constants must appear as lhs; got {lhs_vals}"
+    )
+
+
+def test_embedded_for_list_iter_lifts_one_conjoined_contract():
+    # Same as above but with ast.List (brackets).
+    out = _lift("""
+        def test_embedded_for_list():
+            enc = make_enc()
+            for required in ['"a"', '"b"']:
+                assert required in enc
+    """)
+    assert out.embedded_for_lifted == 1, (
+        f"embedded-for with list iter must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert len(out.decls) == 1, f"expected 1 conjoined contract; got {[d.name for d in out.decls]}"
+    assert out.decls[0].name == "test_embedded_for_list::loop::required"
+
+
+def test_embedded_for_contradictory_conjoined_contract_is_unsat():
+    # DISCRIMINATION: for v in (1, 2): assert v == 1
+    # => and_(eq(1,1), eq(2,1)) — one conjoined contract.
+    # eq(2,1) is UNSAT; the conjunction is UNSAT -> z3 REFUSES at verify time.
+    # SOUNDNESS: the shared outer scope makes these iterations non-independent
+    # (both reference any free outer vars); they MUST be in one contract so
+    # a contradiction fires UNSAT.
+    out = _lift("""
+        def test_embedded_for_contradiction():
+            enc = make_enc()
+            for v in (1, 2):
+                assert v == 1
+    """)
+    assert out.embedded_for_lifted == 1, (
+        f"embedded-for contradiction must lift (z3 finds UNSAT on conjoined contract); "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert len(out.decls) == 1, f"expected 1 conjoined contract; got {len(out.decls)}"
+    assert out.decls[0].name == "test_embedded_for_contradiction::loop::v"
+    atoms = _flatten_and(out.decls[0].inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    # Two atoms: eq(1,1) [from v=1 substitution] and eq(2,1) [from v=2 substitution]
+    assert len(eq_atoms) == 2, f"expected 2 eq atoms; got {atoms}"
+    lhs_vals = sorted(a.args[0].value for a in eq_atoms if isinstance(a.args[0], _ConstInt))
+    assert lhs_vals == [1, 2], f"expected lhs values [1,2] after substitution; got {lhs_vals}"
+
+
+def test_embedded_for_fstring_in_condition_loudly_refused():
+    # SOUNDNESS: f-string in the assert condition is not liftable (JoinedStr).
+    # Pattern 1c must loudly refuse (not silently drop).
+    out = _lift("""
+        def test_embedded_for_fstring():
+            out = build()
+            for required in ('kind', 'name'):
+                assert f'"{required}"' in out
+    """)
+    assert out.embedded_for_lifted == 0
+    assert out.embedded_for_skipped == 1
+    assert "test_embedded_for_fstring" in out.claimed_tests
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings), (
+        f"expected LOUD REFUSAL warning; got {[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 0, (
+        f"f-string in condition must not produce lifted contracts; got {out.decls}"
+    )
+
+
+def test_embedded_for_multi_assert_body_all_lifted():
+    # SOUND: for loop with multiple assertions in the body, all liftable.
+    # ALL per-element × per-assert atoms are conjoined into ONE contract.
+    # 2 elements × 2 asserts = 4 atoms in the single contract.
+    out = _lift("""
+        def test_embedded_for_multi():
+            enc = make_enc()
+            for v in ('a', 'b'):
+                assert v in enc
+                assert enc != None
+    """)
+    assert out.embedded_for_lifted == 1, (
+        f"multi-assert body embedded-for must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert len(out.decls) == 1, f"expected 1 conjoined contract; got {[d.name for d in out.decls]}"
+    # All 4 atoms (2 elements × 2 asserts) conjoined.
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 4, (
+        f"expected 4 atoms (2 elements × 2 asserts); got {atoms}"
+    )
+
+
+def test_embedded_for_body_with_binding_falls_through_not_claimed():
+    # SOUNDNESS: For body contains an assignment -> per-iteration SSA versioning
+    # needed; Pattern 1c gates on no-binding-in-body; falls through to catch-all.
+    out = _lift("""
+        def test_embedded_for_body_binding():
+            enc = make_enc()
+            for v in ('a', 'b'):
+                val = lookup(v)
+                assert val in enc
+    """)
+    assert out.embedded_for_lifted == 0, (
+        f"for body with binding must NOT be lifted by Pattern 1c; "
+        f"decls={[d.name for d in out.decls]}"
+    )
+    # The test IS claimed by the catch-all (asserts nested in for-body).
+    assert "test_embedded_for_body_binding" in out.claimed_tests, (
+        "test must be claimed by catch-all (not silently dropped)"
+    )
+    assert any("loud-refuse" in w.reason for w in out.warnings), (
+        f"expected loud-refuse warning from catch-all; got {[w.reason for w in out.warnings]}"
+    )
+
+
+def test_embedded_for_non_terminal_for_not_claimed_by_embedded_pattern():
+    # SOUNDNESS: For is NOT the last statement -> Pattern 1c gate fails -> catch-all.
+    # The embedded-for pattern requires the For to be the terminal statement.
+    out = _lift("""
+        def test_non_terminal_for():
+            for v in ('a', 'b'):
+                assert v in enc
+            x = finalize()
+    """)
+    assert out.embedded_for_lifted == 0, (
+        f"non-terminal For must NOT be lifted by Pattern 1c"
+    )
+
+
+def test_embedded_for_non_literal_iter_not_claimed_by_embedded_pattern():
+    # SOUNDNESS: For iterator is a variable (not a literal) -> not enumerable at
+    # lift time -> Pattern 1c gate fails -> catch-all loud-refuses.
+    out = _lift("""
+        def test_non_literal_iter():
+            items = build_items()
+            for v in items:
+                assert v != None
+    """)
+    assert out.embedded_for_lifted == 0, (
+        "non-literal iter must NOT be lifted by Pattern 1c"
+    )
+    assert "test_non_literal_iter" in out.claimed_tests, (
+        "must be claimed (loudly refused) not silently dropped"
+    )
+    assert any("loud-refuse" in w.reason for w in out.warnings), (
+        f"expected loud-refuse warning; got {[w.reason for w in out.warnings]}"
+    )
+
+
+def test_embedded_for_ssa_scope_isolates_outer_binding():
+    # SOUNDNESS / FALSE-REFUSAL GUARD: outer bindings that are not contradicted
+    # across iterations must yield a consistent (SAT) conjoined contract.
+    # k in x_enc for k='"k1"' and k='"k2"' are two independent membership
+    # atoms with different subjects but the same free var x_enc$0 -> CONSISTENT.
+    out = _lift("""
+        def test_independent_outer_bindings():
+            x_enc = make_enc_a()
+            y_enc = make_enc_b()
+            for k in ('"k1"', '"k2"'):
+                assert k in x_enc
+    """)
+    assert out.embedded_for_lifted == 1, (
+        f"independent outer bindings must lift without false-refusal; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert len(out.decls) == 1, f"expected 1 conjoined contract; got {[d.name for d in out.decls]}"
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2, f"expected 2 member atoms (one per k); got {atoms}"
+
+
+# ---------------------------------------------------------------------------
+# Pattern 8: if-guarded assertions
+# ---------------------------------------------------------------------------
+
+
+def test_if_guarded_single_branch_lifts_as_implies():
+    # SOUND: if cond: assert P  =>  implies(cond, P)
+    # The assert holds ONLY when cond; lifting P unconditionally would be a falsePass.
+    out = _lift("""
+        def test_if_guarded():
+            if x > 0:
+                assert x < 100
+    """)
+    assert out.if_guarded_lifted == 1, (
+        f"single if-guarded assert must lift as implies; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert "test_if_guarded" in out.claimed_tests
+    assert len(out.decls) == 1
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective) and inv.kind == "implies", (
+        f"inv must be an implies connective; got {inv!r}"
+    )
+    # Antecedent: gt(x, 0)
+    assert isinstance(inv.operands[0], _Atomic) and inv.operands[0].name == ">", (
+        f"antecedent must be gt(x,0); got {inv.operands[0]!r}"
+    )
+    # Consequent: lt(x, 100)
+    assert isinstance(inv.operands[1], _Atomic) and inv.operands[1].name == "<", (
+        f"consequent must be lt(x,100); got {inv.operands[1]!r}"
+    )
+
+
+def test_if_guarded_else_branch_lifts_as_negated_implies():
+    # SOUND: if cond: assert P; else: assert Q
+    # => implies(cond, P) ∧ implies(not_(cond), Q)
+    out = _lift("""
+        def test_if_else():
+            if x > 0:
+                assert x != 0
+            else:
+                assert x == 0
+    """)
+    assert out.if_guarded_lifted == 1, (
+        f"if/else guarded must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    implies_atoms = [a for a in atoms if isinstance(a, _Connective) and a.kind == "implies"]
+    assert len(implies_atoms) == 2, (
+        f"expected 2 implies atoms (then + else); got {atoms}"
+    )
+    # then-branch: implies(cond, ne(x,0))
+    then_impl = implies_atoms[0]
+    assert isinstance(then_impl.operands[0], _Atomic), f"then guard must be atomic; got {then_impl.operands[0]!r}"
+    # else-branch: implies(not_(cond), eq(x,0))
+    else_impl = implies_atoms[1]
+    assert isinstance(else_impl.operands[0], _Connective) and else_impl.operands[0].kind == "not", (
+        f"else guard must be not_(cond); got {else_impl.operands[0]!r}"
+    )
+
+
+def test_if_guarded_false_refusal_guard_cond_false_stays_consistent():
+    # FALSE-REFUSAL GUARD: if cond: assert x==1; if cond: assert x==2
+    # => implies(cond,x==1) ∧ implies(cond,x==2)
+    # Setting cond=False makes BOTH implications vacuously true -> SAT -> PROVEN.
+    # This must NOT be refused (the guard absorbs the apparent contradiction).
+    out = _lift("""
+        def test_cond_false_consistent():
+            if cond:
+                assert x == 1
+            if cond:
+                assert x == 2
+    """)
+    assert out.if_guarded_lifted == 1, (
+        f"if-guarded cond=false consistency must lift (not loud-refuse); "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    implies_atoms = [a for a in atoms if isinstance(a, _Connective) and a.kind == "implies"]
+    assert len(implies_atoms) == 2, f"expected 2 implies atoms; got {atoms}"
+    # Both have the same guard (cond=True atom)
+    guards = [a.operands[0] for a in implies_atoms]
+    assert all(isinstance(g, _Atomic) for g in guards), (
+        f"both guards must be atomic (bare cond -> eq(cond,True)); got {guards}"
+    )
+
+
+def test_if_guarded_tautology_cond_plus_unconditional_contradiction_is_unsat():
+    # DISCRIMINATION: if True: assert x==1; assert x==2
+    # The tautological guard (eq(True,True)) makes implies(eq(True,True), x==1)
+    # reduce to x==1 in z3.  Combined with x==2 -> UNSAT -> REFUSED.
+    out = _lift("""
+        def test_tautology_contradiction():
+            if True:
+                assert x == 1
+            assert x == 2
+    """)
+    assert out.if_guarded_lifted == 1, (
+        f"tautological-guard + unconditional contradiction must lift (z3 detects UNSAT); "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    # One implies(eq(True,True), x==1) and one unconditional eq(x,2)
+    implies_atoms = [a for a in atoms if isinstance(a, _Connective) and a.kind == "implies"]
+    plain_eq = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert len(implies_atoms) == 1, f"expected 1 implies atom; got {atoms}"
+    assert len(plain_eq) == 1, f"expected 1 plain eq atom; got {atoms}"
+    # The tautological guard must be eq(bool_const(True), bool_const(True))
+    guard = implies_atoms[0].operands[0]
+    assert isinstance(guard, _Atomic) and guard.name == "=", f"tautology guard must be eq; got {guard!r}"
+    assert all(isinstance(a, _ConstBool) and a.value is True for a in guard.args), (
+        f"tautology guard must be eq(True,True); got {guard!r}"
+    )
+
+
+def test_if_guarded_body_with_binding_loudly_refused():
+    # SOUNDNESS: binding inside the if-body requires per-branch SSA versioning.
+    # Pattern 8 gates on assert-only branch bodies; loud-refuses.
+    out = _lift("""
+        def test_if_body_binding():
+            if x > 0:
+                y = compute()
+                assert y == 1
+    """)
+    assert out.if_guarded_lifted == 0
+    assert out.if_guarded_skipped == 1
+    assert "test_if_body_binding" in out.claimed_tests
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings), (
+        f"expected LOUD REFUSAL; got {[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 0
+
+
+def test_if_guarded_top_level_assert_and_guarded_assert_combined():
+    # Top-level assert (P3-style plain atom) alongside an if-guarded assert
+    # are conjoined into ONE contract.
+    out = _lift("""
+        def test_combined():
+            assert x >= 0
+            if x > 10:
+                assert x < 100
+    """)
+    assert out.if_guarded_lifted == 1, (
+        f"combined top-level + if-guarded must lift; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    # atom0: x>=0 (plain); atom1: implies(x>10, x<100)
+    plain = [a for a in atoms if isinstance(a, _Atomic)]
+    impl = [a for a in atoms if isinstance(a, _Connective) and a.kind == "implies"]
+    assert len(plain) >= 1, f"expected at least 1 plain atom; got {atoms}"
+    assert len(impl) == 1, f"expected 1 implies atom; got {atoms}"
+
+
+# ---------------------------------------------------------------------------
+# Pattern 9: with-body assertions (non-suppressing context managers)
+# ---------------------------------------------------------------------------
+
+
+def test_with_body_open_cm_lifts_assert():
+    # SOUND: with open(...) as f: assert P  — open() is non-suppressing.
+    # The body assert is a plain fact (not guarded by the CM).
+    out = _lift("""
+        def test_with_open():
+            with open('file.txt') as f:
+                assert f != None
+    """)
+    assert out.with_body_lifted == 1, (
+        f"with-open body assert must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    assert "test_with_open" in out.claimed_tests
+    assert len(out.decls) == 1
+    # f is the `as` target — should appear as opaque SSA var (f$0)
+    inv = out.decls[0].inv
+    # The assert is f != None — should produce a comparison with None guard
+    atoms = _flatten_and(inv)
+    assert atoms, f"expected at least one atom; got {inv!r}"
+
+
+def test_with_body_open_no_as_target_lifts_assert():
+    # Same but without ``as`` target.
+    out = _lift("""
+        def test_with_open_no_as():
+            with open('f.txt'):
+                assert x == 1
+    """)
+    assert out.with_body_lifted == 1, (
+        f"with-open (no as) must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+
+
+def test_with_body_unknown_cm_loudly_refused():
+    # SOUNDNESS: unknown CM may suppress assertions; LOUD REFUSE.
+    out = _lift("""
+        def test_with_unknown():
+            with some_custom_cm():
+                assert x == 1
+    """)
+    assert out.with_body_lifted == 0
+    assert out.with_body_skipped == 1
+    assert "test_with_unknown" in out.claimed_tests
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings), (
+        f"expected LOUD REFUSAL for unknown CM; got {[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 0
+
+
+def test_with_body_suppress_cm_loudly_refused():
+    # SOUNDNESS: contextlib.suppress swallows exceptions, making body asserts
+    # non-load-bearing if the exception occurs before the assert; LOUD REFUSE.
+    out = _lift("""
+        def test_with_suppress():
+            with contextlib.suppress(ValueError):
+                assert x == 1
+    """)
+    assert out.with_body_lifted == 0
+    assert out.with_body_skipped == 1
+    assert "test_with_suppress" in out.claimed_tests
+    assert any("LOUD REFUSAL" in w.reason for w in out.warnings), (
+        f"expected LOUD REFUSAL for suppress; got {[w.reason for w in out.warnings]}"
+    )
+
+
+def test_with_body_consistent_pair_lifted():
+    # DISCRIMINATION: two with-open blocks asserting the same property -> consistent.
+    out = _lift("""
+        def test_with_consistent():
+            with open('a.txt') as f1:
+                assert f1 != None
+            with open('b.txt') as f2:
+                assert f2 != None
+    """)
+    assert out.with_body_lifted == 1, (
+        f"two consistent with-open asserts must lift; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    assert out.lifted == 1
+    atoms = _flatten_and(out.decls[0].inv)
+    # Each with-block contributes one atom (f1$0 != None and f2$0 != None)
+    assert len(atoms) >= 2, f"expected at least 2 atoms (one per with-block); got {atoms}"
