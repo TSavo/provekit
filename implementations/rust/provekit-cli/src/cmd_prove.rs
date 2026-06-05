@@ -88,18 +88,34 @@ fn parse_manifest(path: &std::path::Path) -> Result<PluginManifest, String> {
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut m = PluginManifest::default();
-    for line in text.lines() {
-        let line = match line.find('#') {
-            Some(p) => &line[..p],
-            None => line,
+    let strip = |l: &str| -> String {
+        match l.find('#') {
+            Some(p) => l[..p].to_string(),
+            None => l.to_string(),
         }
-        .trim();
+    };
+    let raw: Vec<String> = text.lines().map(|l| strip(l).trim().to_string()).collect();
+    let mut i = 0;
+    while i < raw.len() {
+        let line = raw[i].clone();
+        i += 1;
         if line.is_empty() || line.starts_with('[') {
             continue;
         }
         let Some(eq) = line.find('=') else { continue };
-        let key = line[..eq].trim();
-        let val = line[eq + 1..].trim();
+        let key = line[..eq].trim().to_string();
+        let mut val = line[eq + 1..].trim().to_string();
+        // Multi-line array value: accumulate continuation lines until the
+        // closing `]` (TOML allows `key = [` then elements on later lines).
+        if val.starts_with('[') && !val.contains(']') {
+            while i < raw.len() && !val.contains(']') {
+                val.push(' ');
+                val.push_str(&raw[i]);
+                i += 1;
+            }
+        }
+        let key = key.as_str();
+        let val = val.as_str();
         match key {
             "name" => m.name = val.trim_matches('"').to_string(),
             "working_dir" => m.working_dir = Some(PathBuf::from(val.trim_matches('"'))),

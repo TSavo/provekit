@@ -215,10 +215,14 @@ fn try_witness_discharge(
         Some(p) => p,
         None => return Some(undecidable("empty PROVEKIT_WITNESS_DISCHARGE".into())),
     };
+    // Spawn with cwd = the project root so a manifest's RELATIVE discharge
+    // command (e.g. `PYTHONPATH=../../implementations/...`) resolves the same
+    // way the lift command does from its working_dir.
     let output = std::process::Command::new(prog)
         .args(parts)
         .arg(&tmp)
         .arg(&project)
+        .current_dir(&project)
         .output();
     let out = match output {
         Ok(o) => o,
@@ -392,6 +396,69 @@ mod tests {
     }
     fn none() -> Json {
         json!({"kind":"ctor","name":"None","args":[]})
+    }
+
+    /// The witness-discharge arm: a contract carrying a `custom` EvidenceTerm is
+    /// settled by spawning the tool's discharge command (here a stub), routed by
+    /// the certificate's `tool`. Discharge -> Witnessed; refuse -> Unsatisfied;
+    /// no command -> Undecidable (fail-closed). Hermetic: no python.
+    #[test]
+    fn witness_arm_routes_by_tool_and_fails_closed() {
+        let dir = std::env::temp_dir();
+        let script = dir.join("provekit_test_witness_discharge.sh");
+        let write_stub = |verdict: &str| {
+            std::fs::write(
+                &script,
+                format!("#!/bin/sh\necho '{{\"verdict\":\"{verdict}\",\"reason\":\"stub\"}}'\n"),
+            )
+            .unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        };
+        let body = json!({
+            "kind": "contract",
+            "contractName": "test_x",
+            "inv": {"kind":"atomic","name":"witnessed","args":[]},
+            "evidence": {"kind":"evidence","proofType":"custom",
+                         "certificate":{"tool":"stubtool","proofData":"{}"}},
+        });
+        let call = || {
+            try_witness_discharge(&body, "blake3-512:cid".into(), "test_x".into()).unwrap()
+        };
+
+        std::env::set_var("PROVEKIT_WITNESS_PROJECT_DIR", &dir);
+        // routed to PROVEKIT_WITNESS_DISCHARGE_STUBTOOL (tool="stubtool")
+        write_stub("DISCHARGED");
+        std::env::set_var("PROVEKIT_WITNESS_DISCHARGE_STUBTOOL", &script);
+        let r = call();
+        assert_eq!(r.verdict, ObligationVerdict::Discharged);
+        assert!(r.witnessed, "discharge must be flagged witnessed");
+
+        write_stub("REFUSED");
+        let r = call();
+        assert_eq!(r.verdict, ObligationVerdict::Unsatisfied);
+        assert!(!r.witnessed);
+
+        // fail-closed: no command for this tool, no generic fallback
+        std::env::remove_var("PROVEKIT_WITNESS_DISCHARGE_STUBTOOL");
+        std::env::remove_var("PROVEKIT_WITNESS_DISCHARGE");
+        let r = call();
+        assert_eq!(r.verdict, ObligationVerdict::Undecidable);
+        assert!(!r.witnessed);
+
+        std::env::remove_var("PROVEKIT_WITNESS_PROJECT_DIR");
+        let _ = std::fs::remove_file(&script);
+    }
+
+    /// A contract WITHOUT a custom witness is untouched by the arm (falls through
+    /// to the normal SAT path).
+    #[test]
+    fn non_witness_contract_ignores_the_arm() {
+        let body = json!({"kind":"contract","contractName":"t","inv": ne(var("x"), none())});
+        assert!(try_witness_discharge(&body, "c".into(), "t".into()).is_none());
     }
 
     #[test]
