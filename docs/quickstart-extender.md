@@ -240,15 +240,39 @@ witness package of CID-named bodies (see
 [docs/how-to/publishing-a-proof.md](how-to/publishing-a-proof.md)). The kit never
 grades itself.
 
-### Future direction: a real editor LSP (not yet built)
+### A real editor LSP (shipped for Python)
 
 A real editor language server, where a `provekit prove` or `verify`
 contradiction surfaces as an inline diagnostic (a red squiggle on the offending
-line), is the next gap, not a shipped feature. One kit,
-`implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/lsp.py`,
-carries the seed: it advertises an `analyzeDocument` method and a `parse` path
-that returns `diagnostics`. That seed is where the editor integration would grow.
-Today it is a batch plugin handler, not a persistent server an editor holds open.
+line), exists for Python:
+`implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/editor_lsp.py`,
+exposed as the `provekit-editor-lsp-python` console script. Unlike the batch
+lift plugin (`lsp.py`, the provekit-lift/1 NDJSON protocol the CLI spawns per
+invocation), this is a persistent stdio server speaking the LSP base wire
+protocol (Content-Length-framed JSON-RPC): `initialize`, `didOpen`, `didChange`,
+`didSave`, `publishDiagnostics`.
+
+It is a thin client over `provekit prove`. On open and save it runs `provekit
+prove --json` over the document's project, and for each unsatisfied obligation it
+recovers the callsite from the report's `#euf#` property term, matches it against
+the document AST, and publishes an `Error`-severity diagnostic on that call. The
+prove runner is injected, so the protocol is testable without the toolchain
+(`tests/test_editor_lsp.py` drives the wire with the real captured report, plus a
+skip-guarded end-to-end test that spawns the real CLI). Verification stays in the
+rust CLI; the server never grades correctness itself.
+
+Two boundaries are deliberate. Diagnostics refresh on open and save (against the
+on-disk project); live dirty-buffer analysis ("squiggle as you type") would need
+a buffer overlay so prove does not run against stale disk, and is not done yet.
+And this is the Python-kit-native server; the cross-language, linker-daemon-routed
+editor server (the rust `provekit-lsp` / `provekit-linkerd` binaries) is still
+roadmap. To add a squiggle server for another language, mirror `editor_lsp.py`:
+the wire protocol and prove-report rendering are language-agnostic; only the
+callsite-recovery AST pass is language-specific.
+
+The older `lsp.py` `analyzeDocument` method (a forward-propagation demo over a
+fixed `checkPositive` contract) remains as-is; it predates this server and backs
+the `provekit_lsp` forward-propagator demo and the rust linker tests.
 
 ## Extend the protocol
 
