@@ -158,6 +158,13 @@ build-python:
 		-e implementations/python/provekit-realize-python-sqlite3 \
 		-e implementations/python/provekit-realize-python-aiosqlite \
 		-e implementations/python/provekit-realize-python-requests
+	# The rust integration suite spawns the python lifter over RPC
+	# (python3 -m provekit_lift_py_tests...). Install the lift packages into the
+	# same interpreter so those cross-language tests find it.
+	$(PIP) install --quiet --no-cache-dir \
+		-e implementations/python/provekit-lift-py-tests \
+		-e implementations/python/provekit-lift-python-source \
+		-e implementations/python/provekit-lift-py-pytest-witness
 
 .PHONY: build-scala
 build-scala:
