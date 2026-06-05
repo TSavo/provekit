@@ -1071,19 +1071,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "provekit-bug-zoo"
-version = "0.1.0"
-dependencies = [
- "clap",
- "provekit-canonicalizer",
- "provekit-verifier",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
-]
-
-[[package]]
 name = "provekit-build"
 version = "0.1.0"
 dependencies = [

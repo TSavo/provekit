@@ -40,7 +40,6 @@ members = [
     "provekit-build",
     "examples/build_script_demo",
     "provekit-linkerd",
-    "../../menagerie/bug-zoo",
     "../../menagerie/bridgeworks",
     "../../menagerie/supply-chain-rails",
     "../../menagerie/protocol-switchyard",

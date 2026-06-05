@@ -1,3 +1,0 @@
-name = "typescript-lift"
-command = ["npx", "tsx", "src/lift/bin/main.ts", "--rpc"]
-working_dir = "."

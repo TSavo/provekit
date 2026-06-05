@@ -1,1 +1,0 @@
-BZ-SHAPE-005 exposes missing edge: maybe_null(name) => non_null(name)

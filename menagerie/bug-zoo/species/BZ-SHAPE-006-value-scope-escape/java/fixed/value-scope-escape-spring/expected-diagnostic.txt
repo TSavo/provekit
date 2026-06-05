@@ -1,1 +1,0 @@
-clean: value witness satisfies the callee requirement.

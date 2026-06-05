@@ -1,5 +1,0 @@
-{
-  "required": [
-    ["zod", "class-validator"]
-  ]
-}
