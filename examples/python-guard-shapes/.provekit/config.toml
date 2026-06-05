@@ -1,0 +1,24 @@
+# Guard-shapes showcase: the four runtime-guard bug classes (#2 index-bounds,
+# #3 empty-container, #4 divide-by-zero, #5 key-access) across numpy AND pandas,
+# a 2x4 matrix of proven cases.
+#
+# These are RUNTIME faults (IndexError, ValueError, KeyError, silent inf), not
+# logical contradictions -- so the WITNESS axis is their natural home: it RUNS
+# the real numpy/pandas code, so a guarded access is witnessed (discharged) and a
+# violation is refused (the run errors or the finiteness assertion fails). The
+# consistency axis is a spec-lint that cannot see a runtime fault, so this
+# example registers ONLY the pytest-witness seat -- the axis that proves
+# correctness by execution.
+[[plugins]]
+name = "pytest-witness-lift"
+kind = "lift"
+surface = "python-pytest-witness"
+
+[solvers]
+default = "z3"
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
