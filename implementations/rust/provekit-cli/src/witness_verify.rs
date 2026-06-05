@@ -131,71 +131,32 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
             });
             continue;
         }
-        let mut verified: Option<(String, Vec<String>)> = None;
-        let mut broken_oracle: Option<String> = None;
-        let mut drift: Option<String> = None;
-        let mut errors: Vec<String> = Vec::new();
-        for (argv, working_dir, method) in &resolvers {
-            match resolve_body(argv, working_dir.as_deref(), method, project_root, &body) {
-                Ok((resolved_by, bytes)) => {
-                    let computed = blake3_512_of(&bytes);
-                    if computed == witness_cid {
-                        let mut c = checks.clone();
-                        c.push(format!("content-address:{resolved_by}"));
-                        verified = Some((resolved_by, c));
-                        break;
-                    } else if resolved_by == "package" {
-                        // The package paired this CID with bytes that do NOT hash
-                        // to it. The resolver delivered wrong content -- a BROKEN
-                        // ORACLE / tampered package -- caught because rust did the
-                        // math anyway.
-                        broken_oracle.get_or_insert(format!(
-                            "package content computes to {computed}, not the pinned {witness_cid} \
-                             -- broken oracle / tampered package; rust recomputed the CID and refused"
-                        ));
-                    } else {
-                        // The oracle re-ran honestly and got a different result:
-                        // the witness no longer reproduces. The resolver was
-                        // honest; the proof is stale (code/runtime DRIFTED).
-                        drift.get_or_insert(format!(
-                            "witness did not reproduce (re-run drifted): computed {computed} != \
-                             pinned {witness_cid} -- the oracle was honest, the proof is stale"
-                        ));
-                    }
-                }
-                Err(e) => errors.push(e),
+        match resolve_over_resolvers(&resolvers, project_root, &body, &witness_cid) {
+            Resolution::Verified { resolved_by } => {
+                checks.push(format!("content-address:{resolved_by}"));
+                out.push(WitnessVerifyResult {
+                    witness_cid: witness_cid.clone(),
+                    verdict: "verified".to_string(),
+                    checks,
+                    reason: format!(
+                        "oracle resolved via {resolved_by}; rust recomputed the CID and it matched"
+                    ),
+                });
             }
-        }
-        if let Some((resolved_by, c)) = verified {
-            out.push(WitnessVerifyResult {
-                witness_cid: witness_cid.clone(),
-                verdict: "verified".to_string(),
-                checks: c,
-                reason: format!(
-                    "oracle resolved via {resolved_by}; rust recomputed the CID and it matched"
-                ),
-            });
-        } else if let Some(reason) = broken_oracle {
-            out.push(WitnessVerifyResult {
+            Resolution::BrokenOracle { reason } => out.push(WitnessVerifyResult {
                 witness_cid: witness_cid.clone(),
                 verdict: "broken-oracle".to_string(),
                 checks,
                 reason,
-            });
-        } else if let Some(reason) = drift {
-            out.push(WitnessVerifyResult {
-                witness_cid: witness_cid.clone(),
-                verdict: "refused".to_string(),
-                checks,
-                reason,
-            });
-        } else {
-            out.push(WitnessVerifyResult {
-                witness_cid: witness_cid.clone(),
-                verdict: "refused".to_string(),
-                checks,
-                reason: format!("could not resolve witness body: {}", errors.join("; ")),
-            });
+            }),
+            Resolution::Drift { reason } | Resolution::Unresolved { reason } => {
+                out.push(WitnessVerifyResult {
+                    witness_cid: witness_cid.clone(),
+                    verdict: "refused".to_string(),
+                    checks,
+                    reason,
+                })
+            }
         }
     }
     out
@@ -299,6 +260,67 @@ fn parse_resolve_command(
         // Honor the manifest's declared method; default to the canonical one.
         method.unwrap_or_else(|| "provekit.plugin.resolve_witness".to_string()),
     ))
+}
+
+/// The outcome of trying every declared resolver against one witness.
+#[derive(Debug)]
+enum Resolution {
+    /// A resolver returned a body whose BLAKE3 equals the pinned witness_cid.
+    Verified { resolved_by: String },
+    /// A package paired this CID with bytes that do NOT hash to it (tampered
+    /// package / broken oracle), and nothing else verified.
+    BrokenOracle { reason: String },
+    /// An honest re-run reproduced a different CID (the proof is stale / drifted).
+    Drift { reason: String },
+    /// No resolver could hand back any usable body (all errored).
+    Unresolved { reason: String },
+}
+
+/// Try each declared resolver against one witness; ACCEPT the first whose returned
+/// body BLAKE3's to the pinned `witness_cid`. The content-address check is the
+/// arbiter, so this is sound (no kit can forge a hashing body) and
+/// order-independent: a first-found scan could otherwise refuse a valid witness
+/// just because an unrelated kit's manifest sorted first. If none hash, report the
+/// most informative refusal seen (broken package > honest drift > resolve error).
+fn resolve_over_resolvers(
+    resolvers: &[(Vec<String>, Option<PathBuf>, String)],
+    project_root: &Path,
+    body: &Value,
+    witness_cid: &str,
+) -> Resolution {
+    let mut broken_oracle: Option<String> = None;
+    let mut drift: Option<String> = None;
+    let mut errors: Vec<String> = Vec::new();
+    for (argv, working_dir, method) in resolvers {
+        match resolve_body(argv, working_dir.as_deref(), method, project_root, body) {
+            Ok((resolved_by, bytes)) => {
+                let computed = blake3_512_of(&bytes);
+                if computed == witness_cid {
+                    return Resolution::Verified { resolved_by };
+                } else if resolved_by == "package" {
+                    broken_oracle.get_or_insert(format!(
+                        "package content computes to {computed}, not the pinned {witness_cid} \
+                         -- broken oracle / tampered package; rust recomputed the CID and refused"
+                    ));
+                } else {
+                    drift.get_or_insert(format!(
+                        "witness did not reproduce (re-run drifted): computed {computed} != \
+                         pinned {witness_cid} -- the oracle was honest, the proof is stale"
+                    ));
+                }
+            }
+            Err(e) => errors.push(e),
+        }
+    }
+    if let Some(reason) = broken_oracle {
+        Resolution::BrokenOracle { reason }
+    } else if let Some(reason) = drift {
+        Resolution::Drift { reason }
+    } else {
+        Resolution::Unresolved {
+            reason: format!("could not resolve witness body: {}", errors.join("; ")),
+        }
+    }
 }
 
 /// Spawn the kit oracle and call `provekit.plugin.resolve_witness`, returning
@@ -414,4 +436,78 @@ fn resolve_body(
         .decode(body_b64)
         .map_err(|e| format!("decode body_b64: {e}"))?;
     Ok((resolved_by, bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // A hermetic fake resolver: an `sh -c` command that drains stdin (so rust's
+    // EOF-after-write handshake completes) and prints one canned JSON-RPC reply.
+    // No kit, no network -- it exercises resolve_over_resolvers' selection logic.
+    fn fake_resolver(reply: &str) -> (Vec<String>, Option<PathBuf>, String) {
+        let script = format!("cat >/dev/null 2>&1; printf '%s\\n' '{reply}'");
+        (
+            vec!["sh".to_string(), "-c".to_string(), script],
+            None,
+            "provekit.plugin.resolve_witness".to_string(),
+        )
+    }
+
+    // A `result` reply handing back `body` as a package-resolved body.
+    fn good_reply(body: &[u8]) -> String {
+        format!(
+            r#"{{"jsonrpc":"2.0","id":1,"result":{{"resolved_by":"package","body_b64":"{}"}}}}"#,
+            B64.encode(body)
+        )
+    }
+
+    // POSITIVE: one resolver hands back the pinned body -> verified.
+    #[test]
+    fn single_resolver_verifies_a_matching_body() {
+        let body = b"the witnessed run body";
+        let cid = blake3_512_of(body);
+        let resolvers = vec![fake_resolver(&good_reply(body))];
+        let res = resolve_over_resolvers(&resolvers, &std::env::temp_dir(), &json!({}), &cid);
+        assert!(matches!(res, Resolution::Verified { .. }), "got {res:?}");
+    }
+
+    // DISCRIMINATION (the finding): the first resolver cannot resolve, the second
+    // can. A first-found scan would refuse; selection-by-content-address verifies.
+    // Both orders must verify -- the choice is the hash, not directory order.
+    #[test]
+    fn second_resolver_verifies_when_the_first_cannot() {
+        let body = b"the witnessed run body";
+        let cid = blake3_512_of(body);
+        let bad = fake_resolver(r#"{"jsonrpc":"2.0","id":1,"error":{"message":"unrelated kit"}}"#);
+        let good = fake_resolver(&good_reply(body));
+        let forward =
+            resolve_over_resolvers(&[bad.clone(), good.clone()], &std::env::temp_dir(), &json!({}), &cid);
+        assert!(
+            matches!(forward, Resolution::Verified { .. }),
+            "bad-then-good must verify; got {forward:?}"
+        );
+        let reverse = resolve_over_resolvers(&[good, bad], &std::env::temp_dir(), &json!({}), &cid);
+        assert!(
+            matches!(reverse, Resolution::Verified { .. }),
+            "good-then-bad must verify; got {reverse:?}"
+        );
+    }
+
+    // STRUCTURAL: no resolver returns a body that hashes to the pinned CID. Wrong
+    // bytes under a "package" label is a BROKEN ORACLE refusal, never a verify --
+    // a wrong kit cannot forge a hashing body.
+    #[test]
+    fn wrong_bytes_under_package_label_is_refused_not_verified() {
+        let body = b"the witnessed run body";
+        let cid = blake3_512_of(body);
+        let err = fake_resolver(r#"{"jsonrpc":"2.0","id":1,"error":{"message":"nope"}}"#);
+        let wrong = fake_resolver(&good_reply(b"not the witnessed body"));
+        let res = resolve_over_resolvers(&[err, wrong], &std::env::temp_dir(), &json!({}), &cid);
+        assert!(
+            matches!(res, Resolution::BrokenOracle { .. }),
+            "wrong bytes must refuse; got {res:?}"
+        );
+    }
 }
