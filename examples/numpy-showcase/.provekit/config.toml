@@ -19,6 +19,11 @@ name = "pytest-witness-lift"
 kind = "lift"
 surface = "python-pytest-witness"
 
+[[plugins]]
+name = "python-bind-lift"
+kind = "lift"
+surface = "python-bind"
+
 [solvers]
 default = "z3"
 [solvers.dispatch]

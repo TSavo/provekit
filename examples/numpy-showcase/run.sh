@@ -45,6 +45,12 @@ echo "== recognize np.add in app.py =="
 "$BIN" recognize --surface python-bind --target python --project . --source app.py --json 2>/dev/null \
   | python3 -c "import sys,json;[print('recognized',t['symbol'],'tier',t['match_tier']) for t in json.load(sys.stdin)['tags']]"
 
-echo "== mint (contract + witness) + prove =="
-"$BIN" mint --out . >/dev/null
+echo "== mint ALL THREE lifters -> one .proof, then prove + verify =="
+# --library-bindings asks the sugar lifter for its bindings, so this ONE mint
+# conjoins all three faces into one .proof:
+#   sugar (python-bind, code IDENTITY) + contract (numpy-testing, the PROPOSITION)
+#   + witness (pytest-witness, the EVIDENCE). 6 members: 3 sugar, 2 contract, 1 witness.
+"$BIN" mint --out . --library-bindings >/dev/null
 "$BIN" prove .
+echo "== verify (witness axis: rust recomputes; the kit oracle is untrusted) =="
+PATH="$VENV/bin:$PATH" "$BIN" verify --project .
