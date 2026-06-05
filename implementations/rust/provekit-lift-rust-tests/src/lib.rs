@@ -136,7 +136,7 @@ pub(crate) fn callsite_contract_name_pub(
     source_path: &str,
     span: proc_macro2::Span,
 ) -> String {
-    callsite_contract_name(callee, source_path, span)
+    callsite_contract_name(callee, None, source_path, span)
 }
 
 #[derive(Debug, Clone)]
@@ -639,6 +639,9 @@ fn bound_call_from_expr(expr: &syn::Expr) -> Option<BoundCall> {
 struct AssertionCallsite {
     callee: String,
     span: proc_macro2::Span,
+    /// EUF arg signature when the call's args are all literals (Some) -> the
+    /// contract is named by location-independent call identity so it inherits.
+    arg_sig: Option<String>,
 }
 
 fn lift_assertion_macro_at_callsites(
@@ -661,7 +664,12 @@ fn lift_assertion_macro_at_callsites(
     let mut seen_names = BTreeSet::new();
     let mut out = Vec::new();
     for callsite in callsites {
-        let name = callsite_contract_name(&callsite.callee, source_path, callsite.span);
+        let name = callsite_contract_name(
+            &callsite.callee,
+            callsite.arg_sig.as_deref(),
+            source_path,
+            callsite.span,
+        );
         if seen_names.insert(name.clone()) {
             out.push(LiftedCallsiteAssertion {
                 name,
@@ -709,9 +717,11 @@ fn collect_expr_callsites(
         syn::Expr::Call(c) => {
             if let syn::Expr::Path(p) = &*c.func {
                 if let Some(callee) = path_final_segment(&p.path) {
+                    let arg_sig = euf_arg_sig(&callee, &c.args);
                     out.push(AssertionCallsite {
                         callee,
                         span: c.span(),
+                        arg_sig,
                     });
                 }
             }
@@ -719,6 +729,7 @@ fn collect_expr_callsites(
         syn::Expr::MethodCall(mc) => out.push(AssertionCallsite {
             callee: mc.method.to_string(),
             span: mc.span(),
+            arg_sig: None,
         }),
         syn::Expr::Path(p) => {
             if let Some(id) = p.path.get_ident() {
@@ -726,6 +737,7 @@ fn collect_expr_callsites(
                     out.push(AssertionCallsite {
                         callee: binding.callee.clone(),
                         span: binding.span,
+                        arg_sig: None,
                     });
                     substitutions.insert(id.to_string(), binding.term.clone());
                 }
@@ -753,7 +765,61 @@ fn collect_expr_callsites(
     }
 }
 
-fn callsite_contract_name(callee: &str, source_path: &str, span: proc_macro2::Span) -> String {
+/// The argument signature of a call whose args are all literals, in the
+/// substrate-wide EUF form Python's lifter uses: `c:callresult_<callee>_a<n>(<args>)`,
+/// e.g. `add(2, 3)` -> `c:callresult_add_a2(i:2,i:3)`. Returns None when any arg is
+/// not a recognized literal (then the callsite stays location-keyed -- a symbolic
+/// call is not a cross-crate-inheritable identity).
+fn euf_arg_sig(callee: &str, args: &syn::punctuated::Punctuated<syn::Expr, syn::token::Comma>) -> Option<String> {
+    let mut sigs = Vec::with_capacity(args.len());
+    for a in args {
+        sigs.push(literal_arg_sig(a)?);
+    }
+    let safe: String = callee
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    Some(format!("c:callresult_{}_a{}({})", safe, args.len(), sigs.join(",")))
+}
+
+/// One literal arg in canonical sig form: `i:<n>` (int), `i:-<n>` (neg int),
+/// `b:<bool>`. None for anything else (a non-literal kills the whole EUF sig).
+fn literal_arg_sig(e: &syn::Expr) -> Option<String> {
+    match e {
+        syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(i), .. }) => {
+            Some(format!("i:{}", i.base10_digits()))
+        }
+        syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. }) => {
+            Some(format!("b:{}", b.value))
+        }
+        syn::Expr::Unary(u) if matches!(u.op, syn::UnOp::Neg(_)) => match &*u.expr {
+            syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(i), .. }) => {
+                Some(format!("i:-{}", i.base10_digits()))
+            }
+            _ => None,
+        },
+        syn::Expr::Group(g) => literal_arg_sig(&g.expr),
+        syn::Expr::Paren(p) => literal_arg_sig(&p.expr),
+        _ => None,
+    }
+}
+
+/// The contract name for one observed callsite. When the call's args are all
+/// literals (`arg_sig` is Some), use the location-INDEPENDENT, value-INDEPENDENT
+/// EUF identity `<callee>#euf#<sig>::assertion` -- the form that lets a vendor's
+/// `==5` and a consumer's `==6` about the SAME call conjoin to UNSAT across
+/// crates (the numpy inheritance story). Otherwise fall back to the
+/// location-keyed `<callee>@<file>:<line>:<col>` (a symbolic call is not an
+/// inheritable identity).
+fn callsite_contract_name(
+    callee: &str,
+    arg_sig: Option<&str>,
+    source_path: &str,
+    span: proc_macro2::Span,
+) -> String {
+    if let Some(sig) = arg_sig {
+        return format!("{callee}#euf#{sig}::assertion");
+    }
     let start = span.start();
     format!("{callee}@{source_path}:{}:{}", start.line, start.column)
 }
@@ -781,7 +847,12 @@ fn lift_assertion_macro_at_callsites_with_span(
     let mut seen_names = BTreeSet::new();
     let mut out = Vec::new();
     for callsite in callsites {
-        let name = callsite_contract_name(&callsite.callee, source_path, callsite.span);
+        let name = callsite_contract_name(
+            &callsite.callee,
+            callsite.arg_sig.as_deref(),
+            source_path,
+            callsite.span,
+        );
         if seen_names.insert(name.clone()) {
             out.push(LiftedCallsiteAssertionWithSpan {
                 name,
@@ -1477,16 +1548,23 @@ mod tests {
     }
 
     fn assert_callsite_name(name: &str, callee: &str) {
-        let prefix = format!("{callee}@t.rs:");
-        assert!(
-            name.starts_with(&prefix),
-            "expected `{name}` to start with `{prefix}`"
-        );
-        let rest = &name[prefix.len()..];
-        let parts: Vec<_> = rest.split(':').collect();
-        assert_eq!(parts.len(), 2, "expected <line>:<col>, got `{rest}`");
-        assert!(parts[0].parse::<usize>().unwrap() > 0);
-        parts[1].parse::<usize>().unwrap();
+        // Literal-arg calls now carry the location-INDEPENDENT EUF identity
+        // (`callee#euf#c:callresult_..._aN(...)::assertion`); method / symbolic-arg
+        // calls keep the location form (`callee@file:line:col`). Accept whichever
+        // applies -- the contract must be ABOUT this callee either way.
+        let euf_prefix = format!("{callee}#euf#");
+        if !name.starts_with(&euf_prefix) {
+            let prefix = format!("{callee}@t.rs:");
+            assert!(
+                name.starts_with(&prefix),
+                "expected `{name}` to start with `{prefix}` or `{euf_prefix}`"
+            );
+            let rest = &name[prefix.len()..];
+            let parts: Vec<_> = rest.split(':').collect();
+            assert_eq!(parts.len(), 2, "expected <line>:<col>, got `{rest}`");
+            assert!(parts[0].parse::<usize>().unwrap() > 0);
+            parts[1].parse::<usize>().unwrap();
+        }
         assert!(
             !name.starts_with("parse_int_42::") && !name.starts_with("three_facts::"),
             "old test-owned name leaked: {name}"
@@ -1967,8 +2045,12 @@ mod tests {
             .get("target_callsite_symbol")
             .and_then(|v| v.as_str())
             .expect("target_callsite_symbol must be present");
-        // Symbol is "<callee>@<file>:<line>:<col>".
-        assert!(symbol.starts_with("compute@t.rs:"), "got: {symbol}");
+        // Symbol is the callsite identity: the EUF form `compute#euf#...` for a
+        // literal-arg call, else `compute@<file>:<line>:<col>`.
+        assert!(
+            symbol.starts_with("compute#euf#") || symbol.starts_with("compute@t.rs:"),
+            "got: {symbol}"
+        );
     }
 
     #[test]
