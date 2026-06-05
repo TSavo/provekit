@@ -10,15 +10,7 @@
 //   (`initialize` + `lift`). The CLI drives that RPC, receives a
 //   `proof-envelope` response, and then:
 //
-//     1. Writes the `.proof` file to the output directory (same as before).
-//     2. Signs a self-contracts attestation (letter-envelope format, per
-//        spec #94 / `protocol/specs/2026-05-02-bundle-attestation-protocol.md`)
-//        and writes it to
-//        `<repo-root>/.provekit/self-contracts-attestations/<kit>.json`.
-//
-//   The dogfood invariant: ProvekIt's `prove` verifies each kit satisfies
-//   the canonical contracts minted by the rust kit. The substrate proves
-//   the kits; the kits prove the substrate.
+//     1. Writes the `.proof` file to the output directory.
 //
 //   The lift protocol (`initialize` + `lift`) is distinct from the LSP
 //   parse protocol (`initialize` + `parse`). The former is for mint; the
@@ -63,7 +55,7 @@ use provekit_claim_envelope::{
 };
 use provekit_ir_types::Sort;
 use provekit_proof_envelope::{
-    build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed,
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed,
     ProofEnvelopeInput,
 };
 
@@ -109,12 +101,9 @@ fn log_body_discharge_policy_warnings(
     }
 }
 
-/// The v0 foundation seed. PUBLICLY KNOWN. Same seed used by foundation-keygen.
-const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
-
-/// Pinned `declaredAt` for self-contracts attestations minted under the
-/// unified pipeline. Matches the v1.6.0 catalog declared_at for consistency.
-const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
+/// Publicly-known dev signer seed. Makes `.proof` CIDs reproducible across
+/// machines; it is NOT an authenticity claim (the seed is a public constant).
+const DEV_SIGNER_SEED: Ed25519Seed = [0x42u8; 32];
 
 fn json_type_name(value: &Value) -> &'static str {
     match value {
@@ -1723,7 +1712,7 @@ fn mint_ir_document(
     let mut contracts_by_cid: BTreeMap<String, MintedContractRef> = BTreeMap::new();
     let mut cids_by_name: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut content_cids: Vec<String> = Vec::new();
-    let default_signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
+    let default_signer_seed: Ed25519Seed = DEV_SIGNER_SEED;
     let produced_at = "2026-05-03T18:00:00Z".to_string();
     // The SEMANTIC library this project's contracts represent, from its
     // `platform_profile.library`. This is the crate a consumer's call resolves
@@ -2730,108 +2719,6 @@ fn json_to_cvalue(j: &Value) -> Arc<CValue> {
 }
 
 // ---------------------------------------------------------------------------
-// Self-contracts attestation signing
-// ---------------------------------------------------------------------------
-
-/// Build the signed self-contracts attestation JSON for a kit.
-///
-/// The signed body (per spec #94 §2) is the seven-field object without
-/// `signature`. JCS encoding of that body is what the foundation key signs.
-///
-/// When `bundle_cid` is empty (lifter binary not found), the attestation
-/// records `cid: ""`: callers can detect the empty-lifter case via this
-/// field. The `contractSetCid` is still valid (it's the empty-set CID).
-fn build_signed_attestation(lang: &str, bundle_cid: &str, contract_set_cid: &str) -> Value {
-    let signer_pubkey = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
-
-    // Build the seven-field message body (no `signature`).
-    // JCS sorts keys by code point; we build as a canonicalizer object in
-    // the SAME field order as foundation-keygen does so the bytes are
-    // byte-identical to what sign-self-contracts produces.
-    let entries: Vec<(String, Arc<CValue>)> = vec![
-        ("schemaVersion".to_string(), CValue::string("1".to_string())),
-        (
-            "kind".to_string(),
-            CValue::string("self-contracts-attestation".to_string()),
-        ),
-        ("lang".to_string(), CValue::string(lang.to_string())),
-        ("cid".to_string(), CValue::string(bundle_cid.to_string())),
-        (
-            "contractSetCid".to_string(),
-            CValue::string(contract_set_cid.to_string()),
-        ),
-        (
-            "declaredAt".to_string(),
-            CValue::string(SELF_CONTRACTS_DECLARED_AT.to_string()),
-        ),
-        ("signer".to_string(), CValue::string(signer_pubkey.clone())),
-    ];
-    let msg_obj = CValue::object(entries);
-    let jcs_bytes = encode_jcs(&msg_obj).into_bytes();
-    let signature = ed25519_sign_string(&FOUNDATION_V0_SEED, &jcs_bytes);
-
-    json!({
-        "schemaVersion": "1",
-        "kind": "self-contracts-attestation",
-        "lang": lang,
-        "cid": bundle_cid,
-        "contractSetCid": contract_set_cid,
-        "declaredAt": SELF_CONTRACTS_DECLARED_AT,
-        "signer": signer_pubkey,
-        "signature": signature,
-    })
-}
-
-/// Write the signed attestation to `<repo_root>/.provekit/self-contracts-attestations/<lang>.json`.
-///
-/// The repo root is located by ascending from the project root looking for
-/// a `.provekit/self-contracts-attestations/` directory. Falls back to
-/// searching from CWD if the project root doesn't resolve it.
-fn write_attestation(
-    project_root: &Path,
-    lang: &str,
-    bundle_cid: &str,
-    contract_set_cid: &str,
-    quiet: bool,
-) -> Result<PathBuf, String> {
-    let attestation = build_signed_attestation(lang, bundle_cid, contract_set_cid);
-    let json_str = serde_json::to_string_pretty(&attestation)
-        .map_err(|e| format!("serialize attestation: {e}"))?;
-
-    let attest_dir = find_attestation_dir(project_root)?;
-    std::fs::create_dir_all(&attest_dir)
-        .map_err(|e| format!("mkdir {}: {e}", attest_dir.display()))?;
-    let out_path = attest_dir.join(format!("{lang}.json"));
-    std::fs::write(&out_path, json_str.as_bytes())
-        .map_err(|e| format!("write {}: {e}", out_path.display()))?;
-    if !quiet {
-        println!("{}: wrote {}", "attest".green().bold(), out_path.display());
-    }
-    Ok(out_path)
-}
-
-/// Locate the `.provekit/self-contracts-attestations/` directory by
-/// searching upward from `start`.
-fn find_attestation_dir(start: &Path) -> Result<PathBuf, String> {
-    // Walk up through the directory tree looking for the attestation dir.
-    let abs = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
-    let mut cur = abs.as_path();
-    loop {
-        let candidate = cur.join(".provekit").join("self-contracts-attestations");
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-        match cur.parent() {
-            Some(p) => cur = p,
-            None => break,
-        }
-    }
-    // Fall back: construct from current working directory.
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    Ok(cwd.join(".provekit").join("self-contracts-attestations"))
-}
-
-// ---------------------------------------------------------------------------
 // MintArgs + run
 // ---------------------------------------------------------------------------
 
@@ -2853,9 +2740,6 @@ pub struct MintArgs {
     /// Output directory for the produced `.proof` file. Defaults to current dir.
     #[arg(long)]
     pub out: Option<PathBuf>,
-    /// Skip writing the signed attestation JSON.
-    #[arg(long)]
-    pub no_attest: bool,
     #[command(flatten)]
     pub flags: OutputFlags,
 }
@@ -2867,8 +2751,8 @@ pub fn run(args: MintArgs) -> u8 {
         surface = args.surface.as_deref().unwrap_or("(none)"),
         "mint: starting"
     );
-    // Resolve (project_root, surface, lang_key) from --kit or --project.
-    let (project_root, derived_surface, lang_key) = if let Some(kit) = &args.kit {
+    // Resolve (project_root, surface) from --kit or --project.
+    let (project_root, derived_surface, _lang_key) = if let Some(kit) = &args.kit {
         let config_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let alias_project_cfg = read_project_config(&config_root);
         let alias_user_cfg = read_user_config();
@@ -3032,22 +2916,6 @@ pub fn run(args: MintArgs) -> u8 {
                     println!("{}", result.filename_cid);
                 }
                 println!("contractSetCid: {contract_set_cid}");
-            }
-
-            // Write attestation unless suppressed.
-            if !args.no_attest {
-                // Determine lang_key: use --kit derived value, else infer from surface.
-                let lang = lang_key.as_deref().unwrap_or(&session.surface);
-                if let Err(e) = write_attestation(
-                    &project_root,
-                    lang,
-                    &result.filename_cid,
-                    &contract_set_cid,
-                    args.flags.quiet,
-                ) {
-                    eprintln!("{}: {e}", "warn".yellow().bold());
-                    // Non-fatal: attestation write failure doesn't fail the mint.
-                }
             }
 
             EXIT_OK
@@ -3296,24 +3164,6 @@ mod tests {
             &ProjectConfig::default()
         )
         .is_none());
-    }
-
-    #[test]
-    fn build_signed_attestation_has_required_fields() {
-        let a = build_signed_attestation("rust", "blake3-512:deadbeef", "blake3-512:cafebabe");
-        assert_eq!(a["schemaVersion"].as_str(), Some("1"));
-        assert_eq!(a["kind"].as_str(), Some("self-contracts-attestation"));
-        assert_eq!(a["lang"].as_str(), Some("rust"));
-        assert_eq!(a["declaredAt"].as_str(), Some("2026-05-05T18:00:00Z"));
-        assert!(a["signature"].as_str().unwrap().starts_with("ed25519:"));
-        assert!(a["signer"].as_str().unwrap().starts_with("ed25519:"));
-    }
-
-    #[test]
-    fn build_signed_attestation_is_deterministic() {
-        let a = build_signed_attestation("go", "blake3-512:aa", "blake3-512:bb");
-        let b = build_signed_attestation("go", "blake3-512:aa", "blake3-512:bb");
-        assert_eq!(a, b);
     }
 
     #[test]

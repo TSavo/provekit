@@ -182,7 +182,7 @@ fn run_mint(project: &Path) {
         .arg(project)
         .arg("--out")
         .arg(project)
-        .args(["--no-attest", "--quiet"])
+        .args(["--quiet"])
         .output()
         .expect("spawn mint");
     assert!(

@@ -193,7 +193,6 @@ fn mint_halve_project(suffix: &str, op: &str, arg: i64, rhs: i64) -> PathBuf {
         .arg(&project)
         .arg("--out")
         .arg(&project)
-        .arg("--no-attest")
         .arg("--quiet")
         .output()
         .expect("spawn provekit mint");

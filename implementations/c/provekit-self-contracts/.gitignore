@@ -1,5 +1,0 @@
-# Build artifacts
-src/*.o
-tests/*.o
-tests/test_runner
-libprovekit-self-contracts.a

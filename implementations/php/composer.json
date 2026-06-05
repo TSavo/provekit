@@ -1,15 +1,16 @@
 {
     "name": "provekit/php-kit",
-    "description": "Provekit PHP kit — IR library + self-contracts lifter",
+    "description": "Provekit PHP kit -- IR library + PHP source lifter",
     "type": "project",
-    "bin": ["bin/provekit-lsp-php"],
+    "bin": [
+        "bin/provekit-lsp-php"
+    ],
     "autoload": {
         "psr-4": {
             "Provekit\\Ir\\": "provekit-ir-symbolic/src/Ir/",
             "Provekit\\Canonicalizer\\": "provekit-ir-symbolic/src/Canonicalizer/",
             "Provekit\\ClaimEnvelope\\": "provekit-ir-symbolic/src/ClaimEnvelope/",
             "Provekit\\ProofEnvelope\\": "provekit-ir-symbolic/src/ProofEnvelope/",
-            "Provekit\\SelfContracts\\": "provekit-self-contracts/slabs/",
             "ProvekIt\\LiftPhpSource\\": "provekit-lift-php-source/src/"
         }
     },
@@ -20,8 +21,6 @@
         "nikic/php-parser": "^5.0"
     },
     "scripts": {
-        "mint": "php provekit-self-contracts/cmd/mint-php-self-contracts/main.php",
-        "mint-rpc": "php provekit-self-contracts/cmd/mint-php-self-contracts/rpc.php --rpc",
         "test": [
             "php provekit-lift/tests/ForwardPropagatorTest.php",
             "php provekit-lift-php-source/tests/PhpSourceLifterTest.php"

@@ -34,6 +34,17 @@ fn python_blake3_available() -> bool {
         .unwrap_or(false)
 }
 
+/// True if `cmd` runs on PATH. Used to skip cross-language lift tests when the
+/// kit's toolchain (zig / clang++ / php) is absent, so the lean CI (rust +
+/// python) does not red on a missing peer toolchain.
+fn on_path(cmd: &str) -> bool {
+    Command::new(cmd)
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Write `text` to `path` and mark it executable.
 ///
 /// Uses explicit `sync_all` + drop before `set_permissions` to ensure the
@@ -552,7 +563,6 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );
@@ -668,7 +678,6 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );
@@ -778,7 +787,6 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );
@@ -883,7 +891,7 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest"),
+            ,
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -994,7 +1002,6 @@ done
             .arg("mint")
             .arg("--project")
             .arg(&project)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );
@@ -1422,6 +1429,10 @@ surface = "python"
 
 #[test]
 fn lift_zig_shows_production_composes_but_unit_tests_conflict() {
+    if !on_path("zig") {
+        eprintln!("skipping lift_zig: zig toolchain not on PATH");
+        return;
+    }
     let root = repo_root();
     let project = tempfile::tempdir().expect("create tempdir");
     fs::write(
@@ -1559,6 +1570,10 @@ surface = "zig-tests"
 
 #[test]
 fn lift_cpp_shows_production_composes_but_unit_tests_conflict() {
+    if !on_path("clang++") {
+        eprintln!("skipping lift_cpp: clang++ not on PATH");
+        return;
+    }
     let root = repo_root();
     let project = tempfile::tempdir().expect("create tempdir");
     fs::write(
@@ -1696,6 +1711,10 @@ surface = "cpp"
 
 #[test]
 fn lift_php_shows_production_composes_but_unit_tests_conflict() {
+    if !on_path("php") {
+        eprintln!("skipping lift_php: php not on PATH");
+        return;
+    }
     let root = repo_root();
     let project = tempfile::tempdir().expect("create tempdir");
     fs::write(

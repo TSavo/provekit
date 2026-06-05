@@ -31,13 +31,11 @@ mod cmd_materialize;
 mod cmd_mint;
 mod cmd_package;
 mod cmd_plugin;
-mod cmd_protocol;
 mod cmd_prove;
 mod cmd_recognize;
 mod cmd_release_gate;
 mod cmd_self_check;
 mod cmd_verify;
-mod cmd_verify_protocol;
 mod cmd_version;
 mod witness_verify;
 mod doctor;
@@ -48,7 +46,6 @@ mod kit_dispatch;
 mod lift_plugin;
 pub mod panic_annotations_runtime;
 mod project_config;
-mod protocol;
 mod report_fmt;
 mod sort_morphism_catalog;
 
@@ -105,15 +102,13 @@ enum Cmd {
     Prove(ProveArgs),
     /// Run the deterministic self-application scoreboard.
     SelfCheck(cmd_self_check::SelfCheckArgs),
-    /// Work with protocol catalog evolution artifacts.
-    Protocol(cmd_protocol::ProtocolArgs),
     /// Inspect package artifacts and supply-chain receipt inputs.
     Package(cmd_package::PackageArgs),
     /// Verify a kit end-to-end: lift its contract claims, discharge each
     /// via the solver-dispatch table, mint a signed witness citing the
     /// discharging solver, and emit a per-claim verification receipt.
     /// This is the real GATE verb (#1405); distinct from `prove` (the
-    /// six-stage prover / `--kit` lift-plugin conformance gate).
+    /// six-stage prover).
     Verify(cmd_verify::VerifyArgs),
     /// Mint an implication memento (antecedent CID -> consequent CID) via Z3.
     Implicate(ImplicateArgs),
@@ -137,9 +132,7 @@ enum Cmd {
     Mint(cmd_mint::MintArgs),
     /// Emit target/framework test artifacts from neutral contract predicates.
     Emit(cmd_emit::EmitArgs),
-    /// Confirm the local install conforms to the expected protocol-catalog CID.
-    VerifyProtocol(VerifyProtocolArgs),
-    /// Print CLI version and the protocol catalog CID it declares conformance to.
+    /// Print CLI version.
     Version(VersionArgs),
     /// JSON-RPC subprocess transport for the canonical compose primitive.
     /// Per spec protocol/specs/2026-05-09-contract-composition-protocol.md §6.3.
@@ -185,14 +178,6 @@ pub struct ProveArgs {
     /// Consensus policy JSON used to evaluate a required empirical witness vector.
     #[arg(long = "consensus-policy", requires = "require_empirically_witnessed")]
     pub consensus_policy: Option<PathBuf>,
-    /// Kit conformance gate: verify the named kit's lifter implements the
-    /// canonical lift-plugin-protocol contracts (C1-C8). When set, the six-stage
-    /// verifier is bypassed; instead the kit's lifter is spawned via JSON-RPC and
-    /// each verifier in `provekit-self-contracts::lift_plugin_protocol` is run
-    /// against the captured RPC messages.
-    /// Kit aliases are project/user config entries, not built-in CLI names.
-    #[arg(long, conflicts_with = "project")]
-    pub kit: Option<String>,
     #[command(flatten)]
     pub out: OutputFlags,
     /// Additional project directories whose .proof files should also be loaded
@@ -259,29 +244,6 @@ pub struct LiftArgs {
 }
 
 #[derive(Parser, Debug, Clone)]
-pub struct VerifyProtocolArgs {
-    /// Override the expected catalog CID.
-    #[arg(long)]
-    pub catalog: Option<String>,
-    /// Also verify the signed catalog attestation (Ed25519 signature
-    /// over the catalog's CID by the ProvekIt Foundation Root Key).
-    /// Default uses the embedded `foundation-v0.pub` and the embedded
-    /// catalog signature (`assets/catalog-signature-*.json`); override via
-    /// `--pubkey-file` and `--signature-file`.
-    #[arg(long)]
-    pub signed: bool,
-    /// Override the public key file used to verify the signature.
-    /// Format: `ed25519:<base64>`, possibly with surrounding whitespace.
-    #[arg(long, requires = "signed")]
-    pub pubkey_file: Option<PathBuf>,
-    /// Override the signed attestation file.
-    #[arg(long, requires = "signed")]
-    pub signature_file: Option<PathBuf>,
-    #[command(flatten)]
-    pub out: OutputFlags,
-}
-
-#[derive(Parser, Debug, Clone)]
 pub struct VersionArgs {
     #[command(subcommand)]
     pub cmd: Option<cmd_version::VersionCmd>,
@@ -311,7 +273,6 @@ fn main() -> ExitCode {
         Cmd::Prove(a) => cmd_prove::run(a),
         Cmd::SelfCheck(a) => cmd_self_check::run(a),
         Cmd::Verify(a) => cmd_verify::run(a),
-        Cmd::Protocol(a) => cmd_protocol::run(a),
         Cmd::Package(a) => cmd_package::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
         Cmd::Dump(a) => cmd_dump::run(a),
@@ -321,7 +282,6 @@ fn main() -> ExitCode {
         Cmd::Lift(a) => cmd_lift::run(a),
         Cmd::Mint(a) => cmd_mint::run(a),
         Cmd::Emit(a) => cmd_emit::run(a),
-        Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
         Cmd::Compose(a) => cmd_compose::run(a),
         Cmd::Bind(a) => cmd_bind::run(a),

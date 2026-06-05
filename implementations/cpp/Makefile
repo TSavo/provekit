@@ -7,7 +7,6 @@ ROOT := ../..
 all: build
 
 build:
-	$(ROOT)/tools/build-cpp-self-contracts.sh --build-only
 	$(ROOT)/tools/build-cpp-lift.sh
 	$(ROOT)/tools/build-cpp-source-lift.sh
 	$(ROOT)/tools/build-cpp-lsp.sh

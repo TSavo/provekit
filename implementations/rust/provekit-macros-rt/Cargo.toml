@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt: runtime support for #[provekit::contract] / #[provekit::verify]. Holds the inventory registration types collected by provekit-self-contracts."
+description = "ProvekIt: runtime support for #[provekit::contract] / #[provekit::verify]. Holds the inventory registration types collected at mint time."
 
 [dependencies]
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }

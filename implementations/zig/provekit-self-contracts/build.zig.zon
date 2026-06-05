@@ -1,9 +1,0 @@
-.{
-    .name = .provekit_self_contracts,
-    .fingerprint = 0xeef4e1eca2f29744,
-    .version = "0.1.0",
-    .paths = .{
-        "build.zig",
-        "src",
-    },
-}

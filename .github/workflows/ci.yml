@@ -1,23 +1,16 @@
-# ProvekIt: cross-language conformance gate
+# ProvekIt CI: the acid test
 #
-# Runs the Linux `make ci` gate on every push and PR, then adds macOS Swift
-# and per-kit verifier jobs. Source of truth for "do the kits derive the
-# catalog-pinned protocol CIDs today" is committed to the repo, not asserted.
-#
-# Languages exercised:
-#   Rust 1.x stable, Go 1.22, .NET 10 (preview), Node 22 + pnpm 10,
-#   Python 3.12, Java 21 (Temurin) + Maven, clang/clang++ via apt,
-#   C, C++, Zig, PHP, Ruby, and Swift in the macOS job.
-#
-# The Makefile is the local contract. CI installs toolchains, calls `make`
-# targets for the Linux profile, then runs the extra platform/profile jobs that
-# are not part of the default local aggregate.
+# Drop provekit into a project, prove correctness with zero code changes.
+# `make ci` runs the two suites that actually do that: `test-rust` (the rust
+# workspace, including the crate-pair inheritance E2E, exercising the java / ts
+# / python realize kits over RPC) and `test-python` (the python kit, including
+# the numpy proof). No federation conformance gate; the Makefile is the
+# contract.
 
 name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 # Cancel superseded runs on the same branch / PR.
@@ -30,37 +23,10 @@ permissions:
   actions: read
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Per-kit conformance gate: provekit prove --kit=<kit>
-  #
-  # Each job spawns the kit's lifter via JSON-RPC and runs C1-C8 verifiers
-  # against the captured RPC messages.
-  #
-  # swift runs on macos-latest (Swift toolchain is macOS-only).
-  # All other kits run on self-hosted Linux.
-  # ---------------------------------------------------------------------------
-
-  prove-linux:
-    name: "prove-${{ matrix.kit }} (C1-C8 conformance)"
-    # Linux-only: exclude the macOS runner registered for #305.
+  acid-test:
+    name: acid test (make ci)
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 15
-    needs: conformance
-    strategy:
-      fail-fast: false
-      matrix:
-        kit:
-          - rust
-          - go
-          - cpp
-          - ts
-          - csharp
-          - clr-bytecode
-          - java
-          - python
-          - ruby
-          - zig
-          - c
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -68,6 +34,8 @@ jobs:
 
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Restore Rust target dirs
         if: github.event_name == 'pull_request'
@@ -77,8 +45,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             implementations/rust/target
-            tools/recompute-spec-cids/target
-            tools/foundation-keygen/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -91,200 +57,40 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             implementations/rust/target
-            tools/recompute-spec-cids/target
-            tools/foundation-keygen/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Set up Go 1.22
-        if: matrix.kit == 'go'
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.22'
-          cache: true
-          cache-dependency-path: |
-            implementations/go/provekit-ir-symbolic/go.sum
-            implementations/go/provekit-self-contracts/go.sum
-            implementations/go/provekit-lift-go-tests/go.sum
-
-      - name: Set up .NET 10 (preview)
-        if: matrix.kit == 'csharp' || matrix.kit == 'clr-bytecode'
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
-
-      - name: Set up pnpm
-        if: matrix.kit == 'ts'
-        uses: pnpm/action-setup@v6
-        with:
-          version: '10.33.0'
-
-      - name: Set up Node 22
-        if: matrix.kit == 'ts'
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - name: Set up Python 3.12
-        if: matrix.kit == 'python'
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install python kit deps
-        if: matrix.kit == 'python'
-        run: pip install -e implementations/python/provekit-lift-py-tests
-
-      - name: Install system deps (cpp)
-        if: matrix.kit == 'cpp'
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            clang \
-            libssl-dev \
-            nlohmann-json3-dev
-
-      - name: Install system deps (c)
-        if: matrix.kit == 'c'
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            libclang-dev \
-            libsodium-dev \
-            libssl-dev \
-            llvm-dev
-
-      - name: Set up Java (java)
-        if: matrix.kit == 'java'
+      - name: Set up Java 21 (Temurin)
         uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Install Java deps (java)
-        if: matrix.kit == 'java'
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: '10.33.0'
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install system deps (z3, maven)
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends maven
+          sudo apt-get install -y --no-install-recommends z3 maven
 
-      - name: Install Ruby (ruby)
-        if: matrix.kit == 'ruby'
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.3'
-          bundler-cache: true
-          working-directory: implementations/ruby
-
-      - name: Install Zig (zig)
-        if: matrix.kit == 'zig'
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
-
-      - name: Install PHP deps (php)
-        if: matrix.kit == 'php'
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends \
-            b3sum \
-            php-cli
-          php -m | grep -q '^sodium$'
-
-      - name: "prove-${{ matrix.kit }}"
-        run: make prove-${{ matrix.kit }}
-
-  prove-swift:
-    name: "prove-swift (C1-C8 conformance, macOS)"
-    # Self-hosted Mac runner (issue #305).
-    runs-on: [self-hosted, macOS, X64]
-    # 35 (was 20): the per-runner SwiftPM cache key means the first PR on each
-    # runner cold-compiles swift-syntax (~15 min) on top of the rust CLI build
-    # before there's a warm .build to restore. Headroom so that first cold run
-    # reports green instead of clipping at the deadline.
-    timeout-minutes: 35
-    needs: conformance
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Restore Rust target dirs
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            implementations/rust/target
-            tools/recompute-spec-cids/target
-            tools/foundation-keygen/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Cache Rust target dirs
-        if: github.event_name != 'pull_request'
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            implementations/rust/target
-            tools/recompute-spec-cids/target
-            tools/foundation-keygen/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      # Cache SwiftPM `.build` (restore always, save on push) — see the
-      # conformance-macos-swift job for the rationale; cold SwiftPM compile
-      # was the ~15-min tax on this job.
-      - name: Restore SwiftPM build
-        uses: actions/cache/restore@v5
-        with:
-          path: implementations/swift/.build
-          key: ${{ runner.os }}-${{ runner.name }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.name }}-swiftpm-
-
-      - name: Save SwiftPM build
-        # Per-runner key (includes runner.name): a runner only ever restores a
-        # .build it built itself, so clang's ModuleCache .pcm files — which
-        # embed the absolute build path — never get restored onto a runner with
-        # a different _work path (the prove-swift cross-runner failure). Save on
-        # PRs too (not just push): main-push dispatches to one runner per event,
-        # so without PR-save the other runner would be permanently cold. With
-        # the per-runner key, only the first PR on each runner pays the upload;
-        # the rest cache-hit and skip.
-        uses: actions/cache@v5
-        with:
-          path: implementations/swift/.build
-          key: ${{ runner.os }}-${{ runner.name }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
-
-      - name: prove-swift
-        run: make prove-swift
-
-  spec-cid-lint:
-    name: Spec CID literal lint
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 2
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Lint blake3-512 CID literals under protocol/specs
-        run: |
-          set -euo pipefail
-          chmod +x tools/spec-cid-lint.sh
-          tools/spec-cid-lint.sh protocol/specs
+      - name: make ci
+        run: make ci
+        env:
+          CI: '1'
