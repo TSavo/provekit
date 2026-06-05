@@ -60,6 +60,7 @@ fn main() -> ExitCode {
 
     for d in &contract_decls {
         let args = MintContractArgs {
+            evidence_term: None,
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),

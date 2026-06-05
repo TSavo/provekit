@@ -1,20 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
-"""pytest witness lifter — the proofchain-native correctness producer.
+"""pytest witness lifter -- the proofchain-native correctness producer.
 
 Instead of lifting a test's assertions into a symbolic consistency claim, this
 RUNS the test: pytest is the deterministic transform ``k``, the code-under-test
 is ``I``, the observed pass/fail is ``t``.  The run is content-addressed into a
 witness memento with the substrate's own CID machinery (``jcs_hash``).
 
-A witness is a k(I)=t proofchain link.  It pins the code CID and the runtime CID
-and records the observed outcome.  VERIFICATION IS RECOMPUTATION — re-run on the
-pinned code, rebuild the witness, memcmp the CID.  Nothing is trusted.
+A witness is a k(I)=t proofchain link.  It pins the code CID + runtime CID +
+outcome and is SELF-DESCRIBING about which code it covers (project-relative
+paths), so a verifier holding only the project root can recompute.  VERIFICATION
+IS RECOMPUTATION -- re-run on the pinned code, rebuild the witness, memcmp.
+Nothing is trusted.
 
-The teeth: the witness is cryptographically bound to the exact code.  A wrong
-implementation has a different code CID, and when run it yields a ``failed``
-outcome — so it can neither borrow a correct program's ``passed`` witness (CID
-mismatch) nor mint a ``passed`` one of its own.  You cannot witness code right
-that runs wrong.
+Teeth: the witness is cryptographically bound to the exact code.  A wrong impl
+has a different code CID (can't borrow a correct program's passing witness) and,
+when run, yields a ``failed`` outcome (can mint no passing witness of its own).
+You cannot witness code right that runs wrong.
 """
 from __future__ import annotations
 
@@ -35,19 +36,20 @@ from provekit_lift_py_tests.canonicalizer import (
 )
 
 
-def code_cid(code_paths: List[str]) -> str:
-    """Content-address the code under test (order-independent over files)."""
+def code_cid(project_dir: str, code_files: List[str]) -> str:
+    """Content-address the code under test by PROJECT-RELATIVE path + content,
+    so the same witness re-runs from any checkout of the same project."""
     parts = []
-    for p in sorted(code_paths):
-        with open(p, "rb") as f:
-            parts.append(os.path.basename(p).encode("utf-8") + b"\0" + f.read())
+    for rel in sorted(code_files):
+        with open(os.path.join(project_dir, rel), "rb") as f:
+            parts.append(rel.encode("utf-8") + b"\0" + f.read())
     return blake3_512_of(b"\0".join(parts))
 
 
 def runtime_cid() -> str:
     """Pin the runtime that makes the run reproducible.  The witness only holds
-    where this CID reproduces — for pure code that is trivial; for FP/SIMD
-    kernels it is exactly where reproducibility must be earned and stated."""
+    where this CID reproduces -- trivial for pure code; for FP/SIMD kernels it is
+    exactly where reproducibility must be earned and stated."""
     desc = (
         f"python={tuple(sys.version_info[:3])};"
         f"impl={platform.python_implementation()};"
@@ -56,11 +58,11 @@ def runtime_cid() -> str:
     return blake3_512_of(desc.encode("utf-8"))
 
 
-def _witness_value(code: str, runtime: str, test_id: str, outcome: str):
-    # Field order is irrelevant: encode_jcs sorts keys before hashing.
+def _witness_value(code: str, runtime: str, test_id: str, outcome: str, code_files: List[str]):
     return vobj([
         ("kind", vstr("pytest-witness")),
         ("codeCid", vstr(code)),
+        ("codeFiles", vstr(",".join(sorted(code_files)))),
         ("outcome", vstr(outcome)),
         ("runtimeCid", vstr(runtime)),
         ("test", vstr(test_id)),
@@ -72,36 +74,35 @@ class Witness:
     code_cid: str
     runtime_cid: str
     test_id: str
-    outcome: str  # "passed" | "failed"
+    outcome: str          # "passed" | "failed"
+    code_files: Tuple[str, ...]  # project-relative
     cid: str
 
 
-def run_and_witness(project_dir: str, test_id: str, code_paths: List[str]) -> Witness:
+def run_and_witness(project_dir: str, test_id: str, code_files: List[str]) -> Witness:
     """Run ``test_id`` under pytest in ``project_dir`` and content-address the run."""
-    cc = code_cid(code_paths)
+    cc = code_cid(project_dir, code_files)
     rc = runtime_cid()
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", test_id, "-q", "-p", "no:cacheprovider"],
-        cwd=project_dir,
-        capture_output=True,
-        text=True,
+        cwd=project_dir, capture_output=True, text=True,
     )
     outcome = "passed" if proc.returncode == 0 else "failed"
-    cid = jcs_hash(_witness_value(cc, rc, test_id, outcome))
-    return Witness(cc, rc, test_id, outcome, cid)
+    cid = jcs_hash(_witness_value(cc, rc, test_id, outcome, code_files))
+    return Witness(cc, rc, test_id, outcome, tuple(sorted(code_files)), cid)
 
 
-def verify(witness: Witness, project_dir: str, code_paths: List[str]) -> Tuple[str, str]:
-    """Verify a witness by RECOMPUTATION.  Returns (verdict, reason).
+def verify(witness: Witness, project_dir: str) -> Tuple[str, str]:
+    """Verify a witness BY RECOMPUTATION against ``project_dir``.
 
-    DISCHARGED iff: the supplied code hashes to the witness's ``codeCid`` (the
-    binding), re-running reproduces the witness CID, and the witnessed outcome is
-    ``passed``.  Anything else is REFUSED — fail-closed.
+    DISCHARGED iff the project's code (at the witness's own code paths) hashes to
+    the witness's ``codeCid`` (binding), re-running reproduces the witness CID,
+    and the witnessed outcome is ``passed``.  Anything else is REFUSED.
     """
-    actual = code_cid(code_paths)
+    actual = code_cid(project_dir, list(witness.code_files))
     if actual != witness.code_cid:
-        return ("REFUSED", "code CID mismatch — this witness is not about this code")
-    recomputed = run_and_witness(project_dir, witness.test_id, code_paths)
+        return ("REFUSED", "code CID mismatch -- this witness is not about this code")
+    recomputed = run_and_witness(project_dir, witness.test_id, list(witness.code_files))
     if recomputed.cid != witness.cid:
         return ("REFUSED", f"witness did not reproduce (re-run outcome: {recomputed.outcome})")
     if witness.outcome != "passed":
@@ -110,20 +111,15 @@ def verify(witness: Witness, project_dir: str, code_paths: List[str]) -> Tuple[s
 
 
 # ---------------------------------------------------------------------------
-# Pipeline-native form: persist the witness as a content-addressed .proof
-# memento (the IR EvidenceTerm{proofType:"custom"} shape) and discharge it by
-# RECOMPUTE.  The Rust verifier stays language-blind; the kit owns recompute
-# because the kit owns the runtime (mirrors "kit owns .proof resolution").
+# Pipeline-native: persist as a content-addressed .proof memento (the IR
+# EvidenceTerm{proofType:"custom"} shape) and discharge BY RECOMPUTE.
 # ---------------------------------------------------------------------------
 
 
 def _witness_envelope_value(w: Witness):
-    """EvidenceTerm{kind:evidence, proofType:custom, certificate:{...}} — the
-    dark IR slot, now with a real producer.  ``proofData`` carries exactly the
-    fields needed to reconstruct and RE-RUN the witness."""
     proof_data = json.dumps(
-        {"codeCid": w.code_cid, "runtimeCid": w.runtime_cid,
-         "test": w.test_id, "outcome": w.outcome},
+        {"codeCid": w.code_cid, "runtimeCid": w.runtime_cid, "test": w.test_id,
+         "outcome": w.outcome, "codeFiles": list(w.code_files)},
         sort_keys=True, separators=(",", ":"),
     )
     cert = vobj([
@@ -140,8 +136,7 @@ def _witness_envelope_value(w: Witness):
 
 
 def emit_witness_proof(w: Witness, out_dir: str) -> str:
-    """Write the witness as a content-addressed ``.proof`` (filename = its CID).
-    Returns the path."""
+    """Write the witness as a content-addressed ``.proof`` (filename = its CID)."""
     val = _witness_envelope_value(w)
     envelope_cid = jcs_hash(val)
     path = os.path.join(out_dir, envelope_cid.replace(":", "_") + ".proof")
@@ -153,16 +148,16 @@ def emit_witness_proof(w: Witness, out_dir: str) -> str:
 def load_witness_from_proof(proof_path: str) -> Witness:
     env = json.loads(open(proof_path, encoding="utf-8").read())
     pd = json.loads(env["certificate"]["proofData"])
-    cid = jcs_hash(_witness_value(pd["codeCid"], pd["runtimeCid"], pd["test"], pd["outcome"]))
-    return Witness(pd["codeCid"], pd["runtimeCid"], pd["test"], pd["outcome"], cid)
+    code_files = tuple(sorted(pd["codeFiles"]))
+    cid = jcs_hash(_witness_value(pd["codeCid"], pd["runtimeCid"], pd["test"], pd["outcome"], list(code_files)))
+    return Witness(pd["codeCid"], pd["runtimeCid"], pd["test"], pd["outcome"], code_files, cid)
 
 
-def discharge_from_proof(proof_path: str, project_dir: str, code_paths: List[str]) -> Tuple[str, str]:
+def discharge_from_proof(proof_path: str, project_dir: str) -> Tuple[str, str]:
     """Pipeline discharge: load the witness memento and settle it BY RECOMPUTE.
 
-    Re-runs the pinned test; a forged ``passed`` envelope over failing code is
-    caught here, because the re-run mints a ``failed`` witness whose CID will not
-    match the forged one.  No trust in the recorded outcome.
+    A forged ``passed`` envelope over failing code is caught here -- the re-run
+    mints a ``failed`` witness whose CID will not match the forged one.
     """
     w = load_witness_from_proof(proof_path)
-    return verify(w, project_dir, code_paths)
+    return verify(w, project_dir)

@@ -74,6 +74,10 @@ pub struct ConsistencyResult {
     /// `Undecidable` => encoding STOP (must be surfaced, never silently passed).
     pub verdict: ObligationVerdict,
     pub reason: String,
+    /// True when the verdict came from an EXECUTION WITNESS discharged by
+    /// recompute (k(I)=t), NOT from a symbolic solver. Kept distinct so the
+    /// report never reads witnessed-by-execution as proven-by-solver.
+    pub witnessed: bool,
 }
 
 const CONSISTENT_REASON: &str = "test assertions mutually consistent about callsite";
@@ -139,6 +143,97 @@ fn consistency_verdict(raw: ObligationVerdict) -> (ObligationVerdict, &'static s
     }
 }
 
+/// Settle a contract carrying a `custom` execution-witness EvidenceTerm by
+/// RECOMPUTE: write the EvidenceTerm to a temp `.proof` and spawn the kit's
+/// discharge command (`$PROVEKIT_WITNESS_DISCHARGE <witness.proof> <project>`),
+/// which re-runs the pinned test. The verifier stays language-blind; the kit
+/// owns recompute. Returns None when there is no custom witness (caller falls
+/// through to symbolic solving). FAIL-CLOSED: missing config / spawn error /
+/// unparseable output is Undecidable, never Discharged.
+fn try_witness_discharge(
+    body: &Json,
+    contract_cid: String,
+    property_name: String,
+) -> Option<ConsistencyResult> {
+    let evidence = body.get("evidence")?;
+    if evidence.get("proofType").and_then(|v| v.as_str()) != Some("custom") {
+        return None;
+    }
+    let undecidable = |reason: String| ConsistencyResult {
+        contract_cid: contract_cid.clone(),
+        property_name: property_name.clone(),
+        verdict: ObligationVerdict::Undecidable,
+        reason,
+        witnessed: false,
+    };
+    let cmd = match std::env::var("PROVEKIT_WITNESS_DISCHARGE") {
+        Ok(c) if !c.trim().is_empty() => c,
+        _ => {
+            return Some(undecidable(
+                "custom witness present but PROVEKIT_WITNESS_DISCHARGE unset (fail-closed)".into(),
+            ))
+        }
+    };
+    let project = match std::env::var("PROVEKIT_WITNESS_PROJECT_DIR") {
+        Ok(p) if !p.trim().is_empty() => p,
+        _ => {
+            return Some(undecidable(
+                "custom witness present but PROVEKIT_WITNESS_PROJECT_DIR unset (fail-closed)".into(),
+            ))
+        }
+    };
+    let tmp = std::env::temp_dir()
+        .join(format!("{}.witness.proof", contract_cid.replace([':', '/'], "_")));
+    if let Err(e) = std::fs::write(&tmp, evidence.to_string()) {
+        return Some(undecidable(format!("witness temp write failed: {e}")));
+    }
+    let mut parts = cmd.split_whitespace();
+    let prog = match parts.next() {
+        Some(p) => p,
+        None => return Some(undecidable("empty PROVEKIT_WITNESS_DISCHARGE".into())),
+    };
+    let output = std::process::Command::new(prog)
+        .args(parts)
+        .arg(&tmp)
+        .arg(&project)
+        .output();
+    let out = match output {
+        Ok(o) => o,
+        Err(e) => return Some(undecidable(format!("witness discharge spawn failed: {e}"))),
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: Json = match serde_json::from_str(stdout.lines().last().unwrap_or("")) {
+        Ok(j) => j,
+        Err(e) => return Some(undecidable(format!("witness discharge output unparseable: {e}"))),
+    };
+    let verdict_str = parsed
+        .get("verdict")
+        .and_then(|v| v.as_str())
+        .unwrap_or("REFUSED");
+    let reason = parsed
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Some(if verdict_str == "DISCHARGED" {
+        ConsistencyResult {
+            contract_cid,
+            property_name,
+            verdict: ObligationVerdict::Discharged,
+            reason: format!("witnessed by recompute (kit): {reason}"),
+            witnessed: true,
+        }
+    } else {
+        ConsistencyResult {
+            contract_cid,
+            property_name,
+            verdict: ObligationVerdict::Unsatisfied,
+            reason: format!("witness REFUSED by recompute: {reason}"),
+            witnessed: false,
+        }
+    })
+}
+
 /// Run the consistency pass over every candidate contract in the pool.
 pub fn verify_consistency(
     pool: &MementoPool,
@@ -166,6 +261,16 @@ pub fn verify_consistency(
                 .to_string();
             let inv = body.get("inv").cloned().unwrap_or(Json::Null);
 
+            // WITNESS DISCHARGE (proofchain-native): if this contract carries a
+            // `custom` execution-witness EvidenceTerm, settle it BY RECOMPUTE --
+            // delegate to the kit's discharge command (the verifier stays
+            // language-blind) -- NOT by symbolic solving.
+            if let Some(res) =
+                try_witness_discharge(body, (*cid).clone(), property_name.clone())
+            {
+                return res;
+            }
+
             // RAW satisfiability: assert <inv>; check-sat (NOT the negated
             // validity form). `emit_asserted` produces exactly that shape.
             let smt = match emit_asserted(&inv) {
@@ -176,6 +281,7 @@ pub fn verify_consistency(
                         property_name,
                         verdict: ObligationVerdict::Undecidable,
                         reason: format!("consistency smt-emit (encoding STOP): {e}"),
+                        witnessed: false,
                     };
                 }
             };
@@ -198,6 +304,7 @@ pub fn verify_consistency(
                 property_name,
                 verdict,
                 reason,
+                witnessed: false,
             }
         })
         .collect();
@@ -216,6 +323,7 @@ pub fn verify_consistency(
             .iter()
             .filter(|r| r.verdict == ObligationVerdict::Undecidable)
             .count(),
+        witnessed = results.iter().filter(|r| r.witnessed).count(),
         "verifier: test-assertion consistency pass complete"
     );
 

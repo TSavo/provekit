@@ -2119,6 +2119,10 @@ fn mint_ir_document(
             pre,
             post,
             inv,
+            // Thread the lifted declaration's execution-witness EvidenceTerm (if
+            // any) into the minted contract memento so `prove` can discharge it
+            // by recompute. Omitted when absent -> non-witness contracts unchanged.
+            evidence_term: decl.get("evidence").map(json_to_cvalue),
             out_binding,
             produced_by,
             produced_at: produced_at.clone(),
@@ -4099,6 +4103,7 @@ mod tests {
         let signer_seed: Ed25519Seed = [0x42; 32];
         let produced_at = "2026-06-01T00:00:00.000Z".to_string();
         let contract = mint_contract(&MintContractArgs {
+            evidence_term: None,
             contract_name: "new_policy_dep".to_string(),
             pre: None,
             post: Some(json_to_cvalue(&json!({

@@ -164,6 +164,7 @@ pub fn mint_args(
         pre: Some(pre),
         post: Some(post),
         inv: None,
+        evidence_term: None,
         out_binding,
         produced_by: "provekit-walk".to_string(),
         produced_at: produced_at.to_string(),

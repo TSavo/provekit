@@ -167,6 +167,7 @@ fn run() -> Result<(), String> {
     let mut parse_kit_contract_cid = String::new();
     for d in &parse_kit_decls {
         let m = mint_contract(&MintContractArgs {
+            evidence_term: None,
             contract_name: d.name.clone(),
             library: None,
             pre: d.pre.as_deref().map(formula_to_value),
@@ -272,6 +273,7 @@ fn run() -> Result<(), String> {
     let mut consumer_contract_cid = String::new();
     for d in &consumer_decls {
         let m = mint_contract(&MintContractArgs {
+            evidence_term: None,
             contract_name: d.name.clone(),
             library: None,
             pre: d.pre.as_deref().map(formula_to_value),

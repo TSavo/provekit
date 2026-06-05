@@ -79,6 +79,7 @@ fn pre_n_gt_0() -> Arc<Value> {
 
 fn contract_args() -> MintContractArgs {
     MintContractArgs {
+        evidence_term: None,
         formals: Vec::new(),
         emit_empty_formals: false,
         formal_sorts: Vec::new(),

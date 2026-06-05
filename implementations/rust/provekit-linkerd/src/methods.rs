@@ -1227,6 +1227,7 @@ async fn lift_rust_source(
             let inv_v = decl.inv.as_deref().map(formula_to_value);
 
             let args = MintContractArgs {
+                evidence_term: None,
                 formals: Vec::new(),
                 emit_empty_formals: false,
                 formal_sorts: Vec::new(),
