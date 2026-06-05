@@ -41,6 +41,20 @@ ProvekIt makes the claims fight together. It lifts the local evidence into a
 shared proof graph, composes the claims, and reports proof violations or
 unresolved residue when the graph cannot justify the assembled system.
 
+This is demonstrated end to end, not aspirational. A numpy vendor mints a
+`.proof` carrying the callsite-keyed contract `np.add(2,3) == 5`. A consumer
+stages that `.proof` in `.provekit/imports/`, asserts `np.add(2,3) == 6`, and
+runs `prove`. The consumer is REFUSED: it inherited numpy's `== 5`, the verifier
+conjoins the two same-callsite contracts, and z3 finds `and(== 5, == 6)` UNSAT. A
+consumer that asserts `== 5` agrees and is PROVEN. The consumer inherits the
+vendor's correctness and is caught contradicting it. This works because contracts
+key to the callsite under test, not to the test, so a downstream assertion about
+the same call meets the upstream contract about it.
+(`implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py`,
+parametrized `consumer-agrees-PROVEN` and `consumer-contradicts-REFUSED`; the
+cross-proof conjoin is locked by `cross_proof_same_named_contracts_are_conjoined`
+in `implementations/rust/provekit-verifier/src/consistency.rs`.)
+
 That makes ProvekIt a supply-chain tool as much as a verification tool. The
 question is not only "did this package pass its own checks?" The question is
 "do the claims this package ships still hold when combined with the claims its
@@ -49,9 +63,12 @@ consumers, dependencies, bridges, and generated artifacts rely on?"
 ## `.proof` artifacts
 
 A `.proof` artifact is a signed, content-addressed bundle of proof data. It can
-contain contract mementos, implication witnesses, bridge attestations,
-proof-file conformance witnesses, materialization receipts, package inspection
-claims, and policy-relevant metadata.
+contain contract mementos, source mementos, witness mementos, implication
+witnesses, bridge attestations, proof-file conformance witnesses, materialization
+receipts, package inspection claims, and policy-relevant metadata. Source and
+witness mementos carry identity (CIDs plus loci plus signatures), not bodies; the
+body is resolved on demand and recompute-verified. See
+[proofchain.md](proofchain.md) for the Source Oracle and Witness Oracle.
 
 Those artifacts form a DAG. Nodes and edges are named by content: contract CIDs,
 attestation CIDs, contract-set CIDs, proof-bundle CIDs, binary CIDs, and protocol

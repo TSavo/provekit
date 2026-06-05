@@ -62,12 +62,18 @@ willing to make.
 Inside a `.proof` artifact, members are content-addressed. The DAG can include:
 
 - contract mementos;
+- source mementos (a locus plus pinned CIDs, not the source body);
+- witness mementos (a signed pointer to a separately deployed witness body);
 - implication witnesses;
 - bridge attestations;
 - proof-file conformance witnesses;
 - package inspection claims;
 - materialization or emit receipts;
 - binary, contract-set, attestation, and protocol catalog CIDs.
+
+Source and witness mementos carry IDENTITY, not bodies. The body is resolved on
+demand and recompute-verified when a verifier needs it; see
+[proofchain.md](proofchain.md) for the Source Oracle and Witness Oracle.
 
 The verifier walks this DAG under policy. If a node or edge names bytes that are
 not present, malformed, unsigned, signed by an untrusted key, or semantically
@@ -106,6 +112,27 @@ ProvekIt handles this by conjoining and composing normalized claims. If the
 assembled graph cannot satisfy the obligation, the result is a proof violation,
 unresolved residue, explicit bounded loss, or refusal, not a silent pass.
 
+### Cross-proof contract conjoin
+
+Contracts key to the CALLSITE under test, not to the test that exercised them
+(for example `numpy.add#euf#...::assertion`). The contract name is the
+content-keyed callsite, so same name means same callsite. Before the
+satisfiability check, the verifier groups same-named contracts across all loaded
+`.proof` files, including imported dependency proofs staged in
+`.provekit/imports/`, and conjoins their invariants. Same name means sound to
+conjoin.
+
+This is the mechanism behind inherited correctness. A consumer that imports a
+numpy `.proof` asserting `np.add(2,3) == 5` and then asserts `np.add(2,3) == 6`
+lands both contracts on the same callsite name. Conjoining gives
+`and(== 5, == 6)`, which z3 finds UNSAT, so the consumer is refused for
+contradicting the contract it inherited. A consumer that asserts `== 5` agrees
+and is proven. Identical assertions dedupe by CID and a lone contract is
+untouched, so consistent compositions stay proven and there is no false refusal.
+(`implementations/rust/provekit-verifier/src/consistency.rs:278-300`, locked by
+the `cross_proof_same_named_contracts_are_conjoined` test; end-to-end in
+`implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py`.)
+
 ## Kit RPC
 
 Kit interaction is explicit. Current CLI paths dispatch configured plugins for
@@ -118,6 +145,22 @@ configured subprocess transport.
 The design goal is simple: native knowledge stays in the kit, proof computation
 stays in the CLI, and the exchange between them is normalized, content-addressed
 proof data.
+
+### The kit oracle is untrusted
+
+When a verifier needs a body that the `.proof` only points at, it calls the kit
+oracle over RPC (for example `provekit.plugin.resolve_witness`). That oracle is
+UNTRUSTED. It RESOLVES bytes; it does not pronounce verdicts. The Rust CLI
+verifies the Ed25519 signature itself with the substrate's own primitive
+(`ed25519_verify_string`), then BLAKE3's the resolved bytes itself and compares
+to the pinned CID. A body the oracle returns that does not recompute to the
+pinned CID is a broken oracle, caught because Rust does the math anyway. A body
+that recomputes but whose honest re-run differs is drift. Both refuse loudly and
+are distinguished. The rule is trust the recomputation, never the resolver.
+(`implementations/rust/provekit-cli/src/witness_verify.rs:1-18`.)
+
+This is why verification lives in the language-blind CLI and not in the kit: the
+kit knows the language, but it must not be trusted to grade itself.
 
 ## Fail-closed posture
 

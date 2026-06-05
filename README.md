@@ -206,9 +206,12 @@ authoritative list; the current subcommands include:
 - `provekit init`: scaffold a project (`provekit.toml`, `.provekit/`, sample
   invariant, GitHub Action).
 
-Note: `provekit lift` is currently a stub that prints adapter directions; `mint`
-is the verb that dispatches the lift plugins. The command surface keeps moving
-as protocol work lands; `provekit --help` is the source of truth.
+- `provekit lift`: dispatch the configured lift surface and write its ProofIR
+  term JSON. `lift` stops at the lifted terms; `mint` is the verb that envelopes
+  them into a signed `.proof`, which is what every example here uses.
+
+The command surface keeps moving as protocol work lands; `provekit --help` is the
+source of truth.
 
 ## Install
 

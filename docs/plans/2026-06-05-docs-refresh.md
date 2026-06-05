@@ -3,8 +3,19 @@
 Scope: the README was rewritten to fold in the oracle trio (source oracle,
 witness oracle), the no-shim numpy vendor demo, and the inheritance capstone
 (cross-proof contract conjoin). This plan is the honest inventory of which other
-docs are now stale against that work, plus a prioritized refresh order. It is a
-plan, not the execution.
+docs are now stale against that work, plus a prioritized refresh order.
+
+Status (2026-06-05): P0 and P1 below are EXECUTED, not just planned.
+per-language-status.md was corrected to v1.6.6 / CID `809ed1eb...`; the oracle
+trio was folded into proofchain.md, architecture.md, and product.md; product.md
+was reframed to cite the inheritance demo. P2 remains a plan. Two prose-sourced
+errors caught during execution and corrected against the implementation: the
+real catalog version is v1.6.6 (the binary, the signed asset, and `protocol.rs`
+all agree; the "no source" note in P0-1 below was wrong), and `provekit lift` is
+a real command (`cmd_lift.rs`, 179 lines, dispatches the lift-plugin protocol and
+writes ProofIR term JSON), NOT the stub its `--help` string claims. Method
+lesson: confirm command behavior and version identifiers against the `cmd_*.rs`
+body and the `include_bytes!` asset, never against a help string or doc-comment.
 
 All claims below were grounded against running code while rewriting the README:
 
@@ -25,13 +36,15 @@ All claims below were grounded against running code while rewriting the README:
 
 1. **`docs/reference/per-language-status.md`** says "protocol v1.6.3 (CID
    `blake3-512:dd0cc...`)". The built binary reports a different catalog CID
-   (`provekit version` -> `blake3-512:809ed1eb...`). One of these is stale. The
-   old README also claimed "v1.6.6", a third number with no source in the code I
-   could find. Action: regenerate the version line from `provekit version` /
-   `tools/recompute-spec-cids/`, and stop hardcoding a human version string the
-   binary does not emit. The README now refers readers to `provekit
-   verify-protocol` instead of asserting a number; this doc should be the one
-   place the live number lives.
+   (`provekit verify-protocol` -> `blake3-512:809ed1eb...`, v1.6.6). The doc's
+   value is the stale one. The real version is v1.6.6: the embedded asset is
+   `catalog-signature-v1.6.6.json` (`protocolVersion: "v1.6.6"`, CID
+   `809ed1eb...`), wired via `include_bytes!` at
+   `implementations/rust/provekit-cli/src/protocol.rs:50` against
+   `EXPECTED_CATALOG_CID` at line 28. DONE: per-language-status.md now states
+   v1.6.6 / `809ed1eb...` and points at `provekit verify-protocol` as the live
+   authority so it cannot silently drift again. Backed by the passing test
+   `embedded_catalog_recomputes_to_expected_cid`.
 
 2. **The oracle trio is absent from the explanation docs.** Grep shows
    `product.md`, `architecture.md`, and `proofchain.md` use "witness" only in
