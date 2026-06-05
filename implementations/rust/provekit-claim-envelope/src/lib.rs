@@ -513,6 +513,12 @@ pub struct MintContractArgs {
     pub pre: Option<Arc<Value>>,
     pub post: Option<Arc<Value>>,
     pub inv: Option<Arc<Value>>,
+    /// Execution-witness EvidenceTerm (the `custom` discharge slot). PROVENANCE,
+    /// not contract identity: carried in the header body so the verifier's
+    /// witness-discharge arm can read it, but OMITTED WHEN `None` so existing
+    /// contracts keep byte-identical headers/CIDs. Does not contribute to the
+    /// contract CID (what is proven) -- only HOW it is discharged.
+    pub evidence_term: Option<Arc<Value>>,
     pub out_binding: String,
     pub produced_by: String,
     pub produced_at: String,
@@ -1000,6 +1006,12 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     // empty so contracts with no panic leaf keep their existing header bytes.
     if !args.panic_loci.is_empty() {
         kind_specific.push(("panicLoci".into(), Value::array(args.panic_loci.clone())));
+    }
+    // Execution-witness evidence: PROVENANCE (how-discharged), carried in the
+    // body for the verifier's witness arm, omitted when None so non-witness
+    // contracts stay byte-identical. Does not perturb the contract CID.
+    if let Some(ev) = &args.evidence_term {
+        kind_specific.push(("evidence".into(), ev.clone()));
     }
 
     let header = build_header("contract", &header_cid, kind_specific);
@@ -1725,6 +1737,7 @@ mod tests {
     #[test]
     fn empty_contract_rejected() {
         let args = MintContractArgs {
+            evidence_term: None,
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
@@ -1774,6 +1787,7 @@ mod tests {
             ),
         ]);
         let args = MintContractArgs {
+            evidence_term: None,
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
@@ -1808,6 +1822,7 @@ mod tests {
             ("args", Value::array(vec![Value::string("out")])),
         ]);
         let args = MintContractArgs {
+            evidence_term: None,
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),

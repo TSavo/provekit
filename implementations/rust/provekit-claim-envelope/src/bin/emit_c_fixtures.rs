@@ -66,6 +66,7 @@ fn main() {
 
     // --- 4. mint_contract canonical_bytes + CID ---
     let args = MintContractArgs {
+        evidence_term: None,
         formals: Vec::new(),
         emit_empty_formals: false,
         formal_sorts: Vec::new(),

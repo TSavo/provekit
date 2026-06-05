@@ -1647,6 +1647,7 @@ name = "provekit-lift"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "libprovekit",
  "proc-macro2",
  "provekit-canonicalizer",
  "provekit-claim-envelope",

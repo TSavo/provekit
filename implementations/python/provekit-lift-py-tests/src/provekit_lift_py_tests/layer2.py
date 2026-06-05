@@ -42,8 +42,12 @@
 #       @pytest.mark.parametrize("v", [1, 2, 3])
 #       def test_x(v):
 #           assert v >= 0
-#   Lift to: ONE memento, body = and-conjunction over each row substitution.
-#   Memento name: ``<test>::parametrize::<param-names>``.
+#   Lift to: ONE ContractDecl per row, each checked independently.
+#   Memento name: ``<test>::parametrize::<param-names>::row<i>``.
+#   SOUNDNESS: pytest runs each row as an independent test instance; a free
+#   non-param variable k in the body must not be tied across rows.
+#   Conjoining rows into a single formula (eq(k,1) ^ eq(k,2)) would be UNSAT
+#   (a false-refuse) when k is free.  Per-row contracts are the correct model.
 #
 #   PATTERN 5 - callsite value-scope facts plus implications
 #       def test_parse():
@@ -67,7 +71,7 @@ from __future__ import annotations
 import ast
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from .ir import (
     ContractDecl,
@@ -117,6 +121,12 @@ class Layer2Output:
     claimed_tests: Set[str] = field(default_factory=set)
     bounded_loop_lifted: int = 0
     bounded_loop_skipped: int = 0
+    embedded_for_lifted: int = 0
+    embedded_for_skipped: int = 0
+    if_guarded_lifted: int = 0
+    if_guarded_skipped: int = 0
+    with_body_lifted: int = 0
+    with_body_skipped: int = 0
     helper_inlined_lifted: int = 0
     helper_inlined_skipped: int = 0
     characterization_lifted: int = 0
@@ -125,6 +135,10 @@ class Layer2Output:
     parametrize_skipped: int = 0
     value_scope_lifted: int = 0
     value_scope_skipped: int = 0
+    mixed_body_lifted: int = 0
+    mixed_body_skipped: int = 0
+    raises_lifted: int = 0
+    raises_skipped: int = 0
     implications: List["ImplicationDecl"] = field(default_factory=list)
 
 
@@ -151,6 +165,24 @@ class _CallOrigin:
     callee: str
     lineno: int
     col: int
+    # ARGUMENT-CARRYING EUF: when the call result was lifted to an
+    # argument-keyed ctor (``callresult_<callee>_a<n>``), ``arg_sig`` holds a
+    # deterministic canonical signature of the SSA-resolved arg-terms.  This
+    # makes the callsite contract base argument-keyed (``<callee>#<arg_sig>``)
+    # instead of location-keyed, so mint's coalesce-by-name conjoins TWO
+    # cross-location assertions about the SAME (callee, args) into a single
+    # ``::assertion`` inv → the contradiction fires UNSAT.  None when the call
+    # fell back to the location-keyed free var (no cross-location unification).
+    arg_sig: Optional[str] = None
+    # BINDING-FORM EUF SUBSTITUTION: when a local ``r = f(5)`` is bound via
+    # ``_apply_value_scope_binding`` and the RHS is a concrete-arg call, these
+    # two fields carry the EUF ctor term and the SSA var name so that
+    # ``_assertion_callsite_context`` can substitute the SSA var for the EUF
+    # ctor in the assertion formula.  None when the origin came from a direct
+    # call in the assertion expression (not a binding), or when the binding RHS
+    # has symbolic args (location-keyed path, no substitution).
+    euf_term: Optional["Term"] = None
+    ssa_name: Optional[str] = None
 
 
 @dataclass
@@ -187,9 +219,87 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
 
     helpers = _collect_helpers(tree)
     test_fns = list(_iter_test_functions(tree))
-    for fn in test_fns:
-        _classify_and_lift(fn, source_path, helpers, out)
+    for fn, class_name in test_fns:
+        _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
+
+    _coalesce_same_named_decls(out)
     return out
+
+
+def _coalesce_same_named_decls(out: Layer2Output) -> None:
+    """FILE-LEVEL coalescing for ARGUMENT-CARRYING EUF cross-FUNCTION
+    contradictions.
+
+    ``_classify_value_scope`` conjoins assertions about the same call-site base
+    WITHIN one test function (its per-base ``assertion_atoms_by_base`` dict).
+    But each test function is classified independently, so two DIFFERENT
+    functions that assert about the SAME argument-keyed EUF base
+    (``make_value#euf#...::assertion``) emit TWO separate ``ContractDecl``s with
+    the SAME name and DIFFERENT invs (``=(cr(x),1)`` and ``=(cr(x),2)``).
+
+    The verifier's load path treats two same-name / different-CID contracts as a
+    DUPLICATE-NAME error and keeps one, dropping the other — so the cross-
+    function contradiction would silently vanish (each survivor is a single,
+    non-contradictory assertion → spurious PROVEN).  To make the contradiction
+    visible, we conjoin same-named ``inv``-bearing decls HERE, at file scope,
+    into ONE decl whose inv is ``and_([inv_0, inv_1, ...])``.  Then
+    ``=(cr(x),1) ∧ =(cr(x),2)`` lands in a single inv → z3 UNSAT → REFUSED.
+
+    SCOPE: this only ever merges decls that actually share a name.  Location-
+    keyed bases embed ``line:col`` and are therefore unique per call site, so
+    they NEVER collide and are left untouched.  Only the argument-keyed
+    (``#euf#``) bases — which intentionally drop line:col so identical
+    (callee, args) collapse — can collide, and merging them is exactly the
+    cross-function unification we want.
+
+    SOUNDNESS: conjoining ``A: f(x)=1`` with ``B: f(x)=2`` on the shared bare
+    parameter name ``x`` treats the two independently-bound parameters as the
+    same input.  That is the CONSERVATIVE direction — it can only OVER-REFUSE
+    (the two ``x``s could differ at runtime), never produce a falsePass.  It is
+    consistent with the EUF purity assumption documented at the call site.
+
+    Order is preserved (first-seen name order; invs in append order) for
+    deterministic, content-addressable output.
+    """
+    decls = out.decls
+    # Group indices by name, preserving first-seen order.
+    order: List[str] = []
+    by_name: Dict[str, List[int]] = {}
+    for i, d in enumerate(decls):
+        if d.name not in by_name:
+            by_name[d.name] = []
+            order.append(d.name)
+        by_name[d.name].append(i)
+
+    # Nothing to do if every name is unique.
+    if all(len(idxs) == 1 for idxs in by_name.values()):
+        return
+
+    new_decls: List[ContractDecl] = []
+    for name in order:
+        idxs = by_name[name]
+        if len(idxs) == 1:
+            new_decls.append(decls[idxs[0]])
+            continue
+        group = [decls[i] for i in idxs]
+        # Only coalesce when EVERY member is a pure ``inv`` contract (the shape
+        # the value-scope ::assertion path emits).  If any member carries
+        # pre/post/evidence (not produced by this path), fall back to keeping
+        # the FIRST decl unchanged rather than risk merging incompatible shapes.
+        if not all(
+            d.inv is not None
+            and d.pre is None
+            and d.post is None
+            and d.evidence is None
+            for d in group
+        ):
+            new_decls.append(group[0])
+            continue
+        invs = [d.inv for d in group]
+        merged_inv = invs[0] if len(invs) == 1 else and_(invs)
+        new_decls.append(ContractDecl(name=name, inv=merged_inv))
+
+    out.decls = new_decls
 
 
 # ---------------------------------------------------------------------------
@@ -198,16 +308,29 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
 
 
 def _iter_test_functions(tree: ast.AST):
-    """Yield FunctionDef / AsyncFunctionDef nodes that look like tests:
-    free function ``test_*`` OR method ``test_*`` on a ``TestCase`` class.
+    """Yield (FunctionDef, class_name_or_None) pairs for test functions:
+    free function ``test_*`` OR method ``test_*`` on a class.
+
+    Class name is the enclosing class so the caller can qualify the decl
+    name as ``ClassName::test_method`` and keep each class-method's
+    scope isolated from same-named methods in other classes.
+    Methods inside a class carry ``self`` (or ``cls``) as their first
+    arg which ``_strip_self`` strips before classification.
     """
+    # Build a mapping from function-node id -> enclosing class name.
+    # ast.walk yields nodes in no particular order, so we do a targeted
+    # traversal of top-level and nested statements to find ClassDef bodies.
+    class_of: Dict[int, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    class_of[id(child)] = node.name
+
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name.startswith("test_") or node.name.startswith("test"):
-                if node.name.startswith("test"):
-                    # Methods inside a class show up here too; they have
-                    # an ``self`` first arg which we strip when classifying.
-                    yield node
+            if node.name.startswith("test"):
+                yield node, class_of.get(id(node))
 
 
 def _collect_helpers(tree: ast.AST) -> Dict[str, _HelperDef]:
@@ -283,8 +406,14 @@ def _classify_and_lift(
     source_path: str,
     helpers: Dict[str, _HelperDef],
     out: Layer2Output,
+    class_name: Optional[str] = None,
 ) -> None:
-    test_name = fn.name
+    # Qualify the test name with the enclosing class so that same-named
+    # methods in different classes produce independent decl scopes.
+    # ``TestFoo::test_bar`` is distinct from ``TestBaz::test_bar`` even
+    # though both have ``fn.name == "test_bar"``.  Free functions keep
+    # their bare name.
+    test_name = f"{class_name}::{fn.name}" if class_name else fn.name
     body = _strip_self(fn.body, fn)
 
     # PATTERN 4: parametrize decorator is the strongest claim. If a
@@ -331,6 +460,32 @@ def _classify_and_lift(
     if _classify_value_scope(body, test_name, source_path, out):
         return
 
+    # PATTERN 7: pytest.raises blocks — must fire before mixed-body so any
+    # With-bearing body is claimed (either lifted or loudly refused) rather
+    # than falling through to Layer 0 silently.
+    if _classify_raises_body(body, test_name, source_path, out):
+        return
+
+    if _classify_mixed_body(body, test_name, source_path, out):
+        return
+
+    # PATTERN 1c: mixed body with a terminal For[literal-iter, assert-only-body].
+    # Must fire BEFORE the catch-all so nested asserts in an embedded literal-iter
+    # For are lifted (or loudly refused with a useful message) rather than hitting
+    # the generic catch-all.
+    if _classify_embedded_for(body, test_name, source_path, out):
+        return
+
+    # PATTERN 8: if-guarded assertions — `if cond: assert P` lifts as implies(cond,P).
+    # Must fire BEFORE the catch-all so nested asserts inside if-bodies are claimed.
+    if _classify_if_guarded(body, test_name, source_path, out):
+        return
+
+    # PATTERN 9: with-body assertions — `with <non-suppressing-CM>: assert P`.
+    # Must fire BEFORE the catch-all so nested asserts inside with-bodies are claimed.
+    if _classify_with_body(body, test_name, source_path, out):
+        return
+
     unsupported_unittest_asserts = _unsupported_unittest_assertions(body)
     if unsupported_unittest_asserts:
         out.claimed_tests.add(test_name)
@@ -341,6 +496,52 @@ def _classify_and_lift(
                     source_path,
                     test_name,
                     f"layer2 unittest lift-gap: unsupported assertion method `{name}`",
+                )
+            )
+        return
+
+    # FIX 2a — LOUD-REFUSE CATCH-ALL (Δ=0 coverage):
+    # If the test body contains ANY assert statement but no pattern above claimed
+    # it, the assert is SILENTLY dropped — a Δ>0 gap.  Common cases:
+    #   - asserts nested inside a for/with/if body (has_assert/has_binding
+    #     pre-screen in _classify_mixed_body only checks TOP-LEVEL stmts)
+    #   - FunctionDef+assert inside the test body
+    #   - single assert with no binding and no qualifying condition for P3
+    #
+    # Rather than silently leaving these for Layer 0 (which produces ZERO
+    # contracts with ZERO warnings), we CLAIM the test and emit a LOUD warning
+    # naming the construct.  Zero contracts are produced — this is a valid
+    # loudly-refused outcome and satisfies per-lifter Δ=0.
+    has_any_assert = any(isinstance(s, ast.Assert) for s in ast.walk(fn))
+    if has_any_assert:
+        out.claimed_tests.add(test_name)
+        out.seen += 1
+        # Find the first construct that caused the fall-through.
+        reasons: List[str] = []
+        for s in fn.body:
+            if isinstance(s, (ast.For, ast.While, ast.With, ast.If)):
+                nested_asserts = [n for n in ast.walk(s) if isinstance(n, ast.Assert)]
+                if nested_asserts:
+                    kind = type(s).__name__
+                    reasons.append(
+                        f"asserts nested in {kind.lower()}-body not lifted "
+                        f"(construct: {_unparse(s)[:60]})"
+                    )
+            elif isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                nested_asserts = [n for n in ast.walk(s) if isinstance(n, ast.Assert)]
+                if nested_asserts:
+                    reasons.append(
+                        f"asserts nested in inner FunctionDef `{s.name}` not lifted"
+                    )
+        if not reasons:
+            # Single assert, no binding, and no call-result scope — residual case.
+            reasons.append("single assert with no recognized binding or call-result scope; not lifted in v0")
+        for reason in reasons:
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 loud-refuse: assert present but pattern unclaimed — {reason}",
                 )
             )
         return
@@ -437,12 +638,222 @@ def _unsupported_unittest_assertions(stmts: Sequence[ast.stmt]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
+def _dotted_attr_path(node: ast.expr) -> Optional[str]:
+    """Extract the dotted path from an attribute-access chain.
+
+    ``out.bounded_loop_lifted`` -> ``"out.bounded_loop_lifted"``.
+    ``a.b.c`` -> ``"a.b.c"``.
+    Returns None if the base is not a simple Name (e.g. ``f().attr``).
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted_attr_path(node.value)
+        if base is None:
+            return None
+        return f"{base}.{node.attr}"
+    return None
+
+
+def _ssa_dotted_attr_path(node: ast.Attribute, scope: "_ValueScope") -> Optional[str]:
+    """Build a dotted attribute path whose base is SSA-keyed.
+
+    Walks the attribute chain to find the leftmost Name base.  If that
+    base is tracked in ``scope.current`` (i.e. it is an SSA-renamed
+    local variable), replace it with its SSA name and return the
+    reassembled path.  Otherwise return None so the caller falls back
+    to the unscoped (raw) dotted path.
+
+    Examples with ``scope.current = {"out": make_var("out$1")}``:
+      ``out.val``   -> ``"out$1.val"``
+      ``out.a.b``   -> ``"out$1.a.b"``
+      ``other.val`` -> None  (``other`` not in scope)
+    """
+    raw = _dotted_attr_path(node)
+    if raw is None:
+        return None
+    # Find the leftmost Name segment (root of the dotted chain).
+    root: ast.expr = node
+    while isinstance(root, ast.Attribute):
+        root = root.value
+    if not isinstance(root, ast.Name):
+        return None
+    root_name = root.id
+    if root_name not in scope.current:
+        return None
+    ssa_term = scope.current[root_name]
+    # Extract the SSA var name from the Term (always a _Var here).
+    from .ir import _Var as _IrVar
+    if not isinstance(ssa_term, _IrVar):
+        return None
+    ssa_base = ssa_term.name
+    # Replace the root segment with its SSA name.  The raw path starts
+    # with root_name; everything after the root is the suffix.
+    suffix = raw[len(root_name):]   # e.g. ".val" or ".a.b" or ""
+    return f"{ssa_base}{suffix}"
+
+
+def _subscript_key_term(key_node: ast.expr) -> Term:
+    """Translate a subscript key to a Term, for use in the ``subscript`` Ctor.
+
+    ONLY literal keys are supported: string, integer, bool, None.  A
+    non-literal / computed key (``parsed[i]``, ``parsed[CONST]``) raises
+    ValueError with an explicit message — these must LOUDLY REFUSE because
+    we cannot soundly establish that two subscript expressions refer to the
+    same slot without knowing the key's value.
+
+    Design: literal string keys produce ``str_const(s)`` (encoded as
+    ``strlit_<hash>`` in SMT, sort-safe Int constant).  Integer and bool keys
+    produce ``num``/``bool_const`` concrete Int values.  None produces the
+    ``None`` nullary ctor.  All of these reuse the existing literal-encoding
+    machinery, so cross-type distinctness axioms are emitted correctly.
+    """
+    if isinstance(key_node, ast.Constant):
+        v = key_node.value
+        if isinstance(v, bool):
+            return bool_const(v)
+        if isinstance(v, int):
+            return num(v)
+        if isinstance(v, str):
+            return str_const(v)
+        if v is None:
+            return ctor("None", [])
+        raise ValueError(
+            f"subscript-index: non-literal key type {type(v)!r} is not liftable"
+        )
+    if isinstance(key_node, ast.UnaryOp) and isinstance(key_node.op, ast.USub):
+        if (
+            isinstance(key_node.operand, ast.Constant)
+            and isinstance(key_node.operand.value, int)
+            and not isinstance(key_node.operand.value, bool)
+        ):
+            return num(-key_node.operand.value)
+    # Non-literal key: LOUD REFUSE.  We cannot establish slot identity.
+    raise ValueError(
+        "subscript-index: non-literal key (computed key or variable) is not "
+        "soundly liftable — cannot establish that two subscript expressions "
+        "refer to the same slot without knowing the key value at lift time"
+    )
+
+
+def _translate_subscript_term(node: ast.Subscript, base_term: Term) -> Term:
+    """Build ``ctor('subscript', [base_term, key_term])`` for a subscript node.
+
+    The ``subscript`` Ctor is an uninterpreted 2-arg function in SMT.
+    Sound because:
+      - same base + same key  -> same Ctor term -> same-subject contradictions fire UNSAT
+      - different key or base -> distinct Ctor terms -> independent facts
+      - attribute ``obj.attr`` and subscript ``obj['attr']`` NEVER share a term
+        (attribute uses a raw Var; subscript uses a Ctor) — no accidental aliasing.
+
+    Non-literal keys raise ValueError (LOUD REFUSE); see ``_subscript_key_term``.
+    """
+    key_term = _subscript_key_term(node.slice)
+    return ctor("subscript", [base_term, key_term])
+
+
+def _callval_head(method: str, arity: int) -> str:
+    """Build an ASCII-safe, arity-stable ctor name for a method-call-result term.
+
+    Shape: ``callval_<method>_a<arity>`` where ``<method>`` has non-alphanumeric
+    chars replaced by ``_``, and ``<arity>`` is the total number of ctor args
+    (receiver is arg 0).
+
+    Encoding arity in the name ensures that calls with different arities
+    (``x.m()`` vs ``x.m(k)``) produce different ctor heads and therefore
+    different SMT declarations, preventing ill-sorted ctor applications.
+    """
+    safe = "".join(c if (c.isascii() and c.isalnum()) else "_" for c in method)
+    return f"callval_{safe}_a{arity}"
+
+
+def _translate_dict_set_literal_term(node: ast.expr) -> Term:
+    """Translate a dict or set literal to an opaque ``str_const`` keyed by its
+    canonical content.
+
+    SOUNDNESS RULE: two structurally-different literals MUST produce DISTINCT
+    str_const values (different strings → different strlit_<hash> SMT consts →
+    z3 can distinguish them → ``x == L1 ∧ x == L2`` with L1≠L2 is UNSAT →
+    REFUSED).  Identical literals produce the SAME str_const → SAT → PROVEN.
+
+    Content restriction: every key and value in the literal must itself be a
+    literal leaf (int / str / bool / None).  Non-literal contents (nested
+    calls, computed keys/values) LOUDLY REFUSE via ValueError — we cannot
+    establish content identity without evaluating the expression at lift time.
+
+    Canonical form:
+      - dict: sorted by key repr, ``{repr(k): repr(v), ...}``
+      - set:  sorted element reprs, ``{repr(e), ...}``
+    Both are then serialized as a deterministic string used as the str_const
+    payload.
+    """
+    if isinstance(node, ast.Dict):
+        items: list = []
+        for k, v in zip(node.keys, node.values):
+            if k is None:
+                # dict unpacking (**other) inside dict literal — not liftable
+                raise ValueError(
+                    "dict literal with unpacking (**expr) is not liftable "
+                    "(cannot establish content identity at lift time)"
+                )
+            k_val = _literal_leaf_value(k)
+            v_val = _literal_leaf_value(v)
+            items.append((k_val, v_val))
+        # Sort by key repr for deterministic canonical form.
+        items.sort(key=lambda kv: repr(kv[0]))
+        canonical = "dict:" + repr(dict(items))
+        return str_const(canonical)
+
+    if isinstance(node, ast.Set):
+        elts_raw = []
+        for el in node.elts:
+            elts_raw.append(_literal_leaf_value(el))
+        # Sort elements by repr for deterministic canonical form (set is unordered).
+        # CRITICAL: repr(set(...)) is hash-randomized for strings in CPython, so we
+        # MUST NOT use repr(set(elts)) here — it produces a different string each
+        # process invocation, breaking content-addressing and Δ=0 determinism.
+        # Instead: deduplicate (matching Python set semantics), then sort by repr.
+        unique_elts = list({repr(e): e for e in elts_raw}.values())
+        unique_elts.sort(key=repr)
+        canonical = "set:[" + ", ".join(repr(e) for e in unique_elts) + "]"
+        return str_const(canonical)
+
+    raise ValueError("node is not a dict or set literal")
+
+
+def _literal_leaf_value(node: ast.expr):
+    """Extract the Python value from a literal leaf node (int/str/bool/None).
+
+    Raises ValueError for any non-literal or non-leaf node so the caller can
+    produce a LOUD REFUSE (never a silent lift of a computed value).
+    """
+    if isinstance(node, ast.Constant):
+        v = node.value
+        if isinstance(v, (int, str, bool)) or v is None:
+            return v
+        raise ValueError(
+            f"dict/set literal leaf has unsupported constant type {type(v)!r}; "
+            "only int / str / bool / None are liftable"
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int) and not isinstance(node.operand.value, bool):
+            return -node.operand.value
+    raise ValueError(
+        f"dict/set literal element is not a literal leaf ({type(node).__name__}); "
+        "computed values are not liftable — cannot establish content identity at lift time"
+    )
+
+
 def _translate_term(node: ast.expr) -> Term:
     """Whitelist:
       - identifier (Var)
       - integer / string / bool literal
       - unary-neg of an integer literal
-      - single-arg call (Ctor with one arg)
+      - dict / set literal (opaque str_const keyed by canonical content)
+      - function call with simple-Name func (Ctor with args)
+      - method call ``recv.method(args)`` → ``ctor('callval_<method>_a<n>', [recv, args...])``
+      - attribute access (Var named by dotted path, e.g. ``obj.attr``)
+      - subscript-index with a literal key (``obj['key']``, ``obj[0]``)
     Everything else raises ValueError.
     """
     if isinstance(node, ast.Name):
@@ -468,9 +879,49 @@ def _translate_term(node: ast.expr) -> Term:
         if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int) and not isinstance(node.operand.value, bool):
             return num(-node.operand.value)
         raise ValueError("unary-neg only liftable on integer literals")
+    if isinstance(node, (ast.Dict, ast.Set)):
+        # Dict/set literal: opaque str_const keyed by canonical content.
+        # Non-literal contents → ValueError (LOUD REFUSE at call site).
+        return _translate_dict_set_literal_term(node)
     if isinstance(node, ast.Call):
+        # pytest.approx as a sub-term: LOUD REFUSE.  approx calls must be
+        # intercepted at the comparison level (_lift_approx_comparison); if
+        # they reach here they are in an unsupported position (e.g. nested
+        # inside another call, or on a non-Eq/NotEq comparison side).
+        # Silently lifting them as a ctor would create a term that looks like
+        # a plain function call — ``x == approx(5); x == approx(99)`` would
+        # become ``eq(x, ctor(approx,5)) ^ eq(x, ctor(approx,99))`` — UNSAT
+        # — REFUSED — a falsePass on overlapping ranges.  Always refuse here.
+        if _is_pytest_approx_call(node):
+            raise ValueError(
+                "approx: pytest.approx(...) in an unsupported position — "
+                "approx is only liftable as the comparand of == or != "
+                "(e.g. `assert x == pytest.approx(target)`); "
+                "use it in a direct == or != comparison at the top level of an assert"
+            )
+        if isinstance(node.func, ast.Attribute):
+            # Method call: ``recv.method(args)`` → callval ctor.
+            # LOUD REFUSE on keyword args: cannot order-stably translate.
+            method = node.func.attr
+            if node.keywords:
+                raise ValueError(
+                    f"method call `{method}` with keyword args is not liftable as a term "
+                    "(keyword args cannot be order-stably translated without knowing "
+                    "the function signature)"
+                )
+            recv_term = _translate_term(node.func.value)
+            arg_terms = [recv_term]
+            for i, arg in enumerate(node.args):
+                try:
+                    arg_terms.append(_translate_term(arg))
+                except ValueError as e:
+                    raise ValueError(
+                        f"method call `{method}` arg[{i}] not liftable as term: {e}"
+                    )
+            head = _callval_head(method, len(arg_terms))
+            return ctor(head, arg_terms)
         if not isinstance(node.func, ast.Name):
-            raise ValueError("call target must be a simple name")
+            raise ValueError("call target must be a simple name or method (recv.method)")
         if node.keywords:
             raise ValueError("call with kwargs is not liftable")
         if len(node.args) == 0:
@@ -479,6 +930,28 @@ def _translate_term(node: ast.expr) -> Term:
             raise ValueError(f"call `{node.func.id}` with {len(node.args)} args is not liftable in v0 (single-arg only)")
         inner = _translate_term(node.args[0])
         return ctor(node.func.id, [inner])
+    if isinstance(node, ast.Attribute):
+        # Attribute access (``obj.attr``): lift as an opaque Var named by the
+        # dotted path.  The subject ``obj`` must itself reduce to a simple Var
+        # or attribute chain so the resulting dotted name is stable and unique.
+        # Sound because: same dotted path -> same Var name -> same-term
+        # contradictions fire UNSAT; different paths remain independent.
+        # Restriction: no method calls (``obj.method()``); those must go
+        # through the Call branch with an Attribute func.
+        obj_name = _dotted_attr_path(node)
+        if obj_name is None:
+            raise ValueError(
+                "attribute access on a non-name/non-attribute subject is not liftable"
+            )
+        return make_var(obj_name)
+    if isinstance(node, ast.Subscript):
+        # Subscript-index (``obj['key']``, ``obj[0]``): lift as
+        # ``ctor('subscript', [base_term, key_term])``.  The base is
+        # recursively translated so nested subscripts (``a['b']['c']``) and
+        # attribute-then-subscript (``a.b['c']``) chain naturally.
+        # Non-literal keys LOUDLY REFUSE via ``_subscript_key_term``.
+        base_term = _translate_term(node.value)
+        return _translate_subscript_term(node, base_term)
     raise ValueError("expression shape not in v0 lift whitelist")
 
 
@@ -516,24 +989,463 @@ def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     identity_sym = _IDENTITY_OP_MAP.get(type(op))
     if identity_sym is not None:
         return _comparison_from_identity_symbol(identity_sym, left, right)
+    # Membership: ``x in coll`` -> ``member(x,coll)``; ``x not in coll`` ->
+    # ``not(member(x,coll))``.  Using the SAME predicate symbol for both forms
+    # is intentional and necessary for discrimination: ``member(x,c) ∧
+    # ¬member(x,c)`` is propositionally UNSAT without any theory; z3 discharges
+    # it trivially.  The SMT emitter declares unknown predicates as uninterpreted
+    # Bool fns (``(declare-fun member (Int Int) Bool)``), so no Undecidable
+    # result fires.  ASCII name chosen deliberately: the Unicode ``∈`` (U+2208)
+    # is not a valid SMT-LIB simple-symbol char and z3 rejects it with a parse
+    # error -- the same class of bug as the bare-string-literal encoding before
+    # the strlit_<hash> fix.
+    if isinstance(op, ast.In):
+        return atomic("member", [left, right])
+    if isinstance(op, ast.NotIn):
+        return not_(atomic("member", [left, right]))
     sym = _COMPARE_OP_MAP.get(type(op))
     if sym is None:
         raise ValueError(f"unsupported comparison op: {type(op).__name__}")
     return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
 
 
+def _is_pytest_approx_call(node: ast.expr) -> bool:
+    """Return True iff ``node`` is ``pytest.approx(...)`` or bare ``approx(...)``.
+
+    Both forms are in scope; this check is purely syntactic.
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    # bare: ``approx(target)``
+    if isinstance(func, ast.Name) and func.id == "approx":
+        return True
+    # ``pytest.approx(target)``
+    if (
+        isinstance(func, ast.Attribute)
+        and func.attr == "approx"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "pytest"
+    ):
+        return True
+    return False
+
+
+def _lift_approx_comparison(
+    op: ast.cmpop,
+    left_node: ast.expr,
+    right_node: ast.expr,
+    term_fn,  # callable: ast.expr -> Term
+) -> Optional[Formula]:
+    """Try to lift ``x == pytest.approx(target)`` / ``x != pytest.approx(target)``.
+
+    SOUND MODEL: conservative uninterpreted predicate.
+      ``x == approx(t)`` -> ``atomic("approx_eq", [x_term, target_term])``
+      ``x != approx(t)`` -> ``not_(atomic("approx_eq", [x_term, target_term]))``
+
+    This catches ``x == approx(t); x != approx(t)`` (SAME x, SAME t) ->
+    ``P ^ not P`` -> UNSAT -> REFUSED.  Different x or different t -> independent
+    atoms -> PROVEN.
+
+    DOCUMENTED LIMITATION (conservative under-refusal, never falsePass):
+      Two assertions with DISJOINT approx targets (``x == approx(5.0); x ==
+      approx(99.0)``) are treated as INDEPENDENT -> consistent -> PROVEN.
+      This misses a real contradiction when the tolerance intervals don't overlap,
+      but because we NEVER assert target distinctness, overlapping ranges are
+      never falsely refused.  The under-refusal is acceptable and explicitly
+      documented.
+
+    LOUD REFUSE (raises ValueError) when:
+      - op is not Eq or NotEq (``x < approx(5)`` is meaningless for tolerance)
+      - kwargs (``rel=``, ``abs=``) present on the approx call — different
+        tolerances produce different effective intervals; treating them as the
+        same atom with the same target would model them identically, hiding the
+        fact that the user specified different tolerances (potential for subtle
+        falsePass if we ever extend the model)
+      - the target is not a translatable numeric literal (computed / variable
+        target cannot be content-addressed)
+      - the approx arg is a list or dict (approx-of-collection is a different
+        shape not modelled here)
+      - approx appears on BOTH sides of the comparison (``approx(a) == approx(b)``
+        is meaningless for our model)
+
+    Returns None if neither side is a pytest.approx call (not our pattern).
+    """
+    left_is_approx = _is_pytest_approx_call(left_node)
+    right_is_approx = _is_pytest_approx_call(right_node)
+
+    if not left_is_approx and not right_is_approx:
+        return None  # Not an approx comparison; caller falls through.
+
+    if left_is_approx and right_is_approx:
+        raise ValueError(
+            "approx: both sides of comparison are pytest.approx calls; "
+            "this shape is not soundly liftable"
+        )
+
+    # Only Eq and NotEq are meaningful for tolerance comparisons.
+    if not isinstance(op, (ast.Eq, ast.NotEq)):
+        raise ValueError(
+            f"approx: operator {type(op).__name__!r} with pytest.approx is not "
+            "soundly liftable — only == and != are in scope for the approx lifter"
+        )
+
+    # Identify the value side and the approx call.
+    if right_is_approx:
+        val_node = left_node
+        approx_call = right_node
+    else:
+        val_node = right_node
+        approx_call = left_node
+
+    assert isinstance(approx_call, ast.Call)  # guaranteed by _is_pytest_approx_call
+
+    # kwargs (rel=, abs=) -> LOUD REFUSE.
+    if approx_call.keywords:
+        kw_names = [k.arg or "**" for k in approx_call.keywords]
+        raise ValueError(
+            f"approx: keyword arguments {kw_names!r} on pytest.approx are not "
+            "soundly liftable — different rel=/abs= tolerances produce different "
+            "effective intervals; refusing rather than silently collapsing them"
+        )
+
+    # Must have exactly one positional arg: the target.
+    if len(approx_call.args) != 1:
+        raise ValueError(
+            f"approx: expected exactly 1 positional argument (the target), "
+            f"got {len(approx_call.args)}"
+        )
+
+    target_node = approx_call.args[0]
+
+    # LOUD REFUSE for list/dict targets (approx-of-collection).
+    if isinstance(target_node, (ast.List, ast.Tuple, ast.Dict, ast.Set)):
+        raise ValueError(
+            "approx: list/tuple/dict/set target is not soundly liftable — "
+            "pytest.approx of a collection requires element-wise tolerance "
+            "comparison which is out of scope for the approx lifter"
+        )
+
+    # Target must be a numeric literal (int or float) or unary-neg thereof.
+    # We encode it as str_const(canonical_repr) so that:
+    #   - int AND float targets work uniformly (num() is Int-only)
+    #   - same literal -> same str_const -> same atom -> discrimination fires
+    #   - different literals -> different str_const -> different atoms -> independent
+    target_repr = _approx_target_repr(target_node)
+    if target_repr is None:
+        raise ValueError(
+            "approx: target is not a translatable numeric literal (int or float); "
+            "computed / variable targets cannot be content-addressed at lift time — "
+            "refusing soundly rather than silently lifting an unstable term"
+        )
+
+    # Translate the value side using the caller's term function.
+    try:
+        val_term = term_fn(val_node)
+    except ValueError as e:
+        raise ValueError(f"approx: value side not liftable: {e}")
+
+    target_term = str_const(target_repr)
+    atom = atomic("approx_eq", [val_term, target_term])
+
+    if isinstance(op, ast.NotEq):
+        return not_(atom)
+    return atom
+
+
+def _approx_target_repr(node: ast.expr) -> Optional[str]:
+    """Return a canonical string representation for a numeric literal target,
+    or None if the node is not a liftable numeric literal.
+
+    Accepted: int literal, float literal, unary-neg of int or float literal.
+    Rejected: bool literals (bool is a subtype of int; approx(True) is
+              semantically approx(1) but not a meaningful test value — refuse).
+              Non-literal expressions (names, calls, etc.).
+
+    The repr is chosen to be:
+      - stable across Python versions for the same value
+      - distinct for distinct numeric values
+      - shared for identical numeric values
+
+    We use ``repr(value)`` which is deterministic for int and float.
+    """
+    if isinstance(node, ast.Constant):
+        v = node.value
+        if isinstance(v, bool):
+            return None  # Bool is subtype of int; refuse for approx context.
+        if isinstance(v, int):
+            return repr(v)
+        if isinstance(v, float):
+            return repr(v)
+        return None  # str, None, etc.
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        inner = node.operand
+        if isinstance(inner, ast.Constant):
+            v = inner.value
+            if isinstance(v, bool):
+                return None
+            if isinstance(v, int):
+                return repr(-v)
+            if isinstance(v, float):
+                return repr(-v)
+    return None
+
+
+def _truthiness_call_head(callee: str, arity: int) -> str:
+    """Build an ASCII-safe, arity-stable SMT predicate head for a truthiness
+    call assertion.
+
+    Shape: ``call_<callee>_a<arity>`` where ``<callee>`` is the callee name
+    with non-alphanumeric chars replaced by ``_``, and ``<arity>`` is the
+    total number of SMT arguments (receiver counts as arg 0 for method calls).
+
+    Encoding arity in the name guarantees that the SMT emitter never sees two
+    declarations with the same head at different arities (which would silently
+    adopt the first arity, producing ill-sorted applications).
+    """
+    safe = "".join(c if (c.isascii() and c.isalnum()) else "_" for c in callee)
+    return f"call_{safe}_a{arity}"
+
+
+## ---------------------------------------------------------------------------
+## isinstance: recognized concrete builtin Python types for soundness.
+##
+## ONLY concrete (leaf) builtin types are recognized. Abstract types
+## (Iterable, Sequence, etc.), user-defined classes, and typing generics
+## are LOUDLY REFUSED because their subtype relationships are unknown.
+##
+## bool IS a subtype of int: isinstance(True, int) is True, so
+## isinstance(x, int) ∧ isinstance(x, bool) is CONSISTENT. The encoder
+## must never assert pytype_int and pytype_bool disjoint.
+## ---------------------------------------------------------------------------
+
+_ISINSTANCE_CONCRETE_BUILTINS: Set[str] = {
+    "int",
+    "str",
+    "float",
+    "complex",
+    "bytes",
+    "bytearray",
+    "list",
+    "tuple",
+    "dict",
+    "set",
+    "frozenset",
+    "bool",
+    "NoneType",
+    "type",
+}
+
+
+def _lift_isinstance_call(node: ast.Call, translate_term_fn) -> Formula:
+    """Lift ``isinstance(x, T)`` to ``atomic("isinstance", [x_term, ctor("pytype_T", [])])``.
+
+    SOUND MODEL:
+      - arg[0] (subject): translated via ``translate_term_fn`` (any liftable term).
+      - arg[1] (type):    MUST be a bare ``ast.Name`` whose id is in
+        ``_ISINSTANCE_CONCRETE_BUILTINS``. Any other shape → LOUD REFUSE.
+
+    EXPLICIT LOUD REFUSES (raise ValueError with descriptive message):
+      - tuple-of-types second arg: ``isinstance(x, (int, str))``
+      - attribute second arg:      ``isinstance(x, typing.Sequence)``
+      - non-builtin Name:          ``isinstance(x, MyClass)``
+      - wrong arity (not exactly 2 positional args):
+      - keyword args:
+
+    The type constant is encoded as a NULLARY CTOR ``pytype_<T>`` (ASCII
+    alnum+underscore only) so the SMT encoder declares it as an
+    uninterpreted Int constant, distinct per type, with no semantic
+    content beyond identity.
+
+    Disjointness axioms are emitted by the Rust SMT encoder (isinstance_encoding.rs)
+    for pairwise-disjoint pairs present in the same formula. The encoder
+    MUST NOT assert int/bool disjoint (bool⊂int is Python-true).
+    """
+    # Arity check.
+    if node.keywords:
+        raise ValueError(
+            "isinstance: keyword arguments are not supported; expected exactly "
+            "2 positional args (subject, type)"
+        )
+    if len(node.args) != 2:
+        raise ValueError(
+            f"isinstance: expected exactly 2 positional args, got {len(node.args)}"
+        )
+
+    subject_node = node.args[0]
+    type_node = node.args[1]
+
+    # Type arg: MUST be a bare Name in the recognized builtin set.
+    if isinstance(type_node, ast.Tuple):
+        raise ValueError(
+            "isinstance: tuple-of-types second arg ``isinstance(x, (A, B))`` is "
+            "not soundly liftable as a single type constant; LOUD REFUSE"
+        )
+    if isinstance(type_node, ast.Attribute):
+        raise ValueError(
+            "isinstance: attribute type expression (e.g. ``typing.Sequence``, "
+            "``collections.abc.Mapping``) has unknown subtype hierarchy; "
+            "type-lattice required for soundness; LOUD REFUSE"
+        )
+    if not isinstance(type_node, ast.Name):
+        raise ValueError(
+            f"isinstance: unsupported type-arg shape {type(type_node).__name__!r}; "
+            "only a bare builtin Name is liftable"
+        )
+    type_name = type_node.id
+    if type_name not in _ISINSTANCE_CONCRETE_BUILTINS:
+        raise ValueError(
+            f"isinstance: ``{type_name}`` is not a recognized concrete builtin type; "
+            "subtype relationships unknown; type-lattice required for soundness; "
+            "LOUD REFUSE (deferred to type-lattice lifter)"
+        )
+
+    # Subject term.
+    try:
+        subject_term = translate_term_fn(subject_node)
+    except ValueError as e:
+        raise ValueError(
+            f"isinstance: subject expression not liftable: {e}"
+        )
+
+    # Type constant: nullary ctor ``pytype_<name>``.
+    type_const = ctor(f"pytype_{type_name}", [])
+    return atomic("isinstance", [subject_term, type_const])
+
+
+def _translate_truthiness_call_formula(
+    node: ast.Call,
+    translate_term_fn,  # callable: ast.expr -> Term
+) -> Formula:
+    """Lift a bare call expression used as a boolean assertion to an
+    UNINTERPRETED predicate atom.
+
+    Handles two shapes:
+      - Method call: ``recv.method(args...)``  -> ``atomic("call_method_a<n>", [recv_term, arg_terms...])``
+      - Function call: ``func(args...)``        -> ``atomic("call_func_a<n>", [arg_terms...])``
+
+    Special case: ``isinstance(x, T)`` is lifted to
+    ``atomic("isinstance", [x_term, ctor("pytype_T", [])])`` for recognized
+    concrete builtin types T. Non-builtin / abstract / tuple-of-types T raises
+    ValueError (LOUD REFUSE). See ``_lift_isinstance_call`` for the full
+    soundness contract and the disjointness model.
+
+    Any argument that cannot be translated by ``translate_term_fn`` raises
+    ValueError (LOUD REFUSE at call site, never silent).
+    """
+    if isinstance(node.func, ast.Name):
+        callee = node.func.id
+        # isinstance: lift soundly for known concrete builtins; loud-refuse rest.
+        if callee == "isinstance":
+            return _lift_isinstance_call(node, translate_term_fn)
+        # Regular function call.
+        if node.keywords:
+            raise ValueError(
+                f"call `{callee}` with keyword args is not soundly liftable "
+                "(keyword args cannot be order-stably translated without knowing "
+                "the function signature)"
+            )
+        arg_terms = []
+        for i, arg in enumerate(node.args):
+            try:
+                arg_terms.append(translate_term_fn(arg))
+            except ValueError as e:
+                raise ValueError(
+                    f"call `{callee}` arg[{i}] not liftable: {e}"
+                )
+        head = _truthiness_call_head(callee, len(arg_terms))
+        return atomic(head, arg_terms)
+
+    if isinstance(node.func, ast.Attribute):
+        method = node.func.attr
+        recv_node = node.func.value
+        if node.keywords:
+            raise ValueError(
+                f"method call `{method}` with keyword args is not soundly liftable"
+            )
+        try:
+            recv_term = translate_term_fn(recv_node)
+        except ValueError as e:
+            raise ValueError(
+                f"method call `{method}` receiver not liftable: {e}"
+            )
+        arg_terms = [recv_term]
+        for i, arg in enumerate(node.args):
+            try:
+                arg_terms.append(translate_term_fn(arg))
+            except ValueError as e:
+                raise ValueError(
+                    f"method call `{method}` arg[{i}] not liftable: {e}"
+                )
+        head = _truthiness_call_head(method, len(arg_terms))
+        return atomic(head, arg_terms)
+
+    raise ValueError(
+        "call with non-Name/non-Attribute func is not liftable as a truthiness predicate"
+    )
+
+
+def _translate_chained_compare(node: ast.Compare, translate_term_fn) -> Formula:
+    """Translate an n-way chained comparison (``a == b == c``, ``a < b <= c``, etc.)
+    to a CONJUNCTION of pairwise comparisons.
+
+    Python semantics: ``a op1 b op2 c`` means ``(a op1 b) and (b op2 c)`` with
+    each intermediate operand evaluated once.  We model this exactly by
+    building pairwise (left_i, op_i, right_i) pairs and conjoining the results.
+
+    Generalises to n-way (any number of operators).  Mixed ops (``<``, ``<=``,
+    ``==``) are handled by the existing ``_comparison_from_ast_op`` dispatcher.
+
+    Sound because:
+      - The conjunction is SATISFIABLE iff all pairwise comparisons are
+        simultaneously satisfiable (correct model of Python chain semantics).
+      - A contradictory chain (e.g. ``x == 1 == 2``) produces
+        ``and_([eq(x,1), eq(1,2)])``; ``eq(1,2)`` is UNSAT in any Int model
+        → the conjunction is UNSAT → REFUSED.
+    """
+    operands: list = [node.left] + list(node.comparators)
+    pairs: list = []
+    for i, op in enumerate(node.ops):
+        l = translate_term_fn(operands[i])
+        r = translate_term_fn(operands[i + 1])
+        pairs.append(_comparison_from_ast_op(op, l, r))
+    return and_(pairs) if len(pairs) > 1 else pairs[0]
+
+
 def _translate_bool_expr(node: ast.expr) -> Formula:
-    """``assert <expr>``: only a single-comparison expression is liftable."""
+    """``assert <expr>``: only a single-comparison, chained-comparison, or
+    truthiness-call expression is liftable.
+
+    Handles:
+      - ``assert <comparison>``         -> comparison formula
+      - ``assert a op1 b op2 c ...``   -> conjunction of pairwise comparisons
+      - ``assert <call>``              -> uninterpreted predicate atom (TRUTHINESS)
+      - ``assert not <call>``          -> not_(predicate atom)
+      - ``assert not <comparison>``    -> not_(comparison formula)
+    """
     if isinstance(node, ast.Compare):
-        if len(node.ops) != 1 or len(node.comparators) != 1:
-            raise ValueError("only single comparisons are liftable (no chained `a < b < c`)")
-        l = _translate_term(node.left)
-        r = _translate_term(node.comparators[0])
-        return _comparison_from_ast_op(node.ops[0], l, r)
+        if len(node.ops) == 1:
+            # pytest.approx interception: must happen BEFORE generic term
+            # translation so approx calls are never silently lifted as ctor terms.
+            approx_formula = _lift_approx_comparison(
+                node.ops[0], node.left, node.comparators[0], _translate_term
+            )
+            if approx_formula is not None:
+                return approx_formula
+            l = _translate_term(node.left)
+            r = _translate_term(node.comparators[0])
+            return _comparison_from_ast_op(node.ops[0], l, r)
+        # Chained comparison: n >= 2 operators.
+        return _translate_chained_compare(node, _translate_term)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        inner = _translate_bool_expr(node.operand)
+        return not_(inner)
+    if isinstance(node, ast.Call):
+        return _translate_truthiness_call_formula(node, _translate_term)
     if isinstance(node, ast.NamedExpr):
         # Walrus inside an assert: skip.
         raise ValueError("walrus operator in assert is not liftable")
-    raise ValueError("assert body must be a comparison expression")
+    raise ValueError("assert body must be a comparison expression or a call/not-call")
 
 
 def _lift_assertion_stmt(stmt: ast.stmt) -> Formula:
@@ -684,8 +1596,12 @@ def _classify_for_loop(
         out.bounded_loop_lifted += 1
         return
 
-    if isinstance(iter_node, ast.List):
-        # for v in [1, 2, 3]: assert phi(v)  ->  and_( phi[v_i] )
+    if isinstance(iter_node, (ast.List, ast.Tuple)):
+        # for v in [1, 2, 3]: assert phi(v)   ->  and_( phi[v_i] )
+        # for v in (1, 2, 3): assert phi(v)   ->  same (Tuple literal is identical semantics)
+        # SOUNDNESS: each element is a CONCRETE literal value; substituting it into phi
+        # produces a closed formula with no free occurrence of v.  The conjunction of
+        # all per-element formulas is EXACTLY the semantics of the bounded loop.
         elements: List[Term] = []
         for el in iter_node.elts:
             try:
@@ -694,14 +1610,14 @@ def _classify_for_loop(
                 out.bounded_loop_skipped += 1
                 out.warnings.append(
                     LiftWarning(source_path, test_name,
-                                f"layer2 bounded-loop: list element not liftable: {e}")
+                                f"layer2 bounded-loop: list/tuple element not liftable: {e}")
                 )
                 return
         if not elements:
             out.bounded_loop_skipped += 1
             out.warnings.append(
                 LiftWarning(source_path, test_name,
-                            "layer2 bounded-loop: empty list iterator yields a vacuous conjunction; skipping")
+                            "layer2 bounded-loop: empty list/tuple iterator yields a vacuous conjunction; skipping")
             )
             return
         try:
@@ -724,8 +1640,686 @@ def _classify_for_loop(
     out.bounded_loop_skipped += 1
     out.warnings.append(
         LiftWarning(source_path, test_name,
-                    "layer2 bounded-loop: iterator is not a literal-bounded numeric range or literal list")
+                    "layer2 bounded-loop: iterator is not a literal-bounded numeric range, list, or tuple")
     )
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 1c: embedded for-loop (assignments + terminal For[literal-iter])
+# ---------------------------------------------------------------------------
+#
+# Handles test bodies of the shape:
+#
+#     def test_x():
+#         a = setup(...)          # zero or more simple assignments
+#         b = other(a)
+#         for v in (x1, x2, ...):   # literal list OR tuple; simple-Name target
+#             assert phi(v, a, b)   # one or more assertions (no bindings in body)
+#
+# The For MUST be the last statement in the test body.  All preceding statements
+# MUST be simple assignments (simple-Name target) or Pass; the same allowlist as
+# Pattern 6 (mixed-body).
+#
+# SOUNDNESS: the loop is enumerated element-by-element (identical to Pattern 1b).
+# Each element is a CONCRETE literal; substituting it into the body formula yields
+# a closed formula.  Preceding bindings establish SSA vars that are used in the
+# body assertions — they are opaque free vars (same as mixed-body), so no false
+# values are ascribed to them.  The outer SSA scope is built ONCE and reused for
+# every iteration (the assignments are NOT re-executed per iteration — they are
+# shared outer bindings), which is correct: Python evaluates the outer assignments
+# once before the loop runs.
+#
+# Multi-assert bodies: each assert in the For body is lifted independently under
+# the current SSA scope + loop-var substitution.  Unliftable asserts are
+# warn-and-skipped (partial lift, same policy as mixed-body).  If NO assert
+# lifts for ANY iteration, the pattern loud-refuses.
+#
+# GATE: fires ONLY when:
+#   - body[-1] is a For
+#   - For target is a simple Name
+#   - For iterator is ast.List or ast.Tuple with at least one liftable element
+#   - For body contains at least one ast.Assert
+#   - For body contains NO bindings (Assign/AnnAssign) — only Asserts + Pass
+#     (bindings INSIDE the loop body would need per-iteration SSA versioning,
+#     which is a separate pattern; keep loud-refused for now)
+#   - All preceding stmts are simple assignments or Pass (no For/With/If/While)
+#
+# If the gate fires but a soundness check fails, the pattern CLAIMS the test and
+# emits a LOUD REFUSAL (never silent).
+
+
+def _classify_embedded_for(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 1c: mixed body with a terminal For[literal-iter, assert-only-body].
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body does not match the embedded-for shape (caller tries next).
+    """
+    # Gate: last statement must be a For.
+    if not body or not isinstance(body[-1], ast.For):
+        return False
+
+    fl = body[-1]
+
+    # Gate: For target must be a simple Name.
+    if not isinstance(fl.target, ast.Name):
+        return False
+    var_name = fl.target.id
+
+    # Gate: For iterator must be a literal List or Tuple.
+    iter_node = fl.iter
+    if not isinstance(iter_node, (ast.List, ast.Tuple)):
+        return False
+
+    # Gate: For body must contain at least one Assert.
+    if not any(isinstance(s, ast.Assert) for s in fl.body):
+        return False
+
+    # Gate: For body must NOT contain bindings (Assign/AnnAssign) — those would
+    # need per-iteration SSA versioning which is out of scope for v0.
+    # SOUNDNESS: if bindings exist in the loop body, they are re-executed each
+    # iteration and may be loop-var-dependent (e.g. ``val = f(v)``).  We cannot
+    # soundly substitute the outer SSA scope into those bindings without
+    # per-iteration versioning.  Keep loud-refused for this shape.
+    for s in fl.body:
+        if isinstance(s, (ast.Assign, ast.AnnAssign)):
+            return False
+
+    # Gate: For body must not have unsupported stmt kinds (For, With, If, etc.).
+    for s in fl.body:
+        if not isinstance(s, (ast.Assert, ast.Pass)):
+            return False
+
+    # Gate: For/else clause is not liftable.
+    if fl.orelse:
+        return False
+
+    # Gate: preceding statements (body[:-1]) must all be simple assignments or Pass.
+    # Any unsupported kind (For, With, If, While, etc.) → not our pattern; let
+    # catch-all handle it.
+    for s in body[:-1]:
+        if isinstance(s, ast.Pass):
+            continue
+        if isinstance(s, ast.Assign):
+            if len(s.targets) != 1 or not isinstance(s.targets[0], ast.Name):
+                return False
+            continue
+        if isinstance(s, ast.AnnAssign):
+            if not isinstance(s.target, ast.Name):
+                return False
+            continue
+        # Docstring (Expr with a string constant at index 0) — skip.
+        if isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant) and isinstance(s.value.value, str):
+            continue
+        return False
+
+    # --- Pattern claimed: all gates passed ---
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    # Translate iterator elements.
+    elements: List[Term] = []
+    for el in iter_node.elts:
+        try:
+            elements.append(_translate_term(el))
+        except ValueError as e:
+            out.embedded_for_skipped += 1
+            out.warnings.append(
+                LiftWarning(
+                    source_path, test_name,
+                    f"layer2 embedded-for: LOUD REFUSAL — iterator element not liftable: {e}",
+                )
+            )
+            return True
+    if not elements:
+        out.embedded_for_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 embedded-for: LOUD REFUSAL — empty iterator yields a vacuous conjunction",
+            )
+        )
+        return True
+
+    # Build outer SSA scope from preceding bindings (opaque free vars — same as
+    # mixed-body: no value constraints on non-translatable RHS bindings).
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+    for s in body[:-1]:
+        if isinstance(s, (ast.Pass, ast.Expr)):
+            continue
+        if isinstance(s, ast.Assign):
+            target_name = s.targets[0].id  # simple name guaranteed by gate
+            value_node = s.value
+        else:  # AnnAssign
+            target_name = s.target.id
+            value_node = s.value
+            if value_node is None:
+                # Bare annotation (no value) — just bump the SSA version.
+                version = ssa_versions.get(target_name, 0)
+                ssa_versions[target_name] = version + 1
+                ssa_current[target_name] = make_var(f"{target_name}${version}")
+                continue
+
+        version = ssa_versions.get(target_name, 0)
+        ssa_versions[target_name] = version + 1
+        ssa_name = f"{target_name}${version}"
+        ssa_current[target_name] = make_var(ssa_name)
+
+    # Per element: substitute loop var, translate assertions under SSA scope.
+    # ALL per-element, per-assert atoms are collected into ONE flat list and
+    # conjoined into a SINGLE ContractDecl named ``<test>::loop::<var>``.
+    #
+    # SOUNDNESS: the for-loop iterations share the SAME Python environment —
+    # only the loop variable changes; outer bindings (encoded as SSA vars) are
+    # evaluated ONCE before the loop and are shared across all iterations.
+    # Therefore a free var ``enc$0`` that appears in assertions from two
+    # different iterations refers to the SAME object; constraining it to two
+    # different values in separate contracts would make each contract
+    # independently SAT (enc$0==1 alone is consistent, enc$0==2 alone is
+    # consistent) — a falsePass.  Conjoining all atoms into one contract
+    # ``enc$0==1 ∧ enc$0==2`` correctly reflects the full constraint set and
+    # fires UNSAT → REFUSED when a genuine contradiction exists.
+    #
+    # This is the same model as Pattern 1b (list literal) and Pattern 1 (range),
+    # which already conjoin all per-element substituted atoms into one formula.
+    #
+    # CONTRAST with Pattern 4 (parametrize): pytest.mark.parametrize rows ARE
+    # independent test INSTANCES (pytest invokes the function once per row with
+    # fresh local bindings); per-row contracts are correct there.  A for-loop
+    # body is NOT independently re-invoked; it shares the outer scope.
+    all_atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for elem_idx, elem_term in enumerate(elements):
+        # Build scope for this iteration: outer SSA + loop var bound to element.
+        iter_scope_current = dict(ssa_current)
+        iter_scope_current[var_name] = elem_term
+        scope = _ValueScope(current=iter_scope_current)
+
+        for s in fl.body:
+            if not isinstance(s, ast.Assert):
+                continue
+            try:
+                atom = _lift_assertion_stmt_scoped(s, scope)
+                all_atoms.append(atom)
+            except ValueError as e:
+                skip_reasons.append(
+                    f"elem {elem_idx} `{_unparse(s)[:60]}`: {e}"
+                )
+
+    if not all_atoms:
+        # No atom lifted from any element — loud refuse.
+        out.embedded_for_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 embedded-for: LOUD REFUSAL — 0 atoms lifted across all elements "
+                "(all assert bodies failed to lift — likely f-strings or unsupported "
+                f"expressions in assert conditions; skipped: {'; '.join(skip_reasons[:3])})",
+            )
+        )
+        return True
+
+    inv = all_atoms[0] if len(all_atoms) == 1 else and_(all_atoms)
+    memento_name = f"{test_name}::loop::{var_name}"
+    out.decls.append(ContractDecl(name=memento_name, inv=inv))
+    out.lifted += 1
+    out.embedded_for_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                f"layer2 embedded-for: {len(skip_reasons)} assert(s) skipped "
+                f"(unliftable): {'; '.join(skip_reasons[:3])}",
+            )
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 8: if-guarded assertions — ``if cond: assert P``
+# ---------------------------------------------------------------------------
+#
+# Handles test bodies where asserts are nested under ``if`` guards.  Each
+# ``if cond: assert P`` is lifted as ``implies(cond_formula, P_formula)``
+# where ``cond_formula`` is translated via ``_translate_bool_expr_scoped``
+# (supports comparison / membership / truthiness / BoolOp / not).
+#
+# SOUNDNESS RULES:
+#   - The guard is lifted via ``_translate_bool_expr_scoped``.  We do NOT
+#     use ``_lift_branch_guard`` because its ``python_branch_condition``
+#     opaque fallback turns any unliftable condition into an always-SAT
+#     atom, making the implication vacuously hold — a falsePass.  If the
+#     condition is not soundly liftable, the branch LOUDLY REFUSES.
+#   - ``if cond: assert P`` → ``implies(cond, P)`` — the assert only claims
+#     P holds WHEN cond.  Lifting P unconditionally would be a falsePass
+#     (P may only hold under cond).
+#   - ``else`` branch: if ``orelse`` contains an ``assert Q``, it is guarded
+#     by ``not_(cond)`` → ``implies(not_(cond), Q)``.  This correctly models
+#     the else-branch condition.
+#   - Tautology: ``if True: assert P`` — ``True``/``False`` are ast.Constant,
+#     rejected by ``_translate_bool_expr_scoped`` (not a Compare/Call/BoolOp).
+#     We map bare ``ast.Constant(True)`` to ``bool_const(True)`` and
+#     ``ast.Constant(False)`` to ``bool_const(False)`` as special cases so
+#     tautological guards reduce correctly in z3 (implies(true, P) = P).
+#   - A ``tautological`` guard (cond = bool_const(True)) makes the implication
+#     equivalent to P, so ``if 1==1: assert x==1`` + ``assert x==2`` produces
+#     ``and_(implies(eq(1,1),eq(x,1)), eq(x,2))`` which z3 sees as
+#     ``eq(x,1) ∧ eq(x,2)`` → UNSAT → REFUSED.  This is the correct model.
+#   - FALSE-REFUSAL GUARD: ``implies(cond,x==1) ∧ implies(cond,x==2)`` is SAT
+#     (set cond=False) so two if-guarded contradictory asserts on the same var
+#     are CONSISTENTLY PROVEN, not refused — the guard absorbs the contradiction.
+#
+# GATE:
+#   - Body contains at least one ``ast.If`` whose nested assert count > 0.
+#   - All non-If, non-Assert, non-Pass, non-binding stmts → LOUD REFUSE.
+#   - Bindings (Assign/AnnAssign) at the top level are allowed (SSA scoping
+#     same as mixed-body); bindings INSIDE the if-body → LOUD REFUSE for that
+#     branch (only asserts + pass allowed in branch bodies).
+#
+# INTEGRATION with sibling asserts:
+#   Top-level asserts alongside ``if`` guards are lifted as plain atoms and
+#   conjoined with the implication atoms into ONE contract (same as mixed-body's
+#   partial-lift model for unliftable assertions).
+
+
+_TAUTOLOGY_BOOLCONST: Dict[object, object] = {True: True, False: False}
+
+
+def _lift_if_cond(node: ast.expr, scope: "_ValueScope") -> Formula:
+    """Translate an ``if`` condition to a Formula for use as a guard.
+
+    Supports everything ``_translate_bool_expr_scoped`` supports, PLUS
+    bare ``ast.Constant(True)`` and ``ast.Constant(False)`` literals which
+    the generic translator rejects (they are not Compare/Call/BoolOp nodes).
+
+    Raises ValueError for any unliftable condition so the caller can LOUD REFUSE
+    that branch (and never emit a vacuous always-SAT guard).
+    """
+    if isinstance(node, ast.Constant):
+        if node.value is True:
+            return eq(bool_const(True), bool_const(True))   # tautology: z3 reduces to true
+        if node.value is False:
+            return eq(bool_const(False), bool_const(True))  # contradiction: z3 reduces to false
+    return _translate_bool_expr_scoped(node, scope)
+
+
+def _if_branch_only_asserts_and_pass(stmts: Sequence[ast.stmt]) -> bool:
+    """Return True iff every stmt in the branch is an Assert or Pass."""
+    return all(isinstance(s, (ast.Assert, ast.Pass)) for s in stmts)
+
+
+def _classify_if_guarded(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 8: test body containing ``if cond: assert P`` guards.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body has no If statement at the top level (caller tries next).
+    """
+    # Gate: at least one top-level If with a nested assert.
+    has_if_with_assert = any(
+        isinstance(s, ast.If)
+        and any(isinstance(n, ast.Assert) for n in ast.walk(s))
+        for s in body
+    )
+    if not has_if_with_assert:
+        return False
+
+    # Gate: every top-level stmt must be one of the allowed kinds.
+    # Allowed: Assert, Pass, Assign (simple name), AnnAssign (simple name),
+    #          Expr (docstring or bare call), If.
+    # NOT allowed: For, While, With, Try, FunctionDef, etc.
+    for s in body:
+        if isinstance(s, (ast.Assert, ast.Pass, ast.If)):
+            continue
+        if isinstance(s, ast.Assign):
+            if all(isinstance(t, ast.Name) for t in s.targets):
+                continue
+        if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
+            continue
+        if isinstance(s, ast.Expr):
+            continue
+        # Unsupported stmt kind — not our pattern.
+        return False
+
+    # --- Pattern claimed ---
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    # Build SSA scope from top-level bindings.
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+    all_atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for s in body:
+        if isinstance(s, ast.Pass):
+            continue
+        if isinstance(s, ast.Expr):
+            continue
+
+        if isinstance(s, (ast.Assign, ast.AnnAssign)):
+            if isinstance(s, ast.Assign):
+                target_name = s.targets[0].id
+                value_node = s.value
+            else:
+                target_name = s.target.id
+                value_node = s.value
+            version = ssa_versions.get(target_name, 0)
+            ssa_versions[target_name] = version + 1
+            ssa_current[target_name] = make_var(f"{target_name}${version}")
+            continue
+
+        if isinstance(s, ast.Assert):
+            # Top-level assert — lift as plain atom under current scope.
+            scope = _ValueScope(current=dict(ssa_current))
+            try:
+                atom = _lift_assertion_stmt_scoped(s, scope)
+                all_atoms.append(atom)
+            except ValueError as e:
+                skip_reasons.append(f"top-level assert `{_unparse(s)[:60]}`: {e}")
+            continue
+
+        if isinstance(s, ast.If):
+            scope = _ValueScope(current=dict(ssa_current))
+
+            # Try to lift the condition.
+            try:
+                cond_formula = _lift_if_cond(s.test, scope)
+            except ValueError as e:
+                skip_reasons.append(
+                    f"if-cond `{_unparse(s.test)[:60]}` not liftable: {e}"
+                )
+                continue
+
+            # Validate then-branch: only Asserts + Pass allowed.
+            if not _if_branch_only_asserts_and_pass(s.body):
+                skip_reasons.append(
+                    f"if-body has non-assert stmts (bindings/for/with in branch not supported)"
+                )
+                continue
+
+            # Validate else-branch: only Asserts + Pass allowed (or empty).
+            else_stmts = s.orelse
+            if else_stmts and not _if_branch_only_asserts_and_pass(else_stmts):
+                skip_reasons.append(
+                    f"else-body has non-assert stmts (bindings/for/with in branch not supported)"
+                )
+                continue
+
+            # Lift then-branch asserts as implies(cond, P).
+            for branch_stmt in s.body:
+                if not isinstance(branch_stmt, ast.Assert):
+                    continue
+                try:
+                    p = _lift_assertion_stmt_scoped(branch_stmt, scope)
+                    all_atoms.append(implies(cond_formula, p))
+                except ValueError as e:
+                    skip_reasons.append(
+                        f"if-body assert `{_unparse(branch_stmt)[:60]}` not liftable: {e}"
+                    )
+
+            # Lift else-branch asserts as implies(not_(cond), Q).
+            for else_stmt in else_stmts:
+                if not isinstance(else_stmt, ast.Assert):
+                    continue
+                try:
+                    q = _lift_assertion_stmt_scoped(else_stmt, scope)
+                    all_atoms.append(implies(not_(cond_formula), q))
+                except ValueError as e:
+                    skip_reasons.append(
+                        f"else-body assert `{_unparse(else_stmt)[:60]}` not liftable: {e}"
+                    )
+            continue
+
+    if not all_atoms:
+        out.if_guarded_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 if-guarded: LOUD REFUSAL — 0 atoms lifted from if-guarded body "
+                f"(skipped: {'; '.join(skip_reasons[:3])})",
+            )
+        )
+        return True
+
+    inv = all_atoms[0] if len(all_atoms) == 1 else and_(all_atoms)
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.if_guarded_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                f"layer2 if-guarded: {len(skip_reasons)} atom(s) skipped: "
+                f"{'; '.join(skip_reasons[:3])}",
+            )
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 9: with-body assertions — ``with <non-suppressing-CM>: assert P``
+# ---------------------------------------------------------------------------
+#
+# Handles test bodies where asserts are inside a ``with`` block backed by a
+# non-suppressing context manager (e.g., ``open(...)``).
+#
+# SOUNDNESS RULES:
+#   - ``pytest.raises`` is Pattern 7 — already handled; Pattern 9 must NOT
+#     fire for raises blocks (the gate excludes them).
+#   - ``contextlib.suppress`` and ``contextlib.ExitStack`` can swallow
+#     exceptions, making the body asserts non-load-bearing; LOUD REFUSE.
+#   - Unknown / user-defined context managers: LOUD REFUSE.  We cannot
+#     know whether they suppress assertions.
+#   - ALLOWLIST of non-suppressing CMs: ``open``, ``tempfile.NamedTemp-
+#     oraryFile``, ``tempfile.TemporaryDirectory``, ``io.StringIO``,
+#     ``io.BytesIO``.  The ``as`` target (if present) becomes an opaque
+#     free var (no value constraint — we treat it as an unknown but known-
+#     non-None reference).
+#   - Body asserts are lifted as plain facts (NOT guarded by the CM) because
+#     the CM does not suppress them — the assert holds unconditionally if
+#     control reaches it.
+#   - Body may contain Pass statements alongside asserts.
+#   - Multi-statement bodies with bindings inside the with-body:
+#     LOUD REFUSE (would need per-with-body SSA versioning).
+#
+# GATE:
+#   - Body contains at least one ``ast.With`` that is NOT a pytest.raises block.
+#   - All With items must be single-item with the CM in the allowlist.
+#   - Mixed with-body (binding + assert) → LOUD REFUSE for that block.
+
+_WITH_CM_ALLOWLIST: Set[str] = {
+    "open",
+    "NamedTemporaryFile",
+    "TemporaryDirectory",
+    "StringIO",
+    "BytesIO",
+}
+
+
+def _with_cm_name(ce: ast.expr) -> Optional[str]:
+    """Extract the CM call name from a withitem context_expr.
+
+    Accepts:
+      - ``open(...)`` → ``"open"``
+      - ``tempfile.NamedTemporaryFile(...)`` → ``"NamedTemporaryFile"``
+      - ``io.StringIO(...)`` → ``"StringIO"``
+    Returns None for any other shape.
+    """
+    if isinstance(ce, ast.Call):
+        func = ce.func
+        if isinstance(func, ast.Name):
+            return func.id
+        if isinstance(func, ast.Attribute):
+            return func.attr
+    return None
+
+
+def _classify_with_body(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 9: test bodies containing non-suppressing with-blocks with asserts.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body has no eligible With statement (caller tries next).
+    """
+    # Gate: at least one top-level With that is NOT a pytest.raises block and
+    # has a nested assert.
+    def _is_raises_with(s: ast.With) -> bool:
+        return (
+            len(s.items) == 1
+            and isinstance(s.items[0].context_expr, ast.Call)
+            and _is_pytest_raises_func(s.items[0].context_expr.func)
+        )
+
+    eligible_withs = [
+        s for s in body
+        if isinstance(s, ast.With)
+        and not _is_raises_with(s)
+        and any(isinstance(n, ast.Assert) for n in ast.walk(s))
+    ]
+    if not eligible_withs:
+        return False
+
+    # Gate: all top-level stmts must be allowed kinds.
+    for s in body:
+        if isinstance(s, (ast.Assert, ast.Pass, ast.Expr, ast.With)):
+            continue
+        if isinstance(s, ast.Assign) and all(isinstance(t, ast.Name) for t in s.targets):
+            continue
+        if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
+            continue
+        return False
+
+    # --- Pattern claimed ---
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+    all_atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for s in body:
+        if isinstance(s, ast.Pass):
+            continue
+        if isinstance(s, ast.Expr):
+            continue
+
+        if isinstance(s, (ast.Assign, ast.AnnAssign)):
+            if isinstance(s, ast.Assign):
+                target_name = s.targets[0].id
+            else:
+                target_name = s.target.id
+            version = ssa_versions.get(target_name, 0)
+            ssa_versions[target_name] = version + 1
+            ssa_current[target_name] = make_var(f"{target_name}${version}")
+            continue
+
+        if isinstance(s, ast.Assert):
+            scope = _ValueScope(current=dict(ssa_current))
+            try:
+                atom = _lift_assertion_stmt_scoped(s, scope)
+                all_atoms.append(atom)
+            except ValueError as e:
+                skip_reasons.append(f"top-level assert `{_unparse(s)[:60]}`: {e}")
+            continue
+
+        if isinstance(s, ast.With):
+            # Check: single withitem.
+            if len(s.items) != 1:
+                skip_reasons.append(
+                    f"with multi-item clause is not soundly liftable"
+                )
+                continue
+
+            item = s.items[0]
+            ce = item.context_expr
+            cm_name = _with_cm_name(ce)
+
+            if cm_name is None or cm_name not in _WITH_CM_ALLOWLIST:
+                # Unknown or suppressing CM — LOUD REFUSE the entire pattern.
+                out.with_body_skipped += 1
+                out.warnings.append(
+                    LiftWarning(
+                        source_path, test_name,
+                        f"layer2 with-body: LOUD REFUSAL — context manager "
+                        f"`{_unparse(ce)[:60]}` is not in the non-suppressing allowlist "
+                        "(only open/NamedTemporaryFile/TemporaryDirectory/StringIO/BytesIO "
+                        "are soundly liftable; other CMs may suppress assertions)",
+                    )
+                )
+                return True
+
+            # with-body must contain only Asserts + Pass (no bindings inside).
+            if not _if_branch_only_asserts_and_pass(s.body):
+                skip_reasons.append(
+                    f"with-body has non-assert stmts (bindings inside with are not supported)"
+                )
+                continue
+
+            # Bind the ``as`` target as an opaque free var if present.
+            scope_current = dict(ssa_current)
+            if item.optional_vars is not None and isinstance(item.optional_vars, ast.Name):
+                as_name = item.optional_vars.id
+                version = ssa_versions.get(as_name, 0)
+                ssa_versions[as_name] = version + 1
+                scope_current[as_name] = make_var(f"{as_name}${version}")
+
+            scope = _ValueScope(current=scope_current)
+
+            for branch_stmt in s.body:
+                if not isinstance(branch_stmt, ast.Assert):
+                    continue
+                try:
+                    atom = _lift_assertion_stmt_scoped(branch_stmt, scope)
+                    all_atoms.append(atom)
+                except ValueError as e:
+                    skip_reasons.append(
+                        f"with-body assert `{_unparse(branch_stmt)[:60]}`: {e}"
+                    )
+            continue
+
+    if not all_atoms:
+        out.with_body_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                "layer2 with-body: LOUD REFUSAL — 0 atoms lifted from with-body "
+                f"(skipped: {'; '.join(skip_reasons[:3])})",
+            )
+        )
+        return True
+
+    inv = all_atoms[0] if len(all_atoms) == 1 else and_(all_atoms)
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.with_body_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path, test_name,
+                f"layer2 with-body: {len(skip_reasons)} atom(s) skipped: "
+                f"{'; '.join(skip_reasons[:3])}",
+            )
+        )
+    return True
 
 
 def _is_range_call(node: ast.expr) -> bool:
@@ -884,9 +2478,10 @@ def _classify_characterization(
     if len(atoms) < 2:
         out.claimed_tests.discard(test_name)
         out.characterization_skipped += 1
+        skip_detail = f"; skipped: {'; '.join(skipped)}" if skipped else ""
         out.warnings.append(
             LiftWarning(source_path, test_name,
-                        f"layer2 characterization: only {len(atoms)} of {len(asserts)} asserts were liftable; releasing to layer 0")
+                        f"layer2 characterization: only {len(atoms)} of {len(asserts)} asserts were liftable; releasing to layer 0{skip_detail}")
         )
         return
 
@@ -1039,43 +2634,41 @@ def _classify_parametrize(
     out.claimed_tests.add(test_name)
     out.seen += 1
 
-    # Body must reduce to a single liftable assertion. Multi-stmt bodies skip.
-    if len(body) != 1 or not _is_assertion_stmt(body[0]):
+    # Body must be ONE OR MORE liftable assertion statements (all asserts; bare
+    # ``assert`` or unittest ``self.assertX``).  A non-assert statement (setup /
+    # binding / loop) makes this a MIXED body — out of scope for the parametrize
+    # pattern (that is Pattern-6 work) — so we loudly refuse.
+    if not body or not all(_is_assertion_stmt(s) for s in body):
         out.parametrize_skipped += 1
         out.warnings.append(
             LiftWarning(source_path, test_name,
-                        "layer2 parametrize: body must be a single liftable assertion in v0")
+                        "layer2 parametrize: body must be one or more liftable "
+                        "assertions in v0 (a non-assert statement is a mixed "
+                        "body, not lifted)")
         )
         return
 
-    try:
-        raw = _lift_assertion_stmt(body[0])
-    except ValueError as e:
+    # Lift each assertion.  Unliftable asserts are recorded (partial lift): we
+    # still lift the liftable SUBSET — a WEAKER but sound claim, since we never
+    # assert more than we lifted — and emit a loud warning naming the skipped.
+    atoms: List[Formula] = []
+    skipped: List[str] = []
+    for i, stmt in enumerate(body):
+        try:
+            atoms.append(_lift_assertion_stmt(stmt))
+        except ValueError as e:
+            skipped.append(f"#{i}: {e}")
+
+    if not atoms:
         out.parametrize_skipped += 1
+        skip_detail = f"; skipped: {'; '.join(skipped)}" if skipped else ""
         out.warnings.append(
             LiftWarning(source_path, test_name,
-                        f"layer2 parametrize: body assertion not liftable: {e}")
+                        f"layer2 parametrize: no liftable assertion in body{skip_detail}")
         )
         return
 
-    # Substitute each row.
-    row_atoms: List[Formula] = []
-    for row in pmark.rows:
-        f = raw
-        for pname, arg_node in zip(pmark.param_names, row):
-            try:
-                arg_term = _translate_term(arg_node)
-            except ValueError as e:
-                out.parametrize_skipped += 1
-                out.warnings.append(
-                    LiftWarning(source_path, test_name,
-                                f"layer2 parametrize: row arg not liftable: {e}")
-                )
-                return
-            f = subst_var_in_formula(f, pname, arg_term)
-        row_atoms.append(f)
-
-    if not row_atoms:
+    if not pmark.rows:
         out.parametrize_skipped += 1
         out.warnings.append(
             LiftWarning(source_path, test_name,
@@ -1083,12 +2676,50 @@ def _classify_parametrize(
         )
         return
 
-    folded: Formula = and_(row_atoms) if len(row_atoms) > 1 else row_atoms[0]
+    # WITHIN-ROW conjunction is SOUND: every assert in the body runs in the SAME
+    # pytest instance for a given row, so they must all hold simultaneously ->
+    # conjoin them.  A single surviving atom stays RAW (byte-stable with the v0
+    # single-assert path); >=2 atoms are wrapped in ``and_``.
+    raw = atoms[0] if len(atoms) == 1 else and_(atoms)
+
+    # CROSS-ROW independence is preserved: each parametrize row is an INDEPENDENT
+    # test instance, so we substitute each row into the (conjoined) template
+    # independently and emit ONE ContractDecl per row named
+    # ``<test>::parametrize::<params>::row<i>``.  A free non-param variable k is
+    # NOT tied across rows (eq(k,1) and eq(k,2) live in separate decls), so the
+    # verifier never false-refuses a consistent test.  Decls are staged locally
+    # and committed only once every row substitutes cleanly (no partial emit).
     suffix = "_".join(pmark.param_names)
-    memento_name = f"{test_name}::parametrize::{suffix}"
-    out.decls.append(ContractDecl(name=memento_name, inv=folded))
+    row_decls: List[ContractDecl] = []
+    for row_idx, row in enumerate(pmark.rows):
+        f = raw
+        failed = False
+        for pname, arg_node in zip(pmark.param_names, row):
+            try:
+                arg_term = _translate_term(arg_node)
+            except ValueError as e:
+                out.parametrize_skipped += 1
+                out.warnings.append(
+                    LiftWarning(source_path, test_name,
+                                f"layer2 parametrize: row {row_idx} arg not liftable: {e}")
+                )
+                failed = True
+                break
+            f = subst_var_in_formula(f, pname, arg_term)
+        if failed:
+            return
+        memento_name = f"{test_name}::parametrize::{suffix}::row{row_idx}"
+        row_decls.append(ContractDecl(name=memento_name, inv=f))
+
+    out.decls.extend(row_decls)
     out.lifted += 1
     out.parametrize_lifted += 1
+    if skipped:
+        out.warnings.append(
+            LiftWarning(source_path, test_name,
+                        f"layer2 parametrize: {len(skipped)} assert(s) skipped "
+                        f"from per-row conjunction: {'; '.join(skipped)}")
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1108,10 +2739,18 @@ def _classify_value_scope(
     implications: List[ImplicationDecl] = []
     used_names: Set[str] = set()
     assertion_index = 0
+    # Accumulate assertion formulas per call-site base so we can emit ONE
+    # conjoined ::assertion contract per base (same shape as Pattern 3's
+    # pre-conjoined ContractDecl). This is what makes same-subject
+    # contradictions visible to the consistency pass without any CLI-side
+    # conjoin logic: and(=(y,None), ≠(y,None)) lands in one memento -> UNSAT.
+    # Order is preserved so the conjunction is deterministic.
+    assertion_atoms_by_base: Dict[str, List[Formula]] = {}
+    base_order: List[str] = []
 
     for stmt in body:
         if _is_assertion_stmt(stmt):
-            made = _emit_value_scope_assertion(
+            pairs = _collect_value_scope_assertion_facts(
                 stmt,
                 scopes,
                 test_name,
@@ -1120,12 +2759,32 @@ def _classify_value_scope(
                 decls,
                 implications,
                 used_names,
+                assertion_atoms_by_base,
+                base_order,
             )
             assertion_index += 1
-            if made:
+            if pairs:
                 continue
             if not decls:
                 return False
+            # FIX 2b — LOUD WARNING on silent value-scope assertion drop:
+            # ``pairs == 0`` but ``decls`` is non-empty means a prior assertion
+            # in this test produced callsite facts (so value_scope will claim
+            # the test and return True), but THIS assertion has no tracked
+            # call-origin in scope — e.g. ``assert MODULE_CONST == 5`` after
+            # ``result = parse_int(...)`` — and the bare ``continue`` would
+            # silently drop it.  Value_scope will claim the test so the Fix 2a
+            # catch-all never fires; the drop is only visible here.
+            # Emit a warning so nothing is silent (Δ=0).
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 value-scope: assertion produced no callsite facts; "
+                    f"not lifted (no tracked call-origin in scope): "
+                    f"`{_unparse(stmt)[:80]}`",
+                )
+            )
             continue
 
         next_scopes = _apply_value_scope_statement(stmt, scopes, versions)
@@ -1135,6 +2794,16 @@ def _classify_value_scope(
 
     if not implications:
         return False
+
+    # Emit ONE conjoined ::assertion contract per call-site base.  Multiple
+    # assertions about the same subject (e.g. both `assert y is None` and
+    # `assert y is not None`) are conjoined here into a single inv so the
+    # consistency pass sees the full fact set and can detect contradictions.
+    for base in base_order:
+        atoms = assertion_atoms_by_base[base]
+        conjoined_inv = atoms[0] if len(atoms) == 1 else and_(atoms)
+        assertion_name = f"{base}::assertion"
+        decls.append(ContractDecl(name=assertion_name, inv=conjoined_inv))
 
     out.claimed_tests.add(test_name)
     out.seen += 1
@@ -1235,6 +2904,38 @@ def _apply_value_scope_binding(
         next_scope.current[name] = ssa
         origin = _call_origin_from_expr(value)
         if origin is not None:
+            # BINDING-FORM EUF SUBSTITUTION: check whether the RHS call has
+            # ALL-CONCRETE literal args.  If so, compute the EUF ctor term and
+            # store it alongside the SSA var name on the origin so
+            # ``_assertion_callsite_context`` can substitute the EUF ctor for
+            # the SSA var in the assertion formula.
+            #
+            # CARDINAL SOUNDNESS — concrete-only rule:
+            #   Concrete args (``r = f(5)``): EUF ctor keyed by (callee, args);
+            #     ``assert r == 1`` becomes ``callresult_f_a1(5) == 1`` →
+            #     cross-function same-input contradictions REFUSED. CORRECT.
+            #   Symbolic args (``r = f(x)``): origin.euf_term stays None →
+            #     assertion stays as SSA var ``r$0`` → location-keyed, no
+            #     cross-function unification → stays PROVEN. (x is
+            #     function-local; unifying would be the false-refusal bug.)
+            #     DO NOT set euf_term for symbolic args.
+            #   ZERO-arg calls (``r = f()``): NO input to unify on, and a
+            #     zero-arg call is the MOST likely to be stateful (reads ambient
+            #     state — counter, RNG, clock).  Require >=1 concrete arg:
+            #     ``r = f()`` stays location-keyed/SSA-var (independent), exactly
+            #     like symbolic args.  This also preserves SSA-reassign
+            #     independence for subscript/attribute bases over zero-arg call
+            #     results (``parsed = f(); parsed['k']`` stays a Var base).
+            euf_term = _call_result_term(value, origin, scope, {})
+            if (
+                euf_term is not None
+                and isinstance(euf_term, _Ctor)
+                and euf_term.args  # >=1 arg required (zero-arg → no input to key on)
+                and _euf_args_all_concrete(euf_term)
+            ):
+                origin.arg_sig = _canonical_term_sig(euf_term)
+                origin.euf_term = euf_term
+                origin.ssa_name = ssa_name
             next_scope.origins[name] = origin
         else:
             next_scope.origins.pop(name, None)
@@ -1243,7 +2944,7 @@ def _apply_value_scope_binding(
     return out
 
 
-def _emit_value_scope_assertion(
+def _collect_value_scope_assertion_facts(
     stmt: ast.stmt,
     scopes: List[_ValueScope],
     test_name: str,
@@ -1252,7 +2953,15 @@ def _emit_value_scope_assertion(
     decls: List[ContractDecl],
     implications: List[ImplicationDecl],
     used_names: Set[str],
+    assertion_atoms_by_base: Dict[str, List[Formula]],
+    base_order: List[str],
 ) -> int:
+    """Collect ::facts contracts and implication wiring for one assertion
+    statement.  The ::assertion contract itself is NOT emitted here; the
+    caller (_classify_value_scope) emits ONE conjoined ::assertion per
+    call-site base after processing all statements.  This keeps the kit
+    dumb: it just admits facts; the conjunction (and all consistency
+    checking) lives in the single conjoined invariant per base."""
     made = 0
     for scope in scopes:
         context = _assertion_callsite_context(stmt, scope)
@@ -1263,13 +2972,23 @@ def _emit_value_scope_assertion(
         for origin in origins:
             base = _callsite_contract_base(origin, source_path)
             facts_name = _unique_contract_name(f"{base}::facts", used_names)
-            assertion_name = _unique_contract_name(f"{base}::assertion", used_names)
             implication_name = _unique_contract_name(
                 f"{base}::facts-implies-assertion", used_names
             )
             fact_formula = facts[0] if len(facts) == 1 else and_(facts)
             decls.append(ContractDecl(name=facts_name, inv=fact_formula))
-            decls.append(ContractDecl(name=assertion_name, inv=assertion))
+            # Accumulate assertion formula for this base; the conjoined
+            # ::assertion contract is emitted once at the end of
+            # _classify_value_scope so all assertions about the same
+            # call-site subject land in one inv.
+            if base not in assertion_atoms_by_base:
+                assertion_atoms_by_base[base] = []
+                base_order.append(base)
+            assertion_atoms_by_base[base].append(assertion)
+            # Wire the implication antecedent to the (not-yet-emitted)
+            # conjoined assertion name; the contract will exist in the
+            # same .proof bundle by the time the verifier loads it.
+            assertion_name = f"{base}::assertion"
             implications.append(
                 ImplicationDecl(
                     name=implication_name,
@@ -1287,23 +3006,85 @@ def _assertion_callsite_context(
     scope: _ValueScope,
 ) -> Optional[Tuple[List[_CallOrigin], List[Formula], Formula]]:
     direct_calls = _collect_assertion_calls(stmt)
+    # ARGUMENT-CARRYING EUF (the "for input x" model).  A bare call result
+    # (``f(x)`` appearing directly in an assertion) is keyed on
+    # (callee, SSA-resolved arg-terms) via ``_call_result_term`` rather than on
+    # source LOCATION.  Two assertions in DIFFERENT functions / lines that call
+    # the SAME callee with the SAME argument terms therefore produce the SAME
+    # ctor term, so a cross-location contradiction (``f(x) == 1`` at line N and
+    # ``f(x) == 2`` at line M) unifies and fires UNSAT → REFUSED.  Different
+    # args (``f(x)`` vs ``f(y)``) → different terms → independent → PROVEN.
+    #
+    # The arg-terms are SSA-resolved through ``scope``, so a reassigned arg
+    # (``x = ...; x = ...`` → ``x$0`` then ``x$1``) yields a fresh term and
+    # never produces a false-refuse.
+    #
+    # PURITY ASSUMPTION (loud — identical to the Form-3 ``callval`` tradeoff):
+    #   same callee + same args → same value ASSUMES the callee is
+    #   DETERMINISTIC / pure.  A STATEFUL callee (counter, generator, RNG)
+    #   called twice with the same args could legitimately return different
+    #   values; unifying them here can only ever produce a CONSERVATIVE
+    #   FALSE-REFUSAL (we over-refuse a test that is actually fine).  It can
+    #   NEVER produce a falsePass: we only ever ADD an equality between two
+    #   syntactically identical call expressions, which is sound for pure fns
+    #   and merely conservative for impure ones.  This is the same tradeoff
+    #   the method-call-result (Form 3) and raises (Pattern 7) forms already
+    #   made; EUF extends it to the bare call-result subject.
+    #
+    # FALLBACK: if an argument is not soundly translatable, ``_call_result_term``
+    # returns None and we fall back to the LOCATION-keyed free var so the
+    # callsite still anchors a ::facts/::assertion contract without over-claiming
+    # argument identity (no cross-location unification, but no regression).
     call_vars: Dict[Tuple[int, int], Term] = {}
+    euf_origins: Dict[Tuple[int, int], _CallOrigin] = {}
     for call in direct_calls:
         origin = _call_origin_from_expr(call)
         if origin is not None:
-            call_vars[_call_key(call)] = make_var(_call_result_var_name(origin))
+            euf_term = _call_result_term(call, origin, scope, call_vars)
+            if euf_term is not None and _euf_args_all_concrete(euf_term):
+                # VALUE-AWARE EUF UNIFICATION (FIX 1 / soundness):
+                # Use the argument-keyed base ONLY when EVERY argument of the
+                # call-result ctor is a CONCRETE LITERAL (int / str / bool /
+                # None constant).  Concrete literals denote the same value
+                # regardless of call-site location, so ``f(5)`` in function A
+                # and ``f(5)`` in function B genuinely refer to the same input
+                # and cross-location unification is sound.
+                #
+                # When ANY argument is SYMBOLIC (a _Var / param / non-literal
+                # _Ctor), the argument may be bound to different values at each
+                # call site; unifying them is UNSOUND (causes false-refusals).
+                # Fall back to the LOCATION-keyed free var (same branch as
+                # ``euf_term is None``) — no cross-location unification.
+                call_vars[_call_key(call)] = euf_term
+                # Argument-key the origin so the callsite contract base
+                # collapses to the same name across locations for same args.
+                assert isinstance(euf_term, _Ctor)
+                origin.arg_sig = _canonical_term_sig(euf_term)
+            else:
+                call_vars[_call_key(call)] = make_var(_call_result_var_name(origin))
+            euf_origins[_call_key(call)] = origin
 
     transient_facts: List[Formula] = []
     direct_origins: List[_CallOrigin] = []
     for call in direct_calls:
-        origin = _call_origin_from_expr(call)
+        origin = euf_origins.get(_call_key(call))
         if origin is None:
+            continue
+        var_term = call_vars[_call_key(call)]
+        if origin.arg_sig is not None:
+            # EUF subject: the ctor IS the value.  A reflexive ``eq(t, t)`` fact
+            # would be vacuous, so we anchor the callsite via a tautological
+            # fact only to keep the ::facts contract non-empty (the implication
+            # antecedent must exist).  The cross-location contradiction fires
+            # because the SAME ctor term ``t`` lands in the (mint-coalesced)
+            # conjoined ::assertion inv — see _callsite_contract_base.
+            transient_facts.append(eq(var_term, var_term))
+            direct_origins.append(origin)
             continue
         try:
             rhs = _translate_call_rhs(call, scope, call_vars)
         except ValueError:
             continue
-        var_term = call_vars[_call_key(call)]
         transient_facts.append(eq(var_term, rhs))
         direct_origins.append(origin)
 
@@ -1319,6 +3100,25 @@ def _assertion_callsite_context(
         assertion = _lift_assertion_stmt_scoped(stmt, scope, call_vars)
     except ValueError:
         return None
+
+    # BINDING-FORM EUF SUBSTITUTION: for each origin that came from a binding
+    # ``r = f(5)`` (concrete args), substitute the EUF ctor for the SSA var
+    # in the assertion formula.  This transforms ``assert r == 1`` from
+    # ``=(r$0, 1)`` into ``=(callresult_f_a1(5), 1)`` — the EUF-keyed subject
+    # that allows cross-function unification when another function also binds
+    # the same call result to an SSA var and asserts a contradictory value.
+    #
+    # CARDINAL SOUNDNESS — subst_var_in_formula keyed on the bare SSA var NAME
+    # (not the ctor) ensures:
+    #   - Attribute/subscript vars (``r$0.x``, ``subscript(r$0, k)``) are NOT
+    #     touched (they are separate Var names / Ctor args, not the bare name).
+    #   - Only the exact ``r$0`` Var in the assertion is replaced → behavior
+    #     change is confined to bare-var subjects of comparisons.
+    #   - Symbolic-arg origins never carry euf_term (set to None in binding),
+    #     so the symbolic false-refusal guard is intact.
+    for origin in origins:
+        if origin.euf_term is not None and origin.ssa_name is not None:
+            assertion = subst_var_in_formula(assertion, origin.ssa_name, origin.euf_term)
 
     return origins, facts, assertion
 
@@ -1337,11 +3137,131 @@ def _unique_contract_name(name: str, used_names: Set[str]) -> str:
 
 def _callsite_contract_base(origin: _CallOrigin, source_path: str) -> str:
     file_name = os.path.basename(source_path) or source_path or "<unknown>"
+    if origin.arg_sig is not None:
+        # ARGUMENT-KEYED base (EUF).  Same callee + same SSA-resolved arg-terms
+        # → same base → mint's coalesce-by-name conjoins the two cross-location
+        # ``::assertion`` decls into one inv, so ``eq(t,1) ∧ eq(t,2)`` lands in
+        # a single obligation and fires UNSAT.  Deliberately DROPS line:col and
+        # the file name so the base is identical across functions AND files for
+        # the same (callee, args) — that is exactly the cross-location unify we
+        # want.  Different args → different arg_sig → different base → PROVEN.
+        return f"{origin.callee}#euf#{origin.arg_sig}"
     return f"{origin.callee}@{file_name}:{origin.lineno}:{origin.col}"
 
 
 def _call_result_var_name(origin: _CallOrigin) -> str:
     return f"{origin.callee}$call${origin.lineno}${origin.col}"
+
+
+def _call_result_head(callee: str, arity: int) -> str:
+    """ASCII-safe, arity-stable ctor head for a bare call-result EUF term.
+
+    Shape: ``callresult_<callee>_a<arity>`` — mirrors the Form-3 ``callval_``
+    and truthiness ``call_`` heads.  Encoding arity in the head guarantees the
+    SMT emitter never sees the same head at two different arities (``f()`` vs
+    ``f(x)``), which would otherwise silently adopt the first arity and produce
+    ill-sorted applications.
+    """
+    safe = "".join(c if (c.isascii() and c.isalnum()) else "_" for c in callee)
+    return f"callresult_{safe}_a{arity}"
+
+
+def _call_result_term(
+    call: ast.Call,
+    origin: _CallOrigin,
+    scope: _ValueScope,
+    call_vars: Dict[Tuple[int, int], Term],
+) -> Optional[Term]:
+    """Build the ARGUMENT-CARRYING EUF term for a bare call result.
+
+    ``f(x)`` → ``ctor("callresult_f_a1", [x_term])`` where ``x_term`` is the
+    SSA-resolved translation of ``x`` through ``scope``.  Same callee + same
+    (SSA-resolved) arg-terms → SAME ctor, regardless of source line; this is
+    what lets a cross-location contradiction (``f(x)==1`` / ``f(x)==2`` in two
+    different functions) unify and fire UNSAT.
+
+    Returns None (caller falls back to a LOCATION-keyed free var) when:
+      - the func is not a simple Name (handled by the origin filter already),
+      - there are keyword args (cannot order-stably translate),
+      - any argument is not soundly translatable as a term.
+
+    NOTE on the ``callresult_`` head vs the bare ``ctor(callee, ...)`` that
+    ``_translate_call_rhs`` builds: they are DELIBERATELY distinct heads.  The
+    EUF subject must be a single dedicated function symbol so two cross-location
+    assertions about the same call unify on it; the arity suffix keeps it
+    sort-stable.  The two share the same args, so identical calls still collapse.
+    """
+    if not isinstance(call.func, ast.Name):
+        return None
+    if call.keywords:
+        return None
+    try:
+        arg_terms = [
+            _translate_term_scoped(arg, scope, call_vars) for arg in call.args
+        ]
+    except ValueError:
+        return None
+    head = _call_result_head(origin.callee, len(arg_terms))
+    return ctor(head, arg_terms)
+
+
+def _euf_args_all_concrete(euf_term: "_Ctor") -> bool:
+    """Return True iff every immediate argument of the EUF call-result ctor is
+    a CONCRETE LITERAL (int / str / bool / None constant).
+
+    FIX 1 — VALUE-AWARE EUF SOUNDNESS:
+    Cross-location unification is only sound when the argument IS the same
+    value at every call site.  Concrete literals (``5``, ``"hello"``, True,
+    None) have a fixed value known at lift time — ``f(5)`` in function A and
+    ``f(5)`` in function B call f with the SAME input, so a cross-location
+    contradiction is genuine.
+
+    A SYMBOLIC argument (_Var from a param/local, or a nested non-literal
+    _Ctor) has a value that depends on the binding environment — ``f(x)`` in
+    function A and ``f(x)`` in function B bind ``x`` independently; they may
+    refer to DIFFERENT values at runtime.  Unifying them produces a spurious
+    UNSAT (false-refusal) when f(x)==1 and f(x)==2 happen to share the same
+    SSA name despite being independent.
+
+    The check is over IMMEDIATE args only (no recursion): a nested ctor arg
+    is by definition non-literal (it encodes a computed sub-expression), so
+    the first level is sufficient.
+    """
+    from .ir import _ConstInt, _ConstStr, _ConstBool
+    for arg in euf_term.args:
+        if isinstance(arg, (_ConstInt, _ConstStr, _ConstBool)):
+            continue
+        if _is_none_term(arg):
+            continue
+        return False
+    return True
+
+
+def _canonical_term_sig(term: Term) -> str:
+    """Deterministic canonical signature for a Term, used to argument-key the
+    callsite contract base so mint's coalesce-by-name conjoins cross-location
+    assertions about the SAME (callee, args) into one ``::assertion`` inv.
+
+    Stable across process invocations (no hash randomization): we recurse
+    structurally over the frozen Term dataclasses and emit a fixed textual
+    encoding.  Same structure → same string → same base → mint coalesces →
+    contradiction fires.  Different structure → different string → distinct
+    base → independent (PROVEN).
+    """
+    from .ir import _Var as _IrVar, _ConstInt, _ConstStr, _ConstBool
+
+    if isinstance(term, _IrVar):
+        return f"v:{term.name}"
+    if isinstance(term, _ConstInt):
+        return f"i:{term.value}"
+    if isinstance(term, _ConstStr):
+        return f"s:{term.value!r}"
+    if isinstance(term, _ConstBool):
+        return f"b:{term.value}"
+    if isinstance(term, _Ctor):
+        inner = ",".join(_canonical_term_sig(a) for a in term.args)
+        return f"c:{term.name}({inner})"
+    return f"?:{term!r}"
 
 
 def _call_key(call: ast.Call) -> Tuple[int, int]:
@@ -1497,13 +3417,23 @@ def _translate_bool_expr_scoped(
     call_vars: Optional[Dict[Tuple[int, int], Term]] = None,
 ) -> Formula:
     if isinstance(node, ast.Compare):
-        if len(node.ops) != 1 or len(node.comparators) != 1:
-            raise ValueError("only single comparisons are liftable")
-        return _comparison_from_ast_op(
-            node.ops[0],
-            _translate_term_scoped(node.left, scope, call_vars),
-            _translate_term_scoped(node.comparators[0], scope, call_vars),
-        )
+        def _scoped_term_fn(n: ast.expr) -> Term:
+            return _translate_term_scoped(n, scope, call_vars)
+        if len(node.ops) == 1:
+            # pytest.approx interception: must happen BEFORE generic term
+            # translation so approx calls are never silently lifted as ctor terms.
+            approx_formula = _lift_approx_comparison(
+                node.ops[0], node.left, node.comparators[0], _scoped_term_fn
+            )
+            if approx_formula is not None:
+                return approx_formula
+            return _comparison_from_ast_op(
+                node.ops[0],
+                _scoped_term_fn(node.left),
+                _scoped_term_fn(node.comparators[0]),
+            )
+        # Chained comparison: n >= 2 operators.
+        return _translate_chained_compare(node, _scoped_term_fn)
     if isinstance(node, ast.BoolOp):
         operands = [
             _translate_bool_expr_scoped(v, scope, call_vars) for v in node.values
@@ -1514,6 +3444,17 @@ def _translate_bool_expr_scoped(
             return connective("or", operands)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         return not_(_translate_bool_expr_scoped(node.operand, scope, call_vars))
+    if isinstance(node, ast.Call):
+        # Truthiness call (``assert h.startswith(p)``): lift as uninterpreted
+        # predicate.  Use a term-translator that honours the current SSA scope.
+        def _scoped_term(n: ast.expr) -> Term:
+            return _translate_term_scoped(n, scope, call_vars)
+        return _translate_truthiness_call_formula(node, _scoped_term)
+    # Bare-var / attribute truthiness (``assert flag``, ``assert obj.ok``):
+    # encode as ``eq(term, True)``.  This path is a fallback for non-call
+    # expressions that are syntactically boolean; it does NOT apply to Call
+    # nodes (handled above) — so isinstance and other calls are not silently
+    # wrapped here.
     term = _translate_term_scoped(node, scope, call_vars)
     return eq(term, bool_const(True))
 
@@ -1532,9 +3473,47 @@ def _translate_term_scoped(
         return _translate_term(node)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return _translate_term(node)
+    if isinstance(node, (ast.Dict, ast.Set)):
+        # Dict/set literal in value-scope: delegate to the content-hashed
+        # opaque-constant translator.  SSA scope does not affect the literal
+        # itself (its content is fully determined at lift time).
+        return _translate_dict_set_literal_term(node)
     if isinstance(node, ast.Call):
+        # pytest.approx as a sub-term in value-scope: LOUD REFUSE (same
+        # reasoning as in _translate_term — see that guard for details).
+        if _is_pytest_approx_call(node):
+            raise ValueError(
+                "approx: pytest.approx(...) in an unsupported position — "
+                "approx is only liftable as the comparand of == or != "
+                "(e.g. `assert x == pytest.approx(target)`); "
+                "use it in a direct == or != comparison at the top level of an assert"
+            )
+        if isinstance(node.func, ast.Attribute):
+            # Method call as a TERM: ``recv.method(args)`` → callval ctor.
+            # SSA-key the receiver through the current scope so that
+            # ``out = f(); assert out.m() == 1; out = g(); assert out.m() == 2``
+            # produces distinct ctor terms (out$0 vs out$1 as receiver).
+            # LOUD REFUSE on keyword args.
+            method = node.func.attr
+            if node.keywords:
+                raise ValueError(
+                    f"method call `{method}` with keyword args is not liftable as a term "
+                    "(keyword args cannot be order-stably translated without knowing "
+                    "the function signature)"
+                )
+            recv_term = _translate_term_scoped(node.func.value, scope, call_vars)
+            arg_terms = [recv_term]
+            for i, arg in enumerate(node.args):
+                try:
+                    arg_terms.append(_translate_term_scoped(arg, scope, call_vars))
+                except ValueError as e:
+                    raise ValueError(
+                        f"method call `{method}` arg[{i}] not liftable as term: {e}"
+                    )
+            head = _callval_head(method, len(arg_terms))
+            return ctor(head, arg_terms)
         if not isinstance(node.func, ast.Name):
-            raise ValueError("call target must be a simple name")
+            raise ValueError("call target must be a simple name or method (recv.method)")
         if node.keywords:
             raise ValueError("call with kwargs is not liftable")
         key = _call_key(node)
@@ -1555,6 +3534,37 @@ def _translate_term_scoped(
                 _translate_term_scoped(node.right, scope, call_vars),
             ],
         )
+    if isinstance(node, ast.Attribute):
+        # Attribute access in value-scope context.  SSA-key the attribute
+        # Var on the base's current SSA name so that ``out = f(x); assert
+        # out.v == 1; out = g(y); assert out.v == 2`` produces two
+        # independent Vars (``out$0.v`` and ``out$1.v``) rather than the
+        # same ``out.v`` Var, which would look like a contradiction.
+        # Without SSA the two atoms would share a Var and a conjunction
+        # across the two assertions would be spuriously UNSAT.
+        #
+        # Algorithm: walk the dotted path; for each Name segment look it up
+        # in scope.current; replace the FIRST Name segment that has an SSA
+        # version.  Deep chains like ``a.b.c`` where only ``a`` is in scope
+        # become ``a$N.b.c``.  If no segment is in scope, fall through to
+        # the unscoped translator (raw dotted path = opaque free var) which
+        # is unchanged behaviour for parameters and module-level names.
+        ssa_attr_name = _ssa_dotted_attr_path(node, scope)
+        if ssa_attr_name is not None:
+            return make_var(ssa_attr_name)
+        # Fall through: base not in scope → opaque free var by raw path.
+        return _translate_term(node)
+    if isinstance(node, ast.Subscript):
+        # Subscript-index in value-scope context.  SSA-key the base: translate
+        # the base expression under the scope so that if the base var has been
+        # SSA-renamed (``parsed = f(); … parsed = g(); …``), the subscript Ctors
+        # for the two generations are distinct (``subscript(parsed$0, k)`` vs
+        # ``subscript(parsed$1, k)``).  This mirrors the SSA treatment of
+        # attribute access: same-generation base + same key = same term = UNSAT
+        # on contradiction; different generation = distinct terms = PROVEN.
+        # Non-literal keys LOUDLY REFUSE via ``_subscript_key_term``.
+        base_term = _translate_term_scoped(node.value, scope, call_vars)
+        return _translate_subscript_term(node, base_term)
     raise ValueError("expression shape not in value-scope lift whitelist")
 
 
@@ -1572,3 +3582,498 @@ def _unparse(node: ast.AST) -> str:
         return ast.unparse(node)  # type: ignore[attr-defined]
     except Exception:
         return node.__class__.__name__
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 7: pytest.raises blocks
+# ---------------------------------------------------------------------------
+#
+# Handles test functions whose body contains ``with pytest.raises(ExcType):``
+# blocks.  The CONSISTENCY-LEVEL model:
+#
+#   ``with pytest.raises(ExcType): <body-call>``
+#   lifts to: ``eq(ctor("raised_exc_a1", [call_term]), str_const(ExcType_name))``
+#
+# This models the RAISED EXCEPTION TYPE as a function-valued term keyed on
+# the callsite, exactly mirroring the ``callval`` method-call-result encoding
+# (Pattern 3 / Form 3).  DISCRIMINATION follows automatically:
+#
+#   same callsite + two DIFFERENT ExcType names
+#     -> ``eq(g, str_const("ValueError")) ∧ eq(g, str_const("KeyError"))``
+#     -> same term g equated to two distinct str-constants
+#     -> UNSAT by EUF / congruence (no axioms needed)
+#     -> REFUSED
+#
+#   same callsite + same ExcType twice -> SAT -> PROVEN
+#
+# SOUNDNESS RULES:
+#   - ExcType must be a simple Name (not a dotted attr, not a Tuple).
+#     Tuples (``raises((ValueError, KeyError))``) mean "one of" — cannot be
+#     modelled as a single string constant soundly; LOUD REFUSE.
+#   - ``as exc_info`` clause (``optional_vars`` present): LOUD REFUSE — we
+#     cannot soundly model the captured exception object.
+#   - ``match=`` or any keyword on pytest.raises: LOUD REFUSE — regex-matching
+#     the exception message is a softer assertion; deferred to production-bridge.
+#   - Body must be exactly ONE statement.  Multi-statement bodies cannot be
+#     reduced to one callsite term; LOUD REFUSE.
+#   - The single body statement must be an ``ast.Expr`` (bare call expression)
+#     whose call translates via ``_translate_term``.  Assignments, assertions,
+#     and other statement kinds inside the with-body: LOUD REFUSE.
+#   - The test body must contain ONLY ``with pytest.raises(...)`` blocks (and
+#     optionally ``ast.Pass``).  Any other statement kind makes the test body
+#     more complex than the raises-only shape — LOUD REFUSE with reason.
+#     (Mixed binding+raises bodies are deliberately out of scope for v0;
+#     the raises-only restriction prevents SSA-scope issues.)
+#
+# TEETH (deferred):
+#   Whether the body ACTUALLY raises (i.e. a ``with pytest.raises`` around a
+#   call that provably CANNOT raise = a provably-wrong test) requires
+#   production-bridge reasoning (callsite postconditions / exception
+#   specifications).  This is explicitly deferred to the production-bridge
+#   discharge path.  The consistency-level lift here only checks that the
+#   RAISE CLAIM is internally consistent (no contradictory exception types
+#   for the same callsite within the same test).
+#
+# GATE: fires when the body contains AT LEAST ONE ``ast.With`` node.
+
+
+def _is_pytest_raises_func(func: ast.expr) -> bool:
+    """Return True iff ``func`` is ``pytest.raises`` or bare ``raises``."""
+    # bare: ``raises(ExcType)``
+    if isinstance(func, ast.Name) and func.id == "raises":
+        return True
+    # ``pytest.raises(ExcType)``
+    if (
+        isinstance(func, ast.Attribute)
+        and func.attr == "raises"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "pytest"
+    ):
+        return True
+    return False
+
+
+def _parse_raises_exc_name(node: ast.expr) -> Optional[str]:
+    """Extract the exception type name from a simple ``Name`` node.
+
+    Returns the name string (e.g. ``"ValueError"``) or None if the shape
+    is not a simple Name (e.g. a Tuple or attribute chain).  The caller
+    must LOUDLY REFUSE on None.
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    return None
+
+
+def _lift_raises_block(
+    stmt: ast.With,
+    source_path: str,
+    test_name: str,
+) -> "Union[Formula, str]":
+    """Try to lift a single ``with pytest.raises(ExcType): <call>`` block.
+
+    Returns:
+      - A ``Formula`` (the raised-exc eq atom) on success.
+      - A ``str`` loud-refuse reason on any unsupported shape.
+
+    Callers must treat a str return as a LOUD REFUSE (claim, warn, no contract).
+    """
+    # Must be exactly one withitem.
+    if len(stmt.items) != 1:
+        return (
+            f"pytest.raises: expected exactly 1 withitem, got {len(stmt.items)}; "
+            "multi-target with-clause is not liftable"
+        )
+    item = stmt.items[0]
+
+    # No ``as exc_info`` clause.
+    if item.optional_vars is not None:
+        return (
+            "pytest.raises: ``as exc_info`` clause is not soundly liftable "
+            "(captured exception object inspection is deferred to production-bridge)"
+        )
+
+    ce = item.context_expr
+    # context_expr must be a Call whose func is pytest.raises / raises.
+    if not isinstance(ce, ast.Call) or not _is_pytest_raises_func(ce.func):
+        return (
+            f"With statement context manager is not pytest.raises / raises: "
+            f"`{_unparse(ce)[:60]}`; only pytest.raises is in scope for this lifter"
+        )
+
+    # No keyword args (e.g. match=).
+    if ce.keywords:
+        kw_names = [k.arg for k in ce.keywords]
+        return (
+            f"pytest.raises: keyword arguments {kw_names!r} are not soundly liftable "
+            "(match= regex and other kwargs are deferred to production-bridge)"
+        )
+
+    # Must have exactly one positional arg: the exception type.
+    if len(ce.args) != 1:
+        return (
+            f"pytest.raises: expected exactly 1 exception type argument, "
+            f"got {len(ce.args)}"
+        )
+
+    exc_arg = ce.args[0]
+    exc_name = _parse_raises_exc_name(exc_arg)
+    if exc_name is None:
+        return (
+            f"pytest.raises: exception type argument must be a simple Name "
+            f"(e.g. ValueError), got `{_unparse(exc_arg)[:60]}`; "
+            "Tuple exception types (raises((A,B))) are not soundly liftable "
+            "as a single constant"
+        )
+
+    # Body must be exactly one statement.
+    if len(stmt.body) != 1:
+        return (
+            f"pytest.raises: body must be exactly 1 statement "
+            f"(got {len(stmt.body)}); multi-statement bodies cannot be reduced "
+            "to a single callsite term soundly"
+        )
+
+    body_stmt = stmt.body[0]
+    # Body statement must be a bare ``ast.Expr`` (expression statement, i.e. a call).
+    if not isinstance(body_stmt, ast.Expr):
+        return (
+            f"pytest.raises: body statement must be a bare call expression "
+            f"(ast.Expr), got `{type(body_stmt).__name__}`; "
+            "assignments, assertions, and other statement kinds inside raises "
+            "body are not soundly liftable"
+        )
+
+    call_expr = body_stmt.value
+    # Translate the call expression as a term.
+    try:
+        call_term = _translate_term(call_expr)
+    except ValueError as e:
+        return (
+            f"pytest.raises: body call not translatable as a term: {e}"
+        )
+
+    # Build: eq(ctor("raised_exc_a1", [call_term]), str_const(exc_name))
+    # "raised_exc_a1" = "the exception raised by this call" as a function-valued
+    # term.  Arity suffix "_a1" encodes arity=1 (one arg: the call term).
+    raised_term = ctor("raised_exc_a1", [call_term])
+    exc_const = str_const(exc_name)
+    return eq(raised_term, exc_const)
+
+
+def _classify_raises_body(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 7: bodies containing ``with pytest.raises(...)`` blocks.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body contains NO ``ast.With`` nodes (caller tries next pattern).
+
+    Strategy:
+      - If no With nodes in body: return False (not our pattern).
+      - Claim the test immediately (so Layer 0 does not silently retry it).
+      - Check all non-With stmts: only ``ast.Pass`` is permitted alongside
+        raises blocks in v0.  Any other stmt kind → LOUD REFUSE for entire body.
+      - For each With node: attempt lift.  Loud-refuse reason → LOUD REFUSE
+        for entire body (claim, warn, zero contracts).  Successful formula
+        → accumulate atom.
+      - If all With nodes lifted successfully AND no other stmts: conjoin atoms
+        into ONE contract (Pattern-3 shape); emit as ContractDecl.
+    """
+    # Gate: only fire if body has at least one pytest.raises With block.
+    # Non-pytest.raises With bodies fall through to mixed-body, which
+    # explicitly loud-refuses any With statement it encounters.
+    has_raises_with = any(
+        isinstance(s, ast.With)
+        and len(s.items) == 1
+        and isinstance(s.items[0].context_expr, ast.Call)
+        and _is_pytest_raises_func(s.items[0].context_expr.func)
+        for s in body
+    )
+    if not has_raises_with:
+        return False
+
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+
+    # Check non-With statements: only Pass is allowed alongside raises blocks.
+    for stmt in body:
+        if isinstance(stmt, (ast.With, ast.Pass)):
+            continue
+        # Any other statement kind (binding, assert, for, try, etc.) is out of scope.
+        out.raises_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                f"layer2 pytest.raises: LOUD REFUSAL — body contains a "
+                f"`{type(stmt).__name__}` statement alongside raises block(s); "
+                "only pure raises-block bodies (with optional pass) are liftable "
+                "in v0; mixed binding+raises bodies are out of scope",
+            )
+        )
+        return True
+
+    # Try to lift each With block.
+    atoms: List[Formula] = []
+    for stmt in body:
+        if isinstance(stmt, ast.Pass):
+            continue
+        # All remaining stmts are With (checked above).
+        result = _lift_raises_block(stmt, source_path, test_name)
+        if isinstance(result, str):
+            # Loud refuse.
+            out.raises_skipped += 1
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 pytest.raises: LOUD REFUSAL — {result}",
+                )
+            )
+            return True
+        atoms.append(result)
+
+    if not atoms:
+        # Body was all Pass — vacuous; loud refuse.
+        out.raises_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                "layer2 pytest.raises: LOUD REFUSAL — body contains no liftable "
+                "raises blocks (only pass statements)",
+            )
+        )
+        return True
+
+    # All blocks lifted successfully.
+    inv = atoms[0] if len(atoms) == 1 else and_(atoms)
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.raises_lifted += 1
+    return True
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 6: mixed-body (opaque bindings + multiple asserts)
+# ---------------------------------------------------------------------------
+#
+# Handles test methods / functions whose body is an interleaving of
+# assignment statements (setup bindings) and ``assert`` statements, where the
+# RHS of many bindings is NOT translatable (e.g. ``out = mint_contract(**kw)``,
+# ``parsed = json.loads(...)``).  Pattern 5 requires a translatable call-result
+# and emits ``::facts`` / ``::assertion`` contracts with implication wiring.
+# Pattern 6 is simpler: it does NOT emit ``::facts`` contracts and does NOT
+# require a translatable RHS.  Instead it:
+#
+#   1. Builds an SSA scope by walking each binding in order.  A translatable
+#      RHS → SSA var bound to a term (same as Pattern 5).  An opaque RHS →
+#      SSA var bound to a fresh free var (name$N) with NO value fact.  This
+#      keeps attribute-access assertions (``assert out.cid == X``) scoped to
+#      the correct SSA generation.
+#
+#   2. Collects liftable ``assert`` statements, translating each under the
+#      current SSA scope.  Unliftable asserts → warn-and-skip (do NOT refuse
+#      the whole method; partial lift is better than silence).
+#
+#   3. Conjoins all successfully lifted atoms into ONE ``ContractDecl`` named
+#      by the test name.  This lands in the consistency pass as a whole-test
+#      invariant (same path as Pattern 3), so contradictions in the conjoined
+#      formula are detected by z3.
+#
+# SOUNDNESS RULES:
+#   - Bindings are FACTS (definitions), never asserted properties.  They are
+#     NOT emitted as contracts and do NOT enter the consistency pass.
+#   - Opaque bindings produce a fresh SSA var with zero constraints → they
+#     cannot create spurious UNSAT.  The consistency pass sees only the
+#     asserted properties, which is correct.
+#   - Reassignment: SSA bumps the version, so ``out = f(); assert out.x==1;
+#     out = g(); assert out.x==2`` produces ``out$0.x`` and ``out$1.x``
+#     (distinct Vars) → the two atoms are independent → CONSISTENT.
+#   - Methods with unsupported control-flow or mutation (``with``, ``for``,
+#     ``while``, ``try``, ``import``, subscript-assign) are LOUDLY REFUSED:
+#     the method is claimed so Layer 0 does not retry it, a warning is
+#     emitted, and zero contracts are produced.
+#
+# GATE: fires ONLY when the body has AT LEAST ONE binding AND at least one
+# liftable assert.  Pure-assert bodies (all asserts, no binding) are Pattern 3.
+# Pure-binding bodies (no asserts) are not test characterizations; they fall
+# through to Layer 0.
+
+
+def _mixed_body_unsupported_stmt(stmt: ast.stmt) -> Optional[str]:
+    """Return a human-readable reason if ``stmt`` is an unsupported statement
+    for the mixed-body pattern, or None if it is permitted.
+
+    Permitted: ``ast.Assign`` (simple-name target only),
+    ``ast.AnnAssign`` (simple-name target), ``ast.Assert``, ``ast.Pass``.
+    Everything else (``with``, ``for``, ``while``, ``try``, ``import``,
+    ``raise``, subscript-assign, etc.) is UNSUPPORTED → loud refusal.
+    """
+    if isinstance(stmt, ast.Assert):
+        return None
+    if isinstance(stmt, ast.Pass):
+        return None
+    if isinstance(stmt, ast.Assign):
+        # Subscript or attribute ASSIGN target is mutation → unsupported.
+        for tgt in stmt.targets:
+            if not isinstance(tgt, ast.Name):
+                return (
+                    f"non-simple assignment target `{_unparse(tgt)[:60]}` "
+                    "(subscript/attribute mutation is not soundly liftable)"
+                )
+        return None
+    if isinstance(stmt, ast.AnnAssign):
+        if not isinstance(stmt.target, ast.Name):
+            return (
+                f"non-simple annotated-assignment target `{_unparse(stmt.target)[:60]}`"
+            )
+        return None
+    if isinstance(stmt, ast.With):
+        # With statements (including pytest.raises) are handled by Pattern 7
+        # (_classify_raises_body) which runs before mixed-body.  If a With
+        # survives to here it is an unsupported context manager — loudly refuse.
+        return (
+            "With statement (context manager) in mixed-body test is not soundly "
+            "liftable — use pytest.raises blocks only at top-level of a raises-only "
+            "test body; other context managers are out of scope"
+        )
+    # Anything else is unsupported.
+    kind = type(stmt).__name__
+    return f"unsupported statement kind `{kind}` in mixed-body test"
+
+
+
+def _classify_mixed_body(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 6: mixed body with opaque bindings + multiple asserts.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body does not fit the mixed-body shape (caller tries next).
+    """
+    # Pre-screen: the body must contain at least one binding AND at least one
+    # assert.  Pure-assert is Pattern 3; pure-binding is not a test claim.
+    has_binding = any(isinstance(s, (ast.Assign, ast.AnnAssign)) for s in body)
+    has_assert = any(isinstance(s, ast.Assert) for s in body)
+    if not (has_binding and has_assert):
+        return False
+
+    # Check every statement for unsupported constructs BEFORE doing any work.
+    unsupported: List[str] = []
+    for stmt in body:
+        reason = _mixed_body_unsupported_stmt(stmt)
+        if reason is not None:
+            unsupported.append(reason)
+
+    if unsupported:
+        # LOUD REFUSAL: claim the test so Layer 0 does not retry it, emit
+        # a warning per unsupported construct, produce zero contracts.
+        out.claimed_tests.add(test_name)
+        out.seen += 1
+        out.mixed_body_skipped += 1
+        for reason in unsupported:
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 mixed-body: LOUD REFUSAL — {reason}",
+                )
+            )
+        return True
+
+    # --- SSA scope build + assertion collection -------------------------
+    #
+    # Walk the body in order.  For each binding, bump the SSA version and
+    # install a fresh var in scope (opaque bindings → fresh free var with no
+    # constraints; translatable bindings → term-valued var, same as P5).
+    # For each assert, translate under the current scope and collect the atom.
+
+    # SSA state: maps local name → current SSA var term.
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+
+    atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for stmt in body:
+        # ---- Binding ----
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+            if isinstance(stmt, ast.Assign):
+                target_name = stmt.targets[0].id  # simple name guaranteed above
+                value_node = stmt.value
+            else:  # AnnAssign
+                target_name = stmt.target.id
+                value_node = stmt.value  # may be None (bare annotation)
+
+            version = ssa_versions.get(target_name, 0)
+            ssa_versions[target_name] = version + 1
+            ssa_name = f"{target_name}${version}"
+            ssa_var = make_var(ssa_name)
+            ssa_current[target_name] = ssa_var
+            # We do NOT emit a facts contract. The SSA var is an opaque free
+            # var unless the RHS is translatable (in which case a value
+            # constraint would be useful, but for the consistency pass only
+            # the asserted properties matter; we intentionally keep this
+            # simple and sound).
+            continue
+
+        # ---- Assert ----
+        if isinstance(stmt, ast.Assert):
+            # Translate under the current SSA scope.
+            scope = _ValueScope(current=dict(ssa_current))
+            try:
+                atom = _lift_assertion_stmt_scoped(stmt, scope)
+            except ValueError as e:
+                skip_reasons.append(f"`{_unparse(stmt)[:60]}`: {e}")
+                continue
+            atoms.append(atom)
+            continue
+
+        # ---- Pass ----
+        # already permitted; nothing to do.
+
+    if not atoms:
+        # No assert was liftable. Warn and claim (so Layer 0 can try).
+        out.claimed_tests.add(test_name)
+        out.seen += 1
+        out.mixed_body_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                f"layer2 mixed-body: 0 of {len([s for s in body if isinstance(s, ast.Assert)])} "
+                f"asserts were liftable; releasing claim to Layer 0. "
+                f"Skipped: {'; '.join(skip_reasons)}",
+            )
+        )
+        return True
+
+    # Conjoin all lifted atoms into ONE contract (Pattern-3 shape).
+    # A single lifted atom is emitted as-is (no redundant and-wrapper).
+    inv = atoms[0] if len(atoms) == 1 else and_(atoms)
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.mixed_body_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                f"layer2 mixed-body: {len(skip_reasons)} of "
+                f"{len([s for s in body if isinstance(s, ast.Assert)])} asserts skipped "
+                f"(unliftable shape): {'; '.join(skip_reasons)}",
+            )
+        )
+
+    return True

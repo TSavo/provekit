@@ -657,6 +657,7 @@ fn value_type_name(value: &Value) -> &'static str {
 
 fn contract_cid_for_lift_path_prepass(d: &ContractDecl) -> String {
     let args = MintContractArgs {
+        evidence_term: None,
         formals: Vec::new(),
         emit_empty_formals: false,
         formal_sorts: Vec::new(),
@@ -750,6 +751,7 @@ pub fn mint_proof(decls: &[ContractDecl], opts: &LiftOptions) -> Result<MintOutp
         validate_panic_loci(&d.panic_loci)?;
         let panic_loci = normalized_panic_loci(&d.panic_loci);
         let args = MintContractArgs {
+            evidence_term: None,
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),

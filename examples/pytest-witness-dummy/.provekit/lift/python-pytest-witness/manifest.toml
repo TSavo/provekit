@@ -1,0 +1,29 @@
+name = "pytest-witness-lift"
+version = "0.1.0-draft"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+# The kit's lift entry (runs the test, emits the witnessed contract).
+command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/provekit-lift-py-pytest-witness/src:../../implementations/python/provekit-lift-py-tests/src:../../implementations/python/provekit-lift-python-source/src",
+    "python3",
+    "-m",
+    "provekit_pytest_witness.lift_lsp",
+]
+# The kit's DISCHARGE entry (re-runs the test to settle the witness). Declared
+# here, alongside `command`, so witness discharge rides the SAME manifest
+# dispatch lift uses. `witness_tool` keys the per-tool registry: `prove` exports
+# this as PROVEKIT_WITNESS_DISCHARGE_PYTEST and the verifier routes the
+# certificate's tool="pytest" to it.
+discharge_command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/provekit-lift-py-pytest-witness/src:../../implementations/python/provekit-lift-py-tests/src:../../implementations/python/provekit-lift-python-source/src",
+    "python3",
+    "-m",
+    "provekit_pytest_witness.discharge_cli",
+]
+witness_tool = "pytest"
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-pytest-witness"]

@@ -13,7 +13,7 @@
 #   1. Bounded ``for`` loop -> forall-implies.
 #   2. Helper function inlined at each call site.
 #   3. Multi-assertion characterization conjunction.
-#   4. ``@pytest.mark.parametrize`` over a literal list -> enumerated and-conjunction.
+#   4. ``@pytest.mark.parametrize`` over a literal list -> one contract per row (per-row independent).
 #   5. Callsite value-scope facts plus implication edges from tests.
 #
 # Out of scope for v0: ``hypothesis`` (Layer 1 already), ``pytest.raises``,

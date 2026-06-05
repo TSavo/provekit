@@ -14,6 +14,8 @@ use provekit_ir_compiler::{
 };
 
 mod generated;
+mod isinstance_encoding;
+mod literal_encoding;
 
 pub const DIALECT: &str = "smt-lib-v2.6";
 pub const COMPILER_NAME: &str = "smt-lib-reference";
@@ -342,6 +344,209 @@ mod tests {
             }
         }
         None
+    }
+
+    // ── String-literal encoding tests ─────────────────────────────────────
+    // POSITIVE: `=(r,"{"a":1}")` is satisfiable (single consistent assertion).
+    // RED before fix: z3 returns a parse error; test asserts no parse error + real verdict.
+    // GREEN after fix: real sat/unsat, no `(error ...` output.
+
+    fn string_const(s: &str) -> serde_json::Value {
+        serde_json::json!({"kind":"const","value":s,"sort":{"kind":"primitive","name":"String"}})
+    }
+
+    #[test]
+    fn string_literal_equality_single_no_parse_error() {
+        // POSITIVE: `assert r == '{"a":1}'` — a single string-equality assertion.
+        // Must compile without error and produce a real sat/unsat, not a parse error.
+        let z3 = which_z3().expect("z3 must be present for string-literal soundness check");
+        let inv = eq(var("r"), string_const(r#"{"a":1}"#));
+        let parts = compile_asserted_to_parts(&inv).expect("compile must succeed");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert!(
+            !out.contains("(error"),
+            "string-literal equality must produce no z3 parse error; got: {out}\nscript:\n{script}"
+        );
+        assert!(
+            out.contains("sat") || out.contains("unsat"),
+            "string-literal equality must produce a real sat/unsat verdict; got: {out}"
+        );
+    }
+
+    #[test]
+    fn two_distinct_string_literals_same_var_is_unsat() {
+        // DISCRIMINATION: `=(r,"a") ∧ =(r,"b")` with two distinct string literals.
+        // A single var cannot equal two different string constants -> UNSAT.
+        // RED before fix: parse error -> undecidable (false pass of consistency).
+        // GREEN after fix: real unsat verdict.
+        let z3 = which_z3().expect("z3 must be present for string-literal soundness check");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                eq(var("r"), string_const("a")),
+                eq(var("r"), string_const("b")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile must succeed");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert!(
+            !out.contains("(error"),
+            "two-literal contradiction must produce no parse error; got: {out}\nscript:\n{script}"
+        );
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "=(r,'a') ∧ =(r,'b') with distinct literals must be UNSAT (refused); \
+             z3 said: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn string_literal_with_brace_backslash_unicode_no_parse_error() {
+        // Weird-char cases: brace, backslash, control char (\x01), unicode (≥).
+        // All must compile without parse error and give a real verdict.
+        let z3 = which_z3().expect("z3 must be present for string-literal soundness check");
+        let weird_cases = vec![
+            r#"{"a":"x"}"#,       // braces
+            r#"path\to\file"#,   // backslashes
+            "\x01",              // control char
+            "≥ ≤ ≠",            // unicode operators
+        ];
+        for s in weird_cases {
+            let inv = eq(var("r"), string_const(s));
+            let parts = compile_asserted_to_parts(&inv).expect("compile must succeed");
+            let script = format!("{}{}", parts.preamble, parts.body);
+            let out = run_z3(&z3, &script);
+            assert!(
+                !out.contains("(error"),
+                "weird-char literal {:?} must produce no z3 parse error; got: {out}\nscript:\n{script}",
+                s
+            );
+            assert!(
+                out.contains("sat") || out.contains("unsat"),
+                "weird-char literal {:?} must produce real sat/unsat; got: {out}",
+                s
+            );
+        }
+    }
+
+    // ── Cross-type literal distinctness (Python `==` semantics) ───────────
+    // Helpers for int / bool / None literal terms.
+    fn int_const(n: i64) -> serde_json::Value {
+        serde_json::json!({"kind":"const","value":n,"sort":{"kind":"primitive","name":"Int"}})
+    }
+    fn bool_const(b: bool) -> serde_json::Value {
+        serde_json::json!({"kind":"const","value":b,"sort":{"kind":"primitive","name":"Bool"}})
+    }
+    fn none_ctor() -> serde_json::Value {
+        serde_json::json!({"kind":"ctor","name":"None","args":[]})
+    }
+    fn and2(a: serde_json::Value, b: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"kind":"and","operands":[a,b]})
+    }
+
+    #[test]
+    fn str_literal_distinct_from_int_literal_is_unsat() {
+        // Python: `"5" != 5`. `r == "5" ∧ r == 5` is contradictory -> UNSAT.
+        // RED before fix: both collapse into Int universe with no distinctness
+        // axiom -> z3 picks strlit == 5 -> SAT (false consistent).
+        let z3 = which_z3().expect("z3 required");
+        let inv = and2(eq(var("r"), string_const("5")), eq(var("r"), int_const(5)));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "`r==\"5\" ∧ r==5` must be UNSAT (Python str≠int); got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn none_distinct_from_int_literal_is_unsat() {
+        // Python: `None != 5`. `r is None ∧ r == 5` is contradictory -> UNSAT.
+        let z3 = which_z3().expect("z3 required");
+        let inv = and2(eq(var("r"), none_ctor()), eq(var("r"), int_const(5)));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "`r is None ∧ r==5` must be UNSAT (Python None≠int); got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn none_distinct_from_str_literal_is_unsat() {
+        // Python: `None != "x"`. `r is None ∧ r == "x"` is contradictory -> UNSAT.
+        let z3 = which_z3().expect("z3 required");
+        let inv = and2(eq(var("r"), none_ctor()), eq(var("r"), string_const("x")));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "`r is None ∧ r==\"x\"` must be UNSAT (Python None≠str); got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn none_distinct_from_bool_false_is_unsat() {
+        // Python: `None != False` (and False==0). `r is None ∧ r == False`
+        // is contradictory -> UNSAT. This is the discriminating test for the
+        // "bool must join the concrete-int distinctness target set" wiring:
+        // False encodes as 0, and None must be distinct from 0.
+        let z3 = which_z3().expect("z3 required");
+        let inv = and2(eq(var("r"), none_ctor()), eq(var("r"), bool_const(false)));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "`r is None ∧ r==False` must be UNSAT (Python None≠False); got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn bool_true_consistent_with_int_one_is_sat() {
+        // Python: `True == 1`. `r == True ∧ r == 1` is CONSISTENT -> SAT.
+        // This is the OVER-DISTINCTNESS GUARD: bool literals must encode to
+        // their int values (True->1) and must NOT be asserted distinct from
+        // int. A false-refusal here would mean over-distinctness. Permanent.
+        let z3 = which_z3().expect("z3 required");
+        let inv = and2(eq(var("r"), bool_const(true)), eq(var("r"), int_const(1)));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert!(
+            !out.contains("(error"),
+            "`r==True ∧ r==1` must not parse-error; got: {out}\nscript:\n{script}"
+        );
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "`r==True ∧ r==1` must be SAT (Python True==1); got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn bool_false_consistent_with_int_zero_is_sat() {
+        // Python: `False == 0`. `r == False ∧ r == 0` is CONSISTENT -> SAT.
+        let z3 = which_z3().expect("z3 required");
+        let inv = and2(eq(var("r"), bool_const(false)), eq(var("r"), int_const(0)));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "`r==False ∧ r==0` must be SAT (Python False==0); got: {out}\nscript:\n{script}"
+        );
     }
 
     fn run_z3(z3: &str, script: &str) -> String {

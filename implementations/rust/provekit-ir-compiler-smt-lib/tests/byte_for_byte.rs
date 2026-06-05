@@ -19,6 +19,20 @@ use provekit_ir_compiler_smt_lib::{compile_to_parts, emit, SmtLibCompiler, DIALE
 
 // -------------------- legacy inline emitter, frozen --------------------
 
+// Mirror of literal_encoding::string_lit_name, frozen into the baseline so the
+// byte-for-byte check tracks the intentional string-as-uninterpreted-Int-const
+// encoding. Kept self-contained (the production helper is module-private).
+fn legacy_string_lit_name(s: &str) -> String {
+    let full = provekit_canonicalizer::blake3_512_of(s.as_bytes());
+    let hex_part = full.strip_prefix("blake3-512:").unwrap_or(&full);
+    let prefix: String = hex_part
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(24)
+        .collect();
+    format!("strlit_{}", prefix)
+}
+
 fn legacy_emit(ir_formula: &Json) -> Result<String, String> {
     let body = legacy_emit_formula(ir_formula)?;
     let mut free_vars: BTreeMap<String, String> = BTreeMap::new();
@@ -165,9 +179,16 @@ fn legacy_emit_term(t: &Json) -> Result<String, String> {
             } else if let Some(u) = v.as_u64() {
                 Ok(u.to_string())
             } else if let Some(b) = v.as_bool() {
-                Ok(if b { "true".into() } else { "false".into() })
+                // Bool IS int (Python `True == 1`, `False == 0`): the frozen
+                // baseline tracks the intentional bool-as-int encoding change
+                // (was `true`/`false`, an Int-vs-Bool ill-sort z3 only tolerated
+                // via coercion). See literal_encoding::emit_const_value.
+                Ok(if b { "1".into() } else { "0".into() })
             } else if let Some(s) = v.as_str() {
-                Ok(format!("\"{s}\""))
+                // String literals encode as hash-named uninterpreted Int consts
+                // (parse-safe, sort-compatible). Mirror string_lit_name so the
+                // frozen baseline tracks the intentional change.
+                Ok(legacy_string_lit_name(s))
             } else if let Some(f) = v.as_f64() {
                 if f == (f as i64 as f64) {
                     Ok((f as i64).to_string())

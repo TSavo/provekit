@@ -1,0 +1,13 @@
+# Witnessed-correctness demo for the pytest-witness seat. `mint` RUNS the test
+# and emits a contract carrying the run as a `custom` EvidenceTerm; `prove`
+# discharges it BY RECOMPUTE (k(I)=t), verdict `witnessed`.
+[[plugins]]
+name = "pytest-witness-lift"
+kind = "lift"
+surface = "python-pytest-witness"
+
+[solvers]
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

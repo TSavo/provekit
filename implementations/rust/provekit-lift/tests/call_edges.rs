@@ -46,6 +46,7 @@ fn b(n: i64) -> i64 { a(n) }
         .iter()
         .map(|d| {
             let args = MintContractArgs {
+                evidence_term: None,
                 formals: Vec::new(),
                 emit_empty_formals: false,
                 formal_sorts: Vec::new(),
@@ -133,6 +134,7 @@ fn b(x: i64) -> i64 {
         .iter()
         .map(|d| {
             let args = MintContractArgs {
+                evidence_term: None,
                 formals: Vec::new(),
                 emit_empty_formals: false,
                 formal_sorts: Vec::new(),
@@ -209,6 +211,7 @@ fn b(n: i64) -> i64 { a(n) }
             .iter()
             .map(|d| {
                 let args = MintContractArgs {
+                    evidence_term: None,
                     formals: Vec::new(),
                     emit_empty_formals: false,
                     formal_sorts: Vec::new(),
@@ -312,6 +315,7 @@ pub extern "C" fn foo(n: i32) -> i32 {
 
     // Verify it round-trips through the CID computation without panic.
     let args = MintContractArgs {
+        evidence_term: None,
         formals: Vec::new(),
         emit_empty_formals: false,
         formal_sorts: Vec::new(),

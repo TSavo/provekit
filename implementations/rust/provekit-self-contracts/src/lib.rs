@@ -95,6 +95,7 @@ pub fn lift_plugin_protocol_contract_cids() -> Result<BTreeMap<String, String>, 
 
     for d in &contracts {
         let args = MintContractArgs {
+            evidence_term: None,
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),

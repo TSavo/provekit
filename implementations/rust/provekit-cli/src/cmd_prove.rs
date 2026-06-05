@@ -73,34 +73,65 @@ struct PluginManifest {
     name: String,
     command: Vec<String>,
     working_dir: Option<PathBuf>,
+    /// Execution-witness discharge command the kit ships (recompute entry).
+    /// Declared alongside `command` so witness discharge rides the SAME manifest
+    /// dispatch as lift -- no bespoke config. `prove` exports it as
+    /// `PROVEKIT_WITNESS_DISCHARGE_<witness_tool>` for the verifier's witness arm.
+    discharge_command: Vec<String>,
+    /// The `tool` value this surface stamps on its witness certificates (e.g.
+    /// `pytest`). Keys the per-tool discharge registry so a proof carrying
+    /// witnesses from multiple kits routes each to its own recompute.
+    witness_tool: Option<String>,
 }
 
 fn parse_manifest(path: &std::path::Path) -> Result<PluginManifest, String> {
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut m = PluginManifest::default();
-    for line in text.lines() {
-        let line = match line.find('#') {
-            Some(p) => &line[..p],
-            None => line,
+    let strip = |l: &str| -> String {
+        match l.find('#') {
+            Some(p) => l[..p].to_string(),
+            None => l.to_string(),
         }
-        .trim();
+    };
+    let raw: Vec<String> = text.lines().map(|l| strip(l).trim().to_string()).collect();
+    let mut i = 0;
+    while i < raw.len() {
+        let line = raw[i].clone();
+        i += 1;
         if line.is_empty() || line.starts_with('[') {
             continue;
         }
         let Some(eq) = line.find('=') else { continue };
-        let key = line[..eq].trim();
-        let val = line[eq + 1..].trim();
+        let key = line[..eq].trim().to_string();
+        let mut val = line[eq + 1..].trim().to_string();
+        // Multi-line array value: accumulate continuation lines until the
+        // closing `]` (TOML allows `key = [` then elements on later lines).
+        if val.starts_with('[') && !val.contains(']') {
+            while i < raw.len() && !val.contains(']') {
+                val.push(' ');
+                val.push_str(&raw[i]);
+                i += 1;
+            }
+        }
+        let key = key.as_str();
+        let val = val.as_str();
         match key {
             "name" => m.name = val.trim_matches('"').to_string(),
             "working_dir" => m.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
-            "command" => {
+            "witness_tool" => m.witness_tool = Some(val.trim_matches('"').to_string()),
+            "command" | "discharge_command" => {
                 let inner = val.trim_matches(|c| c == '[' || c == ']');
-                m.command = inner
+                let parsed: Vec<String> = inner
                     .split(',')
                     .map(|s| s.trim().trim_matches('"').to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
+                if key == "command" {
+                    m.command = parsed;
+                } else {
+                    m.discharge_command = parsed;
+                }
             }
             _ => {}
         }
@@ -496,6 +527,42 @@ pub fn run(args: ProveArgs) -> u8 {
     }
 
     let cfg_doc = read_project_config(&project_root);
+
+    // WITNESS DISCHARGE defaults: so `provekit prove <project>` settles execution
+    // witnesses by recompute WITHOUT the caller exporting env vars. The discharge
+    // command is declared in the KIT'S MANIFEST (alongside its lift `command`) and
+    // resolved here through the SAME `find_manifest` dispatch lift uses -- no
+    // bespoke config. Each lift surface's manifest may declare `discharge_command`
+    // + `witness_tool`; we export PROVEKIT_WITNESS_DISCHARGE_<TOOL> per tool so a
+    // proof carrying witnesses from multiple kits routes each to its own recompute.
+    // Project dir defaults to the project being proven (the source the witness's
+    // relative code paths resolve against). Explicit env vars still win.
+    if std::env::var_os("PROVEKIT_WITNESS_PROJECT_DIR").is_none() {
+        let p = project_root
+            .canonicalize()
+            .unwrap_or_else(|_| project_root.clone());
+        std::env::set_var("PROVEKIT_WITNESS_PROJECT_DIR", &p);
+    }
+    for plugin in cfg_doc.plugins.iter().filter(|p| p.is_lift_plugin()) {
+        let manifest = match find_manifest(&project_root, &plugin.surface) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if manifest.discharge_command.is_empty() {
+            continue;
+        }
+        let Some(tool) = manifest.witness_tool.as_deref() else {
+            continue;
+        };
+        let key = format!(
+            "PROVEKIT_WITNESS_DISCHARGE_{}",
+            tool.to_uppercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        );
+        if std::env::var_os(&key).is_none() {
+            std::env::set_var(&key, manifest.discharge_command.join(" "));
+        }
+    }
 
     // Resolve `--with` paths relative to project_root unless absolute,
     // matching how `[verify].callees` is resolved (project-root-anchored).

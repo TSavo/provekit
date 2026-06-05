@@ -767,6 +767,7 @@ fn compute_contract_set_cid_for_ir(ir: &[Value]) -> Result<String, String> {
             continue;
         }
         let args = MintContractArgs {
+            evidence_term: None,
             contract_name: name.to_string(),
             library: None,
             pre,

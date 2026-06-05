@@ -1,0 +1,16 @@
+# Minimal project for the numpy.testing assertion seat
+# (provekit-lift-py-numpy-testing). Lifts assert_equal/assert_array_equal/...
+# into ProofIR consistency facts; approximate assertions are loudly refused.
+[[plugins]]
+name = "python-numpy-testing-lift"
+kind = "lift"
+surface = "python-numpy-testing"
+
+[solvers]
+default = "z3"
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

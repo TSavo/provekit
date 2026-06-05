@@ -504,6 +504,7 @@ fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> Pa
             let pre_v = pre.as_deref().map(formula_text_to_value);
             let post_v = post.as_deref().map(formula_text_to_value);
             let mint_args = MintContractArgs {
+                evidence_term: None,
                 contract_name: format!("smoke::{}::{}", lift.file, lift.fn_name),
                 pre: pre_v,
                 post: post_v,

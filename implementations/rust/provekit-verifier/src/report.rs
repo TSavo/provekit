@@ -85,6 +85,39 @@ pub fn add_self_post_with_method(
     }
 }
 
+/// Add a test-assertion consistency row (receipt 1). Like a self-post, this
+/// is a contract self-consistency obligation, NOT a call site, so it does not
+/// increment `total_callsites`. A `Discharged` verdict here is a CONSISTENCY
+/// claim ("test assertions mutually consistent about callsite X"), not a
+/// code-correctness claim; a non-`Discharged` verdict (contradictory inv, or
+/// an undecidable/ill-sorted encoding STOP) drives a visible violation so the
+/// contradiction is surfaced loudly rather than swallowed.
+pub fn add_consistency(
+    contract_cid: &str,
+    property_name: &str,
+    verdict: ObligationVerdict,
+    reason: &str,
+    r: &mut Report,
+) {
+    let cs = CallSite {
+        property_name: format!("consistency:{property_name}"),
+        property_cid: contract_cid.to_string(),
+        ..CallSite::default()
+    };
+    r.rows.push(ReportRow {
+        callsite: cs,
+        status: verdict.as_str().to_string(),
+        reason: reason.to_string(),
+        discharge_method: Some("consistency".to_string()),
+        body_discharge_tier: None,
+    });
+    if verdict == ObligationVerdict::Discharged {
+        r.discharged += 1;
+    } else {
+        r.violations += 1;
+    }
+}
+
 pub fn add_load_errors(errs: &[LoadError], r: &mut Report) {
     r.load_errors = errs.to_vec();
 }

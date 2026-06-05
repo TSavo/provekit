@@ -1083,21 +1083,41 @@ surface = "python"
     let implications = report["implications"]
         .as_array()
         .expect("implications array");
+    // EUF argument-carrying lift (post-BINDING-EUF-change): same-arg callsites
+    // across tests AND across the binding/direct forms collapse to one EUF-keyed
+    // base (per concrete arg). The fixture has:
+    //   test_parse_value_scope: actual = parse_int("42") via variable binding
+    //     -> NOW EUF-keyed (concrete 1-arg binding-form substitution):
+    //        parse_int#euf#...(s:'42')   [coalesces with the direct forms below]
+    //   test_direct_parse: parse_int("42") == 42
+    //     -> EUF-keyed (s:'42'): parse_int#euf#...(s:'42')
+    //   test_two_callsites: parse_int("42") == parse_int("042")
+    //     -> EUF-keyed: parse_int#euf#...(s:'42') + parse_int#euf#...(s:'042')
+    // After within-file EUF coalesce: TWO unique bases — (s:'42') and (s:'042').
+    //   (s:'42') gathers THREE consistent ``== 42`` assertions (binding + direct
+    //   + two_callsites arg0) into one conjoined ::assertion (all SAT -> PROVEN).
+    // => 2 ::facts + 2 ::assertion = 4 contracts.
+    // Implications: 4 (one facts->assertion edge per callsite OCCURRENCE: three
+    //   to the (s:'42') base + one to the (s:'042') base).
     assert_eq!(
         ir.len(),
-        8,
+        4,
         "expected callsite fact + assertion contracts: {report:#}"
     );
     assert_eq!(
         implications.len(),
         4,
-        "expected one implication per lifted callsite: {report:#}"
+        "expected one implication per lifted callsite occurrence: {report:#}"
     );
     let names: Vec<_> = ir
         .iter()
         .map(|decl| decl["name"].as_str().unwrap_or_default())
         .collect();
-    assert!(names.iter().all(|name| name.starts_with("parse_int@")));
+    // All names start with "parse_int" (now all #euf#-arg-keyed for concrete args)
+    assert!(
+        names.iter().all(|name| name.starts_with("parse_int")),
+        "all names must start with parse_int: {names:?}"
+    );
     for test_name in [
         "test_parse_value_scope",
         "test_direct_parse",
@@ -1110,14 +1130,16 @@ surface = "python"
             .iter()
             .filter(|name| name.ends_with("::facts"))
             .count(),
-        4
+        2,
+        "expected 2 ::facts contracts: {names:?}"
     );
     assert_eq!(
         names
             .iter()
             .filter(|name| name.ends_with("::assertion"))
             .count(),
-        4
+        2,
+        "expected 2 ::assertion contracts: {names:?}"
     );
     for implication in implications {
         let antecedent = implication["antecedent"].as_str().unwrap_or_default();
@@ -1340,21 +1362,46 @@ surface = "python"
     assert_eq!(let_edge["pre"]["args"][0]["value"], 42);
     assert_eq!(let_edge["pre"]["args"][1]["value"], 10);
 
+    // BINDING-FORM EUF SUBSTITUTION (post-fix): both unittest methods bind
+    // ``actual = checked(42)`` (a CONCRETE 1-arg call) then assert contradictory
+    // values (``== 42`` and ``!= 42``).  The bound assertion subject is now the
+    // EUF ctor ``callresult_checked_a1(42)`` (not the per-method SSA var), so the
+    // two cross-method assertions coalesce by name into ONE
+    // ``checked#euf#...::assertion`` whose inv conjoins both equalities — a
+    // contradiction that fires UNSAT (REFUSED) at prove time.  That is the
+    // "contracts conflict" this test asserts, now as a single coalesced
+    // contradictory contract rather than two independent location-keyed ones.
     let test_assertions: Vec<_> = ir
         .iter()
         .filter(|decl| {
             let name = decl["name"].as_str().unwrap_or_default();
-            name.starts_with("checked@app.py:") && name.ends_with("::assertion")
+            name.starts_with("checked#euf#") && name.ends_with("::assertion")
         })
         .collect();
     assert_eq!(
         test_assertions.len(),
-        2,
-        "expected two unittest-derived assertion contracts: {report:#}"
+        1,
+        "concrete-arg binding cross-method must coalesce into ONE EUF assertion: {report:#}"
     );
-    let mut assertion_ops: Vec<_> = test_assertions
+    // No location-keyed ::assertion survives for the concrete-arg binding.
+    assert_eq!(
+        ir.iter()
+            .filter(|decl| {
+                let name = decl["name"].as_str().unwrap_or_default();
+                name.starts_with("checked@app.py:") && name.ends_with("::assertion")
+            })
+            .count(),
+        0,
+        "no location-keyed ::assertion should survive concrete-arg binding: {report:#}"
+    );
+    // The coalesced inv is an ``and`` of the two contradictory equalities.
+    let coalesced = &test_assertions[0]["inv"];
+    assert_eq!(coalesced["kind"], "and");
+    let mut assertion_ops: Vec<_> = coalesced["operands"]
+        .as_array()
+        .expect("and operands")
         .iter()
-        .map(|decl| decl["inv"]["name"].as_str().unwrap_or_default())
+        .map(|op| op["name"].as_str().unwrap_or_default())
         .collect();
     assertion_ops.sort_unstable();
     assert_eq!(assertion_ops, vec!["=", "≠"]);
@@ -1368,6 +1415,8 @@ surface = "python"
         .filter(|imp| imp["prover"] == "python-test-value-scope")
         .count();
     assert_eq!(wp_implications, 3);
+    // Both value-scope facts-implies-assertion edges now point at the SAME
+    // coalesced EUF assertion name (one edge per call-site occurrence).
     assert_eq!(test_implications, 2);
 }
 
