@@ -312,7 +312,12 @@ def _classify_numpy_testing(
             if subject is not None
             else None
         )
-        keyed.append((base or test_name, atom))
+        # Use the SAME ``{base}::assertion`` name the pytest lifter emits for the
+        # asserted value, so a numpy.testing vendor contract and a plain pytest
+        # consumer assertion about the same call CONJOIN (and a contradiction
+        # fires). Non-callsite atoms stay under the test name.
+        name = f"{base}::assertion" if base is not None else test_name
+        keyed.append((name, atom))
 
     if not keyed:
         out.claimed_tests.add(test_name)

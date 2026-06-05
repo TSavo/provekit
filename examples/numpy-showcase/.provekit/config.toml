@@ -26,9 +26,25 @@ surface = "python-bind"
 
 [solvers]
 default = "z3"
+# Dispatch each obligation class to the solver that owns its theory. Missing
+# binaries simply miss the registry and report Undecidable (loudly) for that
+# class -- the dispatch is the structure; install the seat to light it up.
 [solvers.dispatch]
 linear_arithmetic = "z3"
+bitvectors = "bitwuzla"
+strings = "cvc5"
+equational_theory = "vampire"
+dependent_type = "lean"
+categorical_structure = "coq"
 default = "z3"
 [solvers.z3]
 binary = "z3"
 flags = ["-smt2", "-in"]
+[solvers.vampire]
+binary = "vampire"
+flags = ["--input_syntax", "smtlib2"]
+[solvers.lean]
+binary = "lean"
+[solvers.coq]
+binary = "coqtop"
+flags = ["-batch"]
