@@ -262,6 +262,56 @@ fn try_witness_discharge(
 }
 
 /// Run the consistency pass over every candidate contract in the pool.
+/// True iff this contract carries a `custom` execution-witness EvidenceTerm, so
+/// it is settled BY RECOMPUTE (`try_witness_discharge`) rather than symbolic SAT.
+fn is_witness_member(body: &Json) -> bool {
+    body.get("evidence")
+        .and_then(|e| e.get("proofType"))
+        .and_then(|v| v.as_str())
+        == Some("custom")
+}
+
+/// Run the raw-satisfiability consistency check on a single `inv` and label it.
+/// Shared by the per-contract path and the cross-proof conjoined path.
+fn check_inv_consistency(
+    cid: String,
+    property_name: &str,
+    inv: Json,
+    plan: &SolverPlan,
+    registry: &HashMap<String, SolverHandle>,
+) -> ConsistencyResult {
+    let smt = match emit_asserted(&inv) {
+        Ok(s) => s,
+        Err(e) => {
+            return ConsistencyResult {
+                contract_cid: cid,
+                property_name: property_name.to_string(),
+                verdict: ObligationVerdict::Undecidable,
+                reason: format!("consistency smt-emit (encoding STOP): {e}"),
+                witnessed: false,
+            };
+        }
+    };
+    let (raw, raw_reason, _invs) = run_plan(plan, registry, &smt, Some(&inv));
+    let (verdict, label) = consistency_verdict(raw);
+    let reason = format!("{label} `{property_name}` [{raw_reason}]");
+    if verdict == ObligationVerdict::Undecidable {
+        warn!(
+            contract = %property_name,
+            cid = %cid,
+            raw = ?raw,
+            "consistency: UNDECIDABLE/ill-sorted -- encoding STOP, NOT a pass"
+        );
+    }
+    ConsistencyResult {
+        contract_cid: cid,
+        property_name: property_name.to_string(),
+        verdict,
+        reason,
+        witnessed: false,
+    }
+}
+
 pub fn verify_consistency(
     pool: &MementoPool,
     plan: &SolverPlan,
@@ -299,67 +349,64 @@ pub fn verify_consistency(
 
     let results: Vec<ConsistencyResult> = groups
         .par_iter()
-        .map(|(property_name, members)| {
-            let cid = members[0].0.clone();
+        .flat_map(|(property_name, members)| {
+            let mut out: Vec<ConsistencyResult> = Vec::new();
 
-            // WITNESS DISCHARGE (proofchain-native): a member carrying a `custom`
-            // execution-witness EvidenceTerm is settled BY RECOMPUTE per member --
-            // the kit's discharge command (verifier stays language-blind) -- never
-            // folded into the symbolic conjunction.
+            // WITNESS members are settled BY RECOMPUTE, PER MEMBER (the kit's
+            // discharge command; the verifier stays language-blind). They are
+            // NEVER folded into the symbolic conjunction AND never short-circuit
+            // the group: a witness member must not mask a contradictory inv group.
+            let mut inv_cids: Vec<&String> = Vec::new();
+            let mut inv_bodies: Vec<&Json> = Vec::new();
             for (m_cid, body) in members {
-                if let Some(res) =
-                    try_witness_discharge(body, (*m_cid).clone(), property_name.clone())
-                {
-                    return res;
+                if is_witness_member(body) {
+                    if let Some(res) =
+                        try_witness_discharge(body, (*m_cid).clone(), property_name.clone())
+                    {
+                        out.push(res);
+                        continue;
+                    }
                 }
+                inv_bodies.push(body);
+                inv_cids.push(m_cid);
+            }
+            if inv_bodies.is_empty() {
+                return out;
             }
 
-            // Conjoin the `inv`s of all same-named members (1 -> itself).
-            let invs: Vec<Json> = members
-                .iter()
-                .map(|(_, b)| b.get("inv").cloned().unwrap_or(Json::Null))
-                .collect();
-            let inv = if invs.len() == 1 {
-                invs.into_iter().next().unwrap()
+            // CROSS-PROOF CONJOIN only for CALLSITE-KEYED names (`#euf#`). That key
+            // is `(callee, args)`, so same name == same call == sound to conjoin a
+            // consumer's assertion with an imported vendor contract -> `and(==5,==6)`
+            // -> unsat -> refused. A bare test/location name does NOT guarantee the
+            // same subject, so those stay PER-CONTRACT (conjoining them could falsely
+            // refuse two unrelated tests that happen to share a function name).
+            let callsite_keyed = property_name.contains("#euf#");
+            if callsite_keyed && inv_bodies.len() > 1 {
+                let invs: Vec<Json> = inv_bodies
+                    .iter()
+                    .map(|b| b.get("inv").cloned().unwrap_or(Json::Null))
+                    .collect();
+                let inv = serde_json::json!({ "kind": "and", "operands": invs });
+                out.push(check_inv_consistency(
+                    inv_cids[0].clone(),
+                    property_name,
+                    inv,
+                    plan,
+                    registry,
+                ));
             } else {
-                serde_json::json!({ "kind": "and", "operands": invs })
-            };
-
-            // RAW satisfiability: assert <inv>; check-sat (NOT the negated
-            // validity form). `emit_asserted` produces exactly that shape.
-            let smt = match emit_asserted(&inv) {
-                Ok(s) => s,
-                Err(e) => {
-                    return ConsistencyResult {
-                        contract_cid: cid,
-                        property_name: property_name.clone(),
-                        verdict: ObligationVerdict::Undecidable,
-                        reason: format!("consistency smt-emit (encoding STOP): {e}"),
-                        witnessed: false,
-                    };
+                for (cid, body) in inv_cids.iter().zip(inv_bodies.iter()) {
+                    let inv = body.get("inv").cloned().unwrap_or(Json::Null);
+                    out.push(check_inv_consistency(
+                        (*cid).clone(),
+                        property_name,
+                        inv,
+                        plan,
+                        registry,
+                    ));
                 }
-            };
-
-            let (raw, raw_reason, _invs) = run_plan(plan, registry, &smt, Some(&inv));
-            let (verdict, label) = consistency_verdict(raw);
-            let reason = format!("{label} `{property_name}` [{raw_reason}]");
-
-            if verdict == ObligationVerdict::Undecidable {
-                warn!(
-                    contract = %property_name,
-                    cid = %cid,
-                    raw = ?raw,
-                    "consistency: UNDECIDABLE/ill-sorted -- encoding STOP, NOT a pass"
-                );
             }
-
-            ConsistencyResult {
-                contract_cid: cid,
-                property_name: property_name.clone(),
-                verdict,
-                reason,
-                witnessed: false,
-            }
+            out
         })
         .collect();
 
@@ -478,6 +525,52 @@ mod tests {
         let res = verify_consistency(&pool, &plan, &reg);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].verdict, ObligationVerdict::Discharged);
+    }
+
+    /// A WITNESS member in a same-callsite group must NOT short-circuit the group
+    /// and mask a contradictory inv conjunction. Witnesses settle per-member; the
+    /// `and(==5,==6)` must still surface as Unsatisfied. (Review: CodeRabbit
+    /// Critical / Codex P1 on the first-witnessed-member return.)
+    #[test]
+    fn witness_member_does_not_mask_a_contradictory_group() {
+        let (plan, reg) = z3_plan_and_registry();
+        let name = "numpy.add#euf#c:callresult_numpy_add_a2(i:2,i:3)::assertion";
+        let mut pool = MementoPool::default();
+        // a custom-witness member sharing the callsite name (no discharge command
+        // configured -> Undecidable, fail-closed; the point is it must not swallow
+        // the group's contradiction).
+        let witness = json!({"envelope":{"header":{
+            "kind":"contract","contractName":name,"inv": eqf(var("r"), int(5)),
+            "evidence":{"proofType":"custom","certificate":
+                {"tool":"pytest","version":"x","formulaHash":"x","proofData":"{}"}}}}});
+        pool.insert("blake3-512:witnessmember".to_string(), witness);
+        insert_contract(&mut pool, "blake3-512:c5", name, eqf(var("r"), int(5)));
+        insert_contract(&mut pool, "blake3-512:c6", name, eqf(var("r"), int(6)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert!(
+            res.iter().any(|r| r.verdict == ObligationVerdict::Unsatisfied),
+            "the contradiction must surface despite a witness member: {res:?}"
+        );
+    }
+
+    /// Same callee NAME but DIFFERENT (non-callsite-keyed) test names must NOT be
+    /// conjoined: two unrelated tests that share a function name stay independent,
+    /// no false refusal. Only `#euf#` callsite keys conjoin across proofs.
+    #[test]
+    fn bare_test_names_are_not_conjoined() {
+        let (plan, reg) = z3_plan_and_registry();
+        let mut pool = MementoPool::default();
+        // Two same-named, contradictory-looking contracts under a BARE test name.
+        // They are about independent subjects; conjoining would falsely refuse.
+        insert_contract(&mut pool, "blake3-512:t1", "test_add", eqf(var("r"), int(5)));
+        insert_contract(&mut pool, "blake3-512:t2", "test_add", eqf(var("r"), int(6)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        // per-contract: each is internally satisfiable -> both Discharged, none refused.
+        assert_eq!(res.len(), 2, "bare names must NOT collapse into one obligation: {res:?}");
+        assert!(
+            res.iter().all(|r| r.verdict == ObligationVerdict::Discharged),
+            "independent same-test-name contracts must not be conjoined: {res:?}"
+        );
     }
 
     /// The witness-discharge arm: a contract carrying a `custom` EvidenceTerm is
