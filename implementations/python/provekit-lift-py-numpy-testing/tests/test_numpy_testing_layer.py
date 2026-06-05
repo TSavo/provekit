@@ -193,3 +193,27 @@ def test_bare_assert_only_not_claimed_by_this_seat():
     assert out.claimed_tests == set()
     assert out.decls == []
     assert out.warnings == []
+
+
+def test_assert_equal_keys_callsite_in_either_arg():
+    # `assert_equal(np.add(2,3), 5)` AND `assert_equal(5, np.add(2,3))` both key
+    # the np.add callsite, so a consumer asserting either way inherits the same
+    # contract. (Review: CodeRabbit major - the second-arg call was missed.)
+    def base(src: str):
+        out = lift_file_numpy_testing(textwrap.dedent(src), "t.py")
+        return {d.name.split("::")[0] for d in out.decls}
+
+    first = base(
+        "import numpy as np\n"
+        "from numpy.testing import assert_equal\n"
+        "def test_a():\n"
+        "    assert_equal(np.add(2, 3), 5)\n"
+    )
+    second = base(
+        "import numpy as np\n"
+        "from numpy.testing import assert_equal\n"
+        "def test_b():\n"
+        "    assert_equal(5, np.add(2, 3))\n"
+    )
+    assert "numpy.add#euf#c:callresult_numpy_add_a2(i:2,i:3)" in first, first
+    assert first == second, (first, second)

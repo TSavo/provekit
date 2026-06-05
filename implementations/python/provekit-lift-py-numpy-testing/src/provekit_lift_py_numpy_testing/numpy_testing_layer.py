@@ -167,10 +167,12 @@ def _npt_subject_call(stmt: ast.stmt) -> Optional[ast.Call]:
     ``assert np.add(2,3) == 5`` -> the first Call operand of the comparison. None
     when no call is the subject (keeps the test-name fallback)."""
     if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
-        if _npt_call_name(stmt.value.func) in _NPT_EQUALITY and stmt.value.args:
-            arg0 = stmt.value.args[0]
-            if isinstance(arg0, ast.Call):
-                return arg0
+        if _npt_call_name(stmt.value.func) in _NPT_EQUALITY:
+            # EITHER comparand can be the call under test: `assert_equal(np.add(2,3), 5)`
+            # and `assert_equal(5, np.add(2,3))` both key to the np.add callsite.
+            for arg in stmt.value.args[:2]:
+                if isinstance(arg, ast.Call):
+                    return arg
     if isinstance(stmt, ast.Assert) and isinstance(stmt.test, ast.Compare):
         for operand in [stmt.test.left, *stmt.test.comparators]:
             if isinstance(operand, ast.Call):

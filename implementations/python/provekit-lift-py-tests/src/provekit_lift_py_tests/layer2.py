@@ -3301,8 +3301,15 @@ def _collect_module_aliases(tree: ast.AST) -> Dict[str, str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for a in node.names:
-                local = a.asname or a.name.split(".")[0]
-                aliases[local] = a.name
+                if a.asname:
+                    # `import numpy.linalg as nl` binds `nl` to the FULL module.
+                    aliases[a.asname] = a.name
+                else:
+                    # `import numpy` AND `import numpy.linalg` both bind only the
+                    # TOP-LEVEL name (`numpy`), referring to the top-level package.
+                    # Binding `numpy` -> `numpy.linalg` would mis-resolve `numpy.add`.
+                    top = a.name.split(".")[0]
+                    aliases[top] = top
     return aliases
 
 

@@ -67,7 +67,16 @@ def resolve_source_memento(project_root: str, memento: dict[str, Any]) -> dict[s
         )
 
     rel = file.replace(os.sep, "/")
-    recomputed = _body_source_locator(node, rel, source.splitlines(keepends=True))
+    # The Source Oracle's whole job is to RECONSTRUCT the full body + ast_template
+    # from disk. `_body_source_locator` honors PROVEKIT_LEAN_SOURCE (used at MINT
+    # time to omit inline bodies); if that env leaked into a resolve, the oracle
+    # would return empty bodies. Force full-source mode for the recompute.
+    _prev_lean = os.environ.pop("PROVEKIT_LEAN_SOURCE", None)
+    try:
+        recomputed = _body_source_locator(node, rel, source.splitlines(keepends=True))
+    finally:
+        if _prev_lean is not None:
+            os.environ["PROVEKIT_LEAN_SOURCE"] = _prev_lean
 
     if pinned_source_cid is not None and recomputed.get("source_cid") != pinned_source_cid:
         raise SourceOracleRefusal(

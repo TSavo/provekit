@@ -65,6 +65,19 @@ def test_method_call_on_object_is_not_callsite_keyed():
     assert not any(b.startswith("compute#euf#") or "#euf#" in b for b in bases), bases
 
 
+def test_dotted_import_resolves_to_top_level_package():
+    # `import numpy.linalg` binds the TOP-LEVEL name `numpy` to the numpy package,
+    # NOT to numpy.linalg. `numpy.add(2,3)` must key to `numpy.add`, never
+    # `numpy.linalg.add`. (Review: CodeRabbit major on dotted imports.)
+    src = (
+        "import numpy.linalg\n"
+        "def test_d():\n"
+        "    assert numpy.add(2, 3) == 5\n"
+    )
+    bases = {_euf_base(n) for n in _names(src)}
+    assert bases == {"numpy.add#euf#c:callresult_numpy_add_a2(i:2,i:3)"}, bases
+
+
 def test_symbolic_args_do_not_unify():
     # np.add(x, y) with symbolic args must NOT be argument-keyed (x, y bind
     # independently per function); stays location-keyed -> no cross-test unify.
