@@ -4,10 +4,16 @@ import io
 import json
 import contextlib
 
+import pytest
+
 from provekit_pytest_witness import (
     Witness, run_and_witness, verify, emit_witness_proof, discharge_from_proof,
+    witness_memento,
 )
 from provekit_pytest_witness.discharge_cli import main as discharge_main
+from provekit_lift_py_tests.witness_oracle import (
+    WitnessOracleRefusal, resolve_witness,
+)
 
 GOOD = "def add(a, b):\n    return a + b\n"
 BAD = "def add(a, b):\n    return a + b + 1\n"
@@ -69,6 +75,60 @@ def test_forged_passed_witness_over_failing_code_is_caught_by_recompute(tmp_path
     path = emit_witness_proof(forged, str(out))
     verdict, reason = discharge_from_proof(path, proj)
     assert verdict == "REFUSED" and "did not reproduce" in reason, reason
+
+
+# --- The kit MINTS, the Witness Oracle VERIFIES -------------------------------
+# The witness lifter is the minter (we ran the test, we sign the mark); the
+# Witness Oracle is the verifier (signature always, recompute when re-runnable).
+# That minter/verifier pair is WHY the oracle exists: no external author wrote
+# the witness, so we sign our own and re-check it.
+
+
+def test_minted_memento_carries_no_run_body(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    m = witness_memento(w)
+    # A pointer + hash + signature -- the run body lives in the witness package.
+    assert m["witness_cid"] == w.cid
+    assert m["signer"].startswith("ed25519:") and m["signature"]
+    assert "proof_data" not in m and "ast_template" not in m
+
+
+def test_oracle_verifies_minted_witness_by_signature(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    m = witness_memento(run_and_witness(proj, "test_add.py", CODE))
+    # No package, not re-run here -> signature is the universal check.
+    assert resolve_witness(m)["verified_by"] == "signature"
+
+
+def test_oracle_recomputes_minted_witness_via_rerun(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    m = witness_memento(w)
+    # The pytest-witness is re-runnable + deterministic: the oracle's recompute_fn
+    # re-runs the test and re-derives the CID. Reproduces -> recompute-verified.
+    def recompute(_m):
+        return run_and_witness(proj, w.test_id, list(w.code_files)).cid
+    assert resolve_witness(m, recompute_fn=recompute)["verified_by"] == "recompute"
+
+
+def test_oracle_refuses_minted_witness_when_code_drifts(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    m = witness_memento(w)
+    (tmp_path / "impl.py").write_text(BAD)  # the bytes you'd run drifted
+    def recompute(_m):
+        return run_and_witness(proj, w.test_id, list(w.code_files)).cid
+    with pytest.raises(WitnessOracleRefusal, match="recompute misaligned"):
+        resolve_witness(m, recompute_fn=recompute)
+
+
+def test_oracle_refuses_minted_witness_with_tampered_signature(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    m = witness_memento(run_and_witness(proj, "test_add.py", CODE))
+    m["signature"] = "00" * 64  # forge the mark
+    with pytest.raises(WitnessOracleRefusal, match="signature invalid"):
+        resolve_witness(m)
 
 
 # --- The verifier<->kit contract: the discharge command -----------------------

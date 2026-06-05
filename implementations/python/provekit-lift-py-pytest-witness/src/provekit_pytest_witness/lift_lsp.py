@@ -21,7 +21,7 @@ from provekit_lift_py_tests.ir import (
 )
 from provekit_lift_py_tests.canonicalizer import encode_jcs
 
-from .witness import run_and_witness
+from .witness import run_and_witness, witness_memento
 
 KIT_ID = "python-pytest-witness"
 KIT_VERSION = "0.1.0"
@@ -67,6 +67,7 @@ def handle_lift(msg_id: Any, params: dict) -> None:
         code_rels = [r for r in rels if not os.path.basename(r).startswith("test_")]
         test_rels = [r for r in rels if os.path.basename(r).startswith("test_")]
         decls: List[ContractDecl] = []
+        mementos: List[dict] = []
         for tr in test_rels:
             w = run_and_witness(ws, tr, code_rels)
             proof_data = json.dumps(
@@ -79,9 +80,14 @@ def handle_lift(msg_id: Any, params: dict) -> None:
             )
             ev = EvidenceTerm(proof_type="custom", certificate=cert)
             decls.append(ContractDecl(name=tr, inv=atomic("witnessed", []), evidence=ev))
+            # The signed WitnessMemento the kit MINTS: a pointer + hash + signature,
+            # zero run body. The body is the witness package, resolved + re-verified
+            # by the Witness Oracle. We are the minter; the oracle is the verifier.
+            mementos.append(witness_memento(w))
         ir = json.loads(encode_jcs(declarations_to_value(decls))) if decls else []
         _send({"jsonrpc": "2.0", "id": msg_id, "result": {
-            "kind": "ir-document", "ir": ir, "implications": [], "diagnostics": [], "warnings": [],
+            "kind": "ir-document", "ir": ir, "witness_mementos": mementos,
+            "implications": [], "diagnostics": [], "warnings": [],
         }})
     except Exception as e:
         import traceback

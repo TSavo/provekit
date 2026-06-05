@@ -92,6 +92,38 @@ def run_and_witness(project_dir: str, test_id: str, code_files: List[str]) -> Wi
     return Witness(cc, rc, test_id, outcome, tuple(sorted(code_files)), cid)
 
 
+# ---------------------------------------------------------------------------
+# WitnessMemento: the signed pointer the `.proof` carries INSTEAD of the run body.
+# ---------------------------------------------------------------------------
+
+# The prover's witness-signing seed. A witness is OUR signed mark; in production
+# this is the prover's provenance key (vault). Fixed here so the memento is
+# reproducible in tests.
+WITNESS_SIGNER_SEED = bytes([0x77]) * 32  # 'w' for witness
+
+
+def witness_memento(w: "Witness", seed: bytes = WITNESS_SIGNER_SEED) -> dict:
+    """Build a signed WitnessMemento. The `.proof` carries THIS -- a pointer +
+    hash + signature -- not the run body. The body (the recorded run) goes to the
+    witness package, resolved + re-verified by the Witness Oracle: signature
+    always (whose mark), recompute when the runtime pin reproduces."""
+    import nacl.signing
+
+    sk = nacl.signing.SigningKey(seed)
+    return {
+        "kind": "witness-memento",
+        "witness_cid": w.cid,
+        "witness_kind": "pytest-witness",
+        "signer": "ed25519:" + sk.verify_key.encode().hex(),
+        "signature": sk.sign(w.cid.encode("utf-8")).signature.hex(),
+        "runtime_cid": w.runtime_cid,
+        "code_cid": w.code_cid,
+        "test": w.test_id,
+        "outcome": w.outcome,
+        "code_files": list(w.code_files),
+    }
+
+
 def verify(witness: Witness, project_dir: str) -> Tuple[str, str]:
     """Verify a witness BY RECOMPUTATION against ``project_dir``.
 
