@@ -243,11 +243,7 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
     recreate_imports(&imports)?;
 
     let libprovekit = repo_root.join("implementations/rust/libprovekit");
-    let shim_std = repo_root.join("examples/provekit-shim-rust-std");
-    let dependency_specs = [
-        ("shim-std", shim_std.as_path()),
-        ("libprovekit", libprovekit.as_path()),
-    ];
+    let dependency_specs = [("libprovekit", libprovekit.as_path())];
     let mut dependency_proofs = BTreeMap::new();
     for (name, dep) in dependency_specs {
         if same_path(dep, &target_abs) {
@@ -257,7 +253,7 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
         let staged_imports = stage_dependency_imports_for_mint(
             name,
             dep,
-            dependency_import_requirements(name, &target_abs, &shim_std),
+            dependency_import_requirements(name),
             &dependency_proofs,
         )?;
         info!(
@@ -774,16 +770,11 @@ fn copy_proof_to_imports(proof_file: &Path, imports: &Path) -> Result<(), String
     Ok(())
 }
 
-fn dependency_import_requirements(
-    dependency_name: &str,
-    target_abs: &Path,
-    shim_std: &Path,
-) -> &'static [&'static str] {
-    if dependency_name == "libprovekit" && !same_path(target_abs, shim_std) {
-        &["shim-std"]
-    } else {
-        &[]
-    }
+fn dependency_import_requirements(_dependency_name: &str) -> &'static [&'static str] {
+    // The rust-std shim (Product-B synthesized std panic-freedom contracts) was
+    // the only cross-dependency import requirement; it is deleted. Self-check now
+    // mints each dependency without staging a std-shim proof.
+    &[]
 }
 
 fn stage_dependency_imports_for_mint(

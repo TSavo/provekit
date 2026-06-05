@@ -1,9 +1,0 @@
-# SPDX-License-Identifier: Apache-2.0
-#
-# Rust std algebra is expressed as ordinary Rust unit tests in this shim.
-# The contracts surface must therefore dispatch to the Rust test/assertion
-# lifter. The separate rust-bind surface owns #[provekit::sugar] binding
-# material; do not route unit-test lifting through the sugar/bind lifter.
-name = "rust-contracts-lift"
-command = ["../../implementations/rust/target/debug/provekit-lift", "--rpc"]
-working_dir = "."
