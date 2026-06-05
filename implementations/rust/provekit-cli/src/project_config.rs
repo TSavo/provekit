@@ -143,12 +143,6 @@ pub struct ProjectConfig {
     /// consumed alongside the main project.
     pub callees: Vec<String>,
 
-    /// Execution-witness discharge command (`[witness] discharge = [...]`).
-    /// When set, `provekit prove` exports it as PROVEKIT_WITNESS_DISCHARGE so
-    /// the verifier's witness arm can spawn the kit's recompute. Empty leaves
-    /// witness contracts fail-closed (Undecidable) unless the env var is set.
-    pub witness_discharge: Vec<String>,
-
     /// Serialized command path documents, keyed by command.
     pub path_mint: Option<String>,
 
@@ -287,9 +281,6 @@ fn parse_config(text: &str) -> ProjectConfig {
             (Some("solvers"), "mode") => cfg.solver_mode = Some(val),
             (Some("verify"), "callees") => {
                 cfg.callees = parse_string_array(&val);
-            }
-            (Some("witness"), "discharge") => {
-                cfg.witness_discharge = parse_string_array(&val);
             }
             (Some("paths.mint"), "file") => cfg.path_mint = Some(val),
             // #1358 / #1355: [platform_profile] section

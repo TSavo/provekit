@@ -166,12 +166,35 @@ fn try_witness_discharge(
         reason,
         witnessed: false,
     };
-    let cmd = match std::env::var("PROVEKIT_WITNESS_DISCHARGE") {
-        Ok(c) if !c.trim().is_empty() => c,
-        _ => {
-            return Some(undecidable(
-                "custom witness present but PROVEKIT_WITNESS_DISCHARGE unset (fail-closed)".into(),
-            ))
+    // Route to the TOOL-specific discharge command (federation): the certificate
+    // names its `tool`; the kit's manifest declared the matching command, which
+    // `cmd_prove` exported as PROVEKIT_WITNESS_DISCHARGE_<TOOL>. Fall back to the
+    // generic PROVEKIT_WITNESS_DISCHARGE (manual override). Fail-closed if neither.
+    let tool = evidence
+        .get("certificate")
+        .and_then(|c| c.get("tool"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    let tool_key = format!(
+        "PROVEKIT_WITNESS_DISCHARGE_{}",
+        tool.to_uppercase()
+            .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+    );
+    let cmd = match std::env::var(&tool_key)
+        .ok()
+        .filter(|c| !c.trim().is_empty())
+        .or_else(|| {
+            std::env::var("PROVEKIT_WITNESS_DISCHARGE")
+                .ok()
+                .filter(|c| !c.trim().is_empty())
+        }) {
+        Some(c) => c,
+        None => {
+            return Some(undecidable(format!(
+                "custom witness (tool={tool:?}) present but no discharge command \
+                 configured (declare `discharge_command` + `witness_tool` in the \
+                 kit's lift manifest) (fail-closed)"
+            )))
         }
     };
     let project = match std::env::var("PROVEKIT_WITNESS_PROJECT_DIR") {

@@ -73,6 +73,15 @@ struct PluginManifest {
     name: String,
     command: Vec<String>,
     working_dir: Option<PathBuf>,
+    /// Execution-witness discharge command the kit ships (recompute entry).
+    /// Declared alongside `command` so witness discharge rides the SAME manifest
+    /// dispatch as lift -- no bespoke config. `prove` exports it as
+    /// `PROVEKIT_WITNESS_DISCHARGE_<witness_tool>` for the verifier's witness arm.
+    discharge_command: Vec<String>,
+    /// The `tool` value this surface stamps on its witness certificates (e.g.
+    /// `pytest`). Keys the per-tool discharge registry so a proof carrying
+    /// witnesses from multiple kits routes each to its own recompute.
+    witness_tool: Option<String>,
 }
 
 fn parse_manifest(path: &std::path::Path) -> Result<PluginManifest, String> {
@@ -94,13 +103,19 @@ fn parse_manifest(path: &std::path::Path) -> Result<PluginManifest, String> {
         match key {
             "name" => m.name = val.trim_matches('"').to_string(),
             "working_dir" => m.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
-            "command" => {
+            "witness_tool" => m.witness_tool = Some(val.trim_matches('"').to_string()),
+            "command" | "discharge_command" => {
                 let inner = val.trim_matches(|c| c == '[' || c == ']');
-                m.command = inner
+                let parsed: Vec<String> = inner
                     .split(',')
                     .map(|s| s.trim().trim_matches('"').to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
+                if key == "command" {
+                    m.command = parsed;
+                } else {
+                    m.discharge_command = parsed;
+                }
             }
             _ => {}
         }
@@ -497,21 +512,40 @@ pub fn run(args: ProveArgs) -> u8 {
 
     let cfg_doc = read_project_config(&project_root);
 
-    // WITNESS DISCHARGE defaults: so `provekit prove <project>` settles
-    // execution witnesses by recompute WITHOUT the caller exporting env vars.
-    // The verifier's witness arm reads these (same process). Explicit env vars
-    // still win. Project dir defaults to the project being proven (the source
-    // the witness's relative code paths resolve against); the discharge command
-    // comes from `[witness] discharge = [...]` in the project config.
+    // WITNESS DISCHARGE defaults: so `provekit prove <project>` settles execution
+    // witnesses by recompute WITHOUT the caller exporting env vars. The discharge
+    // command is declared in the KIT'S MANIFEST (alongside its lift `command`) and
+    // resolved here through the SAME `find_manifest` dispatch lift uses -- no
+    // bespoke config. Each lift surface's manifest may declare `discharge_command`
+    // + `witness_tool`; we export PROVEKIT_WITNESS_DISCHARGE_<TOOL> per tool so a
+    // proof carrying witnesses from multiple kits routes each to its own recompute.
+    // Project dir defaults to the project being proven (the source the witness's
+    // relative code paths resolve against). Explicit env vars still win.
     if std::env::var_os("PROVEKIT_WITNESS_PROJECT_DIR").is_none() {
         let p = project_root
             .canonicalize()
             .unwrap_or_else(|_| project_root.clone());
         std::env::set_var("PROVEKIT_WITNESS_PROJECT_DIR", &p);
     }
-    if std::env::var_os("PROVEKIT_WITNESS_DISCHARGE").is_none() && !cfg_doc.witness_discharge.is_empty()
-    {
-        std::env::set_var("PROVEKIT_WITNESS_DISCHARGE", cfg_doc.witness_discharge.join(" "));
+    for plugin in cfg_doc.plugins.iter().filter(|p| p.is_lift_plugin()) {
+        let manifest = match find_manifest(&project_root, &plugin.surface) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if manifest.discharge_command.is_empty() {
+            continue;
+        }
+        let Some(tool) = manifest.witness_tool.as_deref() else {
+            continue;
+        };
+        let key = format!(
+            "PROVEKIT_WITNESS_DISCHARGE_{}",
+            tool.to_uppercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        );
+        if std::env::var_os(&key).is_none() {
+            std::env::set_var(&key, manifest.discharge_command.join(" "));
+        }
     }
 
     // Resolve `--with` paths relative to project_root unless absolute,
