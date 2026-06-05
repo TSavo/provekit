@@ -151,9 +151,7 @@ build-java:
 .PHONY: build-python
 build-python:
 	$(PIP) install --quiet --no-cache-dir \
-		-e examples/provekit-shim-python-requests \
-		-e implementations/python/provekit-realize-python-core \
-		-e implementations/python/provekit-realize-python-requests
+		-e implementations/python/provekit-realize-python-core
 	# The rust integration suite spawns the python lifter over RPC
 	# (python3 -m provekit_lift_py_tests...). Install the lift packages into the
 	# same interpreter so those cross-language tests find it.
@@ -307,11 +305,6 @@ test-python: build-python
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
 		pytest) || failed="$$failed provekit-realize-python-core"; \
-	(cd implementations/python/provekit-realize-python-requests && \
-		python3 -m venv .venv && \
-		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-realize-python-core -e ../../../examples/provekit-shim-python-requests -e . pytest && \
-		pytest) || failed="$$failed provekit-realize-python-requests"; \
 	(cd implementations/python/provekit-lift-python-source && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
