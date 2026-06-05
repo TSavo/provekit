@@ -19,11 +19,11 @@ from provekit_lift_py_tests.ir import (
     atomic,
     declarations_to_value,
 )
-from provekit_lift_py_tests.canonicalizer import encode_jcs
+from provekit_lift_py_tests.canonicalizer import encode_jcs, blake3_512_of
 
 import base64
 
-from .witness import run_and_witness, witness_memento, witness_body
+from .witness import Witness, run_and_witness, witness_memento, witness_body
 
 KIT_ID = "python-pytest-witness"
 KIT_VERSION = "0.1.0"
@@ -135,6 +135,23 @@ def handle_resolve_witness(msg_id: Any, params: dict) -> None:
                 resolved_by = "package"
         # 2. RECOMPUTE -- re-run the pinned test, rebuild the canonical body.
         if body is None and ws and memento.get("test") and memento.get("code_files"):
+            # Don't execute attacker-supplied paths on a memento whose own fields
+            # don't even hash to its pinned CID. The witness body is a pure
+            # function of (code_cid, runtime_cid, test, outcome, code_files), so a
+            # consistent memento MUST reconstruct to `cid` before we run anything.
+            probe = Witness(
+                code_cid=str(memento.get("code_cid", "")),
+                runtime_cid=str(memento.get("runtime_cid", "")),
+                test_id=str(memento["test"]),
+                outcome=str(memento.get("outcome", "")),
+                code_files=tuple(sorted(str(c) for c in memento["code_files"])),
+                cid=cid,
+            )
+            if blake3_512_of(witness_body(probe)) != cid:
+                raise RuntimeError(
+                    f"memento fields do not reconstruct witness_cid {cid}; "
+                    "refusing to re-run a tampered memento"
+                )
             w = run_and_witness(ws, memento["test"], list(memento["code_files"]))
             body = witness_body(w)
             resolved_by = "recompute"

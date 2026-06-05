@@ -223,6 +223,18 @@ def test_resolve_witness_rpc_recompute_reruns_and_returns_body(tmp_path):
     assert blake3_512_of(body) == w.cid
 
 
+def test_resolve_witness_rpc_refuses_recompute_on_tampered_memento(tmp_path):
+    # The body is a pure function of the memento's own fields, so a memento whose
+    # fields don't reconstruct its pinned CID is tampered. The oracle must refuse
+    # BEFORE executing the (attacker-controlled) test path, not after.
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    m = witness_memento(w)
+    m["outcome"] = "failed"  # cid still pins the passing run -> no longer reconstructs
+    reply = _rpc("provekit.plugin.resolve_witness", {"memento": m, "workspace_root": proj})
+    assert "error" in reply and "do not reconstruct" in reply["error"]["message"], reply
+
+
 def test_resolve_witness_rpc_errors_when_unresolvable(tmp_path):
     proj = _project(tmp_path, GOOD)
     w = run_and_witness(proj, "test_add.py", CODE)
