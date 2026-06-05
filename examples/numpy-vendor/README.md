@@ -7,7 +7,7 @@ consumer can `verify` it — recomputing, trusting nothing.
 `./run.sh` does exactly that, with **no code changes to numpy and no hand-written
 shim**:
 
-```
+```text
 numpy.proof:  13M, 2909 sugar members          # all of numpy's python surface
 witness: passed -> .provekit/witnesses/<cid>.witness
 [pass] <cid>  (signature+content-address:package)

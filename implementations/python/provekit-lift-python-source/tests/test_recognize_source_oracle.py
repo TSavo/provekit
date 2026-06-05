@@ -21,6 +21,7 @@ from provekit_lift_python_source.bind_rpc import _resolve_via_source_oracle
 def _entry(tmp: Path, rel: str, src: str, *, lean: bool) -> dict:
     (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
     (tmp / rel).write_text(src, encoding="utf-8")
+    prev = os.environ.get("PROVEKIT_LEAN_SOURCE")
     if lean:
         os.environ["PROVEKIT_LEAN_SOURCE"] = "1"
     try:
@@ -30,7 +31,11 @@ def _entry(tmp: Path, rel: str, src: str, *, lean: bool) -> dict:
             if e.get("kind") == "library-sugar-binding-entry"
         )
     finally:
-        os.environ.pop("PROVEKIT_LEAN_SOURCE", None)
+        # Restore the prior value rather than unconditionally deleting it.
+        if prev is None:
+            os.environ.pop("PROVEKIT_LEAN_SOURCE", None)
+        else:
+            os.environ["PROVEKIT_LEAN_SOURCE"] = prev
 
 
 def test_oracle_reconstructs_the_exact_inline_template(tmp_path: Path) -> None:

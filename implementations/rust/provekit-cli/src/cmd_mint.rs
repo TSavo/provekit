@@ -2509,8 +2509,16 @@ fn mint_witness_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     let witness_cid = required_str(decl, "witness_cid", "witness-memento")?;
     let signer = required_str(decl, "signer", "witness-memento")?;
     let signature = required_str(decl, "signature", "witness-memento")?;
-    if signature.trim().is_empty() {
-        return Err("`witness-memento` missing non-empty `signature`".to_string());
+    // Fail closed on EMPTY load-bearing fields. `required_str` enforces presence
+    // but not non-emptiness; an empty witnessCid/signer/signature is not a witness.
+    for (field, value) in [
+        ("witness_cid", witness_cid),
+        ("signer", signer),
+        ("signature", signature),
+    ] {
+        if value.trim().is_empty() {
+            return Err(format!("`witness-memento` missing non-empty `{field}`"));
+        }
     }
     let witness_kind = optional_str(decl, "witness_kind").unwrap_or("witness");
     let envelope = json!({

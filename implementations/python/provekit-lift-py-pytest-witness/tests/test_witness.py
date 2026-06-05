@@ -59,7 +59,8 @@ def test_bad_code_produces_only_a_failed_witness(tmp_path):
 def test_emit_proof_is_content_addressed_and_discharges(tmp_path):
     proj = _project(tmp_path, GOOD)
     w = run_and_witness(proj, "test_add.py", CODE)
-    out = tmp_path / "out"; out.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
     path = emit_witness_proof(w, str(out))
     assert os.path.basename(path).startswith("blake3-512_") and path.endswith(".proof")
     assert discharge_from_proof(path, proj)[0] == "DISCHARGED"
@@ -71,7 +72,8 @@ def test_forged_passed_witness_over_failing_code_is_caught_by_recompute(tmp_path
     assert w_real.outcome == "failed"
     forged = Witness(w_real.code_cid, w_real.runtime_cid, w_real.test_id,
                      "passed", w_real.code_files, w_real.cid)
-    out = tmp_path / "out"; out.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
     path = emit_witness_proof(forged, str(out))
     verdict, reason = discharge_from_proof(path, proj)
     assert verdict == "REFUSED" and "did not reproduce" in reason, reason
@@ -178,7 +180,7 @@ def _rpc(method, params):
     req = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
     proc = subprocess.run(
         [sys.executable, "-m", "provekit_pytest_witness.lift_lsp", "--rpc"],
-        input=req + "\n", capture_output=True, text=True,
+        input=req + "\n", capture_output=True, text=True, timeout=60,
     )
     # the kit may print pytest noise; the RPC reply is the last JSON line
     for line in reversed(proc.stdout.strip().splitlines()):
@@ -242,7 +244,8 @@ def _run_discharge(proof_path, proj):
 
 def test_discharge_command_good(tmp_path):
     proj = _project(tmp_path, GOOD)
-    out = tmp_path / "out"; out.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
     path = emit_witness_proof(run_and_witness(proj, "test_add.py", CODE), str(out))
     rc, j = _run_discharge(path, proj)
     assert rc == 0 and j["verdict"] == "DISCHARGED", j
@@ -250,7 +253,8 @@ def test_discharge_command_good(tmp_path):
 
 def test_discharge_command_refuses_mutated(tmp_path):
     proj = _project(tmp_path, GOOD)
-    out = tmp_path / "out"; out.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
     path = emit_witness_proof(run_and_witness(proj, "test_add.py", CODE), str(out))
     (tmp_path / "impl.py").write_text(BAD)
     rc, j = _run_discharge(path, proj)

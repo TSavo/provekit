@@ -96,21 +96,42 @@ def run_and_witness(project_dir: str, test_id: str, code_files: List[str]) -> Wi
 # WitnessMemento: the signed pointer the `.proof` carries INSTEAD of the run body.
 # ---------------------------------------------------------------------------
 
-# The prover's witness-signing seed. A witness is OUR signed mark; in production
-# this is the prover's provenance key (vault). Fixed here so the memento is
-# reproducible in tests.
-WITNESS_SIGNER_SEED = bytes([0x77]) * 32  # 'w' for witness
+# The DEV witness-signing seed. A witness is OUR signed mark; in PRODUCTION the
+# seed MUST come from the prover's provenance key (vault), via the env override
+# below. This globally-known default is an INTEGRITY TAG ONLY (it proves the body
+# was not altered, not WHO signed it) and is here so mementos are reproducible in
+# tests. Set PROVEKIT_WITNESS_SIGNER_SEED (64 hex chars) for an authoritative key.
+WITNESS_SIGNER_SEED = bytes([0x77]) * 32  # 'w' for witness; dev/integrity-tag only
+_SIGNER_SEED_ENV = "PROVEKIT_WITNESS_SIGNER_SEED"
 
 
-def witness_memento(w: "Witness", seed: bytes = WITNESS_SIGNER_SEED) -> dict:
+def _resolve_signer_seed(seed: bytes | None) -> bytes:
+    """Explicit override wins; else the env-provided authoritative seed; else the
+    well-known dev seed (integrity tag only)."""
+    if seed is not None:
+        return seed
+    env = os.environ.get(_SIGNER_SEED_ENV)
+    if env:
+        raw = bytes.fromhex(env.strip())
+        if len(raw) != 32:
+            raise ValueError(
+                f"{_SIGNER_SEED_ENV} must be 64 hex chars (32 bytes); got {len(raw)}"
+            )
+        return raw
+    return WITNESS_SIGNER_SEED
+
+
+def witness_memento(w: "Witness", seed: bytes | None = None) -> dict:
     """Build a signed WitnessMemento. The `.proof` carries THIS -- a pointer +
     hash + signature -- not the run body. The body (the recorded run) goes to the
     witness package, resolved + re-verified by the Witness Oracle: signature
-    always (whose mark), recompute when the runtime pin reproduces."""
+    always (whose mark), recompute when the runtime pin reproduces. The signing
+    seed comes from PROVEKIT_WITNESS_SIGNER_SEED in production; the dev default is
+    an integrity tag only."""
     import base64
     import nacl.signing
 
-    sk = nacl.signing.SigningKey(seed)
+    sk = nacl.signing.SigningKey(_resolve_signer_seed(seed))
     sig = sk.sign(w.cid.encode("utf-8")).signature
     # The substrate's canonical ed25519 string form: `ed25519:` + base64, so the
     # rust verifier checks a witness with the SAME primitive (ed25519_verify_string)
@@ -161,7 +182,12 @@ def write_witness_package(witnesses: List["Witness"], out_dir: str) -> List[str]
     paths = []
     for w in witnesses:
         body = witness_body(w)
-        assert blake3_512_of(body) == w.cid, "witness body must address to its CID"
+        # Explicit runtime integrity check (NOT `assert`: must hold under `-O`).
+        if blake3_512_of(body) != w.cid:
+            raise ValueError(
+                f"witness body does not address to its CID: computed "
+                f"{blake3_512_of(body)}, pinned {w.cid}"
+            )
         path = os.path.join(out_dir, _cid_filename(w.cid, ".witness"))
         with open(path, "wb") as f:
             f.write(body)
