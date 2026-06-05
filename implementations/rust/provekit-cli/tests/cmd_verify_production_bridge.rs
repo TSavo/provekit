@@ -253,7 +253,6 @@ fn mint_project_from_ir(suffix: &str, ir_doc: Json) -> (PathBuf, PathBuf) {
         .arg(&project)
         .arg("--out")
         .arg(&project)
-        .arg("--no-attest")
         .arg("--quiet")
         .output()
         .expect("spawn provekit mint");

@@ -124,7 +124,7 @@ fn run_mint(project: &Path, out_dir: &Path) {
         .arg(project)
         .arg("--out")
         .arg(out_dir)
-        .args(["--no-attest", "--quiet", "--json"])
+        .args(["--quiet", "--json"])
         .output()
         .expect("spawn mint");
     assert!(

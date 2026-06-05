@@ -171,7 +171,6 @@ fn run_mint(project: &Path) {
         .arg(project)
         .arg("--out")
         .arg(project)
-        .arg("--no-attest")
         .arg("--quiet")
         .output()
         .expect("spawn provekit mint");

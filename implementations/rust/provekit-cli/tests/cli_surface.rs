@@ -552,7 +552,6 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );
@@ -668,7 +667,6 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );
@@ -778,7 +776,6 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );
@@ -883,7 +880,7 @@ done
             .arg(&project)
             .arg("--out")
             .arg(&out_dir)
-            .arg("--no-attest"),
+            ,
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -994,7 +991,6 @@ done
             .arg("mint")
             .arg("--project")
             .arg(&project)
-            .arg("--no-attest")
             .arg("--json")
             .arg("--quiet"),
     );

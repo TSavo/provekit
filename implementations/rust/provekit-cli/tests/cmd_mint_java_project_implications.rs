@@ -211,7 +211,6 @@ fn java_implication_consumer_mints_bridge_from_manifest_rpc() {
         .arg(&project)
         .arg("--out")
         .arg(&out_dir)
-        .arg("--no-attest")
         .arg("--quiet")
         .arg("--json")
         .output()
