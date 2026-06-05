@@ -184,12 +184,22 @@ kit's config and manifest before a run.
 
 ## Editor integration
 
-A real editor integration (an inline red squiggle when a contract is violated)
-is a roadmap item, not a shipped `provekit` subcommand. The `provekit-lsp` and
-`provekit-linkerd` binaries exist in the repo, but the editor workflow is not
-driven by any current CLI subcommand and is not covered here. The kit RPC
-surface that exists today is a batch plugin protocol the CLI spawns per
-invocation; see [docs/quickstart-extender.md](quickstart-extender.md).
+For Python, the red squiggle is shipped. `provekit-editor-lsp-python` is a
+persistent editor language server (LSP wire protocol) that renders `provekit
+prove` directly: open a file in an LSP-capable editor and a contradicted
+contract surfaces as an inline error diagnostic on the offending call. On open
+and save it re-evaluates your project as it is on disk (it lifts the current
+source into an isolated workspace and proves it, so the squiggle tracks the
+buffer and never writes to your tree) and maps each unsatisfied obligation back
+to its callsite. The squiggle on `np.add(2, 3) == 6` in the Step 4 consumer is
+the same verdict prove prints, and it clears the moment you fix it to `== 5`. The
+server is a thin client: verification still lives in the rust CLI; the editor
+just renders it.
+
+The cross-language, daemon-routed editor server (the `provekit-lsp` /
+`provekit-linkerd` binaries) is still a roadmap item. The Python server above is
+the language-native path; see [docs/quickstart-extender.md](quickstart-extender.md)
+for how it is built and how to add one for another language.
 
 ## When something goes wrong
 

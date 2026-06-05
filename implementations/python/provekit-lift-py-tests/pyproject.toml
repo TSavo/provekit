@@ -22,6 +22,9 @@ test = ["pytest>=7"]
 [project.scripts]
 provekit-lsp-python = "provekit_lift_py_tests.lsp:main"
 provekit-lift-python = "provekit_lift_py_tests.lsp:main"
+# The persistent editor language server (LSP wire protocol; renders `provekit
+# prove` as red squiggles). Distinct from the batch lift plugin above.
+provekit-editor-lsp-python = "provekit_lift_py_tests.editor_lsp:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
