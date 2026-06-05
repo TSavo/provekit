@@ -6,6 +6,13 @@ Before reading further: the architectural derivation (`docs/launch/the-pieces-on
 
 ## Architecture in five minutes
 
+Note on the editor path below: the four-stage editor-squiggle pipeline
+(linker daemon plus LSP server plus editor) is the roadmap target, not the
+shipped path. What runs today is a batch plugin protocol: the `provekit` CLI
+spawns each kit as a subprocess per invocation, drives it over JSON-RPC, and
+reads the result. See "The kit plugin RPC surface" below for the protocol the
+kits actually speak now. The diagram is the intended end state.
+
 The pipeline has four stages, each with a clean seam:
 
 ```
@@ -152,6 +159,96 @@ The daemon's `lift_source` dispatch is in `implementations/rust/provekit-linkerd
 ### Run the cross-kit conformance gate
 
 After adding your kit, run `make conformance`. The conformance gate verifies that byte-identical IR predicates produce byte-identical CIDs across all kits that have self-contracts. If your kit has self-contracts (a binary that mints its own contracts), add a `make mint-<lang>` target and a self-contracts attestation under `.provekit/self-contracts-attestations/<lang>.json`. See the Makefile's bump-dance comment at the top for the full attestation flow.
+
+## The kit plugin RPC surface (what runs today)
+
+The shipped kit interface is a batch plugin protocol, not a persistent editor
+language server. Each kit ships an NDJSON-over-stdio JSON-RPC 2.0 server. The
+Rust CLI SPAWNS one as a subprocess per `.provekit/lift/<surface>/manifest.toml`
+`command`, handshakes, sends a method, reads the response, then shuts it down.
+These servers are spawned per invocation and driven by the CLI, not held open by
+an editor.
+
+### Handshake
+
+Every kit answers two methods first:
+
+- `initialize`
+- `provekit.plugin.kit_declaration`, which advertises the kit's
+  `protocol_version` (today `provekit-lsp-shared/1`), `kit_id`, and the list of
+  methods it implements.
+
+(`implementations/python/provekit-lift-py-pytest-witness/src/provekit_pytest_witness/lift_lsp.py:30,166`.)
+
+### Method sets differ by kit family
+
+There is one shared handshake, but the method set is per kit family, and the
+naming across kits is not unified yet (you will see `lsp.py`, `lift_lsp.py`,
+`rpc.py`, `bind_rpc.py` across the tree). Describe your kit's methods honestly in
+its `kit_declaration` rather than assuming a single fixed protocol.
+
+- Lift kits implement `lift` (plus per-kit extras).
+- The sugar kit (`bind_rpc.py`) adds `provekit.plugin.recognize` and
+  `provekit.plugin.materialize`.
+  (`implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/bind_rpc.py:84,90`.)
+- Realize kits add `provekit.plugin.invoke`, `assemble`, `emit_module`,
+  `body_template_entries`, `resolve_dependency_proofs`, and `check`.
+  (`implementations/python/provekit-realize-python-requests/src/provekit_realize_python_requests/rpc.py`.)
+- The witness kit adds `provekit.plugin.resolve_witness`, covered next.
+
+### Shipping witnesses from a kit
+
+A witness is arbitrary signed content used as an attestation: a test run, a CI
+log, a poem. A kit that ships witnesses RESOLVES bodies; it does not pronounce
+verdicts. Verification lives in the Rust CLI. This is the trust boundary: the kit
+resolves, the CLI verifies.
+
+The witness kit declares a separate RPC entry in its manifest, alongside the lift
+`command`:
+
+```toml
+resolve_witness_command = ["...", "python3", "-m", "provekit_pytest_witness.lift_lsp"]
+resolve_witness_method = "provekit.plugin.resolve_witness"
+```
+
+(`examples/pytest-witness-dummy/.provekit/lift/python-pytest-witness/manifest.toml`.)
+
+The handler returns the body bytes, base64-encoded, NOT a verdict. It has two
+resolution strategies: read the CID-named body from the witness package, or
+re-run the pinned test and rebuild the canonical body. A body it cannot resolve
+is an error, which the verifier treats as refusal.
+
+```python
+def handle_resolve_witness(msg_id, params):
+    # ... resolve body bytes from the witness package or by re-running ...
+    return {"body_b64": base64.b64encode(body).decode("ascii")}
+```
+
+(`implementations/python/provekit-lift-py-pytest-witness/src/provekit_pytest_witness/lift_lsp.py:106-153`.)
+
+The Rust CLI does the verification the kit is not trusted to do: it verifies the
+Ed25519 signature itself with the substrate's own primitive, fetches the body
+over `resolve_witness`, BLAKE3's those bytes itself, and compares to the pinned
+`witness_cid`. A body the oracle returns that does not recompute is a broken
+oracle, caught because Rust does the math anyway; an honest re-run that differs
+is drift. Both refuse, loudly, and are distinguished.
+(`implementations/rust/provekit-cli/src/witness_verify.rs:1-18`.)
+
+So a kit that ships witnesses implements exactly one new method,
+`provekit.plugin.resolve_witness`, declares it in the manifest, and writes a
+witness package of CID-named bodies (see
+[docs/how-to/publishing-a-proof.md](how-to/publishing-a-proof.md)). The kit never
+grades itself.
+
+### Future direction: a real editor LSP (not yet built)
+
+A real editor language server, where a `provekit prove` or `verify`
+contradiction surfaces as an inline diagnostic (a red squiggle on the offending
+line), is the next gap, not a shipped feature. One kit,
+`implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/lsp.py`,
+carries the seed: it advertises an `analyzeDocument` method and a `parse` path
+that returns `diagnostics`. That seed is where the editor integration would grow.
+Today it is a batch plugin handler, not a persistent server an editor holds open.
 
 ## Extend the protocol
 

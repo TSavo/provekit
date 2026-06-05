@@ -1,156 +1,214 @@
-# Quickstart: Get a red squiggle in 10 minutes
+# Quickstart: mint, prove, and verify a `.proof`
 
-You write Rust code with a `#[requires(n > 0)]` precondition. Your colleague calls your Rust function from Go via cgo. You want their IDE to show a red squiggle when their Go caller passes a value that violates your Rust precondition. This walkthrough delivers exactly that.
+This walks the path ProvekIt actually runs today: lift evidence into a signed,
+content-addressed `.proof`, prove that the claims hold, and verify a `.proof`
+by recomputation. The two numpy demos are the runnable artifacts; both run end
+to end and produce the output shown below.
 
-Build time for the Rust workspace is several minutes on a cold machine. The ten minutes below count from when the binaries are on PATH.
+Correctness is `k(I) = t`. A `.proof` makes that promise checkable: the program,
+its input, and its result are content-addressed and pinned, so the claim names
+exactly what it is about. Verification is recomputation. You trust nothing, not
+even the kit that produced the proof.
 
 ## Prerequisites
 
-- Rust toolchain (rustup, stable channel)
-- Go 1.22 or later
-- An LSP-capable editor: VSCode, neovim, Helix, IntelliJ, or any editor with LSP support
-- The ProvekIt repo cloned locally (the demo uses the `examples/polyglot-rust-go/` fixture already in the repo)
+- Rust toolchain (rustup, stable channel) to build the CLI.
+- `python3` and `z3` on PATH (the numpy demos provision their own venv; z3 is the
+  solver).
+- The ProvekIt repo cloned locally.
 
-## Step 1: build and install the binaries
+Confirm z3 is present:
+
+```sh
+z3 --version
+```
+
+## Step 1: build the CLI
 
 From the repo root:
 
 ```sh
-# Build the main CLI
 cargo install --path implementations/rust/provekit-cli
-
-# Build the LSP server
-cargo install --path implementations/rust/provekit-lsp
-
-# Build the linker daemon
-cargo install --path implementations/rust/provekit-linkerd
 ```
 
-All three binaries install to `~/.cargo/bin/`. Confirm they are on your PATH:
+This installs `provekit` to `~/.cargo/bin/`. If that directory is not on your
+PATH, add `export PATH="$HOME/.cargo/bin:$PATH"` to your shell config.
+
+If you are working inside the repo and have already run a debug build, the binary
+is at `implementations/rust/target/debug/provekit`; the demo scripts use that
+path directly. Confirm whichever binary you intend to use:
 
 ```sh
 provekit --version
-provekit-lsp --version
-provekit-linkerd --help
+# provekit 0.1.0
 ```
 
-## Step 2: configure your editor
-
-The LSP server (`provekit-lsp`) connects to the linker daemon (`provekit-linkerd`) at a Unix domain socket. Pass the socket path via `--daemon-socket`. The daemon spawns itself on first connection; you do not start it separately.
-
-The socket path follows the daemon spec: `${XDG_RUNTIME_DIR}/provekit/linkerd-<projectCid>.sock`. For the demo, use a fixed path:
-
-```
-/tmp/provekit-demo.sock
-```
-
-### VSCode
-
-There is no dedicated ProvekIt VSCode extension yet. Search the VSCode marketplace for "LSP client" and install any extension that lets you configure an arbitrary stdio LSP server. Configure it with:
-
-- Executable: `provekit-lsp`
-- Arguments: `--daemon-socket /tmp/provekit-demo.sock`
-
-The server speaks standard LSP over stdio. The exact JSON config keys depend on which extension you chose -- check that extension's own docs for its settings schema.
-
-### neovim
-
-Add to your `init.lua` or a project-local config:
-
-```lua
-vim.lsp.start({
-  name = "provekit",
-  cmd = { "provekit-lsp", "--daemon-socket", "/tmp/provekit-demo.sock" },
-  root_dir = vim.fn.getcwd(),
-  filetypes = { "rust", "go" },
-})
-```
-
-### Helix
-
-In `.helix/languages.toml`:
-
-```toml
-[[language]]
-name = "rust"
-language-servers = ["provekit-lsp", "rust-analyzer"]
-
-[[language]]
-name = "go"
-language-servers = ["provekit-lsp", "gopls"]
-
-[language-server.provekit-lsp]
-command = "provekit-lsp"
-args = ["--daemon-socket", "/tmp/provekit-demo.sock"]
-```
-
-### IntelliJ
-
-Install the LSP4IJ plugin. Add an external language server:
-
-- Program: `provekit-lsp`
-- Arguments: `--daemon-socket /tmp/provekit-demo.sock`
-- File types: Rust, Go
-
-## Step 3: run the demo
-
-The `examples/polyglot-rust-go/` directory contains two fixtures: `fixture-fail/` and `fixture-ok/`.
-
-**fixture-fail:** A Go caller (`caller_fail.go`) calls a Rust function via cgo. The Rust function declares `#[requires(n > 0)]`. The Go caller passes `n` directly without any guard, so the linker cannot discharge the precondition obligation.
-
-**fixture-ok:** A Go caller (`caller_ok.go`) guards the input before using it, so the contract is established.
-
-Run the linker pass on the failure fixture:
+Confirm the install conforms to the protocol catalog it was built against:
 
 ```sh
-provekit link examples/polyglot-rust-go/fixture-fail/
+provekit verify-protocol
 ```
 
-You should see at least one linker error reported on stderr (an unprovable obligation from the Go caller to the Rust function's precondition). The command exits with a non-zero exit code. A `link-bundle.json` is written to the fixture directory recording the full derivation.
+This prints the expected and actual catalog CIDs and `status: match`. The binary
+is the live authority for the catalog CID; do not trust a version number written
+in prose.
 
-Run the linker pass on the success fixture:
+## Step 2: prove a contract two ways (numpy-showcase)
+
+`examples/numpy-showcase/` takes one real library operation, `numpy.add`, through
+the full lifecycle: lift the sugar plus a `numpy.testing` contract plus a pytest
+witness into one `.proof`, then prove the contract. The script provisions a venv
+on first run.
 
 ```sh
-provekit link examples/polyglot-rust-go/fixture-ok/
+./examples/numpy-showcase/run.sh
 ```
 
-You should see zero linker errors and the command exits with code 0. The `link-bundle.json` written here carries the clean bundle CID.
+The `prove` step reports `discharged: 2`. The contract is discharged two
+independent ways, and both agree:
 
-## Step 4: see the red squiggle
+```text
+ProvekIt verifier report
+  total callsites : 0
+  discharged      : 2
+  violations      : 0
+  load errors     : 0
 
-Open `examples/polyglot-rust-go/fixture-fail/go-caller/caller_fail.go` in your editor with the LSP server running. The LSP server forwards the file to the daemon, which runs the linker pass and returns the diagnostic. Your editor should show a diagnostic (red squiggle or warning annotation) indicating an unprovable cross-language obligation from the Go caller to the Rust function's precondition.
+  [discharged]   ( -> )
+      reason: test assertions mutually consistent about callsite `test_add_is_five` [solver 'z3' returned sat (counterexample found)]
+  [discharged]   ( -> )
+      reason: witnessed by recompute (kit): re-ran on pinned code; assertions held; witness CID reproduced
+```
 
-Open `examples/polyglot-rust-go/fixture-ok/go-caller/caller_ok.go`. No diagnostic. The guard the Go caller adds establishes the postcondition, and the linker discharges the obligation cleanly.
+- CONSISTENCY: z3 proves the lifted contract is internally satisfiable. A
+  self-contradictory spec is refused without running anything.
+- WITNESS: the code is actually run, the run is content-addressed, and the
+  verifier recomputes it.
 
-Note: per the current daemon MVP, diagnostics are attached at line 0 (file-level marker) because call-site locus propagation from the linker to the LSP is a follow-up item. The squiggle appears at the top of the file. Precise line-level squiggles are on the roadmap.
+The demo's degenerate case asserts `np.add(2,3)` both `== 5` and `== 6`. It is
+refused both ways: z3 finds the conjunction UNSAT, and the actual run yields `5`,
+so the `== 6` witness fails.
+
+## Step 3: vendor a whole library, then verify it (numpy-vendor)
+
+`examples/numpy-vendor/` is the end-to-end vendor-to-consumer flow. The universal
+lifter sugar-lifts every module-level python function in the installed numpy into
+one lean `.proof` (no shim, no edits to numpy), the vendor ships a separately
+deployed witness package, and a consumer verifies it by recomputation.
+
+```sh
+./examples/numpy-vendor/run.sh
+```
+
+Real output (numpy 2.4.6; the function count tracks the installed numpy version):
+
+```text
+== sugar-lift ALL numpy -> numpy.proof (lean: CIDs, not inline bodies) ==
+  numpy.proof:  13M, 2909 sugar members
+== ship the witness PACKAGE (CID-named body, deployed separately) ==
+  witness: passed blake3-512:049e169f... -> .provekit/witnesses/<cid>.witness
+== VERIFY (consumer): rust recomputes; the kit oracle is untrusted ==
+ProvekIt verification receipt
+Witness dimension (rust recomputes; oracle untrusted)
+  [pass] blake3-512:049e169f28547207...  (signature+content-address:package)
+        oracle resolved via package; rust recomputed the CID and it matched
+pass: 0 claims: 0 discharged ...
+```
+
+The `.proof` is 13M for ~2900 functions because it carries IDENTITY, not bodies:
+CIDs and loci, not inline source or inline test logs. The body lives where the
+ecosystem already put it (the installed numpy, the separately deployed
+`<cid>.witness` package), and the verifier resolves it on demand and
+recompute-verifies it. The kit that resolves the body is untrusted; the Rust CLI
+BLAKE3's the body itself and compares to the pinned CID. A body that does not
+recompute is refused, loudly. See
+[docs/explanation/proofchain.md](explanation/proofchain.md) for the Source Oracle
+and Witness Oracle.
+
+## Step 4: inherit a contract, get caught contradicting it
+
+The composition failure mode ProvekIt exists to catch: two packages each pass
+their own tests, but the assembled system holds contradictory claims. This is
+demonstrated end to end and locked by a committed test.
+
+A numpy vendor mints a `.proof` carrying `np.add(2,3) == 5`. A consumer stages
+that `.proof` in `.provekit/imports/`, asserts something about the same call, and
+runs `prove`:
+
+- A consumer asserting `np.add(2,3) == 6` is REFUSED. It inherits numpy's `== 5`;
+  the verifier conjoins the two same-callsite contracts and z3 finds
+  `and(== 5, == 6)` UNSAT.
+- A consumer asserting `np.add(2,3) == 5` is PROVEN.
+
+Run the committed end-to-end test. It needs the built CLI, numpy, and z3, plus
+the python kit packages on `PYTHONPATH`; it skips cleanly when any are missing.
+Using the venv the numpy demos already built:
+
+```sh
+PYTHONPATH="implementations/python/provekit-lift-py-tests/src:implementations/python/provekit-lift-python-source/src:implementations/python/provekit-lift-py-numpy-testing/src" \
+  python3 -m pytest \
+  implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py
+```
+
+Both parametrizations pass: `consumer-agrees-PROVEN` and
+`consumer-contradicts-REFUSED`. See
+[docs/explanation/product.md](explanation/product.md) and
+[docs/explanation/architecture.md](explanation/architecture.md) for the
+cross-proof contract conjoin that makes inherited correctness work.
 
 ## Step 5: try it on your own project
 
-1. Add a `provekit.config.yaml` to your project root (run `provekit init` to generate a template).
-2. Annotate your Rust functions with `#[requires(...)]` / `#[ensures(...)]` (from the `contracts` crate) or use `assert!` predicates in the function body. ProvekIt's lifter reads both.
-3. For Go callers, add `//provekit:contract` above your Go functions that call into Rust via cgo.
-4. Run `provekit link <project-root>` to see the linker pass.
-5. Point your editor at `provekit-lsp --daemon-socket <socket-path>` and open source files.
+```sh
+provekit init
+```
+
+`provekit init` scaffolds `provekit.toml`, a `.provekit/` directory, a sample
+invariant, and a GitHub Action. From there the flow is:
+
+1. Declare your lift plugins in `.provekit/config.toml` and a manifest under
+   `.provekit/lift/<surface>/manifest.toml` (the numpy demo scripts show concrete
+   manifests, including the witness `resolve_witness_command` /
+   `resolve_witness_method` fields).
+2. `provekit mint --project .` dispatches the configured lift plugins and writes a
+   signed `.proof`. (`lift` dispatches the lift-plugin protocol and prints raw
+   ProofIR; `mint` is the composition step that envelopes lifted terms into the
+   `.proof`.)
+3. `provekit prove .` loads the `.proof` artifacts, resolves dependency proofs,
+   conjoins same-callsite contracts, solves the obligations, recomputes
+   witnesses, and reports discharge status.
+4. `provekit verify --project .` verifies a kit end to end and emits a signed
+   per-claim receipt.
+
+The exact manifest wiring depends on your kit. `provekit doctor` validates a
+kit's config and manifest before a run.
+
+## Editor integration
+
+A real editor integration (an inline red squiggle when a contract is violated)
+is a roadmap item, not a shipped `provekit` subcommand. The `provekit-lsp` and
+`provekit-linkerd` binaries exist in the repo, but the editor workflow is not
+driven by any current CLI subcommand and is not covered here. The kit RPC
+surface that exists today is a batch plugin protocol the CLI spawns per
+invocation; see [docs/quickstart-extender.md](quickstart-extender.md).
 
 ## When something goes wrong
 
-**`provekit: command not found`**
-The install did not add `~/.cargo/bin` to your PATH. Add `export PATH="$HOME/.cargo/bin:$PATH"` to your shell config and reload.
+`provekit: command not found`: `~/.cargo/bin` is not on your PATH (or you meant
+to use the in-repo `implementations/rust/target/debug/provekit`).
 
-**`provekit-linkerd: socket permission denied`**
-The daemon socket is owned by a different user. Delete `/tmp/provekit-demo.sock` and restart.
+The numpy demos fail to provision: they need `python3` to build a venv and `z3`
+on PATH. The scripts use PEP 668 venvs and never `--break-system-packages`.
 
-**`daemon-client: failed to connect`**
-The daemon failed to start. Run `provekit-linkerd --socket /tmp/provekit-demo.sock` in a terminal to see the error output. Common cause: `provekit-linkerd` not on PATH.
-
-**`provekit link` exits with `go-lsp-bin not found`**
-The Go kit lifter (`provekit-lsp-go`) is not on PATH. Build it: `cd implementations/go && go build ./...`. The resulting `provekit-lsp-go` binary goes to your PATH.
-
-**Zero linker errors but no red squiggles in the editor**
-The LSP server is not connected. Confirm `provekit-lsp --version` works from your shell and that your editor's LSP config points at the binary name that actually exists on PATH.
+`verify-protocol` mismatch: your installed binary and the catalog it expects have
+drifted. Rebuild the CLI from the current tree.
 
 ## What is next
 
-The demo uses the rust+go cross-kit path. The same architecture covers any language pair the daemon's kit dispatch supports. See [docs/reference/per-language-status.md](reference/per-language-status.md) for the current matrix of kits with LSP plugin support.
-
-If you want to understand the architecture, write a new lifter, or contribute a new kit, the extender quickstart is [docs/quickstart-extender.md](quickstart-extender.md).
+- [docs/explanation/product.md](explanation/product.md): the product surface.
+- [docs/explanation/architecture.md](explanation/architecture.md): kits own
+  language, the CLI owns proof.
+- [docs/explanation/proofchain.md](explanation/proofchain.md): the `.proof` as
+  identity, not bodies, plus the oracle trio.
+- [docs/quickstart-extender.md](quickstart-extender.md): build or extend a kit.
+- [docs/reference/per-language-status.md](reference/per-language-status.md): kit
+  and language coverage.

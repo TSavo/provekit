@@ -5,17 +5,32 @@ witness oracle), the no-shim numpy vendor demo, and the inheritance capstone
 (cross-proof contract conjoin). This plan is the honest inventory of which other
 docs are now stale against that work, plus a prioritized refresh order.
 
-Status (2026-06-05): P0 and P1 below are EXECUTED, not just planned.
+Status (2026-06-05): P0, P1, and P2 below are EXECUTED, not just planned.
 per-language-status.md was corrected to v1.6.6 / CID `809ed1eb...`; the oracle
 trio was folded into proofchain.md, architecture.md, and product.md; product.md
-was reframed to cite the inheritance demo. P2 remains a plan. Two prose-sourced
-errors caught during execution and corrected against the implementation: the
-real catalog version is v1.6.6 (the binary, the signed asset, and `protocol.rs`
-all agree; the "no source" note in P0-1 below was wrong), and `provekit lift` is
-a real command (`cmd_lift.rs`, 179 lines, dispatches the lift-plugin protocol and
-writes ProofIR term JSON), NOT the stub its `--help` string claims. Method
-lesson: confirm command behavior and version identifiers against the `cmd_*.rs`
-body and the `include_bytes!` asset, never against a help string or doc-comment.
+was reframed to cite the inheritance demo. P2 rewrote the two quickstarts and the
+publishing how-to (details in the P2 section below).
+
+Prose-sourced errors caught during execution and corrected against the
+implementation:
+
+- The real catalog version is v1.6.6 (the binary, the signed asset, and
+  `protocol.rs` all agree; the "no source" note in P0-1 was wrong).
+- `provekit lift` is a real command (`cmd_lift.rs`, 179 lines, dispatches the
+  lift-plugin protocol and writes ProofIR term JSON), NOT the stub its `--help`
+  string claims.
+- `provekit link` is a PHANTOM subcommand: it does not exist in `--help`, there
+  is no `cmd_link.rs`, yet the entire prior `quickstart-end-user.md` (Steps 3, 4,
+  5) was built on `provekit link <project>`. The doc was pivoted to the real
+  mint/prove/verify flow.
+- `provekit fix` is another phantom, referenced in the old
+  `publishing-a-proof.md` body (which was the superseded TypeScript `runFixLoop`
+  surface, not about publishing a `.proof` at all). Fenced as historical.
+
+Method lesson: confirm command behavior and version identifiers against the
+`cmd_*.rs` body and the `include_bytes!` asset, never against a help string or
+doc-comment. A binary that existing prose invokes may not have the subcommand the
+prose calls.
 
 All claims below were grounded against running code while rewriting the README:
 
@@ -80,20 +95,38 @@ All claims below were grounded against running code while rewriting the README:
    lists subcommands should be regenerated from `--help`, and `prove` should be
    described as the six-stage verifier.
 
-### P2: verify, may be fine
+### P2: EXECUTED
 
-7. **`docs/quickstart-end-user.md`** has zero mentions of oracle/witness/
-   inherit/recompute. Confirm its first-run flow still matches current `mint` /
-   `prove` / `verify` behavior, and consider adding the numpy vendor demo as the
-   showcase first run, since it is the most legible end-to-end artifact now.
+7. **`docs/quickstart-end-user.md`** was rewritten. The prior doc was built end
+   to end on the phantom `provekit link` subcommand (a rust+go LSP/squiggle
+   walkthrough). It now walks the real mint/prove/verify flow using the two numpy
+   demos as the runnable artifacts, with real captured output (showcase
+   `discharged: 2`; vendor `2909 sugar members` plus "oracle resolved via
+   package; rust recomputed the CID and it matched"). The editor/LSP story is
+   demoted to a clearly-labeled "not a shipped subcommand, not covered here"
+   pointer. Verified: the documented inheritance-test command runs (2 passed) and
+   `verify-protocol` prints `status: match`.
 
-8. **`docs/quickstart-extender.md`**: confirm the kit-authoring story now
-   covers `resolve_witness` (the RPC method the witness oracle dispatches) and
-   the lean source-resolve path, since a new kit must implement body resolution,
-   not body embedding.
+8. **`docs/quickstart-extender.md`** gained a "The kit plugin RPC surface (what
+   runs today)" section. It describes the surface as it ACTUALLY is: a batch
+   plugin protocol (NDJSON JSON-RPC 2.0, spawned per invocation by the CLI), NOT
+   a persistent editor LSP. Covers the handshake
+   (`initialize` + `provekit.plugin.kit_declaration`, `protocol_version`
+   `provekit-lsp-shared/1`), the per-kit-family method sets (naming not yet
+   unified), the witness `resolve_witness` trust boundary (kit resolves bytes,
+   CLI verifies by BLAKE3 + signature), and a clearly-labeled "Future direction:
+   a real editor LSP (not yet built)" note pointing at the `analyzeDocument` seed
+   in `lsp.py`. The stale "architecture in five minutes" editor-squiggle diagram
+   was annotated as the roadmap target, not the shipped path.
 
-9. **`docs/how-to/publishing-a-proof.md`**: confirm it covers shipping a
-   `.proof` plus a separately deployed witness package, per the vendor demo.
+9. **`docs/how-to/publishing-a-proof.md`** was rewritten. The prior body was the
+   superseded TypeScript `runFixLoop`/`verifyAll` library surface (it referenced
+   the phantom `provekit fix`), not about publishing a `.proof` at all. A current
+   "Publishing a `.proof`" section now leads: mint the `.proof` (identity, not
+   bodies), write the separately deployed `<cid>.witness` package
+   (`write_witness_package`, asserts `blake3_512_of(body) == w.cid`), publish, and
+   the consumer's `verify` recomputes (oracle untrusted). The historical TS
+   section is fenced below under a "Historical" header.
 
 ## Prioritized refresh order
 
