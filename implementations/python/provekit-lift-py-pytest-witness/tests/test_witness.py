@@ -223,6 +223,25 @@ def test_resolve_witness_rpc_recompute_reruns_and_returns_body(tmp_path):
     assert blake3_512_of(body) == w.cid
 
 
+def test_resolve_witness_rpc_recompute_with_empty_code_files(tmp_path):
+    # REGRESSION: an all-tests project pins an EMPTY code_files (the code under
+    # test is the installed library, e.g. numpy/pandas, not a local file). An
+    # empty list is FALSY, so a truthiness guard on `code_files` wrongly declared
+    # such a witness "not re-runnable". It is trivially re-runnable -- just rerun
+    # the test -- and the empty list reconstructs into the pinned witness body.
+    import base64
+    from provekit_lift_py_tests.canonicalizer import blake3_512_of
+    (tmp_path / "test_solo.py").write_text("def test_solo():\n    assert 1 == 1\n")
+    w = run_and_witness(str(tmp_path), "test_solo.py", [])  # empty code_files
+    assert w.code_files == ()
+    reply = _rpc("provekit.plugin.resolve_witness", {
+        "memento": witness_memento(w), "workspace_root": str(tmp_path),
+    })
+    assert "result" in reply, reply  # NOT an error ("not re-runnable")
+    assert reply["result"]["resolved_by"] == "recompute"
+    assert blake3_512_of(base64.b64decode(reply["result"]["body_b64"])) == w.cid
+
+
 def test_resolve_witness_rpc_refuses_recompute_on_tampered_memento(tmp_path):
     # The body is a pure function of the memento's own fields, so a memento whose
     # fields don't reconstruct its pinned CID is tampered. The oracle must refuse

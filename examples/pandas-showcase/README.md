@@ -49,12 +49,12 @@ which is exactly why pandas, not fame, is the right next rung.
 
 ## Scope
 
-This example demonstrates the lift + **prove** path (consistency + witness by
-recompute). The stricter signed-receipt `verify` path additionally re-resolves
-each witness body; for the pytest-witness kit that means either a packaged
-witness body or full re-run metadata forwarded by the verifier — a follow-up
-increment, tracked separately. `run.sh` self-checks the `prove` verdict and
-exits non-zero if provekit does not produce exactly it.
+This example demonstrates lift + **prove** (consistency + witness by recompute).
+The stricter signed-receipt **`verify`** also passes: it re-resolves each witness
+by recompute — the good witnesses re-run and reproduce their pinned CID, and the
+contradictory one is refused as a failed run, the same verdict `prove` gives.
+`run.sh` self-checks the `prove` verdict and exits non-zero if provekit does not
+produce exactly it.
 
 ## Environment
 

@@ -134,7 +134,12 @@ def handle_resolve_witness(msg_id: Any, params: dict) -> None:
                     body = f.read()
                 resolved_by = "package"
         # 2. RECOMPUTE -- re-run the pinned test, rebuild the canonical body.
-        if body is None and ws and memento.get("test") and memento.get("code_files"):
+        # `code_files` is PRESENT-not-truthy: an all-tests project pins an EMPTY
+        # code_files (the code under test is the installed library, not a local
+        # file), and `[]` is falsy -- gating on truthiness would wrongly declare
+        # a trivially re-runnable witness "not re-runnable". The reconstruction
+        # below pins the empty list into the witness body, so this stays sound.
+        if body is None and ws and memento.get("test") and memento.get("code_files") is not None:
             # Don't execute attacker-supplied paths on a memento whose own fields
             # don't even hash to its pinned CID. The witness body is a pure
             # function of (code_cid, runtime_cid, test, outcome, code_files), so a
