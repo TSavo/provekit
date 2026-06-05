@@ -820,12 +820,17 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut capability_kind: Option<String> = None;
     let mut materialize_source = false;
     let mut section = String::new();
-    for line in text.lines() {
-        let line = match line.find('#') {
-            Some(pos) => &line[..pos],
-            None => line,
+    let strip = |l: &str| -> String {
+        match l.find('#') {
+            Some(pos) => l[..pos].trim().to_string(),
+            None => l.trim().to_string(),
         }
-        .trim();
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let mut idx = 0;
+    while idx < lines.len() {
+        let line = strip(lines[idx]);
+        idx += 1;
         if line.is_empty() {
             continue;
         }
@@ -838,8 +843,21 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             continue;
         }
         let Some(eq) = line.find('=') else { continue };
-        let key = line[..eq].trim();
-        let val = line[eq + 1..].trim();
+        let key = line[..eq].trim().to_string();
+        let mut val = line[eq + 1..].trim().to_string();
+        // Multi-line array value (TOML `key = [` then elements on later lines):
+        // accumulate continuation lines until the closing `]`, mirroring
+        // cmd_prove::parse_manifest. Without this a multi-line `command` parses
+        // empty and dependency-proof resolution is silently skipped.
+        if val.starts_with('[') && !val.contains(']') {
+            while idx < lines.len() && !val.contains(']') {
+                val.push(' ');
+                val.push_str(&strip(lines[idx]));
+                idx += 1;
+            }
+        }
+        let key = key.as_str();
+        let val = val.as_str();
         match (section.as_str(), key) {
             ("", "name") => name = val.trim_matches('"').to_string(),
             ("", "working_dir") => working_dir = Some(PathBuf::from(val.trim_matches('"'))),
@@ -2490,6 +2508,44 @@ command = ["/bin/true"]
             .provides_concepts
             .iter()
             .any(|c| c == "concept:blake3-512-of"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_manifest_accepts_multiline_command_array() {
+        // Regression guard (numpy-consumer-demo dependency resolution): a
+        // multi-line TOML `command = [ ... ]` must parse into the full argv.
+        // Before the continuation-accumulation fix this parsed to an EMPTY
+        // command -> "manifest has no `command`" -> dependency-proof resolution
+        // SILENTLY skipped (the numpy sugar .proof never resolved).
+        let dir = std::env::temp_dir().join("provekit-test-multiline-command");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let manifest_path = dir.join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+name = "python-tests-lift"
+command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/provekit-lift-py-tests/src",
+    "python3",
+    "-m",
+    "provekit_lift_py_tests.lsp",
+]
+working_dir = "."
+"#,
+        )
+        .expect("write");
+        let parsed = parse_manifest(&manifest_path).expect("parse");
+        assert_eq!(
+            parsed.command.len(),
+            5,
+            "multi-line command must parse all argv elements: {:?}",
+            parsed.command
+        );
+        assert_eq!(parsed.command[0], "/usr/bin/env");
+        assert_eq!(parsed.command[4], "provekit_lift_py_tests.lsp");
         let _ = fs::remove_dir_all(&dir);
     }
 

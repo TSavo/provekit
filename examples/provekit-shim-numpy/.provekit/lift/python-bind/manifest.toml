@@ -1,0 +1,8 @@
+# PEP 1.7.0 lift plugin manifest for provekit-shim-numpy.
+# Points at the installed provekit-bind-lift-python entry-point script
+# (rebound to this worktree's source via `pip install -e
+# implementations/python/provekit-lift-python-source`). Required by
+# `provekit mint`, which looks for .provekit/lift/<surface>/manifest.toml.
+name = "python-bind-lift"
+command = ["/usr/local/bin/provekit-bind-lift-python", "--rpc"]
+working_dir = "."

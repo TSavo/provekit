@@ -1683,3 +1683,96 @@ def test_recognize_routes_multiple_bindings_per_call_site_pool(tmp_path: Path) -
     assert by_concept["concept:json-parse"]["library_tag"] == "json-lib"
     assert by_concept["concept:sql-execute"]["library_tag"] == "sql-lib"
     assert by_concept["concept:sql-execute"]["function_name"] == "nested"
+
+
+def test_snake_eats_tail_materialize_then_recognize(tmp_path: Path) -> None:
+    """The fixpoint: materialize writes a sugar body into a `@boundary` stub,
+    and recognize reads that same materialized sugar straight back as the
+    symbol. Egress (lower-sugar) and ingress (recognize) are inverses over one
+    sugar binding — the snake eats its tail."""
+    (tmp_path / "shims").mkdir()
+    shim_rel = "shims/numpy_sugar.py"
+    (tmp_path / shim_rel).write_text(
+        "from provekit import sugar\n"
+        "import numpy\n"
+        "\n"
+        '@sugar.bind(library="numpy", symbol="numpy.add")\n'
+        "def add(x, y):\n"
+        "    return numpy.add(x, y)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    app_rel = "src/app.py"
+    (tmp_path / app_rel).write_text(
+        "from provekit import boundary\n"
+        "\n"
+        '@boundary(library="numpy", call="add")\n'
+        "def my_add(x, y):\n"
+        "    raise NotImplementedError\n",
+        encoding="utf-8",
+    )
+
+    # Materialize: fill the @boundary body with the sugar body_text, in place.
+    materialize = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "provekit.plugin.materialize",
+            "params": {
+                "project_root": str(tmp_path),
+                "source_paths": [shim_rel, app_rel],
+                "write": True,
+            },
+        }
+    )
+    assert "error" not in materialize
+    materialized = [
+        r
+        for r in materialize["result"]["results"]
+        if r.get("outcome") == "materialized"
+    ]
+    assert len(materialized) == 1
+    assert {"function": "my_add", "symbol": "numpy.add"} in materialized[0][
+        "materialized"
+    ]
+    assert "return numpy.add(x, y)" in (tmp_path / app_rel).read_text(encoding="utf-8")
+
+    # Recognize the materialized sugar back as numpy.add (snake eats its tail).
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "provekit.plugin.recognize",
+            "params": {
+                "project_root": str(tmp_path),
+                "source_paths": [shim_rel, app_rel],
+            },
+        }
+    )
+    assert "error" not in response
+    app_tags = [t for t in response["result"]["tags"] if t["file"] == app_rel]
+    assert len(app_tags) == 1
+    assert app_tags[0]["symbol"] == "numpy.add"
+    assert app_tags[0]["function_name"] == "my_add"
+
+
+def test_universal_lift_untagged_function_is_sugar_at_library_bindings_layer() -> None:
+    # The zero-code-changes product: a plain function — NO @sugar.bind, no
+    # provekit import, nothing — IS sugar at the library-bindings layer, with the
+    # symbol derived from the qualified module path. The `all` (contract) layer
+    # is unaffected, so the general bind-lift-entry tests keep holding.
+    source = "def add(x, y):\n    return x + y\n"
+
+    lb = lift_source(source, "pkg/calc.py", layer="library-bindings")
+    sugar = [e for e in lb.ir if e.get("kind") == "library-sugar-binding-entry"]
+    assert len(sugar) == 1
+    assert sugar[0]["symbol"] == "pkg.calc.add"
+    assert sugar[0]["binding_origin"] == "derived"
+    assert sugar[0]["body_source"]["body_text"] == "return x + y"
+    assert "ast_template" in sugar[0]["body_source"]
+    assert "concept_name" not in sugar[0]  # concept is gone; symbol is identity
+
+    # The general `all` layer does NOT emit a derived sugar binding (untagged) —
+    # only the bind-lift-entry — so the contract-path unit tests are unaffected.
+    al = lift_source(source, "pkg/calc.py", layer="all")
+    assert not [e for e in al.ir if e.get("kind") == "library-sugar-binding-entry"]

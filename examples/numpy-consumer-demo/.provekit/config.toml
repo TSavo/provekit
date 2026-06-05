@@ -1,0 +1,25 @@
+# A numpy USER, under contract by the numpy sugar .proof.
+#
+# This project imports numpy and asserts about `numpy.add` results. The numpy
+# sugar `.proof` in .provekit/imports/ puts `numpy.add` under contract (its
+# symbol-keyed sugar binding); the pytest lifter lifts these test assertions
+# into ProofIR `inv` contracts keyed on the call result, and `provekit prove`
+# discharges them via z3.
+#
+# Degenerate case (the point): two assertions about the SAME `np.add(2, 3)`
+# result that disagree (5 vs 6) coalesce by name into one conjoined inv,
+# `and(=(r,5), =(r,6))`, which z3 reports UNSAT -> REFUSED-contradictory. The
+# framework catches inconsistent contracts loudly.
+[[plugins]]
+name = "python-tests-lift"
+kind = "lift"
+surface = "python-tests"
+
+[solvers]
+default = "z3"
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

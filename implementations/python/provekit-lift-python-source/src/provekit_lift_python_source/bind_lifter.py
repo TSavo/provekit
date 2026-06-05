@@ -91,7 +91,7 @@ def lift_source(source: str, source_path: str, layer: str = "all") -> BindLiftRe
         try:
             if emit_bind:
                 entry = _library_binding_entry_for_function(
-                    info.node, rel_path, lines, source_lines
+                    info.node, rel_path, lines, source_lines, layer == "library-bindings"
                 )
                 if entry is not None:
                     result.ir.append(entry)
@@ -240,15 +240,48 @@ def _entry_for_function(
     }
 
 
+def _derive_symbol(rel_path: str, function_name: str) -> str | None:
+    """Derive the fully-qualified symbol for an UNTAGGED function from its file
+    position — the zero-code-changes path: `pkg/mod.py::f` -> `pkg.mod.f`,
+    `pkg/__init__.py::f` -> `pkg.f`. The module path IS the qualifier, the
+    package IS the library, the function name IS the symbol; nothing declared."""
+    path = rel_path.replace("\\", "/")
+    if not path.endswith(".py"):
+        return None
+    parts = [p for p in path[:-3].split("/") if p and p != "."]
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    module = ".".join(parts)
+    return f"{module}.{function_name}" if module else function_name
+
+
 def _library_binding_entry_for_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     rel_path: str,
     lines: list[str],
     source_lines: list[str],
+    allow_derived: bool = False,
 ) -> Json | None:
     binding = _sugar_bind_decorator(node)
     if binding is None:
-        return None
+        # Every MODULE-LEVEL function IS sugar. No @sugar.bind required — the tag
+        # is gone; the symbol is DERIVED from the qualified module path + function
+        # name (`pkg/mod.py::f` -> `pkg.mod.f`). This is the zero-code-changes
+        # product: write a function, it's sugar. Gated to the `library-bindings`
+        # layer (where sugar lives) — the general `all` contract path is
+        # unaffected. Methods/nested defs (col_offset != 0) skipped for now.
+        if not allow_derived:
+            return None
+        if node.col_offset != 0:
+            return None
+        symbol = _derive_symbol(rel_path, node.name)
+        if symbol is None:
+            return None
+        binding = {
+            "symbol": symbol,
+            "target_library_tag": symbol.split(".", 1)[0],
+            "binding_origin": "derived",
+        }
 
     shape_result = _function_shape_with_bindings(node, lines)
     term_shape = shape_result.shape
@@ -267,7 +300,6 @@ def _library_binding_entry_for_function(
 
     entry: Json = {
         "body_source": body_source,
-        "concept_name": binding["concept_name"],
         "kind": "library-sugar-binding-entry",
         "loss_record_contribution": {
             "form": "literal",
@@ -283,6 +315,23 @@ def _library_binding_entry_for_function(
         "term_shape": term_shape,
         "term_shape_cid": cid_of_json(term_shape),
     }
+    # Symbol-keyed identity supersedes concept; emit whichever the binding
+    # declared. `symbol` is the fully-qualified library symbol (`numpy.add`);
+    # `concept_name` is the legacy hub tag kept for unmigrated shims. Absent
+    # `symbol` -> `concept_name` present -> existing shims byte-identical.
+    symbol = binding.get("symbol")
+    if symbol:
+        entry["symbol"] = symbol
+    concept_name = binding.get("concept_name")
+    if concept_name:
+        entry["concept_name"] = concept_name
+    # Provenance: `derived` marks a zero-code universal-lift binding (no
+    # @sugar.bind), distinct from a `declared` one. Emitted only when derived,
+    # so tagged shims stay byte-identical. Lets recognize keep the project's own
+    # functions out of the published match-template set.
+    binding_origin = binding.get("binding_origin")
+    if binding_origin:
+        entry["binding_origin"] = binding_origin
     observed = binding.get("observed_dimension")
     if observed:
         entry["observed_dimension"] = observed
@@ -307,8 +356,18 @@ def _sugar_bind_decorator(
             continue
         concept = _keyword_str(decorator, "concept")
         library = _keyword_str(decorator, "library")
-        if concept and library:
-            result: dict = {"concept_name": concept, "target_library_tag": library}
+        symbol = _keyword_str(decorator, "symbol")
+        # Symbol-keyed identity is the path forward (e.g. `numpy.add`): a sugar
+        # binding IS its fully-qualified library symbol — the join key the linker
+        # resolves against and the recognizer canonicalizes aliased calls to
+        # (`import numpy as np; np.add` -> `numpy.add`). `concept` is the legacy
+        # hub key, accepted only as a fallback so existing shims still lift.
+        if library and (symbol or concept):
+            result: dict = {"target_library_tag": library}
+            if symbol:
+                result["symbol"] = symbol
+            if concept:
+                result["concept_name"] = concept
             loss = _keyword_str_list(decorator, "loss")
             if loss is not None:
                 result["loss"] = loss

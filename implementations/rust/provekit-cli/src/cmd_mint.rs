@@ -2438,7 +2438,23 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
     let target_language = required_str(decl, "target_language", "library-sugar-binding-entry")?;
     let target_library_tag =
         required_str(decl, "target_library_tag", "library-sugar-binding-entry")?;
-    let concept_name = required_str(decl, "concept_name", "library-sugar-binding-entry")?;
+    // Identity is symbol-keyed (`numpy.add`); `concept_name` is the legacy hub
+    // key. Require at least one, prefer `symbol`. Both flow into the header.
+    // Existing concept-keyed shims have no `symbol`, so the header is
+    // byte-identical (JCS sorts keys; absent `symbol` adds nothing).
+    let symbol = decl
+        .get("symbol")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty());
+    let concept_name = decl
+        .get("concept_name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty());
+    if symbol.is_none() && concept_name.is_none() {
+        return Err(
+            "`library-sugar-binding-entry` missing `symbol` (or legacy `concept_name`)".to_string(),
+        );
+    }
     let signature_shape_cid =
         required_str(decl, "signature_shape_cid", "library-sugar-binding-entry")?;
     let body_source = decl
@@ -2446,16 +2462,28 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
         .ok_or_else(|| "`library-sugar-binding-entry` missing `body_source`".to_string())?;
     let source_cid = required_str(body_source, "source_cid", "body_source")?;
 
+    let mut header = serde_json::Map::new();
+    header.insert("bodySourceCid".to_string(), json!(source_cid));
+    if let Some(concept_name) = concept_name {
+        header.insert("conceptName".to_string(), json!(concept_name));
+    }
+    header.insert(
+        "kind".to_string(),
+        json!("library-sugar-binding-entry"),
+    );
+    header.insert(
+        "signatureShapeCid".to_string(),
+        json!(signature_shape_cid),
+    );
+    if let Some(symbol) = symbol {
+        header.insert("symbol".to_string(), json!(symbol));
+    }
+    header.insert("targetLanguage".to_string(), json!(target_language));
+    header.insert("targetLibraryTag".to_string(), json!(target_library_tag));
+
     let envelope = json!({
         "body": decl,
-        "header": {
-            "bodySourceCid": source_cid,
-            "conceptName": concept_name,
-            "kind": "library-sugar-binding-entry",
-            "signatureShapeCid": signature_shape_cid,
-            "targetLanguage": target_language,
-            "targetLibraryTag": target_library_tag,
-        },
+        "header": Value::Object(header),
         "schemaVersion": "1",
     });
     let canonical = encode_jcs(&json_to_cvalue(&envelope));
