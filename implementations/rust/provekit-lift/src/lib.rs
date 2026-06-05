@@ -1121,7 +1121,20 @@ fn contract_decl_to_memento(decl: &ContractDecl) -> serde_json::Value {
     let (pre_value, pre_cid) = formula_pair(decl.pre.as_deref());
     let (post_value, post_cid) = formula_pair(decl.post.as_deref());
     let content_cid = blake3_512_of(format!("{inv_cid}|{pre_cid}|{post_cid}").as_bytes());
-    let name = format!("{}#{}", decl.name, content_cid);
+    // The `#<content_cid>` suffix keeps two contracts that share a base name but
+    // carry DIFFERENT formulas as distinct entries (content-honesty / dedup). That
+    // is correct for location-keyed names (`callee@file:line:col`), where each
+    // source site is its own claim. It is WRONG for `#euf#` names, which are
+    // semantic call-identities (`callee#euf#...(argsig)`): two claims about the
+    // SAME call (a vendor's `==5` and a consumer's `==6`) MUST share a name so the
+    // verifier conjoins their invs and refuses the contradiction. So an `#euf#`
+    // name carries the value in its `inv`, never in the name -- the substrate-wide
+    // convention that makes behavioral inheritance work (mirrors the Python lifter).
+    let name = if decl.name.contains("#euf#") {
+        decl.name.clone()
+    } else {
+        format!("{}#{}", decl.name, content_cid)
+    };
     let mut entry = serde_json::json!({
         "kind": "contract",
         "name": name,
