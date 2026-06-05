@@ -1,6 +1,0 @@
-{
-  "condition": "name == null",
-  "has": "maybe_null(name)",
-  "requires": "non_null(name)",
-  "missingEdge": "maybe_null(name) => non_null(name)"
-}

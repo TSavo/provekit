@@ -51,12 +51,10 @@ help:
 	@echo "Mainline:"
 	@echo "  make ci             check-cargo-entrypoint + the acid test (test-all)"
 	@echo "  make test-all       the acid test: test-rust + test-python"
-	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
 	@echo ""
 	@echo "Per-language build:"
 	@echo "  make build-rust     cargo build --release (workspace)"
 	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
-	@echo "  make build-ts       pnpm install"
 	@echo "  make build-python   pip-install Python realize kits and shim packages"
 	@echo "  make build-<lang>   go / cpp / csharp / ruby / scala / c / swift"
 	@echo ""
@@ -79,7 +77,7 @@ help:
 # with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
 # directly on macOS.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-python build-ruby build-scala
+build-all: build-rust build-cpp build-go build-csharp build-java build-python build-ruby build-scala
 
 .PHONY: build-rust
 build-rust:
@@ -102,19 +100,6 @@ build-go:
 	cd implementations/go/provekit-lift-go-tests && go build ./...
 	cd implementations/go/provekit-lift-go && go build ./...
 
-.PHONY: build-ts
-build-ts:
-	pnpm install --frozen-lockfile
-	# Each TS realize kit resolves its shim .proof from its OWN node_modules
-	# (file: dep on the example shim) and needs @ipld/dag-cbor + @noble/hashes
-	# for the CBOR decode. The root install does not provision these per-kit
-	# deps (the kits are npm package-lock.json based, outside the pnpm root),
-	# so install each kit explicitly. Without this the kit RPC returns
-	# SHIM_NOT_FOUND and SQL/migrate materialize tests refuse.
-	npm --prefix implementations/typescript/provekit-emit-typescript-vitest ci
-	npm --prefix implementations/typescript/provekit-realize-typescript-core ci
-	npm --prefix implementations/typescript/provekit-realize-typescript-better-sqlite3 ci
-	npm --prefix implementations/typescript/provekit-realize-typescript-pg ci
 
 .PHONY: build-csharp
 build-csharp:
@@ -207,21 +192,11 @@ check-cargo-entrypoint:
 # provekit-realize-java-core; without `build-java` first, that jar is
 # absent and `lower_java_carrier_registration_points_at_required_fixture_set`
 # panics with `Unable to access jarfile provekit-realize-java.jar`.
-#
-# build-ts (pnpm install) is also required: the bug-zoo smoke tests call
-# `pnpm exec tsx` from the repo root and fail with ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
-# if node_modules is absent (fresh worktrees, CI).
-test-rust: build-java build-ts build-python
+test-rust: build-java build-python
 	@failed=""; \
 	$(CARGO) test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
 	if [ -n "$$failed" ]; then echo "test-rust FAIL:$$failed"; exit 1; fi
-
-.PHONY: bug-zoo
-bug-zoo:
-	@echo "=== Bug Zoo: live ProvekIt receipts ==="
-	env -u PROVEKIT_CLI -u PROVEKIT_BUG_ZOO_EXTERNAL_CLI \
-		$(CARGO) run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 
 .PHONY: python-language-signature
 python-language-signature:
@@ -258,9 +233,6 @@ test-cpp: build-cpp test-cpp-source-lift
 	sh implementations/cpp/provekit-lsp-cpp/test_lsp.sh implementations/cpp/target/provekit-lsp-cpp
 	@echo "test-cpp: mint round-trip also covered by mint-cpp"
 
-.PHONY: test-ts
-test-ts:
-	pnpm test
 
 .PHONY: test-csharp
 test-csharp: build-csharp

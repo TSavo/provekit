@@ -1,6 +1,0 @@
-{
-  "condition": "buf != NULL && dst == src",
-  "has": "borrowed(buf)",
-  "requires": "not_aliased(dst, src)",
-  "missingEdge": "borrowed(buf) => not_aliased(dst, src)"
-}

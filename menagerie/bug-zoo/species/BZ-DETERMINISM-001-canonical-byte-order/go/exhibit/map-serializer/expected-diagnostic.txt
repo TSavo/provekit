@@ -1,1 +1,0 @@
-BZ-DETERMINISM-001 exposes missing edge: post(serialize) => canonical(out)

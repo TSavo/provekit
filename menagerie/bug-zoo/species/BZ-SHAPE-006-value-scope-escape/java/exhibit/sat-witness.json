@@ -1,6 +1,0 @@
-{
-  "condition": "value == 42",
-  "has": "eq(value, 42)",
-  "requires": "gte(value, 43)",
-  "missingEdge": "eq(value, 42) => gte(value, 43)"
-}

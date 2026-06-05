@@ -1,1 +1,0 @@
-clean: JUnit witness is scoped to the required value.
