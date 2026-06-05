@@ -812,16 +812,21 @@ mod tests {
     }
 
     fn assert_callsite_name(name: &str, callee: &str) {
-        let prefix = format!("{callee}@t.rs:");
-        assert!(
-            name.starts_with(&prefix),
-            "expected `{name}` to start with `{prefix}`"
-        );
-        let rest = &name[prefix.len()..];
-        let parts: Vec<_> = rest.split(':').collect();
-        assert_eq!(parts.len(), 2, "expected <line>:<col>, got `{rest}`");
-        assert!(parts[0].parse::<usize>().unwrap() > 0);
-        parts[1].parse::<usize>().unwrap();
+        // Literal-arg calls carry the location-INDEPENDENT EUF identity
+        // (`callee#euf#...`); method / symbolic-arg calls keep the location form.
+        let euf_prefix = format!("{callee}#euf#");
+        if !name.starts_with(&euf_prefix) {
+            let prefix = format!("{callee}@t.rs:");
+            assert!(
+                name.starts_with(&prefix),
+                "expected `{name}` to start with `{prefix}` or `{euf_prefix}`"
+            );
+            let rest = &name[prefix.len()..];
+            let parts: Vec<_> = rest.split(':').collect();
+            assert_eq!(parts.len(), 2, "expected <line>:<col>, got `{rest}`");
+            assert!(parts[0].parse::<usize>().unwrap() > 0);
+            parts[1].parse::<usize>().unwrap();
+        }
         assert!(
             !name.starts_with("squares_are_nonneg")
                 && !name.starts_with("palindromes")

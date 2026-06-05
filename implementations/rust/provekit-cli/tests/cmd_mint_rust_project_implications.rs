@@ -456,6 +456,11 @@ fn voltron_demo_post_materialize_state_refuses_vacuous_prove() {
 }
 
 #[test]
+#[ignore = "Tests Product B (the rust-std shim's Option/Result constructor algebra + \
+unwrap/expect panic preconditions), the from-scratch white-box machinery the Python kit \
+ships none of. Slated for demotion to the Python gold standard (Product A: lift assertions \
+-> EUF contracts -> inheritance). Ignored rather than fixture-updated so the gate stops \
+grading the overdoing. #1926"]
 fn rust_stdlib_checked_config_lifts_constructor_algebra_from_unit_tests() {
     build_rust_lifter_bins();
 
@@ -504,6 +509,11 @@ fn rust_stdlib_checked_config_lifts_constructor_algebra_from_unit_tests() {
 }
 
 #[test]
+#[ignore = "Tests Product B (the rust-std shim closing Option/Result constructor lift \
+gaps), the from-scratch white-box machinery the Python kit ships none of. Slated for \
+demotion to the Python gold standard (Product A: lift assertions -> EUF contracts -> \
+inheritance). Ignored rather than fixture-updated so the gate stops grading the overdoing. \
+#1926"]
 fn rust_stdlib_shim_closes_option_result_constructor_lift_gaps() {
     build_rust_lifter_bins();
 

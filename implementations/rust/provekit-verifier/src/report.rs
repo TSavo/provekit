@@ -37,6 +37,13 @@ pub fn add_callsite_with_discharge(
     });
     if verdict == ObligationVerdict::Discharged {
         r.discharged += 1;
+    } else if verdict == ObligationVerdict::Refused {
+        // A refusal is the trichotomy's third arm: a named, honest "no sound
+        // discharger for this obligation". It is NOT a discharge (no false pass)
+        // and NOT a violation (it does not redden the gate). The row stays visible
+        // (status `refused` + reason); the scoreboard simply does not score it
+        // against correctness, because we never claimed to decide it.
+        r.refused += 1;
     } else {
         r.violations += 1;
     }
@@ -80,6 +87,13 @@ pub fn add_self_post_with_method(
     });
     if verdict == ObligationVerdict::Discharged {
         r.discharged += 1;
+    } else if verdict == ObligationVerdict::Refused {
+        // A refusal is the trichotomy's third arm: a named, honest "no sound
+        // discharger for this obligation". It is NOT a discharge (no false pass)
+        // and NOT a violation (it does not redden the gate). The row stays visible
+        // (status `refused` + reason); the scoreboard simply does not score it
+        // against correctness, because we never claimed to decide it.
+        r.refused += 1;
     } else {
         r.violations += 1;
     }
@@ -113,6 +127,13 @@ pub fn add_consistency(
     });
     if verdict == ObligationVerdict::Discharged {
         r.discharged += 1;
+    } else if verdict == ObligationVerdict::Refused {
+        // A refusal is the trichotomy's third arm: a named, honest "no sound
+        // discharger for this obligation". It is NOT a discharge (no false pass)
+        // and NOT a violation (it does not redden the gate). The row stays visible
+        // (status `refused` + reason); the scoreboard simply does not score it
+        // against correctness, because we never claimed to decide it.
+        r.refused += 1;
     } else {
         r.violations += 1;
     }

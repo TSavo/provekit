@@ -592,6 +592,20 @@ fn discharge_obligation(
             file: None,
             call_site_locus_json: None,
         }),
+        // A refusal is distinct from "undecidable": there is no sound discharger
+        // for this bridge's obligation (the precondition lowers to a construct the
+        // solver cannot interpret). Surface it by its own honest name, not as an
+        // undecidable gap.
+        ObligationVerdict::Refused => Some(LinkerError {
+            kind: "implication-refused".into(),
+            target_symbol: target_symbol.to_string(),
+            source_contract_cid: source_contract_cid.to_string(),
+            reason: format!(
+                "no sound discharger for `post_caller \u{2283} pre_callee` on target `{target_cid}`; refused, not guessed: {reason}"
+            ),
+            file: None,
+            call_site_locus_json: None,
+        }),
     }
 }
 

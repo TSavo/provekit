@@ -108,6 +108,7 @@ impl Solver for StubSolver {
                     ObligationVerdict::Unsatisfied => "sat",
                     ObligationVerdict::Undecidable => "unknown",
                     ObligationVerdict::Disagreement => "disagreement",
+                    ObligationVerdict::Refused => "refused",
                 }
             ),
             wall_clock: started.elapsed(),

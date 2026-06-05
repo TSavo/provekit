@@ -318,6 +318,11 @@ fn reason_for(r: &SolveResult) -> String {
             ObligationVerdict::Disagreement => {
                 format!("solver '{}' produced disagreement", r.solver_name)
             }
+            // Refusals always carry a named reason in `r.error` (handled above);
+            // this is the exhaustive fallback.
+            ObligationVerdict::Refused => {
+                format!("solver '{}' refused: no sound discharger", r.solver_name)
+            }
         }
     }
 }
