@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# pandas showcase: the same two-axis correctness claim as numpy-showcase, one
+# rung up the ladder. The next package after numpy is JUST ANOTHER LIFTER
+# PACKAGE (provekit-lift-py-pandas-testing); this example differs from
+# numpy-showcase only by swapping in that seat and pointing the witness venv at
+# pandas.
+#
+#   mint   — three lift seats run over the project: the plain pytest CONSISTENCY
+#            seat (scalar assertions), the pandas.testing seat (frame assertions,
+#            approximate-by-default REFUSED unless check_exact pinned), and the
+#            pytest-witness seat (RUNS the tests under real pandas).
+#   prove  — discharges two ways:
+#              CONSISTENT : z3 finds the good contracts mutually consistent and
+#                           the contradictory one UNSAT.
+#              WITNESSED  : the witness re-runs pytest; the good tests reproduce,
+#                           the contradictory one's run is 'failed'.
+#
+# The project deliberately contains a buggy (self-contradictory) test,
+# test_pandas_sum_bad.py, so the showcase proves the CORRECT pandas code AND
+# catches the contradiction -- refused BOTH ways. This script PASSES iff
+# provekit produces exactly that verdict.
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"
+BIN="$REPO/implementations/rust/target/debug/provekit"
+
+# The witness lifter RUNS pandas's tests, so it needs pandas + the kit deps in a
+# venv (PEP 668: never --break-system-packages). The lift manifests point their
+# interpreter at this venv.
+VENV="${PANDAS_WITNESS_VENV:-/tmp/pandas-witness-venv}"
+if [ ! -x "$VENV/bin/python" ]; then
+  python3 -m venv "$VENV"
+  "$VENV/bin/pip" install -q pandas pytest pynacl blake3 cbor2
+fi
+
+cd "$HERE"
+rm -f blake3-512:*.proof 2>/dev/null || true
+rm -rf .provekit/runs .provekit/witnesses 2>/dev/null || true
+
+echo "== mint (plain-pytest + pandas.testing + pytest-witness over the project) =="
+"$BIN" mint --out . --quiet
+
+echo "== prove (consistency AND witness) =="
+report="$(PATH="$VENV/bin:$PATH" "$BIN" prove . 2>/dev/null)"
+echo "$report"
+
+echo ""
+echo "== self-check: provekit must prove the good code and refuse the bug both ways =="
+fail=0
+check() { if echo "$report" | grep -q "$2"; then echo "  ok: $1"; else echo "  MISSING: $1 ($2)"; fail=1; fi; }
+# Consistency axis: the two good contracts discharge, the contradiction is UNSAT.
+check "consistency discharges Series.sum == 6"      "consistent about callsite .test_column_sum_is_six"
+check "consistency discharges frame round-trip"     "consistent about callsite .test_frame_round_trips_exactly"
+check "consistency REFUSES the contradiction"       "contradictory about callsite .test_column_sum_contradiction"
+# Witness axis: the good tests reproduce; the contradictory test's run failed.
+check "witness discharges by recompute"             "witnessed by recompute"
+check "witness REFUSES the failed run"              "witnessed outcome is 'failed'"
+
+echo ""
+if [ "$fail" -eq 0 ]; then
+  echo "PASS: pandas proved correct (both axes); the contradictory test refused both ways."
+else
+  echo "FAIL: provekit did not produce the expected verdict."; exit 1
+fi

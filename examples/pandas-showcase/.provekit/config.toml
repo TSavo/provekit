@@ -1,0 +1,40 @@
+# pandas showcase — the same two-axis correctness claim as numpy-showcase, one
+# rung up the ladder: pandas. The next package after numpy is JUST ANOTHER
+# LIFTER PACKAGE (provekit-lift-py-pandas-testing), so this example differs from
+# numpy-showcase only by swapping the numpy.testing seat for the pandas.testing
+# seat and pointing the witness venv at pandas.
+#
+# Three lift seats, each claiming the test it understands:
+#   python               — the plain pytest bare-assert CONSISTENCY seat. Scalar
+#                          assertions (df['a'].sum() == 6) are where z3's teeth
+#                          are: a contradiction (== 6 AND == 7) is UNSAT.
+#   python-pandas-testing — the pandas.testing vocabulary seat. assert_frame_equal
+#                          (check_exact pinned) keys the pandas op for the witness
+#                          axis; approximate-by-default frame compares are REFUSED.
+#   python-pytest-witness — RUNS the test; the witness is real pandas executing.
+#
+# prove discharges CONSISTENT (z3, scalar) and the witness RE-RUNS pytest. The
+# degenerate (test_*_bad.py) is refused BOTH ways: z3 UNSAT and the witness fails.
+[[plugins]]
+name = "python-lift"
+kind = "lift"
+surface = "python"
+
+[[plugins]]
+name = "python-pandas-testing-lift"
+kind = "lift"
+surface = "python-pandas-testing"
+
+[[plugins]]
+name = "pytest-witness-lift"
+kind = "lift"
+surface = "python-pytest-witness"
+
+[solvers]
+default = "z3"
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

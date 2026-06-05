@@ -1,0 +1,21 @@
+name = "python-pandas-testing-lift"
+version = "0.1.0-draft"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+# The pandas.testing assertion seat. Relative PYTHONPATH at the seat src + the
+# pytest seat it reuses for term machinery. Resolved from working_dir (project
+# root). AST-only: it does not import pandas, so the interpreter choice is
+# incidental (shares the witness venv).
+command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/provekit-lift-py-pandas-testing/src:../../implementations/python/provekit-lift-py-tests/src",
+    "/tmp/pandas-witness-venv/bin/python",
+    "-m",
+    "provekit_lift_py_pandas_testing.lsp",
+]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-pandas-testing"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
