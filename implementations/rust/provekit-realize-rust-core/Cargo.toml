@@ -10,22 +10,12 @@ description = "ProvekIt Rust realize kit for canonical body templates."
 name = "provekit_realize_rust_core"
 path = "src/lib.rs"
 
-[[bin]]
-name = "provekit-realize-rust"
-path = "src/main.rs"
 
 [dependencies]
 base64 = { workspace = true }
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
-provekit-shim-blake3-rust = { path = "../../../examples/provekit-shim-blake3-rust" }
-provekit-shim-postgres = { path = "../../../examples/provekit-shim-postgres" }
-provekit-shim-rfc8785-jcs-rust = { path = "../../../examples/provekit-shim-rfc8785-jcs-rust" }
-provekit-shim-reqwest-rust = { path = "../../../examples/provekit-shim-reqwest-rust" }
-provekit-shim-rusqlite = { path = "../../../examples/provekit-shim-rusqlite" }
-provekit-shim-serde-json-rust = { path = "../../../examples/provekit-shim-serde-json-rust" }
-provekit-shim-stdio-rust = { path = "../../../examples/provekit-shim-stdio-rust" }
 proc-macro2 = { workspace = true, features = ["span-locations"] }
 quote = { workspace = true }
 serde = { workspace = true }

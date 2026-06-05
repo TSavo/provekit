@@ -3683,75 +3683,11 @@ fn body_template_entries_json(library_tag: &str) -> Vec<Value> {
     shim_template_entry_values(library_tag)
 }
 
-fn shim_template_entry_values(library_tag: &str) -> Vec<Value> {
-    if library_tag.trim().is_empty() {
-        return Vec::new();
-    }
-    static SHIM_ENTRIES: OnceLock<BTreeMap<String, Vec<Value>>> = OnceLock::new();
-    SHIM_ENTRIES
-        .get_or_init(|| {
-            let mut entries = BTreeMap::new();
-            entries.insert(
-                "postgres".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_postgres::PROVEKIT_PROOF_BYTES,
-                    &["postgres"],
-                ),
-            );
-            entries.insert(
-                "rusqlite".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_rusqlite::PROVEKIT_PROOF_BYTES,
-                    &["rusqlite"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-stdio-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_stdio_rust::PROVEKIT_PROOF_BYTES,
-                    &["std::io"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-serde-json-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_serde_json_rust::PROVEKIT_PROOF_BYTES,
-                    &["serde_json"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-blake3-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_blake3_rust::PROVEKIT_PROOF_BYTES,
-                    &["blake3"],
-                ),
-            );
-            entries.insert(
-                "reqwest".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_reqwest_rust::PROVEKIT_PROOF_BYTES,
-                    &["reqwest"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-rfc8785-jcs-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_rfc8785_jcs_rust::PROVEKIT_PROOF_BYTES,
-                    &["serde_json", "provekit-shim-rfc8785-jcs-rust"],
-                ),
-            );
-            entries
-        })
-        .get(library_tag)
-        .cloned()
-        .unwrap_or_default()
-}
-
-fn entries_from_shim_proof_tags(bytes: &[u8], library_tags: &[&str]) -> Vec<Value> {
-    library_tags
-        .iter()
-        .flat_map(|tag| entries_from_shim_proof(bytes, tag))
-        .collect()
+fn shim_template_entry_values(_library_tag: &str) -> Vec<Value> {
+    // The hand-built rust vendor shims were the dishonest source of vendor
+    // contracts for materialize. They are deleted; materialize now finds no
+    // shim bindings and honestly refuses. Re-implement via the RaOracle.
+    Vec::new()
 }
 
 fn entries_from_shim_proof(bytes: &[u8], library_tag: &str) -> Vec<Value> {
