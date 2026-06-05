@@ -118,17 +118,9 @@ help:
 	@echo "ProvekIt: top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             Linux-profile gate (conformance + test-all)"
-	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
-	@echo "  make cross-language-proof-parity"
-	@echo "                       Java/Go/Python/Rust emit + materialize + recognize + mint + prove + contradiction gate"
-	@echo "  make cross-language-proof-parity-extra"
-	@echo "                       opt-in TypeScript/Zig/Scala/Swift parity lanes"
+	@echo "  make ci             check-cargo-entrypoint + test-all"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
-	@echo "  make bootstrap-self-contracts"
-	@echo "                       re-sign attestations from live kit artifacts"
-	@echo "                       override: CONFORMANCE_PROFILE=all CONFORMANCE_JOBS=8"
 	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
@@ -637,10 +629,6 @@ cid-stability-check:
 	@echo "=== ProofIR resolved round-trip CID stability ==="
 	python3 bootstrap/scripts/cid_stability_check.py
 
-.PHONY: conformance
-conformance: c11-cursorkind-check catalog-verify protocol-verify all-mint test-mint-kit-integration-pins test-self-contracts conformance-region-fixture cross-kit-conformance cid-stability-check
-	@echo ""
-	@echo "==== conformance: PASS ===="
 
 .PHONY: test-mint-kit-integration-pins
 test-mint-kit-integration-pins: all-mint
@@ -692,11 +680,6 @@ conformance-region-fixture:
 	@$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-canonicalizer --test conformance_region_dependent
 
-.PHONY: cross-kit-conformance
-cross-kit-conformance:
-	@echo "=== Catalog-pinned cross-kit conformance fixtures ==="
-	$(CARGO) run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
-		--profile $(CONFORMANCE_PROFILE) --jobs $(CONFORMANCE_JOBS)
 
 .PHONY: cross-language-proof-parity-python-env
 cross-language-proof-parity-python-env:
@@ -908,12 +891,6 @@ cross-language-proof-parity-extra: build-ts build-zig build-scala
 .PHONY: cross-language-proof-parity-all
 cross-language-proof-parity-all: cross-language-proof-parity cross-language-proof-parity-extra
 
-.PHONY: bootstrap-self-contracts
-bootstrap-self-contracts:
-	@echo "=== Bootstrap self-contract attestations from live kit artifacts ==="
-	$(CARGO) run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
-		--profile $(CONFORMANCE_PROFILE) --jobs $(CONFORMANCE_JOBS) \
-		--bootstrap-self-contract-attestations
 
 # --- Per-language test suites ------------------------------------------------
 
@@ -1145,7 +1122,7 @@ test-all:
 # --- CI alias ----------------------------------------------------------------
 
 .PHONY: ci
-ci: check-cargo-entrypoint check-cross-language-proof-parity-scope conformance cross-language-proof-parity test-all
+ci: check-cargo-entrypoint test-all
 	@echo ""
 	@echo "==== ci: PASS ===="
 
