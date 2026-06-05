@@ -9,7 +9,6 @@ use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
-use crate::protocol::EXPECTED_CATALOG_CID;
 use crate::VersionArgs;
 
 const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -43,16 +42,10 @@ pub fn run(args: VersionArgs) -> u8 {
         let payload = json!({
             "name": "provekit",
             "version": CLI_VERSION,
-            "protocolCatalogCid": EXPECTED_CATALOG_CID,
         });
         println!("{}", serde_json::to_string_pretty(&payload).unwrap());
     } else {
-        println!(
-            "{} {} {}",
-            "provekit".bold(),
-            CLI_VERSION,
-            format!("(protocol {EXPECTED_CATALOG_CID})").dimmed()
-        );
+        println!("{} {}", "provekit".bold(), CLI_VERSION);
     }
     crate::EXIT_OK
 }

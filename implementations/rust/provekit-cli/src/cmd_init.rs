@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use owo_colors::OwoColorize;
 
-use crate::protocol::EXPECTED_CATALOG_CID;
 use crate::InitArgs;
 
 pub fn run(args: InitArgs) -> u8 {
@@ -68,10 +67,7 @@ pub(crate) fn init_project(project: &Path, force: bool, quiet: bool) -> Result<(
     if !quiet {
         println!("{}", "Initialized ProvekIt project".green().bold());
         println!("  root          : {}", project.display());
-        println!(
-            "  provekit.toml : declares conformance to {}",
-            EXPECTED_CATALOG_CID
-        );
+        println!("  provekit.toml : created");
         println!("  next steps    :");
         println!("    1. Author your first contract under .provekit/");
         println!("    2. Run `provekit prove` to verify the proof catalog.");
@@ -92,12 +88,7 @@ fn write_if_absent_or_force(path: &Path, contents: &str, force: bool, label: &st
 }
 
 fn provekit_toml_template() -> String {
-    format!(
-        r#"# ProvekIt project manifest. See protocol/specs/.
-
-[provekit]
-# Catalog CID this project declares conformance to.
-protocol = "{cid}"
+    r#"# ProvekIt project manifest.
 
 [paths]
 # Where signed .proof catalogs live. Walked recursively by `provekit prove`.
@@ -109,9 +100,8 @@ cache = ".provekit/cache"
 [solver]
 # Path to z3 binary; "z3" defers to PATH.
 z3 = "z3"
-"#,
-        cid = EXPECTED_CATALOG_CID
-    )
+"#
+    .to_string()
 }
 
 const SAMPLE_INVARIANT_RS: &str = r#"// Sample ProvekIt invariant (Rust). Author with the kit primitives.
@@ -135,8 +125,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y z3
       - name: install provekit
         run: cargo install --git https://github.com/provekit/provekit provekit-cli
-      - name: verify protocol conformance
-        run: provekit verify-protocol
       - name: prove
         run: provekit prove .
 "#;
@@ -170,11 +158,5 @@ mod tests {
         init_project(&dir, true, true).expect("force re-init");
 
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn provekit_toml_contains_expected_cid() {
-        let s = provekit_toml_template();
-        assert!(s.contains(EXPECTED_CATALOG_CID));
     }
 }

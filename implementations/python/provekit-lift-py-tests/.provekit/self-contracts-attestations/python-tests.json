@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1",
+  "kind": "self-contracts-attestation",
+  "lang": "python-tests",
+  "cid": "blake3-512:329bb817b6aefbb4872df6c72bdfbafc8b47d879bc0266a04c6bbd1193ac52117d965e9f3d4f07be7123c28067c2feb7a82501ca3d16208e63ba3a6878aaa870",
+  "contractSetCid": "blake3-512:fa071ab7010328221cbfddc0ea202f10284a423c4c9dbdf6e98fa488b29c256f2267630e05a3e0338be76beac83e242ee29153c90d9879d039faad8886e42eb0",
+  "declaredAt": "2026-05-05T18:00:00Z",
+  "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "signature": "ed25519:gPVPQ5RXAwWoUSH3UT0sHuEMS8qSqrigi4ysdFnotJGOIWR2y+jv64JjkX5kQMOTjOFowkRxl6CLwEZ5BzmUCg=="
+}

@@ -276,7 +276,7 @@ build-c-self-contracts:
 	$(MAKE) -C implementations/c/mint-c-self-contracts
 
 .PHONY: build-java
-build-java: build-java-self-contracts
+build-java:
 	# provekit-lift-java-core depends on the sibling provekit-ir module.
 	# Use the parent pom + `-pl ... -am` (also-make) so dependencies are
 	# built first.
@@ -307,14 +307,6 @@ build-python:
 build-scala:
 	$(SCALA_CLI) compile implementations/scala/provekit-emit-scala-scalatest --server=false --scalac-option -deprecation
 	$(SCALA_CLI) compile implementations/scala/provekit-lift-scala-source --server=false --scalac-option -deprecation
-
-.PHONY: build-java-self-contracts
-build-java-self-contracts:
-	# Build the self-contracts orchestrator's shaded jar (BouncyCastle +
-	# provekit-claim-envelope bundled). The jar lands at
-	# implementations/java/provekit-java-self-contracts/target/provekit-java-self-contracts.jar
-	# and the lift manifest spawns it with `java -jar`.
-	$(MVN) -q -f implementations/java/pom.xml -pl provekit-java-self-contracts -am package -DskipTests
 
 .PHONY: build-ruby
 build-ruby:
@@ -917,10 +909,6 @@ test-rust: build-java build-ts build-python
 	@failed=""; \
 	$(CARGO) test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
-	$(CARGO) test --no-fail-fast --release --manifest-path tools/recompute-spec-cids/Cargo.toml \
-	  || failed="$$failed tools/recompute-spec-cids"; \
-	$(CARGO) test --no-fail-fast --release --manifest-path tools/foundation-keygen/Cargo.toml \
-	  || failed="$$failed tools/foundation-keygen"; \
 	if [ -n "$$failed" ]; then echo "test-rust FAIL:$$failed"; exit 1; fi
 
 .PHONY: bug-zoo

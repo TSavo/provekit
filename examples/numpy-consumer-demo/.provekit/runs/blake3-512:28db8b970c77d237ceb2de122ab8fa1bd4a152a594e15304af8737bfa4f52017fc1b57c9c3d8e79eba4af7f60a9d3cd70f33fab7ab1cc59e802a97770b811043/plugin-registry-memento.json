@@ -1,0 +1,31 @@
+{
+  "envelope": {
+    "declaredAt": "1970-01-01T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "built_in_count": 0,
+    "cid": "blake3-512:28db8b970c77d237ceb2de122ab8fa1bd4a152a594e15304af8737bfa4f52017fc1b57c9c3d8e79eba4af7f60a9d3cd70f33fab7ab1cc59e802a97770b811043",
+    "failures": [],
+    "kind": "plugin-registry",
+    "load_order": [
+      {
+        "cid": "blake3-512:8f937060de507b3176bb98e9059fd853928d4532af9af011cf5a5400eb07de861b7d36a52a40a7f8be33bec4f847d8f5b6722278b632ceb8ad32971a3289bfe9",
+        "kind": "lift",
+        "source": ".provekit/lift/python-tests/manifest.toml"
+      }
+    ],
+    "loaded": [
+      {
+        "cid": "blake3-512:8f937060de507b3176bb98e9059fd853928d4532af9af011cf5a5400eb07de861b7d36a52a40a7f8be33bec4f847d8f5b6722278b632ceb8ad32971a3289bfe9",
+        "kind": "lift"
+      }
+    ],
+    "runtime_protocol_versions": [
+      "pep/1.7.0"
+    ],
+    "schemaVersion": "1",
+    "sealed_at": "1970-01-01T00:00:00.000Z"
+  }
+}

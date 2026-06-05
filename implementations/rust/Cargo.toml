@@ -13,7 +13,6 @@ members = [
     "provekit-ir-compiler-maude",
     "provekit-ir-compiler-lean",
     "provekit-verifier",
-    "provekit-self-contracts",
     "libprovekit",
     "libprovekit-rpc",
     "provekit-cli",

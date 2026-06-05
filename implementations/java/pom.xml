@@ -20,7 +20,6 @@
         <module>provekit-claim-envelope</module>
         <module>provekit-java-runtime</module>
         <module>provekit-java-contract-annotations</module>
-        <module>provekit-java-self-contracts</module>
         <module>provekit-lift-java-core</module>
         <module>provekit-lift-java-source</module>
         <module>provekit-lift-java-bean-validation</module>
