@@ -141,6 +141,14 @@ pub struct BindLiftEntry {
     pub attr_post: Option<String>,
     #[serde(default)]
     pub concept_annotation: Option<String>,
+    /// Fully-qualified library symbol this sugar binding IS, e.g. `numpy.add`
+    /// (the symbol-keyed identity; the join key the linker resolves call-edges
+    /// against and the recognizer stamps as `target_symbol`). When present it
+    /// supersedes concept-derived naming; concept was the legacy hub key and is
+    /// being retired (see SHARED-LANGUAGE.md). Absent → legacy concept path,
+    /// byte-identical for existing shims.
+    #[serde(default)]
+    pub symbol: Option<String>,
     #[serde(default)]
     pub param_names: Vec<String>,
     #[serde(default)]
@@ -974,6 +982,15 @@ fn workspace_root(term_json: &Json) -> Option<String> {
 }
 
 fn concept_name_for(entry: &BindLiftEntry, ordinal: usize, catalog: &Catalog) -> String {
+    // Symbol-keyed identity wins: a sugar binding that declares its
+    // fully-qualified library symbol (e.g. `numpy.add`) IS that symbol. This is
+    // the join key the linker resolves call-edges against and the recognizer
+    // stamps as `target_symbol`; no concept, no catalog shape-match. Concept is
+    // the legacy hub key, retained below only as the fallback for shims that
+    // have not migrated (keeps their `.proof` byte-identical).
+    if let Some(symbol) = entry.symbol.as_ref().filter(|s| !s.trim().is_empty()) {
+        return symbol.clone();
+    }
     if let Some(annotation) = entry.concept_annotation.as_ref().map(|name| {
         if name.starts_with("concept:") {
             name.clone()
@@ -1980,6 +1997,46 @@ mod tests {
         assert_eq!(named.kind, "named-term-document");
         assert_eq!(named.terms[0].concept_name, "concept:demo");
         assert_eq!(named.terms[0].function, "f");
+    }
+
+    #[test]
+    fn symbol_keyed_binding_is_named_by_symbol_not_concept() {
+        // The numpy sugar shim is sugar-only and concept-free: the binding
+        // for `numpy.add` declares `symbol`, no `concept_annotation`. The term
+        // must be named by the fully-qualified symbol verbatim (no `concept:`
+        // prefix, no catalog shape-match) so it is the join key the linker
+        // resolves call-edges against and the recognizer stamps as target_symbol.
+        let term = json!({
+            "kind": "ir-document",
+            "workspaceRoot": "/tmp/numpy-shim",
+            "ir": [{
+                "kind": "library-sugar-binding-entry",
+                "file": "provekit_shim_numpy/__init__.py",
+                "source_function_name": "add",
+                "symbol": "numpy.add",
+                "target_library_tag": "numpy",
+                "param_names": ["x", "y"],
+                "param_types": ["", ""],
+                "return_type": "",
+                "term_shape": {"kind": "op", "name": "add"},
+                "witnesses": []
+            }]
+        });
+        let named = bind_term_document(
+            &term,
+            &BindOptions {
+                lang: "python".to_string(),
+            },
+        )
+        .expect("bind succeeds");
+        assert_eq!(
+            named.terms[0].concept_name, "numpy.add",
+            "symbol-keyed binding must be named by its fully-qualified symbol"
+        );
+        assert!(
+            !named.terms[0].concept_name.starts_with("concept:"),
+            "symbol identity must not be concept-prefixed"
+        );
     }
 
     #[test]

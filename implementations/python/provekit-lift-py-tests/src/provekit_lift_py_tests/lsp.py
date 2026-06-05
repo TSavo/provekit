@@ -879,6 +879,47 @@ def handle_shutdown(msg_id: Any) -> None:
     sys.exit(0)
 
 
+def handle_resolve_dependency_proofs(msg_id: Any, params: dict) -> None:
+    """Resolve dependency `.proof` files from the project's `.provekit/imports/`.
+
+    The verifier (rust `dependency_proofs_via_rpc`) calls this to fold a
+    consumer's resolved vendor proofs into the proof set before discharge —
+    e.g. the numpy sugar `.proof` that puts `numpy.add` under contract. We
+    source from the on-disk `.provekit/imports/` directory (the same place the
+    contract-binding auto-discovery reads), returning each proof's CID and
+    base64 bytes per the realize kits' contract.
+    """
+    import base64
+    import fnmatch
+
+    project_root = str(params.get("project_root") or ".")
+    imports_dir = os.path.join(project_root, ".provekit", "imports")
+    proofs: list[dict] = []
+    if os.path.isdir(imports_dir):
+        for name in sorted(os.listdir(imports_dir)):
+            if not fnmatch.fnmatch(name, "blake3-512:*.proof"):
+                continue
+            path = os.path.join(imports_dir, name)
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as fh:
+                proof_bytes = fh.read()
+            proofs.append(
+                {
+                    "cid": name[: -len(".proof")],
+                    "bytes_base64": base64.b64encode(proof_bytes).decode("ascii"),
+                    "source": f"provekit-imports:{name}",
+                }
+            )
+    _send(
+        {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {"proofs": proofs},
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -906,6 +947,8 @@ def main() -> None:
             handle_lift(msg_id, params)
         elif method == "provekit.plugin.lift_implications":
             handle_lift_implications(msg_id, params)
+        elif method == "provekit.plugin.resolve_dependency_proofs":
+            handle_resolve_dependency_proofs(msg_id, params)
         elif method == "shutdown":
             handle_shutdown(msg_id)
         else:
