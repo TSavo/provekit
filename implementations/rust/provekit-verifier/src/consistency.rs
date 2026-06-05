@@ -424,6 +424,61 @@ mod tests {
     fn none() -> Json {
         json!({"kind":"ctor","name":"None","args":[]})
     }
+    fn int(n: i64) -> Json {
+        json!({"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":n})
+    }
+    fn gt(a: Json, b: Json) -> Json {
+        json!({"kind":"atomic","name":">","args":[a,b]})
+    }
+    fn insert_contract(pool: &mut MementoPool, cid: &str, name: &str, inv: Json) {
+        let env = json!({
+            "envelope": { "header": { "kind": "contract", "contractName": name, "inv": inv } }
+        });
+        pool.insert(cid.to_string(), env);
+    }
+
+    /// CROSS-PROOF CONJOIN: two contracts sharing a callsite name -- a consumer's
+    /// assertion and an IMPORTED vendor contract about the same call -- are
+    /// CONJOINED before the SAT check, not kept-one-dropped-one. This is what
+    /// makes a numpy USER who asserts `np.add(2,3)==6` get REFUSED against an
+    /// inherited numpy `==5`. Discrimination guards the false-refusal boundary:
+    /// a CONSISTENT conjunction stays PROVEN, and a lone contract is untouched.
+    #[test]
+    fn cross_proof_same_named_contracts_are_conjoined() {
+        let (plan, reg) = z3_plan_and_registry();
+        let name = "numpy.add#euf#callresult_numpy_add_a2(2,3)::assertion";
+
+        // consumer ==6 + imported numpy ==5 (distinct CIDs) -> and(==5,==6) -> REFUSED
+        let mut pool = MementoPool::default();
+        insert_contract(&mut pool, "blake3-512:consumer6", name, eqf(var("r"), int(6)));
+        insert_contract(&mut pool, "blake3-512:numpy5", name, eqf(var("r"), int(5)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 1, "same-named contracts collapse to one obligation: {res:?}");
+        assert_eq!(
+            res[0].verdict,
+            ObligationVerdict::Unsatisfied,
+            "cross-proof contradiction must be refused: {res:?}"
+        );
+
+        // consumer ==5 + numpy r>0 (distinct CIDs, CONSISTENT) -> and -> PROVEN
+        let mut pool = MementoPool::default();
+        insert_contract(&mut pool, "blake3-512:a", name, eqf(var("r"), int(5)));
+        insert_contract(&mut pool, "blake3-512:b", name, gt(var("r"), int(0)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 1);
+        assert_eq!(
+            res[0].verdict,
+            ObligationVerdict::Discharged,
+            "consistent conjunction must stay proven (no false refusal): {res:?}"
+        );
+
+        // a LONE contract is untouched -> PROVEN
+        let mut pool = MementoPool::default();
+        insert_contract(&mut pool, "blake3-512:solo", name, eqf(var("r"), int(5)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].verdict, ObligationVerdict::Discharged);
+    }
 
     /// The witness-discharge arm: a contract carrying a `custom` EvidenceTerm is
     /// settled by spawning the tool's discharge command (here a stub), routed by
