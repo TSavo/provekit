@@ -3683,183 +3683,15 @@ fn body_template_entries_json(library_tag: &str) -> Vec<Value> {
     shim_template_entry_values(library_tag)
 }
 
-fn shim_template_entry_values(library_tag: &str) -> Vec<Value> {
-    if library_tag.trim().is_empty() {
-        return Vec::new();
-    }
-    static SHIM_ENTRIES: OnceLock<BTreeMap<String, Vec<Value>>> = OnceLock::new();
-    SHIM_ENTRIES
-        .get_or_init(|| {
-            let mut entries = BTreeMap::new();
-            entries.insert(
-                "postgres".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_postgres::PROVEKIT_PROOF_BYTES,
-                    &["postgres"],
-                ),
-            );
-            entries.insert(
-                "rusqlite".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_rusqlite::PROVEKIT_PROOF_BYTES,
-                    &["rusqlite"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-stdio-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_stdio_rust::PROVEKIT_PROOF_BYTES,
-                    &["std::io"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-serde-json-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_serde_json_rust::PROVEKIT_PROOF_BYTES,
-                    &["serde_json"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-blake3-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_blake3_rust::PROVEKIT_PROOF_BYTES,
-                    &["blake3"],
-                ),
-            );
-            entries.insert(
-                "reqwest".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_reqwest_rust::PROVEKIT_PROOF_BYTES,
-                    &["reqwest"],
-                ),
-            );
-            entries.insert(
-                "provekit-shim-rfc8785-jcs-rust".to_string(),
-                entries_from_shim_proof_tags(
-                    provekit_shim_rfc8785_jcs_rust::PROVEKIT_PROOF_BYTES,
-                    &["serde_json", "provekit-shim-rfc8785-jcs-rust"],
-                ),
-            );
-            entries
-        })
-        .get(library_tag)
-        .cloned()
-        .unwrap_or_default()
+fn shim_template_entry_values(_library_tag: &str) -> Vec<Value> {
+    // The hand-built rust vendor shims were the dishonest source of vendor
+    // contracts for materialize. They are deleted; materialize now finds no
+    // shim bindings and honestly refuses. Re-implement via the RaOracle.
+    Vec::new()
 }
 
-fn entries_from_shim_proof_tags(bytes: &[u8], library_tags: &[&str]) -> Vec<Value> {
-    library_tags
-        .iter()
-        .flat_map(|tag| entries_from_shim_proof(bytes, tag))
-        .collect()
-}
 
-fn entries_from_shim_proof(bytes: &[u8], library_tag: &str) -> Vec<Value> {
-    let Ok(catalog) = provekit_proof_envelope::cbor_decode::decode(bytes) else {
-        return Vec::new();
-    };
-    let Some(root) = catalog.as_map() else {
-        return Vec::new();
-    };
-    let Some(members) = root.get("members").and_then(|value| value.as_map()) else {
-        return Vec::new();
-    };
-    let mut entries = Vec::new();
-    for member in members.values() {
-        let Some(member_bytes) = member.as_bstr() else {
-            continue;
-        };
-        let Ok(member_json) = serde_json::from_slice::<Value>(member_bytes) else {
-            continue;
-        };
-        let body = member_json.get("body").unwrap_or(&member_json);
-        if body.get("kind").and_then(Value::as_str) != Some("library-sugar-binding-entry") {
-            continue;
-        }
-        if library_tag.is_empty()
-            || body.get("target_library_tag").and_then(Value::as_str) != Some(library_tag)
-        {
-            continue;
-        }
-        if let Some(entry) = binding_entry_to_template_entry(body, library_tag) {
-            entries.push(entry);
-        }
-    }
-    entries
-}
 
-fn binding_entry_to_template_entry(decl: &Value, library_tag: &str) -> Option<Value> {
-    let concept_name = decl.get("concept_name").and_then(Value::as_str)?;
-    let param_names = decl
-        .get("param_names")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let body_text = decl
-        .get("body_source")
-        .and_then(|body| body.get("body_text"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if body_text.is_empty() {
-        return None;
-    }
-    let arity = param_names.len();
-    let mut entry = json!({
-        "concept_name": concept_name,
-        "emission_template": {
-            "kind": "verbatim",
-            "template": substitute_shim_params_with_placeholders(body_text, &param_names),
-        },
-        "loss_record_contribution": decl
-            .get("loss_record_contribution")
-            .cloned()
-            .unwrap_or_else(|| json!({"form": "literal", "value": {"entries": []}})),
-        "signature_guard": {
-            "min_params": arity,
-            "max_params": arity,
-        },
-        "target_library_tag": library_tag,
-    });
-    if let Some(observed) = decl.get("observed_dimension").and_then(Value::as_str) {
-        entry["observed_dimension"] = Value::String(observed.to_string());
-    }
-    if let Some(helpers) = decl.get("file_helpers").cloned() {
-        entry["file_helpers"] = helpers;
-    }
-    Some(entry)
-}
-
-fn substitute_shim_params_with_placeholders(body: &str, param_names: &[String]) -> String {
-    let mut out = String::with_capacity(body.len());
-    let bytes = body.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if c.is_ascii_alphabetic() || c == b'_' {
-            let mut j = i + 1;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
-                j += 1;
-            }
-            let ident = std::str::from_utf8(&bytes[i..j]).unwrap_or("");
-            if let Some(index) = param_names.iter().position(|name| name == ident) {
-                out.push_str(&format!("${{param{index}}}"));
-            } else {
-                out.push_str(ident);
-            }
-            i = j;
-        } else {
-            out.push(c as char);
-            i += 1;
-        }
-    }
-    out
-}
 
 fn render_template(
     template: &str,
@@ -5393,36 +5225,6 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn body_template_entries_exposes_reqwest_from_shim_proof() {
-        let response = dispatch(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 13,
-            "method": "provekit.plugin.body_template_entries",
-            "params": {
-                "target_library_tag": "reqwest",
-            }
-        }));
-
-        assert!(
-            response.get("error").is_none(),
-            "body_template_entries must be served by the Rust kit; got {response}"
-        );
-        let entries = response
-            .pointer("/result/entries")
-            .and_then(Value::as_array)
-            .expect("entries array");
-        assert!(
-            entries.iter().any(|entry| {
-                entry.get("concept_name").and_then(Value::as_str) == Some("concept:http-request")
-                    && entry
-                        .pointer("/emission_template/template")
-                        .and_then(Value::as_str)
-                        .is_some_and(|template| template.contains("reqwest::get(${param0})"))
-            }),
-            "reqwest body templates must come from kit-resolved shim proof entries: {entries:#?}"
-        );
-    }
 
     #[test]
     fn plugin_check_runs_cargo_check() {

@@ -2947,21 +2947,6 @@ mod tests {
         root
     }
 
-    fn copy_packaged_serde_json_shim_proofs(imports_dir: &Path) -> usize {
-        let shim_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../examples/provekit-shim-serde-json-rust");
-        let mut copied = 0usize;
-        for entry in std::fs::read_dir(&shim_dir).expect("read serde_json shim dir") {
-            let path = entry.expect("serde_json shim dir entry").path();
-            if path.extension().and_then(|s| s.to_str()) != Some("proof") {
-                continue;
-            }
-            let file_name = path.file_name().expect("proof file name");
-            std::fs::copy(&path, imports_dir.join(file_name)).expect("copy serde_json proof");
-            copied += 1;
-        }
-        copied
-    }
 
     // -----------------------------------------------------------------
     // #1358 / #1355: stamp_platform_profile fills absent fields from
@@ -4141,80 +4126,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn dependency_contract_bindings_include_serde_json_value_totality() {
-        let root = temp_workspace("dependency_contract_serde_json_value_totality");
-        let imports_dir = root.join(".provekit").join("imports");
-        std::fs::create_dir_all(&imports_dir).expect("create imports dir");
 
-        let copied = copy_packaged_serde_json_shim_proofs(&imports_dir);
-        assert!(copied > 0, "serde_json shim proof must be packaged");
-
-        let bindings = contract_bindings_from_dependency_proofs(&root);
-        let value_totality = bindings
-            .iter()
-            .find(|binding| {
-                binding.get("name").and_then(|v| v.as_str()) == Some("serde_json_to_string_value")
-                    && binding.get("library").and_then(|v| v.as_str()) == Some("serde_json")
-            })
-            .unwrap_or_else(|| {
-                panic!("missing serde_json_to_string_value binding in {bindings:#?}")
-            });
-        assert_eq!(
-            value_totality
-                .get("bodyDischargeEligible")
-                .and_then(|v| v.as_bool()),
-            Some(false)
-        );
-        assert_eq!(
-            value_totality
-                .get("bodyDischargeRefusalReason")
-                .and_then(|v| v.as_str()),
-            Some("totality-axiom")
-        );
-        assert!(
-            value_totality
-                .get("target_proof_cid")
-                .and_then(|v| v.as_str())
-                .is_some(),
-            "dependency binding must pin the proof bundle"
-        );
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn dependency_contract_bindings_keep_default_body_discharge_metadata() {
-        let root = temp_workspace("dependency_contract_default_body_discharge_metadata");
-        let imports_dir = root.join(".provekit").join("imports");
-        std::fs::create_dir_all(&imports_dir).expect("create imports dir");
-
-        let copied = copy_packaged_serde_json_shim_proofs(&imports_dir);
-        assert!(copied > 0, "serde_json shim proof must be packaged");
-
-        let bindings = contract_bindings_from_dependency_proofs(&root);
-        let normal_contract = bindings
-            .iter()
-            .find(|binding| {
-                binding.get("name").and_then(|v| v.as_str()) == Some("json_parse")
-                    && binding.get("library").and_then(|v| v.as_str()) == Some("serde_json")
-            })
-            .unwrap_or_else(|| panic!("missing json_parse binding in {bindings:#?}"));
-        assert_eq!(
-            normal_contract
-                .get("bodyDischargeEligible")
-                .and_then(|v| v.as_bool()),
-            Some(true)
-        );
-        assert!(
-            normal_contract
-                .get("bodyDischargeRefusalReason")
-                .is_some_and(|v| v.is_null()),
-            "default-eligible contracts must not gain a refusal reason"
-        );
-
-        let _ = std::fs::remove_dir_all(root);
-    }
 
     #[test]
     fn mint_from_ir_document_links_contract_to_authority_memento() {
