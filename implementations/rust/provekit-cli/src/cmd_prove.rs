@@ -497,6 +497,23 @@ pub fn run(args: ProveArgs) -> u8 {
 
     let cfg_doc = read_project_config(&project_root);
 
+    // WITNESS DISCHARGE defaults: so `provekit prove <project>` settles
+    // execution witnesses by recompute WITHOUT the caller exporting env vars.
+    // The verifier's witness arm reads these (same process). Explicit env vars
+    // still win. Project dir defaults to the project being proven (the source
+    // the witness's relative code paths resolve against); the discharge command
+    // comes from `[witness] discharge = [...]` in the project config.
+    if std::env::var_os("PROVEKIT_WITNESS_PROJECT_DIR").is_none() {
+        let p = project_root
+            .canonicalize()
+            .unwrap_or_else(|_| project_root.clone());
+        std::env::set_var("PROVEKIT_WITNESS_PROJECT_DIR", &p);
+    }
+    if std::env::var_os("PROVEKIT_WITNESS_DISCHARGE").is_none() && !cfg_doc.witness_discharge.is_empty()
+    {
+        std::env::set_var("PROVEKIT_WITNESS_DISCHARGE", cfg_doc.witness_discharge.join(" "));
+    }
+
     // Resolve `--with` paths relative to project_root unless absolute,
     // matching how `[verify].callees` is resolved (project-root-anchored).
     // Without this, `--with foo` depends on CWD and breaks when prove is
