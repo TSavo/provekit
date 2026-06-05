@@ -84,49 +84,13 @@ build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-
 .PHONY: build-rust
 build-rust:
 	$(call CARGO_SYNC_BINS,provekit provekit-lift) build --release --manifest-path implementations/rust/Cargo.toml
-	$(CARGO) build --release --manifest-path tools/recompute-spec-cids/Cargo.toml
-	$(call CARGO_SYNC_BINS,verify-self-contracts sign-self-contracts) build --release --manifest-path tools/foundation-keygen/Cargo.toml
 
 .PHONY: build-rust-cli
 build-rust-cli:
 	$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
 
-.PHONY: check-macos-swift-rust-scope
-check-macos-swift-rust-scope:
-	@mint_dry="$$( $(MAKE) --no-print-directory -n mint-swift )"; \
-	prove_dry="$$( $(MAKE) --no-print-directory -n prove-swift )"; \
-	cli_tree="$$($(CARGO_LOCAL) tree --manifest-path implementations/rust/Cargo.toml -p provekit-cli --edges normal,build --depth 4)"; \
-	cli_cmd='$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli'; \
-	verifier_cmd='$(call CARGO_SYNC_BINS,verify-self-contracts) build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts'; \
-	full_workspace_cmd='$(call CARGO_SYNC_BINS,provekit provekit-lift) build --release --manifest-path implementations/rust/Cargo.toml'; \
-	echo "$$mint_dry" | grep -F -- "$$cli_cmd" >/dev/null || \
-		(echo "FAIL: mint-swift must build only the provekit CLI, not the full Rust workspace" && exit 1); \
-	echo "$$mint_dry" | grep -F -- "$$verifier_cmd" >/dev/null || \
-		(echo "FAIL: mint-swift must build the self-contract verifier it invokes" && exit 1); \
-	echo "$$prove_dry" | grep -F -- "$$cli_cmd" >/dev/null || \
-		(echo "FAIL: prove-swift must build only the provekit CLI, not the full Rust workspace" && exit 1); \
-	if echo "$$mint_dry" | grep -F -x -- "$$full_workspace_cmd" >/dev/null; then \
-		echo "FAIL: mint-swift still pulls the full Rust workspace"; exit 1; \
-	fi; \
-	if echo "$$prove_dry" | grep -F -x -- "$$full_workspace_cmd" >/dev/null; then \
-		echo "FAIL: prove-swift still pulls the full Rust workspace"; exit 1; \
-	fi; \
-	if echo "$$mint_dry" | grep -F -- 'tools/recompute-spec-cids/Cargo.toml' >/dev/null; then \
-		echo "FAIL: mint-swift must not build recompute-spec-cids"; exit 1; \
-	fi; \
-	if echo "$$cli_tree" | grep -F -- 'provekit-realize-rust-core' >/dev/null; then \
-		echo "FAIL: provekit-cli must not pull the Rust realize kit into macOS Swift mint builds"; exit 1; \
-	fi; \
-	if echo "$$cli_tree" | grep -F -- '/examples/provekit-shim-' >/dev/null; then \
-		echo "FAIL: provekit-cli must not pull Rust shim example crates into macOS Swift mint builds"; exit 1; \
-	fi; \
-	if echo "$$cli_tree" | grep -E 'smoke-test-e2e|provekit-bridgeworks|provekit-supply-chain-rails|provekit-protocol-switchyard|bug-zoo' >/dev/null; then \
-		echo "FAIL: provekit-cli must not pull menagerie crates into macOS Swift mint builds"; exit 1; \
-	fi
-
 .PHONY: build-cpp
 build-cpp:
-	tools/build-cpp-self-contracts.sh --build-only
 	tools/build-cpp-lift.sh
 	tools/build-cpp-source-lift.sh
 	tools/build-cpp-lsp.sh
@@ -135,7 +99,6 @@ build-cpp:
 build-go:
 	cd implementations/go && go build ./...
 	cd implementations/go/provekit-ir-symbolic && go build ./...
-	cd implementations/go/provekit-self-contracts && go build ./...
 	cd implementations/go/provekit-lift-go-tests && go build ./...
 	cd implementations/go/provekit-lift-go && go build ./...
 
@@ -167,7 +130,6 @@ build-c:
 	$(MAKE) -C implementations/c/provekit-lift-c-assertions all
 	$(MAKE) -C implementations/c/provekit-realize-c-core all
 	$(MAKE) -C implementations/c/provekit-lsp-c all
-	$(MAKE) -C implementations/c/provekit-self-contracts lib
 
 .PHONY: build-java
 build-java:
@@ -286,8 +248,6 @@ test-go:
 	  || failed="$$failed implementations/go"; \
 	(cd implementations/go/provekit-ir-symbolic && go test ./...) \
 	  || failed="$$failed provekit-ir-symbolic"; \
-	(cd implementations/go/provekit-self-contracts && go test ./...) \
-	  || failed="$$failed provekit-self-contracts"; \
 	(cd implementations/go/provekit-lift-go-tests && go test ./...) \
 	  || failed="$$failed provekit-lift-go-tests"; \
 	(cd implementations/go/provekit-lift-go && go test ./...) \
@@ -324,7 +284,6 @@ test-c: build-c
 	$(MAKE) -C implementations/c/provekit-realize-c-core test || failed="$$failed provekit-realize-c-core"; \
 	$(MAKE) -C implementations/c/provekit-lift-composition test || failed="$$failed provekit-lift-composition"; \
 	$(MAKE) -C implementations/c/provekit-lsp-c test || failed="$$failed provekit-lsp-c"; \
-	$(MAKE) -C implementations/c/provekit-self-contracts test || failed="$$failed provekit-self-contracts"; \
 	if [ -n "$$failed" ]; then echo "test-c FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-python
@@ -415,8 +374,6 @@ test-swift-source-lift: build-swift
 .PHONY: test-zig
 test-zig:
 	cd implementations/zig/provekit-ir && zig build test
-	cd implementations/zig/provekit-self-contracts && zig build test
-	@echo "test-zig: native substrate (jcs + cbor + ed25519 + envelopes) verified"
 	cd implementations/zig/provekit-lift-zig-tests && zig build test
 	cd implementations/zig/provekit-lift-zig-tests && zig build
 	cd implementations/zig/provekit-lift-zig-source && zig build test
@@ -430,12 +387,10 @@ test-zig:
 .PHONY: build-zig
 build-zig:
 	cd implementations/zig/provekit-ir && zig build
-	cd implementations/zig/provekit-self-contracts && zig build
 	cd implementations/zig/provekit-lift-zig-tests && zig build
 	cd implementations/zig/provekit-lift-zig-source && zig build
 	cd implementations/zig/provekit-lsp-zig && zig build
 	cd implementations/zig/provekit-proof-envelope-zig && zig build
-	cd implementations/zig/mint-zig-self-contracts && zig build
 
 # NOTE: test-swift is intentionally excluded from test-all: it requires a
 # macOS host with the Swift toolchain. Use `make test-swift` on macOS.
@@ -500,11 +455,8 @@ self-lift-canonicalizer: build-rust
 .PHONY: clean
 clean:
 	$(CARGO_LOCAL) clean --manifest-path implementations/rust/Cargo.toml
-	$(CARGO_LOCAL) clean --manifest-path tools/recompute-spec-cids/Cargo.toml
-	$(CARGO_LOCAL) clean --manifest-path tools/foundation-keygen/Cargo.toml
 	rm -rf implementations/cpp/target
 	rm -rf implementations/csharp/Provekit.*/bin implementations/csharp/Provekit.*/obj
 	rm -rf node_modules
-	cd implementations/go/provekit-self-contracts && rm -f mint-go-self-contracts
 	rm -f implementations/*/blake3-512:*.proof
 	rm -f blake3-512:*.proof
