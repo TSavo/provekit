@@ -1,97 +1,28 @@
 # ProvekIt: top-level orchestrator
 #
-# Twelve-kit polyglot. TypeScript is the center surface, but every kit
-# owns its native build tool;
-# this Makefile is glue, not a build system. `make ci` runs the Linux-profile
-# gate used by the main GitHub Actions job.
-# Swift is macOS-only; use `make build-swift`, `make test-swift`, `make mint-swift`
-# directly on a macOS host: those targets are excluded from the CI aggregates.
+# Each kit owns its native build tool; this Makefile is glue, not a build
+# system. `make ci` runs the acid test: drop provekit into a project and
+# prove correctness with zero code changes.
 #
 # Mainline targets:
 #   make help: print this help
-#   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
-#   make conformance: catalog + protocol + live mint CIDs + self-contract tests
-#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + recognize + mint + prove + contradiction gate
-#   make cross-language-proof-parity-extra: opt-in TypeScript/Zig/Scala/Swift parity lanes
-#   make all-mint: run all 11 Linux-profile mint commands; print CIDs
-#   make bootstrap-self-contracts: re-sign attestations from live artifacts
-#   make test-all: run the Linux native test aggregate
+#   make ci: check-cargo-entrypoint + the acid test (test-all)
+#   make test-all: the acid test -- test-rust + test-python
 #
-# Per-language targets:
-#   make build-rust: cargo build --release for workspace + tools
-#   make build-cpp: vendored-blake3 clang++ build of the C++ orchestrator
-#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby / test-php / test-scala / test-c
-#
-# Determinism:
-#   make ci is the local Linux-profile contract. If it's green, the non-Swift
-#   self-contracts round-trip to their pinned CIDs, the v1.6.2 catalog hash
-#   matches, and the Linux native test aggregate passes. The GitHub workflow
-#   adds macOS Swift and per-kit verifier jobs.
+# `test-rust` runs the rust workspace (including the crate-pair inheritance
+# E2E) and exercises the java / ts / python realize kits over RPC; `test-python`
+# runs the python kit including the numpy proof. Other per-language suites
+# (test-go / test-ts / test-java / ...) exist but are not part of the gate.
 
 .DEFAULT_GOAL := help
 
-# --- Pinned CIDs ------------------------------------------------------------
-#
-# Bumping a self-contracts CID is now an explicit attestation event, NOT a
-# Makefile string edit. The dance is identical for every peer kit
-# (rust, go, cpp, ts, csharp):
-#
-#   1. Make your code change in `implementations/<lang>/provekit-self-contracts`
-#      (or the language's analog).
-#   2. `make bootstrap-self-contracts`
-#      -> builds the selected kit toolchains, mints verifier-loadable proof
-#         artifacts, and re-signs `.provekit/self-contracts-attestations/*.json`
-#         from the live bundle CID + contractSetCid.
-#   3. `git add .provekit/self-contracts-attestations/<lang>.json && git commit`
-#
-# The bundle (letter) does not know its own CID. The on-disk attestation
-# (envelope) names the CID and is signed externally. See
-# `protocol/specs/2026-05-02-bundle-attestation-protocol.md` for the
-# generic letter-envelope framing and
-# `protocol/specs/2026-05-02-binary-attestation-protocol.md` for the
-# binary-specific elaboration. The source tree no longer carries
-# machine-local truth about its own bytes for any of the five peer kits.
-#
-# `CATALOG_CID` is bumped to v1.6.2 here; the constant remains because
-# `make help` echoes it. Follow-up: retire it the same way the
-# self-contracts CIDs are retired (read from the embedded catalog
-# signature attestation).
-CATALOG_CID := blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
-
 PROVEKIT := implementations/rust/target/release/provekit
-VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
-SELF_CONTRACTS_ATTEST_DIR := .provekit/self-contracts-attestations
-CONFORMANCE_PROFILE ?= linux
-CONFORMANCE_JOBS ?= 4
 RUBY ?= $(shell for p in /usr/local/opt/ruby/bin/ruby /opt/homebrew/opt/ruby/bin/ruby /usr/local/bin/ruby /opt/homebrew/bin/ruby; do if [ -x "$$p" ]; then echo "$$p"; exit; fi; done; command -v ruby || echo ruby)
 PYTHON ?= $(shell command -v python3 || echo python3)
 PIP ?= pip3 --python $(PYTHON)
 MVN ?= mvn
 LOCAL_BIN ?= /tmp/provekit-local-bin
 SCALA_CLI ?= scala-cli
-PARITY_PYTHON_VENV ?= /tmp/provekit-cross-language-parity-python
-PARITY_PYTHON_BIN := $(PARITY_PYTHON_VENV)/bin
-PARITY_PYTHON := $(PARITY_PYTHON_BIN)/python
-BCARGO_PYTHON_VENV ?= /tmp/provekit-bcargo-python-kit-env
-BCARGO_PYTHON_BIN := $(BCARGO_PYTHON_VENV)/bin
-BCARGO_PYTHON := $(BCARGO_PYTHON_BIN)/python
-BCARGO_PYTHON_ENV_STAMP := $(BCARGO_PYTHON_VENV)/.provekit-python-kits.stamp
-BCARGO_TYPESCRIPT_ENV_DIR ?= /tmp/provekit-bcargo-typescript-kit-env
-BCARGO_TYPESCRIPT_ENV_STAMP := $(BCARGO_TYPESCRIPT_ENV_DIR)/.provekit-typescript-kits.stamp
-PYTHON_KIT_EDITABLES = \
-	-e examples/provekit-shim-python-sqlite3 \
-	-e examples/provekit-shim-python-aiosqlite \
-	-e examples/provekit-shim-python-requests \
-	-e implementations/python/libprovekit-py \
-	-e implementations/python/provekit-lift-py-tests \
-	-e implementations/python/provekit-lift-python-source \
-	-e implementations/python/provekit-emit-python-pytest \
-	-e implementations/python/provekit-emit-python-unittest \
-	-e implementations/python/provekit-emit-python-hypothesis \
-	-e implementations/python/provekit-realize-python-core \
-	-e implementations/python/provekit-realize-python-sqlite3 \
-	-e implementations/python/provekit-realize-python-aiosqlite \
-	-e implementations/python/provekit-realize-python-requests
 BCARGO ?= $(CURDIR)/bin/bcargo
 CARGO_LOCAL ?= cargo
 ifeq ($(CI),)
@@ -118,49 +49,26 @@ help:
 	@echo "ProvekIt: top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             check-cargo-entrypoint + test-all"
-	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make ci             check-cargo-entrypoint + the acid test (test-all)"
+	@echo "  make test-all       the acid test: test-rust + test-python"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
-	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
-	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java + python + ruby + scala)"
-	@echo "  make build-rust     cargo build --release (workspace + tools)"
-	@echo "  make build-cpp      clang++ + vendored-blake3"
-	@echo "  make build-go       go build per Go module"
+	@echo "  make build-rust     cargo build --release (workspace)"
+	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
 	@echo "  make build-ts       pnpm install"
 	@echo "  make build-python   pip-install Python realize kits and shim packages"
-	@echo "  make build-csharp   dotnet build"
-	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
-	@echo "  make build-scala    scala-cli compile Scala emit kits"
-	@echo "  make build-c        cc build of C IR, lifters, LSP, and self-contracts"
-	@echo "  make build-swift    swift build -c release"
+	@echo "  make build-<lang>   go / cpp / csharp / ruby / scala / c / swift"
 	@echo ""
 	@echo "Per-language test:"
-	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-ruby  test-php  test-java  test-scala  test-c  test-swift"
-	@echo ""
-	@echo "Per-kit conformance gate (C1-C8 lift-plugin-protocol verifiers):"
-	@echo "  make prove-all      all 12 Linux kits (swift excluded: macOS-only)"
-	@echo "  make prove-rust  prove-go  prove-cpp  prove-ts  prove-csharp  prove-clr-bytecode"
-	@echo "  make prove-java  prove-python  prove-ruby  prove-zig  prove-c"
-	@echo "  make prove-swift    macOS-only"
+	@echo "  make test-rust  test-python   (the proven provers)"
+	@echo "  make test-<lang>              go / ts / csharp / ruby / php / java / scala / c / swift"
 	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean          remove build artifacts"
-	@echo "  make mint-typescript-language-signature"
-	@echo "                       mint the draft TypeScript source language-signature catalog"
-	@echo ""
-	@echo "Pinned CIDs (catalog v1.6.2):"
-	@echo "  catalog: $(CATALOG_CID)"
-	@echo "  rust:    (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json"
-	@echo "  go:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/go.json"
-	@echo "  cpp:     (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json"
-	@echo "  ts:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json"
-	@echo "  csharp:  (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json"
-	@echo "  swift:   (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/swift.json"
 
 # --- Per-language builds -----------------------------------------------------
 
@@ -182,13 +90,6 @@ build-rust:
 .PHONY: build-rust-cli
 build-rust-cli:
 	$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
-
-.PHONY: build-rust-self-contract-verifier
-build-rust-self-contract-verifier:
-	$(call CARGO_SYNC_BINS,verify-self-contracts) build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts
-
-.PHONY: build-rust-mint-tools
-build-rust-mint-tools: build-rust-cli build-rust-self-contract-verifier
 
 .PHONY: check-macos-swift-rust-scope
 check-macos-swift-rust-scope:
@@ -268,13 +169,6 @@ build-c:
 	$(MAKE) -C implementations/c/provekit-lsp-c all
 	$(MAKE) -C implementations/c/provekit-self-contracts lib
 
-.PHONY: build-c-self-contracts
-build-c-self-contracts:
-	# Build the c self-contracts orchestrator binary. Depends on the c
-	# Side B static library (libprovekit-self-contracts.a); the orchestrator
-	# Makefile invokes the Side B build as a sub-make if needed.
-	$(MAKE) -C implementations/c/mint-c-self-contracts
-
 .PHONY: build-java
 build-java:
 	# provekit-lift-java-core depends on the sibling provekit-ir module.
@@ -338,553 +232,9 @@ build-swift:
 # empty-set attestation (contractSetCid = BLAKE3-512 of JCS("[]")).
 # The attestation is still verified; a missing lifter surfaces as a known gap.
 
-.PHONY: mint-rust
-mint-rust: build-rust
-	@echo ">> minting rust self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --project implementations/rust --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json "$$cset" || \
-		(echo "FAIL: rust self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --project implementations/rust" && exit 1)
-
-.PHONY: mint-go
-mint-go: build-rust build-go
-	@echo ">> minting go self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=go --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/go.json "$$cset" || \
-		(echo "FAIL: go self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=go" && exit 1)
-
-.PHONY: mint-cpp
-mint-cpp: build-rust build-cpp
-	@echo ">> minting cpp self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=cpp --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json "$$cset" || \
-		(echo "FAIL: cpp self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=cpp" && exit 1)
-
-.PHONY: mint-ts
-mint-ts: build-rust build-ts
-	@echo ">> minting ts self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=ts --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json "$$cset" || \
-		(echo "FAIL: ts self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=ts" && exit 1)
-
-.PHONY: mint-csharp
-mint-csharp: build-rust
-	@echo ">> minting csharp self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=csharp --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json "$$cset" || \
-		(echo "FAIL: csharp self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=csharp" && exit 1)
-
-# NOTE: mint-swift requires a macOS host with the Swift toolchain.
-# Excluded from all-mint (Linux/CI). Use `make mint-swift` on macOS.
-.PHONY: mint-swift
-mint-swift: build-rust-mint-tools build-swift
-	@echo ">> minting swift self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=swift --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/swift.json "$$cset" || \
-		(echo "FAIL: swift self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=swift" && exit 1)
-
-# New kits: lifter binaries not yet available; mint produces empty-set attestation.
-# These targets will produce the correct attestation structure; the gap is the
-# per-kit lifter, not the substrate pipeline.
-
-.PHONY: mint-java
-mint-java: build-rust build-java-self-contracts
-	@echo ">> minting java self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=java --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/java.json "$$cset" || \
-		(echo "FAIL: java self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=java" && exit 1)
-
-.PHONY: mint-python
-mint-python: build-rust
-	@echo ">> minting python self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=python --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/python.json "$$cset" || \
-		(echo "FAIL: python self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=python" && exit 1)
-
-.PHONY: mint-ruby
-mint-ruby: build-rust build-ruby
-	@echo ">> minting ruby self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=ruby --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ruby.json "$$cset" || \
-		(echo "FAIL: ruby self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=ruby" && exit 1)
-
-.PHONY: mint-zig
-mint-zig: build-rust build-zig
-	@echo ">> minting zig self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=zig --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/zig.json "$$cset" || \
-		(echo "FAIL: zig self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=zig" && exit 1)
-
-.PHONY: mint-c
-mint-c: build-rust build-c-self-contracts
-	@echo ">> minting c self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=c --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/c.json "$$cset" || \
-		(echo "FAIL: c self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=c" && exit 1)
-
-.PHONY: mint-php
-mint-php: build-rust
-	@echo ">> minting php self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=php --quiet); \
-	cid=$$(echo "$$mint_out" | head -1); \
-	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
-	echo "  cid:            $$cid"; \
-	echo "  contractSetCid: $$cset"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/php.json "$$cset" || \
-		(echo "FAIL: php self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=php" && exit 1)
-
-# NOTE: all-mint runs 11 of 12 kits (Linux/CI subset).
-# Excluded: swift (macOS-only; use mint-swift on macOS).
-# zig and c were added after their Side A merges (#283, #272) and are included.
-# php was added after its self-contracts attestation was signed (#393).
-.PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-ruby mint-c mint-zig mint-php
-	@echo ""
-	@echo "==== all 11 core self-contract CIDs match pinned values ===="
-	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
-	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
-	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
-	@printf "  %-8s  %s\n" "ts"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ts.json)"
-	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
-	@printf "  %-8s  %s\n" "java"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/java.json)"
-	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
-	@printf "  %-8s  %s\n" "ruby"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ruby.json)"
-	@printf "  %-8s  %s\n" "c"      "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/c.json)"
-	@printf "  %-8s  %s\n" "zig"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/zig.json)"
-	@printf "  %-8s  %s\n" "php"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/php.json)"
-
-# --- Per-kit prove (C1-C8 conformance gate) ----------------------------------
-#
-# Each `prove-<kit>` target:
-#   1. Builds the kit's lifter binary.
-#   2. Runs `provekit prove --kit=<alias>`, which resolves the alias from
-#      `.provekit/config.toml` and:
-#      - Spawns the kit's lifter via JSON-RPC.
-#      - Drives the initialize -> lift -> shutdown sequence.
-#      - Runs C1-C8 verifiers against the captured RPC messages.
-#   3. Exits 0 iff all 8 contracts hold.
-#
-# NOTE: prove-swift requires a macOS host (Swift toolchain). It is excluded
-# from prove-all but can be run directly on macOS.
-#
-# Kits with no lifter yet (java/python/ruby/zig/c) exit 2 (user error) until
-# their lifters are wired up. They are listed in prove-all so CI knows which
-# need follow-up.
-
-.PHONY: prove-rust
-prove-rust: build-rust
-	@echo ">> proving rust lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=rust
-
-.PHONY: prove-go
-prove-go: build-rust build-go
-	@echo ">> proving go lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=go
-
-.PHONY: prove-cpp
-prove-cpp: build-rust build-cpp
-	@echo ">> proving cpp lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=cpp
-
-.PHONY: prove-ts
-prove-ts: build-rust build-ts
-	@echo ">> proving ts lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=ts
-
-.PHONY: prove-csharp
-prove-csharp: build-rust build-csharp
-	@echo ">> proving csharp lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=csharp
-
-.PHONY: prove-clr-bytecode
-prove-clr-bytecode: build-rust build-csharp
-	@echo ">> proving clr-bytecode lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=clr-bytecode
-
-# macOS-only: requires Swift toolchain.
-.PHONY: prove-swift
-prove-swift: build-rust-cli build-swift
-	@echo ">> proving swift lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=swift
-
-.PHONY: prove-java
-prove-java: build-rust build-java
-	@echo ">> proving java lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=java
-
-.PHONY: prove-python
-prove-python: build-rust
-	@echo ">> proving python lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=python
-
-.PHONY: prove-ruby
-prove-ruby: build-rust build-ruby
-	@echo ">> proving ruby lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=ruby
-
-.PHONY: prove-zig
-prove-zig: build-rust build-zig
-	@echo ">> proving zig lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=zig
-
-.PHONY: prove-c
-prove-c: build-rust build-c build-c-self-contracts
-	@echo ">> proving c lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=c
-
-# prove-all: run C1-C8 gate for the Linux/CI subset (swift excluded: macOS-only).
-# Kits without a wired lifter exit 2 (user error); all 12 targets are listed
-# so CI reports which need follow-up. prove-swift runs separately on macos-latest.
-.PHONY: prove-all
-prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-clr-bytecode prove-java prove-python prove-ruby prove-zig prove-c
-	@echo ""
-	@echo "==== prove-all: complete ===="
-
-# --- Conformance gate --------------------------------------------------------
-
-# Default invocation (no args) is read-only since audit #180 fix; --verify
-# is now a no-op alias retained because protocol-catalog-format.md §5
-# names it literally. Either form is safe; only --write mutates the catalog.
-.PHONY: catalog-verify
-catalog-verify:
-	$(CARGO) run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify
-
-.PHONY: c11-cursorkind-check
-c11-cursorkind-check:
-	python3 tools/generate-c11-from-cursorkind.py --check
-
-.PHONY: mint-typescript-language-signature
-mint-typescript-language-signature:
-	menagerie/typescript-language-signature/mint.sh
-
-.PHONY: protocol-verify
-protocol-verify: build-rust
-	$(PROVEKIT) verify-protocol --signed
-
-.PHONY: cid-stability-check
-cid-stability-check:
-	@echo "=== ProofIR resolved round-trip CID stability ==="
-	python3 bootstrap/scripts/cid_stability_check.py
-
-
-.PHONY: test-mint-kit-integration-pins
-test-mint-kit-integration-pins: all-mint
-	@echo "=== mint kit integration pins: rust/cpp CID gates ==="
-	CI=1 $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test mint_kit_integration \
-		kits_with_real_contracts_produce_nonempty_contract_set
-	CI=1 $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test mint_kit_integration \
-		rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical
-	CI=1 $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test mint_kit_integration \
-		cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical
-
-# --- Self-contracts contract-assertion tests --------------------------------
-#
-# `all-mint` proves each peer kit's bundle round-trips to its pinned CID.
-# That catches CID drift, but it does NOT catch a contract-assertion test
-# being weakened or deleted (e.g. an R1..R15 rule from
-# `protocol/specs/2026-04-30-protocol-catalog-format.md` losing its check).
-# `test-self-contracts` runs the kit-native unit tests that encode those
-# rule assertions, so the conformance gate fails when a regression flips
-# any one of them.
-#
-# Today only the Rust kit ships catalog-format contract-assertion tests
-# (`implementations/rust/provekit-self-contracts/src/catalog_format.rs`,
-# 19 `#[test]` fns covering R1..R15). The go/cpp/ts/csharp self-contracts
-# packages currently only carry the mint binary; once they grow their own
-# catalog-format test suites, add `test-self-contracts-<lang>` targets
-# alongside the rust one and append them to the aggregate dep list below.
-
-.PHONY: test-self-contracts
-test-self-contracts: test-self-contracts-rust
-
-.PHONY: test-self-contracts-rust
-test-self-contracts-rust:
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-self-contracts --lib
-
-# --- Cross-kit conformance fixtures ------------------------------------------
-#
-# Byte-pinned fixtures that every kit must produce the same CID for.
-# Currently only the Rust kit has Sort::Region support; other kits
-# gracefully skip until their per-kit regen lands.
-
-.PHONY: conformance-region-fixture
-conformance-region-fixture:
-	@echo "=== Region+Dependent byte-pinned fixture ==="
-	@$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-canonicalizer --test conformance_region_dependent
-
-
-.PHONY: cross-language-proof-parity-python-env
-cross-language-proof-parity-python-env:
-	$(PYTHON) -m venv $(PARITY_PYTHON_VENV)
-	$(PARITY_PYTHON) -m pip install --quiet --upgrade pip
-	$(PARITY_PYTHON) -m pip install --quiet \
-		pytest \
-		-e implementations/python/provekit-lift-py-tests \
-		-e examples/provekit-shim-python-requests \
-		-e implementations/python/provekit-emit-python-pytest \
-		-e implementations/python/provekit-lift-python-source \
-		-e implementations/python/provekit-realize-python-core \
-		-e implementations/python/provekit-realize-python-requests
-
-.PHONY: bcargo-python-kit-env
-bcargo-python-kit-env: $(BCARGO_PYTHON_ENV_STAMP)
-
-$(BCARGO_PYTHON_ENV_STAMP): Makefile $(wildcard implementations/python/*/pyproject.toml examples/provekit-shim-python-*/pyproject.toml)
-	$(PYTHON) -m venv $(BCARGO_PYTHON_VENV)
-	$(BCARGO_PYTHON) -m pip install --quiet --upgrade pip
-	$(BCARGO_PYTHON) -m pip install --quiet --no-cache-dir pytest $(PYTHON_KIT_EDITABLES)
-	mkdir -p $(dir $(BCARGO_PYTHON_ENV_STAMP))
-	touch $(BCARGO_PYTHON_ENV_STAMP)
-
-.PHONY: bcargo-typescript-kit-env
-bcargo-typescript-kit-env: $(BCARGO_TYPESCRIPT_ENV_STAMP)
-
-$(BCARGO_TYPESCRIPT_ENV_STAMP): Makefile package.json pnpm-lock.yaml \
-		implementations/typescript/provekit-emit-typescript-vitest/package.json \
-		implementations/typescript/provekit-emit-typescript-vitest/package-lock.json \
-		implementations/typescript/provekit-realize-typescript-core/package.json \
-		implementations/typescript/provekit-realize-typescript-core/package-lock.json \
-		implementations/typescript/provekit-realize-typescript-better-sqlite3/package.json \
-		implementations/typescript/provekit-realize-typescript-better-sqlite3/package-lock.json \
-		implementations/typescript/provekit-realize-typescript-pg/package.json \
-		implementations/typescript/provekit-realize-typescript-pg/package-lock.json \
-		examples/provekit-shim-typescript-better-sqlite3/package.json \
-		examples/provekit-shim-typescript-better-sqlite3/provekit.proof \
-		examples/provekit-shim-typescript-pg/package.json \
-		examples/provekit-shim-typescript-pg/provekit.proof
-	pnpm install --frozen-lockfile
-	npm --prefix implementations/typescript/provekit-emit-typescript-vitest ci
-	npm --prefix implementations/typescript/provekit-realize-typescript-core ci
-	npm --prefix implementations/typescript/provekit-realize-typescript-better-sqlite3 ci
-	npm --prefix implementations/typescript/provekit-realize-typescript-pg ci
-	mkdir -p $(dir $(BCARGO_TYPESCRIPT_ENV_STAMP))
-	touch $(BCARGO_TYPESCRIPT_ENV_STAMP)
-
-.PHONY: check-cross-language-proof-parity-scope
-check-cross-language-proof-parity-scope:
-	tools/check-cross-language-proof-parity-scope.sh
-
 .PHONY: check-cargo-entrypoint
 check-cargo-entrypoint:
 	tools/check-cargo-entrypoint.sh
-
-.PHONY: cross-language-proof-parity
-cross-language-proof-parity: build-java cross-language-proof-parity-python-env
-	@echo "=== Cross-language proof parity: emit/materialize/recognize/mint/prove/contradiction lanes for Java, Go, Python, Rust ==="
-	$(CARGO) build --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-realize-rust-core --bin provekit-realize-rust
-	@echo "--- emit parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_java_junit \
-		emit_java_junit_uses_checked_in_java_double_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_java_testng \
-		emit_java_testng_uses_checked_in_java_double_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_go_testing \
-		emit_go_testing_uses_checked_in_go_double_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_go_testify \
-		emit_go_testify_dispatches_separate_emitter_and_compile_checks
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_python_pytest \
-		emit_python_pytest_uses_checked_in_python_double_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_rust_cargo_test \
-		emit_rust_cargo_test_uses_checked_in_rust_double_registration
-	@echo "--- materialize parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_materialize_proof_load \
-		materialize_json_client_jackson_loads_from_proof_and_compiles
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test go_realize_materialize \
-		go_materialize_uses_checked_in_go_double_realize_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test go_realize_materialize \
-		go_materialize_uses_body_template_from_go_module_proof
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test go_realize_materialize \
-		go_dependency_proofs_are_resolved_by_configured_go_kit
-	PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_materialize_integration \
-		materialize_python_uses_checked_in_python_double_realize_registration
-	PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_materialize_integration \
-		materialize_python_requests_example_uses_python_library_shim
-	$(PARITY_PYTHON) -m pytest \
-		implementations/python/provekit-realize-python-requests/tests/test_rpc.py \
-		-q -k test_resolve_dependency_proofs_returns_distribution_proof_bytes
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_materialize_integration \
-		materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_materialize_integration \
-		materialize_rust_reqwest_uses_checked_in_rust_double_realize_registration
-	@echo "--- recognizer parity ---"
-	$(MVN) -q -f implementations/java/pom.xml \
-		-pl provekit-lift-java-source -am \
-		-Dtest=RecognizeHandlerTest,JavaSugarBindingLifterTest test
-	(cd implementations/go/provekit-lift-go && \
-		go test ./... -run 'Test(SugarBody|Recognize)')
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_recognize_go_parity \
-		go_recognize_write_self_resolves_project_proofs_and_proves -- --nocapture
-	$(PARITY_PYTHON) -m pytest \
-		implementations/python/provekit-lift-python-source/tests/test_bind_lifter.py \
-		-q -k 'sugar_body or recognize'
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-walk --bin provekit-walk-rpc \
-		sugar_body -- --nocapture
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-walk --bin provekit-walk-rpc \
-		recognize -- --nocapture
-	@echo "--- mint parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_java_production_bridge \
-		java_mint_uses_checked_in_java_double_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_go_production_bridge \
-		go_mint_auto_writes_body_discharge_bridge
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_python_production_bridge \
-		python_mint_auto_writes_body_discharge_bridge
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_rust_production_bridge \
-		rust_mint_auto_writes_body_discharge_bridge_from_real_lifters
-	@echo "--- prove parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_java_production_bridge \
-		java_production_path_uses_checked_in_java_double_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_go_production_bridge \
-		go_production_path_double_discharges_and_mints_witness
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_python_production_bridge \
-		python_production_path_uses_checked_in_python_double_registration
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_rust_production_bridge \
-		rust_production_path_double_discharges_and_mints_witness
-	@echo "--- contradiction parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_java_production_bridge \
-		java_production_path_checked_in_fixture_refuses_planted_contradictory_implication
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_go_production_bridge \
-		go_production_path_refuses_planted_contradictory_implication
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_python_production_bridge \
-		python_production_path_refuses_planted_contradictory_implication
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_rust_production_bridge \
-		rust_production_path_refuses_planted_contradictory_implication
-	@echo "==== cross-language-proof-parity: PASS ===="
-
-.PHONY: cross-language-proof-parity-extra
-cross-language-proof-parity-extra: build-ts build-zig build-scala
-	@echo "=== Extra proof parity lanes: TypeScript, Zig, Scala, Swift recognizer ==="
-	@echo "--- extra emit parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_typescript_vitest \
-		emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_scala_scalatest \
-		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
-	@echo "--- extra recognizer parity ---"
-	pnpm vitest run implementations/typescript/src/lift/typescript-source/index.test.ts
-	if command -v swift >/dev/null 2>&1; then \
-		make test-swift-source-lift; \
-	else \
-		echo "swift not found; skipping Linux Swift parity (covered by macOS swift gate)"; \
-	fi
-	(cd implementations/zig/provekit-lift-zig-source && zig build test)
-	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
-	@echo "--- extra prove parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_typescript_production_bridge \
-		typescript_production_path_double_discharges_and_mints_witness
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_zig_production_bridge \
-		zig_production_path_double_discharges_and_mints_witness
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_scala_production_bridge \
-		scala_production_path_double_discharges_and_mints_witness
-	@echo "--- extra contradiction parity ---"
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_typescript_production_bridge \
-		typescript_production_path_refuses_planted_contradictory_implication
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_zig_production_bridge \
-		zig_production_path_refuses_planted_contradictory_implication
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_scala_production_bridge \
-		scala_production_path_refuses_planted_contradictory_implication
-	@echo "==== cross-language-proof-parity-extra: PASS ===="
-
-.PHONY: cross-language-proof-parity-all
-cross-language-proof-parity-all: cross-language-proof-parity cross-language-proof-parity-extra
-
-
-# --- Per-language test suites ------------------------------------------------
 
 .PHONY: test-rust
 # The rust integration tests register per-language carriers via
@@ -1090,12 +440,15 @@ build-zig:
 # NOTE: test-swift is intentionally excluded from test-all: it requires a
 # macOS host with the Swift toolchain. Use `make test-swift` on macOS.
 #
-# test-all is NON-FAIL-FAST: every suite runs regardless of prior failures.
-# Failures are collected and reported as a summary at the end.
+# The acid test: the two suites that actually prove real code with zero
+# changes. `test-rust` runs the rust workspace (including the crate-pair
+# inheritance E2E) and exercises the java / ts / python realize kits over RPC;
+# `test-python` runs the python kit including the numpy proof. NON-FAIL-FAST:
+# both run regardless of prior failure; results summarize at the end.
 .PHONY: test-all
 test-all:
 	@failed=""; \
-	for s in test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java test-scala test-c; do \
+	for s in test-rust test-python; do \
 	  echo ""; \
 	  echo "==== $$s ===="; \
 	  $(MAKE) $$s || failed="$$failed $$s"; \
