@@ -124,6 +124,55 @@ def witness_memento(w: "Witness", seed: bytes = WITNESS_SIGNER_SEED) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Witness PACKAGE: the bodies the `.proof` does NOT carry, content-addressed on
+# disk. One file per witness, named by its CID, holding the bytes the CID
+# addresses. Deployed SEPARATELY from the `.proof` (audit material, not ship
+# material). The Witness Oracle's content-address path reads `<cid>.witness`,
+# blake3's it, and confirms it equals the pinned witness_cid.
+# ---------------------------------------------------------------------------
+
+
+def witness_body(w: "Witness") -> bytes:
+    """The bytes the witness CID addresses: the canonical run record. By
+    construction ``blake3_512_of(witness_body(w)) == w.cid`` -- the file content
+    IS what was signed for, so the oracle can content-address it."""
+    return encode_jcs(_witness_value(
+        w.code_cid, w.runtime_cid, w.test_id, w.outcome, list(w.code_files)
+    )).encode("utf-8")
+
+
+def _cid_filename(cid: str, ext: str) -> str:
+    """CID -> on-disk filename. The name IS the CID; ``:`` -> ``_`` because
+    filesystems reject the colon (the convention `.proof` files already use)."""
+    return cid.replace(":", "_") + ext
+
+
+def write_witness_package(witnesses: List["Witness"], out_dir: str) -> List[str]:
+    """Write a witness package: one `<cid>.witness` file per witness, content =
+    the bytes the CID addresses. Returns the paths written. This is the
+    deploy-separately bundle the Witness Oracle resolves bodies from."""
+    os.makedirs(out_dir, exist_ok=True)
+    paths = []
+    for w in witnesses:
+        body = witness_body(w)
+        assert blake3_512_of(body) == w.cid, "witness body must address to its CID"
+        path = os.path.join(out_dir, _cid_filename(w.cid, ".witness"))
+        with open(path, "wb") as f:
+            f.write(body)
+        paths.append(path)
+    return paths
+
+
+def read_witness_body(witness_cid: str, package_dir: str) -> bytes:
+    """Read a witness body from a package by CID. The Witness Oracle hands these
+    bytes to its content-address check (blake3 == witness_cid) -- a swapped or
+    truncated file is caught there, refused loudly."""
+    path = os.path.join(package_dir, _cid_filename(witness_cid, ".witness"))
+    with open(path, "rb") as f:
+        return f.read()
+
+
 def verify(witness: Witness, project_dir: str) -> Tuple[str, str]:
     """Verify a witness BY RECOMPUTATION against ``project_dir``.
 

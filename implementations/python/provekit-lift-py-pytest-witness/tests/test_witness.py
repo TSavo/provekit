@@ -8,7 +8,7 @@ import pytest
 
 from provekit_pytest_witness import (
     Witness, run_and_witness, verify, emit_witness_proof, discharge_from_proof,
-    witness_memento,
+    witness_memento, write_witness_package, read_witness_body,
 )
 from provekit_pytest_witness.discharge_cli import main as discharge_main
 from provekit_lift_py_tests.witness_oracle import (
@@ -129,6 +129,42 @@ def test_oracle_refuses_minted_witness_with_tampered_signature(tmp_path):
     m["signature"] = "00" * 64  # forge the mark
     with pytest.raises(WitnessOracleRefusal, match="signature invalid"):
         resolve_witness(m)
+
+
+# --- Witness PACKAGE: CID-named bodies, deployed separately --------------------
+
+
+def test_package_writes_cid_named_witness_files(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    pkg = tmp_path / "wpkg"
+    paths = write_witness_package([w], str(pkg))
+    # the filename IS the CID (":" -> "_"), extension ".witness"
+    assert len(paths) == 1
+    assert os.path.basename(paths[0]) == w.cid.replace(":", "_") + ".witness"
+
+
+def test_package_body_content_addresses_to_the_pinned_cid(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    pkg = tmp_path / "wpkg"
+    write_witness_package([w], str(pkg))
+    body = read_witness_body(w.cid, str(pkg))
+    # the Witness Oracle's content-address path: bytes blake3 == pinned CID
+    m = witness_memento(w)
+    assert resolve_witness(m, witness_content=body)["verified_by"] == "content-address"
+
+
+def test_package_tamper_is_refused_by_content_address(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    pkg = tmp_path / "wpkg"
+    paths = write_witness_package([w], str(pkg))
+    with open(paths[0], "ab") as f:
+        f.write(b" tampered")  # swap the body under the same name
+    body = read_witness_body(w.cid, str(pkg))
+    with pytest.raises(WitnessOracleRefusal, match="content misaligned"):
+        resolve_witness(witness_memento(w), witness_content=body)
 
 
 # --- The verifier<->kit contract: the discharge command -----------------------
