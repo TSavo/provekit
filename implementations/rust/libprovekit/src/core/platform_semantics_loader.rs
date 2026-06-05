@@ -49,7 +49,7 @@ struct ResolvedPlatformSemanticsCommand {
 ///   2. Try workspace-local build products under `implementations/<kit_id>/`
 ///   3. Try `provekit-realize-<kit_id>-core` on PATH (pure language-kit form)
 ///   4. Try `provekit-realize-<kit_id>` on PATH (full kit-identity form,
-///      e.g., `python-aiosqlite`, `typescript-pg`)
+///      e.g., `typescript-pg`)
 ///
 /// If neither candidate is available, returns the language-kit form as a
 /// best-effort command so

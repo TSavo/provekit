@@ -36,10 +36,6 @@ fn pythonpath_with_realize_srcs() -> std::ffi::OsString {
             .join("python")
             .join("provekit-realize-python-core")
             .join("src"),
-        repo.join("implementations")
-            .join("python")
-            .join("provekit-realize-python-requests")
-            .join("src"),
     ];
     let mut all = paths.to_vec();
     if let Some(existing) = std::env::var_os("PYTHONPATH") {
@@ -170,48 +166,6 @@ fn sql_query_realize_request() -> RealizeRequest {
         function_return_types: std::collections::BTreeMap::new(),
         doc_lines: Vec::new(),
     }
-}
-
-#[test]
-fn dispatch_realize_routes_python_library_tags_to_distinct_kits() {
-    if !python_blake3_available() {
-        eprintln!("skipping python realize dispatch: python module `blake3` is unavailable");
-        return;
-    }
-    let workspace = tempfile::tempdir().expect("tempdir");
-    install_manifest(
-        workspace.path(),
-        "python",
-        "provekit_realize_python_core",
-        "urllib",
-    );
-    install_manifest(
-        workspace.path(),
-        "python-requests",
-        "provekit_realize_python_requests",
-        "requests",
-    );
-
-    std::env::set_var("PROVEKIT_REPO_ROOT", repo_root());
-    std::env::set_var("PYTHONPATH", pythonpath_with_realize_srcs());
-
-    let request = http_request_realize_request();
-    let urllib = dispatch_realize(workspace.path(), "python", Some("urllib"), &request)
-        .expect("dispatch urllib realize kit");
-    let requests = dispatch_realize(workspace.path(), "python", Some("requests"), &request)
-        .expect("dispatch requests realize kit");
-
-    assert_ne!(urllib.source, requests.source);
-    assert!(
-        urllib.source.contains("urllib.request.urlopen"),
-        "urllib output should use urllib.request.urlopen, got:\n{}",
-        urllib.source
-    );
-    assert!(
-        requests.source.contains("requests.get"),
-        "requests output should use requests.get, got:\n{}",
-        requests.source
-    );
 }
 
 #[test]

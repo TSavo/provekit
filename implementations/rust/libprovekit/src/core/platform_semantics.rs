@@ -9,7 +9,7 @@
 // `core::platform_semantics_loader` for the loader.
 //
 // The previous version of this module carried hardcoded Rust modules for
-// typescript/java/python/python_sqlite3/python_aiosqlite/better_sqlite3/pg
+// typescript/java/python/better_sqlite3/pg
 // and #[include!]'d provekit-realize-rust-core + provekit-realize-c-core's
 // platform_semantics.rs directly. That was the substrate violation #1270
 // fixed: kit knowledge was duplicated into libprovekit Rust source, drifting
