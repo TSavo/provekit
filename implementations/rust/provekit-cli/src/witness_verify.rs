@@ -125,16 +125,30 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
                             "oracle resolved via {resolved_by}; rust recomputed the CID and it matched"
                         ),
                     });
-                } else {
-                    // The oracle handed back a body that does not address to the
-                    // pinned CID. rust did the math anyway -> broken oracle / drift.
+                } else if resolved_by == "package" {
+                    // The package paired this CID with bytes that do NOT hash to
+                    // it. The resolver delivered wrong content -- a BROKEN ORACLE
+                    // / tampered package -- caught because rust did the math anyway.
                     out.push(WitnessVerifyResult {
                         witness_cid: witness_cid.clone(),
                         verdict: "broken-oracle".to_string(),
                         checks,
                         reason: format!(
-                            "oracle body computes to {computed}, not the pinned {witness_cid} \
-                             -- the oracle is broken or the witness drifted; rust recomputed and refused"
+                            "package content computes to {computed}, not the pinned {witness_cid} \
+                             -- broken oracle / tampered package; rust recomputed the CID and refused"
+                        ),
+                    });
+                } else {
+                    // The oracle re-ran honestly and got a different result: the
+                    // witness no longer reproduces. The resolver was honest; the
+                    // proof is stale (code/runtime DRIFTED). Refuse, not blame.
+                    out.push(WitnessVerifyResult {
+                        witness_cid: witness_cid.clone(),
+                        verdict: "refused".to_string(),
+                        checks,
+                        reason: format!(
+                            "witness did not reproduce (re-run drifted): computed {computed} != \
+                             pinned {witness_cid} -- the oracle was honest, the proof is stale"
                         ),
                     });
                 }
