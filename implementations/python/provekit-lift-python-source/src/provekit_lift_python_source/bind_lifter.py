@@ -522,12 +522,18 @@ def _body_source_locator(
             "end_line": end_line,
             "end_col": end_col,
         },
-        "ast_template": ast_template,
         "template_cid": template_cid_of_json(ast_template),
         "param_names": function_param_names(node),
     }
-    if body_text:
-        result["body_text"] = body_text
+    # SourceMemento (PROVEKIT_LEAN_SOURCE=1): the `.proof` signs the ACTUAL code
+    # by CID + locus, not a doubled copy. You sign what you run/compile; the
+    # Source Oracle resolves body_text + ast_template from disk on demand,
+    # CID-verified, refusing on drift. Default keeps them inline (legacy / tests /
+    # byte-identical shims) until the lean migration lands.
+    if os.environ.get("PROVEKIT_LEAN_SOURCE") != "1":
+        result["ast_template"] = ast_template
+        if body_text:
+            result["body_text"] = body_text
     return result
 
 

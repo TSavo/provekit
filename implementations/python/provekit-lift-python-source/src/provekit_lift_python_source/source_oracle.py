@@ -1,0 +1,152 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The Source Oracle.
+#
+# The `.proof` does not carry source. A SourceMemento is a pointer + two hashes:
+#   { source_function_name, file, span, source_cid, template_cid }
+# zero content. The source already lives on disk (pip/npm/cargo shipped it); the
+# `.proof` only LOCATES it (file, span) and PINS it (source_cid, template_cid).
+#
+# You do not ask the `.proof` for `body_text`/`ast_template` -- you ask the Source
+# Oracle. Its contract is one line:
+#
+#   given a locus + CID, return the source IFF it recomputes to the CID;
+#   else REFUSE, loudly.
+#
+# That refusal is the BINARY axis of the three-axis pin made operational, checked
+# at every resolution: a tampered or wrong-version package -> CID mismatch ->
+# refuse -> the sugar cannot resolve -> you KNOW the on-disk source is not what was
+# proven. exact-or-refuse, no silent loss (supra omnia, rectum).
+
+from __future__ import annotations
+
+import ast
+import os
+from pathlib import Path
+from typing import Any
+
+from .bind_lifter import _body_source_locator
+
+
+class SourceOracleRefusal(Exception):
+    """Raised LOUDLY when on-disk source does not recompute to the pinned CID:
+    the source has drifted from what the `.proof` pins. Never a silent fallback."""
+
+
+def resolve_source_memento(project_root: str, memento: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a SourceMemento to its `{body_text, ast_template}` by RECOMPUTE.
+
+    Reads the on-disk source at the memento's locus, re-derives the function's
+    body_source with the same lifter machinery that minted it, and returns the
+    body/ast IFF the recomputed `source_cid`/`template_cid` equal the pinned ones.
+    Otherwise raises `SourceOracleRefusal`.
+    """
+    file = memento.get("file")
+    if not isinstance(file, str) or not file:
+        raise SourceOracleRefusal("source memento missing `file`")
+    function_name = memento.get("source_function_name")
+    pinned_source_cid = memento.get("source_cid")
+    pinned_template_cid = memento.get("template_cid")
+    span = memento.get("span") if isinstance(memento.get("span"), dict) else {}
+
+    path = Path(project_root) / file
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise SourceOracleRefusal(f"cannot read source `{path}`: {exc}") from exc
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError as exc:
+        raise SourceOracleRefusal(f"cannot parse source `{path}`: {exc}") from exc
+
+    node = _locate_function(tree, function_name, span)
+    if node is None:
+        raise SourceOracleRefusal(
+            f"source function `{function_name}` not found in `{file}` near line "
+            f"{span.get('start_line')}"
+        )
+
+    rel = file.replace(os.sep, "/")
+    recomputed = _body_source_locator(node, rel, source.splitlines(keepends=True))
+
+    if pinned_source_cid is not None and recomputed.get("source_cid") != pinned_source_cid:
+        raise SourceOracleRefusal(
+            f"source CID misaligned for `{function_name}` in `{file}`: "
+            f"pinned {pinned_source_cid}, on-disk {recomputed.get('source_cid')} "
+            "-- the source drifted from the proof"
+        )
+    if pinned_template_cid is not None and recomputed.get("template_cid") != pinned_template_cid:
+        raise SourceOracleRefusal(
+            f"template CID misaligned for `{function_name}` in `{file}`: "
+            f"pinned {pinned_template_cid}, on-disk {recomputed.get('template_cid')} "
+            "-- the AST drifted from the proof"
+        )
+
+    return {
+        "body_text": recomputed.get("body_text"),
+        "ast_template": recomputed.get("ast_template"),
+        "source_cid": recomputed.get("source_cid"),
+        "template_cid": recomputed.get("template_cid"),
+        "param_names": recomputed.get("param_names"),
+    }
+
+
+def resolve_from_roots(memento: dict[str, Any], roots: list[str]) -> dict[str, Any]:
+    """Resolve a SourceMemento against the first root whose on-disk source aligns
+    to the pinned CIDs. The source already lives SOMEWHERE on disk (the consumer's
+    project, or the vendor's installed package); try each candidate root, refuse
+    loudly only if none aligns."""
+    last: SourceOracleRefusal | None = None
+    for root in roots:
+        if not root:
+            continue
+        try:
+            return resolve_source_memento(root, memento)
+        except SourceOracleRefusal as exc:
+            last = exc
+    raise last or SourceOracleRefusal("no root resolved the source memento")
+
+
+def importlib_package_root(file: str) -> str | None:
+    """Root R such that R/<file> is the installed source for a vendor `.proof`
+    whose `file` is `pkg/mod.py` — found via the package manager (pip/importlib),
+    the same ecosystem-native resolution the kit uses for `.proof`s themselves."""
+    if not isinstance(file, str) or not file:
+        return None
+    package = file.replace("\\", "/").split("/", 1)[0]
+    try:
+        from importlib.util import find_spec
+
+        spec = find_spec(package)
+    except Exception:
+        return None
+    if spec is None:
+        return None
+    locations = getattr(spec, "submodule_search_locations", None)
+    if locations:
+        return str(Path(next(iter(locations))).parent)
+    origin = getattr(spec, "origin", None)
+    return str(Path(origin).parent) if origin else None
+
+
+def _locate_function(
+    tree: ast.AST,
+    function_name: Any,
+    span: dict[str, Any],
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """Find the FunctionDef matching the memento's name (and span when ambiguous)."""
+    start = span.get("start_line")
+    matches = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and (function_name is None or n.name == function_name)
+    ]
+    if not matches:
+        return None
+    if isinstance(start, int) and len(matches) > 1:
+        for n in matches:
+            n_start = min((d.lineno for d in n.decorator_list), default=n.lineno)
+            if n_start <= start <= (n.end_lineno or n.lineno):
+                return n
+    return matches[0]
