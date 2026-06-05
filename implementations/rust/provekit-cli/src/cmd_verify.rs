@@ -51,6 +51,7 @@ use clap::Parser;
 use owo_colors::OwoColorize;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs};
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string};
+use crate::witness_verify;
 use provekit_verifier::body_discharge;
 use provekit_verifier::solvers::registry;
 use provekit_verifier::{
@@ -326,9 +327,11 @@ pub fn run(args: VerifyArgs) -> u8 {
     let pool = load_all_proofs::run(&project_root);
     let callsites = enumerate_callsites::run(&pool);
 
-    if callsites.is_empty() {
-        // No contract claims were discharged. Reporting this as success is a
-        // vacuous green: the run proved nothing.
+    if callsites.is_empty() && !witness_verify::has_witnesses(&pool) {
+        // No contract claims AND no witnesses. Reporting this as success is a
+        // vacuous green: the run proved nothing. (A .proof carrying only
+        // witness-mementos -- the pytest-witness seat -- has no callsites but
+        // still has a witness dimension to verify, so it does NOT bail here.)
         let kit_label = args
             .kit
             .clone()
@@ -425,22 +428,39 @@ pub fn run(args: VerifyArgs) -> u8 {
         .filter(|r| r.verdict == ObligationVerdict::Discharged)
         .count();
     let failed = results.len() - discharged;
-    let ok = failed == 0;
+
+    // Witness verify DIMENSION. Verification lives here, in rust: enumerate the
+    // .proof's witness-mementos, RPC-resolve each body from the (untrusted) kit
+    // oracle, blake3 it OURSELVES, and audit the signature. A body the oracle
+    // approves that does not recompute to the pinned CID is a broken oracle,
+    // caught because rust does the math anyway. Any non-verified witness fails.
+    let witness_results = witness_verify::verify_witnesses(&project_root, &pool);
+    let witnesses_ok = witness_results.iter().all(|w| w.is_ok());
+    let ok = failed == 0 && witnesses_ok;
 
     if json_out {
-        emit_json_receipt(&project_root, &args.kit, &results, discharged, failed, ok);
+        emit_json_receipt(
+            &project_root,
+            &args.kit,
+            &results,
+            discharged,
+            failed,
+            ok,
+            &witness_results,
+        );
     } else {
-        emit_human_receipt(&results, discharged, failed, ok, quiet);
+        emit_human_receipt(&results, discharged, failed, ok, quiet, &witness_results);
     }
 
-    // Exit code: any non-discharged claim is a verification failure;
-    // an Undecidable verdict is a solver failure (exit 3) only when
-    // there were no hard violations.
+    // Exit code: any non-discharged claim OR non-verified witness is a
+    // verification failure; an Undecidable verdict is a solver failure (exit 3)
+    // only when there were no hard violations.
     if ok {
         EXIT_OK
-    } else if results
-        .iter()
-        .any(|r| r.verdict == ObligationVerdict::Unsatisfied)
+    } else if !witnesses_ok
+        || results
+            .iter()
+            .any(|r| r.verdict == ObligationVerdict::Unsatisfied)
     {
         EXIT_VERIFY_FAIL
     } else {
@@ -1046,6 +1066,7 @@ fn emit_json_receipt(
     discharged: usize,
     failed: usize,
     ok: bool,
+    witnesses: &[witness_verify::WitnessVerifyResult],
 ) {
     let claims: Vec<Json> = results
         .iter()
@@ -1066,6 +1087,18 @@ fn emit_json_receipt(
         })
         .collect();
     let split = discharge_split(results);
+    let witness_dim: Vec<Json> = witnesses
+        .iter()
+        .map(|w| {
+            json!({
+                "witnessCid": w.witness_cid,
+                "verdict": w.verdict,
+                "checks": w.checks,
+                "reason": w.reason,
+            })
+        })
+        .collect();
+    let witnesses_ok = witnesses.iter().all(|w| w.is_ok());
     let out = json!({
         "kind": "verification-receipt",
         "schemaVersion": "1",
@@ -1075,6 +1108,15 @@ fn emit_json_receipt(
         "totalClaims": results.len(),
         "discharged": discharged,
         "failed": failed,
+        // The witness verify dimension: rust RPC-resolved each witness body from
+        // the (untrusted) kit oracle, blake3'd it itself, and audited the
+        // signature. "broken-oracle" = the oracle approved a body that did not
+        // recompute to the pinned CID; rust caught it.
+        "witnessDimension": {
+            "witnesses": witness_dim,
+            "total": witnesses.len(),
+            "ok": witnesses_ok,
+        },
         // Honest split of the discharged total. `reflexive` and
         // `solver-substantive` are the two solver-reached methods;
         // `vacuous` and `hash` are non-solver discharges; the methods are
@@ -1101,6 +1143,7 @@ fn emit_human_receipt(
     failed: usize,
     ok: bool,
     quiet: bool,
+    witnesses: &[witness_verify::WitnessVerifyResult],
 ) {
     if quiet {
         return;
@@ -1133,6 +1176,26 @@ fn emit_human_receipt(
         }
         if !r.reason.is_empty() {
             println!("        {}", r.reason.dimmed());
+        }
+    }
+    if !witnesses.is_empty() {
+        println!();
+        println!("{}", "Witness dimension (rust recomputes; oracle untrusted)".bold());
+        for w in witnesses {
+            let status = match w.verdict.as_str() {
+                "verified" => "pass".green().to_string(),
+                "broken-oracle" => "BROKEN-ORACLE".red().bold().to_string(),
+                _ => "REFUSED".red().to_string(),
+            };
+            println!(
+                "  [{}] {}  ({})",
+                status,
+                short_cid(&w.witness_cid),
+                w.checks.join("+")
+            );
+            if !w.reason.is_empty() {
+                println!("        {}", w.reason.dimmed());
+            }
         }
     }
     println!();

@@ -107,15 +107,20 @@ def witness_memento(w: "Witness", seed: bytes = WITNESS_SIGNER_SEED) -> dict:
     hash + signature -- not the run body. The body (the recorded run) goes to the
     witness package, resolved + re-verified by the Witness Oracle: signature
     always (whose mark), recompute when the runtime pin reproduces."""
+    import base64
     import nacl.signing
 
     sk = nacl.signing.SigningKey(seed)
+    sig = sk.sign(w.cid.encode("utf-8")).signature
+    # The substrate's canonical ed25519 string form: `ed25519:` + base64, so the
+    # rust verifier checks a witness with the SAME primitive (ed25519_verify_string)
+    # it uses for every other signature. One signature format across the substrate.
     return {
         "kind": "witness-memento",
         "witness_cid": w.cid,
         "witness_kind": "pytest-witness",
-        "signer": "ed25519:" + sk.verify_key.encode().hex(),
-        "signature": sk.sign(w.cid.encode("utf-8")).signature.hex(),
+        "signer": "ed25519:" + base64.b64encode(bytes(sk.verify_key)).decode("ascii"),
+        "signature": "ed25519:" + base64.b64encode(sig).decode("ascii"),
         "runtime_cid": w.runtime_cid,
         "code_cid": w.code_cid,
         "test": w.test_id,

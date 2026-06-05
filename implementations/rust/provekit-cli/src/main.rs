@@ -39,6 +39,7 @@ mod cmd_self_check;
 mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
+mod witness_verify;
 mod doctor;
 mod doctor_oracle;
 pub mod floor_runtime_check;

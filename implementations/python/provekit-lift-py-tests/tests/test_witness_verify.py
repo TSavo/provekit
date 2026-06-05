@@ -12,10 +12,11 @@ from provekit_lift_py_tests.witness_verify import (
 
 
 def _signed(content: bytes):
+    import base64
     sk = nacl.signing.SigningKey.generate()
     cid = blake3_512_of(content)
-    signature = sk.sign(cid.encode("utf-8")).signature.hex()
-    signer = "ed25519:" + sk.verify_key.encode().hex()
+    signature = "ed25519:" + base64.b64encode(sk.sign(cid.encode("utf-8")).signature).decode("ascii")
+    signer = "ed25519:" + base64.b64encode(bytes(sk.verify_key)).decode("ascii")
     return cid, signature, signer
 
 

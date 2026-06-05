@@ -90,21 +90,25 @@ def resolve_witness(
     }
 
 
-def _verify_signature(message_cid: Any, signature_hex: Any, signer: Any) -> bool:
-    """Ed25519-verify a signature over the witness CID bytes. The signer is
-    `ed25519:<hex pubkey>` (or bare hex). Missing signature/signer -> not signed
+def _verify_signature(message_cid: Any, signature_string: Any, signer: Any) -> bool:
+    """Ed25519-verify a signature over the witness CID bytes. Both `signer` and
+    `signature_string` use the substrate's canonical form `ed25519:<base64>` (the
+    same the rust verifier emits/checks). Missing signature/signer -> not signed
     -> not trusted."""
-    if not isinstance(message_cid, str) or not isinstance(signature_hex, str):
+    if not isinstance(message_cid, str) or not isinstance(signature_string, str):
         return False
     if not isinstance(signer, str) or not signer:
         return False
-    pubkey_hex = signer.split(":", 1)[1] if ":" in signer else signer
+    import base64
+
+    pubkey_b64 = signer.split(":", 1)[1] if ":" in signer else signer
+    sig_b64 = signature_string.split(":", 1)[1] if ":" in signature_string else signature_string
     try:
         from nacl.exceptions import BadSignatureError
         from nacl.signing import VerifyKey
 
-        vk = VerifyKey(bytes.fromhex(pubkey_hex))
-        vk.verify(message_cid.encode("utf-8"), bytes.fromhex(signature_hex))
+        vk = VerifyKey(base64.b64decode(pubkey_b64))
+        vk.verify(message_cid.encode("utf-8"), base64.b64decode(sig_b64))
         return True
     except (BadSignatureError, ValueError, Exception):
         return False
