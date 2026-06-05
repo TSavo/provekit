@@ -100,8 +100,21 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
         }
         checks.push("signature".to_string());
 
+        // OUTCOME: a witness recording a FAILED run is not a discharge, even with
+        // a valid CID + signature. Refuse it. Witnesses with no `outcome` (a poem,
+        // a CI log, a compiler report) skip this check and proceed to recompute.
+        if body.get("outcome").and_then(|v| v.as_str()) == Some("failed") {
+            out.push(WitnessVerifyResult {
+                witness_cid,
+                verdict: "refused".to_string(),
+                checks,
+                reason: "witness records a FAILED run -- not a discharge".to_string(),
+            });
+            continue;
+        }
+
         // 2. RESOLVE via the kit oracle, then RECOMPUTE the CID here.
-        let Some((argv, working_dir)) = resolver.clone() else {
+        let Some((argv, working_dir, method)) = resolver.clone() else {
             out.push(WitnessVerifyResult {
                 witness_cid,
                 verdict: "refused".to_string(),
@@ -112,7 +125,7 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
             });
             continue;
         };
-        match resolve_body(&argv, working_dir.as_deref(), project_root, &body) {
+        match resolve_body(&argv, working_dir.as_deref(), &method, project_root, &body) {
             Ok((resolved_by, bytes)) => {
                 let computed = blake3_512_of(&bytes);
                 if computed == witness_cid {
@@ -174,7 +187,7 @@ pub fn has_witnesses(pool: &MementoPool) -> bool {
 /// Scan `.provekit/lift/*/manifest.toml` for a kit that declares a
 /// `resolve_witness_command`, returning (argv, working_dir). The same scan the
 /// witness-resolve route is declared in -- everything tied together per kit.
-fn find_resolver(project_root: &Path) -> Option<(Vec<String>, Option<PathBuf>)> {
+fn find_resolver(project_root: &Path) -> Option<(Vec<String>, Option<PathBuf>, String)> {
     let lift_dir = project_root.join(".provekit").join("lift");
     let entries = std::fs::read_dir(&lift_dir).ok()?;
     for entry in entries.flatten() {
@@ -194,7 +207,7 @@ fn find_resolver(project_root: &Path) -> Option<(Vec<String>, Option<PathBuf>)> 
 fn parse_resolve_command(
     manifest: &Path,
     project_root: &Path,
-) -> Option<(Vec<String>, Option<PathBuf>)> {
+) -> Option<(Vec<String>, Option<PathBuf>, String)> {
     let text = std::fs::read_to_string(manifest).ok()?;
     let strip = |l: &str| -> String {
         match l.find('#') {
@@ -205,6 +218,7 @@ fn parse_resolve_command(
     let raw: Vec<String> = text.lines().map(|l| strip(l).trim().to_string()).collect();
     let mut argv: Vec<String> = Vec::new();
     let mut working_dir: Option<PathBuf> = None;
+    let mut method: Option<String> = None;
     let mut i = 0;
     while i < raw.len() {
         let line = raw[i].clone();
@@ -239,13 +253,21 @@ fn parse_resolve_command(
                     project_root.join(p)
                 });
             }
+            "resolve_witness_method" => {
+                method = Some(val.trim_matches('"').to_string());
+            }
             _ => {}
         }
     }
     if argv.is_empty() {
         return None;
     }
-    Some((argv, working_dir.or_else(|| Some(project_root.to_path_buf()))))
+    Some((
+        argv,
+        working_dir.or_else(|| Some(project_root.to_path_buf())),
+        // Honor the manifest's declared method; default to the canonical one.
+        method.unwrap_or_else(|| "provekit.plugin.resolve_witness".to_string()),
+    ))
 }
 
 /// Spawn the kit oracle and call `provekit.plugin.resolve_witness`, returning
@@ -254,6 +276,7 @@ fn parse_resolve_command(
 fn resolve_body(
     argv: &[String],
     working_dir: Option<&Path>,
+    method: &str,
     project_root: &Path,
     memento_body: &Value,
 ) -> Result<(String, Vec<u8>), String> {
@@ -275,7 +298,7 @@ fn resolve_body(
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.resolve_witness",
+        "method": method,
         "params": params,
     });
 
@@ -303,23 +326,42 @@ fn resolve_body(
             .map_err(|e| format!("write resolver stdin: {e}"))?;
         // stdin dropped here -> EOF to the kit.
     }
+    // Read stdout on a worker thread and bound the wait with a TIMEOUT: even with
+    // stdin dropped (EOF), a misbehaving kit could ignore it and hang. On timeout
+    // we kill the child and refuse, rather than block verify forever.
     let stdout = child.stdout.take().ok_or("resolver stdout unavailable")?;
-    let reader = BufReader::new(stdout);
-    let mut last_reply: Option<Value> = None;
-    for line in reader.lines() {
-        let line = line.map_err(|e| format!("read resolver stdout: {e}"))?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
-            if v.get("result").is_some() || v.get("error").is_some() {
-                last_reply = Some(v);
+    let (tx, rx) = std::sync::mpsc::channel::<Option<Value>>();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut last_reply: Option<Value> = None;
+        for line in reader.lines().map_while(Result::ok) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+                if v.get("result").is_some() || v.get("error").is_some() {
+                    last_reply = Some(v);
+                }
             }
         }
-    }
+        let _ = tx.send(last_reply);
+    });
+    const RESOLVER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+    let reply = match rx.recv_timeout(RESOLVER_TIMEOUT) {
+        Ok(r) => r,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "resolver `{}` timed out after {}s",
+                argv[0],
+                RESOLVER_TIMEOUT.as_secs()
+            ));
+        }
+    };
     let _ = child.wait();
-    let reply = last_reply.ok_or("resolver produced no JSON-RPC reply")?;
+    let reply = reply.ok_or("resolver produced no JSON-RPC reply")?;
     if let Some(err) = reply.get("error") {
         let msg = err
             .get("message")
