@@ -275,28 +275,55 @@ pub fn verify_consistency(
         .filter(|(_, body)| is_consistency_candidate(body))
         .collect();
 
-    let results: Vec<ConsistencyResult> = candidates
-        .par_iter()
-        .map(|(cid, body)| {
-            // Lifted contracts carry their identity under `name`; some shapes
-            // also (or instead) use `contractName`. Prefer `name`.
-            let property_name = body
-                .get("name")
-                .and_then(|v| v.as_str())
-                .or_else(|| body.get("contractName").and_then(|v| v.as_str()))
-                .unwrap_or("<unnamed>")
-                .to_string();
-            let inv = body.get("inv").cloned().unwrap_or(Json::Null);
+    // CROSS-PROOF CONJOIN: group same-named contracts and conjoin their `inv`s
+    // before the SAT check -- the cross-proof twin of mint's same-name coalesce
+    // (cmd_mint.rs `ir_coalesced` / CoalesceEntry::InvOnly). When a consumer
+    // asserts `np.add(2,3)==6` and an IMPORTED numpy proof asserts
+    // `np.add(2,3)==5`, both land on `numpy.add#euf#...::assertion`; conjoining
+    // gives `and(==5, ==6)` -> raw unsat -> CONTRADICTORY -> refused. Identical
+    // assertions dedupe by CID (one member) and stay PROVEN. The contract NAME is
+    // the content-keyed callsite, so same name == same callsite == sound to
+    // conjoin -- the same invariant mint relies on.
+    let mut by_name: std::collections::BTreeMap<String, Vec<(&String, &Json)>> =
+        std::collections::BTreeMap::new();
+    for (cid, body) in &candidates {
+        let name = body
+            .get("name")
+            .and_then(|v| v.as_str())
+            .or_else(|| body.get("contractName").and_then(|v| v.as_str()))
+            .unwrap_or("<unnamed>")
+            .to_string();
+        by_name.entry(name).or_default().push((*cid, *body));
+    }
+    let groups: Vec<(String, Vec<(&String, &Json)>)> = by_name.into_iter().collect();
 
-            // WITNESS DISCHARGE (proofchain-native): if this contract carries a
-            // `custom` execution-witness EvidenceTerm, settle it BY RECOMPUTE --
-            // delegate to the kit's discharge command (the verifier stays
-            // language-blind) -- NOT by symbolic solving.
-            if let Some(res) =
-                try_witness_discharge(body, (*cid).clone(), property_name.clone())
-            {
-                return res;
+    let results: Vec<ConsistencyResult> = groups
+        .par_iter()
+        .map(|(property_name, members)| {
+            let cid = members[0].0.clone();
+
+            // WITNESS DISCHARGE (proofchain-native): a member carrying a `custom`
+            // execution-witness EvidenceTerm is settled BY RECOMPUTE per member --
+            // the kit's discharge command (verifier stays language-blind) -- never
+            // folded into the symbolic conjunction.
+            for (m_cid, body) in members {
+                if let Some(res) =
+                    try_witness_discharge(body, (*m_cid).clone(), property_name.clone())
+                {
+                    return res;
+                }
             }
+
+            // Conjoin the `inv`s of all same-named members (1 -> itself).
+            let invs: Vec<Json> = members
+                .iter()
+                .map(|(_, b)| b.get("inv").cloned().unwrap_or(Json::Null))
+                .collect();
+            let inv = if invs.len() == 1 {
+                invs.into_iter().next().unwrap()
+            } else {
+                serde_json::json!({ "kind": "and", "operands": invs })
+            };
 
             // RAW satisfiability: assert <inv>; check-sat (NOT the negated
             // validity form). `emit_asserted` produces exactly that shape.
@@ -304,8 +331,8 @@ pub fn verify_consistency(
                 Ok(s) => s,
                 Err(e) => {
                     return ConsistencyResult {
-                        contract_cid: (*cid).clone(),
-                        property_name,
+                        contract_cid: cid,
+                        property_name: property_name.clone(),
                         verdict: ObligationVerdict::Undecidable,
                         reason: format!("consistency smt-emit (encoding STOP): {e}"),
                         witnessed: false,
@@ -327,8 +354,8 @@ pub fn verify_consistency(
             }
 
             ConsistencyResult {
-                contract_cid: (*cid).clone(),
-                property_name,
+                contract_cid: cid,
+                property_name: property_name.clone(),
                 verdict,
                 reason,
                 witnessed: false,
