@@ -21,11 +21,14 @@ from provekit_lift_py_tests.ir import (
 )
 from provekit_lift_py_tests.canonicalizer import encode_jcs
 
-from .witness import run_and_witness, witness_memento
+import base64
+
+from .witness import run_and_witness, witness_memento, witness_body
 
 KIT_ID = "python-pytest-witness"
 KIT_VERSION = "0.1.0"
 KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
+RESOLVE_WITNESS_RPC_METHOD = "provekit.plugin.resolve_witness"
 
 
 def _send(obj: dict) -> None:
@@ -95,6 +98,56 @@ def handle_lift(msg_id: Any, params: dict) -> None:
             "code": -32603, "message": str(e), "data": traceback.format_exc()}})
 
 
+def handle_resolve_witness(msg_id: Any, params: dict) -> None:
+    """The ORACLE'S RPC resolve surface. Given a WitnessMemento (and where its
+    body lives), RESOLVE the body bytes and return them base64-encoded. The
+    oracle returns CONTENT, not a verdict: verification lives in the rust CLI,
+    which blake3's these bytes itself and compares to the pinned witness_cid. The
+    oracle is untrusted -- it must be verified -- so it only hands over the body.
+
+    Resolution order:
+      - PACKAGE: the body is a CID-named file in the witness package (a witness
+        of ANY kind -- poem, CI log, compiler report -- resolves this way).
+      - RECOMPUTE: a re-runnable pytest-witness is reproduced by re-running the
+        pinned test and rebuilding the canonical body.
+    A body that cannot be resolved -> error; the verifier treats that as refusal."""
+    try:
+        memento = params.get("memento") or {}
+        cid = memento.get("witness_cid") or params.get("witness_cid")
+        if not cid:
+            raise RuntimeError("resolve_witness requires a witness_cid")
+        ws = params.get("workspace_root")
+        package_dir = params.get("package_dir")
+        body: Optional[bytes] = None
+        resolved_by: Optional[str] = None
+        # 1. PACKAGE -- CID-named witness body, deployed separately.
+        if package_dir:
+            pdir = package_dir if os.path.isabs(package_dir) else os.path.join(ws or ".", package_dir)
+            path = os.path.join(pdir, cid.replace(":", "_") + ".witness")
+            if os.path.isfile(path):
+                with open(path, "rb") as f:
+                    body = f.read()
+                resolved_by = "package"
+        # 2. RECOMPUTE -- re-run the pinned test, rebuild the canonical body.
+        if body is None and ws and memento.get("test") and memento.get("code_files"):
+            w = run_and_witness(ws, memento["test"], list(memento["code_files"]))
+            body = witness_body(w)
+            resolved_by = "recompute"
+        if body is None:
+            raise RuntimeError(
+                f"cannot resolve witness body for {cid}: no package file and not re-runnable"
+            )
+        _send({"jsonrpc": "2.0", "id": msg_id, "result": {
+            "witness_cid": cid,
+            "body_b64": base64.b64encode(body).decode("ascii"),
+            "resolved_by": resolved_by,
+        }})
+    except Exception as e:
+        import traceback
+        _send({"jsonrpc": "2.0", "id": msg_id, "error": {
+            "code": -32603, "message": str(e), "data": traceback.format_exc()}})
+
+
 def main() -> None:
     while True:
         msg = _recv()
@@ -114,11 +167,14 @@ def main() -> None:
                 "rpc": {"methods": [{"name": "initialize", "required": True},
                                     {"name": KIT_DECLARATION_RPC_METHOD, "required": True},
                                     {"name": "lift", "required": True},
+                                    {"name": RESOLVE_WITNESS_RPC_METHOD, "required": False},
                                     {"name": "shutdown", "required": False}]},
                 "proofResolution": {"strategy": "pip"}, "effectKinds": [], "effectLeaves": [],
                 "guardPredicates": [], "controlCarriers": [], "residueCategories": []}})
         elif method == "lift":
             handle_lift(mid, msg.get("params", {}))
+        elif method == RESOLVE_WITNESS_RPC_METHOD:
+            handle_resolve_witness(mid, msg.get("params", {}))
         elif method == "shutdown":
             _send({"jsonrpc": "2.0", "id": mid, "result": None})
             break

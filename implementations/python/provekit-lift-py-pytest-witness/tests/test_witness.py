@@ -167,6 +167,69 @@ def test_package_tamper_is_refused_by_content_address(tmp_path):
         resolve_witness(witness_memento(w), witness_content=body)
 
 
+# --- The oracle speaks RPC: resolve returns the BODY, not a verdict -----------
+# Verification lives in the rust CLI; the kit oracle is untrusted and only hands
+# over the body bytes over RPC. The verifier blake3's them and audits.
+
+
+def _rpc(method, params):
+    import subprocess, sys
+    from provekit_lift_py_tests.canonicalizer import blake3_512_of  # noqa: F401
+    req = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    proc = subprocess.run(
+        [sys.executable, "-m", "provekit_pytest_witness.lift_lsp", "--rpc"],
+        input=req + "\n", capture_output=True, text=True,
+    )
+    # the kit may print pytest noise; the RPC reply is the last JSON line
+    for line in reversed(proc.stdout.strip().splitlines()):
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            continue
+    raise AssertionError(f"no JSON-RPC reply; stderr={proc.stderr}")
+
+
+def test_resolve_witness_rpc_returns_body_that_addresses_to_cid_from_package(tmp_path):
+    import base64
+    from provekit_pytest_witness import write_witness_package
+    from provekit_lift_py_tests.canonicalizer import blake3_512_of
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    pkg = tmp_path / "wpkg"; write_witness_package([w], str(pkg))
+    reply = _rpc("provekit.plugin.resolve_witness", {
+        "memento": witness_memento(w), "package_dir": str(pkg),
+    })
+    assert "result" in reply, reply
+    body = base64.b64decode(reply["result"]["body_b64"])
+    assert reply["result"]["resolved_by"] == "package"
+    # the check the rust verifier does: recompute the CID over the resolved body
+    assert blake3_512_of(body) == w.cid
+
+
+def test_resolve_witness_rpc_recompute_reruns_and_returns_body(tmp_path):
+    import base64
+    from provekit_lift_py_tests.canonicalizer import blake3_512_of
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    # no package -> the oracle re-runs the pinned test and rebuilds the body
+    reply = _rpc("provekit.plugin.resolve_witness", {
+        "memento": witness_memento(w), "workspace_root": proj,
+    })
+    assert "result" in reply, reply
+    assert reply["result"]["resolved_by"] == "recompute"
+    body = base64.b64decode(reply["result"]["body_b64"])
+    assert blake3_512_of(body) == w.cid
+
+
+def test_resolve_witness_rpc_errors_when_unresolvable(tmp_path):
+    proj = _project(tmp_path, GOOD)
+    w = run_and_witness(proj, "test_add.py", CODE)
+    m = witness_memento(w)
+    m.pop("test"); m.pop("code_files")  # not re-runnable, no package
+    reply = _rpc("provekit.plugin.resolve_witness", {"memento": m})
+    assert "error" in reply and "cannot resolve" in reply["error"]["message"]
+
+
 # --- The verifier<->kit contract: the discharge command -----------------------
 
 
