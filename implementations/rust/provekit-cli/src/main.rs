@@ -39,6 +39,7 @@ mod cmd_self_check;
 mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
+mod witness_verify;
 mod doctor;
 mod doctor_oracle;
 pub mod floor_runtime_check;
@@ -130,7 +131,7 @@ enum Cmd {
     Recognize(cmd_recognize::RecognizeArgs),
     /// Initialize a project: provekit.toml, .provekit/, sample invariant, GitHub Action.
     Init(InitArgs),
-    /// Print directions for the lift adapter (TS only in v1.0; planned for v1.2.0).
+    /// Dispatch the configured lift surface and write its ProofIR term JSON (no `.proof` envelope; use `mint` for that).
     Lift(LiftArgs),
     /// Dispatch the lift-plugin protocol: spawn the configured plugin, write its `.proof`.
     Mint(cmd_mint::MintArgs),
@@ -264,9 +265,9 @@ pub struct VerifyProtocolArgs {
     pub catalog: Option<String>,
     /// Also verify the signed catalog attestation (Ed25519 signature
     /// over the catalog's CID by the ProvekIt Foundation Root Key).
-    /// Default uses the embedded `foundation-v0.pub` and embedded
-    /// `catalog-signature-v1.4.0.json`; override via `--pubkey-file`
-    /// and `--signature-file`.
+    /// Default uses the embedded `foundation-v0.pub` and the embedded
+    /// catalog signature (`assets/catalog-signature-*.json`); override via
+    /// `--pubkey-file` and `--signature-file`.
     #[arg(long)]
     pub signed: bool,
     /// Override the public key file used to verify the signature.

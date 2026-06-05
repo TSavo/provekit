@@ -40,16 +40,24 @@ the lifter cannot prove the bound value is unchanged across it.
 from __future__ import annotations
 
 import ast
+from collections import OrderedDict
 from typing import Dict, List, Optional, Sequence
 
 # Reuse the pytest seat's shared term/formula machinery so equivalent claims
 # federate.  (These live in provekit_lift_py_tests today; if a shared
 # libprovekit-py term core is extracted later, re-point these imports.)
+import provekit_lift_py_tests.layer2 as _l2
 from provekit_lift_py_tests.layer2 import (
     Layer2Output,
     LiftWarning,
     _ValueScope,
     _call_key,
+    _callsite_contract_base,
+    _call_origin_from_expr,
+    _call_result_term,
+    _canonical_term_sig,
+    _Ctor,
+    _euf_args_all_concrete,
     _iter_test_functions,
     _lift_assertion_stmt_scoped,
     _strip_self,
@@ -153,6 +161,49 @@ def _lift_npt_assertion_scoped(call: ast.Call, scope: _ValueScope, call_vars) ->
     raise ValueError(f"numpy.testing assertion `{name}` not lifted in v0")
 
 
+def _npt_subject_call(stmt: ast.stmt) -> Optional[ast.Call]:
+    """The library call WHOSE RESULT is under test, for callsite-keying.
+    ``assert_equal(np.add(2,3), 5)`` -> the ``np.add(2,3)`` Call (first comparand);
+    ``assert np.add(2,3) == 5`` -> the first Call operand of the comparison. None
+    when no call is the subject (keeps the test-name fallback)."""
+    if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+        if _npt_call_name(stmt.value.func) in _NPT_EQUALITY:
+            # EITHER comparand can be the call under test: `assert_equal(np.add(2,3), 5)`
+            # and `assert_equal(5, np.add(2,3))` both key to the np.add callsite.
+            for arg in stmt.value.args[:2]:
+                if isinstance(arg, ast.Call):
+                    return arg
+    if isinstance(stmt, ast.Assert) and isinstance(stmt.test, ast.Compare):
+        for operand in [stmt.test.left, *stmt.test.comparators]:
+            if isinstance(operand, ast.Call):
+                return operand
+    return None
+
+
+def _npt_callsite_base(call, scope, call_vars, source_path: str) -> Optional[str]:
+    """The callsite contract base (``numpy.add#euf#...``) for ``call``, reusing
+    the pytest lifter's argument-keyed naming so a numpy.testing assertion and a
+    plain pytest assertion about the SAME numpy call land on the SAME name and
+    conjoin. None when ``call`` is not a module-function callsite."""
+    origin = _call_origin_from_expr(call)
+    if origin is None:
+        return None
+    euf_term = _call_result_term(call, origin, scope, call_vars)
+    # Only a CONCRETE-ARG callsite (``numpy.add(2,3)``) splits into its own
+    # argument-keyed contract -- that is what conjoins across tests/files/proofs.
+    # Symbolic-arg or non-liftable calls return None -> the assertion stays in the
+    # test-name group (unchanged behaviour, no spurious cross-location unify).
+    if not (
+        euf_term is not None
+        and isinstance(euf_term, _Ctor)
+        and euf_term.args
+        and _euf_args_all_concrete(euf_term)
+    ):
+        return None
+    origin.arg_sig = _canonical_term_sig(euf_term)
+    return _callsite_contract_base(origin, source_path)
+
+
 # --- statement gating (mirrors the pytest lifter's mixed-body permitted set) --
 
 
@@ -217,7 +268,6 @@ def _classify_numpy_testing(
     # SSA scope build (identical model to the pytest lifter's mixed-body).
     ssa_current: Dict[str, Term] = {}
     ssa_versions: Dict[str, int] = {}
-    atoms: List[Formula] = []
     skipped: List[str] = []
 
     # SOUNDNESS — impure repeated calls: a call RESULT (repr(x), len(x), ...) is
@@ -235,6 +285,11 @@ def _classify_numpy_testing(
                 if k not in call_vars:
                     call_vars[k] = make_var(f"__call${c.lineno}${c.col_offset}")
 
+    # (contract name, atom) per assertion. The name is the CALLSITE UNDER TEST
+    # (``numpy.add#euf#...``) so the contract conjoins with any other assertion
+    # about the same call -- in this file, or in a consumer's imported proof.
+    # Falls back to the test name only when there is no module-call subject.
+    keyed: List = []
     for stmt in body:
         if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
             target = stmt.targets[0].id if isinstance(stmt, ast.Assign) else stmt.target.id
@@ -247,13 +302,26 @@ def _classify_numpy_testing(
         scope = _ValueScope(current=dict(ssa_current))
         try:
             if _npt_assertion_name(stmt) is not None:
-                atoms.append(_lift_npt_assertion_scoped(stmt.value, scope, call_vars))
+                atom = _lift_npt_assertion_scoped(stmt.value, scope, call_vars)
             else:  # bare assert — conjoin for a complete per-test claim
-                atoms.append(_lift_assertion_stmt_scoped(stmt, scope, call_vars))
+                atom = _lift_assertion_stmt_scoped(stmt, scope, call_vars)
         except ValueError as e:
             skipped.append(f"`{_unparse(stmt)[:60]}`: {e}")
+            continue
+        subject = _npt_subject_call(stmt)
+        base = (
+            _npt_callsite_base(subject, scope, call_vars, source_path)
+            if subject is not None
+            else None
+        )
+        # Use the SAME ``{base}::assertion`` name the pytest lifter emits for the
+        # asserted value, so a numpy.testing vendor contract and a plain pytest
+        # consumer assertion about the same call CONJOIN (and a contradiction
+        # fires). Non-callsite atoms stay under the test name.
+        name = f"{base}::assertion" if base is not None else test_name
+        keyed.append((name, atom))
 
-    if not atoms:
+    if not keyed:
         out.claimed_tests.add(test_name)
         out.seen += 1
         out.warnings.append(
@@ -263,10 +331,14 @@ def _classify_numpy_testing(
         )
         return True
 
-    inv = atoms[0] if len(atoms) == 1 else and_(atoms)
     out.claimed_tests.add(test_name)
     out.seen += 1
-    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    groups: "OrderedDict[str, List]" = OrderedDict()
+    for name, atom in keyed:
+        groups.setdefault(name, []).append(atom)
+    for name, atoms_g in groups.items():
+        inv = atoms_g[0] if len(atoms_g) == 1 else and_(atoms_g)
+        out.decls.append(ContractDecl(name=name, inv=inv))
     out.lifted += 1
     if skipped:
         out.warnings.append(
@@ -287,8 +359,16 @@ def lift_file_numpy_testing(source: str, source_path: str) -> Layer2Output:
             LiftWarning(source_path, "<file>", f"layer2 numpy-testing: failed to parse: {e}")
         )
         return out
-    for fn, class_name in _iter_test_functions(tree):
-        test_name = f"{class_name}::{fn.name}" if class_name else fn.name
-        body = _strip_self(fn.body, fn)
-        _classify_numpy_testing(body, test_name, source_path, out)
+    # Resolve module aliases (``import numpy as np`` -> np->numpy) so attribute
+    # calls key to the qualified callsite -- the same map the pytest lifter uses,
+    # so both surfaces produce identical ``numpy.add#euf#...`` names.
+    prev_aliases = _l2._CURRENT_MODULE_ALIASES
+    _l2._CURRENT_MODULE_ALIASES = _l2._collect_module_aliases(tree)
+    try:
+        for fn, class_name in _iter_test_functions(tree):
+            test_name = f"{class_name}::{fn.name}" if class_name else fn.name
+            body = _strip_self(fn.body, fn)
+            _classify_numpy_testing(body, test_name, source_path, out)
+    finally:
+        _l2._CURRENT_MODULE_ALIASES = prev_aliases
     return out

@@ -92,6 +92,118 @@ def run_and_witness(project_dir: str, test_id: str, code_files: List[str]) -> Wi
     return Witness(cc, rc, test_id, outcome, tuple(sorted(code_files)), cid)
 
 
+# ---------------------------------------------------------------------------
+# WitnessMemento: the signed pointer the `.proof` carries INSTEAD of the run body.
+# ---------------------------------------------------------------------------
+
+# The DEV witness-signing seed. A witness is OUR signed mark; in PRODUCTION the
+# seed MUST come from the prover's provenance key (vault), via the env override
+# below. This globally-known default is an INTEGRITY TAG ONLY (it proves the body
+# was not altered, not WHO signed it) and is here so mementos are reproducible in
+# tests. Set PROVEKIT_WITNESS_SIGNER_SEED (64 hex chars) for an authoritative key.
+WITNESS_SIGNER_SEED = bytes([0x77]) * 32  # 'w' for witness; dev/integrity-tag only
+_SIGNER_SEED_ENV = "PROVEKIT_WITNESS_SIGNER_SEED"
+
+
+def _resolve_signer_seed(seed: bytes | None) -> bytes:
+    """Explicit override wins; else the env-provided authoritative seed; else the
+    well-known dev seed (integrity tag only)."""
+    if seed is not None:
+        return seed
+    env = os.environ.get(_SIGNER_SEED_ENV)
+    if env:
+        raw = bytes.fromhex(env.strip())
+        if len(raw) != 32:
+            raise ValueError(
+                f"{_SIGNER_SEED_ENV} must be 64 hex chars (32 bytes); got {len(raw)}"
+            )
+        return raw
+    return WITNESS_SIGNER_SEED
+
+
+def witness_memento(w: "Witness", seed: bytes | None = None) -> dict:
+    """Build a signed WitnessMemento. The `.proof` carries THIS -- a pointer +
+    hash + signature -- not the run body. The body (the recorded run) goes to the
+    witness package, resolved + re-verified by the Witness Oracle: signature
+    always (whose mark), recompute when the runtime pin reproduces. The signing
+    seed comes from PROVEKIT_WITNESS_SIGNER_SEED in production; the dev default is
+    an integrity tag only."""
+    import base64
+    import nacl.signing
+
+    sk = nacl.signing.SigningKey(_resolve_signer_seed(seed))
+    sig = sk.sign(w.cid.encode("utf-8")).signature
+    # The substrate's canonical ed25519 string form: `ed25519:` + base64, so the
+    # rust verifier checks a witness with the SAME primitive (ed25519_verify_string)
+    # it uses for every other signature. One signature format across the substrate.
+    return {
+        "kind": "witness-memento",
+        "witness_cid": w.cid,
+        "witness_kind": "pytest-witness",
+        "signer": "ed25519:" + base64.b64encode(bytes(sk.verify_key)).decode("ascii"),
+        "signature": "ed25519:" + base64.b64encode(sig).decode("ascii"),
+        "runtime_cid": w.runtime_cid,
+        "code_cid": w.code_cid,
+        "test": w.test_id,
+        "outcome": w.outcome,
+        "code_files": list(w.code_files),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Witness PACKAGE: the bodies the `.proof` does NOT carry, content-addressed on
+# disk. One file per witness, named by its CID, holding the bytes the CID
+# addresses. Deployed SEPARATELY from the `.proof` (audit material, not ship
+# material). The Witness Oracle's content-address path reads `<cid>.witness`,
+# blake3's it, and confirms it equals the pinned witness_cid.
+# ---------------------------------------------------------------------------
+
+
+def witness_body(w: "Witness") -> bytes:
+    """The bytes the witness CID addresses: the canonical run record. By
+    construction ``blake3_512_of(witness_body(w)) == w.cid`` -- the file content
+    IS what was signed for, so the oracle can content-address it."""
+    return encode_jcs(_witness_value(
+        w.code_cid, w.runtime_cid, w.test_id, w.outcome, list(w.code_files)
+    )).encode("utf-8")
+
+
+def _cid_filename(cid: str, ext: str) -> str:
+    """CID -> on-disk filename. The name IS the CID; ``:`` -> ``_`` because
+    filesystems reject the colon (the convention `.proof` files already use)."""
+    return cid.replace(":", "_") + ext
+
+
+def write_witness_package(witnesses: List["Witness"], out_dir: str) -> List[str]:
+    """Write a witness package: one `<cid>.witness` file per witness, content =
+    the bytes the CID addresses. Returns the paths written. This is the
+    deploy-separately bundle the Witness Oracle resolves bodies from."""
+    os.makedirs(out_dir, exist_ok=True)
+    paths = []
+    for w in witnesses:
+        body = witness_body(w)
+        # Explicit runtime integrity check (NOT `assert`: must hold under `-O`).
+        if blake3_512_of(body) != w.cid:
+            raise ValueError(
+                f"witness body does not address to its CID: computed "
+                f"{blake3_512_of(body)}, pinned {w.cid}"
+            )
+        path = os.path.join(out_dir, _cid_filename(w.cid, ".witness"))
+        with open(path, "wb") as f:
+            f.write(body)
+        paths.append(path)
+    return paths
+
+
+def read_witness_body(witness_cid: str, package_dir: str) -> bytes:
+    """Read a witness body from a package by CID. The Witness Oracle hands these
+    bytes to its content-address check (blake3 == witness_cid) -- a swapped or
+    truncated file is caught there, refused loudly."""
+    path = os.path.join(package_dir, _cid_filename(witness_cid, ".witness"))
+    with open(path, "rb") as f:
+        return f.read()
+
+
 def verify(witness: Witness, project_dir: str) -> Tuple[str, str]:
     """Verify a witness BY RECOMPUTATION against ``project_dir``.
 

@@ -217,12 +217,18 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
         )
         return out
 
-    helpers = _collect_helpers(tree)
-    test_fns = list(_iter_test_functions(tree))
-    for fn, class_name in test_fns:
-        _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
+    global _CURRENT_MODULE_ALIASES
+    prev_aliases = _CURRENT_MODULE_ALIASES
+    _CURRENT_MODULE_ALIASES = _collect_module_aliases(tree)
+    try:
+        helpers = _collect_helpers(tree)
+        test_fns = list(_iter_test_functions(tree))
+        for fn, class_name in test_fns:
+            _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
 
-    _coalesce_same_named_decls(out)
+        _coalesce_same_named_decls(out)
+    finally:
+        _CURRENT_MODULE_ALIASES = prev_aliases
     return out
 
 
@@ -3190,8 +3196,17 @@ def _call_result_term(
     EUF subject must be a single dedicated function symbol so two cross-location
     assertions about the same call unify on it; the arity suffix keeps it
     sort-stable.  The two share the same args, so identical calls still collapse.
+
+    Module-function attribute calls (``np.add(2, 3)``) are admitted: the receiver
+    is the MODULE (in ``call.func.value``, NOT in ``call.args``), and
+    ``origin.callee`` is already resolved to the qualified name (``numpy.add``).
+    So the arg-terms are exactly ``[2, 3]`` and the head is
+    ``callresult_numpy_add_a2`` -- identical for every call to ``numpy.add(2,3)``
+    regardless of the alias (``np`` / ``numpy``) or the enclosing test. A method
+    call on a non-module receiver never reaches here: ``_call_origin_from_expr``
+    returns no origin for it (receiver-dependent, kept location-keyed).
     """
-    if not isinstance(call.func, ast.Name):
+    if not isinstance(call.func, ast.Name) and _module_attr_callee(call.func) is None:
         return None
     if call.keywords:
         return None
@@ -3268,18 +3283,66 @@ def _call_key(call: ast.Call) -> Tuple[int, int]:
     return (getattr(call, "lineno", 0), getattr(call, "col_offset", 0))
 
 
-def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
-    if (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and not node.keywords
-    ):
-        return _CallOrigin(
-            callee=node.func.id,
-            lineno=getattr(node, "lineno", 0),
-            col=getattr(node, "col_offset", 0),
-        )
+# Per-file import-as map (``import numpy as np`` -> {"np": "numpy"}), set by
+# ``lift_file_layer2`` for the file currently being lifted. Used to resolve an
+# attribute call's MODULE receiver to its qualified callee so a callsite keys to
+# the function under test (``numpy.add``), not the surface alias (``np``) and not
+# the enclosing test. Module-global is safe: lift is single-threaded, one file at
+# a time, and the map is saved/restored around each file.
+_CURRENT_MODULE_ALIASES: Dict[str, str] = {}
+
+
+def _collect_module_aliases(tree: ast.AST) -> Dict[str, str]:
+    """Map each local module name to its qualified module: ``import numpy`` ->
+    {"numpy": "numpy"}, ``import numpy as np`` -> {"np": "numpy"}. Only plain
+    ``import`` (a module bound to a name); ``from x import y`` binds y to a
+    member, handled by the bare-name path, not here."""
+    aliases: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.asname:
+                    # `import numpy.linalg as nl` binds `nl` to the FULL module.
+                    aliases[a.asname] = a.name
+                else:
+                    # `import numpy` AND `import numpy.linalg` both bind only the
+                    # TOP-LEVEL name (`numpy`), referring to the top-level package.
+                    # Binding `numpy` -> `numpy.linalg` would mis-resolve `numpy.add`.
+                    top = a.name.split(".")[0]
+                    aliases[top] = top
+    return aliases
+
+
+def _module_attr_callee(func: ast.expr) -> Optional[str]:
+    """Resolve ``np.add`` -> ``numpy.add`` when ``np`` is an imported MODULE.
+    Returns None for a method call on a non-module receiver (``lst.append``):
+    those are RECEIVER-DEPENDENT, so they must stay location-keyed -- unifying
+    ``a.foo(5)`` with ``b.foo(5)`` would be a false refusal. Only a module-level
+    function (pure, receiver-free) is safe to key to the callsite."""
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        module = _CURRENT_MODULE_ALIASES.get(func.value.id)
+        if module is not None:
+            return f"{module}.{func.attr}"
     return None
+
+
+def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
+    if not (isinstance(node, ast.Call) and not node.keywords):
+        return None
+    if isinstance(node.func, ast.Name):
+        callee: Optional[str] = node.func.id
+    else:
+        # Attribute call: key to the callsite ONLY when the receiver is an
+        # imported module (``np.add`` -> ``numpy.add``). The callsite under test
+        # is the function, not the enclosing test.
+        callee = _module_attr_callee(node.func)
+    if callee is None:
+        return None
+    return _CallOrigin(
+        callee=callee,
+        lineno=getattr(node, "lineno", 0),
+        col=getattr(node, "col_offset", 0),
+    )
 
 
 def _assertion_value_exprs(stmt: ast.stmt) -> List[ast.expr]:

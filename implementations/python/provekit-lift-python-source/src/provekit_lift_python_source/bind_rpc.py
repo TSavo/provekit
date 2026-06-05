@@ -626,6 +626,19 @@ def _vendor_proof_binding_templates(root: Path) -> list[dict[str, Any]]:
                 continue
             ast_template = body_source.get("ast_template")
             template_cid = body_source.get("template_cid")
+            body_text = body_source.get("body_text")
+            # SourceMemento: when the `.proof` carries no inline source (just the
+            # locus + CIDs), ask the SOURCE ORACLE to resolve body_text +
+            # ast_template from the on-disk source at the locus (CID-verified,
+            # refuse on drift). ONE resolution feeds BOTH recognize (ast_template)
+            # and materialize (body_text). Inline content (legacy .proof) wins.
+            if ast_template is None or body_text is None:
+                resolved = _resolve_via_source_oracle(str(root), body)
+                if resolved is not None:
+                    if ast_template is None:
+                        ast_template = resolved.get("ast_template")
+                    if body_text is None:
+                        body_text = resolved.get("body_text")
             if ast_template is None or not isinstance(template_cid, str) or not template_cid:
                 continue
             templates.append(
@@ -636,11 +649,43 @@ def _vendor_proof_binding_templates(root: Path) -> list[dict[str, Any]]:
                     "ast_template": ast_template,
                     "template_cid": template_cid,
                     "param_names": body_source.get("param_names"),
-                    "body_text": body_source.get("body_text"),
+                    "body_text": body_text,
                     "contract_cid": body.get("contract_cid"),
                 }
             )
     return templates
+
+
+def _resolve_via_source_oracle(
+    project_root: str, body: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Resolve a SourceMemento (the `.proof`'s locus + CIDs) to body_text +
+    ast_template via the Source Oracle, trying the consumer project root and the
+    vendor's installed-package root. None on a loud refusal (source drift)."""
+    from .source_oracle import (
+        SourceOracleRefusal,
+        importlib_package_root,
+        resolve_from_roots,
+    )
+
+    body_source = body.get("body_source")
+    if not isinstance(body_source, dict):
+        return None
+    memento = {
+        "source_function_name": body.get("source_function_name"),
+        "file": body_source.get("file"),
+        "span": body_source.get("span"),
+        "source_cid": body_source.get("source_cid"),
+        "template_cid": body_source.get("template_cid"),
+    }
+    roots = [project_root]
+    pkg_root = importlib_package_root(body_source.get("file") or "")
+    if pkg_root:
+        roots.append(pkg_root)
+    try:
+        return resolve_from_roots(memento, roots)
+    except SourceOracleRefusal:
+        return None
 
 
 def _binding_template_from_sugar_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
