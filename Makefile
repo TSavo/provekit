@@ -151,12 +151,8 @@ build-java:
 .PHONY: build-python
 build-python:
 	$(PIP) install --quiet --no-cache-dir \
-		-e examples/provekit-shim-python-sqlite3 \
-		-e examples/provekit-shim-python-aiosqlite \
 		-e examples/provekit-shim-python-requests \
 		-e implementations/python/provekit-realize-python-core \
-		-e implementations/python/provekit-realize-python-sqlite3 \
-		-e implementations/python/provekit-realize-python-aiosqlite \
 		-e implementations/python/provekit-realize-python-requests
 	# The rust integration suite spawns the python lifter over RPC
 	# (python3 -m provekit_lift_py_tests...). Install the lift packages into the
@@ -311,16 +307,6 @@ test-python: build-python
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
 		pytest) || failed="$$failed provekit-realize-python-core"; \
-	(cd implementations/python/provekit-realize-python-sqlite3 && \
-		python3 -m venv .venv && \
-		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-realize-python-core -e ../../../examples/provekit-shim-python-sqlite3 -e . pytest && \
-		pytest) || failed="$$failed provekit-realize-python-sqlite3"; \
-	(cd implementations/python/provekit-realize-python-aiosqlite && \
-		python3 -m venv .venv && \
-		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-realize-python-core -e ../../../examples/provekit-shim-python-aiosqlite -e . pytest && \
-		pytest) || failed="$$failed provekit-realize-python-aiosqlite"; \
 	(cd implementations/python/provekit-realize-python-requests && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
