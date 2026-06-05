@@ -49,7 +49,7 @@ impl WitnessVerifyResult {
 /// (empty when the `.proof` carries no witnesses).
 pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessVerifyResult> {
     let mut out = Vec::new();
-    let resolver = find_resolver(project_root);
+    let resolvers = find_resolvers(project_root);
     for env in pool.mementos.values() {
         if env.pointer("/header/kind").and_then(|v| v.as_str()) != Some("witness-memento") {
             continue;
@@ -113,8 +113,14 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
             continue;
         }
 
-        // 2. RESOLVE via the kit oracle, then RECOMPUTE the CID here.
-        let Some((argv, working_dir, method)) = resolver.clone() else {
+        // 2. RESOLVE via the kit oracle, then RECOMPUTE the CID here. Try each
+        // declared resolver; ACCEPT the first whose returned body BLAKE3's to the
+        // pinned witness_cid. The content-address check is the arbiter, so this is
+        // sound (no kit can forge a hashing body) and order-independent: a
+        // first-found scan could otherwise refuse a valid witness just because an
+        // unrelated kit's manifest sorted first. If none hash, report the most
+        // informative refusal seen (broken package > honest drift > resolve error).
+        if resolvers.is_empty() {
             out.push(WitnessVerifyResult {
                 witness_cid,
                 verdict: "refused".to_string(),
@@ -124,54 +130,72 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
                     .to_string(),
             });
             continue;
-        };
-        match resolve_body(&argv, working_dir.as_deref(), &method, project_root, &body) {
-            Ok((resolved_by, bytes)) => {
-                let computed = blake3_512_of(&bytes);
-                if computed == witness_cid {
-                    checks.push(format!("content-address:{resolved_by}"));
-                    out.push(WitnessVerifyResult {
-                        witness_cid: witness_cid.clone(),
-                        verdict: "verified".to_string(),
-                        checks,
-                        reason: format!(
-                            "oracle resolved via {resolved_by}; rust recomputed the CID and it matched"
-                        ),
-                    });
-                } else if resolved_by == "package" {
-                    // The package paired this CID with bytes that do NOT hash to
-                    // it. The resolver delivered wrong content -- a BROKEN ORACLE
-                    // / tampered package -- caught because rust did the math anyway.
-                    out.push(WitnessVerifyResult {
-                        witness_cid: witness_cid.clone(),
-                        verdict: "broken-oracle".to_string(),
-                        checks,
-                        reason: format!(
+        }
+        let mut verified: Option<(String, Vec<String>)> = None;
+        let mut broken_oracle: Option<String> = None;
+        let mut drift: Option<String> = None;
+        let mut errors: Vec<String> = Vec::new();
+        for (argv, working_dir, method) in &resolvers {
+            match resolve_body(argv, working_dir.as_deref(), method, project_root, &body) {
+                Ok((resolved_by, bytes)) => {
+                    let computed = blake3_512_of(&bytes);
+                    if computed == witness_cid {
+                        let mut c = checks.clone();
+                        c.push(format!("content-address:{resolved_by}"));
+                        verified = Some((resolved_by, c));
+                        break;
+                    } else if resolved_by == "package" {
+                        // The package paired this CID with bytes that do NOT hash
+                        // to it. The resolver delivered wrong content -- a BROKEN
+                        // ORACLE / tampered package -- caught because rust did the
+                        // math anyway.
+                        broken_oracle.get_or_insert(format!(
                             "package content computes to {computed}, not the pinned {witness_cid} \
                              -- broken oracle / tampered package; rust recomputed the CID and refused"
-                        ),
-                    });
-                } else {
-                    // The oracle re-ran honestly and got a different result: the
-                    // witness no longer reproduces. The resolver was honest; the
-                    // proof is stale (code/runtime DRIFTED). Refuse, not blame.
-                    out.push(WitnessVerifyResult {
-                        witness_cid: witness_cid.clone(),
-                        verdict: "refused".to_string(),
-                        checks,
-                        reason: format!(
+                        ));
+                    } else {
+                        // The oracle re-ran honestly and got a different result:
+                        // the witness no longer reproduces. The resolver was
+                        // honest; the proof is stale (code/runtime DRIFTED).
+                        drift.get_or_insert(format!(
                             "witness did not reproduce (re-run drifted): computed {computed} != \
                              pinned {witness_cid} -- the oracle was honest, the proof is stale"
-                        ),
-                    });
+                        ));
+                    }
                 }
+                Err(e) => errors.push(e),
             }
-            Err(e) => out.push(WitnessVerifyResult {
-                witness_cid,
+        }
+        if let Some((resolved_by, c)) = verified {
+            out.push(WitnessVerifyResult {
+                witness_cid: witness_cid.clone(),
+                verdict: "verified".to_string(),
+                checks: c,
+                reason: format!(
+                    "oracle resolved via {resolved_by}; rust recomputed the CID and it matched"
+                ),
+            });
+        } else if let Some(reason) = broken_oracle {
+            out.push(WitnessVerifyResult {
+                witness_cid: witness_cid.clone(),
+                verdict: "broken-oracle".to_string(),
+                checks,
+                reason,
+            });
+        } else if let Some(reason) = drift {
+            out.push(WitnessVerifyResult {
+                witness_cid: witness_cid.clone(),
                 verdict: "refused".to_string(),
                 checks,
-                reason: format!("could not resolve witness body: {e}"),
-            }),
+                reason,
+            });
+        } else {
+            out.push(WitnessVerifyResult {
+                witness_cid: witness_cid.clone(),
+                verdict: "refused".to_string(),
+                checks,
+                reason: format!("could not resolve witness body: {}", errors.join("; ")),
+            });
         }
     }
     out
@@ -184,22 +208,29 @@ pub fn has_witnesses(pool: &MementoPool) -> bool {
         .any(|e| e.pointer("/header/kind").and_then(|v| v.as_str()) == Some("witness-memento"))
 }
 
-/// Scan `.provekit/lift/*/manifest.toml` for a kit that declares a
-/// `resolve_witness_command`, returning (argv, working_dir). The same scan the
-/// witness-resolve route is declared in -- everything tied together per kit.
-fn find_resolver(project_root: &Path) -> Option<(Vec<String>, Option<PathBuf>, String)> {
+/// Scan `.provekit/lift/*/manifest.toml` for EVERY kit that declares a
+/// `resolve_witness_command`, returning each as (argv, working_dir, method). We
+/// return all of them, not the first found, because the resolver is not chosen
+/// blindly by directory order: each witness picks the resolver whose body BLAKE3's
+/// to its pinned CID (see `verify_witnesses`). A wrong kit cannot forge a hashing
+/// body, so trying each is sound and removes the order-dependence a single
+/// first-found scan would have in a multi-kit project.
+fn find_resolvers(project_root: &Path) -> Vec<(Vec<String>, Option<PathBuf>, String)> {
     let lift_dir = project_root.join(".provekit").join("lift");
-    let entries = std::fs::read_dir(&lift_dir).ok()?;
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&lift_dir) else {
+        return found;
+    };
     for entry in entries.flatten() {
         let manifest = entry.path().join("manifest.toml");
         if !manifest.exists() {
             continue;
         }
-        if let Some(found) = parse_resolve_command(&manifest, project_root) {
-            return Some(found);
+        if let Some(r) = parse_resolve_command(&manifest, project_root) {
+            found.push(r);
         }
     }
-    None
+    found
 }
 
 /// Minimal TOML read for the `resolve_witness_command` array + `working_dir`,
