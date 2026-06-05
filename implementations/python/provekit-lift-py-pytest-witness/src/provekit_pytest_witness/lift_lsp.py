@@ -88,6 +88,11 @@ def handle_lift(msg_id: Any, params: dict) -> None:
             # by the Witness Oracle. We are the minter; the oracle is the verifier.
             mementos.append(witness_memento(w))
         ir = json.loads(encode_jcs(declarations_to_value(decls))) if decls else []
+        # The signed WitnessMementos flow as `ir` members (kind "witness-memento"):
+        # mint envelopes each into the .proof via its per-kind dispatch, so the
+        # .proof carries the signed pointer the rust verifier enumerates. (Also
+        # surfaced as `witness_mementos` for non-mint consumers.)
+        ir = ir + mementos
         _send({"jsonrpc": "2.0", "id": msg_id, "result": {
             "kind": "ir-document", "ir": ir, "witness_mementos": mementos,
             "implications": [], "diagnostics": [], "warnings": [],

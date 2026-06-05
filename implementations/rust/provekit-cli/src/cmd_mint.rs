@@ -2234,6 +2234,10 @@ fn mint_ir_document(
                     let (cid, bytes) = mint_realization_memento(decl)?;
                     members.entry(cid).or_insert(bytes);
                 }
+                Some("witness-memento") => {
+                    let (cid, bytes) = mint_witness_memento(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
                 Some("bridge") => {
                     let (cid, bytes) =
                         mint_bridge_from_decl(decl, &produced_at, default_signer_seed)?;
@@ -2255,6 +2259,10 @@ fn mint_ir_document(
                 }
                 Some("realization-memento") => {
                     let (cid, bytes) = mint_realization_memento(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                Some("witness-memento") => {
+                    let (cid, bytes) = mint_witness_memento(decl)?;
                     members.entry(cid).or_insert(bytes);
                 }
                 Some("bridge") => {
@@ -2484,6 +2492,35 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
     let envelope = json!({
         "body": decl,
         "header": Value::Object(header),
+        "schemaVersion": "1",
+    });
+    let canonical = encode_jcs(&json_to_cvalue(&envelope));
+    let cid = blake3_512_of(canonical.as_bytes());
+    Ok((cid, canonical.into_bytes()))
+}
+
+/// Mint a `witness-memento` into the envelope: the kit's SIGNED POINTER to a
+/// witness (test run, CI log, compiler report, poem -- arbitrary content), CID +
+/// signature, ZERO body. The body lives in a separately-deployed witness package.
+/// The rust verifier enumerates these, RPC-resolves each body from the kit
+/// oracle, blake3's the bytes itself, and audits against `witnessCid` -- so the
+/// .proof carries only the signed identity, not the run record.
+fn mint_witness_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
+    let witness_cid = required_str(decl, "witness_cid", "witness-memento")?;
+    let signer = required_str(decl, "signer", "witness-memento")?;
+    let signature = required_str(decl, "signature", "witness-memento")?;
+    if signature.trim().is_empty() {
+        return Err("`witness-memento` missing non-empty `signature`".to_string());
+    }
+    let witness_kind = optional_str(decl, "witness_kind").unwrap_or("witness");
+    let envelope = json!({
+        "body": decl,
+        "header": {
+            "kind": "witness-memento",
+            "signer": signer,
+            "witnessCid": witness_cid,
+            "witnessKind": witness_kind,
+        },
         "schemaVersion": "1",
     });
     let canonical = encode_jcs(&json_to_cvalue(&envelope));
