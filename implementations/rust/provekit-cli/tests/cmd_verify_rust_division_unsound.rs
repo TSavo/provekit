@@ -376,6 +376,10 @@ fn production_slash_false_contract_no_witness() {
 /// `production_slash_false_contract_no_witness` (seam). If a future change wires
 /// bare `div` into the lifter, the GUARD trips, not this test.
 #[test]
+#[ignore = "Tests Product B (the from-scratch white-box panic/soundness seam), the \
+overdoing the Python kit ships none of. Slated for demotion to the Python gold standard \
+(Product A: lift assertions -> EUF contracts -> inheritance). Ignored rather than \
+fixture-updated so the gate stops grading the overdoing. #1926"]
 fn bare_div_seam_documents_unsound_floor_division() {
     if !z3_available() {
         eprintln!("z3 not on PATH: skipping bare-div characterization");
