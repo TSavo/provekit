@@ -1156,6 +1156,7 @@ fn emit_human_receipt(
             ObligationVerdict::Unsatisfied => "FAIL".red().to_string(),
             ObligationVerdict::Undecidable => "undecidable".yellow().to_string(),
             ObligationVerdict::Disagreement => "disagreement".yellow().to_string(),
+            ObligationVerdict::Refused => "refused".yellow().to_string(),
         };
         let method = r
             .discharge_method

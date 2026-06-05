@@ -138,6 +138,10 @@ fn consistency_verdict(raw: ObligationVerdict) -> (ObligationVerdict, &'static s
         ObligationVerdict::Unsatisfied => (ObligationVerdict::Discharged, CONSISTENT_REASON),
         // raw `unsat` -> solver said Discharged -> the inv is contradictory -> refuse
         ObligationVerdict::Discharged => (ObligationVerdict::Unsatisfied, CONTRADICTORY_REASON),
+        // An honest refusal (no sound discharger) passes through as a refusal --
+        // it carries its own named reason from the solver layer, never overwritten
+        // with the generic encoding-STOP message.
+        ObligationVerdict::Refused => (ObligationVerdict::Refused, "refused: no sound discharger"),
         // unknown / error -> encoding STOP, surfaced loud
         other => (other, "consistency check undecidable (encoding STOP)"),
     }

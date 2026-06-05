@@ -24,6 +24,7 @@ pub fn report_to_json(r: &Report) -> Json {
         "totalCallsites": r.total_callsites,
         "discharged": r.discharged,
         "violations": r.violations,
+        "refused": r.refused,
         "dischargeSplit": discharge_split_to_json(r),
         "rows": rows,
         "loadErrors": load_errors,

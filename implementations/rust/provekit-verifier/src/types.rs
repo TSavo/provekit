@@ -869,6 +869,13 @@ pub enum ObligationVerdict {
     Unsatisfied,
     Undecidable,
     Disagreement,
+    /// First-class, loudly-bounded REFUSAL: there is no sound discharger for this
+    /// obligation (e.g. its precondition lowers to a construct the solver cannot
+    /// interpret -- z3 "unknown constant"). NOT a violation, NOT an undecidable
+    /// gap, NOT a crash: an honest "I decline to decide this, here is why." The
+    /// trichotomy's third arm (exact / loudly-bounded-lossy / REFUSE), so it does
+    /// not redden the gate -- a refusal is an expected, named outcome.
+    Refused,
 }
 
 impl ObligationVerdict {
@@ -878,6 +885,7 @@ impl ObligationVerdict {
             Self::Unsatisfied => "unsatisfied",
             Self::Undecidable => "undecidable",
             Self::Disagreement => "disagreement",
+            Self::Refused => "refused",
         }
     }
 }
@@ -903,6 +911,10 @@ pub struct Report {
     pub total_callsites: usize,
     pub discharged: usize,
     pub violations: usize,
+    /// Obligations honestly REFUSED (no sound discharger): not discharged (no
+    /// false pass), not a violation (does not redden the gate). The trichotomy's
+    /// third arm, surfaced in the scoreboard so refusals are loud, not hidden.
+    pub refused: usize,
     pub rows: Vec<ReportRow>,
     pub load_errors: Vec<LoadError>,
     pub call_edges: Vec<ResolvedCallEdge>,

@@ -181,6 +181,20 @@ impl Solver for SubprocessSolver {
         let (verdict, error) = match verdict_line.as_str() {
             "unsat" => (ObligationVerdict::Discharged, String::new()),
             "sat" => (ObligationVerdict::Unsatisfied, String::new()),
+            // An undeclared/uninterpreted symbol means OUR lowering emitted a
+            // construct the solver cannot interpret (e.g. `method:map_err`). There
+            // is no sound discharger, so we REFUSE -- loudly, by name -- rather
+            // than mislabel it "undecidable" or crash. (trichotomy: refuse.)
+            _ if unknown_symbol(&stdout).is_some() => {
+                let sym = unknown_symbol(&stdout).unwrap_or_default();
+                (
+                    ObligationVerdict::Refused,
+                    format!(
+                        "no discharger for `{sym}`: precondition lowers to a construct the \
+                         solver cannot interpret (unknown constant); refused, not guessed"
+                    ),
+                )
+            }
             other => (
                 ObligationVerdict::Undecidable,
                 format!("unrecognized solver verdict: {other}"),
@@ -195,5 +209,73 @@ impl Solver for SubprocessSolver {
             wall_clock: started.elapsed(),
             timed_out,
         }
+    }
+}
+
+/// Extract the undeclared symbol from a z3 `unknown constant <sym> ...` error, if
+/// present. Its presence marks an UNSUPPORTED LOWERING: our SMT referenced a
+/// function the solver has no definition for, so the obligation has no discharger
+/// and must be REFUSED rather than mislabelled undecidable. Returns the symbol
+/// (e.g. `method:map_err`) for the refusal reason.
+fn unknown_symbol(stdout: &str) -> Option<String> {
+    const MARK: &str = "unknown constant ";
+    let start = stdout.find(MARK)? + MARK.len();
+    let sym: String = stdout[start..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != '(' && *c != ')')
+        .collect();
+    (!sym.is_empty()).then_some(sym)
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::*;
+
+    // DISCRIMINATION: an obligation whose precondition lowers to a construct the
+    // solver cannot interpret (z3 "unknown constant") is REFUSED by name -- not
+    // undecidable, not a panic, not a silent pass. We drive the real solver with
+    // a script referencing an undeclared function and assert the verdict.
+    #[test]
+    fn unknown_constant_lowers_to_a_named_refusal_not_undecidable() {
+        if Command::new("z3").arg("--version").output().is_err() {
+            eprintln!("z3 absent: skipping refusal discrimination test");
+            return;
+        }
+        let solver = SubprocessSolver::new(
+            "z3",
+            "z3",
+            "4.x",
+            "smt-lib-v2.6",
+            vec!["-smt2".into(), "-in".into()],
+            None,
+        );
+        // `map_err` is never declared -> z3 emits `unknown constant map_err`
+        // (the same class as the real `unknown constant method:map_err` the
+        // Result::map_err lowering produces; the colon form quotes in context).
+        let script = "(assert (= (map_err 1) 2))\n(check-sat)\n";
+        let r = solver.solve(script);
+        assert_eq!(
+            r.verdict,
+            ObligationVerdict::Refused,
+            "unsupported lowering must REFUSE, got {:?} (stdout: {})",
+            r.verdict,
+            r.solver_stdout
+        );
+        assert!(
+            r.error.contains("no discharger") && r.error.contains("map_err"),
+            "refusal must name the undischarjable construct, got: {}",
+            r.error
+        );
+    }
+
+    // A genuinely-unparseable verdict (not an unknown-constant lowering gap) stays
+    // Undecidable -- refusal is reserved for the unsupported-lowering class.
+    #[test]
+    fn unknown_symbol_extracts_the_constant_name() {
+        assert_eq!(
+            unknown_symbol("(error \"line 6 column 97: unknown constant method:map_err (Int)\")"),
+            Some("method:map_err".to_string())
+        );
+        assert_eq!(unknown_symbol("sat"), None);
     }
 }
