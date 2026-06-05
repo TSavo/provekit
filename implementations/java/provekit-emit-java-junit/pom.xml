@@ -61,6 +61,7 @@
                         <goals><goal>shade</goal></goals>
                         <configuration>
                             <outputFile>${project.build.directory}/provekit-emit-java-junit.jar</outputFile>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>

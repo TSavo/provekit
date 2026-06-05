@@ -47,6 +47,7 @@
                         <goals><goal>shade</goal></goals>
                         <configuration>
                             <outputFile>${project.build.directory}/provekit-emit-java-assertj.jar</outputFile>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
