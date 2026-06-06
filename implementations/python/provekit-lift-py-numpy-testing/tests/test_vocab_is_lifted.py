@@ -18,10 +18,16 @@ from provekit_lift_py_numpy_testing.numpy_testing_layer import NUMPY_TESTING as 
 def test_approx_split_lifts_itself_from_source():
     # The SOUNDNESS-CRITICAL split -- which assertions are approximate (and must
     # never be lifted as exact ``=``) -- is derived from the signatures alone.
+    # Asserted as two directions that are robust to a moving ``pip install numpy``
+    # (a future release may ADD an approx helper; that must not redden CI):
     derived = derive_vocab("numpy.testing", "numpy-testing")
-    assert derived.approx == HAND.approx, (
-        f"derived approx {sorted(derived.approx)} != hand {sorted(HAND.approx)}"
+    # soundness: every assertion the hand table refuses as approximate is derived
+    # as approximate (nothing approximate is ever missed and lifted as exact).
+    assert HAND.approx <= derived.approx, (
+        f"hand approx {sorted(HAND.approx)} not all derived {sorted(derived.approx)}"
     )
+    # tightness: no exact-equality helper leaked into the approx set.
+    assert not (HAND.equality & derived.approx), sorted(HAND.equality & derived.approx)
     # the exact-equality assertion is recovered from its operator.__eq__ delegation
     assert "assert_array_equal" in derived.equality
 
