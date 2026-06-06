@@ -290,6 +290,11 @@ test-python: build-python
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest && \
 		pytest) || failed="$$failed provekit-lift-py-pandas-testing"; \
+	(cd implementations/python/provekit-lift-py-sklearn-testing && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest && \
+		pytest) || failed="$$failed provekit-lift-py-sklearn-testing"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-ruby

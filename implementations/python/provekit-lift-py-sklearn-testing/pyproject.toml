@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "provekit-lift-py-sklearn-testing"
+version = "0.1.0"
+description = "ProvekIt lift seat for the sklearn.utils._testing assertion vocabulary"
+requires-python = ">=3.10"
+# Reuses the pytest seat's shared term/formula machinery (same as the numpy and
+# pandas testing seats) so equivalent claims federate.
+dependencies = ["provekit-lift-py-tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
