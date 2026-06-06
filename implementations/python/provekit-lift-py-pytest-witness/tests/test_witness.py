@@ -223,6 +223,40 @@ def test_resolve_witness_rpc_recompute_reruns_and_returns_body(tmp_path):
     assert blake3_512_of(body) == w.cid
 
 
+def test_witness_package_one_cid_for_the_whole_suite(tmp_path):
+    # The proof carries ONE cid for the whole suite: the WitnessPackageMemento.
+    # The per-test facts live IN the content-addressed package; discharge re-runs
+    # the suite and reproduces the package cid.
+    from provekit_pytest_witness.witness import (
+        build_suite_bundle, discharge_bundle, witness_package_memento, blake3_512_of,
+    )
+    (tmp_path / "test_ok.py").write_text("def test_a():\n    assert 1 == 1\ndef test_b():\n    assert 2 == 2\n")
+    buf, pkg_cid, ws = build_suite_bundle(str(tmp_path), ["test_ok.py"], [])
+    assert blake3_512_of(buf) == pkg_cid                  # the package self-addresses
+    assert len(ws) == 2 and all(w.outcome == "passed" for w in ws)
+    # all-pass suite -> DISCHARGED by reproduce
+    verdict, reason = discharge_bundle(pkg_cid, ["test_ok.py"], [], str(tmp_path))
+    assert verdict == "DISCHARGED", reason
+    # the memento is ONE pointer over the package cid
+    m = witness_package_memento(pkg_cid, ["test_ok.py"], [], 2, 2)
+    assert m["kind"] == "witness-memento" and m["witness_kind"] == "pytest-witness-package"
+    assert m["witness_cid"] == pkg_cid and m["passed"] == 2 and m["count"] == 2
+
+
+def test_witness_package_refuses_on_a_failing_test(tmp_path):
+    # A suite containing a failing test reproduces (honest) but is REFUSED -- a
+    # failing test in the package means the package is not a clean discharge.
+    from provekit_pytest_witness.witness import build_suite_bundle, discharge_bundle
+    (tmp_path / "test_mix.py").write_text("def test_ok():\n    assert 1 == 1\ndef test_bad():\n    assert False\n")
+    _, pkg_cid, _ = build_suite_bundle(str(tmp_path), ["test_mix.py"], [])
+    verdict, reason = discharge_bundle(pkg_cid, ["test_mix.py"], [], str(tmp_path))
+    assert verdict == "REFUSED" and "1/2" in reason and "test_bad" in reason, reason
+    # a DRIFTED package (different pinned cid) is refused as non-reproducing
+    bad_cid = "blake3-512:" + "0" * 128
+    v2, r2 = discharge_bundle(bad_cid, ["test_mix.py"], [], str(tmp_path))
+    assert v2 == "REFUSED" and "did not reproduce" in r2, r2
+
+
 def test_per_test_witnesses_one_per_node_id(tmp_path):
     # The Oracle runs the file ONCE and mints one witness PER TEST -- a single
     # failing test no longer refuses the whole file's passes.

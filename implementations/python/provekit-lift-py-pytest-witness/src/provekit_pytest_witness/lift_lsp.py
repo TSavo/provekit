@@ -25,7 +25,8 @@ import base64
 
 from .witness import (
     Witness, run_and_witness, run_file_witnesses, witness_memento, witness_body,
-    write_witness_bundle, _cid_filename,
+    write_witness_bundle, build_suite_bundle, witness_package_memento, runtime_cid,
+    _cid_filename,
 )
 
 KIT_ID = "python-pytest-witness"
@@ -74,40 +75,36 @@ def handle_lift(msg_id: Any, params: dict) -> None:
         test_rels = [r for r in rels if os.path.basename(r).startswith("test_")]
         decls: List[ContractDecl] = []
         mementos: List[dict] = []
-        all_witnesses: List[Witness] = []
-        for tr in test_rels:
-            # PER-TEST: the Oracle runs the file ONCE (package context intact) and
-            # mints one witness per test node id -- not one coarse witness per file
-            # where a single failure refuses thousands of passes.
-            for w in run_file_witnesses(ws, tr, code_rels):
-                all_witnesses.append(w)
-                proof_data = json.dumps(
-                    {"codeCid": w.code_cid, "runtimeCid": w.runtime_cid, "test": w.test_id,
-                     "outcome": w.outcome, "codeFiles": list(w.code_files)},
-                    sort_keys=True, separators=(",", ":"),
-                )
-                cert = EvidenceCertificate(
-                    tool="pytest", version=w.runtime_cid, formula_hash=w.cid, proof_data=proof_data,
-                )
-                ev = EvidenceTerm(proof_type="custom", certificate=cert)
-                # name = the node id, so each test is its own contract.
-                decls.append(ContractDecl(name=w.test_id, inv=atomic("witnessed", []), evidence=ev))
-                # The signed WitnessMemento the kit MINTS: a pointer + hash +
-                # signature, zero run body. The bodies go to a `.witness` BUNDLE,
-                # resolved + re-verified by the Witness Oracle. Minter here; the
-                # oracle is the verifier.
-                mementos.append(witness_memento(w))
-        # The `.witness` BUNDLE: all per-test bodies in one content-addressed file
-        # the Oracle resolves from (the `.proof` carries only the signed pointers).
-        if all_witnesses:
+        if test_rels:
+            # PER-TEST run, but ONE proof member. The whole suite is a WITNESS
+            # PACKAGE: a content-addressed `.witness` bundle of per-test bodies,
+            # cid = blake3(bundle). The proof carries ONE WitnessPackageMemento
+            # (64 bytes) + ONE contract whose evidence pins the package cid -- not
+            # N mementos. The verifier asks the oracle to discharge by re-running
+            # the suite and reproducing the package cid (`discharge_bundle`).
+            bundle_bytes, bundle_cid, witnesses = build_suite_bundle(ws, test_rels, code_rels)
+            passed = sum(1 for w in witnesses if w.outcome == "passed")
             try:
                 bundle_dir = os.path.join(ws, ".provekit", "witnesses")
-                cids = "".join(sorted(w.cid for w in all_witnesses))
-                from provekit_lift_py_tests.canonicalizer import blake3_512_of as _b3
-                bundle_path = os.path.join(bundle_dir, _cid_filename(_b3(cids.encode()), ".witness"))
-                write_witness_bundle(all_witnesses, bundle_path)
+                os.makedirs(bundle_dir, exist_ok=True)
+                with open(os.path.join(bundle_dir, _cid_filename(bundle_cid, ".witness")), "wb") as f:
+                    f.write(bundle_bytes)
             except OSError:
-                pass  # bundle is audit material; never fail the lift on a write error
+                pass  # the package is audit material; never fail the lift on a write error
+            proof_data = json.dumps(
+                {"kind": "witness-package", "packageCid": bundle_cid,
+                 "testFiles": sorted(test_rels), "codeFiles": sorted(code_rels),
+                 "count": len(witnesses), "passed": passed},
+                sort_keys=True, separators=(",", ":"),
+            )
+            cert = EvidenceCertificate(
+                tool="pytest", version=runtime_cid(), formula_hash=bundle_cid, proof_data=proof_data,
+            )
+            ev = EvidenceTerm(proof_type="custom", certificate=cert)
+            decls.append(ContractDecl(name=f"witness-package:{bundle_cid}",
+                                      inv=atomic("witnessed", []), evidence=ev))
+            mementos.append(witness_package_memento(
+                bundle_cid, test_rels, code_rels, len(witnesses), passed))
         ir = json.loads(encode_jcs(declarations_to_value(decls))) if decls else []
         # The signed WitnessMementos flow as `ir` members (kind "witness-memento"):
         # mint envelopes each into the .proof via its per-kind dispatch, so the
@@ -154,6 +151,19 @@ def handle_resolve_witness(msg_id: Any, params: dict) -> None:
                 with open(path, "rb") as f:
                     body = f.read()
                 resolved_by = "package"
+        # 2a. PACKAGE RECOMPUTE -- a whole-suite WitnessPackageMemento reproduces
+        # by re-running the suite and rebuilding the content-addressed bundle.
+        if body is None and ws and memento.get("witness_kind") == "pytest-witness-package":
+            from .witness import build_suite_bundle
+            buf, rcid, _ = build_suite_bundle(
+                ws, list(memento.get("test_files", [])), list(memento.get("code_files", []))
+            )
+            if rcid != cid:
+                raise RuntimeError(
+                    f"witness package did not reproduce: recomputed {rcid}, pinned {cid}"
+                )
+            body = buf
+            resolved_by = "recompute"
         # 2. RECOMPUTE -- re-run the pinned test, rebuild the canonical body.
         # `code_files` is PRESENT-not-truthy: an all-tests project pins an EMPTY
         # code_files (the code under test is the installed library, not a local

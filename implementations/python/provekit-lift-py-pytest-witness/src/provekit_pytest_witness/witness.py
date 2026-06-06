@@ -317,6 +317,86 @@ def write_witness_bundle(witnesses: List["Witness"], path: str) -> str:
     return path
 
 
+def build_suite_bundle(
+    project_dir: str, test_files: List[str], code_files: List[str]
+) -> "Tuple[bytes, str, List[Witness]]":
+    """Run EVERY test file per-test and assemble ONE content-addressed bundle.
+
+    Returns ``(bundle_bytes, bundle_cid, witnesses)``. The bundle is a
+    witness-of-witnesses: ``bundle_cid = blake3_512_of(bundle_bytes)``, so the
+    `.proof` can pin the ENTIRE suite run with ONE cid, and the oracle reproduces
+    it by re-running. Deterministic: witnesses are sorted by node id so the bytes
+    -- and the cid -- are reproducible across runs.
+    """
+    witnesses: List[Witness] = []
+    for tf in sorted(test_files):
+        witnesses.extend(run_file_witnesses(project_dir, tf, code_files))
+    witnesses.sort(key=lambda w: w.test_id)
+    buf = b"".join(witness_body(w) + b"\n" for w in witnesses)
+    return buf, blake3_512_of(buf), witnesses
+
+
+def witness_package_memento(
+    bundle_cid: str,
+    test_files: List[str],
+    code_files: List[str],
+    count: int,
+    passed: int,
+    seed: bytes | None = None,
+) -> dict:
+    """The ONE memento the `.proof` carries for a WHOLE SUITE: a WitnessPackageMemento.
+
+    Instead of N per-test mementos, mint stores ONE pointer to the witness
+    PACKAGE (the content-addressed `.witness` bundle): hash + signature over the
+    package cid, plus the `test_files`/`code_files` the oracle needs to RESOLVE
+    and REPRODUCE the package by re-running the suite. The per-test bodies live in
+    the package, addressed by `witness_cid`; the proof carries 64 bytes, not 48k.
+
+    The envelope `kind` stays ``witness-memento`` so the verifier's signed
+    dimension processes it unchanged (it resolves the body by cid and
+    content-addresses it -- the body IS the bundle). ``witness_kind`` marks it as
+    the package variant."""
+    import base64
+    import nacl.signing
+
+    sk = nacl.signing.SigningKey(_resolve_signer_seed(seed))
+    sig = sk.sign(bundle_cid.encode("utf-8")).signature
+    return {
+        "kind": "witness-memento",
+        "witness_cid": bundle_cid,
+        "witness_kind": "pytest-witness-package",
+        "signer": "ed25519:" + base64.b64encode(bytes(sk.verify_key)).decode("ascii"),
+        "signature": "ed25519:" + base64.b64encode(sig).decode("ascii"),
+        "test_files": sorted(test_files),
+        "code_files": sorted(code_files),
+        "count": count,
+        "passed": passed,
+    }
+
+
+def discharge_bundle(
+    bundle_cid: str, test_files: List[str], code_files: List[str], project_dir: str
+) -> Tuple[str, str]:
+    """Discharge a whole-suite bundle BY RECOMPUTE: re-run the suite, rebuild the
+    bundle, and confirm it reproduces the pinned cid. DISCHARGED iff the suite
+    reproduced AND every per-test witness passed; else REFUSED with the breakdown
+    (which is what a failing test in the package means)."""
+    buf, cid, witnesses = build_suite_bundle(project_dir, test_files, code_files)
+    n = len(witnesses)
+    if cid != bundle_cid:
+        return ("REFUSED",
+                f"suite did not reproduce the pinned bundle: recomputed "
+                f"{cid[:28]}... != pinned {bundle_cid[:28]}... ({n} tests re-run)")
+    failed = [w.test_id for w in witnesses if w.outcome != "passed"]
+    if failed:
+        shown = ", ".join(t.rsplit("::", 1)[-1] for t in failed[:6])
+        more = f" (+{len(failed) - 6} more)" if len(failed) > 6 else ""
+        return ("REFUSED",
+                f"bundle reproduced but {len(failed)}/{n} tests failed: {shown}{more}")
+    return ("DISCHARGED",
+            f"suite re-ran; all {n} per-test witnesses reproduced and passed")
+
+
 def read_witness_bundle(path: str) -> "dict[str, bytes]":
     """Load a `.witness` bundle as {witness_cid: body}, content-addressing each
     line itself (the cid IS blake3 of the body) -- a tampered line simply keys to
@@ -408,6 +488,16 @@ def discharge_from_proof(proof_path: str, project_dir: str) -> Tuple[str, str]:
 
     A forged ``passed`` envelope over failing code is caught here -- the re-run
     mints a ``failed`` witness whose CID will not match the forged one.
+
+    A WHOLE-SUITE package (proofData ``kind == "witness-package"``) settles by
+    re-running the suite and reproducing the package cid (``discharge_bundle``).
     """
+    env = json.loads(open(proof_path, encoding="utf-8").read())
+    pd = json.loads(env["certificate"]["proofData"])
+    if pd.get("kind") == "witness-package":
+        return discharge_bundle(
+            pd["packageCid"], list(pd.get("testFiles", [])),
+            list(pd.get("codeFiles", [])), project_dir,
+        )
     w = load_witness_from_proof(proof_path)
     return verify(w, project_dir)

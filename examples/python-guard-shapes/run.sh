@@ -26,41 +26,41 @@ cd "$HERE"
 rm -f blake3-512:*.proof 2>/dev/null || true
 rm -rf .provekit/runs .provekit/witnesses __pycache__ 2>/dev/null || true
 
-echo "== mint (pytest-witness over the 16 cases) =="
+echo "== mint (one WitnessPackageMemento over the 16 cases; oracle runs the suite) =="
+rm -rf .provekit/witnesses 2>/dev/null || true
 "$BIN" mint --out . --quiet
 
-echo "== prove (witness axis: re-run each case under real numpy/pandas) =="
-PATH="$VENV/bin:$PATH" "$BIN" prove . --json 2>/dev/null > /tmp/guard_shapes_prove.json
-
-echo "== self-check: every _ok discharged, every _bad refused (per file) =="
+echo "== self-check: the per-test facts live in the content-addressed .witness package =="
+# The proof carries ONE package cid; the 16 per-test outcomes are IN the package
+# (each line a witness body). We read the package and assert every _ok passed and
+# every _bad failed -- per-test discrimination, now pinned by one cid.
 "$VENV/bin/python" - <<'PY'
-import json, sys
-d = json.load(open("/tmp/guard_shapes_prove.json"))
-rows = d.get("rows", [])
+import json, sys, glob
+bundles = glob.glob(".provekit/witnesses/*.witness")
+if not bundles:
+    print("FAIL: no witness package written"); sys.exit(1)
 seen = {}
-for r in rows:
-    prop = r.get("property", "")
-    # property is "consistency:<file>[::<node id>]" -- the witness is now PER TEST,
-    # so recover the file from before the "::".
-    body = prop.split(":", 1)[1] if ":" in prop else prop
-    f = body.split("::")[0]
-    if f.startswith("test_") and f.endswith(".py"):
-        seen[f] = r.get("status")
+for line in open(bundles[0], "rb"):
+    line = line.strip()
+    if not line: continue
+    w = json.loads(line)
+    f = w["test"].split("::")[0]            # node id -> file
+    seen[f] = w["outcome"]
 fail = 0
-shapes = ["index_bounds", "empty_container", "divide_by_zero", "key_access"]
-for shape in shapes:
+for shape in ["index_bounds", "empty_container", "divide_by_zero", "key_access"]:
     for lib in ("numpy", "pandas"):
         ok, bad = f"test_{shape}_{lib}_ok.py", f"test_{shape}_{lib}_bad.py"
         so, sb = seen.get(ok), seen.get(bad)
-        ok_pass  = so == "discharged"
-        bad_pass = sb == "unsatisfied"
-        mark = "ok " if (ok_pass and bad_pass) else "XX "
-        if not (ok_pass and bad_pass): fail = 1
-        print(f"  {mark}{shape:<16} {lib:<6}  ok->{so}  bad->{sb}")
-disc = sum(1 for v in seen.values() if v == "discharged")
-refu = sum(1 for v in seen.values() if v == "unsatisfied")
-print(f"\n  totals: {disc} discharged, {refu} refused (expected 8 / 8)")
-if fail or disc != 8 or refu != 8:
-    print("\nFAIL: provekit did not produce the expected per-cell verdict."); sys.exit(1)
-print("\nPASS: 2x4 guard-shape matrix -- every guarded case proved, every violation refused.")
+        good = (so == "passed" and sb != "passed")
+        if not good: fail = 1
+        print(f"  {'ok ' if good else 'XX '}{shape:<16} {lib:<6}  ok->{so}  bad->{sb}")
+passed = sum(1 for v in seen.values() if v == "passed")
+failed = sum(1 for v in seen.values() if v != "passed")
+print(f"\n  package: {passed} passed, {failed} failed (expected 8 / 8)")
+if fail or passed != 8 or failed != 8:
+    print("\nFAIL: package did not record the expected per-cell outcomes."); sys.exit(1)
+print("\nPASS: 2x4 guard-shape matrix -- one package cid, every guarded case passed, every violation failed.")
 PY
+
+echo "== prove: the verifier asks the oracle to reproduce the package (one cid) =="
+PATH="$VENV/bin:$PATH" "$BIN" prove . 2>/dev/null | grep -iE 'reproduced|failed:|package' | head -3 || true

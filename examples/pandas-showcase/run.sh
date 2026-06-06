@@ -52,9 +52,27 @@ check() { if echo "$report" | grep -q "$2"; then echo "  ok: $1"; else echo "  M
 check "consistency discharges Series.sum == 6"      "consistent about callsite .test_column_sum_is_six"
 check "consistency discharges frame round-trip"     "consistent about callsite .test_frame_round_trips_exactly"
 check "consistency REFUSES the contradiction"       "contradictory about callsite .test_column_sum_contradiction"
-# Witness axis: the good tests reproduce; the contradictory test's run failed.
-check "witness discharges by recompute"             "witnessed by recompute"
-check "witness REFUSES the failed run"              "witnessed outcome is 'failed'"
+# Witness axis: ONE WitnessPackageMemento over the suite. The package reproduces;
+# the good tests passed IN it, the contradictory test failed -- so the package is
+# refused, naming the failing test. The per-test facts live in the package.
+check "witness package reproduces"                  "bundle reproduced"
+check "witness package names the failing test"      "test_column_sum_contradiction"
+# read the per-test outcomes straight from the content-addressed package
+"$VENV/bin/python" - <<'PY' || fail=1
+import json, glob, sys
+b = glob.glob(".provekit/witnesses/*.witness")
+if not b: print("  MISSING: witness package"); sys.exit(1)
+out = {}
+for line in open(b[0], "rb"):
+    line = line.strip()
+    if line:
+        w = json.loads(line); out[w["test"].split("::")[-1]] = w["outcome"]
+ok  = out.get("test_column_sum_is_six") == "passed" and out.get("test_frame_round_trips_exactly") == "passed"
+bad = out.get("test_column_sum_contradiction") == "failed"
+print(f"  {'ok' if ok else 'MISSING'}: package records good tests passed")
+print(f"  {'ok' if bad else 'MISSING'}: package records the contradiction failed")
+sys.exit(0 if (ok and bad) else 1)
+PY
 
 echo ""
 if [ "$fail" -eq 0 ]; then
