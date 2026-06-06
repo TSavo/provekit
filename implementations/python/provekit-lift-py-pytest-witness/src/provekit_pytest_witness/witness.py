@@ -79,8 +79,80 @@ class Witness:
     cid: str
 
 
+def run_file_witnesses(
+    project_dir: str, test_file: str, code_files: List[str]
+) -> List[Witness]:
+    """The Oracle's PER-TEST run primitive: run ALL tests in ``test_file`` under
+    pytest ONCE -- in the package's own execution context (conftest, fixtures,
+    relative imports) -- and content-address EACH test as its own witness, keyed
+    by the pytest node id. One file run, N per-test witnesses.
+
+    This is what fixes the coarse per-file witness, where one failing test out of
+    thousands refused the whole file. The ``_witness_collect`` plugin records
+    every test's outcome from the single run; mint and verify share THIS
+    primitive, so lift and recompute agree on outcome under shared file state.
+    """
+    import json as _json
+    import tempfile
+
+    cc = code_cid(project_dir, code_files)
+    rc = runtime_cid()
+    fd, out_path = tempfile.mkstemp(suffix=".json", prefix="pvk-witness-")
+    os.close(fd)
+    try:
+        # Load the capture plugin STANDALONE (bare module name), with its own
+        # directory on PYTHONPATH. `_witness_collect` imports only json/os, so it
+        # loads without pulling in the rest of the package (which would need the
+        # whole kit dependency chain on the path). This makes the per-test run
+        # robust to cwd and to a partial PYTHONPATH.
+        plugin_dir = os.path.dirname(os.path.abspath(__file__))
+        env_pp = os.pathsep.join(p for p in (plugin_dir, os.environ.get("PYTHONPATH", "")) if p)
+        env = dict(os.environ, PROVEKIT_WITNESS_OUT=out_path, PYTHONPATH=env_pp)
+        subprocess.run(
+            [sys.executable, "-m", "pytest", test_file, "-q", "-p", "no:cacheprovider",
+             "-p", "_witness_collect"],
+            cwd=project_dir, capture_output=True, text=True, env=env,
+        )
+        results: dict = {}
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            with open(out_path, encoding="utf-8") as f:
+                try:
+                    results = _json.load(f)
+                except ValueError:
+                    results = {}
+    finally:
+        if os.path.exists(out_path):
+            os.remove(out_path)
+
+    witnesses: List[Witness] = []
+    for nodeid, raw in sorted(results.items()):
+        if raw == "skipped":
+            continue  # a skip is neither a discharge nor a refusal
+        outcome = "passed" if raw == "passed" else "failed"
+        cid = jcs_hash(_witness_value(cc, rc, nodeid, outcome, code_files))
+        witnesses.append(Witness(cc, rc, nodeid, outcome, tuple(sorted(code_files)), cid))
+    return witnesses
+
+
 def run_and_witness(project_dir: str, test_id: str, code_files: List[str]) -> Witness:
-    """Run ``test_id`` under pytest in ``project_dir`` and content-address the run."""
+    """Content-address ONE witness for ``test_id`` in ``project_dir``.
+
+    A pytest NODE ID (``file::test`` / ``file::Class::test``) is reproduced via
+    its FILE -- the same single-file run the per-test lift used -- so lift and
+    recompute agree on outcome under shared file state. A bare FILE path keeps
+    the legacy whole-file witness (exit-code outcome). The Oracle owns both."""
+    if "::" in test_id:
+        test_file = test_id.split("::", 1)[0]
+        for w in run_file_witnesses(project_dir, test_file, code_files):
+            if w.test_id == test_id:
+                return w
+        # The node id is gone (test removed/renamed) -> a non-reproducing
+        # 'failed' witness, so verify REFUSES rather than inventing a pass.
+        cc = code_cid(project_dir, code_files)
+        rc = runtime_cid()
+        cid = jcs_hash(_witness_value(cc, rc, test_id, "failed", code_files))
+        return Witness(cc, rc, test_id, "failed", tuple(sorted(code_files)), cid)
+
     cc = code_cid(project_dir, code_files)
     rc = runtime_cid()
     proc = subprocess.run(
@@ -198,10 +270,76 @@ def write_witness_package(witnesses: List["Witness"], out_dir: str) -> List[str]
 def read_witness_body(witness_cid: str, package_dir: str) -> bytes:
     """Read a witness body from a package by CID. The Witness Oracle hands these
     bytes to its content-address check (blake3 == witness_cid) -- a swapped or
-    truncated file is caught there, refused loudly."""
+    truncated file is caught there, refused loudly.
+
+    Resolution order: first the legacy one-file-per-CID ``<cid>.witness``; then
+    any multi-witness ``.witness`` BUNDLE in the dir (the per-test, whole-suite
+    shape). Either way the caller re-blake3's the bytes, so this is just a lookup.
+    """
     path = os.path.join(package_dir, _cid_filename(witness_cid, ".witness"))
+    if os.path.isfile(path):
+        with open(path, "rb") as f:
+            return f.read()
+    for name in sorted(os.listdir(package_dir)):
+        if not name.endswith(".witness") or name == _cid_filename(witness_cid, ".witness"):
+            continue
+        body = read_witness_from_bundle(witness_cid, os.path.join(package_dir, name))
+        if body is not None:
+            return body
+    raise FileNotFoundError(f"no witness body for {witness_cid} in {package_dir}")
+
+
+# ---------------------------------------------------------------------------
+# Witness BUNDLE: MANY witnesses in ONE `.witness` file. A per-test run of a real
+# package yields thousands of witnesses; carrying each as its own file (or inline
+# `.proof` memento) does not scale. A bundle is content-addressed JSONL -- ONE
+# canonical witness body per line, and ``blake3_512_of(line) == that witness's
+# cid``. The content IS the key: no index, nothing to trust. The Oracle resolves
+# a body by scanning + blake3-matching, exactly its content-address check.
+# ---------------------------------------------------------------------------
+
+
+def write_witness_bundle(witnesses: List["Witness"], path: str) -> str:
+    """Write MANY witness bodies into ONE `.witness` bundle (content-addressed
+    JSONL, one canonical body per line). Returns the path written."""
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    with open(path, "wb") as f:
+        for w in witnesses:
+            body = witness_body(w)  # JCS: compact, single line, no embedded newline
+            if blake3_512_of(body) != w.cid:
+                raise ValueError(
+                    f"witness body does not address to its CID: computed "
+                    f"{blake3_512_of(body)}, pinned {w.cid}"
+                )
+            f.write(body)
+            f.write(b"\n")
+    return path
+
+
+def read_witness_bundle(path: str) -> "dict[str, bytes]":
+    """Load a `.witness` bundle as {witness_cid: body}, content-addressing each
+    line itself (the cid IS blake3 of the body) -- a tampered line simply keys to
+    a different cid and never satisfies a lookup."""
+    out: "dict[str, bytes]" = {}
     with open(path, "rb") as f:
-        return f.read()
+        for line in f:
+            body = line.rstrip(b"\n")
+            if not body:
+                continue
+            out[blake3_512_of(body)] = body
+    return out
+
+
+def read_witness_from_bundle(witness_cid: str, path: str) -> "bytes | None":
+    """Return the body for ``witness_cid`` from a `.witness` bundle, or None.
+    Matches by re-blake3'ing each line, so the lookup IS the integrity check."""
+    with open(path, "rb") as f:
+        for line in f:
+            body = line.rstrip(b"\n")
+            if body and blake3_512_of(body) == witness_cid:
+                return body
+    return None
 
 
 def verify(witness: Witness, project_dir: str) -> Tuple[str, str]:

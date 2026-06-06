@@ -40,7 +40,10 @@ rows = d.get("rows", [])
 seen = {}
 for r in rows:
     prop = r.get("property", "")
-    f = prop.split(":")[-1]          # "...:test_<shape>_<lib>_<kind>.py"
+    # property is "consistency:<file>[::<node id>]" -- the witness is now PER TEST,
+    # so recover the file from before the "::".
+    body = prop.split(":", 1)[1] if ":" in prop else prop
+    f = body.split("::")[0]
     if f.startswith("test_") and f.endswith(".py"):
         seen[f] = r.get("status")
 fail = 0

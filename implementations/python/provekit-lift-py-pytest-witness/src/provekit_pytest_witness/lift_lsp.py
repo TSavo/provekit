@@ -23,7 +23,10 @@ from provekit_lift_py_tests.canonicalizer import encode_jcs, blake3_512_of
 
 import base64
 
-from .witness import Witness, run_and_witness, witness_memento, witness_body
+from .witness import (
+    Witness, run_and_witness, run_file_witnesses, witness_memento, witness_body,
+    write_witness_bundle, _cid_filename,
+)
 
 KIT_ID = "python-pytest-witness"
 KIT_VERSION = "0.1.0"
@@ -71,22 +74,40 @@ def handle_lift(msg_id: Any, params: dict) -> None:
         test_rels = [r for r in rels if os.path.basename(r).startswith("test_")]
         decls: List[ContractDecl] = []
         mementos: List[dict] = []
+        all_witnesses: List[Witness] = []
         for tr in test_rels:
-            w = run_and_witness(ws, tr, code_rels)
-            proof_data = json.dumps(
-                {"codeCid": w.code_cid, "runtimeCid": w.runtime_cid, "test": w.test_id,
-                 "outcome": w.outcome, "codeFiles": list(w.code_files)},
-                sort_keys=True, separators=(",", ":"),
-            )
-            cert = EvidenceCertificate(
-                tool="pytest", version=w.runtime_cid, formula_hash=w.cid, proof_data=proof_data,
-            )
-            ev = EvidenceTerm(proof_type="custom", certificate=cert)
-            decls.append(ContractDecl(name=tr, inv=atomic("witnessed", []), evidence=ev))
-            # The signed WitnessMemento the kit MINTS: a pointer + hash + signature,
-            # zero run body. The body is the witness package, resolved + re-verified
-            # by the Witness Oracle. We are the minter; the oracle is the verifier.
-            mementos.append(witness_memento(w))
+            # PER-TEST: the Oracle runs the file ONCE (package context intact) and
+            # mints one witness per test node id -- not one coarse witness per file
+            # where a single failure refuses thousands of passes.
+            for w in run_file_witnesses(ws, tr, code_rels):
+                all_witnesses.append(w)
+                proof_data = json.dumps(
+                    {"codeCid": w.code_cid, "runtimeCid": w.runtime_cid, "test": w.test_id,
+                     "outcome": w.outcome, "codeFiles": list(w.code_files)},
+                    sort_keys=True, separators=(",", ":"),
+                )
+                cert = EvidenceCertificate(
+                    tool="pytest", version=w.runtime_cid, formula_hash=w.cid, proof_data=proof_data,
+                )
+                ev = EvidenceTerm(proof_type="custom", certificate=cert)
+                # name = the node id, so each test is its own contract.
+                decls.append(ContractDecl(name=w.test_id, inv=atomic("witnessed", []), evidence=ev))
+                # The signed WitnessMemento the kit MINTS: a pointer + hash +
+                # signature, zero run body. The bodies go to a `.witness` BUNDLE,
+                # resolved + re-verified by the Witness Oracle. Minter here; the
+                # oracle is the verifier.
+                mementos.append(witness_memento(w))
+        # The `.witness` BUNDLE: all per-test bodies in one content-addressed file
+        # the Oracle resolves from (the `.proof` carries only the signed pointers).
+        if all_witnesses:
+            try:
+                bundle_dir = os.path.join(ws, ".provekit", "witnesses")
+                cids = "".join(sorted(w.cid for w in all_witnesses))
+                from provekit_lift_py_tests.canonicalizer import blake3_512_of as _b3
+                bundle_path = os.path.join(bundle_dir, _cid_filename(_b3(cids.encode()), ".witness"))
+                write_witness_bundle(all_witnesses, bundle_path)
+            except OSError:
+                pass  # bundle is audit material; never fail the lift on a write error
         ir = json.loads(encode_jcs(declarations_to_value(decls))) if decls else []
         # The signed WitnessMementos flow as `ir` members (kind "witness-memento"):
         # mint envelopes each into the .proof via its per-kind dispatch, so the

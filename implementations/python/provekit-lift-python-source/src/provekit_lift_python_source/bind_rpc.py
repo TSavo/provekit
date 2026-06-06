@@ -808,8 +808,15 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 
 def _send(obj: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(obj, separators=(",", ":"), ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    # Write bytes with errors="replace": a single pathological source character
+    # (e.g. an astral emoji whose surrogate pair got split during source slicing)
+    # would otherwise raise UnicodeEncodeError ("surrogates not allowed") and
+    # kill the ENTIRE response. A lifter must be robust to one bad byte in one
+    # function out of thousands, so unencodable chars become U+FFFD rather than
+    # aborting the run.
+    line = json.dumps(obj, separators=(",", ":"), ensure_ascii=False) + "\n"
+    sys.stdout.buffer.write(line.encode("utf-8", "replace"))
+    sys.stdout.buffer.flush()
 
 
 def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:

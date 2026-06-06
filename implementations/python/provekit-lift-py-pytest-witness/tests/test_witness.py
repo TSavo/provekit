@@ -223,6 +223,60 @@ def test_resolve_witness_rpc_recompute_reruns_and_returns_body(tmp_path):
     assert blake3_512_of(body) == w.cid
 
 
+def test_per_test_witnesses_one_per_node_id(tmp_path):
+    # The Oracle runs the file ONCE and mints one witness PER TEST -- a single
+    # failing test no longer refuses the whole file's passes.
+    from provekit_pytest_witness.witness import run_file_witnesses
+    (tmp_path / "test_many.py").write_text(
+        "def test_a():\n    assert 1 == 1\n"
+        "def test_b():\n    assert 2 == 2\n"
+        "def test_c():\n    assert False\n"
+    )
+    ws = run_file_witnesses(str(tmp_path), "test_many.py", [])
+    by = {w.test_id.split("::")[-1]: w.outcome for w in ws}
+    assert by == {"test_a": "passed", "test_b": "passed", "test_c": "failed"}, by
+    # each witness keys to a pytest node id (file::test), distinct per test
+    assert all("::" in w.test_id for w in ws)
+
+
+def test_per_test_recompute_agrees_with_lift(tmp_path):
+    # run_and_witness on a NODE ID reproduces the lift CID (lift and verify share
+    # the Oracle's single-file run, so they agree under shared file state).
+    from provekit_pytest_witness.witness import run_file_witnesses
+    (tmp_path / "test_pair.py").write_text(
+        "def test_ok():\n    assert 1 == 1\n"
+        "def test_bad():\n    assert False\n"
+    )
+    ws = {w.test_id.rsplit("::", 1)[-1]: w for w in run_file_witnesses(str(tmp_path), "test_pair.py", [])}
+    for name in ("test_ok", "test_bad"):
+        re = run_and_witness(str(tmp_path), ws[name].test_id, [])
+        assert re.cid == ws[name].cid, name
+        assert re.outcome == ws[name].outcome
+
+
+def test_witness_bundle_is_content_addressed_jsonl(tmp_path):
+    # MANY witnesses in ONE .witness file; each line self-addresses
+    # (blake3(line) == cid), so the reader needs no index and trusts nothing.
+    from provekit_pytest_witness.witness import (
+        run_file_witnesses, write_witness_bundle, read_witness_bundle,
+        read_witness_from_bundle,
+    )
+    from provekit_lift_py_tests.canonicalizer import blake3_512_of
+    (tmp_path / "test_b.py").write_text(
+        "def test_a():\n    assert 1 == 1\n"
+        "def test_b():\n    assert 2 == 2\n"
+    )
+    ws = run_file_witnesses(str(tmp_path), "test_b.py", [])
+    bundle = str(tmp_path / "all.witness")
+    write_witness_bundle(ws, bundle)
+    loaded = read_witness_bundle(bundle)
+    assert set(loaded) == {w.cid for w in ws}
+    for cid, body in loaded.items():
+        assert blake3_512_of(body) == cid          # the line IS the key
+    # a tampered line keys to a different cid -> single lookup misses, no false hit
+    assert read_witness_from_bundle("blake3-512:" + "0" * 128, bundle) is None
+
+
 def test_resolve_witness_rpc_recompute_with_empty_code_files(tmp_path):
     # REGRESSION: an all-tests project pins an EMPTY code_files (the code under
     # test is the installed library, e.g. numpy/pandas, not a local file). An
