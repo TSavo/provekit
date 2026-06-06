@@ -457,6 +457,25 @@ fn render_const(value: &Json, sort: &Sort) -> Result<String, CompileError> {
         Json::Bool(b) => Ok(if *b { "true" } else { "false" }.to_string()),
         Json::String(s) => match sort {
             Sort::Primitive { name } if name == "String" => Ok(format!("{s:?}")),
+            Sort::Primitive { name } if name == "Real" => {
+                // A `Real` const is a canonical decimal string; render it as a Maude
+                // `Float` literal verbatim. Maude floats permit `.`/`e`/sign, which
+                // the identifier token validator forbids, so validate the float
+                // shape directly. (Maude is an equational/rewriting engine and does
+                // not receive arithmetic `Formula` obligations -- those dispatch to
+                // z3/coq/lean -- but a Real literal may still appear in a rewriting
+                // term, and it must render rather than error.)
+                if !s.is_empty()
+                    && s.chars()
+                        .all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))
+                {
+                    Ok(s.clone())
+                } else {
+                    Err(CompileError::MalformedIr(format!(
+                        "invalid Real literal `{s}` in equational_theory"
+                    )))
+                }
+            }
             _ => {
                 validate_token(s, "constant")?;
                 Ok(s.clone())
@@ -511,6 +530,19 @@ fn validate_attr(attr: &str) -> Result<(), CompileError> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn real_const_renders_as_a_maude_float_literal() {
+        // solver 4/4 of the Real-tolerance fan-out. Maude does not receive the
+        // arithmetic tolerance Formula (it compiles equational obligations, a
+        // different IR shape), but its term renderer must be Real-safe.
+        let real = Sort::Primitive { name: "Real".to_string() };
+        assert_eq!(render_const(&json!("0.00000015"), &real).unwrap(), "0.00000015");
+        assert_eq!(render_const(&json!("-0.00000015"), &real).unwrap(), "-0.00000015");
+        assert_eq!(render_const(&json!("1.5"), &real).unwrap(), "1.5");
+        // soundness: a non-float string in Real position is rejected, not cloned.
+        assert!(render_const(&json!("evil token"), &real).is_err());
+    }
 
     #[test]
     fn rejects_non_equational_root() {
