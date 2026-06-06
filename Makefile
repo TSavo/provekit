@@ -293,7 +293,7 @@ test-python: build-python
 	(cd implementations/python/provekit-lift-py-sklearn-testing && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest && \
+		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest numpy scikit-learn && \
 		pytest) || failed="$$failed provekit-lift-py-sklearn-testing"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
