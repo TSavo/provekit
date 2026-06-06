@@ -293,13 +293,10 @@ def test_library_bindings_layer_lifts_requests_shim_from_real_python_source() ->
         "end_line": 8,
         "end_col": 31,
     }
-    assert body_source["source_cid"] == blake3_512_of(
-        body_source["body_text"].encode("utf-8")
-    )
-    assert body_source["ast_template"]["kind"] == "block"
-    assert body_source["template_cid"] == _template_cid_of_json(
-        body_source["ast_template"]
-    )
+    # the SourceMemento PINS the body + template by cid; no inline copy in the proof.
+    assert "body_text" not in body_source and "ast_template" not in body_source
+    assert body_source["source_cid"].startswith("blake3-512:")
+    assert body_source["template_cid"].startswith("blake3-512:")
     assert body_source["param_names"] == ["url"]
 
 
@@ -1419,8 +1416,10 @@ def test_layer_all_emits_both_bind_entry_and_language_neutral_entry() -> None:
     )
 
 
-def test_sugar_bind_body_text_is_populated_in_body_source() -> None:
-    """body_source.body_text must be set so cmd_mint can project body templates."""
+def test_sugar_bind_body_source_is_a_lean_source_memento() -> None:
+    """body_source is the SourceMemento: locus + CIDs, ZERO inline body. cmd_mint
+    and the recognizer resolve the body from disk via the Source Oracle -- the
+    proof never carries a doubled copy of the code (no flag, no fat alternative)."""
     source = (
         "from provekit import sugar\n"
         "import sqlite3\n"
@@ -1432,12 +1431,9 @@ def test_sugar_bind_body_text_is_populated_in_body_source() -> None:
     result = lift_source(source, "shim.py", layer="library-bindings")
     assert result.diagnostics == []
     assert len(result.ir) == 1
-    entry = result.ir[0]
-    body_text = entry.get("body_source", {}).get("body_text")
-    assert body_text is not None, "body_source.body_text must be present"
-    assert "conn.close()" in body_text, (
-        "body_text should contain the function body"
-    )
+    bs = result.ir[0]["body_source"]
+    assert "body_text" not in bs and "ast_template" not in bs, "no inline body in the proof"
+    assert bs["source_cid"] and bs["template_cid"], "the body is PINNED by cid, not carried"
 
 
 def _single_sugar_entry(source: str) -> dict:
@@ -1457,14 +1453,20 @@ def test_sugar_body_emits_ast_template_alongside_body_text() -> None:
         "    return json.loads(payload)\n"
     )
 
+    import ast as _ast
+    from provekit_lift_python_source.ast_template import function_body_template
+
     entry = _single_sugar_entry(source)
     body_source = entry["body_source"]
 
-    assert "body_text" in body_source
-    assert "ast_template" in body_source
+    # body_source is the SourceMemento -- no inline template/body in the proof.
+    assert "body_text" not in body_source and "ast_template" not in body_source
     assert body_source["param_names"] == ["payload"]
-    template = body_source["ast_template"]
-    assert template == {
+    # the SourceMemento PINS the template by cid; recomputing it from the source
+    # reproduces that cid (the oracle reconstructs the exact dict on demand).
+    fn = next(n for n in _ast.parse(source).body if isinstance(n, _ast.FunctionDef))
+    expected = function_body_template(fn)
+    assert expected == {
         "kind": "block",
         "stmts": [
             {
@@ -1482,7 +1484,7 @@ def test_sugar_body_emits_ast_template_alongside_body_text() -> None:
             }
         ],
     }
-    assert body_source["template_cid"] == _template_cid_of_json(template)
+    assert body_source["template_cid"] == _template_cid_of_json(expected)
 
 
 def test_sugar_body_alpha_equivalence_collapses_to_same_cid() -> None:
@@ -1504,9 +1506,10 @@ def test_sugar_body_alpha_equivalence_collapses_to_same_cid() -> None:
     entry_a = _single_sugar_entry(src_a)
     entry_b = _single_sugar_entry(src_b)
 
-    assert entry_a["body_source"]["ast_template"] == entry_b["body_source"]["ast_template"]
+    # alpha-equivalent bodies pin the SAME template_cid; different parameter names
+    # mean different SOURCE bytes -> different source_cid. (No inline template/body
+    # in the SourceMemento; the cids carry the invariant.)
     assert entry_a["body_source"]["template_cid"] == entry_b["body_source"]["template_cid"]
-    assert entry_a["body_source"]["body_text"] != entry_b["body_source"]["body_text"]
     assert entry_a["body_source"]["source_cid"] != entry_b["body_source"]["source_cid"]
 
 
@@ -1768,8 +1771,11 @@ def test_universal_lift_untagged_function_is_sugar_at_library_bindings_layer() -
     assert len(sugar) == 1
     assert sugar[0]["symbol"] == "pkg.calc.add"
     assert sugar[0]["binding_origin"] == "derived"
-    assert sugar[0]["body_source"]["body_text"] == "return x + y"
-    assert "ast_template" in sugar[0]["body_source"]
+    # body_source is the SourceMemento: locus + cids, no inline body (the oracle
+    # resolves `return x + y` from disk on demand).
+    bs = sugar[0]["body_source"]
+    assert "body_text" not in bs and "ast_template" not in bs
+    assert bs["source_cid"] and bs["template_cid"]
     assert "concept_name" not in sugar[0]  # concept is gone; symbol is identity
 
     # The general `all` layer does NOT emit a derived sugar binding (untagged) —
