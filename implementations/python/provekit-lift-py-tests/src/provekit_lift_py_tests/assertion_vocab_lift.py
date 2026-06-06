@@ -29,9 +29,9 @@ import ast
 import importlib
 import inspect
 import textwrap
-from typing import Dict, FrozenSet, Optional, Set
+from typing import Dict, FrozenSet, Optional, Set, Tuple
 
-from provekit_lift_py_tests.assertion_layer import AssertionVocab
+from provekit_lift_py_tests.assertion_layer import AssertionVocab, ToleranceSpec
 
 # A parameter named one of these means the assertion compares within a tolerance:
 # it is APPROXIMATE, and must never be lifted as exact equality.
@@ -70,6 +70,7 @@ def derive_vocab(
     overrides: "Optional[Dict[str, FrozenSet[str]]]" = None,
     harmless_kwargs: "Optional[FrozenSet[str]]" = None,
     require_true_kwargs: FrozenSet[str] = frozenset(),
+    tolerances: "Tuple[ToleranceSpec, ...]" = (),
 ) -> AssertionVocab:
     """Derive an AssertionVocab by reading ``module_name``'s assert functions.
 
@@ -108,4 +109,5 @@ def derive_vocab(
         other=frozenset(cats["other"]),
         harmless_kwargs=kw,
         require_true_kwargs=require_true_kwargs,
+        tolerances=tolerances,
     )

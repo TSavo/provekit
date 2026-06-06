@@ -288,7 +288,7 @@ test-python: build-python
 	(cd implementations/python/provekit-lift-py-pandas-testing && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest && \
+		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest pandas && \
 		pytest) || failed="$$failed provekit-lift-py-pandas-testing"; \
 	(cd implementations/python/provekit-lift-py-sklearn-testing && \
 		python3 -m venv .venv && \

@@ -1,60 +1,39 @@
 # SPDX-License-Identifier: Apache-2.0
 """NumPy ``numpy.testing`` assertion-vocabulary lift surface.
 
-This is now the generic assertion fold (``provekit_lift_py_tests.assertion_layer``)
-plus a vocabulary table. The fold is shared with the pandas and sklearn seats; the
-ONLY thing that varies per library is this table.
+The vocabulary is NOT hand-authored: it is LIFTED from numpy.testing's own source
+by ``derive_vocab``, which reads each ``assert_*`` function and classifies it by
+structure -- a tolerance parameter in the signature (rtol/atol/decimal/...) ->
+APPROX (the soundness-critical exact/approximate split); an ``operator.__eq__``
+delegation in the body -> EQUALITY (``=``); everything else -> OTHER (claim +
+refuse). The ``other`` set is therefore the TRUE set for the installed numpy, not
+a curated list that drifts.
 
-SOUNDNESS -- the EXACT/APPROXIMATE split:
-  EXACT (lifted as ``=``):  assert_equal / assert_array_equal / assert_equals
-  TRUTH (bool-expr lift):   assert_
-  APPROXIMATE -- ``a ~= b`` within tolerance is NOT ``a = b``:
-    decimal-bounded (lifted as the real-arithmetic two-sided bound
-      ``|a-b| < 1.5 * 10**(-decimal)``):  assert_almost_equal, assert_array_almost_equal
-    not-yet-bounded (LOUD REFUSE):        assert_allclose (rtol/atol; needs abs),
-      assert_approx_equal (significant digits), assert_array_almost_equal_nulp,
-      assert_array_max_ulp (ULP distance -- not algebraic)
-  OTHER (claim + refuse, so nothing is silently skipped):
-    assert_raises, assert_warns, assert_string_equal, assert_array_less, ...
+Only the structurally-opaque names are a hand ``override``: ``assert_equal`` /
+``assert_equals`` (recursive dispatch, no single delegated operator) and
+``assert_`` (truthiness). The decimal-bounded approx members carry ToleranceSpecs
+so they lift as the real two-sided bound ``|a-b| < 1.5*10**(-decimal)`` (see
+``assertion_layer``) instead of being refused.
 """
 
 from __future__ import annotations
 
-from provekit_lift_py_tests.assertion_layer import (
-    AssertionVocab,
-    ToleranceSpec,
-    lift_file_assertions,
-)
+from provekit_lift_py_tests.assertion_layer import ToleranceSpec, lift_file_assertions
+from provekit_lift_py_tests.assertion_vocab_lift import derive_vocab
 
-NUMPY_TESTING = AssertionVocab(
-    label="numpy-testing",
-    equality=frozenset({"assert_equal", "assert_array_equal", "assert_equals"}),
-    truth=frozenset({"assert_"}),
-    approx=frozenset({
-        "assert_allclose",
-        "assert_almost_equal",
-        "assert_array_almost_equal",
-        "assert_approx_equal",
-        "assert_array_almost_equal_nulp",
-        "assert_array_max_ulp",
-    }),
-    # The decimal-bounded members lift as a real-arithmetic tolerance instead of
-    # refusing. numpy's defaults: assert_almost_equal -> decimal=7,
+NUMPY_TESTING = derive_vocab(
+    "numpy.testing",
+    "numpy-testing",
+    overrides={
+        "equality": frozenset({"assert_equal", "assert_equals"}),
+        "truth": frozenset({"assert_"}),
+    },
+    # numpy's defaults: assert_almost_equal -> decimal=7,
     # assert_array_almost_equal -> decimal=6 (both: 3rd positional is `decimal`).
     tolerances=(
         ToleranceSpec("assert_almost_equal", decimal_default=7),
         ToleranceSpec("assert_array_almost_equal", decimal_default=6),
     ),
-    other=frozenset({
-        "assert_raises",
-        "assert_raises_regex",
-        "assert_warns",
-        "assert_no_warnings",
-        "assert_string_equal",
-        "assert_array_less",
-        "assert_warns_message",
-        "assert_array_equal_nan",
-    }),
 )
 
 
