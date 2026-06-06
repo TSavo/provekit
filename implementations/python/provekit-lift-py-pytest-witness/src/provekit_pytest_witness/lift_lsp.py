@@ -23,7 +23,11 @@ from provekit_lift_py_tests.canonicalizer import encode_jcs, blake3_512_of
 
 import base64
 
-from .witness import Witness, run_and_witness, witness_memento, witness_body
+from .witness import (
+    Witness, run_and_witness, run_file_witnesses, witness_memento, witness_body,
+    write_witness_bundle, build_suite_bundle, witness_package_memento, runtime_cid,
+    _cid_filename,
+)
 
 KIT_ID = "python-pytest-witness"
 KIT_VERSION = "0.1.0"
@@ -71,22 +75,36 @@ def handle_lift(msg_id: Any, params: dict) -> None:
         test_rels = [r for r in rels if os.path.basename(r).startswith("test_")]
         decls: List[ContractDecl] = []
         mementos: List[dict] = []
-        for tr in test_rels:
-            w = run_and_witness(ws, tr, code_rels)
+        if test_rels:
+            # PER-TEST run, but ONE proof member. The whole suite is a WITNESS
+            # PACKAGE: a content-addressed `.witness` bundle of per-test bodies,
+            # cid = blake3(bundle). The proof carries ONE WitnessPackageMemento
+            # (64 bytes) + ONE contract whose evidence pins the package cid -- not
+            # N mementos. The verifier asks the oracle to discharge by re-running
+            # the suite and reproducing the package cid (`discharge_bundle`).
+            bundle_bytes, bundle_cid, witnesses = build_suite_bundle(ws, test_rels, code_rels)
+            passed = sum(1 for w in witnesses if w.outcome == "passed")
+            try:
+                bundle_dir = os.path.join(ws, ".provekit", "witnesses")
+                os.makedirs(bundle_dir, exist_ok=True)
+                with open(os.path.join(bundle_dir, _cid_filename(bundle_cid, ".witness")), "wb") as f:
+                    f.write(bundle_bytes)
+            except OSError:
+                pass  # the package is audit material; never fail the lift on a write error
             proof_data = json.dumps(
-                {"codeCid": w.code_cid, "runtimeCid": w.runtime_cid, "test": w.test_id,
-                 "outcome": w.outcome, "codeFiles": list(w.code_files)},
+                {"kind": "witness-package", "packageCid": bundle_cid,
+                 "testFiles": sorted(test_rels), "codeFiles": sorted(code_rels),
+                 "count": len(witnesses), "passed": passed},
                 sort_keys=True, separators=(",", ":"),
             )
             cert = EvidenceCertificate(
-                tool="pytest", version=w.runtime_cid, formula_hash=w.cid, proof_data=proof_data,
+                tool="pytest", version=runtime_cid(), formula_hash=bundle_cid, proof_data=proof_data,
             )
             ev = EvidenceTerm(proof_type="custom", certificate=cert)
-            decls.append(ContractDecl(name=tr, inv=atomic("witnessed", []), evidence=ev))
-            # The signed WitnessMemento the kit MINTS: a pointer + hash + signature,
-            # zero run body. The body is the witness package, resolved + re-verified
-            # by the Witness Oracle. We are the minter; the oracle is the verifier.
-            mementos.append(witness_memento(w))
+            decls.append(ContractDecl(name=f"witness-package:{bundle_cid}",
+                                      inv=atomic("witnessed", []), evidence=ev))
+            mementos.append(witness_package_memento(
+                bundle_cid, test_rels, code_rels, len(witnesses), passed))
         ir = json.loads(encode_jcs(declarations_to_value(decls))) if decls else []
         # The signed WitnessMementos flow as `ir` members (kind "witness-memento"):
         # mint envelopes each into the .proof via its per-kind dispatch, so the
@@ -133,8 +151,26 @@ def handle_resolve_witness(msg_id: Any, params: dict) -> None:
                 with open(path, "rb") as f:
                     body = f.read()
                 resolved_by = "package"
+        # 2a. PACKAGE RECOMPUTE -- a whole-suite WitnessPackageMemento reproduces
+        # by re-running the suite and rebuilding the content-addressed bundle.
+        if body is None and ws and memento.get("witness_kind") == "pytest-witness-package":
+            from .witness import build_suite_bundle
+            buf, rcid, _ = build_suite_bundle(
+                ws, list(memento.get("test_files", [])), list(memento.get("code_files", []))
+            )
+            if rcid != cid:
+                raise RuntimeError(
+                    f"witness package did not reproduce: recomputed {rcid}, pinned {cid}"
+                )
+            body = buf
+            resolved_by = "recompute"
         # 2. RECOMPUTE -- re-run the pinned test, rebuild the canonical body.
-        if body is None and ws and memento.get("test") and memento.get("code_files"):
+        # `code_files` is PRESENT-not-truthy: an all-tests project pins an EMPTY
+        # code_files (the code under test is the installed library, not a local
+        # file), and `[]` is falsy -- gating on truthiness would wrongly declare
+        # a trivially re-runnable witness "not re-runnable". The reconstruction
+        # below pins the empty list into the witness body, so this stays sound.
+        if body is None and ws and memento.get("test") and memento.get("code_files") is not None:
             # Don't execute attacker-supplied paths on a memento whose own fields
             # don't even hash to its pinned CID. The witness body is a pure
             # function of (code_cid, runtime_cid, test, outcome, code_files), so a

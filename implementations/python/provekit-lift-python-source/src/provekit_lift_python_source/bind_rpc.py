@@ -196,7 +196,17 @@ def materialize_impl(params: dict[str, Any]) -> dict[str, Any]:
     by_symbol: dict[str, dict[str, Any]] = {}
     for binding in binding_templates:
         symbol = binding.get("symbol") if isinstance(binding, dict) else None
-        if isinstance(symbol, str) and symbol and binding.get("body_text"):
+        if not (isinstance(symbol, str) and symbol):
+            continue
+        # A lean binding carries only the SourceMemento (locus + cids), no inline
+        # body. Materialize needs the body to fill the @boundary stub, so it asks
+        # the SOURCE ORACLE to resolve it from disk -- the same resolution recognize
+        # uses. The proof never carries the body; the oracle reconstructs it.
+        if not binding.get("body_text"):
+            resolved = _resolve_via_source_oracle(str(root), binding)
+            if resolved and resolved.get("body_text"):
+                binding = {**binding, "body_text": resolved["body_text"]}
+        if binding.get("body_text"):
             by_symbol.setdefault(symbol, binding)
 
     results: list[dict[str, Any]] = []
@@ -692,20 +702,26 @@ def _binding_template_from_sugar_entry(entry: dict[str, Any]) -> dict[str, Any] 
     body_source = entry.get("body_source")
     if not isinstance(body_source, dict):
         return None
-    ast_template = body_source.get("ast_template")
     template_cid = body_source.get("template_cid")
-    if ast_template is None or not isinstance(template_cid, str) or not template_cid:
+    # `template_cid` is the recognize key (recognize matches by cid, not by the
+    # inline template) and is ALWAYS present -- even in a lean SourceMemento. The
+    # inline `ast_template`/`body_text` are absent in a lean binding; the consumer
+    # (recognize match / materialize fill) resolves them through the Source Oracle.
+    # Carry `body_source` + `source_function_name` so the oracle can resolve.
+    if not isinstance(template_cid, str) or not template_cid:
         return None
     return {
         "symbol": entry.get("symbol"),
         "concept_name": entry.get("concept_name"),
         "library_tag": entry.get("target_library_tag"),
         "family": entry.get("family"),
-        "ast_template": ast_template,
+        "ast_template": body_source.get("ast_template"),
         "template_cid": template_cid,
         "param_names": body_source.get("param_names"),
         "body_text": body_source.get("body_text"),
         "contract_cid": entry.get("contract_cid"),
+        "body_source": body_source,
+        "source_function_name": entry.get("source_function_name"),
     }
 
 
@@ -808,8 +824,15 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 
 def _send(obj: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(obj, separators=(",", ":"), ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    # Write bytes with errors="replace": a single pathological source character
+    # (e.g. an astral emoji whose surrogate pair got split during source slicing)
+    # would otherwise raise UnicodeEncodeError ("surrogates not allowed") and
+    # kill the ENTIRE response. A lifter must be robust to one bad byte in one
+    # function out of thousands, so unencodable chars become U+FFFD rather than
+    # aborting the run.
+    line = json.dumps(obj, separators=(",", ":"), ensure_ascii=False) + "\n"
+    sys.stdout.buffer.write(line.encode("utf-8", "replace"))
+    sys.stdout.buffer.flush()
 
 
 def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:

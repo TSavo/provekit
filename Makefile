@@ -285,6 +285,11 @@ test-python: build-python
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e ../provekit-lift-py-tests -e ../provekit-lift-python-source -e ../provekit-lift-py-pytest-witness -e . pytest numpy blake3 pynacl cbor2 && \
 		pytest) || failed="$$failed provekit-lift-py-numpy-testing"; \
+	(cd implementations/python/provekit-lift-py-pandas-testing && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest && \
+		pytest) || failed="$$failed provekit-lift-py-pandas-testing"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-ruby

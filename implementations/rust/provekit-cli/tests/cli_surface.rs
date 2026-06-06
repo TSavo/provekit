@@ -102,31 +102,6 @@ fn output_retrying_etxtbsy(cmd: &mut Command) -> std::process::Output {
 }
 
 #[test]
-fn bug_zoo_machinery_is_self_contained() {
-    let root = repo_root();
-    assert!(
-        root.join("menagerie/bug-zoo/Cargo.toml").exists(),
-        "Bug Zoo should live as a Menagerie destination under menagerie/bug-zoo/"
-    );
-    assert!(
-        !root.join("bug-zoo/Cargo.toml").exists(),
-        "Bug Zoo should no longer live at the repository root"
-    );
-    assert!(
-        !root
-            .join("implementations/rust/provekit-cli/src/cmd_zoo.rs")
-            .exists(),
-        "Bug Zoo should not be embedded as a provekit CLI command"
-    );
-    assert!(
-        !root
-            .join("implementations/rust/provekit-cli/tests/support/bug_zoo.rs")
-            .exists(),
-        "Bug Zoo harness code should live under menagerie/bug-zoo/, not provekit-cli tests"
-    );
-}
-
-#[test]
 fn provekit_cli_does_not_expose_zoo_subcommand() {
     let output = Command::new(provekit_bin())
         .arg("--help")

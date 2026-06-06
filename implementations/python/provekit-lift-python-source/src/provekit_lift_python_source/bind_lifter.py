@@ -295,7 +295,9 @@ def _library_binding_entry_for_function(
         "param_types": param_types,
         "return_type": return_type,
     }
-    body_source = _body_source_locator(node, rel_path, source_lines)
+    # The proof carries the SourceMemento ONLY (locus + cids). The body never
+    # enters the `.proof`; the Source Oracle reconstructs it from disk on demand.
+    body_source = source_memento_of(_body_source_locator(node, rel_path, source_lines))
     loss_entries = binding.get("loss") or []
 
     entry: Json = {
@@ -525,16 +527,27 @@ def _body_source_locator(
         "template_cid": template_cid_of_json(ast_template),
         "param_names": function_param_names(node),
     }
-    # SourceMemento (PROVEKIT_LEAN_SOURCE=1): the `.proof` signs the ACTUAL code
-    # by CID + locus, not a doubled copy. You sign what you run/compile; the
-    # Source Oracle resolves body_text + ast_template from disk on demand,
-    # CID-verified, refusing on drift. Default keeps them inline (legacy / tests /
-    # byte-identical shims) until the lean migration lands.
-    if os.environ.get("PROVEKIT_LEAN_SOURCE") != "1":
-        result["ast_template"] = ast_template
-        if body_text:
-            result["body_text"] = body_text
+    # `_body_source_locator` is the FULL reconstruction (locus + cids + body +
+    # ast_template) -- this is what the Source Oracle returns when it resolves a
+    # SourceMemento from disk. The MINT path strips body_text/ast_template to the
+    # SourceMemento before anything enters the `.proof` (see `source_memento_of`);
+    # the body NEVER touches the proof. No flag: the lean SourceMemento is the
+    # only thing a proof ever carries.
+    result["ast_template"] = ast_template
+    if body_text:
+        result["body_text"] = body_text
     return result
+
+
+# The fields a `.proof` carries: locus + CIDs, ZERO content. The Source Oracle
+# resolves body_text + ast_template from disk on demand, CID-verified.
+_SOURCE_MEMENTO_FIELDS = ("file", "source_cid", "span", "template_cid", "param_names")
+
+
+def source_memento_of(full_body_source: Json) -> Json:
+    """Strip a full `_body_source_locator` reconstruction down to the SourceMemento
+    the proof carries -- locus + CIDs, no body_text, no ast_template."""
+    return {k: full_body_source[k] for k in _SOURCE_MEMENTO_FIELDS if k in full_body_source}
 
 
 def _extract_body_text(

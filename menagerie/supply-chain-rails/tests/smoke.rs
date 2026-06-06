@@ -294,6 +294,7 @@ fn package_inspection_uses_real_package_and_external_receipt_tools() {
 }
 
 #[test]
+#[ignore = "drives the supply-chain-npm lifter (run-supply-chain-npm-lifter.sh -> tsx), which the TypeScript bankruptcy (#1936) deleted: the run now fails 'tsx not found' before reaching the missing-tarball path the assertion checks. Sibling tsx-driven tests are already ignored (#1476); re-enable when the npm supply-chain demo is redone off the deleted TS lifter. Do not delete."]
 fn package_inspection_rejects_missing_npm_tarball() {
     let root = repo_root();
     let provekit = build_provekit(&root);

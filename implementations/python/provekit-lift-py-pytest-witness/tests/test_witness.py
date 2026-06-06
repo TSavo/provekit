@@ -223,6 +223,113 @@ def test_resolve_witness_rpc_recompute_reruns_and_returns_body(tmp_path):
     assert blake3_512_of(body) == w.cid
 
 
+def test_witness_package_one_cid_for_the_whole_suite(tmp_path):
+    # The proof carries ONE cid for the whole suite: the WitnessPackageMemento.
+    # The per-test facts live IN the content-addressed package; discharge re-runs
+    # the suite and reproduces the package cid.
+    from provekit_pytest_witness.witness import (
+        build_suite_bundle, discharge_bundle, witness_package_memento, blake3_512_of,
+    )
+    (tmp_path / "test_ok.py").write_text("def test_a():\n    assert 1 == 1\ndef test_b():\n    assert 2 == 2\n")
+    buf, pkg_cid, ws = build_suite_bundle(str(tmp_path), ["test_ok.py"], [])
+    assert blake3_512_of(buf) == pkg_cid                  # the package self-addresses
+    assert len(ws) == 2 and all(w.outcome == "passed" for w in ws)
+    # all-pass suite -> DISCHARGED by reproduce
+    verdict, reason = discharge_bundle(pkg_cid, ["test_ok.py"], [], str(tmp_path))
+    assert verdict == "DISCHARGED", reason
+    # the memento is ONE pointer over the package cid
+    m = witness_package_memento(pkg_cid, ["test_ok.py"], [], 2, 2)
+    assert m["kind"] == "witness-memento" and m["witness_kind"] == "pytest-witness-package"
+    assert m["witness_cid"] == pkg_cid and m["passed"] == 2 and m["count"] == 2
+
+
+def test_witness_package_refuses_on_a_failing_test(tmp_path):
+    # A suite containing a failing test reproduces (honest) but is REFUSED -- a
+    # failing test in the package means the package is not a clean discharge.
+    from provekit_pytest_witness.witness import build_suite_bundle, discharge_bundle
+    (tmp_path / "test_mix.py").write_text("def test_ok():\n    assert 1 == 1\ndef test_bad():\n    assert False\n")
+    _, pkg_cid, _ = build_suite_bundle(str(tmp_path), ["test_mix.py"], [])
+    verdict, reason = discharge_bundle(pkg_cid, ["test_mix.py"], [], str(tmp_path))
+    assert verdict == "REFUSED" and "1/2" in reason and "test_bad" in reason, reason
+    # a DRIFTED package (different pinned cid) is refused as non-reproducing
+    bad_cid = "blake3-512:" + "0" * 128
+    v2, r2 = discharge_bundle(bad_cid, ["test_mix.py"], [], str(tmp_path))
+    assert v2 == "REFUSED" and "did not reproduce" in r2, r2
+
+
+def test_per_test_witnesses_one_per_node_id(tmp_path):
+    # The Oracle runs the file ONCE and mints one witness PER TEST -- a single
+    # failing test no longer refuses the whole file's passes.
+    from provekit_pytest_witness.witness import run_file_witnesses
+    (tmp_path / "test_many.py").write_text(
+        "def test_a():\n    assert 1 == 1\n"
+        "def test_b():\n    assert 2 == 2\n"
+        "def test_c():\n    assert False\n"
+    )
+    ws = run_file_witnesses(str(tmp_path), "test_many.py", [])
+    by = {w.test_id.split("::")[-1]: w.outcome for w in ws}
+    assert by == {"test_a": "passed", "test_b": "passed", "test_c": "failed"}, by
+    # each witness keys to a pytest node id (file::test), distinct per test
+    assert all("::" in w.test_id for w in ws)
+
+
+def test_per_test_recompute_agrees_with_lift(tmp_path):
+    # run_and_witness on a NODE ID reproduces the lift CID (lift and verify share
+    # the Oracle's single-file run, so they agree under shared file state).
+    from provekit_pytest_witness.witness import run_file_witnesses
+    (tmp_path / "test_pair.py").write_text(
+        "def test_ok():\n    assert 1 == 1\n"
+        "def test_bad():\n    assert False\n"
+    )
+    ws = {w.test_id.rsplit("::", 1)[-1]: w for w in run_file_witnesses(str(tmp_path), "test_pair.py", [])}
+    for name in ("test_ok", "test_bad"):
+        re = run_and_witness(str(tmp_path), ws[name].test_id, [])
+        assert re.cid == ws[name].cid, name
+        assert re.outcome == ws[name].outcome
+
+
+def test_witness_bundle_is_content_addressed_jsonl(tmp_path):
+    # MANY witnesses in ONE .witness file; each line self-addresses
+    # (blake3(line) == cid), so the reader needs no index and trusts nothing.
+    from provekit_pytest_witness.witness import (
+        run_file_witnesses, write_witness_bundle, read_witness_bundle,
+        read_witness_from_bundle,
+    )
+    from provekit_lift_py_tests.canonicalizer import blake3_512_of
+    (tmp_path / "test_b.py").write_text(
+        "def test_a():\n    assert 1 == 1\n"
+        "def test_b():\n    assert 2 == 2\n"
+    )
+    ws = run_file_witnesses(str(tmp_path), "test_b.py", [])
+    bundle = str(tmp_path / "all.witness")
+    write_witness_bundle(ws, bundle)
+    loaded = read_witness_bundle(bundle)
+    assert set(loaded) == {w.cid for w in ws}
+    for cid, body in loaded.items():
+        assert blake3_512_of(body) == cid          # the line IS the key
+    # a tampered line keys to a different cid -> single lookup misses, no false hit
+    assert read_witness_from_bundle("blake3-512:" + "0" * 128, bundle) is None
+
+
+def test_resolve_witness_rpc_recompute_with_empty_code_files(tmp_path):
+    # REGRESSION: an all-tests project pins an EMPTY code_files (the code under
+    # test is the installed library, e.g. numpy/pandas, not a local file). An
+    # empty list is FALSY, so a truthiness guard on `code_files` wrongly declared
+    # such a witness "not re-runnable". It is trivially re-runnable -- just rerun
+    # the test -- and the empty list reconstructs into the pinned witness body.
+    import base64
+    from provekit_lift_py_tests.canonicalizer import blake3_512_of
+    (tmp_path / "test_solo.py").write_text("def test_solo():\n    assert 1 == 1\n")
+    w = run_and_witness(str(tmp_path), "test_solo.py", [])  # empty code_files
+    assert w.code_files == ()
+    reply = _rpc("provekit.plugin.resolve_witness", {
+        "memento": witness_memento(w), "workspace_root": str(tmp_path),
+    })
+    assert "result" in reply, reply  # NOT an error ("not re-runnable")
+    assert reply["result"]["resolved_by"] == "recompute"
+    assert blake3_512_of(base64.b64decode(reply["result"]["body_b64"])) == w.cid
+
+
 def test_resolve_witness_rpc_refuses_recompute_on_tampered_memento(tmp_path):
     # The body is a pure function of the memento's own fields, so a memento whose
     # fields don't reconstruct its pinned CID is tampered. The oracle must refuse
