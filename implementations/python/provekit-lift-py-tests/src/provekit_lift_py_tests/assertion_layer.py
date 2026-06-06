@@ -32,7 +32,8 @@ from __future__ import annotations
 import ast
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Optional, Sequence
+from decimal import Decimal
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 import provekit_lift_py_tests.layer2 as _l2
 from provekit_lift_py_tests.layer2 import (
@@ -59,8 +60,37 @@ from provekit_lift_py_tests.ir import (
     Formula,
     and_,
     comparison_with_none_guard,
+    ctor,
+    gt,
+    lt,
     make_var,
+    real_lit,
 )
+
+
+@dataclass(frozen=True)
+class ToleranceSpec:
+    """How to lift a member of ``approx`` as a real-arithmetic tolerance bound,
+    instead of loud-refusing it.
+
+    A ``decimal``-kind assertion (numpy's ``assert_array_almost_equal`` /
+    ``assert_almost_equal``) holds iff ``|actual - desired| < 1.5 * 10**(-decimal)``.
+    The bound is an EXACT decimal (a power-of-ten times 1.5), so it rides into the
+    contract as a canonical decimal string with no float in sight. The relation is
+    lifted two-sided -- ``-T < (a-b) ∧ (a-b) < T`` -- which needs only the already-
+    interpreted ``-`` operator and ``<``; no ``abs`` term is required.
+
+    ``name``            the assert function this spec governs.
+    ``decimal_param``   the parameter carrying the precision (kwarg name); it may
+                        also arrive as ``decimal_pos`` (positional index).
+    ``decimal_default`` numpy's default precision when the param is omitted.
+    """
+
+    name: str
+    kind: str = "decimal"
+    decimal_param: str = "decimal"
+    decimal_pos: int = 2
+    decimal_default: int = 7
 
 
 @dataclass(frozen=True)
@@ -75,10 +105,19 @@ class AssertionVocab:
     harmless_kwargs: FrozenSet[str] = frozenset({"err_msg", "verbose"})
     require_true_kwargs: FrozenSet[str] = frozenset()
     relation: str = "="
+    # Members of ``approx`` that ARE liftable as a real-arithmetic tolerance bound
+    # (the rest of ``approx`` -- e.g. the ULP family -- stays loud-refused).
+    tolerances: Tuple[ToleranceSpec, ...] = ()
 
     @property
     def all(self) -> FrozenSet[str]:
         return self.equality | self.truth | self.approx | self.other
+
+    def tolerance_for(self, name: str) -> "Optional[ToleranceSpec]":
+        for t in self.tolerances:
+            if t.name == name:
+                return t
+        return None
 
 
 def _call_name(func: ast.expr) -> Optional[str]:
@@ -104,6 +143,33 @@ def _kwarg_is_true(call: ast.Call, name: str) -> bool:
         if kw.arg == name and isinstance(kw.value, ast.Constant) and kw.value.value is True:
             return True
     return False
+
+
+def _decimal_tol_strings(decimal: int) -> Tuple[str, str]:
+    """Exact ``(+T, -T)`` decimal strings for ``|a-b| < 1.5 * 10**(-decimal)``.
+
+    ``1.5 * 10**(-decimal)`` is an exact decimal, so ``Decimal`` renders it with
+    no rounding: the bound is content-addressable verbatim."""
+    val = Decimal("15") * (Decimal(10) ** (-decimal - 1))
+    return format(val, "f"), format(-val, "f")
+
+
+def _read_int_literal_arg(call: ast.Call, kw_name: str, pos_index: int) -> Optional[int]:
+    """Read an integer-literal argument by keyword name or positional index.
+    Returns None if absent; raises ValueError if present but not an int literal
+    (so the tolerance is not computable and the assertion is loud-refused)."""
+    for kw in call.keywords:
+        if kw.arg == kw_name:
+            v = kw.value
+            if isinstance(v, ast.Constant) and isinstance(v.value, int) and not isinstance(v.value, bool):
+                return v.value
+            raise ValueError(f"`{kw_name}` is not an integer literal; tolerance not computable")
+    if len(call.args) > pos_index:
+        a = call.args[pos_index]
+        if isinstance(a, ast.Constant) and isinstance(a.value, int) and not isinstance(a.value, bool):
+            return a.value
+        raise ValueError(f"positional `{kw_name}` is not an integer literal; tolerance not computable")
+    return None
 
 
 def _lift_assertion_scoped(
@@ -137,10 +203,32 @@ def _lift_assertion_scoped(
             raise ValueError(f"{name} expects 1 positional arg")
         return _translate_bool_expr_scoped(call.args[0], scope, call_vars)
     if name in vocab.approx:
-        raise ValueError(
-            f"approximate assertion `{name}` is not exact equality "
-            "(a ~= b within tolerance); refused to avoid false-pass"
-        )
+        spec = vocab.tolerance_for(name)
+        if spec is None:
+            # Approximate, but with no liftable tolerance shape (e.g. the ULP
+            # family -- ULP distance is not algebraic). Refuse loudly.
+            raise ValueError(
+                f"approximate assertion `{name}` is not exact equality "
+                "(a ~= b within tolerance); refused to avoid false-pass"
+            )
+        if len(call.args) < 2:
+            raise ValueError(f"{name} expects at least 2 positional args")
+        kw = {k.arg for k in call.keywords}
+        extra = kw - vocab.harmless_kwargs - {spec.decimal_param}
+        if extra:
+            raise ValueError(
+                f"{name}: keyword arg(s) {sorted(extra)} may change the tolerance; "
+                "not liftable as a fixed bound"
+            )
+        decimal = _read_int_literal_arg(call, spec.decimal_param, spec.decimal_pos)
+        if decimal is None:
+            decimal = spec.decimal_default
+        pos, neg = _decimal_tol_strings(decimal)
+        a = _translate_term_scoped(call.args[0], scope, call_vars)
+        b = _translate_term_scoped(call.args[1], scope, call_vars)
+        diff = ctor("-", [a, b])
+        # |a - b| < T  <=>  -T < (a - b) ∧ (a - b) < T  (two-sided; no abs needed)
+        return and_([gt(diff, real_lit(neg)), lt(diff, real_lit(pos))])
     raise ValueError(f"assertion `{name}` not lifted in v0")
 
 
