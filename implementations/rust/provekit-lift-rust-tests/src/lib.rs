@@ -644,13 +644,93 @@ struct AssertionCallsite {
     arg_sig: Option<String>,
 }
 
+/// The closed range `[lo, hi]` of a fixed-width Rust integer type, as i64 bounds.
+/// `hi` is None for widths whose maximum exceeds i64 (u64/usize/u128); the lower
+/// bound (>= 0 for unsigned) still applies. None for a non-integer type.
+fn int_type_bounds(name: &str) -> Option<(Option<i64>, Option<i64>)> {
+    Some(match name {
+        "i8" => (Some(-128), Some(127)),
+        "i16" => (Some(-32768), Some(32767)),
+        "i32" => (Some(-2_147_483_648), Some(2_147_483_647)),
+        "i64" | "isize" => (Some(i64::MIN), Some(i64::MAX)),
+        "u8" => (Some(0), Some(255)),
+        "u16" => (Some(0), Some(65535)),
+        "u32" => (Some(0), Some(4_294_967_295)),
+        "u64" | "usize" | "u128" => (Some(0), None), // unsigned: lower bound only
+        "i128" => (None, None),                       // 128-bit: bounds exceed i64
+        _ => return None,
+    })
+}
+
+/// The integer-width REFINEMENT for `<term> as <ty>`: a value of a fixed-width
+/// integer type is bounded to that type's range. Emitted as range constraints
+/// (`lo <= term ∧ term <= hi`) -- the integral+width refinement of the numeric
+/// hierarchy, with real teeth (bounds/overflow) and using only existing primitives.
+fn int_type_bound_formulas(ty: &syn::Type, term: &Rc<Term>) -> Vec<Rc<Formula>> {
+    let name = match ty {
+        syn::Type::Path(p) => match p.path.segments.last() {
+            Some(seg) => seg.ident.to_string(),
+            None => return vec![],
+        },
+        _ => return vec![],
+    };
+    let (lo, hi) = match int_type_bounds(&name) {
+        Some(b) => b,
+        None => return vec![],
+    };
+    let mut out = Vec::new();
+    if let Some(lo) = lo {
+        out.push(lte(num(lo), term.clone())); // lo <= term
+    }
+    if let Some(hi) = hi {
+        out.push(lte(term.clone(), num(hi))); // term <= hi
+    }
+    out
+}
+
+/// Walk the observed assertion exprs for `<e> as <intN>` casts and emit a width
+/// refinement for each (recursing through transparent wrappers + binary operands).
+fn collect_int_width_refinements(exprs: &[syn::Expr]) -> Vec<Rc<Formula>> {
+    fn walk(e: &syn::Expr, out: &mut Vec<Rc<Formula>>) {
+        match e {
+            syn::Expr::Cast(c) => {
+                if let Ok(term) = translate_term(&c.expr) {
+                    out.extend(int_type_bound_formulas(&c.ty, &term));
+                }
+                walk(&c.expr, out);
+            }
+            syn::Expr::Paren(p) => walk(&p.expr, out),
+            syn::Expr::Reference(r) => walk(&r.expr, out),
+            syn::Expr::Unary(u) => walk(&u.expr, out),
+            syn::Expr::Binary(b) => {
+                walk(&b.left, out);
+                walk(&b.right, out);
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for e in exprs {
+        walk(e, &mut out);
+    }
+    out
+}
+
 fn lift_assertion_macro_at_callsites(
     mac: &syn::Macro,
     source_path: &str,
     bindings: &BTreeMap<String, BoundCall>,
 ) -> Result<Vec<LiftedCallsiteAssertion>, String> {
-    let formula = lift_assertion_macro(mac)?;
+    let mut formula = lift_assertion_macro(mac)?;
     let exprs = assertion_observed_exprs(mac)?;
+    // Conjoin the integer-width refinements (`<x> as i32` -> x in range) so the
+    // contract carries the bound; substitution below keys them to the same callsite.
+    let refinements = collect_int_width_refinements(&exprs);
+    if !refinements.is_empty() {
+        let mut parts = vec![formula];
+        parts.extend(refinements);
+        formula = and_(parts);
+    }
     let mut callsites = Vec::new();
     let mut substitutions: BTreeMap<String, Rc<Term>> = BTreeMap::new();
     for expr in &exprs {
@@ -1911,6 +1991,31 @@ mod tests {
         // non-assertions and unknown assert-shaped names are not misclassified
         assert_eq!(canonical_assertion_name("println"), None);
         assert_eq!(canonical_assertion_name("assert_something_else"), None);
+    }
+
+    #[test]
+    fn integer_cast_adds_a_width_range_refinement() {
+        // `compute(a) as i32` -> the contract carries compute()'s i32 bounds.
+        let exprs: Vec<syn::Expr> =
+            vec![syn::parse_quote!(compute(a) as i32), syn::parse_quote!(5)];
+        let refs = collect_int_width_refinements(&exprs);
+        assert_eq!(refs.len(), 2, "i32 contributes a lower and an upper bound");
+        let dump = format!("{refs:?}");
+        assert!(dump.contains("2147483647"), "i32 max present: {dump}");
+        assert!(dump.contains("2147483648"), "i32 min present: {dump}");
+    }
+
+    #[test]
+    fn unsigned_64bit_cast_adds_only_the_lower_bound() {
+        // usize/u64 upper exceeds i64; emit the >= 0 lower bound only (still sound).
+        let exprs: Vec<syn::Expr> = vec![syn::parse_quote!(n as usize)];
+        assert_eq!(collect_int_width_refinements(&exprs).len(), 1);
+    }
+
+    #[test]
+    fn non_integer_cast_adds_no_refinement() {
+        let exprs: Vec<syn::Expr> = vec![syn::parse_quote!(x as f64)];
+        assert!(collect_int_width_refinements(&exprs).is_empty());
     }
 
     #[test]
