@@ -28,6 +28,7 @@ mod cmd_implicate;
 mod cmd_init;
 mod cmd_lift;
 mod cmd_materialize;
+mod cmd_materialize_boundary;
 mod cmd_mint;
 mod cmd_package;
 mod cmd_plugin;
@@ -144,6 +145,12 @@ enum Cmd {
     Bind(cmd_bind::BindArgs),
     /// Materialize concept-citation carriers into library-bound source via substrate realize kits.
     Materialize(cmd_materialize::MaterializeArgs),
+    /// By-reference boundary fill: resolve `#[provekit::boundary(library, call)]`
+    /// stub bodies from the bound vendor function's REAL source via the Source
+    /// Oracle (CID-verified against the frozen vendor `.proof`), or REFUSE on
+    /// drift. The reverse direction of recognize over a lean SourceMemento — no
+    /// concept emission; only real source that exists on disk is resolved.
+    MaterializeBoundary(cmd_materialize_boundary::MaterializeBoundaryArgs),
     /// Validate a kit's config/manifest wiring before a run. Catches missing
     /// binaries (the manifest-path footgun) before they silently produce an
     /// empty-set attestation. Exit 0 on pass (warnings allowed), exit 2 on any
@@ -286,6 +293,7 @@ fn main() -> ExitCode {
         Cmd::Compose(a) => cmd_compose::run(a),
         Cmd::Bind(a) => cmd_bind::run(a),
         Cmd::Materialize(a) => cmd_materialize::run(a),
+        Cmd::MaterializeBoundary(a) => cmd_materialize_boundary::run(a),
         Cmd::Doctor(a) => cmd_doctor::run(a),
         Cmd::ReleaseGate(a) => cmd_release_gate::run(a),
     };

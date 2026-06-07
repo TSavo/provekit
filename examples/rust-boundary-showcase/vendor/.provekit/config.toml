@@ -1,0 +1,14 @@
+[authoring]
+surface = "rust-bind"
+
+[[plugins]]
+name = "rust-sugar"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[solvers]
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
