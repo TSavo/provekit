@@ -1228,7 +1228,7 @@ reason = "runtime residue"
             10,
             "method:expect",
             "residue",
-            "platform_semantics_runtime_residue",
+            "dependency_memento_residue",
             "irreducible",
             "dependency memento residue",
         )];
@@ -1245,7 +1245,7 @@ reason = "runtime residue"
         assert_eq!(row.status, "residue");
         assert_eq!(
             row.category.as_deref(),
-            Some("platform_semantics_runtime_residue")
+            Some("dependency_memento_residue")
         );
         assert_eq!(row.reason, "dependency memento residue");
     }

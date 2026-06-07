@@ -6604,13 +6604,6 @@ fn body_template_entries(
     language: &str,
     library_tag: &str,
 ) -> Result<Vec<BodyTemplateCallEntry>, String> {
-    if language == "rust" {
-        let entries = rust_kit_body_template_entries(library_tag);
-        if !entries.is_empty() {
-            return Ok(entries);
-        }
-    }
-
     let rel = PathBuf::from("menagerie")
         .join(format!("{language}-language-signature"))
         .join("specs")
@@ -6630,27 +6623,6 @@ fn body_template_entries(
         .iter()
         .filter_map(body_template_call_entry_from_json)
         .collect())
-}
-
-fn rust_kit_body_template_entries(library_tag: &str) -> Vec<BodyTemplateCallEntry> {
-    let response = provekit_realize_rust_core::dispatch(&json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "provekit.plugin.body_template_entries",
-        "params": {
-            "target_library_tag": library_tag,
-        }
-    }));
-    response
-        .pointer("/result/entries")
-        .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(body_template_call_entry_from_json)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn body_template_call_entry_from_json(entry: &Value) -> Option<BodyTemplateCallEntry> {
@@ -8551,19 +8523,6 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             } else {
                 return non_operation_shape();
             };
-            // catalog #1391: nullary path-call → kit-op → concept (reverse lookup).
-            if e.args.is_empty() {
-                let kit_op = match callee_text.as_str() {
-                    "Vec::new" => Some("rust:vec-new"),
-                    "HashMap::new" => Some("rust:hashmap-new"),
-                    _ => None,
-                };
-                if let Some(kit_op) = kit_op {
-                    if let Some(concept) = provekit_realize_rust_core::operation_realization_catalog::concept_for_rust_op(kit_op) {
-                        return gamma_operation(&concept, vec![]);
-                    }
-                }
-            }
             // args[0]: callee path leaf (kind:"path", text:"blake3::Hasher::new")
             // args[1..]: call arguments, matching bindings_of_expr layout above.
             let callee_leaf = CValue::object([
@@ -8581,21 +8540,6 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             // a method:<name> leaf. Both sides do the same; the cycle
             // collapses to the abstraction at the substrate seam.
             let m_name = e.method.to_string();
-            if e.args.is_empty() {
-                // catalog #1391: reverse-lookup matcher AST shape → kit-op
-                // name → concept-hub name. The catalog supplies the concept.
-                let kit_op = match m_name.as_str() {
-                    "as_bytes" => Some("rust:str-as-bytes"),
-                    "as_str" => Some("rust:serde-value-as-str"),
-                    "is_some" => Some("rust:option-is-some"),
-                    _ => None,
-                };
-                if let Some(kit_op) = kit_op {
-                    if let Some(concept) = provekit_realize_rust_core::operation_realization_catalog::concept_for_rust_op(kit_op) {
-                        return gamma_operation(&concept, vec![shape_of_expr(&e.receiver, ctx)]);
-                    }
-                }
-            }
             // args[0]: receiver shape, matching bindings_of_expr layout above.
             // args[1]: canonical method-concept leaf (kind:"method",
             // concept_name:"method:<name>", arity:<n>, op_cid:<derived>).

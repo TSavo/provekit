@@ -25,7 +25,7 @@ required-features = ["rpc"]
 
 [features]
 default = ["rpc"]
-rpc = ["provekit-realize-rust-core"]
+rpc = []
 
 [dependencies]
 syn = { workspace = true }
@@ -38,7 +38,6 @@ provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 libprovekit = { path = "../libprovekit" }
-provekit-realize-rust-core = { path = "../provekit-realize-rust-core", optional = true }
 serde_json = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }

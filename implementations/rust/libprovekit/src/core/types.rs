@@ -7,9 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use provekit_ir_types::{
-    DimensionValueMemento, IrFormula, IrTerm, LetBinding, PlatformSemanticTag, Sort,
-};
+use provekit_ir_types::{IrFormula, IrTerm, LetBinding, Sort};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
@@ -799,154 +797,11 @@ pub enum Dialect {
     Other(String),
 }
 
-/// Registration-time declaration of a kit's conformance posture.
-///
-/// `target_language` is intentionally absent. The registered kit's `dialect()`
-/// is the canonical source of truth for what language the kit emits; lifting
-/// dialect into a separate field here would denormalize the kit-registration
-/// data and require dialect-as-substrate-object architecture that the kit's
-/// own content-addressing already provides.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct PlatformSemanticsDeclaration {
-    pub tags: Vec<PlatformSemanticTag>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dimension_values: Vec<DimensionValueMemento>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub op_aliases: BTreeMap<String, String>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DivergenceCharacterization {
-    pub dimension_name: String,
-    pub source_value_cid: String,
-    pub target_value_cid: String,
-    pub source_compare_to: IrFormula,
-    pub target_compare_to: IrFormula,
-}
-
-/// Which side of a comparison was absent when a tag was only present on one kit.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Side {
-    /// The source kit did not declare a tag for the op-CID.
-    Source,
-    /// The target kit did not declare a tag for the op-CID.
-    Target,
-}
-
-/// Four-state verdict returned by `compare_op_with`.
-///
-/// This replaces the previous `Result<Option<DivergenceCharacterization>, PlatformSemanticComparisonError>`
-/// shape, which conflated "both kits absent" with "exactly one kit absent".
-/// The two op-absent cases have distinct semantics: both-absent means the
-/// substrate has no opinion (caller should continue); exactly-one-absent means
-/// the substrate cannot characterize the divergence (caller must refuse).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub enum OpCoverageVerdict {
-    /// Neither kit declares a tag for this op. Substrate has no opinion.
-    /// The caller should continue (this op is not in the substrate alphabet
-    /// for the source/target kit pair).
-    NoOpinion,
-
-    /// Exactly one kit declares a tag. The substrate cannot characterize
-    /// the divergence; the caller must route to the refuse leg of the
-    /// trichotomy.
-    Uncharacterizable { absent_on: Side },
-
-    /// Both kits declare a tag and the dimension values are identical.
-    Same,
-
-    /// Both kits declare a tag and the dimension values differ. The
-    /// characterization carries both sides compare_to formulas for
-    /// IrFormula::DivergenceBetween construction at the loss-record layer.
-    Divergent(DivergenceCharacterization),
-}
-
-/// Errors that indicate internal substrate inconsistency (a tag references
-/// a value CID that is absent from `dimension_values`). These are distinct
-/// from op-absent cases, which are handled by `OpCoverageVerdict`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PlatformSemanticComparisonError {
-    SourceValueAbsent { value_cid: String },
-    TargetValueAbsent { value_cid: String },
-}
-
-impl PlatformSemanticsDeclaration {
-    pub fn compare_op_with(
-        &self,
-        op_cid: &str,
-        target: &Self,
-    ) -> Result<OpCoverageVerdict, PlatformSemanticComparisonError> {
-        let source_tag = self.tag_for_op(op_cid);
-        let target_tag = target.tag_for_op(op_cid);
-
-        let (source_tag, target_tag) = match (source_tag, target_tag) {
-            (None, None) => return Ok(OpCoverageVerdict::NoOpinion),
-            (None, Some(_)) => {
-                return Ok(OpCoverageVerdict::Uncharacterizable {
-                    absent_on: Side::Source,
-                })
-            }
-            (Some(_), None) => {
-                return Ok(OpCoverageVerdict::Uncharacterizable {
-                    absent_on: Side::Target,
-                })
-            }
-            (Some(s), Some(t)) => (s, t),
-        };
-
-        for (dimension_name, source_value_cid) in &source_tag.dimensions {
-            let Some(target_value_cid) = target_tag.dimensions.get(dimension_name) else {
-                continue;
-            };
-            if source_value_cid == target_value_cid {
-                continue;
-            }
-
-            let source_value = self.value_for_cid(source_value_cid).ok_or_else(|| {
-                PlatformSemanticComparisonError::SourceValueAbsent {
-                    value_cid: source_value_cid.clone(),
-                }
-            })?;
-            let target_value = target.value_for_cid(target_value_cid).ok_or_else(|| {
-                PlatformSemanticComparisonError::TargetValueAbsent {
-                    value_cid: target_value_cid.clone(),
-                }
-            })?;
-            return Ok(OpCoverageVerdict::Divergent(DivergenceCharacterization {
-                dimension_name: dimension_name.clone(),
-                source_value_cid: source_value_cid.clone(),
-                target_value_cid: target_value_cid.clone(),
-                source_compare_to: source_value.compare_to.clone(),
-                target_compare_to: target_value.compare_to.clone(),
-            }));
-        }
-
-        Ok(OpCoverageVerdict::Same)
-    }
-
-    fn tag_for_op(&self, op_cid: &str) -> Option<&PlatformSemanticTag> {
-        let resolved = self
-            .op_aliases
-            .get(op_cid)
-            .map(String::as_str)
-            .unwrap_or(op_cid);
-        self.tags.iter().find(|tag| tag.op_cid == resolved)
-    }
-
-    fn value_for_cid(&self, value_cid: &str) -> Option<&DimensionValueMemento> {
-        self.dimension_values
-            .iter()
-            .find(|value| value.cid == value_cid)
-    }
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ConformanceDeclaration {
     /// Kit emits target source and pins the fixture directory that proves it.
     Carrier {
         fixtures_path: PathBuf,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        platform_semantics: Option<PlatformSemanticsDeclaration>,
     },
     /// Kit does not emit target source; `reason` records the audit premise.
     NonCarrier { reason: &'static str },

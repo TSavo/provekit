@@ -23,8 +23,6 @@ pub mod emit_obligation;
 pub mod lift_plugin;
 pub mod lower_plugin;
 pub mod path_executor;
-pub mod platform_semantics;
-pub mod platform_semantics_loader;
 pub mod primitives;
 pub mod prove_kit;
 pub mod source_transform;
@@ -48,7 +46,6 @@ pub use lower_plugin::{
     RealizedSource,
 };
 pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecutionError};
-pub use platform_semantics::{platform_semantics_for_binding, platform_semantics_for_lower_target};
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };
@@ -64,10 +61,10 @@ pub use traits::{
 pub use types::{
     ArityShape, AritySlot, Attestation, Boundary, ChainIntegrityFailureWitness,
     ChainIntegrityWitness, Cid, CidError, ConformanceDeclaration, Contract, Dialect,
-    DivergenceCharacterization, DomainClaim, DomainKind, Formula, Input, LanguageSignature,
-    OpCoverageVerdict, OperationSignature, Path, PathAlgebra, PathDocument, PathDocumentError,
-    PathError, PathInputBinding, PathInputMaterial, PlatformSemanticComparisonError,
-    PlatformSemanticsDeclaration, Refutation, Side, SignatureCatalogError, SlotEvaluation,
+    DomainClaim, DomainKind, Formula, Input, LanguageSignature,
+    OperationSignature, Path, PathAlgebra, PathDocument, PathDocumentError,
+    PathError, PathInputBinding, PathInputMaterial,
+    Refutation, SignatureCatalogError, SlotEvaluation,
     SlotSort, Term, Truth, Verb, Verdict, VerdictCoercionError, Witness,
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};
