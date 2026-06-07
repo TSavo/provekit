@@ -454,25 +454,77 @@ def _canonicalize_template(
     }
 
 
+def _canonical_call_symbol(template: Any) -> str | None:
+    """Return the fully-qualified dotted symbol a canonicalized call template
+    invokes (`numpy.rot90` for `numpy.rot90(...)`), or None when the template is
+    not a direct dotted call. `_canonicalize_template` has already rewritten
+    aliases to the vendor form (`np`->`numpy`, `from numpy import rot90`->
+    `numpy.rot90`), so the receiver path + method spell the public symbol."""
+    if not isinstance(template, dict):
+        return None
+    if template.get("kind") == "method_call":
+        receiver = template.get("receiver")
+        method = template.get("method")
+        if not isinstance(method, str):
+            return None
+        if isinstance(receiver, dict) and receiver.get("kind") == "ident":
+            name = receiver.get("name")
+            return f"{name}.{method}" if isinstance(name, str) else None
+        if isinstance(receiver, dict) and receiver.get("kind") == "path":
+            segments = receiver.get("segments")
+            if isinstance(segments, list) and all(isinstance(s, str) for s in segments):
+                return ".".join([*segments, method])
+        return None
+    if template.get("kind") == "call":
+        # `from numpy import rot90; rot90(...)` canonicalizes the callee to the
+        # vendor path; a bare ident callee carries no library qualifier and is
+        # not a vendor symbol match.
+        callee = template.get("callee")
+        if isinstance(callee, dict) and callee.get("kind") == "path":
+            segments = callee.get("segments")
+            if isinstance(segments, list) and all(isinstance(s, str) for s in segments):
+                return ".".join(segments)
+    return None
+
+
 def _recognize_calls_anywhere(
     rel_path: str,
     tree: ast.AST,
     binding_templates: list[dict[str, Any]],
     exclude_tags: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Walk every call expression and match published sugar body patterns
-    anywhere they appear (the recognizer's real job — the body template is a
-    pattern, matched against real code at any position, not just identical
-    wrapper functions). Call sites whose line falls within an `exclude_tags`
-    span (an exact whole-function match) are skipped to avoid double-emitting."""
+    """Walk every call expression and match published sugar bindings anywhere
+    they appear (the recognizer's real job — matched against real code at any
+    position, not just identical wrapper functions). Two match faces:
+
+      - BODY-PATTERN: a declared shim publishes a thin wrapper body
+        (`return numpy.add(x, y)`); its template IS a call pattern, matched
+        structurally with `param_ref` holes (`np.add(_, _)` anywhere).
+      - SYMBOL: a universal-lifted vendor function publishes its PUBLIC symbol
+        (`numpy.rot90`) but its body is the real implementation, NOT a self-call
+        — so there is no wrapper pattern. The recognizer matches any call whose
+        canonicalized dotted symbol equals the binding's `symbol`. This is the
+        path the lean source oracle requires; without it a vendored symbol whose
+        body is not a one-line call could never be recognized.
+
+    Call sites whose line falls within an `exclude_tags` span (an exact
+    whole-function match) are skipped to avoid double-emitting."""
     patterns: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    symbol_bindings: dict[str, dict[str, Any]] = {}
     for binding in binding_templates:
         if not isinstance(binding, dict):
             continue
         pattern = _published_call_pattern(binding.get("ast_template"))
         if pattern is not None:
             patterns.append((pattern, binding))
-    if not patterns:
+            continue
+        # No wrapper body pattern: fall back to public-symbol matching. Only
+        # bindings carrying an explicit `symbol` (the vendor public name) qualify;
+        # the body-pattern path above keeps declared shims byte-identical.
+        symbol = binding.get("symbol")
+        if isinstance(symbol, str) and symbol:
+            symbol_bindings.setdefault(symbol, binding)
+    if not patterns and not symbol_bindings:
         return []
 
     exclude_ranges: list[tuple[int, int]] = []
@@ -494,6 +546,7 @@ def _recognize_calls_anywhere(
             continue
         candidate = expr_to_template(node, [])
         candidate = _canonicalize_template(candidate, module_aliases, from_imports)
+        matched = False
         for pattern, binding in patterns:
             holes: dict[int, Any] = {}
             if not _unify_template(pattern, candidate, holes):
@@ -520,7 +573,44 @@ def _recognize_calls_anywhere(
                     ],
                 }
             )
+            matched = True
             break
+        if matched:
+            continue
+        # SYMBOL face: a universal-lifted vendor binding has no wrapper pattern;
+        # match by the call's canonicalized public symbol (`numpy.rot90`). The
+        # call args are the published-symbol's argument bindings (index-keyed),
+        # so a downstream consumer can recover them the same way body-pattern
+        # holes are recovered.
+        if symbol_bindings:
+            call_symbol = _canonical_call_symbol(candidate)
+            binding = symbol_bindings.get(call_symbol) if call_symbol else None
+            if binding is not None:
+                args = candidate.get("args") if isinstance(candidate, dict) else None
+                param_bindings = (
+                    [{"index": i, "template": a} for i, a in enumerate(args)]
+                    if isinstance(args, list)
+                    else []
+                )
+                tags.append(
+                    {
+                        "file": rel_path,
+                        "span": {
+                            "start_line": node.lineno,
+                            "start_col": node.col_offset,
+                            "end_line": node.end_lineno or node.lineno,
+                            "end_col": node.end_col_offset or 0,
+                        },
+                        "symbol": binding.get("symbol"),
+                        "concept_name": binding.get("concept_name"),
+                        "library_tag": binding.get("library_tag"),
+                        "family": binding.get("family"),
+                        "template_cid": binding.get("template_cid"),
+                        "contract_cid": binding.get("contract_cid"),
+                        "match_tier": "symbol",
+                        "param_bindings": param_bindings,
+                    }
+                )
     return tags
 
 
@@ -674,6 +764,7 @@ def _resolve_via_source_oracle(
     vendor's installed-package root. None on a loud refusal (source drift)."""
     from .source_oracle import (
         SourceOracleRefusal,
+        importlib_library_dir,
         importlib_package_root,
         resolve_from_roots,
     )
@@ -689,9 +780,20 @@ def _resolve_via_source_oracle(
         "template_cid": body_source.get("template_cid"),
     }
     roots = [project_root]
+    # 1. `file` is `pkg/mod.py` -> the package's PARENT resolves it
+    #    (`numpy/lib/...` against site-packages).
     pkg_root = importlib_package_root(body_source.get("file") or "")
     if pkg_root:
         roots.append(pkg_root)
+    # 2. `file` is RELATIVE TO THE PACKAGE (`lib/_function_base_impl.py`, minted
+    #    with `--project <site-packages>/numpy`) -> the package DIR ITSELF
+    #    resolves it. Keyed by the binding's authoritative `target_library_tag`
+    #    (`numpy`), not the file's private first segment (`lib`). Additive: tried
+    #    only after the project root, so in-project resolutions are unaffected.
+    library_tag = body.get("target_library_tag") or body.get("library_tag") or ""
+    lib_dir = importlib_library_dir(library_tag)
+    if lib_dir:
+        roots.append(lib_dir)
     try:
         return resolve_from_roots(memento, roots)
     except SourceOracleRefusal:
