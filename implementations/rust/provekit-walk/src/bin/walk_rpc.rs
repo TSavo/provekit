@@ -195,6 +195,15 @@ fn handle_line(line: &str) -> Value {
         // binary handles this too because it already owns the syn AST
         // machinery that recognize needs — same kit, same language.
         "provekit.plugin.recognize" => recognize(&params),
+        // Materialize (#1359, rust mirror of the python bind_rpc materializer).
+        // Finds `#[provekit::boundary(library, call)]` stubs in the consumer
+        // source, asks the SOURCE ORACLE to resolve each bound vendor function's
+        // REAL body from on-disk source (CID-verified against the lean
+        // SourceMemento the vendor sugar-lift minted), and rewrites the stub
+        // body in place. On a CID-misalign (source drift) the oracle REFUSES and
+        // the site is reported `outcome:"refused"` with NO write. Same kit, same
+        // syn AST machinery, same source-oracle family as lift/recognize.
+        "provekit.plugin.materialize" => materialize(&params),
         // Implication lifter (#97). For every call expression in every
         // function body in the supplied source files, emit a kind:bridge
         // memento that links the call site (sourceSymbol = callee ident)
@@ -3342,6 +3351,42 @@ fn crate_name_for(dir: &Path) -> Option<String> {
     None
 }
 
+/// Read the RAW `[package].name` of the crate rooted at `dir` (its
+/// `Cargo.toml`), WITHOUT the `-`→`_` normalization `crate_name_for` applies.
+///
+/// The derived `library-sugar-binding-entry` stamps this as its
+/// `target_library_tag`, and the materialize verb matches a boundary stub by
+/// `(target_library_tag, source_function_name) == (library, call)` with a RAW
+/// `==` (no normalization on either side). The consumer's
+/// `#[provekit::boundary(library = "rust-boundary-vendor", ...)]` carries the
+/// crate name verbatim (hyphens intact), so the tag we derive must too, or the
+/// match silently misses. (The DERIVED symbol the verb synthesizes is
+/// `format!("{library}.{call}")` — `rust-boundary-vendor.reverse_chars` — built
+/// from the boundary attr, not from this entry, so the separator is the verb's
+/// concern, not ours.)
+fn crate_name_raw_for(dir: &Path) -> Option<String> {
+    let manifest = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;
+    let mut in_package = false;
+    for line in manifest.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_package = t == "[package]";
+            continue;
+        }
+        if in_package {
+            if let Some(rest) = t.strip_prefix("name") {
+                if let Some(rest) = rest.trim_start().strip_prefix('=') {
+                    let v = rest.trim().trim_matches('"').trim_matches('\'');
+                    if !v.is_empty() {
+                        return Some(v.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// JSON-RPC handler for `provekit.plugin.lift_implications`.
 ///
 /// Request params:
@@ -3983,6 +4028,563 @@ fn binding_rank(binding: &Value) -> u8 {
     } else {
         0
     }
+}
+
+// ---------------------------------------------------------------------------
+// Source Oracle + materialize (#1359). The rust mirror of the python kit's
+// `source_oracle.py` + `bind_rpc.py::materialize_impl`. The `.proof` carries a
+// LEAN SourceMemento (locus + source_cid/template_cid, no inline body); the
+// oracle reconstructs the body from on-disk source IFF it recomputes to the
+// pinned CIDs, else REFUSES. Exact-or-refuse, no silent loss.
+// ---------------------------------------------------------------------------
+
+/// A typed refusal from the Source Oracle: the on-disk source did not recompute
+/// to the pinned CID (drift), or the locus could not be resolved. Never a silent
+/// fallback — the refusal is the BINARY axis of the three-axis pin, checked at
+/// every resolution.
+#[derive(Debug)]
+struct SourceOracleRefusal {
+    reason: String,
+}
+
+/// A SourceMemento: the locus + pins extracted from a lean sugar binding's
+/// `body_source`. Zero content — the body lives on disk.
+#[derive(Debug)]
+struct SourceMemento {
+    source_function_name: Option<String>,
+    file: String,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+    source_cid: Option<String>,
+    template_cid: Option<String>,
+}
+
+/// What the oracle returns on a clean resolve: the reconstructed body + the
+/// recomputed pins (byte-identical to the mint).
+#[derive(Debug)]
+struct ResolvedSource {
+    body_text: String,
+    source_cid: String,
+    template_cid: String,
+    param_names: Vec<String>,
+}
+
+/// The Source Oracle. Reads the on-disk rust source at the memento's locus,
+/// re-derives `source_cid`/`template_cid` USING THE EXACT SAME bytes +
+/// canonicalization the producer (`sugar_body_source`) used at mint
+/// (`block_inner_source` -> `canonical_sugar_body_text` -> `blake3_512_of`; and
+/// `block_to_ast_template().to_string()` -> `blake3_512_of`), and returns the
+/// body IFF BOTH recomputed CIDs equal the pinned ones. Else a typed refusal.
+///
+/// `project_root` is the root the memento's `file` is relative to (the vendor
+/// package dir for a vendor binding, the consumer project for an in-project
+/// one). The reuse of the producer's exact functions is what guarantees a clean
+/// resolve byte-matches the mint (and preserves the `.chars()` multibyte
+/// operator invariant).
+fn resolve_source_memento(
+    project_root: &Path,
+    memento: &SourceMemento,
+) -> Result<ResolvedSource, SourceOracleRefusal> {
+    let path = project_root.join(&memento.file);
+    let src = std::fs::read_to_string(&path).map_err(|e| SourceOracleRefusal {
+        reason: format!("cannot read source `{}`: {e}", path.display()),
+    })?;
+    let file = syn::parse_file(&src).map_err(|e| SourceOracleRefusal {
+        reason: format!("cannot parse source `{}`: {e}", path.display()),
+    })?;
+
+    let item_fn = locate_boundary_source_fn(&file.items, memento).ok_or_else(|| {
+        SourceOracleRefusal {
+            reason: format!(
+                "source function `{}` not found in `{}` near line {:?}",
+                memento.source_function_name.as_deref().unwrap_or("<any>"),
+                memento.file,
+                memento.start_line
+            ),
+        }
+    })?;
+
+    // Recompute with the producer's EXACT machinery (no reimplementation).
+    let body_text = block_inner_source(&src, &item_fn.block)
+        .map(canonical_sugar_body_text)
+        .unwrap_or_default()
+        .to_string();
+    let param_names: Vec<String> = item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_ty) => match &*pat_ty.pat {
+                syn::Pat::Ident(pid) => Some(pid.ident.to_string()),
+                _ => None,
+            },
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+    let ast_template = block_to_ast_template(&item_fn.block, &param_names);
+    let recomputed_source_cid = blake3_512_of(body_text.as_bytes());
+    let recomputed_template_cid = blake3_512_of(ast_template.to_string().as_bytes());
+
+    if let Some(pinned) = &memento.source_cid {
+        if &recomputed_source_cid != pinned {
+            return Err(SourceOracleRefusal {
+                reason: format!(
+                    "source CID misaligned for `{}` in `{}`: pinned {pinned}, on-disk {recomputed_source_cid} -- the source drifted from the proof",
+                    memento.source_function_name.as_deref().unwrap_or("<any>"),
+                    memento.file
+                ),
+            });
+        }
+    }
+    if let Some(pinned) = &memento.template_cid {
+        if &recomputed_template_cid != pinned {
+            return Err(SourceOracleRefusal {
+                reason: format!(
+                    "template CID misaligned for `{}` in `{}`: pinned {pinned}, on-disk {recomputed_template_cid} -- the AST drifted from the proof",
+                    memento.source_function_name.as_deref().unwrap_or("<any>"),
+                    memento.file
+                ),
+            });
+        }
+    }
+
+    Ok(ResolvedSource {
+        body_text,
+        source_cid: recomputed_source_cid,
+        template_cid: recomputed_template_cid,
+        param_names,
+    })
+}
+
+/// Find the `syn::ItemFn` the memento names (by `source_function_name`, then by
+/// span when ambiguous), recursing into nested modules.
+fn locate_boundary_source_fn<'a>(
+    items: &'a [syn::Item],
+    memento: &SourceMemento,
+) -> Option<&'a syn::ItemFn> {
+    let mut matches: Vec<&syn::ItemFn> = Vec::new();
+    collect_named_fns(items, memento.source_function_name.as_deref(), &mut matches);
+    if matches.is_empty() {
+        return None;
+    }
+    if matches.len() > 1 {
+        if let Some(start) = memento.start_line {
+            for f in &matches {
+                let f_start = f.sig.fn_token.span.start().line;
+                let f_end = f.block.brace_token.span.close().end().line;
+                let end = memento.end_line.unwrap_or(f_end);
+                if f_start <= start && start <= end {
+                    return Some(f);
+                }
+            }
+        }
+    }
+    Some(matches[0])
+}
+
+fn collect_named_fns<'a>(
+    items: &'a [syn::Item],
+    name: Option<&str>,
+    out: &mut Vec<&'a syn::ItemFn>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if name.is_none_or(|n| item_fn.sig.ident == n) {
+                    out.push(item_fn);
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, nested)) = &item_mod.content {
+                    collect_named_fns(nested, name, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// A vendor sugar binding the materializer can fill a boundary stub from: the
+/// `(library_tag, source_function_name)` key + the SourceMemento needed to
+/// resolve its body.
+struct VendorBinding {
+    library_tag: String,
+    source_function_name: String,
+    memento: SourceMemento,
+}
+
+/// Parse a lean `body_source` JSON into a SourceMemento.
+fn source_memento_from_body_source(
+    source_function_name: Option<String>,
+    body_source: &Value,
+) -> Option<SourceMemento> {
+    let file = body_source.get("file").and_then(Value::as_str)?.to_string();
+    let span = body_source.get("span");
+    let start_line = span
+        .and_then(|s| s.get("start_line"))
+        .and_then(Value::as_u64)
+        .map(|n| n as usize);
+    let end_line = span
+        .and_then(|s| s.get("end_line"))
+        .and_then(Value::as_u64)
+        .map(|n| n as usize);
+    Some(SourceMemento {
+        source_function_name,
+        file,
+        start_line,
+        end_line,
+        source_cid: body_source
+            .get("source_cid")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        template_cid: body_source
+            .get("template_cid")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    })
+}
+
+/// Collect VendorBindings from the FROZEN vendor `.proof`s resolved for the
+/// project (the same proof sources `recognize` uses: `.provekit/imports/` +
+/// cargo-dependency proofs). The pin is frozen at mint time; the oracle later
+/// resolves it against LIVE vendor disk, so drift (frozen pin != live recompute)
+/// is detectable. This is the by-reference contract: re-lifting live source
+/// could never detect drift (the pin would track disk by construction).
+///
+/// Mirrors python `_vendor_proof_binding_templates` + `_resolve_via_source_oracle`.
+/// Unlike the recognize loader (`binding_template_from_sugar_entry`), this does
+/// NOT require an inline `ast_template`: a lean binding has none, and dropping
+/// it is the whole point — we pull the SourceMemento (locus + pins) instead.
+fn vendor_bindings_from_proofs(project_root: &Path) -> Result<Vec<VendorBinding>, String> {
+    let proof_paths = resolve_recognizer_proof_paths(project_root)?;
+    let mut bindings = Vec::new();
+    for path in proof_paths {
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let Ok(catalog) = provekit_proof_envelope::cbor_decode(&bytes) else {
+            continue;
+        };
+        let Some(members) = catalog
+            .as_map()
+            .and_then(|root| root.get("members"))
+            .and_then(provekit_proof_envelope::CborValue::as_map)
+        else {
+            continue;
+        };
+        for member in members.values() {
+            let Some(member_bytes) = member.as_bstr() else {
+                continue;
+            };
+            let Ok(parsed) = serde_json::from_slice::<Value>(member_bytes) else {
+                continue;
+            };
+            let body = parsed.get("body").unwrap_or(&parsed);
+            if body.get("kind").and_then(Value::as_str) != Some("library-sugar-binding-entry") {
+                continue;
+            }
+            let library_tag = body
+                .get("target_library_tag")
+                .or_else(|| body.get("library_tag"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let source_function_name = body
+                .get("source_function_name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let Some(body_source) = body.get("body_source") else {
+                continue;
+            };
+            let Some(memento) =
+                source_memento_from_body_source(Some(source_function_name.clone()), body_source)
+            else {
+                continue;
+            };
+            bindings.push(VendorBinding {
+                library_tag,
+                source_function_name,
+                memento,
+            });
+        }
+    }
+    Ok(bindings)
+}
+
+/// Extract `(library, call)` from a `#[provekit::boundary(library, call)]`
+/// stub. `call` falls back to `api` (older annotations spelled the bound symbol
+/// there) and then to the stub's own fn name. Mirrors python `_boundary_decorator`.
+fn boundary_library_call(item_fn: &syn::ItemFn) -> Option<(String, String)> {
+    let target = extract_boundary_attr(item_fn)?;
+    if target.library.is_empty() {
+        return None;
+    }
+    let call = target
+        .call
+        .or(target.api)
+        .unwrap_or_else(|| item_fn.sig.ident.to_string());
+    if call.is_empty() {
+        return None;
+    }
+    Some((target.library, call))
+}
+
+/// `provekit.plugin.materialize`. Mirrors python `materialize_impl`. Params:
+///   - `project_root`: consumer project containing the `#[provekit::boundary]`
+///     stubs AND the resolved vendor `.proof`s (`.provekit/imports/` + cargo
+///     deps), exactly the proof sources `recognize` reads.
+///   - `source_paths`: consumer files to scan for stubs (relative to project_root).
+///   - `vendor_root` (optional): root the FROZEN memento's `file` path is
+///     relative to (where the LIVE vendor source lives on disk). Defaults to
+///     `project_root`. The oracle resolves the frozen pin against this live
+///     source — drift between the two is what gets REFUSED.
+///   - `write` (optional bool): write the rewritten file in place.
+///
+/// For each `#[provekit::boundary(library, call)]` stub: match a frozen vendor
+/// binding by `(library_tag, source_function_name) == (library, call)`, ask the
+/// SOURCE ORACLE to resolve its body from live disk (CID-verified against the
+/// frozen pin), and rewrite the stub body. On a missing binding or an oracle
+/// refusal (drift): `outcome:"refused"`, no write.
+fn materialize(params: &Value) -> Result<Value, String> {
+    let project_root = params
+        .get("project_root")
+        .and_then(Value::as_str)
+        .ok_or("missing `project_root`")?;
+    let project_root = PathBuf::from(project_root);
+    let source_paths: Vec<String> = params
+        .get("source_paths")
+        .and_then(Value::as_array)
+        .ok_or("missing `source_paths` array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    let write = params.get("write").and_then(Value::as_bool).unwrap_or(false);
+
+    let vendor_root = params
+        .get("vendor_root")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| project_root.clone());
+
+    // Frozen pins from the resolved vendor `.proof`s (NOT a live re-lift; that
+    // could never detect drift).
+    let vendor_bindings = vendor_bindings_from_proofs(&project_root)?;
+
+    let mut results: Vec<Value> = Vec::new();
+    for rel_path in &source_paths {
+        let full_path = project_root.join(rel_path);
+        let src = match std::fs::read_to_string(&full_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let file = match syn::parse_file(&src) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        // Collect (stub_fn, library, call) for every boundary stub, top-level
+        // and in nested modules.
+        let mut stubs: Vec<(&syn::ItemFn, String, String)> = Vec::new();
+        collect_boundary_stubs(&file.items, &mut stubs);
+
+        let mut edits: Vec<BoundaryBodyEdit> = Vec::new();
+        let mut file_refused = false;
+        for (stub_fn, library, call) in &stubs {
+            let binding = vendor_bindings.iter().find(|b| {
+                &b.library_tag == library && &b.source_function_name == call
+            });
+            let Some(binding) = binding else {
+                results.push(json!({
+                    "file": rel_path,
+                    "function": stub_fn.sig.ident.to_string(),
+                    "symbol": format!("{library}.{call}"),
+                    "outcome": "refused",
+                    "reason": format!("no vendor sugar binding for `{library}.{call}` in scope"),
+                }));
+                file_refused = true;
+                continue;
+            };
+            match resolve_source_memento(&vendor_root, &binding.memento) {
+                Ok(resolved) => {
+                    let symbol = format!("{library}.{call}");
+                    if let Some(mut edit) =
+                        boundary_body_edit(&src, stub_fn, &resolved.body_text, symbol)
+                    {
+                        // Carry the oracle's recomputed pins for the per-site
+                        // audit record (they equal the frozen pin on a clean
+                        // resolve; this is the receipt of WHICH source filled).
+                        edit.resolved_source_cid = resolved.source_cid.clone();
+                        edit.resolved_template_cid = resolved.template_cid.clone();
+                        edit.param_names = resolved.param_names.clone();
+                        edits.push(edit);
+                    } else {
+                        results.push(json!({
+                            "file": rel_path,
+                            "function": stub_fn.sig.ident.to_string(),
+                            "symbol": format!("{library}.{call}"),
+                            "outcome": "refused",
+                            "reason": "boundary stub body could not be located for rewrite",
+                        }));
+                        file_refused = true;
+                    }
+                }
+                Err(refusal) => {
+                    results.push(json!({
+                        "file": rel_path,
+                        "function": stub_fn.sig.ident.to_string(),
+                        "symbol": format!("{library}.{call}"),
+                        "outcome": "refused",
+                        "reason": refusal.reason,
+                    }));
+                    file_refused = true;
+                }
+            }
+        }
+
+        if edits.is_empty() {
+            continue;
+        }
+        // Refuse the WHOLE file if any site refused: a partially-materialized
+        // file is not exact-or-refuse. Report the materializable sites but do
+        // not write.
+        let new_source = apply_boundary_body_edits(&src, &mut edits);
+        let materialized: Vec<Value> = edits
+            .iter()
+            .map(|e| {
+                json!({
+                    "function": e.function_name,
+                    "symbol": e.symbol,
+                    "source_cid": e.resolved_source_cid,
+                    "template_cid": e.resolved_template_cid,
+                    "param_names": e.param_names,
+                })
+            })
+            .collect();
+        let mut file_result = json!({
+            "file": rel_path,
+            "outcome": "materialized",
+            "materialized": materialized,
+            "new_source": new_source,
+        });
+        if write && !file_refused {
+            if let Err(e) = std::fs::write(&full_path, &new_source) {
+                file_result["write_error"] = json!(e.to_string());
+            }
+        } else if file_refused {
+            // Do not write a file that had any refusal; downgrade the outcome.
+            file_result["outcome"] = json!("refused");
+            file_result["reason"] =
+                json!("one or more boundary sites in this file refused; file not written");
+        }
+        results.push(file_result);
+    }
+
+    Ok(json!({ "results": results }))
+}
+
+fn collect_boundary_stubs<'a>(
+    items: &'a [syn::Item],
+    out: &mut Vec<(&'a syn::ItemFn, String, String)>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if let Some((library, call)) = boundary_library_call(item_fn) {
+                    out.push((item_fn, library, call));
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, nested)) = &item_mod.content {
+                    collect_boundary_stubs(nested, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// A pending body rewrite: replace the byte range of a stub's block-inner source
+/// with the resolved vendor body (re-indented to the stub's block indent).
+struct BoundaryBodyEdit {
+    function_name: String,
+    symbol: String,
+    start_byte: usize,
+    end_byte: usize,
+    replacement: String,
+    resolved_source_cid: String,
+    resolved_template_cid: String,
+    param_names: Vec<String>,
+}
+
+/// Build a body edit that replaces the stub's block-inner source (between the
+/// braces) with the vendor `body_text`, re-indented to one level past the fn's
+/// own indentation. Returns None if the brace span cannot be byte-resolved.
+fn boundary_body_edit(
+    src: &str,
+    stub_fn: &syn::ItemFn,
+    body_text: &str,
+    symbol: String,
+) -> Option<BoundaryBodyEdit> {
+    let open_end = stub_fn.block.brace_token.span.open().end();
+    let close_start = stub_fn.block.brace_token.span.close().start();
+    let start_byte = line_column_to_byte_offset(src, open_end)?;
+    let end_byte = line_column_to_byte_offset(src, close_start)?;
+    if start_byte > end_byte {
+        return None;
+    }
+    // Base indent = the leading whitespace of the line that holds the stub's
+    // closing brace (which is exactly the fn item's own indentation, robust to
+    // `pub fn` where the `fn` token column is past the item indent). Body lines
+    // get base + 4.
+    let base_indent = leading_whitespace_of_line_at(src, end_byte);
+    let body_indent = format!("{base_indent}    ");
+    let mut replacement = String::new();
+    replacement.push('\n');
+    for line in body_text.lines() {
+        if line.trim().is_empty() {
+            replacement.push('\n');
+        } else {
+            replacement.push_str(&body_indent);
+            replacement.push_str(line);
+            replacement.push('\n');
+        }
+    }
+    replacement.push_str(&base_indent);
+    Some(BoundaryBodyEdit {
+        function_name: stub_fn.sig.ident.to_string(),
+        symbol,
+        start_byte,
+        end_byte,
+        replacement,
+        resolved_source_cid: String::new(),
+        resolved_template_cid: String::new(),
+        param_names: Vec::new(),
+    })
+}
+
+/// Leading whitespace of the source line containing byte offset `at`.
+fn leading_whitespace_of_line_at(src: &str, at: usize) -> String {
+    let line_start = src[..at.min(src.len())]
+        .rfind('\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    src[line_start..]
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect()
+}
+
+/// Apply body edits bottom-up (by start byte, descending) so earlier edits do
+/// not shift later byte offsets.
+fn apply_boundary_body_edits(src: &str, edits: &mut [BoundaryBodyEdit]) -> String {
+    edits.sort_by(|a, b| b.start_byte.cmp(&a.start_byte));
+    let mut out = src.to_string();
+    for edit in edits.iter() {
+        out.replace_range(edit.start_byte..edit.end_byte, &edit.replacement);
+    }
+    out
 }
 
 fn lift_implications(params: &Value) -> Result<Value, String> {
@@ -4752,6 +5354,7 @@ fn kit_declaration_result() -> Value {
                 {"name": "lift", "required": true},
                 {"name": "shutdown", "required": true},
                 {"name": "provekit.plugin.recognize", "required": false},
+                {"name": "provekit.plugin.materialize", "required": false},
                 {"name": "provekit.plugin.lift_implications", "required": false},
                 {"name": KIT_DECLARATION_RPC_METHOD, "required": false}
             ]
@@ -4833,6 +5436,30 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
     let library_bindings = LibraryBindingLookup::load(&root)?;
+
+    // Derive-from-source: in the `library-bindings` layer, EVERY module-level
+    // `pub fn` that carries NO `#[provekit::sugar]` attribute is ALSO sugar —
+    // the tag is gone, the binding is DERIVED from the crate name + fn name
+    // (`<crate>::f` -> tag=`<crate>`, symbol=`<crate>.f`). This is the rust
+    // mirror of python's universal lift (`_library_binding_entry_for_function`,
+    // `binding_origin: "derived"`): write a function, it's sugar — zero code
+    // changes, no `#[provekit::sugar]` required. Gated to `library-bindings`
+    // exactly like python (`layer == "library-bindings"`) so the general
+    // contract path (`all`) is untouched and not flooded. The explicit-tag
+    // path below stays unconditional (it already works).
+    let derive_library_bindings = params
+        .get("options")
+        .and_then(|options| options.get("layer"))
+        .and_then(Value::as_str)
+        == Some("library-bindings");
+    // The crate the derived tag names: the RAW `[package].name` (hyphens
+    // intact) so it matches a consumer's `#[provekit::boundary(library = ...)]`
+    // verbatim under the materialize verb's raw `==`.
+    let derived_crate_tag = if derive_library_bindings {
+        crate_name_raw_for(&root)
+    } else {
+        None
+    };
 
     let scan_roots: Vec<PathBuf> = if source_paths.is_empty() {
         vec![root.clone()]
@@ -5163,6 +5790,141 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             }));
         }
 
+        // Derive-from-source lane (mirrors python's universal lift). Anything is
+        // liftable sugar: when the `library-bindings` layer is active and the
+        // crate has a readable `[package].name`, every MODULE-LEVEL `fn` (ANY
+        // visibility) with NO `#[provekit::sugar]` and NO `#[provekit::boundary]`
+        // attribute ALSO emits a `library-sugar-binding-entry` —
+        // `binding_origin: "derived"`, `target_library_tag = <crate>`,
+        // `symbol = <crate>.<fn>`, carrying the SAME lean SourceMemento
+        // (`sugar_body_source`) the tagged path emits. The body source CIDs are
+        // byte-identical to the tagged path for the same fn (same locus, same
+        // hashing), so the Source Oracle resolves a derived binding exactly as it
+        // does a tagged one. We reuse the tagged path's entry builder; only the
+        // symbol/tag/origin provenance differs (path-derived vs attribute-
+        // derived). Visibility is NOT a gate. Only structural skips remain: a
+        // still-tagged fn (emitted above), a `#[provekit::boundary]` consumer
+        // stub, and test fns. Impl methods + nested-module fns are the next
+        // increment of "anything" (a structural walk, not an access rule). No
+        // `concept_name` is emitted, so `recognize` (which requires it) keeps the
+        // project's own functions out of its published match-template set; the
+        // derived binding is materialize-only, exactly like python's derived
+        // path.
+        if let Some(crate_tag) = &derived_crate_tag {
+            for item in &file.items {
+                let syn::Item::Fn(item_fn) = item else {
+                    continue;
+                };
+                // Anything is liftable sugar: visibility is NOT a gate. A
+                // crate-private fn is as derivable as a `pub` one — its body is
+                // real source the oracle resolves and CID-verifies just the
+                // same. The only skips below are structural, not access-level.
+                // The tag is OPTIONAL, not removed: a fn that still carries
+                // `#[provekit::sugar]` is emitted by the tagged path above —
+                // skip it here so we never double-emit.
+                if extract_sugar_attr(item_fn).is_some() {
+                    continue;
+                }
+                // `#[provekit::boundary]` stubs are CONSUMERS of a binding, not
+                // producers — never lift them as sugar.
+                if extract_boundary_attr(item_fn).is_some() {
+                    continue;
+                }
+                // Tests are not a vendored surface.
+                if is_rust_test_fn(item_fn) {
+                    continue;
+                }
+
+                let fn_name = item_fn.sig.ident.to_string();
+                let symbol = format!("{crate_tag}.{fn_name}");
+                let param_names = fn_param_names(item_fn);
+                let param_types = sugar_param_types(item_fn);
+                let original_param_types = sugar_original_param_types(item_fn);
+                let generic_params = sugar_generic_params(item_fn);
+                let return_type = sugar_return_type(item_fn);
+                let term_shape = term_shape_for_fn(item_fn);
+                let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
+                let operand_bindings = operand_bindings_for_fn(item_fn);
+                let sig_shape = CValue::object([
+                    (
+                        "param_names",
+                        CValue::array(
+                            param_names
+                                .iter()
+                                .map(|name| CValue::string(name.clone()))
+                                .collect(),
+                        ),
+                    ),
+                    (
+                        "param_types",
+                        CValue::array(
+                            param_types
+                                .iter()
+                                .map(|param_type| CValue::string(param_type.clone()))
+                                .collect(),
+                        ),
+                    ),
+                    ("return_type", CValue::string(return_type.clone())),
+                ]);
+                let signature_shape_cid = blake3_512_of(encode_jcs(&sig_shape).as_bytes());
+                let mut parametric_sort_expansions: Vec<
+                    libprovekit::core::lower_plugin::ParametricSortExpansion,
+                > = Vec::new();
+                let param_sort_cids: Vec<String> = param_types
+                    .iter()
+                    .map(|t| {
+                        rust_source_type_to_concept_hub_sort_cid(
+                            t,
+                            &mut parametric_sort_expansions,
+                        )
+                        .unwrap_or_default()
+                    })
+                    .collect();
+                let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(
+                    &return_type,
+                    &mut parametric_sort_expansions,
+                )
+                .unwrap_or_default();
+                let doc_lines = sugar_doc_lines(item_fn);
+                let mut entry = json!({
+                    "kind": "library-sugar-binding-entry",
+                    "target_language": "rust",
+                    "target_library_tag": crate_tag,
+                    "symbol": symbol,
+                    "binding_origin": "derived",
+                    "source_function_name": fn_name,
+                    "visibility": match &item_fn.vis {
+                        syn::Visibility::Public(_) => "pub",
+                        _ => "private",
+                    },
+                    "generic_params": generic_params,
+                    "original_param_types": original_param_types,
+                    "param_names": param_names,
+                    "param_types": param_types,
+                    "param_sort_cids": param_sort_cids,
+                    "return_type": return_type,
+                    "return_sort_cid": return_sort_cid,
+                    "term_shape": cvalue_to_json(&term_shape),
+                    "term_shape_cid": term_shape_cid,
+                    "operand_bindings": operand_bindings,
+                    "signature_shape_cid": signature_shape_cid,
+                    "loss_record_contribution": {
+                        "form": "literal",
+                        "value": { "entries": Vec::<String>::new() },
+                    },
+                    "body_source": sugar_body_source(&rel, &src, item_fn),
+                    "doc_lines": doc_lines,
+                });
+                if !parametric_sort_expansions.is_empty() {
+                    entry["parametric_sort_expansions"] = serde_json::to_value(
+                        &parametric_sort_expansions,
+                    )
+                    .unwrap_or_else(|_| json!([]));
+                }
+                entries.push(entry);
+            }
+        }
+
         for refuse_target in collect_refuse_targets(&file) {
             let RefuseTarget {
                 surface,
@@ -5194,6 +5956,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 version,
                 family,
                 api,
+                call,
                 boundary_contract,
                 loss,
                 source_function_name,
@@ -5212,6 +5975,11 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             });
             if let Some(api_str) = api {
                 entry["api"] = json!(api_str);
+            }
+            // The bound vendor symbol (matches the vendor sugar binding's
+            // `source_function_name`); materialize reads it to fill the stub.
+            if let Some(call_str) = call {
+                entry["call"] = json!(call_str);
             }
             if let Some(bc) = boundary_contract {
                 entry["boundary_contract"] = json!(bc);
@@ -6190,6 +6958,12 @@ struct BoundaryTarget {
     version: Option<String>,
     family: Option<String>,
     api: Option<String>,
+    /// The vendor function this boundary stub binds to (matches the vendor
+    /// sugar binding's `source_function_name`). Materialize fills the stub
+    /// body from this call's REAL source, resolved by the Source Oracle.
+    /// Falls back to `api` when omitted, since older annotations spelled the
+    /// bound symbol there.
+    call: Option<String>,
     boundary_contract: Option<String>,
     loss: Vec<String>,
     source_function_name: String,
@@ -6237,6 +7011,7 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
                         version: args.string("version"),
                         family: args.string("family"),
                         api: args.string("api"),
+                        call: args.string("call"),
                         boundary_contract: args.string("boundary_contract"),
                         loss: args.string_array("loss"),
                         source_function_name: String::new(),
@@ -7266,6 +8041,29 @@ fn sugar_type_surface(ty: &syn::Type) -> String {
     ty.to_token_stream().to_string().replace(' ', "")
 }
 
+/// When set in the environment, `sugar_body_source` emits a LEAN SourceMemento:
+/// it keeps the locus (`file`/`span`) and the two pins (`source_cid`/
+/// `template_cid`) + `param_names`, but DROPS the inline `body_text`/
+/// `ast_template`. The body then lives only on disk (the vendor shipped it);
+/// the consumer reconstructs it through the Source Oracle (`resolve_source_memento`),
+/// which recomputes the CIDs from on-disk source and refuses on drift. This
+/// mirrors the python kit's `PROVEKIT_LEAN_SOURCE=1` (see numpy-showcase/run.sh).
+///
+/// Off by default: the recognize lane + existing tests read the inline
+/// `body_text`/`ast_template`, and lean-by-default would break them. The CIDs
+/// are computed from the body BEFORE the drop, so lean and non-lean mint
+/// byte-identical `source_cid`/`template_cid` — the oracle's clean resolve
+/// byte-matches whichever form minted the pin.
+const LEAN_SOURCE_ENV: &str = "PROVEKIT_LEAN_SOURCE";
+
+fn lean_source_enabled() -> bool {
+    std::env::var_os(LEAN_SOURCE_ENV).is_some_and(|v| {
+        let v = v.to_string_lossy();
+        let v = v.trim();
+        !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
+    })
+}
+
 fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
     let start = item_fn.sig.fn_token.span.start();
     let end = item_fn.block.brace_token.span.close().end();
@@ -7294,7 +8092,11 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         .collect();
     let ast_template = block_to_ast_template(&item_fn.block, &param_names);
     let template_text = ast_template.to_string();
-    json!({
+    // CIDs are computed from the body BEFORE any lean drop, so lean and
+    // non-lean mints are byte-identical on the pins.
+    let source_cid = blake3_512_of(body_text.as_bytes());
+    let template_cid = blake3_512_of(template_text.as_bytes());
+    let mut out = json!({
         "file": rel,
         "span": {
             "start_line": start.line,
@@ -7302,13 +8104,20 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
             "end_line": end.line,
             "end_col": end.column,
         },
-        "source_cid": blake3_512_of(body_text.as_bytes()),
-        "body_text": body_text,
+        "source_cid": source_cid,
         "body_text_canonicalization": BODY_TEXT_CANONICALIZATION,
-        "ast_template": ast_template,
-        "template_cid": blake3_512_of(template_text.as_bytes()),
+        "template_cid": template_cid,
         "param_names": param_names,
-    })
+    });
+    // Lean SourceMemento: keep locus + pins, drop the inline body. The Source
+    // Oracle reconstructs `body_text`/`ast_template` from on-disk source.
+    if !lean_source_enabled() {
+        if let Value::Object(map) = &mut out {
+            map.insert("body_text".to_string(), json!(body_text));
+            map.insert("ast_template".to_string(), ast_template);
+        }
+    }
+    out
 }
 
 fn canonical_sugar_body_text(body: &str) -> &str {
@@ -9276,6 +10085,182 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    // ---- Source Oracle + materialize (#1359) --------------------------------
+
+    /// Mint a lean SourceMemento for `fn_name` in `src`, then return
+    /// (project_root, memento). Mirrors what the producer (`sugar_body_source`)
+    /// emits + what the proof loader hands `resolve_source_memento`.
+    fn mint_memento_for(
+        dir: &Path,
+        fn_name: &str,
+        src: &str,
+    ) -> SourceMemento {
+        let file_rel = "src/lib.rs";
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join(file_rel), src).unwrap();
+        let parsed = syn::parse_file(src).unwrap();
+        let item_fn = parsed
+            .items
+            .iter()
+            .find_map(|it| match it {
+                syn::Item::Fn(f) if f.sig.ident == fn_name => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        let body_source = sugar_body_source(file_rel, src, item_fn);
+        // body_source is non-lean here (env not set), but a memento only needs
+        // the locus + pins — exactly what a lean binding also carries.
+        source_memento_from_body_source(Some(fn_name.to_string()), &body_source).unwrap()
+    }
+
+    fn unique_tmp(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "pk-oracle-{tag}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn source_oracle_resolves_matching_source_to_body() {
+        let dir = unique_tmp("match");
+        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let memento = mint_memento_for(&dir, "rev", src);
+        // Clean disk == the pin: the oracle returns the body.
+        let resolved = resolve_source_memento(&dir, &memento).expect("clean resolve");
+        assert_eq!(resolved.body_text, "s.chars().rev().collect()");
+        assert_eq!(resolved.source_cid, memento.source_cid.clone().unwrap());
+        assert_eq!(resolved.template_cid, memento.template_cid.clone().unwrap());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn source_oracle_refuses_on_body_drift() {
+        let dir = unique_tmp("drift");
+        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let memento = mint_memento_for(&dir, "rev", src);
+        // Tamper the body AFTER minting the pin: same behavior, different bytes.
+        let tampered = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    let v: Vec<char> = s.chars().rev().collect();\n    v.into_iter().collect()\n}\n";
+        fs::write(dir.join("src/lib.rs"), tampered).unwrap();
+        let err = resolve_source_memento(&dir, &memento).expect_err("drift must refuse");
+        assert!(
+            err.reason.contains("source CID misaligned"),
+            "expected source_cid refusal, got: {}",
+            err.reason
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn source_oracle_param_rename_keeps_template_cid_but_drifts_source_cid() {
+        // Renaming a PARAM (not a local) leaves the AST template stable —
+        // `block_to_ast_template` canonicalizes params to positional `param_ref`
+        // holes — so template_cid is unchanged. But the body TEXT changes
+        // (`s` -> `input`), so source_cid drifts. The oracle therefore refuses
+        // on the source_cid axis, demonstrating the producer's canonicalization
+        // is exactly what the oracle recomputes.
+        let dir = unique_tmp("rename");
+        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let memento = mint_memento_for(&dir, "rev", src);
+
+        // Re-mint a memento from the param-renamed body to read its pins.
+        let renamed = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(input: &str) -> String {\n    input.chars().rev().collect()\n}\n";
+        let dir2 = unique_tmp("rename2");
+        let renamed_memento = mint_memento_for(&dir2, "rev", renamed);
+        // template_cid is STABLE across the param rename (alpha-equivalence).
+        assert_eq!(
+            memento.template_cid, renamed_memento.template_cid,
+            "param rename must leave template_cid stable"
+        );
+        // source_cid DIFFERS (body text changed).
+        assert_ne!(
+            memento.source_cid, renamed_memento.source_cid,
+            "param rename must drift source_cid"
+        );
+
+        // Resolving the ORIGINAL pin against the renamed disk refuses on source_cid.
+        fs::write(dir.join("src/lib.rs"), renamed).unwrap();
+        let err = resolve_source_memento(&dir, &memento).expect_err("rename must refuse");
+        assert!(err.reason.contains("source CID misaligned"), "got: {}", err.reason);
+        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(&dir2).ok();
+    }
+
+    #[test]
+    fn source_oracle_refuses_when_function_absent() {
+        let dir = unique_tmp("absent");
+        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let memento = mint_memento_for(&dir, "rev", src);
+        // Replace with a file that has no `rev`.
+        fs::write(
+            dir.join("src/lib.rs"),
+            "pub fn other() -> u32 { 0 }\n",
+        )
+        .unwrap();
+        let err = resolve_source_memento(&dir, &memento).expect_err("absent fn must refuse");
+        assert!(err.reason.contains("not found"), "got: {}", err.reason);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lean_source_drops_inline_body_but_keeps_pins() {
+        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let parsed = syn::parse_file(src).unwrap();
+        let item_fn = parsed
+            .items
+            .iter()
+            .find_map(|it| match it {
+                syn::Item::Fn(f) => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        // Default (non-lean): inline body present.
+        let full = sugar_body_source("src/lib.rs", src, item_fn);
+        assert!(full.get("body_text").is_some());
+        assert!(full.get("ast_template").is_some());
+        let full_source_cid = full.get("source_cid").cloned();
+        let full_template_cid = full.get("template_cid").cloned();
+
+        // Lean: body dropped, pins byte-identical to the non-lean mint.
+        std::env::set_var(LEAN_SOURCE_ENV, "1");
+        let lean = sugar_body_source("src/lib.rs", src, item_fn);
+        std::env::remove_var(LEAN_SOURCE_ENV);
+        assert!(lean.get("body_text").is_none(), "lean must drop body_text");
+        assert!(
+            lean.get("ast_template").is_none(),
+            "lean must drop ast_template"
+        );
+        assert_eq!(lean.get("source_cid").cloned(), full_source_cid);
+        assert_eq!(lean.get("template_cid").cloned(), full_template_cid);
+        assert!(lean.get("span").is_some());
+    }
+
+    #[test]
+    fn boundary_body_edit_reindents_to_stub_level() {
+        let src = "mod m {\n    #[provekit::boundary(concept=\"c\", library=\"l\", call=\"f\")]\n    pub fn rev(s: &str) -> String {\n        unimplemented!()\n    }\n}\n";
+        let parsed = syn::parse_file(src).unwrap();
+        let mut stubs: Vec<(&syn::ItemFn, String, String)> = Vec::new();
+        collect_boundary_stubs(&parsed.items, &mut stubs);
+        assert_eq!(stubs.len(), 1, "one nested boundary stub");
+        let (stub_fn, _lib, call) = &stubs[0];
+        assert_eq!(call, "f");
+        let edit = boundary_body_edit(src, stub_fn, "s.chars().rev().collect()", "l.f".into())
+            .expect("edit");
+        let mut edits = vec![edit];
+        let out = apply_boundary_body_edits(src, &mut edits);
+        // The body is indented to the stub's level + 4 (8 spaces inside `mod m`).
+        assert!(
+            out.contains("\n        s.chars().rev().collect()\n"),
+            "reindented body, got:\n{out}"
+        );
+        assert!(!out.contains("unimplemented"), "stub body replaced");
+    }
+
     const RUST_FN_CONTRACTS_SURFACE: &str = "rust-fn-contracts";
 
     fn assert_kit_declaration_mappings(
@@ -9723,6 +10708,101 @@ async fn fetch_status(url: String) -> i64 {
         assert!(
             e["body_source"].get("locator").is_none(),
             "must use span not locator"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn untagged_pub_fn_derives_library_sugar_binding_entry_in_library_bindings_layer() {
+        // The relapse-killer: a PLAIN `pub fn` with NO `#[provekit::sugar]`
+        // attribute must ALSO emit a `library-sugar-binding-entry` when the
+        // `library-bindings` layer is active — the tag is gone; the binding is
+        // DERIVED from the crate name + fn name. Mirror of python's universal
+        // lift. The `target_library_tag` is the RAW crate name (hyphens intact)
+        // so it matches a consumer's `#[provekit::boundary(library = ...)]`.
+        let root = temp_workspace("derive_positive");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"rust-boundary-vendor\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .expect("write Cargo.toml");
+        let src = "pub fn reverse_chars(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+            "options": { "layer": "library-bindings" },
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let derived: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(
+            derived.len(),
+            1,
+            "expected exactly one derived sugar entry, got: {derived:?}"
+        );
+        let e = &derived[0];
+        assert_eq!(e["target_language"], "rust");
+        assert_eq!(
+            e["target_library_tag"], "rust-boundary-vendor",
+            "derived tag must be the RAW crate name (hyphens intact)"
+        );
+        assert_eq!(e["symbol"], "rust-boundary-vendor.reverse_chars");
+        assert_eq!(e["binding_origin"], "derived");
+        assert_eq!(e["source_function_name"], "reverse_chars");
+        assert!(
+            e.get("concept_name").is_none(),
+            "derived entry must NOT carry concept_name (materialize-only; keeps recognize from publishing the project's own fns)"
+        );
+        assert!(
+            e["body_source"]["source_cid"]
+                .as_str()
+                .expect("source cid")
+                .starts_with("blake3-512:"),
+            "bad source cid"
+        );
+        assert!(
+            e["body_source"]["span"]["start_line"].is_number(),
+            "derived body_source must carry a locus span"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn untagged_pub_fn_does_not_derive_in_general_all_layer() {
+        // Membrane: the derived path is GATED to `library-bindings`. A plain
+        // `pub fn` lifted in the default (no-layer / `all`) path must NOT emit a
+        // derived binding — else every general lift floods spurious entries.
+        let root = temp_workspace("derive_negative");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"rust-boundary-vendor\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .expect("write Cargo.toml");
+        let src = "pub fn reverse_chars(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let derived: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert!(
+            derived.is_empty(),
+            "no-layer lift must NOT derive sugar bindings, got: {derived:?}"
         );
 
         let _ = fs::remove_dir_all(root);
