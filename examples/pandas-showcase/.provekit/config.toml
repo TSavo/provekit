@@ -1,8 +1,9 @@
 # pandas showcase — the same two-axis correctness claim as numpy-showcase, one
-# rung up the ladder: pandas. The next package after numpy is JUST ANOTHER
-# LIFTER PACKAGE (provekit-lift-py-pandas-testing), so this example differs from
-# numpy-showcase only by swapping the numpy.testing seat for the pandas.testing
-# seat and pointing the witness venv at pandas.
+# rung up the ladder: pandas. The next library after numpy is NOT a new package:
+# it is the SAME one lifter (provekit_lift_py_tests.assertion_lsp), so this example
+# differs from numpy-showcase only by its
+# .provekit/vocab-exceptions/pandas.testing.json and pointing the witness venv at
+# pandas.
 #
 # Three lift seats, each claiming the test it understands:
 #   python               — the plain pytest bare-assert CONSISTENCY seat. Scalar
