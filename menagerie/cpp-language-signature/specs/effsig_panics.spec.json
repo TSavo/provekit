@@ -1,6 +1,0 @@
-{
-  "kind": "effect-signature",
-  "name": "panics",
-  "effect": "cpp:panics",
-  "locus": "menagerie/cpp-language-signature/README.md"
-}

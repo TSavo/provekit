@@ -1,6 +1,0 @@
-{
-  "kind": "effect-signature",
-  "name": "opaque_loop",
-  "effect": "cpp:opaque_loop",
-  "locus": "menagerie/cpp-language-signature/README.md"
-}

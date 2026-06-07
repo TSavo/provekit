@@ -1,9 +1,0 @@
-{
-  "name": "guard-narrowing",
-  "retired": {
-    "at": "2026-04-27T00:00:00.000Z",
-    "reason": "DSL-pending stub, no matching mechanism shipped; not adversarially validated.",
-    "task": "#129",
-    "spec": "docs/specs/2026-04-27-constraint-driven-development.md"
-  }
-}

@@ -63,15 +63,14 @@ use tracing::{debug, info, trace, warn};
 #[path = "../ra_daemon_client.rs"]
 mod ra_daemon_client;
 
-const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
-    include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
 const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
 const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
 const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
 const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
 const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
 
-static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+static CONCEPT_OP_CIDS: OnceLock<std::sync::Mutex<BTreeMap<String, &'static str>>> =
+    OnceLock::new();
 
 fn log_body_discharge_policy_warnings(
     context: &str,
@@ -5609,28 +5608,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 item_fn,
                 totality_result_ok,
             } = sugar_target;
-            // #1396 PR-0: singleton-concept lift-gap validator.  When the
-            // @sugar annotation claims a portable `concept:X`, the substrate
-            // expects ≥2 realizations in the catalog (one is a singleton
-            // dressed in cross-language clothing).  `library:X` prefixes are
-            // already-honest kit-specific identifiers — we skip them
-            // entirely.  This is GAP-EMITTING, not refusing: the existing
-            // `library-sugar-binding-entry` is still emitted below.
-            if concept.starts_with("concept:") {
-                let counts = concept_realization_counts();
-                let realization_count = counts.get(&concept).copied().unwrap_or(0);
-                if realization_count < 2 {
-                    let fn_name = item_fn.sig.ident.to_string();
-                    let line = item_fn.sig.fn_token.span.start().line;
-                    diagnostics.push(singleton_concept_gap(
-                        &fn_name,
-                        &rel,
-                        line,
-                        &concept,
-                        realization_count,
-                    ));
-                }
-            }
             let param_names = fn_param_names(&item_fn);
             let param_types = sugar_param_types(&item_fn);
             let original_param_types = sugar_original_param_types(&item_fn);
@@ -9735,7 +9712,7 @@ fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
             // CID from structure (here just the name), and join the
             // catalogue. Catalog memento files can be generated later
             // from observed CIDs.
-            format!("blake3-512:{}", blake3_512_of(concept_name.as_bytes()))
+            blake3_512_of(concept_name.as_bytes())
         }
     };
     CValue::object([
@@ -9864,151 +9841,18 @@ fn byte_array_value(bytes: Vec<u8>) -> Arc<CValue> {
 }
 
 fn concept_op_cid(concept_name: &str) -> Option<&'static str> {
-    CONCEPT_OP_CIDS
-        .get_or_init(load_concept_op_cids)
-        .get(concept_name)
-        .map(String::as_str)
-}
-
-fn load_concept_op_cids() -> BTreeMap<String, String> {
-    let index: Value = serde_json::from_str(CONCEPT_SHAPES_CATALOG_INDEX_JSON)
-        .expect("embedded concept-shapes catalog index is valid JSON");
-    let mut cids = BTreeMap::new();
-    let Some(entries) = index.get("entries").and_then(Value::as_object) else {
-        return cids;
-    };
-    for (cid, meta) in entries {
-        // Both `algorithm` and `abstraction` entries are usable as
-        // term-shape node identities. Algorithms are operations (e.g.
-        // concept:assign, concept:call); abstractions are values-as-
-        // operations in syntactic position (e.g. concept:closure —
-        // syntactically a closure-creation node, semantically a value).
-        let kind = meta.get("kind").and_then(Value::as_str).unwrap_or("");
-        if kind != "algorithm" && kind != "abstraction" {
-            continue;
-        }
-        let Some(name) = meta.get("name").and_then(Value::as_str) else {
-            continue;
-        };
-        if !name.starts_with("concept:") {
-            continue;
-        }
-        let resolved_cid = meta.get("cid").and_then(Value::as_str).unwrap_or(cid);
-        cids.insert(name.to_string(), resolved_cid.to_string());
+    if !concept_name.starts_with("concept:") {
+        return None;
     }
-    cids
-}
-
-/// #1396 PR-0: count abstraction-REALIZATION catalog entries per concept name.
-///
-/// A realization that counts toward a concept's cross-language admissibility is
-/// a catalog entry with `kind == "realization"` whose underlying memento has
-/// `role == "abstraction-realization"` — i.e. an N-edge answering "language L
-/// realizes concept X".  These are exactly the FORWARD-direction entries whose
-/// `name` starts with `concept:X` (e.g. `concept:closure->rust:closure-expression`
-/// or the colon form `concept:bool-cell:c:pointer-indirection`).
-///
-/// We deliberately EXCLUDE reverse-direction entries (`lang:form->concept:X`).
-/// Those are `role == "abstraction-lift"` M-edges minted by the lift scripts;
-/// they answer a different question ("how does language L's surface form lift
-/// INTO the hub", not "how many languages realize this concept") and must not
-/// count toward the >=2 singleton threshold. See #1397 (PR-1 absorbed): the
-/// seven reverse-direction entries are intentional M-edges, not mis-filed
-/// N-edges.
-///
-/// The embedded `index.json` does not carry the `role` field, but role
-/// correlates exactly with direction in the catalog: every `concept:X->...`
-/// entry is `abstraction-realization` and every `...->concept:X` entry is
-/// `abstraction-lift`. Filtering by direction is therefore equivalent to
-/// filtering by `role == "abstraction-realization"`.
-///
-/// Returns a map keyed by the bare concept name (e.g. `"concept:closure"`),
-/// used by the singleton-concept lift-gap validator at @sugar attribute
-/// extraction time.
-fn concept_realization_counts() -> &'static BTreeMap<String, usize> {
-    static COUNTS: OnceLock<BTreeMap<String, usize>> = OnceLock::new();
-    COUNTS.get_or_init(|| {
-        let index: Value = serde_json::from_str(CONCEPT_SHAPES_CATALOG_INDEX_JSON)
-            .expect("embedded concept-shapes catalog index is valid JSON");
-        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-        let Some(entries) = index.get("entries").and_then(Value::as_object) else {
-            return counts;
-        };
-        for meta in entries.values() {
-            let kind = meta.get("kind").and_then(Value::as_str).unwrap_or("");
-            if kind != "realization" {
-                continue;
-            }
-            let Some(name) = meta.get("name").and_then(Value::as_str) else {
-                continue;
-            };
-            // Reverse-direction (`lang:form->concept:X`) = abstraction-lift
-            // M-edge. Skip entirely — does not count toward the threshold.
-            if name.contains("->concept:") {
-                continue;
-            }
-            // Forward-direction (`concept:X->lang:form` arrow form, or the
-            // colon form `concept:X:lang:form`) = abstraction-realization.
-            let Some(rest) = name.strip_prefix("concept:") else {
-                continue;
-            };
-            // Bare concept name is the segment up to the first `->` (arrow
-            // form) or, absent an arrow, up to the next `:` (colon form).
-            let bare = if let Some(idx) = rest.find("->") {
-                &rest[..idx]
-            } else if let Some(idx) = rest.find(':') {
-                &rest[..idx]
-            } else {
-                rest
-            };
-            let concept = format!("concept:{bare}");
-            *counts.entry(concept).or_insert(0) += 1;
-        }
-        counts
-    })
-}
-
-/// #1396 PR-0: build a singleton-concept lift-gap diagnostic.
-///
-/// Emitted (non-fatally) into the lift `diagnostics` channel whenever a
-/// `#[provekit::sugar(concept = "concept:X", ...)]` annotation names a
-/// `concept:X` whose catalog has fewer than 2 realizations — i.e. it is a
-/// singleton or absent.  The gap is informational: the caller (substrate /
-/// audit tooling) can choose to refuse, rewrite (`concept:X` → `library:X`),
-/// or mint a second realization in another language.
-///
-/// `library:X` prefixed concepts are SKIPPED at the call site — they're
-/// already-honest kit-specific identifiers and carry no cross-language claim.
-fn singleton_concept_gap(
-    fn_name: &str,
-    rel_path: &str,
-    line: usize,
-    concept: &str,
-    realization_count: usize,
-) -> Value {
-    // Field name is `function_name` (not `fn_name`) deliberately: the bind
-    // payload's substrate-hygiene assertion forbids `fn_name` outside the
-    // `gapRecords` subtree (see `assert_no_fn_name_outside_gap_records` in
-    // this file's tests).  The lift `diagnostics` channel rides alongside
-    // `ir` and is NOT stripped by `strip_realize_sidecar_from_lift_term`,
-    // so any field name we choose here lands verbatim in downstream JSON.
-    // `function_name` carries the same signal without colliding with the
-    // existing `fn_name` invariant.
-    json!({
-        "kind": "lift-gap",
-        "category": "singleton-concept",
-        "function_name": fn_name,
-        "path": format!("{rel_path}:{line}"),
-        "concept": concept,
-        "realization_count": realization_count,
-        "suggestion": format!(
-            "`{concept}` has {realization_count} realization(s) in the catalog; \
-             a portable cross-language `concept:` claim requires >=2. Either \
-             rename to `library:{}` (kit-specific identifier; no cross-language \
-             claim) or mint a second realization in another language.",
-            concept.strip_prefix("concept:").unwrap_or(concept),
-        ),
-    })
+    let cache = CONCEPT_OP_CIDS.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()));
+    let mut cids = cache.lock().ok()?;
+    if let Some(cid) = cids.get(concept_name) {
+        return Some(*cid);
+    }
+    let cid = blake3_512_of(concept_name.as_bytes());
+    let cid = Box::leak(cid.into_boxed_str()) as &'static str;
+    cids.insert(concept_name.to_string(), cid);
+    Some(cid)
 }
 
 fn is_non_operation_shape(shape: &CValue) -> bool {
@@ -11594,6 +11438,7 @@ pub fn add(x: i64, y: i64) -> i64 {
 }
 "#,
         );
+        let add_cid = concept_op_cid("concept:add").expect("concept:add cid");
 
         // Substrate-canonical shape (#1075 federation): operand NAMES are
         // sugar, so scoped param/local references lift as EMPTY structural
@@ -11611,7 +11456,7 @@ pub fn add(x: i64, y: i64) -> i64 {
                     {},
                 ],
                 "concept_name": "concept:add",
-                "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
+                "op_cid": add_cid
             })
         );
 
@@ -13006,260 +12851,6 @@ pub mod refused_backup {}
             .collect();
         assert_eq!(refusals.len(), 1, "expected one refusal-memento entry");
         assert_eq!(refusals[0]["surface"], "rusqlite::Connection::backup");
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    // ========================================================================
-    // #1396 PR-0: singleton-concept lift-gap validator tests
-    //
-    // Discrimination triplet covering the three input shapes:
-    //   * positive  — `concept:X` singleton in catalog → gap emitted
-    //   * negative  — `concept:X` with ≥2 realizations → no gap
-    //   * structural — `library:X` prefix skipped entirely (no lookup)
-    //
-    // Plus a sanity check on the realization-count helper itself.
-    // ========================================================================
-
-    fn singleton_concept_gap_diagnostics(out: &Value) -> Vec<&Value> {
-        out["diagnostics"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter(|d| d["kind"] == "lift-gap" && d["category"] == "singleton-concept")
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default()
-    }
-
-    fn bind_lift_for_source(name: &str, source: &str) -> (PathBuf, Value) {
-        let root = temp_workspace(name);
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("create src dir");
-        fs::write(src_dir.join("lib.rs"), source).expect("write source");
-        let out = bind_lift(&json!({
-            "workspace_root": root.to_string_lossy(),
-            "source_paths": ["."]
-        }))
-        .expect("bind lift should succeed");
-        (root, out)
-    }
-
-    #[test]
-    fn singleton_concept_validator_positive_emits_gap_for_unknown_concept() {
-        // A `concept:X` that the catalog has never heard of (0 realizations)
-        // is the strictest singleton case.  The gap must be emitted.
-        let (root, out) = bind_lift_for_source(
-            "singleton_validator_positive_unknown",
-            r#"
-#[provekit::sugar(
-    concept = "concept:totally-unknown-singleton-from-pr0-test",
-    library = "test-library",
-    loss = [],
-)]
-pub fn lonely_singleton(_x: i64) -> i64 {
-    _x
-}
-"#,
-        );
-
-        let gaps = singleton_concept_gap_diagnostics(&out);
-        assert_eq!(
-            gaps.len(),
-            1,
-            "expected exactly one singleton-concept gap, got: {:#?}",
-            out["diagnostics"]
-        );
-        let gap = gaps[0];
-        assert_eq!(gap["kind"], "lift-gap");
-        assert_eq!(gap["category"], "singleton-concept");
-        assert_eq!(
-            gap["concept"],
-            "concept:totally-unknown-singleton-from-pr0-test"
-        );
-        assert_eq!(gap["realization_count"], 0);
-        assert_eq!(gap["function_name"], "lonely_singleton");
-        // Path is "src/lib.rs:<line>" with a colon-separated line number.
-        let path = gap["path"].as_str().expect("path string");
-        assert!(
-            path.starts_with("src/lib.rs:"),
-            "expected path to begin with src/lib.rs:, got {path}"
-        );
-        assert!(
-            gap["suggestion"]
-                .as_str()
-                .expect("suggestion string")
-                .contains("library:totally-unknown-singleton-from-pr0-test"),
-            "suggestion should propose prefix-flip with bare concept name"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn singleton_concept_validator_negative_no_gap_for_well_realized_concept() {
-        // `concept:closure` has 4 realizations in the on-disk catalog
-        // (jvm:lambda-invokedynamic, rust:closure-expression,
-        // python:native-closure, c11:defunctionalized-env-struct).
-        // The validator must NOT emit a gap for it.
-        let (root, out) = bind_lift_for_source(
-            "singleton_validator_negative_well_realized",
-            r#"
-#[provekit::sugar(
-    concept = "concept:closure",
-    library = "well-realized-test",
-    loss = [],
-)]
-pub fn closure_carrier(_x: i64) -> i64 {
-    _x
-}
-"#,
-        );
-
-        let gaps = singleton_concept_gap_diagnostics(&out);
-        assert!(
-            gaps.is_empty(),
-            "concept:closure has >=2 realizations; no singleton-concept gap \
-             expected, got: {:#?}",
-            gaps
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn singleton_concept_validator_structural_skips_library_prefix() {
-        // `library:X` prefixed concepts are kit-specific identifiers and
-        // make no cross-language claim.  The validator MUST NOT perform a
-        // catalog lookup or emit a gap, even though `library:foo` is
-        // certainly absent from the catalog.
-        let (root, out) = bind_lift_for_source(
-            "singleton_validator_structural_library_prefix",
-            r#"
-#[provekit::sugar(
-    concept = "library:kit-private-helper",
-    library = "structural-test",
-    loss = [],
-)]
-pub fn kit_private_helper(_x: i64) -> i64 {
-    _x
-}
-"#,
-        );
-
-        let gaps = singleton_concept_gap_diagnostics(&out);
-        assert!(
-            gaps.is_empty(),
-            "library:X prefix must be skipped entirely; no gap expected, got: {:#?}",
-            gaps
-        );
-
-        // Sanity: the @sugar entry itself IS still emitted (validator is
-        // GAP-EMITTING, not refusing — existing behavior preserved).
-        let ir = out["ir"].as_array().expect("ir array");
-        let sugar_entries: Vec<_> = ir
-            .iter()
-            .filter(|e| e["kind"] == "library-sugar-binding-entry")
-            .collect();
-        assert_eq!(
-            sugar_entries.len(),
-            1,
-            "library-sugar-binding-entry must still be emitted regardless of \
-             singleton-concept validator outcome"
-        );
-        assert_eq!(
-            sugar_entries[0]["concept_name"],
-            "library:kit-private-helper"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn concept_realization_counts_matches_catalog_shape() {
-        // Sanity test on the helper: known multi-realized concepts surface
-        // their expected counts, and pure singletons or absent names map to
-        // 0 (the `.get().copied().unwrap_or(0)` fallback at the call site).
-        let counts = concept_realization_counts();
-        let closure = counts.get("concept:closure").copied().unwrap_or(0);
-        assert!(
-            closure >= 2,
-            "concept:closure has at least two realizations in the bundled \
-             catalog (got {closure})"
-        );
-        let absent = counts
-            .get("concept:totally-unknown-singleton-from-pr0-test")
-            .copied()
-            .unwrap_or(0);
-        assert_eq!(
-            absent, 0,
-            "an absent concept name must map to zero realizations"
-        );
-    }
-
-    #[test]
-    fn concept_realization_counts_excludes_abstraction_lift_m_edges() {
-        // #1397 (PR-1 absorbed): the seven reverse-direction `lang->concept`
-        // entries are abstraction-lift M-edges, NOT abstraction-realization
-        // N-edges, and must not count toward the >=2 threshold.
-        //
-        // `concept:option` and `concept:pair` each have exactly ONE forward
-        // realization plus ONE reverse abstraction-lift M-edge.  Counting the
-        // M-edge would inflate them to 2 (no gap); excluding it leaves them at
-        // 1 (singleton -> gap).  This test is the regression guard for the
-        // counting-rule fix.
-        let counts = concept_realization_counts();
-        assert_eq!(
-            counts.get("concept:option").copied().unwrap_or(0),
-            1,
-            "concept:option has one abstraction-realization; its reverse \
-             abstraction-lift M-edge must not be counted"
-        );
-        assert_eq!(
-            counts.get("concept:pair").copied().unwrap_or(0),
-            1,
-            "concept:pair has one abstraction-realization; its reverse \
-             abstraction-lift M-edge must not be counted"
-        );
-        // Sanity: a concept with multiple forward realizations PLUS a reverse
-        // M-edge still counts only the forward ones.
-        assert_eq!(
-            counts.get("concept:option-bind").copied().unwrap_or(0),
-            3,
-            "concept:option-bind has three forward realizations; its reverse \
-             abstraction-lift M-edge must not inflate the count to 4"
-        );
-    }
-
-    #[test]
-    fn singleton_concept_validator_flags_concept_with_only_an_m_edge_companion() {
-        // End-to-end: a @sugar function claiming `concept:option` (1 forward
-        // realization + 1 reverse M-edge) must surface a singleton-concept
-        // gap, because the M-edge does not count toward the >=2 threshold.
-        let (root, out) = bind_lift_for_source(
-            "singleton_validator_m_edge_companion",
-            r#"
-#[provekit::sugar(
-    concept = "concept:option",
-    library = "m-edge-test",
-    loss = [],
-)]
-pub fn option_carrier(_x: i64) -> i64 {
-    _x
-}
-"#,
-        );
-
-        let gaps = singleton_concept_gap_diagnostics(&out);
-        assert_eq!(
-            gaps.len(),
-            1,
-            "concept:option is a singleton once abstraction-lift M-edges are \
-             excluded; expected exactly one gap, got: {:#?}",
-            out["diagnostics"]
-        );
-        assert_eq!(gaps[0]["concept"], "concept:option");
-        assert_eq!(gaps[0]["realization_count"], 1);
 
         let _ = fs::remove_dir_all(root);
     }

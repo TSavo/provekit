@@ -31,7 +31,6 @@ LANGUAGES = (
     "python",
     "ruby",
     "rust",
-    "typescript",
     "zig",
 )
 TAG_KIND_ORDER = ("first-class", "composition", "boundary", "sugar-carrier", "absent")
@@ -91,7 +90,7 @@ def catalog_name_from_path(path: Path) -> str:
 
 
 def normalize_language(language: str) -> str:
-    return {"c": "c11", "jvm": "java", "ts": "typescript"}.get(language, language)
+    return {"c": "c11", "jvm": "java"}.get(language, language)
 
 
 def output_path() -> Path:

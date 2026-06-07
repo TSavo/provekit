@@ -84,9 +84,7 @@ fn main() {
     println!("== hover_probe ==");
     println!("crate root : {}", crate_root.display());
     println!("source     : {}", abs_path.display());
-    println!(
-        "position   : line {lsp_line}, col {lsp_col} (0-based LSP) at `unwrap`"
-    );
+    println!("position   : line {lsp_line}, col {lsp_col} (0-based LSP) at `unwrap`");
 
     let mut oracle = match RaOracle::start(&crate_root) {
         Some(o) => o,

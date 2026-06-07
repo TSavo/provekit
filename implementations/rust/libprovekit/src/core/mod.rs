@@ -36,9 +36,9 @@ pub mod walks;
 pub use bind::{
     bind_result_payload, bind_term_document, concept_bind_result_cid, grammar_op_cid,
     named_term_document_cid, named_term_document_from_bind_payload,
-    strip_realize_sidecar_from_lift_term,
-    BindContractWitness, BindError, BindKit, BindLiftEntry, BindOptions, CandidateCluster,
-    CandidateClusterManifest, NamedTerm, NamedTermDocument, NamedTermTree, NamedWitness,
+    strip_realize_sidecar_from_lift_term, BindContractWitness, BindError, BindKit, BindLiftEntry,
+    BindOptions, CandidateCluster, CandidateClusterManifest, NamedTerm, NamedTermDocument,
+    NamedTermTree, NamedWitness,
 };
 pub use lift_plugin::{LiftKit, LiftPluginKit, LiftPluginKitError, LiftPluginKitSession};
 pub use lower_plugin::{
@@ -60,12 +60,11 @@ pub use traits::{
 };
 pub use types::{
     ArityShape, AritySlot, Attestation, Boundary, ChainIntegrityFailureWitness,
-    ChainIntegrityWitness, Cid, CidError, ConformanceDeclaration, Contract, Dialect,
-    DomainClaim, DomainKind, Formula, Input, LanguageSignature,
-    OperationSignature, Path, PathAlgebra, PathDocument, PathDocumentError,
-    PathError, PathInputBinding, PathInputMaterial,
-    Refutation, SignatureCatalogError, SlotEvaluation,
-    SlotSort, Term, Truth, Verb, Verdict, VerdictCoercionError, Witness,
+    ChainIntegrityWitness, Cid, CidError, ConformanceDeclaration, Contract, Dialect, DomainClaim,
+    DomainKind, Formula, Input, LanguageSignature, OperationSignature, Path, PathAlgebra,
+    PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial, Refutation,
+    SignatureCatalogError, SlotEvaluation, SlotSort, Term, Truth, Verb, Verdict,
+    VerdictCoercionError, Witness,
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};
 pub use walks::{

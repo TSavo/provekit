@@ -1038,9 +1038,9 @@ mod tests {
             .expect("original annotation must remain indexed");
         assert_eq!(kept.memento_cid, "blake3-512:annotation-original");
         assert!(
-            left.load_errors.iter().any(|error| error
-                .reason
-                .contains("[effect-site-annotation-duplicate]")),
+            left.load_errors
+                .iter()
+                .any(|error| error.reason.contains("[effect-site-annotation-duplicate]")),
             "duplicate merge must emit stable tagged load error: {:#?}",
             left.load_errors
         );

@@ -47,11 +47,11 @@
 
 use std::path::PathBuf;
 
+use crate::witness_verify;
 use clap::Parser;
 use owo_colors::OwoColorize;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs};
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string};
-use crate::witness_verify;
 use provekit_verifier::body_discharge;
 use provekit_verifier::solvers::registry;
 use provekit_verifier::{
@@ -1181,7 +1181,10 @@ fn emit_human_receipt(
     }
     if !witnesses.is_empty() {
         println!();
-        println!("{}", "Witness dimension (rust recomputes; oracle untrusted)".bold());
+        println!(
+            "{}",
+            "Witness dimension (rust recomputes; oracle untrusted)".bold()
+        );
         for w in witnesses {
             let status = match w.verdict.as_str() {
                 "verified" => "pass".green().to_string(),
@@ -1932,8 +1935,10 @@ mod tests {
         let pool = dlib_pool();
         let no_kit = std::path::Path::new("/nonexistent-dlib-option-negative-test-kit");
         let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
-        let witness_dir =
-            std::env::temp_dir().join(format!("provekit-dlib-option-neg-test-{}", std::process::id()));
+        let witness_dir = std::env::temp_dir().join(format!(
+            "provekit-dlib-option-neg-test-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&witness_dir).ok();
 
         let wrong_predicate = verify_one_claim(

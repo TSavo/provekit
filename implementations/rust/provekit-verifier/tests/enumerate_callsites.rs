@@ -547,10 +547,7 @@ fn panic_loci_only_contract_becomes_panic_callsite() {
     assert_eq!(cs[0].bridge_target_cid, "blake3-512:result-expect");
     assert_eq!(cs[0].file.as_deref(), Some("src/kit_dispatch.rs"));
     assert_eq!(cs[0].line, Some(2130));
-    assert_eq!(
-        cs[0].callsite_bundle_cid.as_deref(),
-        Some(property_bundle)
-    );
+    assert_eq!(cs[0].callsite_bundle_cid.as_deref(), Some(property_bundle));
 }
 
 #[test]
@@ -607,7 +604,11 @@ fn panic_loci_duplicate_formula_panic_is_not_double_counted() {
     );
 
     let cs = enumerate_callsites::run(&pool);
-    assert_eq!(cs.len(), 1, "panicLoci must not duplicate formula callsites");
+    assert_eq!(
+        cs.len(),
+        1,
+        "panicLoci must not duplicate formula callsites"
+    );
     assert!(cs[0].panic_site);
 }
 
@@ -774,7 +775,10 @@ fn non_panic_effect_loci_are_ignored() {
     );
 
     let cs = enumerate_callsites::run(&pool);
-    assert!(cs.is_empty(), "non-panic effect loci must not surface panic sites");
+    assert!(
+        cs.is_empty(),
+        "non-panic effect loci must not surface panic sites"
+    );
 }
 
 #[test]
@@ -832,7 +836,11 @@ fn matching_panic_loci_and_effect_loci_do_not_duplicate_callsite() {
     );
 
     let cs = enumerate_callsites::run(&pool);
-    assert_eq!(cs.len(), 1, "matching old/new effect fields must not duplicate");
+    assert_eq!(
+        cs.len(),
+        1,
+        "matching old/new effect fields must not duplicate"
+    );
     assert!(cs[0].panic_site);
     assert_eq!(cs[0].line, Some(25));
 }
@@ -904,7 +912,11 @@ fn disagreeing_effect_aliases_warn_and_preserve_old_panic_loci() {
         cs = enumerate_callsites::run(&pool);
     });
     assert_eq!(cs.len(), 1);
-    assert_eq!(cs[0].line, Some(25), "old panicLoci must win on disagreement");
+    assert_eq!(
+        cs[0].line,
+        Some(25),
+        "old panicLoci must win on disagreement"
+    );
     assert!(
         logs.contains("effect-site-disagreement")
             && logs.contains("panicLoci")
@@ -983,7 +995,11 @@ fn formula_backed_panic_locus_warns_once_for_effect_site_disagreement() {
     let logs = capture_warn_log(|| {
         cs = enumerate_callsites::run(&pool);
     });
-    assert_eq!(cs.len(), 1, "formula callsite and panicLoci fallback must dedup");
+    assert_eq!(
+        cs.len(),
+        1,
+        "formula callsite and panicLoci fallback must dedup"
+    );
     assert_eq!(
         logs.matches("panicSite/effectSite").count(),
         1,

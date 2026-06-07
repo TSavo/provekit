@@ -68,12 +68,17 @@ pub fn emit_term(term: &Term) -> String {
             // SMT symbol `|e#0|` -- and matches the quoted Var reference to
             // it in the body. Unquoted, z3 reads `#0` as a malformed
             // bit-vector literal.
-            format!("(lambda (({} {})) {})", smt_quote(param_name), sort_str, body_str)
+            format!(
+                "(lambda (({} {})) {})",
+                smt_quote(param_name),
+                sort_str,
+                body_str
+            )
         }
         Term::Let { bindings, body, .. } => {
             let mut binding_strs = bindings.iter();
-            let binding_strs =
-                binding_strs.map(|b| format!("({} {})", smt_quote(&b.name), emit_term(&b.bound_term)));
+            let binding_strs = binding_strs
+                .map(|b| format!("({} {})", smt_quote(&b.name), emit_term(&b.bound_term)));
             let binding_strs: Vec<String> = binding_strs.collect();
             let body_str = emit_term(body);
             format!("(let ({}) {})", binding_strs.join(" "), body_str)
@@ -99,12 +104,17 @@ pub fn emit_term(term: &Term) -> String {
             // SMT symbol `|e#0|` -- and matches the quoted Var reference to
             // it in the body. Unquoted, z3 reads `#0` as a malformed
             // bit-vector literal.
-            format!("(lambda (({} {})) {})", smt_quote(param_name), sort_str, body_str)
+            format!(
+                "(lambda (({} {})) {})",
+                smt_quote(param_name),
+                sort_str,
+                body_str
+            )
         }
         Term::Let { bindings, body } => {
             let binding_strs = bindings.iter();
-            let binding_strs =
-                binding_strs.map(|b| format!("({} {})", smt_quote(&b.name), emit_term(&b.bound_term)));
+            let binding_strs = binding_strs
+                .map(|b| format!("({} {})", smt_quote(&b.name), emit_term(&b.bound_term)));
             let binding_strs: Vec<String> = binding_strs.collect();
             let body_str = emit_term(body);
             format!("(let ({}) {})", binding_strs.join(" "), body_str)
@@ -171,10 +181,7 @@ fn opaque_sort_smt_name(sort: &Sort) -> String {
 /// quantifiers (Forall/Exists/Choice) so that `(declare-sort <S> 0)` can be
 /// emitted into the preamble before the body. Each distinct opaque sort name
 /// is stored as a key (value is unused).
-fn collect_opaque_quantifier_sorts_formula(
-    formula: &Formula,
-    out: &mut BTreeMap<String, ()>,
-) {
+fn collect_opaque_quantifier_sorts_formula(formula: &Formula, out: &mut BTreeMap<String, ()>) {
     match formula {
         Formula::Atomic { .. } => {}
         Formula::And { operands }
@@ -623,8 +630,7 @@ fn term_has_real_const(term: &Term) -> bool {
         Term::Ctor { args, .. } => args.iter().any(term_has_real_const),
         Term::Lambda { body, .. } => term_has_real_const(body),
         Term::Let { bindings, body, .. } => {
-            bindings.iter().any(|b| term_has_real_const(&b.bound_term))
-                || term_has_real_const(body)
+            bindings.iter().any(|b| term_has_real_const(&b.bound_term)) || term_has_real_const(body)
         }
         Term::Var { .. } => false,
     }
@@ -856,10 +862,7 @@ fn is_builtin_atomic_predicate(name: &str) -> bool {
 /// matching the `(declare-const opt Int)` the free-var pass already emits, so
 /// applications type-check. A nullary atomic (the boolean literals, or a
 /// 0-ary user predicate constant) is left to the existing handling.
-fn collect_predicate_decls_formula(
-    formula: &Formula,
-    out: &mut BTreeMap<String, CtorSignature>,
-) {
+fn collect_predicate_decls_formula(formula: &Formula, out: &mut BTreeMap<String, CtorSignature>) {
     match formula {
         Formula::Atomic { name, args } => {
             if !args.is_empty() && !is_builtin_atomic_predicate(name) {

@@ -1,9 +1,0 @@
-{
-  "name": "empty-catch",
-  "retired": {
-    "at": "2026-04-27T00:00:00.000Z",
-    "reason": "heuristic: empty catch is sometimes intentional (best-effort cleanup); biome/eslint own this surface.",
-    "task": "#129",
-    "spec": "docs/specs/2026-04-27-constraint-driven-development.md"
-  }
-}

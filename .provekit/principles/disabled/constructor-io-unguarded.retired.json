@@ -1,9 +1,0 @@
-{
-  "name": "constructor-io-unguarded",
-  "retired": {
-    "at": "2026-04-27T00:00:00.000Z",
-    "reason": "heuristic: shape-matches unconditional I/O in constructors; legitimate when caller catches construction errors.",
-    "task": "#129",
-    "spec": "docs/specs/2026-04-27-constraint-driven-development.md"
-  }
-}

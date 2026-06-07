@@ -1,9 +1,0 @@
-{
-  "name": "switch-no-default",
-  "retired": {
-    "at": "2026-04-27T00:00:00.000Z",
-    "reason": "heuristic: exhaustive switch over closed enum needs no default.",
-    "task": "#129",
-    "spec": "docs/specs/2026-04-27-constraint-driven-development.md"
-  }
-}

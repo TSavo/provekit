@@ -5,7 +5,6 @@
 // Realizes stdio line-stream concepts via the JDK standard library
 // (System.in / System.out / System.err). Sister shim to:
 //   - rust: provekit-shim-stdio-rust (std::io)
-//   - ts:   provekit-shim-stdio-typescript (node:readline + process.stdout)
 //   - python: provekit-shim-stdio-python (sys.stdin / sys.stdout)
 // All members of concept:family:stdio-stream, anchored to
 // boundary:stdio-line-stream.

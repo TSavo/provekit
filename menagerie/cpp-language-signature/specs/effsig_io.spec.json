@@ -1,6 +1,0 @@
-{
-  "kind": "effect-signature",
-  "name": "io",
-  "effect": "cpp:io",
-  "locus": "menagerie/cpp-language-signature/README.md"
-}

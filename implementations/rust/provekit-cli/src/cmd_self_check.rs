@@ -523,7 +523,9 @@ fn effect_site_annotations_from_pool(
         .collect::<Vec<_>>();
     if !annotation_errors.is_empty() {
         let errors = annotation_errors.join("; ");
-        return Err(format!("effect-site annotation proof load failed: {errors}"));
+        return Err(format!(
+            "effect-site annotation proof load failed: {errors}"
+        ));
     }
     Ok(pool
         .panic_effect_site_annotations
@@ -996,10 +998,10 @@ fn build_scoreboard_with_runtime_annotations_and_mementos(
         doctor_mode,
     )
     .map_err(|error| {
-            format!(
-                "panic annotation runtime check failed: {}; evidence={}",
-                error, error.check.evidence
-            )
+        format!(
+            "panic annotation runtime check failed: {}; evidence={}",
+            error, error.check.evidence
+        )
     })?;
     let annotation_check = &annotation_outcome.check;
     info!(
@@ -1741,8 +1743,8 @@ mod tests {
             "[effect-site-annotation] blake3-512:abc: missing or invalid `callee`",
         ));
 
-        let err = effect_site_annotations_from_pool(pool)
-            .expect_err("annotation load errors must fail");
+        let err =
+            effect_site_annotations_from_pool(pool).expect_err("annotation load errors must fail");
 
         assert!(err.contains("[effect-site-annotation]"), "{err}");
         assert!(err.contains("callee"), "{err}");
@@ -1761,10 +1763,7 @@ mod tests {
         let err =
             effect_site_annotations_from_pool(pool).expect_err("tagged mixed error must fail");
 
-        assert!(
-            err.contains("[effect-site-annotation-duplicate]"),
-            "{err}"
-        );
+        assert!(err.contains("[effect-site-annotation-duplicate]"), "{err}");
         assert!(!err.contains("string_field"), "{err}");
     }
 
@@ -1808,7 +1807,10 @@ mod tests {
 
         assert_eq!(lift.fn_contracts, 1);
         assert_eq!(lift.body_discharge_eligible, 0);
-        assert_eq!(lift.body_discharge_ineligible.get("totality-axiom"), Some(&1));
+        assert_eq!(
+            lift.body_discharge_ineligible.get("totality-axiom"),
+            Some(&1)
+        );
     }
 
     #[test]
@@ -1830,7 +1832,10 @@ mod tests {
         let (lift, _, _, _) = lift_scoreboards(&lift_json);
 
         assert_eq!(lift.body_discharge_eligible, 0);
-        assert_eq!(lift.body_discharge_ineligible.get("legacy-refusal"), Some(&1));
+        assert_eq!(
+            lift.body_discharge_ineligible.get("legacy-refusal"),
+            Some(&1)
+        );
     }
 
     #[test]
@@ -2539,10 +2544,7 @@ reason = "this row exists only in prove output"
             .collect();
         assert_eq!(
             bundles,
-            std::collections::BTreeSet::from([
-                "blake3-512:bundle-a",
-                "blake3-512:bundle-b",
-            ])
+            std::collections::BTreeSet::from(["blake3-512:bundle-a", "blake3-512:bundle-b",])
         );
     }
 

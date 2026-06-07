@@ -1,9 +1,0 @@
-{
-  "name": "multiplication-overflow",
-  "retired": {
-    "at": "2026-04-27T00:00:00.000Z",
-    "reason": "DSL already disabled (capability-gap on value comparisons); JSON moved alongside.",
-    "task": "#129",
-    "spec": "docs/specs/2026-04-27-constraint-driven-development.md"
-  }
-}

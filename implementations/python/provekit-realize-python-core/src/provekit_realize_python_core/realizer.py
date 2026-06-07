@@ -11,18 +11,10 @@ from typing import Any
 
 import blake3
 
-BODY_TEMPLATE_REL = Path(
-    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies.json"
-)
-LIBPROVEKIT_BODY_TEMPLATE_REL = Path(
-    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-libprovekit.json"
-)
-RUST_RUNTIME_BODY_TEMPLATE_REL = Path(
-    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-rust-runtime.json"
-)
-BLAKE3_BODY_TEMPLATE_REL = Path(
-    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-blake3.json"
-)
+BODY_TEMPLATE_REL = Path("body_templates/python-canonical-bodies.json")
+LIBPROVEKIT_BODY_TEMPLATE_REL = Path("body_templates/python-canonical-bodies-libprovekit.json")
+RUST_RUNTIME_BODY_TEMPLATE_REL = Path("body_templates/python-canonical-bodies-rust-runtime.json")
+BLAKE3_BODY_TEMPLATE_REL = Path("body_templates/python-canonical-bodies-blake3.json")
 
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")

@@ -31,11 +31,6 @@ members = [
     "provekit-build",
     "examples/build_script_demo",
     "provekit-linkerd",
-    "../../menagerie/bridgeworks",
-    "../../menagerie/supply-chain-rails",
-    "../../menagerie/protocol-switchyard",
-    "../../menagerie/smoke-test-e2e",
-    "../../menagerie/smoke-test-e2e/driver",
 ]
 
 [workspace.package]

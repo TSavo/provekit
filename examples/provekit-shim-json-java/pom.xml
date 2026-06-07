@@ -17,7 +17,6 @@
         provekit-shim-serde-json-rust for cross-library cluster membership.
         Sister shim to:
           - rust:   provekit-shim-serde-json-rust (serde_json)
-          - ts:     provekit-shim-json-typescript (JSON.parse / JSON.stringify, follow-up)
           - python: provekit-shim-json-python (stdlib json module, follow-up)
     </description>
     <url>https://github.com/TSavo/provekit</url>

@@ -274,8 +274,7 @@ pub fn default_workspace_root() -> PathBuf {
 // concept-hub-typed payloads.
 //
 // Source-syntax recognition (e.g. rust `&str` → rust:Str → concept:String)
-// lives in each kit's source lifter (walk_rpc for rust, the typescript
-// source lifter for ts, etc.). Each kit declares its own source-syntax
+// lives in each kit's source lifter. Each kit declares its own source-syntax
 // → lang-sort mapping internally, then composes via its own morphism
 // to concept-hub before emitting the carrier payload.
 

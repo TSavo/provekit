@@ -162,27 +162,6 @@ fn registry_memento_includes_loaded_cid() {
 }
 
 // ---------------------------------------------------------------------------
-// java-canonical.json: file-load CID pin
-// ---------------------------------------------------------------------------
-
-#[test]
-fn java_canonical_sugar_file_load_pinned_cid() {
-    // §6.1 byte-stability: the java-canonical.json file must load cleanly and
-    // produce the pinned CID. If the content changes, the CID changes and this
-    // test catches the drift.
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../menagerie/java-language-signature/specs/sugar/java-canonical.json");
-    let plugin = load_plugin_from_file(&path).expect("should load java-canonical.json");
-    assert_eq!(
-        plugin.cid(),
-        "blake3-512:b7ad1160f00d892d310fb33ac3372a4ebb2f89fec563cab1719e7006ab3d7593aae2162b882aedbec1b97e44957240b3c7e8ab1675456f0539c4ad3f45d22a7b",
-        "java-canonical.json CID must match pinned value"
-    );
-    assert_eq!(plugin.kind(), "sugar");
-    assert!(!plugin.is_critical());
-}
-
-// ---------------------------------------------------------------------------
 // §4: JSON-RPC stdio interface
 // ---------------------------------------------------------------------------
 

@@ -2,8 +2,6 @@
 //
 // Tagged enum tests for RealizationMemento.
 
-use std::path::Path;
-
 use provekit_ir_types::{
     BoundaryRealization, CompositionRealization, FirstClassRealization, RealizationMemento,
     RealizationValidationError, SugarCarrierRealization,
@@ -162,21 +160,15 @@ fn kind_field_discriminates_overlapping_data() {
 
 #[test]
 fn legacy_catalog_realization_parses_as_boundary() {
-    let catalog_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../..")
-        .join("menagerie/concept-shapes/catalog/realizations");
-    let path = std::fs::read_dir(catalog_dir)
-        .expect("read realization catalog")
-        .map(|entry| entry.expect("read catalog entry").path())
-        .find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name.starts_with("concept:double-dispatch->c11:2d-fn-ptr-table.")
-                })
-        })
-        .expect("double-dispatch c11 realization fixture exists");
-    let text = std::fs::read_to_string(path).expect("read legacy fixture");
+    let text = format!(
+        r#"{{
+            "cid": "{CID_2}",
+            "memento": {{
+                "source_lang": "c11",
+                "target_form": "concept:double-dispatch->c11:2d-fn-ptr-table"
+            }}
+        }}"#
+    );
 
     let parsed: RealizationMemento = serde_json::from_str(&text).expect("parse legacy fixture");
 
@@ -185,8 +177,7 @@ fn legacy_catalog_realization_parses_as_boundary() {
     };
     assert_eq!(boundary.library, "c11");
     assert_eq!(boundary.api, "concept:double-dispatch->c11:2d-fn-ptr-table");
-    assert!(boundary.boundary_contract_cid.starts_with("blake3-512:"));
-    assert_eq!(boundary.boundary_contract_cid.len(), 139);
+    assert_eq!(boundary.boundary_contract_cid, CID_2);
 }
 
 #[test]

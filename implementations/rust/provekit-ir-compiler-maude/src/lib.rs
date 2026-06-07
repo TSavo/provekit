@@ -536,9 +536,17 @@ mod tests {
         // solver 4/4 of the Real-tolerance fan-out. Maude does not receive the
         // arithmetic tolerance Formula (it compiles equational obligations, a
         // different IR shape), but its term renderer must be Real-safe.
-        let real = Sort::Primitive { name: "Real".to_string() };
-        assert_eq!(render_const(&json!("0.00000015"), &real).unwrap(), "0.00000015");
-        assert_eq!(render_const(&json!("-0.00000015"), &real).unwrap(), "-0.00000015");
+        let real = Sort::Primitive {
+            name: "Real".to_string(),
+        };
+        assert_eq!(
+            render_const(&json!("0.00000015"), &real).unwrap(),
+            "0.00000015"
+        );
+        assert_eq!(
+            render_const(&json!("-0.00000015"), &real).unwrap(),
+            "-0.00000015"
+        );
         assert_eq!(render_const(&json!("1.5"), &real).unwrap(), "1.5");
         // soundness: a non-float string in Real position is rejected, not cloned.
         assert!(render_const(&json!("evil token"), &real).is_err());

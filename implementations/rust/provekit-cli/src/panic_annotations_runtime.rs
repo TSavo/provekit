@@ -128,9 +128,14 @@ impl RuntimeAnnotation {
     }
 
     fn scoped_key(&self) -> Option<(String, String, usize, String)> {
-        self.bundle_cid
-            .as_ref()
-            .map(|bundle| (bundle.clone(), self.file.clone(), self.line, self.callee.clone()))
+        self.bundle_cid.as_ref().map(|bundle| {
+            (
+                bundle.clone(),
+                self.file.clone(),
+                self.line,
+                self.callee.clone(),
+            )
+        })
     }
 }
 
@@ -383,8 +388,7 @@ fn build_row_indexes(
     BTreeMap<(String, String, usize, String), Option<usize>>,
 ) {
     let mut row_index = BTreeMap::<(String, usize, String), Option<usize>>::new();
-    let mut scoped_row_index =
-        BTreeMap::<(String, String, usize, String), Option<usize>>::new();
+    let mut scoped_row_index = BTreeMap::<(String, String, usize, String), Option<usize>>::new();
 
     for (index, row) in rows.iter().enumerate() {
         let key = (row.file.clone(), row.line, row.callee.clone());
@@ -1006,7 +1010,10 @@ reason = "ambiguous without bundle"
             .iter()
             .find(|row| row.callsite_bundle_cid.as_deref() == Some("blake3-512:bundle-b"))
             .expect("bundle-b row");
-        assert_eq!(annotated.category.as_deref(), Some("lock_poisoning_residue"));
+        assert_eq!(
+            annotated.category.as_deref(),
+            Some("lock_poisoning_residue")
+        );
         assert_eq!(annotated.reason, "scoped dependency memento");
         let untouched = outcome
             .rows
@@ -1243,10 +1250,7 @@ reason = "runtime residue"
         let row = &outcome.rows[0];
 
         assert_eq!(row.status, "residue");
-        assert_eq!(
-            row.category.as_deref(),
-            Some("dependency_memento_residue")
-        );
+        assert_eq!(row.category.as_deref(), Some("dependency_memento_residue"));
         assert_eq!(row.reason, "dependency memento residue");
     }
 
@@ -1295,7 +1299,10 @@ reason = "local manifest residue"
         .expect("union");
 
         assert_eq!(outcome.rows.len(), 2);
-        assert_eq!(outcome.rows[0].category.as_deref(), Some("lock_poisoning_residue"));
+        assert_eq!(
+            outcome.rows[0].category.as_deref(),
+            Some("lock_poisoning_residue")
+        );
         assert_eq!(outcome.rows[1].category.as_deref(), Some("D-lib"));
     }
 

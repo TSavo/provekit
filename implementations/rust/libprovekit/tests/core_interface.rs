@@ -9,19 +9,17 @@ use libprovekit::compose::{
     FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, compose, execute_path, link, prove, transform,
-    verify, ArityShape, AritySlot, CKit, Canonical, Catalog, Cid, ConformanceDeclaration, Dialect,
-    DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input,
-    InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit, LiftPluginKit,
-    Path, PathAlgebra, PathDocument, PathDocumentError, PathError,
-    Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
+    address, compose, execute_path, link, prove, transform, verify, ArityShape, AritySlot, CKit,
+    Canonical, Catalog, Cid, ConformanceDeclaration, Dialect, DomainClaim, DomainKind,
+    FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
+    KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
+    PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
 };
-use provekit_canonicalizer::{blake3_512_of, Value};
+use provekit_canonicalizer::Value;
 use provekit_ir_types::{
     composition_refusal_compose_input_cid, composition_refusal_header_cid,
     composition_refusal_signature, CompositionRefusalEnvelope, CompositionRefusalHeader,
-    CompositionRefusalMemento, CompositionRefusalMetadata, IrFormula,
-    IrTerm, Sort,
+    CompositionRefusalMemento, CompositionRefusalMetadata, IrFormula, IrTerm, Sort,
 };
 use serde_json::json;
 
@@ -361,19 +359,19 @@ fn link_cross_domain_claims_by_shared_contract_cid() {
     let contract = pure_identity_contract("ffi_shared", "x");
     let shared_cid = Cid::try_from(contract.cid.clone()).expect("fixture cid is valid");
 
-    let mut ts_claim = claim_for_contract(contract.clone());
-    ts_claim.domain = DomainKind::Other("typescript".to_string());
-    ts_claim.artifacts = vec![address(&"ts.proof")];
-    ts_claim.from = vec![address(&"typescript-source")];
+    let mut python_claim = claim_for_contract(contract.clone());
+    python_claim.domain = DomainKind::Other("python".to_string());
+    python_claim.artifacts = vec![address(&"python.proof")];
+    python_claim.from = vec![address(&"python-source")];
 
     let mut c_claim = claim_for_contract(contract);
     c_claim.domain = DomainKind::Other("c".to_string());
     c_claim.artifacts = vec![address(&"c.proof")];
     c_claim.from = vec![address(&"c-source")];
 
-    let linked = link(&[ts_claim.clone(), c_claim.clone()])
+    let linked = link(&[python_claim.clone(), c_claim.clone()])
         .expect("cross-domain claims link through shared contract cid");
-    let mut expected_premises = vec![ts_claim.cid(), c_claim.cid()];
+    let mut expected_premises = vec![python_claim.cid(), c_claim.cid()];
     expected_premises.sort();
 
     assert_eq!(
@@ -383,7 +381,7 @@ fn link_cross_domain_claims_by_shared_contract_cid() {
     assert_eq!(linked.to, shared_cid);
     assert_eq!(linked.premises, expected_premises);
     assert_eq!(linked.artifacts.len(), 2);
-    assert!(linked.artifacts.contains(&address(&"ts.proof")));
+    assert!(linked.artifacts.contains(&address(&"python.proof")));
     assert!(linked.artifacts.contains(&address(&"c.proof")));
 }
 
@@ -861,12 +859,12 @@ fn path_rejects_invalid_dependency_graphs() {
 
 #[test]
 fn path_orders_cross_domain_link_after_shared_contract_proofs() {
-    let shared_contract = address(&"shared-ts-c-contract");
-    let ts_proof = PathAlgebra {
-        name: "ts-proof".to_string(),
-        kit: "lift-plugin:typescript".to_string(),
+    let shared_contract = address(&"shared-python-c-contract");
+    let python_proof = PathAlgebra {
+        name: "python-proof".to_string(),
+        kit: "lift-plugin:python".to_string(),
         inputs: vec![address(&Input::Spec(serde_json::json!({
-            "proofFile": "ts.proof",
+            "proofFile": "python.proof",
             "contractCid": shared_contract.as_str()
         })))],
         depends_on: vec![],
@@ -888,11 +886,11 @@ fn path_orders_cross_domain_link_after_shared_contract_proofs() {
         inputs: vec![address(&Input::Spec(serde_json::json!({
             "sharedContractCid": shared_contract.as_str()
         })))],
-        depends_on: vec!["ts-proof".to_string(), "c-proof".to_string()],
+        depends_on: vec!["python-proof".to_string(), "c-proof".to_string()],
         verb: Verb::Transform,
     };
     let path = Path {
-        algebra: vec![link, ts_proof, c_proof],
+        algebra: vec![link, python_proof, c_proof],
     };
 
     let ordered_names: Vec<&str> = path
@@ -902,7 +900,7 @@ fn path_orders_cross_domain_link_after_shared_contract_proofs() {
         .map(|step| step.name.as_str())
         .collect();
     assert_eq!(ordered_names.last(), Some(&"link"));
-    assert!(ordered_names[..2].contains(&"ts-proof"));
+    assert!(ordered_names[..2].contains(&"python-proof"));
     assert!(ordered_names[..2].contains(&"c-proof"));
     assert_eq!(
         path.terminal_steps()

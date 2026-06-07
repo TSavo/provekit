@@ -3,7 +3,7 @@ use provekit_ir_compiler_coq::CoqCompiler;
 use serde_json::json;
 
 fn main() {
-    let mut compiler = CoqCompiler::new();
+    let compiler = CoqCompiler::new();
 
     // Simple formula
     let ir = json!({

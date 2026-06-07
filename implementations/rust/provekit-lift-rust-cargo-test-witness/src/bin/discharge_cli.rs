@@ -59,7 +59,8 @@ fn run() -> i32 {
     };
     let code_files = kit::memento_str_list(&pd, "codeFiles");
 
-    let (verdict, reason) = kit::discharge_bundle(&package_cid, &code_files, Path::new(project_dir));
+    let (verdict, reason) =
+        kit::discharge_bundle(&package_cid, &code_files, Path::new(project_dir));
     emit(&verdict, &reason)
 }
 

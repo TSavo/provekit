@@ -14,29 +14,26 @@
 //         a result with declarations and callEdges arrays when provekit-lsp-java
 //         is on PATH. Skipped if provekit-lsp-java is not installed.
 //
-// Test 5: parseFile(kit="ts", ...) dispatches to the ts lifter.
-//         Skipped if provekit-lsp-ts is not installed.
-//
-// Test 6: parseFile(kit="cpp", ...) dispatches to the cpp lifter.
+// Test 5: parseFile(kit="cpp", ...) dispatches to the cpp lifter.
 //         Skipped if provekit-lsp-cpp is not installed.
 //
-// Test 7: parseFile(kit="swift", ...) dispatches to the swift lifter.
+// Test 6: parseFile(kit="swift", ...) dispatches to the swift lifter.
 //         Skipped if provekit-lsp-swift is not installed.
 //
-// Test 8: parseFile(kit="c", ...) dispatches to the c lifter.
+// Test 7: parseFile(kit="c", ...) dispatches to the c lifter.
 //         Skipped if provekit-lsp-c is not installed.
 //
-// Test 9: parseFile(kit="zig", ...) dispatches to the zig lifter.
+// Test 8: parseFile(kit="zig", ...) dispatches to the zig lifter.
 //         Skipped if provekit-lsp-zig is not installed.
 //
-// Test 10: parseFile(kit="python", ...) dispatches to the python lifter.
+// Test 9: parseFile(kit="python", ...) dispatches to the python lifter.
 //          Uses a fixture binary on PATH so the test is not coupled to the
 //          developer machine's Python package installation state.
 //
-// Test 11: parseFile(kit="php", ...) dispatches to the php lifter and returns
+// Test 10: parseFile(kit="php", ...) dispatches to the php lifter and returns
 //          a result with a diagnostics array when provekit-lsp-php is on PATH.
 //
-// Test 12: parseFile(kit="scala", ...) is registered in linkerd dispatch.
+// Test 11: parseFile(kit="scala", ...) is registered in linkerd dispatch.
 //          If provekit-lsp-scala is absent, it must return LifterUnavailable,
 //          not UnknownKit.
 //
@@ -568,81 +565,6 @@ public class Calculator {
     assert!(
         resp["result"]["diagnostics"].is_array(),
         "java kit parseFile result must have diagnostics array: {:?}",
-        resp
-    );
-
-    shutdown(&sock);
-    child.wait().ok();
-    std::fs::remove_file(&sock).ok();
-}
-
-// -------------------------------------------------------------------
-// Test 5: typescript kit dispatch returns diagnostics when provekit-lsp-ts is on PATH.
-// -------------------------------------------------------------------
-
-/// Test 5: parseFile with kit="ts" dispatches to the typescript lifter.
-///
-/// Skipped if `provekit-lsp-ts` is not on PATH. The skip is printed to stdout
-/// so CI can see why the test was skipped, not silently ignored.
-///
-/// Install via:
-///   cd implementations/typescript && pnpm install && pnpm build && \
-///   cp bin/provekit-lsp-ts.cjs ~/.local/bin/provekit-lsp-ts && \
-///   chmod +x ~/.local/bin/provekit-lsp-ts
-///
-/// When provekit-lsp-ts is available, sends a tiny TypeScript source and asserts:
-///   - The response has a `result.diagnostics` array.
-///   - No JSON-RPC error is returned.
-#[test]
-fn test5_typescript_kit_dispatch() {
-    if !binary_on_path("provekit-lsp-ts") {
-        println!(
-            "SKIP test5_typescript_kit_dispatch: provekit-lsp-ts not on PATH. \
-             Install via: cd implementations/typescript && pnpm install && pnpm build && \
-             cp bin/provekit-lsp-ts.cjs ~/.local/bin/provekit-lsp-ts && \
-             chmod +x ~/.local/bin/provekit-lsp-ts"
-        );
-        return;
-    }
-
-    let sock = unique_sock_path("t5");
-    let _ = std::fs::remove_file(&sock);
-
-    let mut child = spawn_daemon(&sock);
-
-    assert!(
-        wait_for_socket(&sock, Duration::from_secs(5)),
-        "daemon socket did not appear"
-    );
-
-    let ts_source = r#"
-// @provekit:contract post="result >= 0"
-function absValue(x: number): number {
-    return x < 0 ? -x : x;
-}
-"#;
-
-    let req = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "parseFile",
-        "params": {
-            "kitId": "ts",
-            "file": "/tmp/test_abs.ts",
-            "source": ts_source
-        }
-    });
-
-    let resp = send_recv(&sock, &req);
-
-    assert!(
-        resp.get("error").is_none(),
-        "ts kit parseFile returned unexpected error: {:?}",
-        resp
-    );
-    assert!(
-        resp["result"]["diagnostics"].is_array(),
-        "ts kit parseFile result must have diagnostics array: {:?}",
         resp
     );
 

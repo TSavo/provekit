@@ -10,7 +10,7 @@
 //
 // Lifting strategy for parseFile:
 //   For `rust` sources: call `provekit_lift::lift_path` in-process (fast).
-//   For `go`, `csharp`, `ruby`, `java`, `swift`, `ts`, `cpp`, `c`, `zig`, `php`, `scala`:
+//   For `go`, `csharp`, `ruby`, `java`, `swift`, `cpp`, `c`, `zig`, `php`, `scala`:
 //     spawn the kit's LSP plugin binary, send a JSON-RPC `parse` request,
 //     read the `{declarations, callEdges}` response, and map into
 //     `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
@@ -23,8 +23,6 @@
 //     returns LifterUnavailable if the binary is not on PATH.
 //   For `swift`: spawn `provekit-lsp-swift` (no args: reads stdin directly).
 //     Binary is built via `swift build -c release` in implementations/swift.
-//   For `ts`: spawn `provekit-lsp-ts` (no args: node-based CJS binary).
-//     Binary must be on PATH; returns LifterUnavailable if not installed.
 //   For `cpp`: spawn `provekit-lsp-cpp` (no args: native binary, int main()).
 //     Binary built via `g++ -std=c++17 -o provekit-lsp-cpp main.cpp`.
 //   For `c`: spawn `provekit-lsp-c --rpc` (requires --rpc flag).
@@ -236,34 +234,31 @@ pub async fn handle_rust_analyzer_ready(
     let timeout = Duration::from_millis(timeout_ms);
     let host_for_wait = host.clone();
     let root_for_wait = workspace_root.clone();
-    let phase = match task::spawn_blocking(move || {
-        host_for_wait.wait_until_ready(&root_for_wait, timeout)
-    })
-    .await
-    {
-        Ok(phase) => phase,
-        Err(error) => {
-            return rpc_result(
-                serde_json::json!({
-                    "ready": false,
-                    "phase": "failed",
-                    "detail": format!("rust-analyzer readiness wait task failed: {error}"),
-                }),
-                id,
-            )
-        }
-    };
+    let phase =
+        match task::spawn_blocking(move || host_for_wait.wait_until_ready(&root_for_wait, timeout))
+            .await
+        {
+            Ok(phase) => phase,
+            Err(error) => {
+                return rpc_result(
+                    serde_json::json!({
+                        "ready": false,
+                        "phase": "failed",
+                        "detail": format!("rust-analyzer readiness wait task failed: {error}"),
+                    }),
+                    id,
+                )
+            }
+        };
     let ready = phase == crate::ra_host::Phase::Ready;
     let detail = match phase {
-        crate::ra_host::Phase::Ready => {
-            "rust-analyzer workspace indexed and ready".to_string()
-        }
+        crate::ra_host::Phase::Ready => "rust-analyzer workspace indexed and ready".to_string(),
         crate::ra_host::Phase::Failed => {
             "rust-analyzer failed to reach readiness; resolutions refuse".to_string()
         }
-        crate::ra_host::Phase::Spawning => format!(
-            "rust-analyzer still indexing after {timeout_ms}ms; resolutions refuse"
-        ),
+        crate::ra_host::Phase::Spawning => {
+            format!("rust-analyzer still indexing after {timeout_ms}ms; resolutions refuse")
+        }
     };
     rpc_result(
         serde_json::json!({
@@ -658,7 +653,6 @@ enum LiftError {
 /// - `java`: subprocess `provekit-lsp-java --rpc`, method `parse`; binary must be
 ///   installed via `mvn package` in implementations/java/provekit-lift-java-core.
 /// - `swift`: subprocess `provekit-lsp-swift` (no args), method `parse`.
-/// - `ts`: subprocess `provekit-lsp-ts` (no args), method `parse`.
 /// - `cpp`: subprocess `provekit-lsp-cpp` (no args), method `parse`.
 /// - `c`: subprocess `provekit-lsp-c --rpc`, method `parse`.
 /// - `php`: subprocess `provekit-lsp-php` (no args), method `parse`.
@@ -753,20 +747,6 @@ async fn lift_source(
             })?;
             // swift lsp binary reads stdin directly (no --rpc flag needed).
             spawn_kit_lifter(&binary, &[], file, source, "swift-kit").await
-        }
-
-        "ts" => {
-            let binary = find_binary("provekit-lsp-ts").ok_or_else(|| {
-                LiftError::LifterUnavailable(
-                    "kit 'ts' binary not found on PATH; install via: \
-                     cd implementations/typescript && pnpm install && pnpm build && \
-                     cp bin/provekit-lsp-ts.cjs ~/.local/bin/provekit-lsp-ts && \
-                     chmod +x ~/.local/bin/provekit-lsp-ts"
-                        .to_string(),
-                )
-            })?;
-            // ts lsp binary is a node CJS shim; reads stdin directly (no --rpc flag needed).
-            spawn_kit_lifter(&binary, &[], file, source, "ts-kit").await
         }
 
         "cpp" => {

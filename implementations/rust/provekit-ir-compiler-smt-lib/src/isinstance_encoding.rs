@@ -46,9 +46,20 @@ use std::collections::{BTreeMap, BTreeSet};
 /// This MUST match ``_ISINSTANCE_CONCRETE_BUILTINS`` in layer2.py exactly.
 /// A type not in this set → no clause emitted (safe under-refusal).
 const KNOWN_BUILTINS: &[&str] = &[
-    "int", "str", "float", "complex", "bytes", "bytearray",
-    "list", "tuple", "dict", "set", "frozenset", "bool",
-    "NoneType", "type",
+    "int",
+    "str",
+    "float",
+    "complex",
+    "bytes",
+    "bytearray",
+    "list",
+    "tuple",
+    "dict",
+    "set",
+    "frozenset",
+    "bool",
+    "NoneType",
+    "type",
 ];
 
 /// The SMT symbol the lifter emits for a Python type name T:
@@ -126,7 +137,6 @@ impl IsinstanceClauses {
         }
         out
     }
-
 }
 
 /// Emit the subject term as a raw SMT string for use as a map key.
@@ -165,7 +175,11 @@ fn collect_isinstance_formula(formula: &Formula, out: &mut BTreeMap<String, BTre
         Formula::Atomic { name, args } => {
             // Recognize: isinstance(<subject>, <ctor "pytype_T">)
             if name == "isinstance" && args.len() == 2 {
-                if let Term::Ctor { name: ctor_name, args: ctor_args } = &args[1] {
+                if let Term::Ctor {
+                    name: ctor_name,
+                    args: ctor_args,
+                } = &args[1]
+                {
                     if ctor_args.is_empty() {
                         if let Some(type_name) = ctor_name.strip_prefix("pytype_") {
                             if let Some(subject_smt) = render_subject(&args[0]) {
@@ -213,7 +227,8 @@ mod tests {
             "kind": "ctor",
             "name": format!("pytype_{}", type_name),
             "args": []
-        })).unwrap()
+        }))
+        .unwrap()
     }
 
     fn isinstance_atom(subject: Term, type_name: &str) -> Formula {
@@ -224,7 +239,9 @@ mod tests {
     }
 
     fn and2(a: Formula, b: Formula) -> Formula {
-        Formula::And { operands: vec![a, b] }
+        Formula::And {
+            operands: vec![a, b],
+        }
     }
 
     fn not1(a: Formula) -> Formula {
@@ -241,7 +258,11 @@ mod tests {
             args: vec![var("x"), var("y")],
         };
         let ic = IsinstanceClauses::from_formula(&formula);
-        assert_eq!(ic.preamble(), "", "no isinstance → empty preamble (byte-identical)");
+        assert_eq!(
+            ic.preamble(),
+            "",
+            "no isinstance → empty preamble (byte-identical)"
+        );
     }
 
     #[test]
@@ -249,7 +270,11 @@ mod tests {
         // A single isinstance atom: no disjoint pair possible → empty preamble.
         let formula = isinstance_atom(var("x"), "int");
         let ic = IsinstanceClauses::from_formula(&formula);
-        assert_eq!(ic.preamble(), "", "single isinstance → no disjoint pair → empty");
+        assert_eq!(
+            ic.preamble(),
+            "",
+            "single isinstance → no disjoint pair → empty"
+        );
     }
 
     #[test]
@@ -262,8 +287,11 @@ mod tests {
         let ic = IsinstanceClauses::from_formula(&formula);
         let preamble = ic.preamble();
         assert!(
-            preamble.contains("(assert (not (and (isinstance x pytype_int) (isinstance x pytype_str))))") ||
-            preamble.contains("(assert (not (and (isinstance x pytype_str) (isinstance x pytype_int))))"),
+            preamble.contains(
+                "(assert (not (and (isinstance x pytype_int) (isinstance x pytype_str))))"
+            ) || preamble.contains(
+                "(assert (not (and (isinstance x pytype_str) (isinstance x pytype_int))))"
+            ),
             "int/str same-subject must emit disjointness clause: {preamble}"
         );
     }
@@ -310,8 +338,8 @@ mod tests {
         // x has both int and str (one under not); should emit clause.
         let preamble = ic.preamble();
         assert!(
-            preamble.contains("isinstance x pytype_int") &&
-            preamble.contains("isinstance x pytype_str"),
+            preamble.contains("isinstance x pytype_int")
+                && preamble.contains("isinstance x pytype_str"),
             "polarity-blind: must emit clause even when one atom is under not: {preamble}"
         );
     }
@@ -336,7 +364,12 @@ mod tests {
     // These tests gate on z3 availability (hard-fail like literal_encoding).
 
     fn which_z3() -> Option<String> {
-        for cand in ["z3", "/opt/homebrew/bin/z3", "/usr/local/bin/z3", "/usr/bin/z3"] {
+        for cand in [
+            "z3",
+            "/opt/homebrew/bin/z3",
+            "/usr/local/bin/z3",
+            "/usr/bin/z3",
+        ] {
             if std::process::Command::new(cand)
                 .arg("--version")
                 .output()
@@ -398,7 +431,7 @@ mod tests {
         // RED before encoder: sat (spurious model). GREEN after: unsat.
         let z3 = which_z3().expect(
             "z3 must be available for isinstance soundness check; \
-             install z3 and re-run (a missing z3 is a false green)"
+             install z3 and re-run (a missing z3 is a false green)",
         );
         let script = isinstance_script("x", "int", "str");
         let out = run_z3(&z3, &script);
@@ -416,7 +449,7 @@ mod tests {
         // must be SAT (bool⊂int in Python; True IS an int). MUST NEVER be unsat.
         let z3 = which_z3().expect(
             "z3 must be available for isinstance bool⊂int guard; \
-             install z3 and re-run (a missing z3 is a false green)"
+             install z3 and re-run (a missing z3 is a false green)",
         );
         let script = isinstance_script("x", "int", "bool");
         let out = run_z3(&z3, &script);
@@ -435,7 +468,7 @@ mod tests {
         // subjects must be SAT (independent, no disjointness clause applies).
         let z3 = which_z3().expect(
             "z3 must be available for isinstance different-subjects check; \
-             install z3 and re-run"
+             install z3 and re-run",
         );
         // Build script manually for different subjects.
         let formula = and2(

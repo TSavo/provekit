@@ -219,8 +219,8 @@ fn primitive_sort_name(ident: &str) -> Option<&'static str> {
         // job). Collapsing to `Int` is what lets a Rust `i64` contract
         // federate (share CIDs) with a Java `long` contract over the same
         // canonical `Int`, and keeps the solver in LIA.
-        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64"
-        | "i128" | "isize" => "Int",
+        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128"
+        | "isize" => "Int",
         "f32" => "F32",
         "f64" => "F64",
         "bool" => "Bool",
@@ -636,9 +636,17 @@ mod tests {
         // are the SAME sort; their distinction lives in the contract's range
         // refinement, not the sort name. This is the deliberate reversal of
         // the old width-distinct "Option A".
-        let int = Sort::Primitive { name: "Int".to_string() };
-        for ty in ["u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize"] {
-            assert_eq!(syn_type_to_sort(&parse_ty(ty)), int, "`{ty}` must canonicalize to Int");
+        let int = Sort::Primitive {
+            name: "Int".to_string(),
+        };
+        for ty in [
+            "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
+        ] {
+            assert_eq!(
+                syn_type_to_sort(&parse_ty(ty)),
+                int,
+                "`{ty}` must canonicalize to Int"
+            );
         }
     }
 
