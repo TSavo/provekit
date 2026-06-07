@@ -80,7 +80,7 @@ Per host language idiom:
 - Ruby: RubyGems via `gem build && gem push`.
 - Zig: Zig package manager (still evolving; pin in `build.zig.zon`).
 
-For all distributions: include a clear README, a CHANGELOG, an MIT or Apache-2.0 license file, and a link back to the ProvekIt repository.
+For all distributions: include a clear README, a CHANGELOG, an MIT or Apache-2.0 license file, and a link back to the Sugar repository.
 
 ## Inclusion in `make conformance`
 
@@ -92,7 +92,7 @@ This means every adapter's bytes are watched. A drift in the adapter's canonical
 
 A shipping adapter has at minimum:
 
-1. **README** at the package root: install, usage example, link to the ProvekIt monorepo.
+1. **README** at the package root: install, usage example, link to the Sugar monorepo.
 2. **COVERAGE** manifest as above.
 3. **An entry in [`docs/reference/per-adapter-coverage.md`](../../reference/per-adapter-coverage.md)** in the monorepo: one paragraph summary, link to the adapter's package, coverage tier (A/B/C), known gaps.
 4. **A tutorial mention** in the relevant per-language tutorial (`docs/tutorials/<language>.md`): "if your codebase uses [library], try [adapter]".

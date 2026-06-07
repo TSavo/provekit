@@ -27,7 +27,7 @@ We prove that this discipline (a) makes drift between language ports mechanicall
 
 ## §1: The substrate's first axiom and its violations
 
-The first axiom is short. *Supra omnia, rectum.* Above all, correctness. Every ProvekIt decision flows from this; shipping incorrect substrate is self-defeating.
+The first axiom is short. *Supra omnia, rectum.* Above all, correctness. Every Sugar decision flows from this; shipping incorrect substrate is self-defeating.
 
 The substrate has applied this axiom rigorously to its outputs. Lifted contracts are canonical IR. Composition is byte-deterministic. Signed mementos carry their own attestation. Witness pluralism gives every consumer a choice of which solver's verdict to accept. The substrate's *output* layer has been disciplined.
 

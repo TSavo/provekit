@@ -1,6 +1,6 @@
-# Building ProvekIt from source
+# Building Sugar from source
 
-ProvekIt is a multi-language polyglot. The main implementations today: Rust, Go, C++, TypeScript, C#, Python, Java, Ruby, Zig, Swift, C, PHP. The default local conformance gate uses the Linux profile: every non-Swift peer mints its own self-contracts under the foundation key, and every minted catalog must match the pinned content-addressed CID before that local gate is green. Swift is checked by the macOS profile in CI.
+Sugar is a multi-language polyglot. The main implementations today: Rust, Go, C++, TypeScript, C#, Python, Java, Ruby, Zig, Swift, C, PHP. The default local conformance gate uses the Linux profile: every non-Swift peer mints its own self-contracts under the foundation key, and every minted catalog must match the pinned content-addressed CID before that local gate is green. Swift is checked by the macOS profile in CI.
 
 The contract is the top-level [`Makefile`](../../Makefile). If `make ci` is green, the Linux profile's self-contracts, catalog hash, proof-protocol fixtures, and Linux native test aggregate passed on that host. The CI workflow at [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs that Linux path and adds macOS Swift plus per-kit `provekit prove --kit=<alias>` verifier jobs. Those aliases are project config entries, not built-in CLI kit names.
 

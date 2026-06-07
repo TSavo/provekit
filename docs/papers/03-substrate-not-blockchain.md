@@ -1,6 +1,6 @@
 # After Bluepapers: Substrate, Not Blockchain
 
-ProvekIt builds proofchains: portable chains of formal proofs over content-addressed claims. Proofchains are blockchain-adjacent, not blockchain-derived. They share the same older primitives blockchains assembled so effectively: hash chains, Merkle structure, signatures, content addressing, witness publication, and local verification. The difference is the payload. A blockchain carries state transitions ordered by a distributed timestamp server. A proofchain carries formal proofs checked by a local verifier.
+Sugar builds proofchains: portable chains of formal proofs over content-addressed claims. Proofchains are blockchain-adjacent, not blockchain-derived. They share the same older primitives blockchains assembled so effectively: hash chains, Merkle structure, signatures, content addressing, witness publication, and local verification. The difference is the payload. A blockchain carries state transitions ordered by a distributed timestamp server. A proofchain carries formal proofs checked by a local verifier.
 
 That difference is small at the data-structure level and fundamental at the trust boundary. This essay derives the distinction from first principles.
 
@@ -8,7 +8,7 @@ That difference is small at the data-structure level and fundamental at the trus
 
 Conventional blockchains conflate two questions. The first is "what is the state of the world?" The second is "did this transition obey the rules?" Global consensus exists to settle the first so the network can verify the second. Every node holds the same ledger because the ledger IS the answer to "what happened."
 
-ProvekIt drops the first question. State is whatever the producer says it is. There is no global ledger, no agreed-upon answer to "what's true." What ProvekIt enforces is the second question, exclusively: did the transition obey the rules?
+Sugar drops the first question. State is whatever the producer says it is. There is no global ledger, no agreed-upon answer to "what's true." What Sugar enforces is the second question, exclusively: did the transition obey the rules?
 
 That question turns out to be content-addressable. A `.proof` bundle either discharges its obligations against its declared contracts or it does not. The verifier walks the chain locally, recomputes hashes, checks signatures, runs the handshake against the IR formulas, and emits a fail-closed verdict. No quorum. No peer consensus. The bytes either prove what they claim or they do not.
 
@@ -119,7 +119,7 @@ multi-tool, multi-artifact proof space.
 
 If correctness is the only thing the substrate enforces, then producing a valid state transition reduces to producing a valid correctness proof. There is no third thing.
 
-This is the Curry-Howard correspondence operating at the protocol layer. A proof of a proposition is a program that produces a witness for it. ProvekIt's `.proof` bundle is both at once: it carries the canonical IR of the transition AND the discharge mementos that prove the transition satisfies its declared contracts. The catalog memento at the root of the bundle binds the two together under one signature. Anyone who can produce a valid `.proof` has produced a valid transition. Anyone who cannot, has not.
+This is the Curry-Howard correspondence operating at the protocol layer. A proof of a proposition is a program that produces a witness for it. Sugar's `.proof` bundle is both at once: it carries the canonical IR of the transition AND the discharge mementos that prove the transition satisfies its declared contracts. The catalog memento at the root of the bundle binds the two together under one signature. Anyone who can produce a valid `.proof` has produced a valid transition. Anyone who cannot, has not.
 
 There is no separate "execution" layer to validate against. Execution and proof collapse into one artifact. At planet scale, this means a producer in Lagos and a verifier in Tallinn never need to talk: the bundle that landed on the verifier's disk either holds up under the four substrate invariants or it does not, and the verifier's report is itself a memento that another verifier can take as evidence.
 
@@ -127,7 +127,7 @@ The proof IS the transition. This is what makes the next step possible.
 
 ## 3. EVM is the floor, not the ceiling
 
-If the proof is the transition, then the substrate's only job is to enforce the SHAPE of that artifact, not its semantics. ProvekIt's discipline reduces to four invariants:
+If the proof is the transition, then the substrate's only job is to enforce the SHAPE of that artifact, not its semantics. Sugar's discipline reduces to four invariants:
 
 1. The bundle's bytes hash to its filename CID.
 2. Every embedded member's bytes hash to its declared CID.
@@ -146,23 +146,23 @@ member-body: <EVM bytecode + state delta + proof of EVM execution>
 member-body: <JSON: {"action": "transfer", "from": "...", "to": "...", "amount": 100}>
 ```
 
-The substrate cannot tell the difference, and does not try. A blockchain is one application of ProvekIt: a particular discipline that interprets member bodies as state-transition deltas, and a participant set that agrees on which producer's chain to follow. The substrate enforces the SHAPE of state transitions; it is normatively opaque to their SEMANTICS. EVM-on-ProvekIt is one body shape among many.
+The substrate cannot tell the difference, and does not try. A blockchain is one application of Sugar: a particular discipline that interprets member bodies as state-transition deltas, and a participant set that agrees on which producer's chain to follow. The substrate enforces the SHAPE of state transitions; it is normatively opaque to their SEMANTICS. EVM-on-Sugar is one body shape among many.
 
 ## 4. The DAG is a tape
 
 "One body shape among many" is not a marketing claim. It is a structural ceiling. The reason the substrate hosts EVM, WASM, Move, JSON deltas, attestations, and sensor envelopes interchangeably is that the four invariants plus the witness DAG already constitute a verified universal computer. There is no shape above this one to reach for.
 
-Walk the equivalence directly. A Turing machine is a transition rule, a head, a tape, and a sequence. ProvekIt has all four:
+Walk the equivalence directly. A Turing machine is a transition rule, a head, a tape, and a sequence. Sugar has all four:
 
 ```
 (transition rule, head, tape, sequence) = (four invariants, witnesses, member bodies, DAG)
 ```
 
-Witnesses commit each successor to its predecessors via CID. That is the head and the sequence: any node in the DAG knows its full causal past, and the order of work is fixed by content addressing rather than by clock. The four invariants are the transition rule: every step is admitted or rejected by the same finite, fail-closed check. Member bodies are the tape: freeform bytes under the proof-file-format grammar, hence a universal alphabet. State transitions plus DAG ordering plus a transition rule is the structure of a Turing machine, and ProvekIt is, structurally, a verified universal computer.
+Witnesses commit each successor to its predecessors via CID. That is the head and the sequence: any node in the DAG knows its full causal past, and the order of work is fixed by content addressing rather than by clock. The four invariants are the transition rule: every step is admitted or rejected by the same finite, fail-closed check. Member bodies are the tape: freeform bytes under the proof-file-format grammar, hence a universal alphabet. State transitions plus DAG ordering plus a transition rule is the structure of a Turing machine, and Sugar is, structurally, a verified universal computer.
 
 Once you accept that, "what should the substrate add next?" becomes a malformed question. There is nothing above Turing complete to reach for. Anyone proposing a strictly more general substrate is either building a less general one (a special-purpose chain, a fixed VM, a typed but narrower envelope) or reinventing the same kind of minimal invariant set under a different brand. The design space above the substrate is full of applications. The space at the substrate level is small because it has to be. This is why §3's "EVM is the floor" is structural rather than aspirational: the floor sits at the lower bound of proof-carrying universality, and applications stack above it.
 
-What this argument does and does not buy is worth naming directly. Turing-completeness gives sufficiency: any computable application can be hosted as a body, including blockchains, smart-contract VMs, attestation logs, and arbitrary state machines. It does not give uniqueness. A different proof-carrying substrate with the same four-invariant discipline, or a different but equally minimal set of invariants, could exist. The claim that ProvekIt is *the* substrate at this layer is empirical, not a theorem about the universe of possible designs: it ships, it composes, it works at the four-invariant scale, and competing shapes have to demonstrate the same body-opacity, the same per-producer sovereignty, and the same constant-size verification before claiming the same architectural floor. The ceiling here is the design space's lower bound for proof-carrying universality, not a theorem about the only shape that fills it.
+What this argument does and does not buy is worth naming directly. Turing-completeness gives sufficiency: any computable application can be hosted as a body, including blockchains, smart-contract VMs, attestation logs, and arbitrary state machines. It does not give uniqueness. A different proof-carrying substrate with the same four-invariant discipline, or a different but equally minimal set of invariants, could exist. The claim that Sugar is *the* substrate at this layer is empirical, not a theorem about the universe of possible designs: it ships, it composes, it works at the four-invariant scale, and competing shapes have to demonstrate the same body-opacity, the same per-producer sovereignty, and the same constant-size verification before claiming the same architectural floor. The ceiling here is the design space's lower bound for proof-carrying universality, not a theorem about the only shape that fills it.
 
 Conventional blockchains pick one tape format (state-machine deltas) and one consensus discipline (totally ordered chain over a globally shared ledger). That is a restriction on the substrate, not an extension. They buy timestamp-server ordering for state transitions. Proofchains do not need that ordering for logical validity. Strip the consensus, keep the verification. You get more, not less. A Turing complete substrate already contains every program a smart contract could embed; the substrate is the bigger set.
 
@@ -180,7 +180,7 @@ Per-producer sovereignty plus body-opacity yields the final property: the substr
 
 A new blockchain does not need a substrate change. A new consensus mechanism does not need a substrate change. A new supply-chain attestation format, a new audit-log discipline, a new ML-model provenance chain, a new sensor-telemetry envelope, a new legal-clause notarization scheme: none of them requires the substrate to ship a feature. They all slot into member bodies. The substrate stays at the four invariants.
 
-Forward compatibility is a property of the seam between substrate and application, not a feature added to the substrate. The seam is the boundary at which the verifier stops interpreting and starts trusting the application's discipline. ProvekIt locates that seam at the body byte string. Everything below the seam is finite, signed, and frozen. Everything above the seam is unbounded.
+Forward compatibility is a property of the seam between substrate and application, not a feature added to the substrate. The seam is the boundary at which the verifier stops interpreting and starts trusting the application's discipline. Sugar locates that seam at the body byte string. Everything below the seam is finite, signed, and frozen. Everything above the seam is unbounded.
 
 ## 7. DAGs form witness chains
 

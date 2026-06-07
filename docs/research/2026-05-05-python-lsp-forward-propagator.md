@@ -2,7 +2,7 @@
 
 ## Scope
 
-This note documents the current state of the Python LSP plugin in the Provekit monorepo, its entry point, existing infrastructure, and what the ForwardPropagator (#320) will reuse. The goal is to provide enough context for a low-context agent to implement #320 without further investigation.
+This note documents the current state of the Python LSP plugin in the Sugar monorepo, its entry point, existing infrastructure, and what the ForwardPropagator (#320) will reuse. The goal is to provide enough context for a low-context agent to implement #320 without further investigation.
 
 ## Findings
 
@@ -103,8 +103,8 @@ require_once __DIR__ . '/../provekit-ir-symbolic/src/Ir/Declaration.php';
 require_once __DIR__ . '/../provekit-ir-symbolic/src/Canonicalizer/Blake3.php';
 require_once __DIR__ . '/../provekit-ir-symbolic/src/Canonicalizer/Jcs.php';
 
-use ProvekIt\Ir\{ContractDecl, BridgeDecl, Collector};
-use ProvekIt\Canonicalizer\{Blake3, Jcs};
+use Sugar\Ir\{ContractDecl, BridgeDecl, Collector};
+use Sugar\Canonicalizer\{Blake3, Jcs};
 ```
 
 ### Self-contracts: contract JSON shape

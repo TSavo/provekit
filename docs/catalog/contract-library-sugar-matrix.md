@@ -64,7 +64,7 @@ This catalog does not implement new sugar.
 
 This catalog does not modify existing sugar JSON, CID registries, lifters, realizers, tests, or policy files.
 
-This catalog does not claim that a source library is semantically correct. It records what ProvekIt can lift, emit, relift, or refuse for that library surface.
+This catalog does not claim that a source library is semantically correct. It records what Sugar can lift, emit, relift, or refuse for that library surface.
 
 This catalog does not turn planned cells into shipped cells. A planned row becomes shipped only when a sugar JSON exists, its spec path resolves, loss dimensions are declared, and fail-closed tests link to it.
 

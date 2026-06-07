@@ -75,7 +75,7 @@ Same handshake, same discharge breakdown shape as the [Rust tutorial step 4](rus
 
 ## 6. Wire your IDE
 
-- **IDE:** install the LSP plugin. See [docs/how-to/ide-integration/](../how-to/ide-integration/) for editor-specific wire-up. The plugin implements the ProvekIt NDJSON LSP plugin protocol.
+- **IDE:** install the LSP plugin. See [docs/how-to/ide-integration/](../how-to/ide-integration/) for editor-specific wire-up. The plugin implements the Sugar NDJSON LSP plugin protocol.
 
 ## What's next
 

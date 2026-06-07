@@ -5,7 +5,7 @@ Draft text content for a designed social preview image (1280×640 GitHub default
 ## Recommended (tight, declarative)
 
 ```
-ProvekIt
+Sugar
 Prove k(I) = t
 
 Locally verifiable proofchains for any transformation.
@@ -20,7 +20,7 @@ Visual cut: lead with `k(I) = t` typeset large; supra-omnia-rectum quote optiona
 ## Alternative: substrate-focused
 
 ```
-ProvekIt
+Sugar
 The substrate beneath every modern correctness claim.
 
 Compiler, lifter, verifier, schema, repair tool: every transformation
@@ -32,7 +32,7 @@ Polyglot. Federated. Jurisdiction-neutral. No consensus required.
 ## Alternative: paper-corpus emphasis
 
 ```
-ProvekIt
+Sugar
 11 papers. Six runnable exhibits. One claim:
 
          k(I) = t
@@ -45,7 +45,7 @@ A proofchain carries formal proofs.
 
 - Background: dark, near-black; technical, not "tech-marketing." Avoid generic AI-substrate visual clichés (glowing nodes, abstract networks).
 - Lead glyph: `k(I) = t` set in a serif math face (Computer Modern, Latin Modern, or Iowan) at 60-80% of the canvas height. The equation IS the brand mark.
-- Wordmark: "ProvekIt" with the literal lowercase k / capital It rendered at slightly different weight to make "Prove It" pop. Don't use Title Case ("Provekit") under any rendering.
+- Wordmark: "Sugar" with the literal lowercase k / capital It rendered at slightly different weight to make "Prove It" pop. Don't use Title Case ("Sugar") under any rendering.
 - Optional: micro-typography of one historical CID (e.g., the v1.6.3 catalog CID `dd0cc798...`) running along an edge as a fingerprint detail. Cypherpunk register, not dataviz-flourish.
 - No emoji, no badges, no "AI-powered" framing.
 - Test small: GitHub social previews render at ~640×320 in unfurls. The equation must be legible at that size.

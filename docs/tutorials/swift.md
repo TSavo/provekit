@@ -30,7 +30,7 @@ cd implementations/swift && swift build
 In v1.1, author directly through `IR.swift`. The kit provides IR types, JCS canonical JSON via `Jcs.encode`, and BLAKE3-512 hashing.
 
 ```swift
-import Provekit
+import Sugar
 
 let formula = IrFormula.atomic(...)
 let cid = try IR.canonicalize(formula).hash()

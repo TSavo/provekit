@@ -2,7 +2,7 @@
 
 Hashes are deterministic functions of canonical bytes. When bytes change, hashes change. Old implication mementos remain cryptographically valid against their stated `(antecedentHash, consequentHash)`; they simply become unreachable from any contract that has been re-canonicalized. The lattice does not need invalidation.
 
-This is the structural absence of cache invalidation. A stale entry in a conventional cache is a poison pill; in ProvekIt, an old memento describing now-orphaned hashes neither falsifies nor poisons anything. The lattice grows monotonically. Every minted implication memento is true forever, against the bytes it was minted for.
+This is the structural absence of cache invalidation. A stale entry in a conventional cache is a poison pill; in Sugar, an old memento describing now-orphaned hashes neither falsifies nor poisons anything. The lattice grows monotonically. Every minted implication memento is true forever, against the bytes it was minted for.
 
 The implication: provability is monotonic. A fact, once published, is a hash lookup forever. The protocol's value compounds with time. Software ages backwards.
 
@@ -16,7 +16,7 @@ In the conventional cache pattern:
 - Cache invalidation is required to remove stale entries.
 - Cache invalidation is famously hard ("the two hardest problems in computer science").
 
-In ProvekIt's lattice:
+In Sugar's lattice:
 
 - An implication memento stores `(antecedentHash → consequentHash, evidence, signature)`.
 - Underlying contracts can change. When they do, their canonical IR changes; their CIDs change.
@@ -37,7 +37,7 @@ A conventional cache requires:
 - Coordinating invalidation across distributed cache layers.
 - Handling failed invalidations.
 
-ProvekIt requires none of this. You add to the lattice; you never remove. The lattice maintainer's job is "add new entries"; the maintainer's job is never "figure out what's stale."
+Sugar requires none of this. You add to the lattice; you never remove. The lattice maintainer's job is "add new entries"; the maintainer's job is never "figure out what's stale."
 
 ### Distribution simplicity
 
@@ -47,7 +47,7 @@ A conventional cache shared across multiple parties:
 - Invalidation must propagate.
 - A party that misses an invalidation has stale data.
 
-ProvekIt's lattice shared across multiple parties:
+Sugar's lattice shared across multiple parties:
 
 - Each party has its own copy.
 - New entries propagate; nothing needs to be removed.
@@ -61,7 +61,7 @@ If a developer's signing key is compromised in 2027, what happens to the implica
 
 In a conventional system: revoke the key, somehow propagate to all caches, hope the propagation reaches everyone.
 
-In ProvekIt:
+In Sugar:
 
 - The 2026 mementos remain cryptographically valid (the signature was correct against the bytes).
 - Verifiers updated their `trusted_keys` configuration to reject the compromised key going forward.
@@ -107,7 +107,7 @@ Monotonicity is "old facts stay true." It is not "new facts can be derived from 
 
 ## "Software ages backwards"
 
-The phrase: every codebase that adopts ProvekIt becomes easier to verify than the one shipped yesterday.
+The phrase: every codebase that adopts Sugar becomes easier to verify than the one shipped yesterday.
 
 What it means concretely:
 
@@ -121,7 +121,7 @@ Tomorrow's lattice has all of today's pairs plus new ones. A codebase running to
 Verification cost can decrease over time as more obligations hit prior CIDs or
 cached implication mementos instead of requiring new semantic proof.
 
-This is the inverse of conventional software, where dependencies get harder to reason about as the dependency tree grows. With ProvekIt, the dependency tree's verification cost decreases as the lattice grows. The codebase ages "backwards" in the sense that older codebases are harder to verify (less lattice support) than newer ones.
+This is the inverse of conventional software, where dependencies get harder to reason about as the dependency tree grows. With Sugar, the dependency tree's verification cost decreases as the lattice grows. The codebase ages "backwards" in the sense that older codebases are harder to verify (less lattice support) than newer ones.
 
 ## What this argues for
 

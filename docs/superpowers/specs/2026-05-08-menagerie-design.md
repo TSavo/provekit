@@ -2,7 +2,7 @@
 
 ## Purpose
 
-ProvekIt needs a top-level home for executable proof-workflow exhibits. The
+Sugar needs a top-level home for executable proof-workflow exhibits. The
 current `bug-zoo/` directory is valuable, but it accidentally suggests that bug
 rediscovery is the whole project. The project is broader: `prove k(I)=t` applies
 to any workflow where an artifact is projected into a canonical, signed,
@@ -11,7 +11,7 @@ content-addressed truth claim.
 The Menagerie is that home. It is both product framing and executable repo
 structure:
 
-- framing: a map of the major proof workflows ProvekIt supports;
+- framing: a map of the major proof workflows Sugar supports;
 - harness: runnable exhibits with receipts, passing cases, and refusal cases;
 - migration: `bug-zoo/` moves physically under `menagerie/bug-zoo/`.
 
@@ -209,7 +209,7 @@ single content address.
 
 Supply Chain Rails demonstrates artifact movement under proof. Contracts,
 witnesses, binaries, CI closures, and provenance must stay on the same verified
-track, or admission fails closed. This makes clear that ProvekIt is not merely
+track, or admission fails closed. This makes clear that Sugar is not merely
 about source-level contracts; it is about refusing supply-chain drift and
 substitution when the proof graph no longer matches the bytes.
 

@@ -1,4 +1,4 @@
-# ProvekIt papers
+# Sugar papers
 
 This directory contains paper-grade arguments. These are not docs (how to use the protocol) and not specs (the formal definition of the protocol). They are sustained arguments about what the protocol *is*, why its design choices are load-bearing, and what its consequences are.
 
@@ -20,7 +20,7 @@ For the current operator-facing map, start with
 
 The papers are an inductive ladder. Paper 1 is the pitch, paper 2 is the formal spec, and papers 3 through 23 are the After-X rungs: given what the prior paper established, here is what changes. Read them in order, because later rungs assume the framing earlier ones built.
 
-1. **[The Whitepaper](01-whitepaper.md)**: Executive summary. What ProvekIt is, why it matters, who it is for, the trojan horse, the cypherpunk lineage. The trust-depth knob; the three-CLI surface; the install path. The shortest path from "I have heard of this" to "I understand the move."
+1. **[The Whitepaper](01-whitepaper.md)**: Executive summary. What Sugar is, why it matters, who it is for, the trojan horse, the cypherpunk lineage. The trust-depth knob; the three-CLI surface; the install path. The shortest path from "I have heard of this" to "I understand the move."
 
 2. **[The Bluepaper](02-bluepaper.md)**: Formal protocol specification. Theorem statements with proofs; the canonical IR grammar in EBNF; the constant-size verification theorem with hypotheses H1-H5; the `memcmp` line shown verbatim; the cryptographic-minimum claim; every spec referenced by content hash. Closes with a runnable verification: compute the catalog CID locally, and the bluepaper has just verified its own authority. The paper is a formal baseline; the current CLI catalog and extension CIDs live in [../reference/cids.md](../reference/cids.md) and [../reference/protocol-extensions.md](../reference/protocol-extensions.md).
 

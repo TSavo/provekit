@@ -1,6 +1,6 @@
 # 2026-05-28 — snake eats tail
 
-The ProvekIt CLI lifted its own contracts.
+The Sugar CLI lifted its own contracts.
 
 ## What happened
 

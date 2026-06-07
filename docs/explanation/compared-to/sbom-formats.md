@@ -1,6 +1,6 @@
-# ProvekIt compared to SBOM formats (CycloneDX, SPDX)
+# Sugar compared to SBOM formats (CycloneDX, SPDX)
 
-SBOMs are inventory; ProvekIt is behavior. They are complementary in a complete supply-chain posture.
+SBOMs are inventory; Sugar is behavior. They are complementary in a complete supply-chain posture.
 
 ## What an SBOM is
 
@@ -33,19 +33,19 @@ The SBOM tells you `lodash@4.17.21` is included. It does not tell you whether yo
 
 These questions are out of scope for inventory.
 
-## Where SBOMs and ProvekIt overlap
+## Where SBOMs and Sugar overlap
 
 Almost nowhere. The questions are orthogonal:
 
 - SBOM: "what's there?"
-- ProvekIt: "what does what's there do, and does it satisfy the contracts I depend on?"
+- Sugar: "what does what's there do, and does it satisfy the contracts I depend on?"
 
 ## How they fit together
 
 A complete supply-chain artifact:
 
 1. **CycloneDX SBOM**: lists every component, every version, every license, every known vulnerability.
-2. **ProvekIt `.proof`**: signs behavioral contracts on the components, carries the rank-3 pin (`contractCid`, `witnessCid`, `binaryCid` per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md)), encodes bridges.
+2. **Sugar `.proof`**: signs behavioral contracts on the components, carries the rank-3 pin (`contractCid`, `witnessCid`, `binaryCid` per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md)), encodes bridges.
 
 A consumer's verification pipeline:
 
@@ -73,7 +73,7 @@ CycloneDX has an extension for cryptographic attestations (`vulnerabilityDisclos
 
 The consumer reads the SBOM, fetches the `.proof` by CID, verifies. The combination provides inventory + behavioral verification in a coordinated pipeline.
 
-## SBOM limits ProvekIt addresses
+## SBOM limits Sugar addresses
 
 If you have an SBOM but no behavioral verification, you know what's there but not whether it works correctly. Consider:
 
@@ -86,9 +86,9 @@ The SBOM doesn't catch this. The version string is correct; the binary differs. 
 - A registry that signs releases (Sigstore + transparency log).
 - A `.proof` whose rank-3 pin (`contractCid`, `witnessCid`, `binaryCid`) matches the legitimate artifact and its contract; the malicious binary's hash mismatches; verification fails.
 
-ProvekIt's rank-3 pin provides exactly this defense. SBOM enumerates; rank-3 validates.
+Sugar's rank-3 pin provides exactly this defense. SBOM enumerates; rank-3 validates.
 
-## ProvekIt limits SBOM addresses
+## Sugar limits SBOM addresses
 
 Conversely, if you have a `.proof` but no SBOM:
 
@@ -96,27 +96,27 @@ Conversely, if you have a `.proof` but no SBOM:
 - You don't have a comprehensive inventory.
 - You can't easily check "is anyone shipping a known-vulnerable transitive dependency?"
 
-SBOMs are essential for vulnerability tracking. They list everything; they're queryable; they're standard. ProvekIt doesn't replace this.
+SBOMs are essential for vulnerability tracking. They list everything; they're queryable; they're standard. Sugar doesn't replace this.
 
 ## Where each is required by what
 
 - **Compliance regimes** (NIST, NTIA, FDA, FedRAMP) increasingly require SBOMs for procurement.
-- **No major regime requires ProvekIt yet.** It's too new.
-- **Some defense / aerospace standards** require formal verification at specific assurance levels (DO-178C, Common Criteria EAL5+); none currently accepts ProvekIt-style hash-bounded verification as equivalent to ITP-checked proofs.
+- **No major regime requires Sugar yet.** It's too new.
+- **Some defense / aerospace standards** require formal verification at specific assurance levels (DO-178C, Common Criteria EAL5+); none currently accepts Sugar-style hash-bounded verification as equivalent to ITP-checked proofs.
 
-For compliance: ship an SBOM. ProvekIt is value-add, not a compliance requirement.
+For compliance: ship an SBOM. Sugar is value-add, not a compliance requirement.
 
 For security: ship both. SBOM for inventory, `.proof` for behavior, both for defense in depth.
 
 ## When you don't need both
 
-- **You ship a public artifact and care about consumers' visibility into dependencies**: ship an SBOM. (ProvekIt optional but additive.)
+- **You ship a public artifact and care about consumers' visibility into dependencies**: ship an SBOM. (Sugar optional but additive.)
 - **You ship a closed-source artifact and care about clients' verification of behavior**: ship a `.proof`. SBOM optional for closed-source distribution; SBOM is more often required for open or shared artifacts.
 - **You ship both**: ship both. They cost different things to produce; both pay off.
 
 ## The decision
 
-SBOM is mostly compliance + inventory. ProvekIt is verification + integrity. They complement.
+SBOM is mostly compliance + inventory. Sugar is verification + integrity. They complement.
 
 If your supply-chain checklist already includes "ship SBOM," add "ship `.proof`" for the behavioral layer. If it doesn't include either, decide which question is more pressing for your consumers and start there.
 

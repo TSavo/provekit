@@ -6,11 +6,11 @@
 >
 > **Premise the earlier papers established.** A protocol for content-addressable, cryptographically-signed, byte-deterministic claims about software behavior, federated across signers, composable end-to-end, jurisdiction-neutral, and machine-checkable.
 >
-> **What this paper argues.** That standardization, in the form an industry-grade verification substrate requires, is not the multi-decade per-regulator amendment process the industry has assumed. It is cryptographic re-derivation. The substrate ProvekIt ships is the lift of Schneier's defining cipher identity into structured plaintext; standardization in this setting is signing a `.proof` that re-derives in an hour on a developer laptop. The institutional path remains real and is the appendix; the primary path is individual.
+> **What this paper argues.** That standardization, in the form an industry-grade verification substrate requires, is not the multi-decade per-regulator amendment process the industry has assumed. It is cryptographic re-derivation. The substrate Sugar ships is the lift of Schneier's defining cipher identity into structured plaintext; standardization in this setting is signing a `.proof` that re-derives in an hour on a developer laptop. The institutional path remains real and is the appendix; the primary path is individual.
 
 ## Abstract
 
-The structure of a ProvekIt `.proof` is not a design choice. It is the canonical encoding of "a chain of content-addressed, signed implications." Any system attempting to compose formal verifications across vendors, languages, and decades requires this data structure; ProvekIt is one canonical instantiation.
+The structure of a Sugar `.proof` is not a design choice. It is the canonical encoding of "a chain of content-addressed, signed implications." Any system attempting to compose formal verifications across vendors, languages, and decades requires this data structure; Sugar is one canonical instantiation.
 
 The substrate has two roots. The mathematical root is Cousot 1977: abstract interpretation lifted to content-addressed federation. The design root is Schneier's *Applied Cryptography* Volume 1, Chapter 1: the substrate's round-trip identity `k(k'(I)) = t` is the direct lift of the defining cipher identity `Pk(Pk'(P)) = P` into structured plaintext. The substrate IS a cipher. Trinity is plaintext, algebras are keys, lift and realize are the inverse-key-pair, CIDs are message authenticators, cross-language federation is a mode of operation.
 
@@ -18,7 +18,7 @@ This paper argues three claims:
 
 1. **Cipher-substrate correspondence.** The substrate is the move that takes Applied Cryptography's Chapter 1 seriously and asks "what if the plaintext is structure." Every primitive in the substrate has a Chapter 1 analog, including AES (the C11 signature CID with its catalog of 114 op-specs) and the PKI registry (the catalog of published `.proof` files).
 2. **Structural identity with the vertical stack.** A `.proof` and the vertical stack of formal verification share an identical data structure: a chain of content-addressed signed tuples of arbitrary rank. The v1.4 multi-dimensional pinning architecture (rank-3 consumer pin: `(contractCid, witnessCid, binaryCid)`) is the operational realization of this claim.
-3. **Standardization as cryptographic re-derivation, via the Forgery-Equals-Production lemma.** A signed catalog `.proof` certifying that an algebra is complete at named levels L0-L3, with each level's witness re-derivable in a clean environment, is what standardization becomes. The full re-derivation cost is roughly one hour on a laptop. The lemma states that the set of algebras admitting a verifying `.proof` equals the set of algebras with the property; forging a `.proof` and producing the algebra honestly are the same activity. This is an asymmetry of kind, not of degree, in the cryptographic sense. Bitcoin's seventeen-year existence at planetary scale is the precedent. ProvekIt generalizes the mechanism from proof-of-expenditure (money) to proof-of-substance (standardization).
+3. **Standardization as cryptographic re-derivation, via the Forgery-Equals-Production lemma.** A signed catalog `.proof` certifying that an algebra is complete at named levels L0-L3, with each level's witness re-derivable in a clean environment, is what standardization becomes. The full re-derivation cost is roughly one hour on a laptop. The lemma states that the set of algebras admitting a verifying `.proof` equals the set of algebras with the property; forging a `.proof` and producing the algebra honestly are the same activity. This is an asymmetry of kind, not of degree, in the cryptographic sense. Bitcoin's seventeen-year existence at planetary scale is the precedent. Sugar generalizes the mechanism from proof-of-expenditure (money) to proof-of-substance (standardization).
 
 The per-regulator engagement paths the earlier draft of this paper enumerated remain real institutional work and are preserved as an appendix. Under v1.4's policy-as-memento architecture (paper 05 §10) and under the cost structure §9 develops, the primary path is no longer institutional. It is individual.
 
@@ -75,7 +75,7 @@ The substrate IS a cipher.
 
 The map, ten rows, made explicit:
 
-| Crypto (Schneier, Chapter 1) | Substrate (ProvekIt) |
+| Crypto (Schneier, Chapter 1) | Substrate (Sugar) |
 |---|---|
 | Plaintext space `P` | Trinity: terms, contracts, implications |
 | Key `k` | Language algebra (C11, x86-64, JVM, Rust, ...) |
@@ -101,7 +101,7 @@ The substrate is not a new project. It is the current point of a continuous thou
 - ShareReactor and MST3kDAP whitelists. Hash trust-anchoring made operational: MAC verification of unknown sources by reference to a curated list of known-good hashes.
 - BitTorrent's file format. File-with-content-hashes-plus-FEC, the same primitives.
 - 2010 Bitcoin. Proof-of-work chain over a content-addressed transaction graph, signed.
-- 2026 ProvekIt. The same cryptographic discipline applied to algebraic substrates rather than to byte streams.
+- 2026 Sugar. The same cryptographic discipline applied to algebraic substrates rather than to byte streams.
 
 The thread is one move repeated at higher abstraction: identify the artifact by a computed value over its content, sign claims about the artifact, treat the substrate as authoritative for identity and let policy decide trust. Each generation could only apply this move to the kind of artifact its compute and its theory could hold. Bytes first; transactions next; structure now. The substrate is what happens when you can finally apply the move to algebraic objects.
 
@@ -174,9 +174,9 @@ Each axis is a different content projection (manifesto §11 in [`03-substrate-no
 
 The vertical stack's links are also rank-N tuples. A claim about gate-level logic implying RTL semantics is structurally `(rtlSpecCid, gateNetlistCid, equivalenceProofCid, signerCid)`, rank-4 at minimum. An implication from BSIM transistor models to drift-diffusion equations is `(bsimModelCid, ddEquationsCid, derivationProofCid, calibrationDataCid, signerCid)`, rank-5.
 
-Each link in the chain has its own rank. ProvekIt's substrate transports tuples of any rank without modification. **This is the structural identity in its sharpest form: the data structure isn't just `(antecedent, consequent, evidence, signature)`; it is a tuple of arbitrary rank, where each component is a content-only projection of one axis of the assertion.**
+Each link in the chain has its own rank. Sugar's substrate transports tuples of any rank without modification. **This is the structural identity in its sharpest form: the data structure isn't just `(antecedent, consequent, evidence, signature)`; it is a tuple of arbitrary rank, where each component is a content-only projection of one axis of the assertion.**
 
-A protocol that supports only rank-1 pins cannot transport the vertical stack. A protocol that conflates content axes with envelope-state axes (collapsing `contractCid` and `attestationCid` onto one term, the pre-v1.4 mistake) loses predicates and produces drift. ProvekIt v1.4 is the protocol naming the rank-N tuple as primitive.
+A protocol that supports only rank-1 pins cannot transport the vertical stack. A protocol that conflates content axes with envelope-state axes (collapsing `contractCid` and `attestationCid` onto one term, the pre-v1.4 mistake) loses predicates and produces drift. Sugar v1.4 is the protocol naming the rank-N tuple as primitive.
 
 ### §4.2 What single-axis pinning loses
 
@@ -200,7 +200,7 @@ Every property in this list is required for the vertical stack to compose. Every
 
 ## §5. Algebra Certification mementos: the catalog `.proof`
 
-A ProvekIt `.proof` is a CBOR-encoded catalog of mementos. The earlier ontology of memento kinds enumerated three:
+A Sugar `.proof` is a CBOR-encoded catalog of mementos. The earlier ontology of memento kinds enumerated three:
 
 - **Contract memento**: `(canonicalIR, signature)`. A claim about behavior.
 - **Implication memento**: `(antecedentCid, consequentCid, evidence, signature)`. A claim that one contract implies another.
@@ -290,22 +290,22 @@ The structural identity between a `.proof` and the vertical stack of formal veri
 
 **Where the identity holds:**
 
-- The data structure of one link in the vertical stack is identical to the data structure of one ProvekIt memento.
-- The composition pattern of multiple links in the vertical stack (chaining implications) is identical to the composition pattern of multiple ProvekIt mementos (DAG of bridges).
-- The trust posture of one link (non-repudiation by signing, tamper-evidence by hashing) is identical to ProvekIt's trust posture.
+- The data structure of one link in the vertical stack is identical to the data structure of one Sugar memento.
+- The composition pattern of multiple links in the vertical stack (chaining implications) is identical to the composition pattern of multiple Sugar mementos (DAG of bridges).
+- The trust posture of one link (non-repudiation by signing, tamper-evidence by hashing) is identical to Sugar's trust posture.
 - The deployment model (permissionless publication, content-addressed lookup, no central authority) is identical.
 - The cipher-substrate correspondence of §2 holds: every primitive at every layer maps to a Chapter 1 analog.
 
 **Where the identity does not hold:**
 
-- The IR. ProvekIt's IR captures behavioral contracts in canonical form (a quantifier-free or first-order fragment over Int/String/Bool/Real). It does not capture quantum mechanical theories, semiconductor band structures, or microarchitectural pipeline invariants directly.
-- The proof methods. ProvekIt's evidence terms are Z3 unsat cores and similar SMT outputs. The vertical stack's lower layers use very different proof methods: many-body physics simulations, SPICE simulations, model checking, theorem prover scripts.
-- The TCB. ProvekIt's TCB is the protocol primitives plus configured solver backends. The vertical stack's TCB at each layer varies dramatically: Coq's kernel, Lean's kernel, HOL4, the SPICE simulator, the synthesis tool.
+- The IR. Sugar's IR captures behavioral contracts in canonical form (a quantifier-free or first-order fragment over Int/String/Bool/Real). It does not capture quantum mechanical theories, semiconductor band structures, or microarchitectural pipeline invariants directly.
+- The proof methods. Sugar's evidence terms are Z3 unsat cores and similar SMT outputs. The vertical stack's lower layers use very different proof methods: many-body physics simulations, SPICE simulations, model checking, theorem prover scripts.
+- The TCB. Sugar's TCB is the protocol primitives plus configured solver backends. The vertical stack's TCB at each layer varies dramatically: Coq's kernel, Lean's kernel, HOL4, the SPICE simulator, the synthesis tool.
 - The cipher analogy is structural, not operational. The substrate does not actually encrypt the trinity in the sense of producing unreadable bytes; it computes on the trinity in the open. What the cipher analogy says is that *the algebraic shape of lift and realize is identical to the algebraic shape of encrypt and decrypt*. The discipline applies; the operational secrecy does not. Cryptographers reading this paper should read "cipher" as "primitive obeying the cipher equations," not "primitive producing ciphertext as opacity."
 
-So the 1:1 claim is precisely: at the data-structure level, the encoding ProvekIt uses for behavioral verifications is exactly the encoding required for any link in the vertical stack of formal verification. At the algebraic level, the lift-realize pair obeys the cipher identity. The protocol can transport any link's evidence; the protocol does not produce that evidence. Each layer of the stack must encode its own claims into the data structure ProvekIt provides.
+So the 1:1 claim is precisely: at the data-structure level, the encoding Sugar uses for behavioral verifications is exactly the encoding required for any link in the vertical stack of formal verification. At the algebraic level, the lift-realize pair obeys the cipher identity. The protocol can transport any link's evidence; the protocol does not produce that evidence. Each layer of the stack must encode its own claims into the data structure Sugar provides.
 
-This is a stronger claim than "ProvekIt is one of many possible verification protocols." It is "ProvekIt is the canonical content-addressed encoding of the vertical stack's natural composition pattern, rendered explicit." A different protocol would have to be either isomorphic (same structure, different cryptographic choices) or strictly weaker.
+This is a stronger claim than "Sugar is one of many possible verification protocols." It is "Sugar is the canonical content-addressed encoding of the vertical stack's natural composition pattern, rendered explicit." A different protocol would have to be either isomorphic (same structure, different cryptographic choices) or strictly weaker.
 
 ## §7. State of the vertical stack today
 
@@ -353,7 +353,7 @@ CompCert verifies C → Cminor → ... → assembly. CakeML verifies Standard ML
 
 ### Source to application contracts
 
-ProvekIt's slice. Lift adapters promote source-level annotations to canonical IR; verifiers discharge the resulting `(post, pre)` pairs. Content-addressed and signed, currently disconnected from lower layers.
+Sugar's slice. Lift adapters promote source-level annotations to canonical IR; verifiers discharge the resulting `(post, pre)` pairs. Content-addressed and signed, currently disconnected from lower layers.
 
 ### The composition gap
 
@@ -361,20 +361,20 @@ Each layer has been verified in some setting. None of the verifications compose 
 
 The result: practical end-to-end formal verification (such as seL4's complete stack) requires bespoke engineering at every layer, with single-vendor or single-research-group control over each piece.
 
-ProvekIt's structural claim addresses exactly this gap. If each layer's evidence were encoded as content-addressed signed mementos, composition would be automatic: chain the bridges, walk the DAG, discharge by hash equality. If each layer's algebra had a published `.proof`, the registry would catalog the stack the way TLS root stores catalog certificate authorities.
+Sugar's structural claim addresses exactly this gap. If each layer's evidence were encoded as content-addressed signed mementos, composition would be automatic: chain the bridges, walk the DAG, discharge by hash equality. If each layer's algebra had a published `.proof`, the registry would catalog the stack the way TLS root stores catalog certificate authorities.
 
-## §8. ProvekIt as the substrate
+## §8. Sugar as the substrate
 
 The substrate role is precise:
 
-- ProvekIt does not replace any layer's verification framework.
-- ProvekIt does not replace any layer's evidence format internally; HOL4 proof terms remain HOL4 proof terms, Coq remains Coq, SPICE remains SPICE.
-- ProvekIt provides a content-addressed, signed envelope around each link's evidence.
-- ProvekIt provides bridges between adjacent links, content-addressing the implication.
-- ProvekIt provides composition: DAG walking, transitive verification, cache amortization.
-- ProvekIt provides algebra certification via catalog `.proof` mementos (§5).
+- Sugar does not replace any layer's verification framework.
+- Sugar does not replace any layer's evidence format internally; HOL4 proof terms remain HOL4 proof terms, Coq remains Coq, SPICE remains SPICE.
+- Sugar provides a content-addressed, signed envelope around each link's evidence.
+- Sugar provides bridges between adjacent links, content-addressing the implication.
+- Sugar provides composition: DAG walking, transitive verification, cache amortization.
+- Sugar provides algebra certification via catalog `.proof` mementos (§5).
 
-A vertical-stack-aware ProvekIt deployment would publish:
+A vertical-stack-aware Sugar deployment would publish:
 
 - Each layer's canonical claims as contract mementos.
 - Each cross-layer implication as bridge mementos with `evidence` carrying the layer-specific proof artifact (HOL4 term, Coq term, SPICE result, etc.).
@@ -386,11 +386,11 @@ A consumer verifying this `.proof` would:
 1. Verify the bundle's outer CID and signature.
 2. Walk the DAG: contract → bridge → contract → bridge → ... down to the lowest verified layer.
 3. At each step, the bridge's evidence is sufficient (per the kit's trust policy), and the relevant algebra's catalog `.proof` is in the consumer's accepted set.
-4. The leaf-most claim (probably "Bloch theorem applies to silicon" or similar) is either externally trusted or recursively expanded into another ProvekIt-encoded chain.
+4. The leaf-most claim (probably "Bloch theorem applies to silicon" or similar) is either externally trusted or recursively expanded into another Sugar-encoded chain.
 
 The whole stack is one composable artifact. A consumer's verification cost is hash-bounded at every step. A change at any layer produces a new CID; the change is detected and propagates upward through the DAG.
 
-This is what end-to-end formal verification looks like at scale, and ProvekIt's data structure is its natural transport layer.
+This is what end-to-end formal verification looks like at scale, and Sugar's data structure is its natural transport layer.
 
 ## §9. The Forgery-Equals-Production lemma
 
@@ -405,7 +405,7 @@ Traditional certification of a cryptographic primitive or a verification tool co
 - **AES standardization**: 5 years from NIST's 1997 call for candidates to FIPS 197 publication in 2001, during which fifteen candidate ciphers underwent open cryptanalysis by the global community.
 - **PGP web-of-trust verification**: re-establishing trust relationships with N parties is O(N) human labor per consumer, multiplied by the depth of the trust graph.
 
-ProvekIt full re-derivation of `c11.proof` (Mode 3 verification, every recipe re-run in a clean environment) on a developer laptop:
+Sugar full re-derivation of `c11.proof` (Mode 3 verification, every recipe re-run in a clean environment) on a developer laptop:
 
 - L0 cursor-kind dispatch coverage: roughly 5 seconds.
 - L1 catalog completeness gate: roughly 30 seconds.
@@ -477,7 +477,7 @@ Bitcoin's proof-of-work is forgery-equals-production for money. Extending the ch
 
 The structural mapping:
 
-| Bitcoin | ProvekIt |
+| Bitcoin | Sugar |
 |---|---|
 | Block contents (transactions) | Algebra structure (trinity) |
 | PoW: find nonce s.t. SHA-256(header) < target | PoX: produce A s.t. φ(A) = E |
@@ -493,19 +493,19 @@ Bitcoin works. The mechanism that makes it work is the mechanism the substrate g
 
 **Proof of expenditure versus proof of substance.** Bitcoin's work is intentionally meaningless. Finding partial hash collisions has no value outside the consensus mechanism. The energy spent on PoW is by design wasted; the waste is what gives consensus its teeth. Bitcoin solved Byzantine generals by burning electricity into agreement.
 
-ProvekIt's work is intentionally substantive. Re-running L0 to L3 recipes against an algebra produces actual algebraic facts. The compute spent on verification is useful work that incidentally also serves as the proof. The hour on a laptop is not a deliberate cost; it is the cost of actually knowing whether the algebra has the property. **The proof and the knowledge are the same artifact.**
+Sugar's work is intentionally substantive. Re-running L0 to L3 recipes against an algebra produces actual algebraic facts. The compute spent on verification is useful work that incidentally also serves as the proof. The hour on a laptop is not a deliberate cost; it is the cost of actually knowing whether the algebra has the property. **The proof and the knowledge are the same artifact.**
 
 This generalization is what distinguishes proof-of-substance from proof-of-expenditure. PoW is a special case where the substance is "I burned this much electricity"; the substrate generalizes to "I re-derived this algebraic property," and in principle to "I re-derived this property of any class." Bitcoin is one waypoint of a primitive whose target is broader.
 
 **Longest-chain analog.** Bitcoin's consensus is the chain with most cumulative work. The canonical chain is the one the network has invested in most.
 
-ProvekIt's standardization is the algebra-CID with most cumulative consumer pins. The canonical algebra is the one the substrate has invested in most. Same structural shape: *the canonical thing is the one the network has invested in most.* The investment vehicle differs. Bitcoin's investment vehicle is hashpower; the substrate's investment vehicle is consumer pinning via CID reference.
+Sugar's standardization is the algebra-CID with most cumulative consumer pins. The canonical algebra is the one the substrate has invested in most. Same structural shape: *the canonical thing is the one the network has invested in most.* The investment vehicle differs. Bitcoin's investment vehicle is hashpower; the substrate's investment vehicle is consumer pinning via CID reference.
 
 **Fork dynamics.** Bitcoin: Bitcoin Cash, Bitcoin SV, and other forks split the chain; the market chose which fork to value. Anyone can fork; the market sorts.
 
-ProvekIt: `c11.proof` v1, then someone publishes `c11-prime.proof` with different `_Generic` semantics, or `c11-strict.proof` with no GCC extensions, or `c11-msvc.proof` matching Microsoft's interpretation. Consumers pin to whichever CID they trust. Anyone can mint a competing algebra; the market sorts via downstream CID references.
+Sugar: `c11.proof` v1, then someone publishes `c11-prime.proof` with different `_Generic` semantics, or `c11-strict.proof` with no GCC extensions, or `c11-msvc.proof` matching Microsoft's interpretation. Consumers pin to whichever CID they trust. Anyone can mint a competing algebra; the market sorts via downstream CID references.
 
-**Lineage.** Tonight's framing reveals a thirty-year arc that includes Bitcoin as one waypoint, not the destination. Content-addressable identity (1995) gave rise to swarmed delivery with chunk MACs (1998 Digital Confetti), which gave rise to hash-anchored trust (ShareReactor, MST3kDAP), which gave rise to BitTorrent file-format-with-FEC, which gave rise to Bitcoin PoW (2010), which gives rise to ProvekIt PoX (2026). The substrate is the latest step of a continuous thought about forgery-equals-production primitives, with progressively more abstract targets: file bytes, then transactions, then algebras.
+**Lineage.** Tonight's framing reveals a thirty-year arc that includes Bitcoin as one waypoint, not the destination. Content-addressable identity (1995) gave rise to swarmed delivery with chunk MACs (1998 Digital Confetti), which gave rise to hash-anchored trust (ShareReactor, MST3kDAP), which gave rise to BitTorrent file-format-with-FEC, which gave rise to Bitcoin PoW (2010), which gives rise to Sugar PoX (2026). The substrate is the latest step of a continuous thought about forgery-equals-production primitives, with progressively more abstract targets: file bytes, then transactions, then algebras.
 
 Without naming Bitcoin explicitly, a reader would have to discover this analogy themselves. With it named, the lemma becomes obviously credible. Bitcoin works at planetary scale; the same mechanism applied to a substantive target produces a substrate that works at the scale of formal verification.
 
@@ -564,7 +564,7 @@ This is what standardization looks like when the substrate is a cipher and the l
 
 ## §10. What the protocol must do to fully enable this
 
-The protocol must satisfy several requirements that current v1.x ProvekIt does not yet fully satisfy. These are the engineering items between today and the cost-structure claim of §9 being true across the full vertical stack:
+The protocol must satisfy several requirements that current v1.x Sugar does not yet fully satisfy. These are the engineering items between today and the cost-structure claim of §9 being true across the full vertical stack:
 
 ### TCB minimization
 
@@ -609,13 +609,13 @@ These are 18 to 36 months of engineering work, in parallel with the substrate-le
 
 A complete paper engages the most plausible counterarguments. Here are six.
 
-### "ProvekIt is for behavioral contracts; the vertical stack is much broader."
+### "Sugar is for behavioral contracts; the vertical stack is much broader."
 
-True at the IR level. But the data structure (content-addressed signed implications) is universal, and the cipher correspondence holds at every layer. A different protocol would either be isomorphic or strictly weaker. The argument for ProvekIt-the-instantiation is pragmatic; the argument for ProvekIt-the-data-structure is structural.
+True at the IR level. But the data structure (content-addressed signed implications) is universal, and the cipher correspondence holds at every layer. A different protocol would either be isomorphic or strictly weaker. The argument for Sugar-the-instantiation is pragmatic; the argument for Sugar-the-data-structure is structural.
 
 ### "Why not just use Coq / Lean for the whole stack?"
 
-You could. Several research groups have. The result is a single-vendor stack with no cross-language interchange, no cross-vendor interoperability, no path to industry adoption beyond a single research community. The vertical stack composes within Coq, but Coq's authority is the kernel; the kernel does not federate. ProvekIt's data structure federates because the substrate is a cipher and ciphers federate by mode of operation.
+You could. Several research groups have. The result is a single-vendor stack with no cross-language interchange, no cross-vendor interoperability, no path to industry adoption beyond a single research community. The vertical stack composes within Coq, but Coq's authority is the kernel; the kernel does not federate. Sugar's data structure federates because the substrate is a cipher and ciphers federate by mode of operation.
 
 ### "But fragmentation will cause chaos. Standards-body authority prevents incompatibility."
 
@@ -641,17 +641,17 @@ The institutional path is the appendix, not the spine. The §9 cost-structure pa
 
 Where institutional adoption is statutorily required (FAA type certification, EASA, CMVP for FIPS 140 cryptographic modules), the appendix paths apply. Where it is not, individual standardization via `.proof` plus consumer pin is sufficient and is faster.
 
-### "The TCB of ProvekIt + Z3 is much larger than Coq's kernel."
+### "The TCB of Sugar + Z3 is much larger than Coq's kernel."
 
-True for Z3. The path forward is constructive-proof backends. Configured ProvekIt-with-Coq has the same TCB as Coq; the protocol layer adds a small auditable surface (BLAKE3, Ed25519, JCS). The `.proof` envelope structure is itself small enough to be hand-audited.
+True for Z3. The path forward is constructive-proof backends. Configured Sugar-with-Coq has the same TCB as Coq; the protocol layer adds a small auditable surface (BLAKE3, Ed25519, JCS). The `.proof` envelope structure is itself small enough to be hand-audited.
 
 ### "Hash collisions could break everything."
 
-BLAKE3-512 is collision-resistant to the best of current cryptographic knowledge. A collision attack would break ProvekIt's content-addressing for the affected pair. Mitigations: cryptographic agility (the protocol catalog is itself versioned; a future version could use a different hash function; old `.proof` files would be migrated). This is the same risk every cryptographic protocol carries; it is not specific to ProvekIt. The cipher correspondence of §2 makes this explicit: the substrate inherits every assumption Chapter 1 ciphers inherit, including hash collision resistance.
+BLAKE3-512 is collision-resistant to the best of current cryptographic knowledge. A collision attack would break Sugar's content-addressing for the affected pair. Mitigations: cryptographic agility (the protocol catalog is itself versioned; a future version could use a different hash function; old `.proof` files would be migrated). This is the same risk every cryptographic protocol carries; it is not specific to Sugar. The cipher correspondence of §2 makes this explicit: the substrate inherits every assumption Chapter 1 ciphers inherit, including hash collision resistance.
 
 ## §12. Conclusion
 
-A `.proof` and a chain of formally verified software from quantum physics to bytecode are 1:1 identical at the data-structure level. The data structure is `(antecedentCid, consequentCid, evidence, signature)`, composed via DAG. Each layer of the vertical stack is a chain of such tuples, and the substrate ProvekIt ships is the canonical content-addressed encoding.
+A `.proof` and a chain of formally verified software from quantum physics to bytecode are 1:1 identical at the data-structure level. The data structure is `(antecedentCid, consequentCid, evidence, signature)`, composed via DAG. Each layer of the vertical stack is a chain of such tuples, and the substrate Sugar ships is the canonical content-addressed encoding.
 
 The data-structure claim is one third of the story. The cipher correspondence is the second third: the substrate is the move that takes Schneier's *Applied Cryptography* Volume 1 Chapter 1 seriously and asks what happens when the plaintext is structure rather than bytes. The trinity is structured plaintext. Lift and realize are the inverse-key-pair. CIDs are message authenticators. Cross-language federation is a mode of operation.
 
@@ -687,7 +687,7 @@ Cost of trust collapses from years to one hour. Standards bodies become individu
 - NIST SP 800-218: NIST.
 - SLSA: OpenSSF.
 - EU Cyber Resilience Act: European Commission.
-- ProvekIt catalog `.proof` design draft: `docs/specs/catalog-proof-v1.md` (pending PR; current draft at `/tmp/pk-catalog-proof/DESIGN.md`).
+- Sugar catalog `.proof` design draft: `docs/specs/catalog-proof-v1.md` (pending PR; current draft at `/tmp/pk-catalog-proof/DESIGN.md`).
 - Paper 05, §10: jurisdictional policy as memento.
 - Paper 14, §1: the `.proof` file as the universal correctness bundle.
 - Paper 17: every programming language is a dialect, and the substrate names the references.
@@ -735,15 +735,15 @@ Each has a different gatekeeping process. Each takes years to update. Together t
 
 DO-178C is the current FAA / EASA-accepted standard for avionics software. DO-333 ("Formal Methods Supplement to DO-178C") explicitly enables formal methods to satisfy verification objectives. Tool qualification per DO-330 governs which verification tools are accepted.
 
-### Where ProvekIt currently stands relative to DO-178C
+### Where Sugar currently stands relative to DO-178C
 
-- **DO-333 §FM.6.7.b**: requires that formal methods be "based on mathematical models and have a well-defined syntax and semantics, including operations." ProvekIt's IR plus canonical form plus handshake satisfies this requirement.
-- **DO-333 §FM.6.7.c**: requires that formal methods be sound: "if the analysis claims a property holds, it does." ProvekIt's soundness rests on the configured backend's soundness; with a constructive-proof backend (Coq, Lean), DO-333 soundness is achieved.
+- **DO-333 §FM.6.7.b**: requires that formal methods be "based on mathematical models and have a well-defined syntax and semantics, including operations." Sugar's IR plus canonical form plus handshake satisfies this requirement.
+- **DO-333 §FM.6.7.c**: requires that formal methods be sound: "if the analysis claims a property holds, it does." Sugar's soundness rests on the configured backend's soundness; with a constructive-proof backend (Coq, Lean), DO-333 soundness is achieved.
 - **DO-330**: requires that any formal-verification tool used be qualified at the appropriate Tool Qualification Level (TQL). For DAL A software (the highest), TQL-1 verification tools are required.
 
-ProvekIt's specific gaps:
+Sugar's specific gaps:
 
-1. **No TQL-1 qualification kit exists.** A TQL-1 kit requires hundreds of pages of evidence: requirements, design, traceability, test results, hazard analysis. Currently no party has invested in producing this for a ProvekIt implementation.
+1. **No TQL-1 qualification kit exists.** A TQL-1 kit requires hundreds of pages of evidence: requirements, design, traceability, test results, hazard analysis. Currently no party has invested in producing this for a Sugar implementation.
 2. **The Z3 backend is not TQL-1 qualified.** A constructive-proof backend (Coq) would need to be the qualified Tier 3 backend for DAL A software.
 3. **Cross-language transfer** is not addressed by DO-178C explicitly. The standard assumes a single development environment.
 
@@ -751,7 +751,7 @@ ProvekIt's specific gaps:
 
 **Phase 1 (years 0-3): demonstration and engagement.**
 
-- Produce a TQL-2 reference implementation (lower assurance level; faster to qualify) of a ProvekIt-based verification flow for a non-critical avionics component.
+- Produce a TQL-2 reference implementation (lower assurance level; faster to qualify) of a Sugar-based verification flow for a non-critical avionics component.
 - Demonstrate the flow to RTCA Working Group SC-205 / EUROCAE WG-71 (the joint group that maintains DO-178C and its supplements).
 - Engage with AVSI (Aerospace Vehicle Systems Institute) consortium members; they coordinate industry-academia collaboration on avionics tooling.
 - Publish papers in DASC (Digital Avionics Systems Conference) and FM (Formal Methods) covering the demonstration.
@@ -768,14 +768,14 @@ ProvekIt's specific gaps:
 
 **Phase 3 (years 7-12): tool qualification and adoption.**
 
-- Produce a TQL-1 qualification kit for a specific ProvekIt implementation (likely the Rust kit plus a configured Coq backend).
+- Produce a TQL-1 qualification kit for a specific Sugar implementation (likely the Rust kit plus a configured Coq backend).
 - Submit to certification authorities (FAA AIR, EASA) for type certification approval.
 - Pioneer adopters (likely Airbus or Boeing in cooperation with academic partners) deploy the qualified flow on a non-critical system.
 
 **Phase 4 (years 12+): mainstream avionics adoption.**
 
-- Subsequent revisions of DO-178C / DO-333 fold in ProvekIt's data structure as standard.
-- Industry tooling (LDRA, Polyspace, Coverity competitors) integrates ProvekIt support.
+- Subsequent revisions of DO-178C / DO-333 fold in Sugar's data structure as standard.
+- Industry tooling (LDRA, Polyspace, Coverity competitors) integrates Sugar support.
 
 This is a 10-15 year roadmap. Avionics moves slowly because the cost of a wrong call is catastrophic. The roadmap is feasible; equivalent timelines have been observed for prior verification methods (model checking to DO-333 acceptance took roughly 15 years from research demonstration to standard-supplement acceptance).
 
@@ -785,25 +785,25 @@ Common Criteria ISO/IEC 15408 governs IT security product evaluation. EAL5 ("Sem
 
 The CC Recognition Arrangement (CCRA) coordinates 31 nations' acceptance of CC certificates. Updates to CC happen through an international working group; major version revisions take roughly 5 years.
 
-### Where ProvekIt currently stands relative to CC
+### Where Sugar currently stands relative to CC
 
-- **EAL5+ formal methods requirements**: CC explicitly accepts formal methods including model checking, theorem proving, and refinement. ProvekIt's data structure transports any of these.
-- **EAL6 / EAL7 formal verification**: ProvekIt with constructive-proof backends (Coq, Lean) reaches the assurance level CC requires.
-- **Protection Profile (PP) evolution**: PPs define security requirements for product categories. Updating PPs to recognize ProvekIt's content-addressed format is the practical path.
+- **EAL5+ formal methods requirements**: CC explicitly accepts formal methods including model checking, theorem proving, and refinement. Sugar's data structure transports any of these.
+- **EAL6 / EAL7 formal verification**: Sugar with constructive-proof backends (Coq, Lean) reaches the assurance level CC requires.
+- **Protection Profile (PP) evolution**: PPs define security requirements for product categories. Updating PPs to recognize Sugar's content-addressed format is the practical path.
 
 ### The path
 
 **Phase 1 (years 0-3): research and demonstration.**
 
-- Produce a complete EAL6 evaluation case study for a small component (e.g., a cryptographic primitive), using ProvekIt to compose the formal proofs.
+- Produce a complete EAL6 evaluation case study for a small component (e.g., a cryptographic primitive), using Sugar to compose the formal proofs.
 - Engage with national schemes (BSI in Germany, CCN in France, NIAP in the US) to get informal feedback.
 - Publish the evaluation methodology in an academic venue (e.g., LOPSTR, FM, ITP) to build community recognition.
 
 **Phase 2 (years 3-7): PP work and tool integration.**
 
-- Draft a Protection Profile (PP) for a product class using ProvekIt-backed verification (e.g., a smart-card OS, an HSM, or a TEE).
+- Draft a Protection Profile (PP) for a product class using Sugar-backed verification (e.g., a smart-card OS, an HSM, or a TEE).
 - Submit to a national scheme for evaluation.
-- Coordinate with CC technical communities to integrate ProvekIt-formatted evidence into evaluation artifacts.
+- Coordinate with CC technical communities to integrate Sugar-formatted evidence into evaluation artifacts.
 
 **Phase 3 (years 7-10): CC revision integration.**
 
@@ -812,15 +812,15 @@ The CC Recognition Arrangement (CCRA) coordinates 31 nations' acceptance of CC c
 
 **Phase 4 (years 10+): product certifications.**
 
-- High-assurance products (HSMs, smart cards, secure enclaves, government-grade encryption) ship with ProvekIt-formatted formal verification artifacts as part of their CC submissions.
+- High-assurance products (HSMs, smart cards, secure enclaves, government-grade encryption) ship with Sugar-formatted formal verification artifacts as part of their CC submissions.
 
 The CC path is faster than DO-178C in the protocol-acceptance phase but slower in the recognition-of-tools phase. Realistic horizon: 10 years for full integration.
 
 ## A.4 The road for ISO 26262
 
-ISO 26262 governs functional safety in automotive electronics. ASIL-D (the highest assurance level) requires formal methods per Part 6 §10.4.5. The standard's annexes list accepted methods; updating the annex to recognize ProvekIt is the practical path.
+ISO 26262 governs functional safety in automotive electronics. ASIL-D (the highest assurance level) requires formal methods per Part 6 §10.4.5. The standard's annexes list accepted methods; updating the annex to recognize Sugar is the practical path.
 
-### Where ProvekIt currently stands relative to ISO 26262
+### Where Sugar currently stands relative to ISO 26262
 
 - **Part 6 Annex C**: lists accepted verification techniques. Includes "formal verification (formal proof of correctness)" as a recommended technique for ASIL-D.
 - **Part 8 Clause 11**: covers tool qualification. Requires evidence that verification tools are reliable.
@@ -830,7 +830,7 @@ ISO 26262 governs functional safety in automotive electronics. ASIL-D (the highe
 
 **Phase 1 (years 0-3): industry pilot.**
 
-- Partner with an automotive OEM (e.g., Bosch, Continental, Mercedes) on a pilot project using ProvekIt for ASIL-D-relevant code.
+- Partner with an automotive OEM (e.g., Bosch, Continental, Mercedes) on a pilot project using Sugar for ASIL-D-relevant code.
 - Demonstrate the flow on a non-critical ECU (e.g., an infotainment subsystem or a non-functional-safety component).
 - Publish results in IEEE Trans. on Computer-Aided Design or Automotive Software Engineering venues.
 
@@ -847,7 +847,7 @@ ISO 26262 governs functional safety in automotive electronics. ASIL-D (the highe
 
 **Phase 4 (years 10+): industry rollout.**
 
-- ASIL-D components in production vehicles increasingly use ProvekIt-formatted verification artifacts.
+- ASIL-D components in production vehicles increasingly use Sugar-formatted verification artifacts.
 
 Total horizon: 10 years. The automotive industry moves faster than aerospace because product cycles are shorter and the regulatory pressure is more immediate (autonomous driving safety cases, electric powertrain functional safety).
 
@@ -864,9 +864,9 @@ These standards govern medical devices, federal cloud services, and general func
 
 **Path:**
 
-- Phase 1 (years 0-3): partner with a medical device vendor (e.g., a pacemaker manufacturer) on a pilot using ProvekIt for PMA-required formal verification.
+- Phase 1 (years 0-3): partner with a medical device vendor (e.g., a pacemaker manufacturer) on a pilot using Sugar for PMA-required formal verification.
 - Phase 2 (years 3-7): submit as a Q-Sub; engage CDRH on hash-bounded verification.
-- Phase 3 (years 7-10): IEC 62304 revision (ISO/IEC JTC1/SC42 process) integrates ProvekIt-style verification artifacts.
+- Phase 3 (years 7-10): IEC 62304 revision (ISO/IEC JTC1/SC42 process) integrates Sugar-style verification artifacts.
 
 Realistic horizon: 7-10 years from start of pilot to integration.
 
@@ -879,9 +879,9 @@ Realistic horizon: 7-10 years from start of pilot to integration.
 
 **Path:**
 
-- Phase 1 (years 0-3): a cryptographic library (e.g., HACL\* successor, or an HSM firmware project) ships with ProvekIt-formatted formal proofs.
-- Phase 2 (years 3-5): CMVP recognizes ProvekIt-formatted artifacts as acceptable formal modeling evidence for FIPS 140-3 Level 3-4.
-- Phase 3 (years 5-7): FedRAMP authorizations increasingly cite ProvekIt-backed cryptographic modules.
+- Phase 1 (years 0-3): a cryptographic library (e.g., HACL\* successor, or an HSM firmware project) ships with Sugar-formatted formal proofs.
+- Phase 2 (years 3-5): CMVP recognizes Sugar-formatted artifacts as acceptable formal modeling evidence for FIPS 140-3 Level 3-4.
+- Phase 3 (years 5-7): FedRAMP authorizations increasingly cite Sugar-backed cryptographic modules.
 
 Faster than the aviation/automotive path because cryptography is already well-formalized; the protocol layer is the easier add.
 
@@ -893,7 +893,7 @@ General functional safety. SIL 3-4 require formal verification. The standard is 
 
 - Phase 1: industry pilots in railway, process industries, nuclear (each has its own SIL regime built on IEC 61508).
 - Phase 2: amendments to recognize hash-bounded verification.
-- Phase 3: industry-specific standards (CENELEC for rail, IEC 61511 for process) integrate ProvekIt format.
+- Phase 3: industry-specific standards (CENELEC for rail, IEC 61511 for process) integrate Sugar format.
 
 ### NIST SP 800-218 / SLSA / Cyber Resilience Act
 
@@ -901,15 +901,15 @@ NIST's Secure Software Development Framework (SSDF) and SLSA are aligned and ref
 
 **Path:**
 
-- Phase 1 (years 0-2): work with OpenSSF and SLSA maintainers to add ProvekIt-formatted attestation as a recognized SLSA Level 4 mechanism.
-- Phase 2 (years 2-4): NIST 800-218 revision references ProvekIt-style behavioral attestations.
-- Phase 3 (years 4-6): EU ENISA guidance for CRA Article 13 (essential cybersecurity requirements) recognizes ProvekIt-backed verification for high-risk products.
+- Phase 1 (years 0-2): work with OpenSSF and SLSA maintainers to add Sugar-formatted attestation as a recognized SLSA Level 4 mechanism.
+- Phase 2 (years 2-4): NIST 800-218 revision references Sugar-style behavioral attestations.
+- Phase 3 (years 4-6): EU ENISA guidance for CRA Article 13 (essential cybersecurity requirements) recognizes Sugar-backed verification for high-risk products.
 
 This is the fastest institutional path: SSDF and SLSA move on shorter cycles than aviation/automotive standards. Realistic horizon: 5 years to mainstream recognition.
 
 ## A.6 Industry adoption (parallel to institutional standardization)
 
-Standards lag industry. Industry adopts when the value is clear, then standards catch up. ProvekIt's industry-adoption path is:
+Standards lag industry. Industry adopts when the value is clear, then standards catch up. Sugar's industry-adoption path is:
 
 1. **Academic and research adoption.** Publications, conference talks, workshops. Build credibility.
 2. **Open-source adoption.** Major open-source projects publishing `.proof` files alongside packages. Build a substrate.
@@ -930,7 +930,7 @@ Aggregating the per-standard analyses:
 | **7 years** | First-pilot regulatory acceptance: FedRAMP / FIPS 140-3 for cryptographic modules; ISO 26262 amendment in flight |
 | **10 years** | Common Criteria PP integration; ISO 26262 next-revision integration; automotive ASIL-D production use |
 | **12 years** | DO-178C / DO-333 supplement integration; first avionics use |
-| **15 years** | Mainstream regulatory acceptance across all major standards; ProvekIt-equivalent acceptance with ITP-backed kits at the highest assurance levels |
+| **15 years** | Mainstream regulatory acceptance across all major standards; Sugar-equivalent acceptance with ITP-backed kits at the highest assurance levels |
 | **20 years** | The vertical stack of formal verification has a content-addressed substrate (this protocol or a successor); composition of formal verifications is industry standard for high-assurance domains |
 
 This is realistic, not aspirational, for the institutional track. Each milestone follows demonstrated work, not expectations. The 20-year horizon for full vertical-stack institutional adoption matches the historical pace of formal-methods adoption (Hoare logic to mainstream contract programming: 30 years; Coq / F\* / Lean to industry deployment: 25 years; ITP-checked compilers to commercial deployment: 20 years from CompCert).

@@ -1,6 +1,6 @@
 # IDE integration: overview
 
-ProvekIt LSP plugins shipping today:
+Sugar LSP plugins shipping today:
 
 | Kit | Plugin | Status |
 |---|---|---|
@@ -19,7 +19,7 @@ If your kit is not in the shipping list, the in-editor squigglies are not yet av
 
 ## What an LSP plugin does
 
-The plugin is invoked by your editor (or your editor's host language server). It walks source files for ProvekIt-relevant annotations, runs the kit's lift adapters, performs the three-tier handshake, and returns LSP diagnostics. The result is in-editor squigglies on contract violations.
+The plugin is invoked by your editor (or your editor's host language server). It walks source files for Sugar-relevant annotations, runs the kit's lift adapters, performs the three-tier handshake, and returns LSP diagnostics. The result is in-editor squigglies on contract violations.
 
 Per [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md), the plugin protocol is small (NDJSON over stdio, three methods: `initialize`, `parse`, `shutdown`). Most editors don't need a custom integration; they integrate via existing LSP infrastructure.
 
@@ -50,7 +50,7 @@ After installation:
 
 1. Open a file with annotations the kit recognizes (e.g., a Rust file with `proptest!` blocks, a Python file with `pydantic.BaseModel`, etc.).
 2. Wait briefly for the LSP to parse.
-3. The editor's diagnostic display should show ProvekIt as a diagnostic source.
+3. The editor's diagnostic display should show Sugar as a diagnostic source.
 4. If a contract is unmet (e.g., `@Min(0)` is violated by a constant `-1`), the editor should display a red squiggle with a message including `provekit`.
 
 If no squigglies appear:
@@ -64,14 +64,14 @@ For specific troubleshooting, see [`../debugging-a-failed-handshake.md`](../debu
 
 ## Diagnostic conventions
 
-ProvekIt diagnostics use:
+Sugar diagnostics use:
 
 - **Severity:**
   - `error`: contract is provably violated.
   - `warning`: contract requires Tier 3 (Z3 fallback) and didn't discharge in the LSP timeout.
   - `information`: lifted contract; no violation.
   - `hint`: suggestion (e.g., "consider adding `@NotNull` to align with caller's contract").
-- **Source:** always `"provekit"`. Filter by source for "show only ProvekIt issues."
+- **Source:** always `"provekit"`. Filter by source for "show only Sugar issues."
 - **Code:** stable error code, e.g., `PROVEKIT_E001`. See [`../../reference/error-codes.md`](../../reference/error-codes.md).
 - **Message:** human-readable. Includes the contract that was violated and (where possible) the source-library annotation that gave rise to the contract.
 

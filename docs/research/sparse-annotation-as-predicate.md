@@ -120,5 +120,5 @@ for the predicate, half a day to triage. Substrate today: insufficient: needs a
 extension every other predicate also needs (parameter-binding + deref-site facts). Land
 that scaffolding first; #2 and #4 then collapse to one-day predicates each. #3 is
 cheap and high-value as a *manifest* even before bug detection. #5 is the lowest
-priority but is the canonical demonstration that ProvekIt preserves discipline no other
+priority but is the canonical demonstration that Sugar preserves discipline no other
 tool sees.

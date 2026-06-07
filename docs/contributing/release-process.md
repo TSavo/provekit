@@ -1,12 +1,12 @@
 # Release process
 
-This describes how a ProvekIt protocol release is cut: catalog version bump, kit re-mints, conformance harness updates, multi-package distribution.
+This describes how a Sugar protocol release is cut: catalog version bump, kit re-mints, conformance harness updates, multi-package distribution.
 
 This document is for protocol maintainers. End users should never need it; adapter authors usually don't either.
 
 ## What gets released
 
-A ProvekIt release is many things at once:
+A Sugar release is many things at once:
 
 1. **A new protocol catalog** with a new CID.
 2. **Updated specs** (IR grammar, proof file format, handshake algorithm, lattice tractability theorem, signatures, kit standard), only those that changed.

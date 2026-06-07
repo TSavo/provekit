@@ -1,6 +1,6 @@
 # Spec CIDs
 
-Every spec in ProvekIt is content-addressed by BLAKE3-512. Verify the local
+Every spec in Sugar is content-addressed by BLAKE3-512. Verify the local
 install conforms to the protocol catalog embedded in the CLI via
 `provekit verify-protocol`.
 

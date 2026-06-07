@@ -6,12 +6,12 @@ The LSP plugin is what gives users red squigglies in their editor. It is the mos
 
 ## Scope
 
-A ProvekIt LSP plugin is **not** a full Language Server Protocol implementation. It is a plugin that the editor's existing language server delegates to. The host language server (rust-analyzer, pylsp, gopls, etc.) handles the bulk of LSP work; the ProvekIt plugin handles the contract verification slice.
+A Sugar LSP plugin is **not** a full Language Server Protocol implementation. It is a plugin that the editor's existing language server delegates to. The host language server (rust-analyzer, pylsp, gopls, etc.) handles the bulk of LSP work; the Sugar plugin handles the contract verification slice.
 
 This means:
 
 - You don't implement `textDocument/completion`, `textDocument/hover`, `textDocument/definition`, or any of the other heavy-duty LSP methods.
-- You implement the three methods needed for ProvekIt's contract-verification feedback.
+- You implement the three methods needed for Sugar's contract-verification feedback.
 - You ride on top of the host language server's existing infrastructure.
 
 The plugin's deliverable is: "given a parse of the user's code, return the contract violations as LSP diagnostics."
@@ -106,13 +106,13 @@ This is the typical path. Extensions exist (or are planned) per shipping kit.
 
 ### Pattern B: ride on host language server
 
-Some host language servers support plugin protocols (rust-analyzer's procedural macro server, pylsp's plugin system). The ProvekIt plugin can register as a host language server plugin instead of a standalone LSP.
+Some host language servers support plugin protocols (rust-analyzer's procedural macro server, pylsp's plugin system). The Sugar plugin can register as a host language server plugin instead of a standalone LSP.
 
 This is more efficient (no separate process) but couples to the host language server's plugin API.
 
 ### Pattern C: shell out from the linter
 
-Some editors run linters as standalone processes (eslint, ruff, golangci-lint). The ProvekIt plugin can integrate as a custom linter rule that shells out and returns diagnostics in the linter's output format.
+Some editors run linters as standalone processes (eslint, ruff, golangci-lint). The Sugar plugin can integrate as a custom linter rule that shells out and returns diagnostics in the linter's output format.
 
 This is simpler but limited to editors with linter integration.
 
@@ -141,10 +141,10 @@ The plugin's responsiveness is what users perceive. A 50ms response is fine; a 5
 
 ## Diagnostic granularity
 
-LSP diagnostics carry severity, source, code, message, and range. ProvekIt diagnostics use:
+LSP diagnostics carry severity, source, code, message, and range. Sugar diagnostics use:
 
 - **Severity**: `error` (contract violated), `warning` (contract requires Tier 3 fallback), `information` (lifted contract), `hint` (suggestion).
-- **Source**: always `"provekit"`. Editors filter by source for "show only ProvekIt issues."
+- **Source**: always `"provekit"`. Editors filter by source for "show only Sugar issues."
 - **Code**: stable error code, e.g., `PROVEKIT_E001`. See [`docs/reference/error-codes.md`](../reference/error-codes.md).
 - **Message**: human-readable, includes the contract that was violated. Include the source-library annotation that gave rise to the contract, so users see "your `@Min(0)` is violated" rather than "atomic ge violated."
 - **Range**: the source range the violation applies to.

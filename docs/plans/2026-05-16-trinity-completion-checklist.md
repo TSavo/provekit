@@ -125,7 +125,7 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 **Census antibody flip merged** (PR #1082, 2026-05-16T22:29:06Z). The structural antibodies are now CI-load-bearing positive assertions; 9/9 census slow lane tests pass with `assert_eq!`/`assert_ne!` instead of `#[should_panic]` wrappers.
 
 **Empirically validated at the algebra layer:**
-- Seam 4 federation byte-identity (`add(x: i64, y: i64) -> i64 { x + y }` lifts from both Rust and Python to byte-identical bind CIDs). Paper 16's colimit argument applied to ProvekIt has its first empirical receipt.
+- Seam 4 federation byte-identity (`add(x: i64, y: i64) -> i64 { x + y }` lifts from both Rust and Python to byte-identical bind CIDs). Paper 16's colimit argument applied to Sugar has its first empirical receipt.
 - Seam 3 positive lower-relift round-trip (structural assertion: relift produces >=1 IR entry; lower step's body synthesis emits parseable Python).
 - All other seam positive + discrimination tests pass.
 

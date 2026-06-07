@@ -1,6 +1,6 @@
 # Bug Zoo: Executable Bug Species
 
-Bug Zoo is ProvekIt's executable evidence that bug classes have portable
+Bug Zoo is Sugar's executable evidence that bug classes have portable
 semantic shape.
 
 The claim is not that TypeScript, Java, C#, Go, and Rust fail in the same way at
@@ -30,7 +30,7 @@ verification. The lab has no `.provekit` project; it only shows that the
 ordinary host code still passes native checks.
 
 1. **Language discovery.** The host language uses its own toolchain and kit.
-   Each exhibit/fixed harness is a tiny ProvekIt project with
+   Each exhibit/fixed harness is a tiny Sugar project with
    `.provekit/config.toml` selecting a surface and
    `.provekit/lift/<surface>/manifest.toml` naming the native RPC lifter.
    The zoo invokes `provekit mint` for lift exhibits and validates checked-in
@@ -45,7 +45,7 @@ ordinary host code still passes native checks.
    fixed signal is green when the paired source closes it.
 
 In shorthand: each language proves `k_lang(I) = t`, where `k_lang` is the
-language compiler as a ProvekIt kit/lifter, `I` is source, and `t` is witnessed
+language compiler as a Sugar kit/lifter, `I` is source, and `t` is witnessed
 output: an addressable ProofIR shape CID or LinkBundle receipt CID. When
 different domains land on the same shape CID, the bug has a portable signature
 independent of its host-language syntax, exception type, or call boundary.
@@ -131,7 +131,7 @@ receipt CID for the specimen.
 
 ## Why This Matters
 
-Bug Zoo turns the broad ProvekIt thesis into receipts:
+Bug Zoo turns the broad Sugar thesis into receipts:
 
 - ordinary code passes ordinary host checks;
 - each language's own compiler/kit maps source to a witnessed missing edge;

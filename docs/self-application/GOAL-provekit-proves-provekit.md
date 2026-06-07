@@ -675,7 +675,7 @@ labeling.
   federation, cross-language emit, and boundary realization; they are not
   proof-enabling artifacts. If initial K requires source modifications, the
   catalog / discharge tier is too shallow.
-- Provekit-specific contract centralization is the wrong product shape. A
+- Sugar-specific contract centralization is the wrong product shape. A
   contract can be formed anywhere ordinary source, tests, framework metadata,
   or library-specific declarations already carry one. Lifters are the
   ecosystem boundary that turns those surfaces into ProofIR.

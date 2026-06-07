@@ -1,7 +1,7 @@
 # Foundation baseline catalogs
 
 Per-language advisory catalogs of hidden predicates about each language's
-standard library. These catalogs are signed by the ProvekIt foundation v0
+standard library. These catalogs are signed by the Sugar foundation v0
 ed25519 key as a starting point for users who want to verify proofs about
 code in the named language.
 

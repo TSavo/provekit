@@ -12,7 +12,7 @@
 
 Today, the artifact of software is code. Tomorrow, the artifact of software is the proof. Code becomes one implementation of the proof. Refactoring becomes generating different implementations of the same proof. AI becomes a proof-implementation generator. The engineer's job shifts from *write code that works* to *write the contract; agents write the code*.
 
-This paper argues that the substrate ProvekIt ships is the move that makes that shift not aspirational but mechanical. That shift cascades through software's value chain: engineering practice changes, supply chains become computable, type systems get demoted to syntactic conveniences, insurance finds a footing it has been waiting decades for, and the open-vs-closed source dichotomy collapses into a question of which signer's keys you pin.
+This paper argues that the substrate Sugar ships is the move that makes that shift not aspirational but mechanical. That shift cascades through software's value chain: engineering practice changes, supply chains become computable, type systems get demoted to syntactic conveniences, insurance finds a footing it has been waiting decades for, and the open-vs-closed source dichotomy collapses into a question of which signer's keys you pin.
 
 We are after reputation. The substrate makes trust composable. What follows is what falls out.
 
@@ -169,7 +169,7 @@ It may still fail. Predicting cultural adoption is hard. But the failure modes o
 
 A remark to close on.
 
-ProvekIt is not a security tool, a verification tool, a type system, a proof assistant, a package manager, or a compiler. It is the diplomatic protocol between all of those. Today each tool has its own model of what's true; they don't compose. Static analyzers produce findings nobody can sign or compose. SMT solvers produce verdicts nobody can pin. Proof assistants produce certificates nobody else's tools consume. Package managers ship code nobody can verify against contracts. Type systems catch a narrow band of errors and stay silent on the rest.
+Sugar is not a security tool, a verification tool, a type system, a proof assistant, a package manager, or a compiler. It is the diplomatic protocol between all of those. Today each tool has its own model of what's true; they don't compose. Static analyzers produce findings nobody can sign or compose. SMT solvers produce verdicts nobody can pin. Proof assistants produce certificates nobody else's tools consume. Package managers ship code nobody can verify against contracts. Type systems catch a narrow band of errors and stay silent on the rest.
 
 Each of these tools is correct within its scope and silent outside it. They have been silent to each other for fifty years.
 
@@ -196,7 +196,7 @@ The Apache JCS team page lists the architect of this protocol as a member during
 
 ## §11: Citation
 
-> Savo, T. (2026). *After Reputation: Software as Federated Truth-Claims*. ProvekIt Papers, vol. 6. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/06-after-reputation-software-as-federated-truth-claims.md.
+> Savo, T. (2026). *After Reputation: Software as Federated Truth-Claims*. Sugar Papers, vol. 6. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/06-after-reputation-software-as-federated-truth-claims.md.
 
 ---
 

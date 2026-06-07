@@ -1,6 +1,6 @@
 # Quickstart: mint, prove, and verify a `.proof`
 
-This walks the path ProvekIt actually runs today: lift evidence into a signed,
+This walks the path Sugar actually runs today: lift evidence into a signed,
 content-addressed `.proof`, prove that the claims hold, and verify a `.proof`
 by recomputation. The two numpy demos are the runnable artifacts; both run end
 to end and produce the output shown below.
@@ -15,7 +15,7 @@ even the kit that produced the proof.
 - Rust toolchain (rustup, stable channel) to build the CLI.
 - `python3` and `z3` on PATH (the numpy demos provision their own venv; z3 is the
   solver).
-- The ProvekIt repo cloned locally.
+- The Sugar repo cloned locally.
 
 Confirm z3 is present:
 
@@ -68,7 +68,7 @@ The `prove` step reports `discharged: 2`. The contract is discharged two
 independent ways, and both agree:
 
 ```text
-ProvekIt verifier report
+Sugar verifier report
   total callsites : 0
   discharged      : 2
   violations      : 0
@@ -108,7 +108,7 @@ Real output (numpy 2.4.6; the function count tracks the installed numpy version)
 == ship the witness PACKAGE (CID-named body, deployed separately) ==
   witness: passed blake3-512:049e169f... -> .provekit/witnesses/<cid>.witness
 == VERIFY (consumer): rust recomputes; the kit oracle is untrusted ==
-ProvekIt verification receipt
+Sugar verification receipt
 Witness dimension (rust recomputes; oracle untrusted)
   [pass] blake3-512:049e169f28547207...  (signature+content-address:package)
         oracle resolved via package; rust recomputed the CID and it matched
@@ -127,7 +127,7 @@ and Witness Oracle.
 
 ## Step 4: inherit a contract, get caught contradicting it
 
-The composition failure mode ProvekIt exists to catch: two packages each pass
+The composition failure mode Sugar exists to catch: two packages each pass
 their own tests, but the assembled system holds contradictory claims. This is
 demonstrated end to end and locked by a committed test.
 

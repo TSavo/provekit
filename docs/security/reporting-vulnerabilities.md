@@ -1,6 +1,6 @@
 # Reporting vulnerabilities
 
-This document describes how to report security issues in ProvekIt.
+This document describes how to report security issues in Sugar.
 
 ## What counts as a vulnerability
 
@@ -112,7 +112,7 @@ Affected users are encouraged to upgrade promptly.
 
 ## Bug bounty
 
-ProvekIt does not currently offer a bug bounty. We recognize and credit reporters in security advisories. Reporters who prefer anonymity will be respected.
+Sugar does not currently offer a bug bounty. We recognize and credit reporters in security advisories. Reporters who prefer anonymity will be respected.
 
 ## What we ask of reporters
 
@@ -130,14 +130,14 @@ In exchange, we commit to:
 
 ## Out-of-scope
 
-Some things look like security issues but aren't ProvekIt's responsibility:
+Some things look like security issues but aren't Sugar's responsibility:
 
 - **Vulnerabilities in Z3 or other third-party solvers.** Report to the solver project.
 - **Vulnerabilities in OpenSSL, BLAKE3 reference implementation, or other cryptographic libraries.** Report to those projects.
 - **Vulnerabilities in language runtimes** (Rust toolchain, Node.js, Python interpreter). Report to those projects.
 - **Vulnerabilities in source-library annotation systems** (Bean Validation, zod, pydantic). Report to those projects.
 
-If you discover a chain of vulnerabilities involving ProvekIt and a third party, report to both. Our triage team will coordinate where appropriate.
+If you discover a chain of vulnerabilities involving Sugar and a third party, report to both. Our triage team will coordinate where appropriate.
 
 ## What past advisories have looked like
 
@@ -145,6 +145,6 @@ If you discover a chain of vulnerabilities involving ProvekIt and a third party,
 
 ## Read next
 
-- [threat-model.md](threat-model.md): the threat surface ProvekIt covers.
+- [threat-model.md](threat-model.md): the threat surface Sugar covers.
 - [signature-and-non-repudiation.md](signature-and-non-repudiation.md): what the protocol's signatures buy.
 - [`SECURITY.md`](../../SECURITY.md) (when written): the canonical security policy at repo root.

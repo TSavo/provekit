@@ -1,12 +1,12 @@
 # Thesis: hash-bounded verification
 
-**ProvekIt is not a formal verification framework. It is a protocol for content-addressing formal verifications.**
+**Sugar is not a formal verification framework. It is a protocol for content-addressing formal verifications.**
 
-Z3, Coq, Lean, F\*, Isabelle, Kani, Prusti, Creusot, Dafny, TLA+, CBMC: those are formal verification frameworks. They consume formulas and produce verdicts. ProvekIt does not consume formulas, does not produce verdicts. ProvekIt provides the substrate over which the verdicts of those frameworks are published, signed, distributed, federated, and composed.
+Z3, Coq, Lean, F\*, Isabelle, Kani, Prusti, Creusot, Dafny, TLA+, CBMC: those are formal verification frameworks. They consume formulas and produce verdicts. Sugar does not consume formulas, does not produce verdicts. Sugar provides the substrate over which the verdicts of those frameworks are published, signed, distributed, federated, and composed.
 
-This is the same shape as Bitcoin (content-addressed currency, no central mint), Git (content-addressed source history, no master copy), BitTorrent (content-addressed content distribution, no central server), IPFS (content-addressed web, no registry). Each of those took a domain that was thought to require a central authority and showed it admits a content-addressed protocol with no central party. ProvekIt applies the same primitive to behavioral verification.
+This is the same shape as Bitcoin (content-addressed currency, no central mint), Git (content-addressed source history, no master copy), BitTorrent (content-addressed content distribution, no central server), IPFS (content-addressed web, no registry). Each of those took a domain that was thought to require a central authority and showed it admits a content-addressed protocol with no central party. Sugar applies the same primitive to behavioral verification.
 
-ProvekIt's central claim is operational, not philosophical: a content-addressed
+Sugar's central claim is operational, not philosophical: a content-addressed
 protocol can carry behavioral verification across a dependency graph without
 making every consumer redo all prior semantic work. When a prior commitment is
 unchanged, the verifier can compare CIDs, check signatures, and walk proof
@@ -100,7 +100,7 @@ node_modules/ → contains dependencies
  audits? → manual, optional, slow
 ```
 
-ProvekIt proof distribution:
+Sugar proof distribution:
 ```
 <cid>.proof -> travels with or beside the package
   ├── contracts: what the code guarantees
@@ -130,21 +130,21 @@ package has been formally verified.
 
 ## 6. No database; computable hashspace
 
-The "registry" in ProvekIt is the BLAKE3-512 hashspace itself. There is no master copy. There is no service that mediates membership. There is no party whose downtime stops the protocol.
+The "registry" in Sugar is the BLAKE3-512 hashspace itself. There is no master copy. There is no service that mediates membership. There is no party whose downtime stops the protocol.
 
-This is the lineage of Bitcoin (a global ledger with no mint), Git (a content-addressed graph with no master), BitTorrent (petabytes of content with no server), and IPFS (an addressable web with no registry). ProvekIt is one more application of the same primitive. Populated points in the hashspace are sparse: only the canonical-IR formulas that some kit has emitted exist as addresses.
+This is the lineage of Bitcoin (a global ledger with no mint), Git (a content-addressed graph with no master), BitTorrent (petabytes of content with no server), and IPFS (an addressable web with no registry). Sugar is one more application of the same primitive. Populated points in the hashspace are sparse: only the canonical-IR formulas that some kit has emitted exist as addresses.
 
 ## 7. Trust built into the protocol; no permission required
 
-ProvekIt asks no party's permission to publish. The act of publishing is the act of producing bytes that verify themselves: a signed memento whose CID is its content. Anyone with a key pair can mint mementos. Anyone with the spec can verify them. The trust comes from the protocol's primitives, not from a gatekeeper.
+Sugar asks no party's permission to publish. The act of publishing is the act of producing bytes that verify themselves: a signed memento whose CID is its content. Anyone with a key pair can mint mementos. Anyone with the spec can verify them. The trust comes from the protocol's primitives, not from a gatekeeper.
 
-This is the lineage of Bitcoin, BitTorrent, Tor: protocols that operate without permission because they do not need one. ProvekIt's trust model is inherited from this lineage. We don't ask anyone's permission to publish; we provide bytes that verify themselves.
+This is the lineage of Bitcoin, BitTorrent, Tor: protocols that operate without permission because they do not need one. Sugar's trust model is inherited from this lineage. We don't ask anyone's permission to publish; we provide bytes that verify themselves.
 
 ## 8. Lift, don't author
 
 Every annotation library in wide deployment already contains specifications. `proptest`, `contracts`, `kani`, `prusti`, `hypothesis`, `deal`, `pydantic`, `zod`, `class-validator`, `bean-validation`, JML, Cofoja, `go-playground/validator`. Each is an informal or semi-formal specification the codebase already maintains.
 
-ProvekIt does not compete with these libraries. It sits beneath them. Whatever annotation library a codebase already uses, the lift adapter promotes those annotations to content-addressed signed contracts, with no rewrites and no parallel spec to maintain. Authoring stays where the developer already is. Verification moves underneath.
+Sugar does not compete with these libraries. It sits beneath them. Whatever annotation library a codebase already uses, the lift adapter promotes those annotations to content-addressed signed contracts, with no rewrites and no parallel spec to maintain. Authoring stays where the developer already is. Verification moves underneath.
 
 This is the lift-not-author posture. It is the answer to "how do we get the specifications?" that fifty years of formal methods could not solve. The specifications already exist; we just need to lift them.
 
@@ -163,7 +163,7 @@ The hash-discharge fraction (the share of call sites discharged at Tier 1 alone)
 
 Hashes are deterministic functions of canonical bytes. When bytes change, hashes change. Old implication mementos remain cryptographically valid against their stated `(antecedentHash, consequentHash)`; they simply become unreachable from any contract that has been re-canonicalized. The lattice does not need invalidation.
 
-This is the structural absence of cache invalidation. A stale entry in a conventional cache is a poison pill; in ProvekIt, an old memento describing now-orphaned hashes neither falsifies nor poisons anything. The lattice grows monotonically. Every minted implication memento is true forever, against the bytes it was minted for.
+This is the structural absence of cache invalidation. A stale entry in a conventional cache is a poison pill; in Sugar, an old memento describing now-orphaned hashes neither falsifies nor poisons anything. The lattice grows monotonically. Every minted implication memento is true forever, against the bytes it was minted for.
 
 The implication: provability is monotonic. A fact, once published, is a hash lookup forever. The protocol's value compounds with time. Software ages backwards.
 
@@ -171,11 +171,11 @@ The implication: provability is monotonic. A fact, once published, is a hash loo
 
 This is not a claim that all software bugs go away. The lift adapter sees what it knows how to walk; per-library coverage is empirical; the residue at Tier 3 of the handshake is still real work. The protocol does not turn empirical software into mathematical software. It turns one specific class of behavioral verification (the kind expressible in the IR's logical fragments) into a content-addressed substrate that composes across the dependency graph.
 
-This is not a claim of regulator-accepted soundness. ProvekIt's correctness rests on cryptographic assumptions, the underlying solver's correctness, and per-adapter faithfulness. None of these produce a Coq-style certificate.
+This is not a claim of regulator-accepted soundness. Sugar's correctness rests on cryptographic assumptions, the underlying solver's correctness, and per-adapter faithfulness. None of these produce a Coq-style certificate.
 
 This is not a claim of zero adoption cost. The lift adapter is per source library; each adapter is real engineering. Today, two lift adapters exist (`proptest` and `contracts` for Rust). The roadmap covers more.
 
-What the thesis is, is a structural claim: the verification problem at supply-chain scale has the same shape as currency, source history, content distribution, and the addressable web. Each of those problems was once thought to require a central authority. Each turned out to admit a content-addressed protocol with no central party. ProvekIt applies the same primitive to behavioral verification, and the primitive carries the load.
+What the thesis is, is a structural claim: the verification problem at supply-chain scale has the same shape as currency, source history, content distribution, and the addressable web. Each of those problems was once thought to require a central authority. Each turned out to admit a content-addressed protocol with no central party. Sugar applies the same primitive to behavioral verification, and the primitive carries the load.
 
 The proof is in the bytes. The bytes are named by CID, signed by producers, and
 accepted or rejected under local verifier policy.

@@ -11,7 +11,7 @@ Catalog file: [`.provekit/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d8
 Foundation baseline catalog: advisory only.
 
 This catalog asserts hidden predicates about the named language's
-standard library. It is signed by the ProvekIt foundation key as a
+standard library. It is signed by the Sugar foundation key as a
 starting point for users who want to verify proofs about code in
 this language.
 

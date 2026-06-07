@@ -89,7 +89,7 @@ BLAKE3's the resolved body itself, and compares to the pinned CID. Real output
 from the vendor demo:
 
 ```text
-ProvekIt verification receipt
+Sugar verification receipt
 Witness dimension (rust recomputes; oracle untrusted)
   [pass] blake3-512:049e169f28547207...  (signature+content-address:package)
         oracle resolved via package; rust recomputed the CID and it matched
@@ -120,12 +120,12 @@ pre-protocol-cut TypeScript invariant-runtime library surface (`runFixLoop`,
 above. The names and CLI subcommands below (for example `provekit fix`) are NOT
 part of the current CLI. The current surface is the `.proof` flow above plus
 [docs/quickstart-extender.md](../quickstart-extender.md) for kit authors. The
-content below applies only to a pre-protocol-cut version of ProvekIt.
+content below applies only to a pre-protocol-cut version of Sugar.
 
 ---
 
 Audience: IDE authors, agent-runtime authors, and CI integrators who want to
-embed ProvekIt as a programmable correctness gate. If you only want the
+embed Sugar as a programmable correctness gate. If you only want the
 out-of-the-box CI check, use the `provekit` CLI plus the GitHub Action
 (Channel 1) instead. This document is for the integrators who need more.
 
@@ -306,7 +306,7 @@ async function gateOnReport(
 
 The bundle returned in `FixLoopResult.bundle` is the unit of work
 Holyship reviews. The `auditTrail` is the append-only log Holyship
-ingests for forensics. ProvekIt does not write per-runtime adapters;
+ingests for forensics. Sugar does not write per-runtime adapters;
 Holyship and any future agent runtime target the same surface above.
 
 ### 2c. CI custom integration
@@ -330,7 +330,7 @@ async function buildkitePluginEntry(projectRoot: string) {
     }
   }
 
-  // Honor ProvekIt's exit-code convention so CI fails the right way.
+  // Honor Sugar's exit-code convention so CI fails the right way.
   process.exit(exitCodeFor(report));
 }
 ```
@@ -423,7 +423,7 @@ explains its role.
 
 ## 4. Semver commitment
 
-ProvekIt is pre-1.0 (currently 0.x). The semver promise on the library
+Sugar is pre-1.0 (currently 0.x). The semver promise on the library
 surface for the duration of the 0.x major is:
 
 **What is stable.** Every name re-exported from `src/index.ts` and the

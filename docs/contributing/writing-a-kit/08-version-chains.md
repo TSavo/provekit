@@ -2,7 +2,7 @@
 
 Semver's "minor upgrade" promise is an honor-system claim. The maintainer types `18.3.0`, the registry serves the bytes, the consumer trusts the version string. Nothing in that pipeline checks that the new release actually preserves every contract the consumer had pinned to.
 
-ProvekIt v1.4 turns that promise into a verifiable substrate fact. Each release ships a signed bundle attestation that carries two body fields: a content-addressed identity for the contract set itself, and an optional pointer to the prior set. A consumer can walk the chain back, recompute every link, and reject any release whose claim of "minor upgrade" fails to mechanically hold.
+Sugar v1.4 turns that promise into a verifiable substrate fact. Each release ships a signed bundle attestation that carries two body fields: a content-addressed identity for the contract set itself, and an optional pointer to the prior set. A consumer can walk the chain back, recompute every link, and reject any release whose claim of "minor upgrade" fails to mechanically hold.
 
 This step teaches the producer side. You are minting attestations; consumers are walking your chain. The conformance suite checks that the bytes you emit agree with every other kit's bytes for the same inputs.
 

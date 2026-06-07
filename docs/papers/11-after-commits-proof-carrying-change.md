@@ -33,7 +33,7 @@ fix null dereference in UserDirectory
 
 but the object itself did not carry the proof of that sentence. The proof lived elsewhere: in reviewer judgment, CI results, unit tests, a static analyzer warning disappearing, a bug report closing, a release note, a CVE advisory, a security engineer's memory, or nothing at all.
 
-ProvekIt changes the possible shape.
+Sugar changes the possible shape.
 
 The semantic commit is:
 
@@ -373,7 +373,7 @@ A fix receipt is not the fix. It is the content-addressed claim that the fix clo
 
 This distinction is load-bearing.
 
-The code that actually lands may differ from the patch a human would have written. The implementation style may be uninteresting. The variable names may be boring. The guard may be expressed as a native ProvekIt annotation, a Spring annotation, a schema constraint, a validator, a generated wrapper, a type-level refinement, a migration check, or a lower-level resource-state transition. For the substrate, the question is not "is this the canonical human patch?" The question is:
+The code that actually lands may differ from the patch a human would have written. The implementation style may be uninteresting. The variable names may be boring. The guard may be expressed as a native Sugar annotation, a Spring annotation, a schema constraint, a validator, a generated wrapper, a type-level refinement, a migration check, or a lower-level resource-state transition. For the substrate, the question is not "is this the canonical human patch?" The question is:
 
 ```text
 does the post-lift boundary state close the edge?

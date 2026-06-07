@@ -4,9 +4,9 @@
 
 **Goal:** Promote the Supply Chain Rails JavaScript lowerer from token scanning to an AST-backed `runtime.no-env-secret-read` evidence/refusal engine with content-addressed receipts.
 
-**Architecture:** Keep the lowerer as the exhibit-local Rust JSON-RPC kit, but split JavaScript analysis into explicit parse, scan, and receipt steps. Use a real JavaScript parser, fail closed on parse/unsupported dynamic surfaces, and preserve ProvekIt's `lower -> witness/refusal -> .proof` flow.
+**Architecture:** Keep the lowerer as the exhibit-local Rust JSON-RPC kit, but split JavaScript analysis into explicit parse, scan, and receipt steps. Use a real JavaScript parser, fail closed on parse/unsupported dynamic surfaces, and preserve Sugar's `lower -> witness/refusal -> .proof` flow.
 
-**Tech Stack:** Rust 2021, `tree-sitter`, `tree-sitter-javascript`, `serde_json`, existing ProvekIt lower JSON-RPC protocol, existing Supply Chain Rails smoke tests.
+**Tech Stack:** Rust 2021, `tree-sitter`, `tree-sitter-javascript`, `serde_json`, existing Sugar lower JSON-RPC protocol, existing Supply Chain Rails smoke tests.
 
 ---
 

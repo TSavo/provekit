@@ -1,6 +1,6 @@
-# ProvekIt documentation
+# Sugar documentation
 
-ProvekIt is a proof supply chain for existing software ecosystems.
+Sugar is a proof supply chain for existing software ecosystems.
 
 It turns language-native evidence, including tests, assertions, contracts,
 schemas, validators, framework annotations, and boundary/library sugar, into
@@ -10,7 +10,7 @@ RPC to kits, composes normalized claims, emits proof bundles, and proves the
 assembled obligations.
 
 The center use case is assembled correctness. Two packages can each pass their
-own checks and still make contradictory claims when used together. ProvekIt
+own checks and still make contradictory claims when used together. Sugar
 makes those claims meet in one content-addressed `.proof` DAG and fails closed
 when the graph cannot carry the composed claim.
 
@@ -47,7 +47,7 @@ spec CID background.
 | Read the protocol/tooling extension map | [reference/protocol-extensions.md](reference/protocol-extensions.md) |
 | Look up current CIDs | [reference/cids.md](reference/cids.md) |
 
-## Use ProvekIt in code
+## Use Sugar in code
 
 | If you write... | Start here | Current shape |
 |---|---|---|

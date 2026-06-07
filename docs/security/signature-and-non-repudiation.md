@@ -1,6 +1,6 @@
 # Signature and non-repudiation
 
-ProvekIt is a protocol for content-addressing formal verifications. Every memento (every contract, every implication, every bridge, every proof bundle) is signed. This doc explains exactly what the signature buys and what it does not.
+Sugar is a protocol for content-addressing formal verifications. Every memento (every contract, every implication, every bridge, every proof bundle) is signed. This doc explains exactly what the signature buys and what it does not.
 
 ## The signature scheme
 
@@ -98,7 +98,7 @@ reject_unknown_signers: true
 
 A memento signed by an untrusted key fails verification. Different verifiers can have different policies; one verifier might trust 3 keys, another might trust 30.
 
-The trust set is operational. ProvekIt provides the substrate; you choose your trust set.
+The trust set is operational. Sugar provides the substrate; you choose your trust set.
 
 ## Key management: out-of-protocol
 
@@ -110,7 +110,7 @@ The protocol does not manage signing keys. Concerns the protocol does NOT addres
 - **Key revocation.** When a key is compromised, distribute revocation info out of band. Verifiers' `trusted_keys` lists are updated.
 - **Quorum signing.** N-of-M signing reduces single-key compromise risk. The protocol does not prescribe a specific scheme; it accepts multiple signatures.
 
-Key-management practices are a security domain in their own right. ProvekIt provides hooks for trust decisions; key custody is up to the operator.
+Key-management practices are a security domain in their own right. Sugar provides hooks for trust decisions; key custody is up to the operator.
 
 ## Foundation keys
 
@@ -154,9 +154,9 @@ When a `.proof` ships, every memento is signed. The bundle is signed at the top 
 
 This is the protocol's commitment to making formal verifications portable. The signature is what makes "I claim my code is correct, here's the verification" cryptographically distinguishable from "I claim my code is correct, trust me."
 
-In a world where typical deployment is "trust me, I'm the package author," ProvekIt's substrate adds a layer of cryptographic accountability. The package author signs; the consumer verifies; the chain is auditable. Failures are attributable.
+In a world where typical deployment is "trust me, I'm the package author," Sugar's substrate adds a layer of cryptographic accountability. The package author signs; the consumer verifies; the chain is auditable. Failures are attributable.
 
-This is the smaller-than-correctness, larger-than-nothing claim of cryptographic protocols. It is exactly the claim ProvekIt makes.
+This is the smaller-than-correctness, larger-than-nothing claim of cryptographic protocols. It is exactly the claim Sugar makes.
 
 ## Read next
 

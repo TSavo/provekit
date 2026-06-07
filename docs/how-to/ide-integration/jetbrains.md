@@ -1,6 +1,6 @@
 # JetBrains integration (IntelliJ, PyCharm, RubyMine, Rider, CLion, GoLand)
 
-JetBrains IDEs run a Java-based IDE platform with their own LSP support and a plugin marketplace. ProvekIt integrates per-IDE.
+JetBrains IDEs run a Java-based IDE platform with their own LSP support and a plugin marketplace. Sugar integrates per-IDE.
 
 ## Plugin matrix
 
@@ -8,10 +8,10 @@ JetBrains IDEs run a Java-based IDE platform with their own LSP support and a pl
 |---|---|---|---|
 | IntelliJ IDEA | Java | (planned) | not yet |
 | IntelliJ IDEA | Kotlin | (planned) | not yet |
-| PyCharm | Python | "ProvekIt for PyCharm" | shipping |
-| RubyMine | Ruby | "ProvekIt for RubyMine" | shipping |
-| Rider | C# | "ProvekIt for Rider" | shipping |
-| CLion | Rust (via Rust plugin) | "ProvekIt for CLion" | shipping |
+| PyCharm | Python | "Sugar for PyCharm" | shipping |
+| RubyMine | Ruby | "Sugar for RubyMine" | shipping |
+| Rider | C# | "Sugar for Rider" | shipping |
+| CLion | Rust (via Rust plugin) | "Sugar for CLion" | shipping |
 | GoLand | Go | (planned) | not yet |
 | WebStorm | TypeScript | (planned) | not yet |
 | Android Studio | Java/Kotlin | (planned) | not yet |
@@ -23,7 +23,7 @@ JetBrains IDEs run a Java-based IDE platform with their own LSP support and a pl
 When plugins are in the JetBrains Marketplace:
 
 1. Settings → Plugins → Marketplace
-2. Search "ProvekIt"
+2. Search "Sugar"
 3. Install the plugin matching your IDE
 4. Restart
 
@@ -35,7 +35,7 @@ For sideloading (until marketplace publish):
 
 ## Configuration
 
-Per-IDE settings live in Settings → Tools → ProvekIt:
+Per-IDE settings live in Settings → Tools → Sugar:
 
 - **Server path**: path to the LSP plugin binary (auto-detected; override if needed).
 - **Protocol version**: `1.1.0` (must match `provekit verify-protocol` output).
@@ -46,17 +46,17 @@ Per-IDE settings live in Settings → Tools → ProvekIt:
 
 Open a file with annotations the kit recognizes. After a brief delay (cold-start), the IDE should show:
 
-- ProvekIt as a problem source in the Problems tool window.
+- Sugar as a problem source in the Problems tool window.
 - Inspections highlighting violations.
 - Hover tooltips showing the contract.
 
-Use **View → Tool Windows → ProvekIt** (or equivalent) to see the discharge breakdown for the open file.
+Use **View → Tool Windows → Sugar** (or equivalent) to see the discharge breakdown for the open file.
 
 ## Inspections
 
-ProvekIt diagnostics show as IDE inspections. To configure severity per JetBrains conventions:
+Sugar diagnostics show as IDE inspections. To configure severity per JetBrains conventions:
 
-Settings → Editor → Inspections → ProvekIt. Three categories:
+Settings → Editor → Inspections → Sugar. Three categories:
 
 - **Contract violations** (default: ERROR).
 - **Tier 3 fallbacks** (default: WARNING).
@@ -66,7 +66,7 @@ Each can be enabled / disabled / re-severitied per project.
 
 ## Quick fixes
 
-JetBrains IDEs are good at intention actions. ProvekIt plugins ship intentions for:
+JetBrains IDEs are good at intention actions. Sugar plugins ship intentions for:
 
 - "Add annotation to align with caller's contract."
 - "Bind to reference contract."
@@ -97,7 +97,7 @@ If lift adapters can't find annotations, check that the workspace root is correc
 ### Plugin doesn't load
 
 - IDE Log: Help → Show Log in Files. Look for `provekit` errors.
-- Plugin compatibility: ProvekIt plugins target specific IDE platform versions. Check the plugin's compatibility range against your IDE version.
+- Plugin compatibility: Sugar plugins target specific IDE platform versions. Check the plugin's compatibility range against your IDE version.
 
 ### Squigglies don't appear
 
@@ -115,7 +115,7 @@ If lift adapters can't find annotations, check that the workspace root is correc
 
 ### PyCharm
 
-Integrates with PyCharm's existing type-checking and inspection infrastructure. ProvekIt diagnostics appear alongside Python type errors.
+Integrates with PyCharm's existing type-checking and inspection infrastructure. Sugar diagnostics appear alongside Python type errors.
 
 ### RubyMine
 

@@ -2,9 +2,9 @@
 
 The fundamental problem of formal verification has always been: how do we get the specifications? For fifty years the answer was "convince developers to write them." That never worked at scale.
 
-ProvekIt's answer is different. The specifications already exist. They live in the annotation libraries codebases already use. The job is not to convince developers to author specs; the job is to lift specs from where they already are.
+Sugar's answer is different. The specifications already exist. They live in the annotation libraries codebases already use. The job is not to convince developers to author specs; the job is to lift specs from where they already are.
 
-This is the lift-not-author posture. It is the most consequential single design choice in ProvekIt's adoption story.
+This is the lift-not-author posture. It is the most consequential single design choice in Sugar's adoption story.
 
 ## The history
 
@@ -39,7 +39,7 @@ Each of these is a **specification the developer already wrote**, not for verifi
 
 The lift adapter walks these annotations and emits canonical IR. The developer didn't add anything. They didn't change their workflow. They didn't learn a spec language. The specifications they already authored became proof candidates.
 
-This is what "lift, don't author" means operationally. The codebase keeps its existing annotations. The author keeps their existing workflow. ProvekIt does not ask the author to learn a new spec language, write a parallel specification, or migrate to a different annotation library.
+This is what "lift, don't author" means operationally. The codebase keeps its existing annotations. The author keeps their existing workflow. Sugar does not ask the author to learn a new spec language, write a parallel specification, or migrate to a different annotation library.
 
 ## Coverage by ecosystem
 
@@ -70,7 +70,7 @@ The traditional adoption story for formal verification:
 
 Adoption is gated on step 1, which usually fails. Even when it succeeds, step 2 dominates ongoing cost.
 
-ProvekIt's adoption story:
+Sugar's adoption story:
 
 1. Notice your codebase already uses an annotation library.
 2. Install the lift adapter for that library.
@@ -79,7 +79,7 @@ ProvekIt's adoption story:
 
 Steps 1 and 2 are trivial. Step 3 is automated. The friction that defeated formal verification for fifty years is bypassed.
 
-This is the structural reason ProvekIt has a chance at mainstream adoption where the previous fifty years' tools did not.
+This is the structural reason Sugar has a chance at mainstream adoption where the previous fifty years' tools did not.
 
 ## What "lift" doesn't do
 
@@ -101,15 +101,15 @@ For most codebases, the partial coverage is enough to dominate the contract surf
 
 ## Sit beneath, don't compete
 
-The framing "ProvekIt sits beneath every annotation library" is precise. The protocol does not provide a competing annotation library. It provides a lower layer that promotes existing annotations to a content-addressed substrate.
+The framing "Sugar sits beneath every annotation library" is precise. The protocol does not provide a competing annotation library. It provides a lower layer that promotes existing annotations to a content-addressed substrate.
 
-This is intentional. Competing with annotation libraries would re-introduce the adoption problem (developers would have to choose between their existing library and ProvekIt's). Sitting beneath them eliminates the choice.
+This is intentional. Competing with annotation libraries would re-introduce the adoption problem (developers would have to choose between their existing library and Sugar's). Sitting beneath them eliminates the choice.
 
 A codebase using `pydantic` for type validation now has a path: ship the same `pydantic` annotations, and let `provekit-lift-pydantic` (running underneath) emit canonical IR. The team's authoring workflow is unchanged; the verification surface is gained.
 
 ## Comparison to "convince developers to spec"
 
-The traditional approach asked developers to do new work. ProvekIt asks developers to do nothing. The work is in the lift adapter, written once per annotation library, maintained by the adapter author (typically the kit maintainers or ecosystem contributors).
+The traditional approach asked developers to do new work. Sugar asks developers to do nothing. The work is in the lift adapter, written once per annotation library, maintained by the adapter author (typically the kit maintainers or ecosystem contributors).
 
 This shifts the cost from "every developer in the world" to "one adapter author per library." For a library with thousands of users, the adapter cost is amortized across all of them.
 

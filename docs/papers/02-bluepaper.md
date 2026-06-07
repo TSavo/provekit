@@ -1,6 +1,6 @@
-# ProvekIt Bluepaper
+# Sugar Bluepaper
 
-> ProvekIt constrains the set of all possible validations to 64 bytes regardless of length. The proof follows.
+> Sugar constrains the set of all possible validations to 64 bytes regardless of length. The proof follows.
 
 Version 1.4.1. May 3, 2026. Protocol freeze.
 
@@ -27,9 +27,9 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 
 ---
 
-## §1. ProvekIt is two protocols composed
+## §1. Sugar is two protocols composed
 
-ProvekIt is the composition of two protocols. Everything else, every lift adapter, every solver, every agent, every authoring surface, every CLI verb, is decoration on these two pillars.
+Sugar is the composition of two protocols. Everything else, every lift adapter, every solver, every agent, every authoring surface, every CLI verb, is decoration on these two pillars.
 
 ### §1.1 Canonical IR (the language)
 
@@ -82,7 +82,7 @@ Decoration that uses the two pillars without changing them:
 - Lift adapters produce canonical IR from existing surfaces (Zod, proptest, kani, JSDoc, Bean Validation, Pydantic, Hypothesis, Frama-C, dafny, hand-written contracts).
 - IR compilers consume canonical IR and lower to per-solver formats (SMT-LIB for Z3 and CVC5, TPTP for Vampire, Lean tactics, Coq goals, Bitwuzla bit-vectors, dReal real arithmetic, domain-specific witnesses for non-software domains).
 - Agents author canonical IR via prompts (Claude Code, Codex, OpenCode, OpenAI, ollama, deterministic rule-based agents). The agent maps English to IR; the IR is canonical regardless of which agent produced it.
-- Authoring surfaces are interchangeable input syntaxes that map into canonical IR. Every modern annotation library is one such surface; ProvekIt sits beneath all of them.
+- Authoring surfaces are interchangeable input syntaxes that map into canonical IR. Every modern annotation library is one such surface; Sugar sits beneath all of them.
 - The proof DAG is the lattice that grows as producers mint mementos. Edges via `inputCids`; nodes are mementos; verification walks the DAG.
 
 The two pillars are non-pluggable. The decoration is. This is the architectural division of labor.

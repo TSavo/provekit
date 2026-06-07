@@ -12,7 +12,7 @@
 
 Today, bug-class elimination is heuristic. Static analyzers find some bugs and miss others. Type systems catch a narrow band. Test suites cover what they cover. Whole-program verification efforts (seL4, CompCert) take 200 person-years and produce a single artifact whose scope is a microkernel's worth of code. The substrate of correctness assurance is fragmented across tools whose results are ephemeral, unsigned, and incompatible with each other.
 
-This paper argues that the substrate ProvekIt ships, once droppers close the loop over weakest-precondition propagation, retires that fragmentation by making bug-class elimination a theorem rather than a heuristic. Specifically: every leaf-discharge bug class (input validation, use-after-free, null deref, data races on lock-holding properties, and most of the OWASP Top 10) is structurally eliminated under a sound substrate, and the proof is by induction on data-flow path length over a content-addressed federated DAG of cached one-step implications.
+This paper argues that the substrate Sugar ships, once droppers close the loop over weakest-precondition propagation, retires that fragmentation by making bug-class elimination a theorem rather than a heuristic. Specifically: every leaf-discharge bug class (input validation, use-after-free, null deref, data races on lock-holding properties, and most of the OWASP Top 10) is structurally eliminated under a sound substrate, and the proof is by induction on data-flow path length over a content-addressed federated DAG of cached one-step implications.
 
 The substrate's accumulated DAG IS the proof. Verification of any program is graph reachability over the cached edges. New verification work mints new edges. Edges are content-addressed, signed, and shared across the entire ecosystem. The cost of verifying any new program asymptotically approaches the cost of cache lookups, because most proof obligations have already been discharged by someone, somewhere, for some other program.
 
@@ -157,7 +157,7 @@ Each cached `p → c` is a free contribution. Only missing conjuncts cost mint w
 
 Combined with universal quantification, the leverage compounds. Each cached edge is universally quantified over its free variables; one edge covers all instantiations. The cache grows polynomially with distinct universal patterns. The program space grows exponentially with concrete instantiations. The ratio is the substrate's compounding return.
 
-The substrate is the global lemma cache of all theorem provers, ever. Z3 has an internal lemma cache, scoped to a single solving session. Coq has one, scoped to a session. Vampire has one. CVC5 has one. Every static analyzer has its own. They are ephemeral. ProvekIt makes them public, federated, monotonic. Every cached edge is a lemma some solver minted, that no other solver ever needs to mint again. Z3's work survives Z3's session. Coq's work survives Coq's session. The work that has historically been thrown away every build, every CI run, every research paper, is preserved, content-addressed, and shared.
+The substrate is the global lemma cache of all theorem provers, ever. Z3 has an internal lemma cache, scoped to a single solving session. Coq has one, scoped to a session. Vampire has one. CVC5 has one. Every static analyzer has its own. They are ephemeral. Sugar makes them public, federated, monotonic. Every cached edge is a lemma some solver minted, that no other solver ever needs to mint again. Z3's work survives Z3's session. Coq's work survives Coq's session. The work that has historically been thrown away every build, every CI run, every research paper, is preserved, content-addressed, and shared.
 
 Software stops aging because the substrate accumulates faster than novel proof shapes appear. Every if-statement, every assertion, every type-narrowing, every match arm, every lock acquisition, every bounds check in every program ever lifted contributes one or more cached edges. The cache grows monotonically. Coverage grows monotonically. The cost of verifying new code asymptotically approaches the cost of computing CIDs, which is the cost of one BLAKE3 hash, which is what compilers pay anyway.
 
@@ -212,7 +212,7 @@ eBPF verification becomes thin. The eBPF verifier today does heroic abstract int
 
 Driver authors write at the leaf, get sealed automatically. A new PCIe driver's authors add the safety assertions appropriate to their device. Propagation extends to every interrupt handler, every syscall path that eventually touches the device. The "did we miss a path" question dissolves: propagation finds them all.
 
-Whole-kernel verification, which has been impossible by every prior approach, becomes incremental and compositional. seL4 took 200 person-years to verify a microkernel's worth of code. ProvekIt-on-Linux does not ask anyone to do whole-kernel verification. It asks the substrate to read what kernel devs have already written, propagate it mechanically, and accumulate the resulting edges in the federated DAG. Each commit's contribution is small; the cumulative coverage is monotonically growing; the verified region becomes the union of every successfully-discharged proof obligation. After ten years of community lifting, the verified surface is most of the kernel. After one year, it is the high-traffic syscall paths. Coverage is strictly monotone in either case.
+Whole-kernel verification, which has been impossible by every prior approach, becomes incremental and compositional. seL4 took 200 person-years to verify a microkernel's worth of code. Sugar-on-Linux does not ask anyone to do whole-kernel verification. It asks the substrate to read what kernel devs have already written, propagate it mechanically, and accumulate the resulting edges in the federated DAG. Each commit's contribution is small; the cumulative coverage is monotonically growing; the verified region becomes the union of every successfully-discharged proof obligation. After ten years of community lifting, the verified surface is most of the kernel. After one year, it is the high-traffic syscall paths. Coverage is strictly monotone in either case.
 
 If droppers work on Linux, the foundation of computation becomes structurally provable, retroactively, from work humans already did. Then FreeBSD. Then XNU. Then NT, if Microsoft signs. Then every embedded RTOS whose vendor cares about the SBOM. The kernel ecosystem under every running application becomes contract-verified. Application contracts then mean something because the kernel they run on stops being the unverified weak link.
 
@@ -321,7 +321,7 @@ This is the milestone that retires the "do we need v1.6" question. Until conform
 
 ## §12: The diplomatic substrate framing, extended
 
-After Reputation argued that ProvekIt is the diplomatic substrate between every truth-claim about software ever made. This paper extends the framing.
+After Reputation argued that Sugar is the diplomatic substrate between every truth-claim about software ever made. This paper extends the framing.
 
 Verification today is not just fragmented across tools. It is fragmented across disciplines that do not speak to each other. Static analyzers cannot consume SMT solver outputs. SMT solvers cannot consume proof assistant certificates. Proof assistants cannot consume type-system constraints from arbitrary languages. Type systems cannot consume runtime invariants. Runtime invariants cannot compose into supply-chain claims. Each discipline has its own model of what is true, and the models do not federate.
 
@@ -366,7 +366,7 @@ The structural-elimination theorem was articulated in conversation with Claude O
 
 ## §15: Citation
 
-> Savo, T. (2026). *After Verification: Bug Classes as Missing Edges in the Federated Proof Substrate*. ProvekIt Papers, vol. 7. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/07-after-verification-bug-classes-as-missing-edges.md.
+> Savo, T. (2026). *After Verification: Bug Classes as Missing Edges in the Federated Proof Substrate*. Sugar Papers, vol. 7. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/07-after-verification-bug-classes-as-missing-edges.md.
 
 ---
 

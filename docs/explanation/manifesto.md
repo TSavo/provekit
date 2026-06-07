@@ -1,4 +1,4 @@
-# ProvekIt: Correctness is just a hash
+# Sugar: Correctness is just a hash
 
 > A manifesto for the trust substrate of computation.
 
@@ -60,7 +60,7 @@ producer fungibility) has ridden through five prior domains:
 
 Each layer captured a domain by reducing it to a single hash. Bitcoin's
 contribution was money-as-hash. IPFS was content-as-hash. Git was
-source-as-hash. **ProvekIt is correctness-as-hash.**
+source-as-hash. **Sugar is correctness-as-hash.**
 
 The proof hash is the canonical correctness identifier of any artifact.
 Two artifacts with the same proof hash claim the same set of properties.
@@ -157,7 +157,7 @@ implementations is the durability property.
 
 The Bitcoin SPEC is durable; Bitcoin Core's C++ is not. The HTTP SPEC is
 durable; nginx is not. The TCP SPEC is durable; OS network stacks are
-not. ProvekIt inherits this property by construction. The spec is the
+not. Sugar inherits this property by construction. The spec is the
 framework. The code is the framework's current shadow.
 
 ## What this generalizes to
@@ -188,7 +188,7 @@ makes possible, not what we're building first.
 
 ## What this is for
 
-ProvekIt is the trust substrate for software in the AI era. The
+Sugar is the trust substrate for software in the AI era. The
 substrate that makes:
 
 - AI agents trustable at scale (because their output composes into hash
@@ -204,7 +204,7 @@ substrate that makes:
 
 The framework's external surface is almost nothing. A library. A CLI.
 An optional language server. Optional swarm distribution. No SaaS. No
-central registry. No "log in to ProvekIt." The framework is
+central registry. No "log in to Sugar." The framework is
 infrastructure installed locally that runs against existing developer
 workflows and exchanges content-hashed mementos through whatever
 distribution channels users already have.

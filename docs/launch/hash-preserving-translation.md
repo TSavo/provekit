@@ -1,12 +1,12 @@
 # Hash-Preserving Translation
 
-The lift layer is not a translator. It is a hash-preserving projection. N host-language annotation notations converge into ONE canonical IR, and by content addressing, semantically-equivalent annotations across languages become byte-identical at the substrate. Cross-language semantic equivalence isn't a feature ProvekIt implements. It's a property of content addressing applied to a canonical IR. This essay derives that claim from first principles in five steps.
+The lift layer is not a translator. It is a hash-preserving projection. N host-language annotation notations converge into ONE canonical IR, and by content addressing, semantically-equivalent annotations across languages become byte-identical at the substrate. Cross-language semantic equivalence isn't a feature Sugar implements. It's a property of content addressing applied to a canonical IR. This essay derives that claim from first principles in five steps.
 
 ## 1. Pluralism is structural
 
 Every host language has many ways to express contracts. Java alone has thirteen mainstream notations: JSR-380 Bean Validation, JML, Cofoja, Hibernate validator constraints, Jackson schemas, Spring Web request constraints, Spring Security expressions, Swagger annotations, JPA constraints, OpenAPI Validator, Checker Framework qualifiers, Error Prone matchers, JUnit assertions. TypeScript has Zod, io-ts, runtime assertions, hand-rolled type guards, ArkType, valibot. Rust has `#[contract]` macros, Kani harnesses, Creusot specs, Prusti annotations, Flux refinements, doc-comment ensures/requires. Each notation captures different semantic dimensions and is loved by a different community.
 
-ProvekIt does not pick one. It admits all. Each is a separate **lifter**, written in the host language because each needs the host's parser and AST, spawned via JSON-RPC by the Rust CLI per `protocol/specs/2026-04-30-lift-plugin-protocol.md`. A project's `.provekit/config.toml` declares which lifters it uses. The CLI dispatches files to all applicable lifters and unions the results.
+Sugar does not pick one. It admits all. Each is a separate **lifter**, written in the host language because each needs the host's parser and AST, spawned via JSON-RPC by the Rust CLI per `protocol/specs/2026-04-30-lift-plugin-protocol.md`. A project's `.provekit/config.toml` declares which lifters it uses. The CLI dispatches files to all applicable lifters and unions the results.
 
 This pluralism is not a feature added to the framework. It IS the framework's lift layer. The seam is built to be plural because the world is plural.
 
@@ -60,13 +60,13 @@ This collapses what would otherwise be an N-by-N matrix of cross-language verifi
 
 ## 5. The IR is the universal language for contracts
 
-The IR is not a serialization format. It is not an interchange format. It is the canonical predicate calculus for ProvekIt, independent of any host syntax.
+The IR is not a serialization format. It is not an interchange format. It is the canonical predicate calculus for Sugar, independent of any host syntax.
 
-Every way humans express "this isn't null" in any programming language gets absorbed into one IR atom with one CID. `@NotNull` in Java, `nonNullable` in TypeScript, `Option::Some` in Rust, `?T` in Zig, `std::optional` in C++, `nil` checks in Go: today they are six separate things that happen to mean the same. With ProvekIt they ARE the same, by hash, by memento, by verification. The framework absorbs the entire programming-language ecosystem into one proposition vocabulary.
+Every way humans express "this isn't null" in any programming language gets absorbed into one IR atom with one CID. `@NotNull` in Java, `nonNullable` in TypeScript, `Option::Some` in Rust, `?T` in Zig, `std::optional` in C++, `nil` checks in Go: today they are six separate things that happen to mean the same. With Sugar they ARE the same, by hash, by memento, by verification. The framework absorbs the entire programming-language ecosystem into one proposition vocabulary.
 
 The dedup is the ecosystem play. Every annotation library in every language, every test assertion, every where-clause, every type guard, every refinement, every pre/post-condition collapses into a finite alphabet of IR atoms. The alphabet is the canonical predicate calculus. The corpus is the proof DAG. The lifters are the projection.
 
-ProvekIt does not host annotation libraries. It absorbs them. What goes in is N host notations; what stays is one canonical vocabulary, reused by every consumer who reads the substrate.
+Sugar does not host annotation libraries. It absorbs them. What goes in is N host notations; what stays is one canonical vocabulary, reused by every consumer who reads the substrate.
 
 ## What this means for you
 

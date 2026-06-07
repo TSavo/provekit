@@ -1,4 +1,4 @@
-# ProvekIt: Five-Minute Launch Demo Script
+# Sugar: Five-Minute Launch Demo Script
 
 Audience: engineers and skeptical CTOs. Tone: hands-on, no marketing register, every claim grounded in a command they can copy. Total run time on screen: five minutes.
 
@@ -10,7 +10,7 @@ The demo is a single terminal session against a fresh checkout. The screencast r
 
 A black terminal. The narrator says one line.
 
-> "ProvekIt verifies a function in sixty-four bytes. Same number whether the function has ten lines or ten million dependencies. Watch."
+> "Sugar verifies a function in sixty-four bytes. Same number whether the function has ten lines or ten million dependencies. Watch."
 
 ---
 

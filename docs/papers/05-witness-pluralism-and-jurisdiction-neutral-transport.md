@@ -10,7 +10,7 @@ The v1.4 substrate is content-agnostic. Static analyzer attestations, formal ver
 2. **Witness pluralism in valence.** Negative attestations ("binary X fails contract Y") are first-class. Adversarial witnesses share the infrastructure with positive witnesses; consumer policy decides what to do with each. CVE, NVD, GHSA become memento streams. Yank-by-counter-witness is a primitive operation, not a registry feature.
 3. **Linear scaling.** New witnesses, kits, consumers compose at O(N+M+K), not O(N×M×K). This is the marketplace property, made literal.
 4. **Existing frameworks reduce to body conventions.** SLSA, Sigstore, in-toto, SCITT, CycloneDX, OSCAL: every supply-chain framework is expressible as body schema plus tooling under the substrate.
-5. **Transport is fungible.** Content-addressing makes distribution mechanism irrelevant. Mementos flow through IPFS, BitTorrent, HTTPS, git, S3, USB sticks, Bitcoin OP_RETURN. There can be no ProvekIt server because there can't be one.
+5. **Transport is fungible.** Content-addressing makes distribution mechanism irrelevant. Mementos flow through IPFS, BitTorrent, HTTPS, git, S3, USB sticks, Bitcoin OP_RETURN. There can be no Sugar server because there can't be one.
 6. **Spec authorship is not spec ownership.** The architect authored the substrate; the marketplace forms downstream. The reference implementation bootstraps adoption without controlling it. This is the cURL/HTTP relationship made explicit.
 
 These consequences restructure the standardization story. Regulators publish content-addressed policy mementos naming their (contract spec + trusted signer set) requirements. Consumers pin to policy CIDs. The per-regulator standardization ask collapses from "amend this regime's text" to "publish a memento under your authority key", measured in 1-2-year horizons rather than 10-15-year ones for the regulator-acceptance phase, while the substrate-level engineering work (TCB minimization, tool qualification, conformance harness) continues on the longer track.
@@ -198,7 +198,7 @@ The witness-pluralism claim is structural. The §10 closure-by-composition claim
 
 ### §4.1 The math
 
-Consider an ecosystem with N witness producers (analyzers, verifiers, auditors), M kits (per-host-language ProvekIt implementations), and K consumers (each with their own trust policy).
+Consider an ecosystem with N witness producers (analyzers, verifiers, auditors), M kits (per-host-language Sugar implementations), and K consumers (each with their own trust policy).
 
 Without composition closure, each new participant must coordinate with every existing participant on the other axes. A new analyzer must be tested against every kit (does this analyzer's output round-trip through this kit's lifter?), and every consumer must be configured to recognize this analyzer's signing key. Adding an analyzer is M×K coordination events. Adding a kit is N×K. Adding a consumer is N×M. Total ecosystem coordination cost: O(N×M×K).
 
@@ -284,7 +284,7 @@ The Supply-chain Levels for Software Artifacts framework defines build-provenanc
 - The signer is the build system's authority key, typically rooted via Sigstore's OIDC-issued certificates.
 - Consumers configured for "SLSA L3 required" check `metadata.slsaLevel >= 3` plus the signer trust.
 
-SLSA's framework can be carried natively. SLSA's content is body schema. ProvekIt's substrate transports it without modification.
+SLSA's framework can be carried natively. SLSA's content is body schema. Sugar's substrate transports it without modification.
 
 ### §5.2 Sigstore (Cosign + Fulcio + Rekor)
 
@@ -426,7 +426,7 @@ TCP got standardized once: RFC 793 in 1981, with subsequent maintenance. Applica
 
 The composition produces an ecosystem in which different jurisdictions, networks, and applications all share infrastructure. Different countries' firewall policies layer on top of TCP without re-specifying TCP. Different content-moderation regimes layer on top without re-specifying. PCI-DSS for payments, HIPAA for healthcare, FedRAMP for federal cloud: each is a regime layered on top of TLS (which is layered on top of TCP). None requires TCP or TLS to amend; they layer policy.
 
-ProvekIt's substrate has the same architectural shape. The substrate (sign + hash + reference + envelope/header/body, plus the four invariants) is the wire. Application protocols ride on top: SLSA-style provenance, Sigstore-rooted signing, in-toto pipelines, SCITT transparency, OSCAL controls, regulator policies. Each application protocol defines its own body conventions.
+Sugar's substrate has the same architectural shape. The substrate (sign + hash + reference + envelope/header/body, plus the four invariants) is the wire. Application protocols ride on top: SLSA-style provenance, Sigstore-rooted signing, in-toto pipelines, SCITT transparency, OSCAL controls, regulator policies. Each application protocol defines its own body conventions.
 
 The standardization implication is the same as for TCP. The substrate gets standardized once. Application protocols and policies evolve independently. Different regulators, jurisdictions, and ecosystems compose on the same wire.
 
@@ -456,9 +456,9 @@ Concrete examples:
 
 The substrate does not specify a distribution mechanism because it cannot. Content-addressing is what makes intermediaries fungible: the channel does not certify the bytes; the bytes certify themselves.
 
-### §8.2 No "ProvekIt server"
+### §8.2 No "Sugar server"
 
-A consequence of transport fungibility: there can be no central ProvekIt server, because there cannot be one. The substrate is content-addressed and signed; any party with the bytes is an equally authoritative source. A "ProvekIt registry" would be one indexing service among many, helpful for discovery but not load-bearing for trust.
+A consequence of transport fungibility: there can be no central Sugar server, because there cannot be one. The substrate is content-addressed and signed; any party with the bytes is an equally authoritative source. A "Sugar registry" would be one indexing service among many, helpful for discovery but not load-bearing for trust.
 
 This is the property that made BitTorrent approximately 30% of peak internet traffic in the mid-2000s. Once content was addressable by hash, every peer holding the bytes was a server. The protocol's value scaled with adoption rather than depending on central capacity.
 
@@ -553,7 +553,7 @@ This section restates three representative regulator paths under the new framing
 
 ### §10.1 DO-178C / DO-333 (avionics)
 
-**Old framing (paper 04):** RTCA SC-205 / EUROCAE WG-71 amend DO-333 to recognize hash-bounded verification. Tool qualification kit (TQL-1) for a ProvekIt implementation. 10-15 year horizon.
+**Old framing (paper 04):** RTCA SC-205 / EUROCAE WG-71 amend DO-333 to recognize hash-bounded verification. Tool qualification kit (TQL-1) for a Sugar implementation. 10-15 year horizon.
 
 **New framing:** RTCA publishes a policy memento under the RTCA authority key. The memento body specifies:
 
@@ -579,7 +579,7 @@ Estimated horizon: 1-2 years per PP, parallelizable across PPs. CCRA mutual reco
 
 ### §10.3 EU Cyber Resilience Act
 
-**Old framing (paper 04):** ENISA guidance for CRA Article 13 (essential cybersecurity requirements) recognizes ProvekIt-backed verification for high-risk products. 5-year horizon.
+**Old framing (paper 04):** ENISA guidance for CRA Article 13 (essential cybersecurity requirements) recognizes Sugar-backed verification for high-risk products. 5-year horizon.
 
 **New framing:** ENISA publishes a CRA-compliance policy memento under ENISA's authority key. The policy specifies:
 
@@ -670,7 +670,7 @@ Paper 04 (the vertical-stack and standardization paper) and paper 05 are complem
 - The vertical-stack thesis (a `.proof` is structurally identical to a chain of formally verified software from quantum mechanics to bytecode).
 - Per-layer state-of-the-art survey (HOL4 ARM, CompCert, CakeML, Vellvm, seL4, HACL\*).
 - The composition gap (no common substrate connects existing verifications).
-- ProvekIt as the missing transport layer.
+- Sugar as the missing transport layer.
 - Per-regulator engagement paths assuming substrate-level amendment.
 - TCB minimization, tool qualification, and conformance harness engineering work.
 

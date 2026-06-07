@@ -1,6 +1,6 @@
 # Supply-chain attacks
 
-ProvekIt's `.proof` bundle is the supply-chain artifact. Under v1.4 and later, the supply-chain anchor is the **rank-3 consumer pin** `(contractCid, witnessCid, binaryCid)`, not a single CID. Each axis catches a distinct attack class; the combination closes the supply-chain perimeter at a level single-axis pinning cannot.
+Sugar's `.proof` bundle is the supply-chain artifact. Under v1.4 and later, the supply-chain anchor is the **rank-3 consumer pin** `(contractCid, witnessCid, binaryCid)`, not a single CID. Each axis catches a distinct attack class; the combination closes the supply-chain perimeter at a level single-axis pinning cannot.
 
 This doc walks through the supply-chain attack scenarios and what the protocol does (and doesn't) defend against.
 
@@ -21,7 +21,7 @@ Recent real-world examples (illustrative, not exhaustive):
 
 Different attack mechanisms, similar shape: malicious code in the dependency tree.
 
-## What ProvekIt provides at the supply-chain layer
+## What Sugar provides at the supply-chain layer
 
 ### A signed `.proof` per dependency
 
@@ -49,13 +49,13 @@ This means an attacker cannot satisfy the consumer's contract on the B side whil
 
 When Tier 3 fires, the implication memento is signed by the prover. A user investigating "how was this discharged?" can audit the evidence offline.
 
-## What ProvekIt does NOT provide at the supply-chain layer
+## What Sugar does NOT provide at the supply-chain layer
 
 ### Maintainer identity verification
 
 The protocol does not verify that "alice@example.com" is actually Alice. It just verifies that the signature was made by someone holding the key associated with that identity.
 
-Mitigation: Sigstore + Fulcio (OIDC-rooted certificates) provide identity verification. ProvekIt and Sigstore are complementary; a `.proof` can be signed by a Sigstore-rooted key.
+Mitigation: Sigstore + Fulcio (OIDC-rooted certificates) provide identity verification. Sugar and Sigstore are complementary; a `.proof` can be signed by a Sigstore-rooted key.
 
 ### Account compromise of the maintainer
 
@@ -79,7 +79,7 @@ Mitigation: hardware-key signing where the human signer is separate from CI, in-
 
 If the attacker controls the network between the registry and the consumer, they may attempt to inject a tampered `.proof` or a tampered binary.
 
-Mitigation: TLS for distribution. ProvekIt's content-addressing also defends: the consumer fetches by CID; if the bytes don't hash to the expected CID, the fetch fails. Network injection cannot produce content with a colliding CID without breaking BLAKE3-512.
+Mitigation: TLS for distribution. Sugar's content-addressing also defends: the consumer fetches by CID; if the bytes don't hash to the expected CID, the fetch fails. Network injection cannot produce content with a colliding CID without breaking BLAKE3-512.
 
 ### DNS poisoning
 
@@ -91,19 +91,19 @@ If the registry itself is compromised (registry operators or registry infrastruc
 
 ## Layered defenses
 
-ProvekIt is one layer. A robust supply-chain posture combines:
+Sugar is one layer. A robust supply-chain posture combines:
 
 | Defense | Role |
 |---|---|
 | TLS in transit | Confidentiality + integrity at the network layer |
 | Sigstore / Fulcio | Identity-rooted signing (OIDC certificates) |
 | in-toto / SLSA | Build provenance (where the binary was built, by what, from what source) |
-| ProvekIt | Behavioral contracts, binary CID pinning, proof witnesses |
+| Sugar | Behavioral contracts, binary CID pinning, proof witnesses |
 | Reproducible builds | Verifiable that source compiles to the binary |
 | Multi-maintainer review | Human-layer integrity |
 | SBOM (CycloneDX / SPDX) | Inventory of what's in the build |
 
-Each addresses a different failure mode. ProvekIt specifically covers behavioral verification + binary integrity. Sigstore + in-toto + reproducible builds covers identity + build provenance. SBOM covers inventory.
+Each addresses a different failure mode. Sugar specifically covers behavioral verification + binary integrity. Sigstore + in-toto + reproducible builds covers identity + build provenance. SBOM covers inventory.
 
 The combinations: Sigstore-signed `.proof` files, with in-toto attestations for the build, reproducible binaries pinned via `binaryCid`, and behavioral contracts verified at Tier 1.
 
@@ -131,9 +131,9 @@ For ecosystem-level participants:
 13. **Curate reference contracts** for your domain.
 14. **Document threat models** so consumers know what your `.proof` does and doesn't claim.
 
-## What ProvekIt's role becomes at scale
+## What Sugar's role becomes at scale
 
-As the ecosystem matures, ProvekIt's role in supply-chain security is:
+As the ecosystem matures, Sugar's role in supply-chain security is:
 
 - **At fetch time**: content-addressing detects tampering in transit and at the registry.
 - **At verify time**: contracts and bridges detect behavioral substitution.
@@ -147,5 +147,5 @@ The protocol's structure is "every step is content-addressed and signed." This m
 - [what-binaryCid-catches.md](what-binaryCid-catches.md): detailed walkthrough of binary substitution scenarios.
 - [what-binaryCid-does-not-catch.md](what-binaryCid-does-not-catch.md): limits of `binaryCid`.
 - [signature-and-non-repudiation.md](signature-and-non-repudiation.md): signing scheme details.
-- [`../explanation/compared-to/slsa-sigstore-in-toto-scitt.md`](../explanation/compared-to/slsa-sigstore-in-toto-scitt.md) (when written): how ProvekIt complements other supply-chain tools.
+- [`../explanation/compared-to/slsa-sigstore-in-toto-scitt.md`](../explanation/compared-to/slsa-sigstore-in-toto-scitt.md) (when written): how Sugar complements other supply-chain tools.
 - [reporting-vulnerabilities.md](reporting-vulnerabilities.md): operational security practices.

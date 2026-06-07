@@ -4,7 +4,7 @@
 
 By T. Savo, 2026-05-03
 
-This document captures the architectural derivation of ProvekIt as a unified system: the cosmic-brain thread that landed today across spec PRs #91, #94, #95, #96, #97, R6, #114, #120, the §11 and §12 manifesto sections, and the conversations that produced them. The pieces it assembles are public. They have been on the table for roughly a decade. The contribution is the assembly.
+This document captures the architectural derivation of Sugar as a unified system: the cosmic-brain thread that landed today across spec PRs #91, #94, #95, #96, #97, R6, #114, #120, the §11 and §12 manifesto sections, and the conversations that produced them. The pieces it assembles are public. They have been on the table for roughly a decade. The contribution is the assembly.
 
 The arc proceeds in twelve steps. Each step is a small claim. Each step assumes the previous. The closure of the twelve is the system.
 
@@ -16,13 +16,13 @@ Different type systems express different predicates. Different runtimes enforce 
 
 The question this raises: what is the thing all type systems are approximating? If two languages can both express the predicate "this argument is non-null," there must be a representation of that predicate that does not depend on which language wrote it. That representation is the substrate.
 
-## Step 2: ProvekIt IR is the common predicate language
+## Step 2: Sugar IR is the common predicate language
 
 Predicates are language-free. The predicate `x ≥ 0 ∧ x < 100` does not care whether `x` was a Go `int`, a Python `int`, a Rust `i32`, or a JavaScript `number`. The predicate is a tree of operators over named arguments and constants. Encode that tree as JSON, canonicalize it with JCS (RFC 8785), hash it with BLAKE3-512, and you have a content-addressed identity for the predicate that any kit can produce given the same source-language annotation.
 
-ProvekIt IR is that representation. Every ProvekIt kit (rust, go, python, cpp, c, java, ruby, csharp, swift, ts, zig) emits ProvekIt IR for the same logical predicate as byte-identical JCS bytes. The cross-kit conformance gate that has run for months in CI is empirical confirmation: 11 kits, byte-identical encoding, byte-identical BLAKE3-512, byte-identical contractCids for every contract in the catalog.
+Sugar IR is that representation. Every Sugar kit (rust, go, python, cpp, c, java, ruby, csharp, swift, ts, zig) emits Sugar IR for the same logical predicate as byte-identical JCS bytes. The cross-kit conformance gate that has run for months in CI is empirical confirmation: 11 kits, byte-identical encoding, byte-identical BLAKE3-512, byte-identical contractCids for every contract in the catalog.
 
-This is the substrate. Languages have type systems. ProvekIt has a predicate substrate that type systems are language-local renderings of.
+This is the substrate. Languages have type systems. Sugar has a predicate substrate that type systems are language-local renderings of.
 
 ## Step 3: the substrate's three primitives
 
@@ -80,7 +80,7 @@ Per spec #114 R1, every lift-plugin-protocol RPC server emits two streams per co
 1. **Contract mementos** at function nodes (the existing `kind: "contract"` shape per `ir-formal-grammar.md`).
 2. **Call-edge mementos** at function calls (`kind: "call-edge"` with sourceContractCid, targetContractCid or null+targetSymbol for FFI, callSiteLocus, evidenceTerm).
 
-The two streams are distinct outputs from the same lift pass. The lifter does not derive bridges. The lifter walks the AST, finds contracts and calls, and emits the corresponding mementos. The lifter is per-language; its job is exactly to translate the host language's contract syntax (annotations, body assertions, validator tags, type predicates, etc.) into ProvekIt IR contracts and call-edges.
+The two streams are distinct outputs from the same lift pass. The lifter does not derive bridges. The lifter walks the AST, finds contracts and calls, and emits the corresponding mementos. The lifter is per-language; its job is exactly to translate the host language's contract syntax (annotations, body assertions, validator tags, type predicates, etc.) into Sugar IR contracts and call-edges.
 
 LSP backends in every modern language (`gopls`, `rust-analyzer`, `pylsp`, `clangd`, `csharp-ls`, `solargraph`, `jdtls`, `zls`, `ts-language-server`, etc.) already resolve cross-file and cross-language references for IDE features. The lifter re-uses that infrastructure. Per spec #114 R3, when a call edge crosses kits (the callee is in a different language via FFI), the lifter emits `targetContractCid: null` and a populated `targetSymbol`; the linker resolves the symbol against the union of all loaded contracts.
 
@@ -90,9 +90,9 @@ Per spec #114 R2, the rust CLI orchestrator (the linker in this protocol) takes 
 
 The derivation is mechanical and deterministic. Two linker runs over byte-identical inputs produce a byte-identical set of derived bridges. The set's content-addressed CID, `bridgeSetCid`, is the rank-1 projection of the entire derivation. Combined with `contractSetCid` and `callEdgeSetCid`, the linker's output composes into a rank-3 pin: `(contractSetCid, callEdgeSetCid, bridgeSetCid) ⇒ linkBundleCid`.
 
-The linker is the substrate's notion of linkage. Traditional linkers (ld, lld, gold, mold) connect symbols by name and type signature, producing a binary where every reference resolves at the byte level. ProvekIt's linker connects contracts by predicate satisfaction (`post_B ⊃ pre_A`) at the predicate level, producing a `.proof` bundle where every call-site obligation is content-addressed and verifiable.
+The linker is the substrate's notion of linkage. Traditional linkers (ld, lld, gold, mold) connect symbols by name and type signature, producing a binary where every reference resolves at the byte level. Sugar's linker connects contracts by predicate satisfaction (`post_B ⊃ pre_A`) at the predicate level, producing a `.proof` bundle where every call-site obligation is content-addressed and verifiable.
 
-A traditional linker error ("undefined reference to `foo`") and a ProvekIt linker error ("unresolved targetSymbol `foo`") are the same error at two different rank levels: rank 1 (the symbol exists) versus rank 2 (the symbol exists and its precondition is established by the caller's postcondition).
+A traditional linker error ("undefined reference to `foo`") and a Sugar linker error ("unresolved targetSymbol `foo`") are the same error at two different rank levels: rank 1 (the symbol exists) versus rank 2 (the symbol exists and its precondition is established by the caller's postcondition).
 
 ## Step 9: cross-language is not a special case
 
@@ -100,36 +100,36 @@ A call edge `goCaller → rustCallee` is the same shape as `rustCallerA → rust
 
 There is no special case for cgo or JNI or ctypes or WASM imports. Every FFI mechanism is just a kit-specific resolver mapping language-local symbol names to canonical `<kit>:<contract>` identifiers. The kit-specific FFI resolver is a v1.1.0 additive contract on lift-plugin-protocol; the linker is uniform.
 
-This is the universal linker that has not existed at this layer. Type checkers stop at language boundaries. Traditional linkers stop at byte boundaries. Formal-methods proof checkers stop at proof boundaries. ProvekIt's linker walks the entire polyglot call graph, derives the rank-2 bridge tuple at every edge, produces the rank-3 link bundle pin, and emits one linkBundleCid that commits to the correctness of every call site in every language in the project.
+This is the universal linker that has not existed at this layer. Type checkers stop at language boundaries. Traditional linkers stop at byte boundaries. Formal-methods proof checkers stop at proof boundaries. Sugar's linker walks the entire polyglot call graph, derives the rank-2 bridge tuple at every edge, produces the rank-3 link bundle pin, and emits one linkBundleCid that commits to the correctness of every call site in every language in the project.
 
 ## Step 10: annotations stop being suggestions
 
 Consider the canonical demonstration. A Java method declares `@NotNull String name`. The annotation compiles to bytecode metadata. Today nobody enforces it: not the JVM at runtime, not the Java compiler at the call boundary, not Scala's compiler when it consumes the JAR, not Kotlin's, not Clojure's, not anything calling the JVM via JNI. The annotation is a comment with rules.
 
-ProvekIt's Java lifter sees the annotation. It lifts to a ProvekIt IR predicate: `pre = (name != null)`. The lifter mints a contract memento with that predicate, content-addresses it, gets `contractCid_method`. Publishes it in the Java kit's contract stream. The `.proof` bundle ships with the JAR.
+Sugar's Java lifter sees the annotation. It lifts to a Sugar IR predicate: `pre = (name != null)`. The lifter mints a contract memento with that predicate, content-addresses it, gets `contractCid_method`. Publishes it in the Java kit's contract stream. The `.proof` bundle ships with the JAR.
 
 A Scala developer writes `javaApi.method(maybeName)` where `maybeName: Option[String]` and they wrote `.orNull` somewhere. Scala's compiler is happy: the JVM signature accepts `String`, including `null`. The Scala type system does not see Java's annotation.
 
-ProvekIt's Scala lifter sees the call edge. Emits a call-edge memento with `targetSymbol = "java-kit:javaApi.method:String→Unit"`. The linker resolves the symbol against the union, finds the Java contract memento, fills in `targetContractCid`. The linker checks: does the Scala caller's postcondition at the call site imply `(name != null)`? Scala's lifter analyzed the flow and found that `maybeName.orNull` can produce `null`. The post-condition does not imply `(name != null)`. The bridge derivation fails. The linker emits a `linker-error` memento with the call site location and the failed predicate.
+Sugar's Scala lifter sees the call edge. Emits a call-edge memento with `targetSymbol = "java-kit:javaApi.method:String→Unit"`. The linker resolves the symbol against the union, finds the Java contract memento, fills in `targetContractCid`. The linker checks: does the Scala caller's postcondition at the call site imply `(name != null)`? Scala's lifter analyzed the flow and found that `maybeName.orNull` can produce `null`. The post-condition does not imply `(name != null)`. The bridge derivation fails. The linker emits a `linker-error` memento with the call site location and the failed predicate.
 
 Scala's LSP plugin pushes the diagnostic. Red squiggle in IntelliJ on the `.method(maybeName.orNull)` call. Message: *cannot verify javaApi.method's precondition `name != null`; postcondition at call site allows null.*
 
-The Scala developer never read the Java annotation. The Scala compiler never knew about it. The JVM does not enforce it. But the IDE turned red because ProvekIt lifted the annotation into ProvekIt IR, content-addressed it, shipped it with the JAR, and Scala's linker found it during bridge derivation. The annotation stopped being a suggestion the moment the `.proof` bundle existed.
+The Scala developer never read the Java annotation. The Scala compiler never knew about it. The JVM does not enforce it. But the IDE turned red because Sugar lifted the annotation into Sugar IR, content-addressed it, shipped it with the JAR, and Scala's linker found it during bridge derivation. The annotation stopped being a suggestion the moment the `.proof` bundle existed.
 
 The same shape generalizes:
 
-- **C#'s `[NotNull]`, `[Required]`, `[Range(0,100)]`, `[StringLength(255)]`** lift into ProvekIt IR; consumed by F# / IronPython / anything calling .NET.
+- **C#'s `[NotNull]`, `[Required]`, `[Range(0,100)]`, `[StringLength(255)]`** lift into Sugar IR; consumed by F# / IronPython / anything calling .NET.
 - **Python type hints + `assert x > 0` in the function body** lift as the function's pre/post; consumed by Cython, C extensions, Java-via-Jython.
 - **Rust's `debug_assert!` and `assert!`** lift from the body; consumed by Go-via-cgo, Python-via-PyO3, Node-via-napi.
 - **An unannotated C function** whose body has `if (n < 0) return -1; if (n > 100) return -1;` lifts to a contract `pre_X = (0 ≤ n ≤ 100)` derived from the early-return pattern. Now any language calling that C function gets verified against `0 ≤ n ≤ 100` even though the C source said nothing.
 
-Annotations have always been weakly enforced because their enforcement was language-scoped. The moment Java code is consumed from a different language, the annotation is invisible. ProvekIt makes annotations strongly enforced because the enforcement is at the predicate level via ProvekIt IR, and ProvekIt IR crosses runtime boundaries. No standards body is required: ProvekIt's per-kit lifter is a translation table from the host language's contract syntax to ProvekIt IR, and the cross-language interaction happens entirely in ProvekIt IR space where every kit's bytes converge by JCS conformance.
+Annotations have always been weakly enforced because their enforcement was language-scoped. The moment Java code is consumed from a different language, the annotation is invisible. Sugar makes annotations strongly enforced because the enforcement is at the predicate level via Sugar IR, and Sugar IR crosses runtime boundaries. No standards body is required: Sugar's per-kit lifter is a translation table from the host language's contract syntax to Sugar IR, and the cross-language interaction happens entirely in Sugar IR space where every kit's bytes converge by JCS conformance.
 
 ## Step 11: the IDE is the developer surface
 
-The user-facing surface of ProvekIt is identical to a type system. The user writes code in their language. The lifter runs incrementally as the user types (today via LSP plugin handshake; eventually via deep IDE integration). The linker derives bridges. Failed derivations become diagnostics. The IDE shows red squiggles. The user fixes them. The user ships.
+The user-facing surface of Sugar is identical to a type system. The user writes code in their language. The lifter runs incrementally as the user types (today via LSP plugin handshake; eventually via deep IDE integration). The linker derives bridges. Failed derivations become diagnostics. The IDE shows red squiggles. The user fixes them. The user ships.
 
-The user never types the word "bridge." The user never thinks about content addressing. The user never reads ProvekIt IR. The user calls a function. ProvekIt does the rest.
+The user never types the word "bridge." The user never thinks about content addressing. The user never reads Sugar IR. The user calls a function. Sugar does the rest.
 
 The `.proof` bundle that ships alongside the binary is the frozen IDE state at the moment of shipping: every squiggle was green, every contract verified, every cross-language call's bridge derivation succeeded. A consumer pulling the binary recomputes the linkBundleCid from the same code's contracts and call edges and checks byte-equality against the bundle's claim. If they match, the consumer knows the developer's IDE was green at ship time, byte-for-byte, without re-running anything. The proof is the snapshot. The snapshot is the IDE state.
 
@@ -139,7 +139,7 @@ This collapses the developer's mental model to: **calling a function is asking t
 
 Four properties fall out of content addressing once the architecture above is in place.
 
-**Verification cost bounds at hash count.** The cost of verifying that two parties have the same closure is one BLAKE3-512 comparison per CID. The DAG underneath the CID is not re-walked unless the hashes diverge; if they do, the divergence pinpoints exactly which sub-CID changed, which becomes the diagnostic. Verification cost grows with the number of distinct CIDs being verified, not with the program's structural complexity. This is why ProvekIt scales where formal verification has not: Coq, TLA+, F*, Lean each re-run their proof checker every time. ProvekIt content-addresses the result of running it once; downstream consumers verify by hash compare. The proof becomes a primary key.
+**Verification cost bounds at hash count.** The cost of verifying that two parties have the same closure is one BLAKE3-512 comparison per CID. The DAG underneath the CID is not re-walked unless the hashes diverge; if they do, the divergence pinpoints exactly which sub-CID changed, which becomes the diagnostic. Verification cost grows with the number of distinct CIDs being verified, not with the program's structural complexity. This is why Sugar scales where formal verification has not: Coq, TLA+, F*, Lean each re-run their proof checker every time. Sugar content-addresses the result of running it once; downstream consumers verify by hash compare. The proof becomes a primary key.
 
 **Distribution cost bounds at constant 64 bytes.** A `linkBundleCid` for a polyglot project with 100,000 functions across 10 languages with full predicate-level cross-call verification is the same 64 bytes as the `linkBundleCid` for a hello-world. The bytes commit to unbounded content; the closure can be arbitrarily large; the hash is constant size. Without content addressing, the same architecture would be unshippable: every intermediate proof step would have to travel inline, and the wire size would grow with the proof's depth and breadth. With content addressing, the wire size is a small constant.
 
@@ -147,7 +147,7 @@ Four properties fall out of content addressing once the architecture above is in
 
 **Composition stays cheap.** A bundle that references 10 sub-bundles verifies by checking 10 CIDs, not by re-walking 10 sub-DAGs. If the sub-bundles each reference 10 more, the cost is 10 + 10 = 20 hash comparisons. Composition under §10 is a closure under verification cost too.
 
-The blockchain people are paying re-execution cost on every node forever because they did not realize the hash IS the proof. ProvekIt knows the hash is the proof and the verification stops there.
+The blockchain people are paying re-execution cost on every node forever because they did not realize the hash IS the proof. Sugar knows the hash is the proof and the verification stops there.
 
 ## What is on the table that has not been there before
 
@@ -172,7 +172,7 @@ The structural shape matches earlier load-bearing assemblies:
 
 Bitcoin assembled hash chains + Merkle trees + Byzantine fault tolerance + proof-of-work + economic incentives (primitives that all existed in the literature) into a distributed timestamp server that did not exist as one thing. The 2008 paper's contribution was the assembly, not the components.
 
-ProvekIt assembles content-addressed predicate canonicalization + LSP infrastructure + a unified cross-language linker abstraction + ProvekIt IR as common substrate (primitives that all exist) into a polyglot compile-time correctness gate that does not exist as one thing. The contribution is the assembly.
+Sugar assembles content-addressed predicate canonicalization + LSP infrastructure + a unified cross-language linker abstraction + Sugar IR as common substrate (primitives that all exist) into a polyglot compile-time correctness gate that does not exist as one thing. The contribution is the assembly.
 
 In both cases the components are public; the assembly is novel. The novelty is load-bearing because the assembly enables outcomes none of the components enables alone.
 
@@ -215,6 +215,6 @@ The manifesto sections that articulate the substrate posture, in `docs/papers/03
 - §11: the address is multi-dimensional
 - §12: the pin is a tuple of the right rank
 
-The cross-kit conformance gate that proves ProvekIt IR holds as a common predicate language at byte equivalence: `conformance/run.sh`, 11 kits, all passing.
+The cross-kit conformance gate that proves Sugar IR holds as a common predicate language at byte equivalence: `conformance/run.sh`, 11 kits, all passing.
 
 The author: T. Savo (handle Kevlar since the early-90s P2P scene), 2026-05-03.

@@ -267,4 +267,4 @@ The Cousot-Cousot abstract interpretation framework (1977) is what the substrate
 
 Cite as:
 
-> ProvekIt Substrate Working Notes (2026). *After Types: How I Learned to Stop Logging and Trust the Invariant Solver*. Paper 08 of the After-X arc.
+> Sugar Substrate Working Notes (2026). *After Types: How I Learned to Stop Logging and Trust the Invariant Solver*. Paper 08 of the After-X arc.

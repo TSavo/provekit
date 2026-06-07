@@ -1,6 +1,6 @@
 # `provekit materialize`
 
-`provekit materialize` replaces ProvekIt concept-citation carrier comments in source files with source emitted by a selected realize kit.
+`provekit materialize` replaces Sugar concept-citation carrier comments in source files with source emitted by a selected realize kit.
 
 The command is an orchestration surface only. It does not contain host-language renderers in the Rust CLI: language and library behavior lives behind `.provekit/realize/<surface>/manifest.toml` JSON-RPC realize plugins and body-template entries that explicitly declare their `(target_language, target_library_tag, concept_name)` tuple.
 

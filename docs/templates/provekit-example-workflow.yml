@@ -1,6 +1,6 @@
-# ProvekIt: example workflow
+# Sugar: example workflow
 #
-# This file is a TEMPLATE for downstream consumers. ProvekIt itself does not
+# This file is a TEMPLATE for downstream consumers. Sugar itself does not
 # run this workflow on its own commits: it lives here so a developer can
 # copy it into their own repository and have a working CI gate immediately.
 #
@@ -9,7 +9,7 @@
 # invariant gate (Z3 only, no LLM, no network). Exit code 1 (violation) fails
 # the workflow.
 
-name: ProvekIt
+name: Sugar
 on:
   push:
   pull_request:
@@ -26,5 +26,5 @@ jobs:
         # Use whichever your project uses. `npm ci` requires a lockfile;
         # `npm install` works without one.
         run: npm ci || npm install
-      - name: ProvekIt verify
+      - name: Sugar verify
         run: npx provekit verify --ci

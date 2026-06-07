@@ -93,7 +93,7 @@ Every entry in this catalogue is named. Every entry is filed. Every entry has a 
 
 A bug-finder cannot find a gap. A bug-finder finds violations of specifications. A gap is not a violation. A gap is the absence of a specification. The only thing that can find a gap is a system that surveys the boundaries of a codebase and asks, at each one, *what contract is in force here*, and then notices when the answer is silence.
 
-That system is ProvekIt. That system is the substrate. The gap-finding is its defining capability. The bug-finding is what every static analyzer has always done. The gap-finding is what no system has ever done.
+That system is Sugar. That system is the substrate. The gap-finding is its defining capability. The bug-finding is what every static analyzer has always done. The gap-finding is what no system has ever done.
 
 The catastrophe catalogue is the field's bill for the gap-blindness. The bill is in the hundreds of billions of dollars. The bill is still being paid.
 

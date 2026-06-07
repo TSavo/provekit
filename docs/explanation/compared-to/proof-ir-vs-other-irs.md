@@ -14,7 +14,7 @@
 
 That's the answer. The reasoning that follows explains why none of those existing IRs covers what Proof IR covers; the name itself is the same naming pattern those IRs all use, applied to a domain that didn't have one yet.
 
-The competitor isn't another IR. The competitor is the absence of an IR for proofs. ProvekIt fills that gap.
+The competitor isn't another IR. The competitor is the absence of an IR for proofs. Sugar fills that gap.
 
 ## The real innovation: byte-ordering invariance and representation invariance
 
@@ -32,7 +32,7 @@ If the bytes weren't canonical, "content-addressable" would be marketing. The CI
 
 This is what other IRs that exist for proofs (Boogie IL, Why-IR) don't have. They are intermediate representations of proof obligations within their respective frameworks. They aren't byte-canonical wire formats whose CIDs are stable across machines, languages, and provers. The existence-of-the-IR is the mundane part; the byte-ordering + representation invariance is the move.
 
-**ProvekIt is therefore a universal protocol for correctness, not a tool for one ecosystem.** Any language, any prover, any artifact with logical structure can be brought into the substrate by giving it a lifter that emits canonical bytes. The protocol doesn't care about the source language; it cares about whether the bytes meet the canonicalization rules. Universality is a *consequence of the invariants*, not an add-on feature. A language that doesn't exist yet, a prover that hasn't been built yet, a verification framework someone will design next decade: all of them join the federation by emitting canonical Proof IR bytes. The substrate scales to languages and tools we haven't imagined, because the canonical-form rules don't depend on the source.
+**Sugar is therefore a universal protocol for correctness, not a tool for one ecosystem.** Any language, any prover, any artifact with logical structure can be brought into the substrate by giving it a lifter that emits canonical bytes. The protocol doesn't care about the source language; it cares about whether the bytes meet the canonicalization rules. Universality is a *consequence of the invariants*, not an add-on feature. A language that doesn't exist yet, a prover that hasn't been built yet, a verification framework someone will design next decade: all of them join the federation by emitting canonical Proof IR bytes. The substrate scales to languages and tools we haven't imagined, because the canonical-form rules don't depend on the source.
 
 For the formal treatment of this property (same algorithm in different languages producing the same CID), see [Hash-Preserving Translation](../../papers/03-substrate-not-blockchain.md) (the manifesto's framing) and the bridge linkage protocol spec.
 
@@ -88,7 +88,7 @@ These are the closest neighbors. Boogie IL (Microsoft) and Why-IR (Why3) are ver
 
 But they're tied to specific verification frameworks. Boogie IL is shaped by Microsoft's tooling (Spec#, Dafny, Viper); Why-IR is shaped by the Why3 platform. Neither is designed for federation across multiple language kits or multi-prover consensus. Neither is content-addressable canonical bytes by design.
 
-Using Boogie IL would inherit Microsoft's tooling assumptions. Using Why-IR would inherit Why3's. The substrate would no longer be jurisdiction-neutral or framework-agnostic. The tools that depend on either would also gain implicit coupling. ProvekIt's federation property would be broken at the IR layer.
+Using Boogie IL would inherit Microsoft's tooling assumptions. Using Why-IR would inherit Why3's. The substrate would no longer be jurisdiction-neutral or framework-agnostic. The tools that depend on either would also gain implicit coupling. Sugar's federation property would be broken at the IR layer.
 
 ### vs. MSIL / CIL / JVM bytecode: runtime ILs
 
@@ -114,9 +114,9 @@ That's why a new IR exists and a new name was minted. Same naming pattern as eve
 
 ## See also
 
-- [Whitepaper](../../papers/01-whitepaper.md): what ProvekIt is and why
+- [Whitepaper](../../papers/01-whitepaper.md): what Sugar is and why
 - [Bluepaper](../../papers/02-bluepaper.md): formal protocol spec
 - [Substrate, not Blockchain](../../papers/03-substrate-not-blockchain.md): multi-dimensional pinning, the architectural foundation
 - [Witness Pluralism](../../papers/05-witness-pluralism-and-jurisdiction-neutral-transport.md): the substrate-independence theorem; multi-prover consensus
-- [coq-fstar-lean.md](coq-fstar-lean.md): ProvekIt-the-tool vs. proof assistants (different comparison)
-- [kani-prusti-creusot.md](kani-prusti-creusot.md): ProvekIt-the-tool vs. Rust-specific verifiers (different comparison)
+- [coq-fstar-lean.md](coq-fstar-lean.md): Sugar-the-tool vs. proof assistants (different comparison)
+- [kani-prusti-creusot.md](kani-prusti-creusot.md): Sugar-the-tool vs. Rust-specific verifiers (different comparison)

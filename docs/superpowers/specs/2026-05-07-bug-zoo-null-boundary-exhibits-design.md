@@ -107,10 +107,10 @@ The repeated code across `lab`, `exhibit`, and `fixed` is intentional. These
 folders are separate evidentiary states, not duplicate source for convenience.
 
 `lab/` proves the specimen is normal host-language code. It should compile,
-run, and pass ordinary checks while leaving the ProvekIt obligation latent.
+run, and pass ordinary checks while leaving the Sugar obligation latent.
 
 `exhibit/` proves native source surfaces can express the boundary. For Java,
-that can be ProvekIt-native annotations and Spring Web. For TypeScript, that can
+that can be Sugar-native annotations and Spring Web. For TypeScript, that can
 be zod and class-validator. For C#, that can be DataAnnotations,
 `//provekit:` annotations, and LINQ. Each exhibit lifts through its language kit
 and must match the species-level missing edge.
@@ -212,10 +212,10 @@ The restructure is complete when:
 
 - `cargo run --manifest-path bug-zoo/Cargo.toml -- --all` passes.
 - Direct TypeScript discovery still works for zod and class-validator.
-- Direct C# discovery still works for DataAnnotations, ProvekIt annotations,
+- Direct C# discovery still works for DataAnnotations, Sugar annotations,
   and LINQ.
 - Java exhibit lifters still produce the same expected ProofIR.
-- Java ProvekIt-native `@Requires("name != null")` and `@NotNull` emit the same
+- Java Sugar-native `@Requires("name != null")` and `@NotNull` emit the same
   IR for the null case.
 - Bug Zoo docs describe one null-boundary species with three language exhibits.
 - No empty `wild/` directory remains in the null-boundary species.

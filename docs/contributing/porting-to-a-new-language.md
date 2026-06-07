@@ -1,6 +1,6 @@
-# Porting ProvekIt to a new host language
+# Porting Sugar to a new host language
 
-This is the master guide for adding a new host language to ProvekIt. It walks the path from "I want to add Kotlin / Elixir / OCaml / Erlang / Crystal / Nim / V" to "the kit ships and the conformance harness is green."
+This is the master guide for adding a new host language to Sugar. It walks the path from "I want to add Kotlin / Elixir / OCaml / Erlang / Crystal / Nim / V" to "the kit ships and the conformance harness is green."
 
 The polyglot thesis is a contributor story. This document is the on-ramp.
 

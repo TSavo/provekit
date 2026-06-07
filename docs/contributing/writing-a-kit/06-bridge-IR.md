@@ -121,7 +121,7 @@ and signs an attestation over those three values. Where a body axis is absent, t
 
 A cross-kit RPC bridge attests that an implementation in another kit satisfies a contract owned by the source kit. The canonical shape for such bridges sets `header.target.cid` byte-identical to `header.sourceContractCid`. There is one contractCid per protocol obligation, owned by the kit that defined the contract. Per-kit bridges anchor at that same value.
 
-ProvekIt's `lift_plugin_protocol` is the worked example. The rust kit owns the contract in `implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs`. Per-kit RPC servers in cpp, csharp, go, swift, ts, and zig each implement the protocol. Each implementing kit emits a bridge whose target is the rust contractCid; the implementing kit does not re-declare a parallel "counterpart" contract.
+Sugar's `lift_plugin_protocol` is the worked example. The rust kit owns the contract in `implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs`. Per-kit RPC servers in cpp, csharp, go, swift, ts, and zig each implement the protocol. Each implementing kit emits a bridge whose target is the rust contractCid; the implementing kit does not re-declare a parallel "counterpart" contract.
 
 A go-kit bridge for `lift_plugin_lift_response_kind_in_set`:
 

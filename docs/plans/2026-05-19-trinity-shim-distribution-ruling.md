@@ -207,7 +207,7 @@ The kit-side work (shipping the shim packages) is the bulk of each sub-issue. Th
 - Does NOT pre-allowlist any signer key. Consumer policy decides.
 - Does NOT impose substrate-side restrictions on shim publishers. Permissionless publication per paper 23 §8.
 - Does NOT block adoption: provekit-project ships the bootstrap shims; community publishers can ship additional shims; vendor adoption transitions Phase B → Phase C transparently.
-- Does NOT introduce a "ProvekIt shim registry" central infrastructure. The catalog is the union of every published shim across every ecosystem; federation is the ecosystem's existing infrastructure.
+- Does NOT introduce a "Sugar shim registry" central infrastructure. The catalog is the union of every published shim across every ecosystem; federation is the ecosystem's existing infrastructure.
 
 ## §8. Cross-references
 

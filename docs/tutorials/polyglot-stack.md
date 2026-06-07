@@ -2,7 +2,7 @@
 
 > **Status:** stub. This is the load-bearing tutorial for the thesis. Until it ships as a runnable end-to-end demo, the cross-domain claim remains prose. Contributions especially welcome.
 
-A walkthrough demonstrating ProvekIt's central claim: **a proof minted in one language transfers to another for free, by walking content-addressed bridges anchored to shared reference contracts.**
+A walkthrough demonstrating Sugar's central claim: **a proof minted in one language transfers to another for free, by walking content-addressed bridges anchored to shared reference contracts.**
 
 ## What this tutorial proves
 

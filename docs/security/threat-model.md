@@ -1,6 +1,6 @@
 # Threat model
 
-What attacks does ProvekIt actually catch? What does it not? This document is the explicit threat model. It is precise about what the protocol detects, mathematically; it is precise about what falls outside its scope.
+What attacks does Sugar actually catch? What does it not? This document is the explicit threat model. It is precise about what the protocol detects, mathematically; it is precise about what falls outside its scope.
 
 > **v1.4 update.** Multi-dimensional pinning (the rank-3 consumer pin: `(contractCid, witnessCid, binaryCid)`) closes attack classes that were structurally open under v1.1's single-CID pinning. The "lying contracts paired with matching binaries" attack class (previously listed as the most important non-catch) is closed at the rank-3 level. See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md) for the architecture; the table below has been updated accordingly.
 
@@ -21,7 +21,7 @@ A wide range. From least to most powerful:
 5. **Compiler backdoor.** An attacker who controls the compiler. Reflections on Trusting Trust (Thompson 1984).
 6. **Runtime patching.** An attacker who controls the runtime (JIT, dynamic loader) and modifies code after the verifier has run.
 
-Different threat tiers; different defenses; different ProvekIt coverage.
+Different threat tiers; different defenses; different Sugar coverage.
 
 ## Catches: tampering with `.proof` content
 
@@ -123,7 +123,7 @@ Mitigation: hardware-key signing, quorum signing (require N-of-M signatures), re
 
 If the compiler is backdoored such that compiled binaries deviate from the source's claimed behavior, but the binary's CID is what `binaryCid` pins, then `binaryCid` matches the running artifact (which is what the user compiled). The contract doesn't match the artifact's actual behavior, but the verifier doesn't detect this.
 
-This is Thompson's "Trusting Trust" attack. ProvekIt does not solve it. The defense is reproducible builds, multi-vendor compiler comparison, and bootstrappable systems (Bootstrappable.org's work). ProvekIt's `binaryCid` pins the artifact you ran; it doesn't validate the artifact's source.
+This is Thompson's "Trusting Trust" attack. Sugar does not solve it. The defense is reproducible builds, multi-vendor compiler comparison, and bootstrappable systems (Bootstrappable.org's work). Sugar's `binaryCid` pins the artifact you ran; it doesn't validate the artifact's source.
 
 ## Does NOT catch: runtime patching after verification
 
@@ -132,11 +132,11 @@ If an attacker patches the running process's code after `provekit prove` has dis
 Attacker action: in-memory code injection, JIT manipulation, dynamic loader interception.
 Detection: NONE within the protocol; this requires runtime integrity monitoring (Linux IMA, Windows Code Integrity, hardware-based attestation).
 
-ProvekIt is a build-time gate, not a runtime monitor. Runtime threats are out of scope.
+Sugar is a build-time gate, not a runtime monitor. Runtime threats are out of scope.
 
 ## Does NOT catch: timing attacks, side channels, resource exhaustion
 
-The protocol verifies behavioral contracts, not non-functional properties. A function that returns the correct value in time exponential in input size satisfies its behavioral contract; ProvekIt approves.
+The protocol verifies behavioral contracts, not non-functional properties. A function that returns the correct value in time exponential in input size satisfies its behavioral contract; Sugar approves.
 
 Out of scope:
 
@@ -146,7 +146,7 @@ Out of scope:
 - Memory unsafety (use-after-free, buffer overflow) in languages where the contract doesn't capture memory state.
 - Concurrency bugs (race conditions, deadlock) that don't manifest in the formula's universe.
 
-These need different tools. ProvekIt complements them; it does not replace them.
+These need different tools. Sugar complements them; it does not replace them.
 
 ## Does NOT catch: incorrect spec change
 
@@ -182,7 +182,7 @@ Mitigation: rigorous spec review (see [`docs/contributing/proposing-a-spec-chang
 
 ## Defense in depth
 
-ProvekIt is one layer in a defense-in-depth strategy. Other layers:
+Sugar is one layer in a defense-in-depth strategy. Other layers:
 
 - Code review.
 - Static analysis.
@@ -192,7 +192,7 @@ ProvekIt is one layer in a defense-in-depth strategy. Other layers:
 - Runtime integrity monitoring.
 - Hardware-rooted attestation.
 
-Use them together. ProvekIt's strength is behavioral contracts as a content-addressed substrate; it does not replace any of the others.
+Use them together. Sugar's strength is behavioral contracts as a content-addressed substrate; it does not replace any of the others.
 
 ## Read next
 
@@ -202,4 +202,4 @@ Use them together. ProvekIt's strength is behavioral contracts as a content-addr
 - [adapter-trust.md](adapter-trust.md): lift adapters as TCB.
 - [signature-and-non-repudiation.md](signature-and-non-repudiation.md): what the signatures buy.
 - [supply-chain.md](supply-chain.md): supply-chain attack scenarios.
-- [../explanation/boundaries.md](../explanation/boundaries.md): what ProvekIt is NOT.
+- [../explanation/boundaries.md](../explanation/boundaries.md): what Sugar is NOT.

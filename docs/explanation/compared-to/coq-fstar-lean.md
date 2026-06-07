@@ -1,10 +1,10 @@
-# ProvekIt compared to Coq, F\*, Lean (interactive theorem provers)
+# Sugar compared to Coq, F\*, Lean (interactive theorem provers)
 
 This is the comparison decision-makers most often need. The short version:
 
-**ProvekIt is not in the same category. Coq, F\*, Lean, Isabelle, Agda are formal verification frameworks. ProvekIt is a protocol for content-addressing the verifications those frameworks produce.**
+**Sugar is not in the same category. Coq, F\*, Lean, Isabelle, Agda are formal verification frameworks. Sugar is a protocol for content-addressing the verifications those frameworks produce.**
 
-If you're choosing between "use ProvekIt" and "use Coq," you've miscategorized. The right comparison is "what's my verification framework?" (Coq vs. F\* vs. Lean vs. Isabelle vs. Z3 vs. Kani) and separately "how do I publish, distribute, and compose my framework's outputs?" (an ad-hoc registry vs. ProvekIt vs. nothing).
+If you're choosing between "use Sugar" and "use Coq," you've miscategorized. The right comparison is "what's my verification framework?" (Coq vs. F\* vs. Lean vs. Isabelle vs. Z3 vs. Kani) and separately "how do I publish, distribute, and compose my framework's outputs?" (an ad-hoc registry vs. Sugar vs. nothing).
 
 This doc unpacks why.
 
@@ -21,22 +21,22 @@ The kernel is the TCB. A proof term checked by the kernel is sound modulo the ke
 
 This is the highest assurance level available in formal verification. seL4, CompCert, Verdi, Tezos's smart contract verifier, all rely on ITP-level assurance.
 
-## What ProvekIt does
+## What Sugar does
 
-ProvekIt does not produce verifications. ProvekIt provides:
+Sugar does not produce verifications. Sugar provides:
 
 - **Canonical IR**: a content-addressed representation for behavioral contracts.
 - **Signed mementos**: contracts and implications, signed by the prover.
 - **A handshake**: how a verifier discharges call sites against a memento pool.
 - **A protocol**: how all this composes across the dependency graph.
 
-ProvekIt invokes Z3 by default at Tier 3. Z3 is not an ITP; Z3 is an SMT solver, returning `unsat` heuristically without producing a kernel-checkable proof term.
+Sugar invokes Z3 by default at Tier 3. Z3 is not an ITP; Z3 is an SMT solver, returning `unsat` heuristically without producing a kernel-checkable proof term.
 
-So ProvekIt's default backend has lower assurance than an ITP. But:
+So Sugar's default backend has lower assurance than an ITP. But:
 
-- ProvekIt supports configuring different backends.
-- ProvekIt supports requiring multi-backend concurrence.
-- An ITP-backed ProvekIt setup has the same TCB depth as the ITP itself, plus the protocol's substrate.
+- Sugar supports configuring different backends.
+- Sugar supports requiring multi-backend concurrence.
+- An ITP-backed Sugar setup has the same TCB depth as the ITP itself, plus the protocol's substrate.
 
 ## When you actually want an ITP
 
@@ -49,15 +49,15 @@ Use Coq, F\*, Lean, Isabelle, or Agda when:
 
 The use case is narrow. Most software does not need it. The cost is high.
 
-## When ProvekIt complements an ITP
+## When Sugar complements an ITP
 
-Use ProvekIt alongside Coq/F\*/Lean when:
+Use Sugar alongside Coq/F\*/Lean when:
 
-- **You want to publish ITP-verified contracts in a portable, content-addressed form.** The ITP produces the verification; ProvekIt distributes it.
-- **You have an ITP-verified library and consumers in multiple languages.** A bridge from a Coq-verified C function to a Rust consumer's contract becomes possible if the Coq verification is captured as a ProvekIt evidence term.
+- **You want to publish ITP-verified contracts in a portable, content-addressed form.** The ITP produces the verification; Sugar distributes it.
+- **You have an ITP-verified library and consumers in multiple languages.** A bridge from a Coq-verified C function to a Rust consumer's contract becomes possible if the Coq verification is captured as a Sugar evidence term.
 - **You want cross-domain verification without re-running the ITP.** Once Coq has discharged a `(post, pre)` pair and the result is signed and minted, every future verifier hits the cache.
 
-The ITP is the verification framework. ProvekIt is the substrate over which the ITP's outputs become useful at scale.
+The ITP is the verification framework. Sugar is the substrate over which the ITP's outputs become useful at scale.
 
 ## Worked example: Coq-verified parseInt
 
@@ -76,7 +76,7 @@ Qed.
 
 The proof term is checked by Coq's kernel. You're confident in `parseInt`'s correctness.
 
-Without ProvekIt: `parseInt`'s correctness is a fact in your local Coq workspace. To make it useful to others:
+Without Sugar: `parseInt`'s correctness is a fact in your local Coq workspace. To make it useful to others:
 
 - They run Coq.
 - They check your proof.
@@ -84,7 +84,7 @@ Without ProvekIt: `parseInt`'s correctness is a fact in your local Coq workspace
 
 This is workable but doesn't compose across languages. A Rust consumer of a different `parseInt` cannot benefit from your Coq verification.
 
-With ProvekIt:
+With Sugar:
 
 1. Your Coq theorem produces a proof term.
 2. You publish a contract memento for the canonical `parseInt` reference contract (`ref-parseInt-v1`).
@@ -99,7 +99,7 @@ A consumer in Rust, using a different `parseInt`:
 
 The Coq verification's correctness now applies to a Rust consumer of a different `parseInt`. The transfer is hash-bounded.
 
-This is what "composing across the dependency graph" means in the ITP world. Without ProvekIt, the Coq proof stays local. With ProvekIt, the Coq proof is portable.
+This is what "composing across the dependency graph" means in the ITP world. Without Sugar, the Coq proof stays local. With Sugar, the Coq proof is portable.
 
 ## TCB comparison
 
@@ -109,56 +109,56 @@ This is what "composing across the dependency graph" means in the ITP world. Wit
 | Lean alone | Lean kernel (~12kloc C++) + extraction |
 | F\* alone | F\* SMT-encoder + Z3 |
 | Z3 alone | Z3 binary (~250kloc) |
-| ProvekIt + Z3 | Z3 + protocol primitives (BLAKE3-512, Ed25519, JCS) + kits |
-| ProvekIt + Coq backend | Coq kernel + protocol primitives + kits |
-| ProvekIt + multi-backend concurrence | Multiple solvers + protocol primitives + kits (lowest TCB unless all backends are wrong simultaneously) |
+| Sugar + Z3 | Z3 + protocol primitives (BLAKE3-512, Ed25519, JCS) + kits |
+| Sugar + Coq backend | Coq kernel + protocol primitives + kits |
+| Sugar + multi-backend concurrence | Multiple solvers + protocol primitives + kits (lowest TCB unless all backends are wrong simultaneously) |
 
 The protocol primitives (BLAKE3-512, Ed25519, JCS canonicalization) are roughly comparable in audit difficulty to a kernel: thousands of lines, well-specified, widely-deployed.
 
 The kits' canonicalizers add to the TCB: kit-specific code that must produce byte-identical output. Conformance fixtures defend against drift; the harness is the audit hook.
 
-So ProvekIt with multi-backend concurrence is plausibly comparable in assurance to a single ITP, with the protocol layer as additional TCB. Trades for portability and amortized cost.
+So Sugar with multi-backend concurrence is plausibly comparable in assurance to a single ITP, with the protocol layer as additional TCB. Trades for portability and amortized cost.
 
 ## What you lose vs. an ITP
 
-ProvekIt does not provide:
+Sugar does not provide:
 
 - A kernel-checked proof of soundness for the protocol itself.
 - A constructive proof for every discharge (only for ITP-backed discharges).
 - A verified extraction story.
-- A regulator-accepted assurance level (none of the major standards reference ProvekIt yet).
+- A regulator-accepted assurance level (none of the major standards reference Sugar yet).
 
-If your deployment requires any of these, an ITP alone (without ProvekIt) is the right fit. ProvekIt's value-add is when you also need cross-language portability, dependency-graph-scale composition, and amortized solver cost.
+If your deployment requires any of these, an ITP alone (without Sugar) is the right fit. Sugar's value-add is when you also need cross-language portability, dependency-graph-scale composition, and amortized solver cost.
 
-## What you lose vs. ProvekIt
+## What you lose vs. Sugar
 
-If you go pure-ITP without ProvekIt:
+If you go pure-ITP without Sugar:
 
 - No content-addressed substrate. Sharing proofs across teams requires ad-hoc tooling.
 - No bridges between proofs in different languages. Cross-language proof transfer requires custom encoding per pair.
 - No cache effects. Every consumer re-runs the ITP (or trusts an ad-hoc artifact).
 - No supply-chain anchor (no rank-3 pin equivalent in standard ITP workflows; see [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md) for the `(contractCid, witnessCid, binaryCid)` framing).
 
-ProvekIt fills these gaps for the cases where ITP-level rigor is overkill but content-addressed verification is valuable.
+Sugar fills these gaps for the cases where ITP-level rigor is overkill but content-addressed verification is valuable.
 
 ## Choosing your stack
 
 Decision tree:
 
-1. **Does my deployment require regulator-accepted formal methods (Common Criteria, DO-178C, ISO 26262)?** → ITP. ProvekIt does not yet have regulator acceptance.
+1. **Does my deployment require regulator-accepted formal methods (Common Criteria, DO-178C, ISO 26262)?** → ITP. Sugar does not yet have regulator acceptance.
 2. **Is my code tiny but high-stakes (cryptographic primitives, kernel modules, memory allocators)?** → ITP. The cost is justified.
-3. **Is my code large, polyglot, and behavioral-contract-shaped (input validation, type checking, schema validation)?** → ProvekIt. The lift-not-author posture matters.
-4. **Both?** → ITP for the high-stakes core, ProvekIt for the polyglot perimeter, with bridges connecting them.
+3. **Is my code large, polyglot, and behavioral-contract-shaped (input validation, type checking, schema validation)?** → Sugar. The lift-not-author posture matters.
+4. **Both?** → ITP for the high-stakes core, Sugar for the polyglot perimeter, with bridges connecting them.
 
-The "both" path is rare today because ITP integrations with ProvekIt are nascent. Coq → ProvekIt evidence-term emission is in flight; Lean and F\* are TBD. As these integrations mature, "both" becomes practical.
+The "both" path is rare today because ITP integrations with Sugar are nascent. Coq → Sugar evidence-term emission is in flight; Lean and F\* are TBD. As these integrations mature, "both" becomes practical.
 
 ## What ITPs would add
 
-If a ProvekIt-Coq integration ships:
+If a Sugar-Coq integration ships:
 
-- Coq theorems can directly become ProvekIt mementos.
-- Coq proof terms can be evidence in ProvekIt implication mementos.
-- Verified OCaml extracted from Coq can be bound to ProvekIt contracts via bridges.
+- Coq theorems can directly become Sugar mementos.
+- Coq proof terms can be evidence in Sugar implication mementos.
+- Verified OCaml extracted from Coq can be bound to Sugar contracts via bridges.
 
 Same shape for Lean, F\*. Each integration is a contributor project; see [`../../contributing/writing-a-prover-backend.md`](../../contributing/writing-a-prover-backend.md).
 
@@ -169,4 +169,4 @@ The current state is "Z3 is the default backend; ITP backends are explicitly in 
 - [kani-prusti-creusot.md](kani-prusti-creusot.md): Rust-specific provers.
 - [`../../contributing/writing-a-prover-backend.md`](../../contributing/writing-a-prover-backend.md): adding a new backend.
 - [`../../security/solver-trust.md`](../../security/solver-trust.md): TCB for different backends.
-- [`../boundaries.md`](../boundaries.md): what ProvekIt is NOT.
+- [`../boundaries.md`](../boundaries.md): what Sugar is NOT.

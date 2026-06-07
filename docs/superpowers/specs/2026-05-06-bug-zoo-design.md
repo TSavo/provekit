@@ -5,18 +5,18 @@ Status: Draft for review
 
 ## Purpose
 
-Bug Zoo is a reproducible laboratory of bug species. Its job is to turn broad ProvekIt claims into concrete receipts:
+Bug Zoo is a reproducible laboratory of bug species. Its job is to turn broad Sugar claims into concrete receipts:
 
 1. a specimen-native library or project looks plausible and passes its normal gate;
 2. that specimen's own kit/lifter lifts contracts already latent in the specimen's code, framework annotations, schemas, tests, or metadata through the kit RPC boundary;
 3. the Rust `provekit` CLI orchestrates the specimen and reports the missing `p => q` edge as a red squiggle or build refusal;
 4. an optional dropper pass independently emits a native-language edge-closing shape and re-verifies closure.
 
-Bug Zoo is not a patch museum. It does not lead with vulnerable-versus-fixed diffs, and it does not grade droppers by whether they match the historical remediation. The primary artifact is vulnerable-and-exposed: the same code engineers might ship, caught by ProvekIt before it ships. When a dropped specimen exists, the claim is that ProvekIt discovered the missing obligation and synthesized a verified closure from the exposed shape itself.
+Bug Zoo is not a patch museum. It does not lead with vulnerable-versus-fixed diffs, and it does not grade droppers by whether they match the historical remediation. The primary artifact is vulnerable-and-exposed: the same code engineers might ship, caught by Sugar before it ships. When a dropped specimen exists, the claim is that Sugar discovered the missing obligation and synthesized a verified closure from the exposed shape itself.
 
-The adoption claim is just as important as the verification claim: ProvekIt-native contracts are a reference surface, not a required authoring style. The zoo should show that many contracts were already built into ordinary code through frameworks and libraries; ProvekIt turns those latent contracts into universal ProofIR and shows where the graph stops composing.
+The adoption claim is just as important as the verification claim: Sugar-native contracts are a reference surface, not a required authoring style. The zoo should show that many contracts were already built into ordinary code through frameworks and libraries; Sugar turns those latent contracts into universal ProofIR and shows where the graph stops composing.
 
-The deeper claim is that the exposed edge becomes universal, comparable, solvable, translatable, content-addressable, and signable. A Spring annotation, a ProvekIt-native annotation, an OpenAPI schema, a Zod validator, and a historical OSS commit can all name the same contract edge once lifted. The edge has canonical bytes, a CID, and signing semantics, so it can move across language domains, repositories, package ecosystems, commits, and time without becoming folklore again.
+The deeper claim is that the exposed edge becomes universal, comparable, solvable, translatable, content-addressable, and signable. A Spring annotation, a Sugar-native annotation, an OpenAPI schema, a Zod validator, and a historical OSS commit can all name the same contract edge once lifted. The edge has canonical bytes, a CID, and signing semantics, so it can move across language domains, repositories, package ecosystems, commits, and time without becoming folklore again.
 
 ProofIR is allowed to be lossy. It is not a universal language for re-expressing every implementation detail of every programming language. It is a universal language for contract boundaries: preconditions, postconditions, invariants, protocol obligations, value predicates, resource states, signer claims, and the implication edges that connect them. That boundary language looks like first-order logic because contract composition is predicate composition: given `p`, can this edge establish required `q`?
 
@@ -26,17 +26,17 @@ ProofIR is allowed to be lossy. It is not a universal language for re-expressing
 
 **Lab specimen.** A controlled, runnable fixture that isolates a species. It should fit in one or two pages, but it must look like realistic production-shaped code or metadata rather than a toy line.
 
-**Specimen tooling.** The build files, harnesses, lifter entrypoint, and kit RPC adapter that belong to one specimen. This tooling lives inside the specimen, not in a central zoo library. A Java specimen may expose the same species through ProvekIt-native annotations, Spring, Bean Validation, Swagger, JML, or another realistic Java surface. The important thing is that each surface is lifted by the Java kit and compared through ProofIR.
+**Specimen tooling.** The build files, harnesses, lifter entrypoint, and kit RPC adapter that belong to one specimen. This tooling lives inside the specimen, not in a central zoo library. A Java specimen may expose the same species through Sugar-native annotations, Spring, Bean Validation, Swagger, JML, or another realistic Java surface. The important thing is that each surface is lifted by the Java kit and compared through ProofIR.
 
-**Surface-equivalent exposure.** Two or more exposed variants of the same species that express the same contract in different source surfaces and lift to identical canonical ProofIR. Example: a ProvekIt-native Java annotation and a Spring request annotation can be separate exposed variants; the zoo should show their lifters produce the same contract bytes/CID before checking the missing edge.
+**Surface-equivalent exposure.** Two or more exposed variants of the same species that express the same contract in different source surfaces and lift to identical canonical ProofIR. Example: a Sugar-native Java annotation and a Spring request annotation can be separate exposed variants; the zoo should show their lifters produce the same contract bytes/CID before checking the missing edge.
 
 **Boundary-preserving lift.** A lift that may discard host-language implementation detail while preserving the contract boundary needed for verification. This is the key to cross-domain equivalence: two very different source artifacts can collapse to the same ProofIR when they assert the same boundary predicate.
 
-**Wild specimen.** Real OSS code pinned at a vulnerable commit, with an exposure artifact showing ProvekIt reports the same missing edge. A historical remediation may be linked for context, but it is neither the proof nor the target. The exposure is the proof.
+**Wild specimen.** Real OSS code pinned at a vulnerable commit, with an exposure artifact showing Sugar reports the same missing edge. A historical remediation may be linked for context, but it is neither the proof nor the target. The exposure is the proof.
 
-**Exposed.** The state where ProvekIt has lifted the specimen and emitted the red squiggle/build refusal. This includes expected ProofIR, missing edge, diagnostic location, and SAT witness or countercondition when available.
+**Exposed.** The state where Sugar has lifted the specimen and emitted the red squiggle/build refusal. This includes expected ProofIR, missing edge, diagnostic location, and SAT witness or countercondition when available.
 
-**Dropped.** The state after a dropper emits a native edge-closing shape and ProvekIt re-lifts and verifies closure. "Dropped" is not "fixed": it means the missing contract edge was discharged by a generated native-language shape and confirmed by the substrate, independent of whatever remediation a maintainer eventually chose.
+**Dropped.** The state after a dropper emits a native edge-closing shape and Sugar re-lifts and verifies closure. "Dropped" is not "fixed": it means the missing contract edge was discharged by a generated native-language shape and confirmed by the substrate, independent of whatever remediation a maintainer eventually chose.
 
 ## Taxonomy
 
@@ -44,7 +44,7 @@ Bug Zoo v0 has two top-level kingdoms.
 
 ### Shape Bugs
 
-The graph does not compose. These are ProvekIt's direct structural catches:
+The graph does not compose. These are Sugar's direct structural catches:
 
 - missing implication edge;
 - wrong pin rank;
@@ -58,7 +58,7 @@ These bugs are red-squiggle candidates. The code/config may run, but the ProofIR
 
 ### Value Bugs
 
-The graph shape composes, but a signed value, axiom, contract, or policy is wrong. ProvekIt cannot make false values true; it makes the false claim explicit, attributable, revocable, and linkable to downstream failures.
+The graph shape composes, but a signed value, axiom, contract, or policy is wrong. Sugar cannot make false values true; it makes the false claim explicit, attributable, revocable, and linkable to downstream failures.
 
 Examples:
 
@@ -67,7 +67,7 @@ Examples:
 - a boundary axiom overstates what an upstream service guarantees;
 - a policy memento accepts an overbroad signer set.
 
-Value bugs teach the boundary of the claim: ProvekIt exposes structure and provenance; it does not turn bad axioms into good ones.
+Value bugs teach the boundary of the claim: Sugar exposes structure and provenance; it does not turn bad axioms into good ones.
 
 ## v0 Species Pack
 
@@ -138,7 +138,7 @@ bug-zoo/
       exposed/
         provekit-native/
           harness/
-            code that depends on the same lab library and exercises the ProvekIt reference surface
+            code that depends on the same lab library and exercises the Sugar reference surface
           kit-rpc/
             specimen-owned lifter command or adapter manifest
           expected.proofir.json
@@ -163,7 +163,7 @@ bug-zoo/
         README.md
 ```
 
-For a TypeScript specimen, `library/` might contain `package.json`, `src/app.ts`, and tests. For a Java specimen, it might contain `pom.xml` or `build.gradle`, one ProvekIt-native exposure, one Spring or Bean Validation exposure, source files, and a Java kit RPC entrypoint. For an OpenAPI specimen, the "library" can be the protocol artifact itself plus the harness that consumes it.
+For a TypeScript specimen, `library/` might contain `package.json`, `src/app.ts`, and tests. For a Java specimen, it might contain `pom.xml` or `build.gradle`, one Sugar-native exposure, one Spring or Bean Validation exposure, source files, and a Java kit RPC entrypoint. For an OpenAPI specimen, the "library" can be the protocol artifact itself plus the harness that consumes it.
 
 The Rust CLI is the orchestrator for all of this. It reads `specimen.yaml`, runs the declared host command, invokes the declared lifter through the kit RPC protocol, and compares the resulting ProofIR/diagnostic behavior to the specimen's exposed or dropped expectations.
 
@@ -203,9 +203,9 @@ bug-zoo/species/BZ-SHAPE-001-sql-identifier-injection/
     README.md
 ```
 
-`lab/` is required. `exposed/` is required. Each species needs at least one exposed variant; species with a meaningful framework/library surface should prefer two variants: one ProvekIt-native reference surface and one ecosystem-native surface. `dropped/` is optional in v0 and required only for species where a verified dropper exists. `wild/` is optional per species at first, but every v0 species should have room for at least one wild specimen. Each wild child directory must be named from a real advisory ID and project slug, and the validator must reject entries whose advisory URL, commit hash, or affected path cannot be resolved.
+`lab/` is required. `exposed/` is required. Each species needs at least one exposed variant; species with a meaningful framework/library surface should prefer two variants: one Sugar-native reference surface and one ecosystem-native surface. `dropped/` is optional in v0 and required only for species where a verified dropper exists. `wild/` is optional per species at first, but every v0 species should have room for at least one wild specimen. Each wild child directory must be named from a real advisory ID and project slug, and the validator must reject entries whose advisory URL, commit hash, or affected path cannot be resolved.
 
-When a specimen has multiple exposed variants, `exposed/equivalence.json` records the canonical ProofIR CIDs that must match. This is a first-class receipt: the zoo demonstrates that ProvekIt did not require a new authoring style, only a lifter that could recognize the contract already present in code. The equivalence is intentionally at the contract boundary, not at the implementation level.
+When a specimen has multiple exposed variants, `exposed/equivalence.json` records the canonical ProofIR CIDs that must match. This is a first-class receipt: the zoo demonstrates that Sugar did not require a new authoring style, only a lifter that could recognize the contract already present in code. The equivalence is intentionally at the contract boundary, not at the implementation level.
 
 Example TypeScript-shaped lab internals:
 
@@ -267,7 +267,7 @@ exposed/
   equivalence.json
 ```
 
-The exact files differ by language, but the dependency direction does not: harnesses depend on the specimen library; the Rust CLI invokes the lifter via RPC; ProvekIt does not import specimen internals as a central library.
+The exact files differ by language, but the dependency direction does not: harnesses depend on the specimen library; the Rust CLI invokes the lifter via RPC; Sugar does not import specimen internals as a central library.
 
 Obsolete layout, kept here only as a warning against the wrong dependency direction:
 
@@ -394,7 +394,7 @@ Bug Zoo v0 succeeds when:
 
 - at least eight species are represented by minimal realistic lab fixtures;
 - each lab fixture has a clear exposed ProofIR/missing-edge artifact;
-- at least one species has two exposed variants where a ProvekIt-native surface and an ecosystem-native surface lift to identical canonical ProofIR;
+- at least one species has two exposed variants where a Sugar-native surface and an ecosystem-native surface lift to identical canonical ProofIR;
 - at least two surfaces are non-code artifacts, such as OpenAPI or `.proof` metadata;
 - at least one species has a dropped variant verified by re-lift;
 - at least one wild specimen pins real OSS vulnerable code and shows exposure;
@@ -403,11 +403,11 @@ Bug Zoo v0 succeeds when:
 
 ## Implementation Decisions For v0
 
-- First implementation target: `BZ-SHAPE-005: Optional or Null Misuse` on Java, because the repository already has Java lifter surfaces for ProvekIt-style contracts, Bean Validation, JML, Cofoja, and Spring Web. This first specimen should prove the corrected architecture: ordinary framework contracts and explicit contract surfaces lift to the same boundary ProofIR, then the missing `maybe_null(x) => non_null(x)` edge is exposed by Rust CLI orchestration.
+- First implementation target: `BZ-SHAPE-005: Optional or Null Misuse` on Java, because the repository already has Java lifter surfaces for Sugar-style contracts, Bean Validation, JML, Cofoja, and Spring Web. This first specimen should prove the corrected architecture: ordinary framework contracts and explicit contract surfaces lift to the same boundary ProofIR, then the missing `maybe_null(x) => non_null(x)` edge is exposed by Rust CLI orchestration.
 - Specimen metadata format: YAML, because the files are meant to be read as exhibit labels as much as machine manifests.
 - Wild specimen storage: store minimal extracts plus exact upstream commit metadata and source links; fetch full upstream repositories only in optional validation paths.
 - Runner architecture: implement a Rust CLI subcommand that reads specimen manifests, executes specimen-declared host checks, invokes each specimen-declared exposure through kit RPC, compares canonical ProofIR equivalence where required, and checks exposed/dropped expectations.
 - Language boundary: specimens own lifters and language tooling. Rust CLI orchestration may call RPC and compare outputs, but it must not become a TypeScript, Java, OpenAPI, or Rust specimen library.
-- Exposure strategy: prefer paired surfaces when available. One variant may use a ProvekIt-native contract surface as the reference; another should use the ecosystem contract surface engineers already have, such as Spring, Bean Validation, Swagger/OpenAPI, Zod, Pydantic, JML, or framework metadata.
+- Exposure strategy: prefer paired surfaces when available. One variant may use a Sugar-native contract surface as the reference; another should use the ecosystem contract surface engineers already have, such as Spring, Bean Validation, Swagger/OpenAPI, Zod, Pydantic, JML, or framework metadata.
 - ProofIR scope: treat ProofIR as boundary-preserving and deliberately lossy. The implementation plan should avoid any goal that requires reconstructing host-language semantics beyond the predicates and edges needed to verify the specimen.
 - Dropped phase: include it only where a verified dropper exists. For v0 that means the Rust not-null dropper path is eligible; non-Rust species may remain exposure-only until their droppers exist.

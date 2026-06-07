@@ -170,7 +170,7 @@ The competition shifts to authorship. Library authors who ship sound envelopes a
 
 ## 10. Bootstrap: the third-party envelope as catalog seed
 
-Paper 22 §7 names the developer-keyboard pitch: refusals at your callsites become commits to your competitor. This paper grounds the timeline: a third-party Inferred envelope can ship today, before any library author has heard of ProvekIt.
+Paper 22 §7 names the developer-keyboard pitch: refusals at your callsites become commits to your competitor. This paper grounds the timeline: a third-party Inferred envelope can ship today, before any library author has heard of Sugar.
 
 The bootstrap shape:
 

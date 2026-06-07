@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Bridgeworks should be the Menagerie destination that makes the ProvekIt
+Bridgeworks should be the Menagerie destination that makes the Sugar
 primitive feel larger than software verification. Bug Zoo shows real software
 bugs as missing edges. Bridgeworks should show a claim crossing epistemic
 domains without becoming unverified translation:
@@ -35,7 +35,7 @@ refinement, gate behavior, cell behavior, and device assumptions.
 ## The Contract Chain
 
 Every layer keeps its native artifact. The paper is not JSON. The CPU is not
-TOML. ProvekIt receives native artifacts through lifters and records only the
+TOML. Sugar receives native artifacts through lifters and records only the
 projected contract claims and bridge edges.
 
 | Layer | Native artifact | Projection `k(I)` | Claim `t` |

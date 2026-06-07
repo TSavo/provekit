@@ -1,6 +1,6 @@
-# Contributing to ProvekIt
+# Contributing to Sugar
 
-ProvekIt is a polyglot protocol. The thesis only holds if the protocol bytes match across implementations. Every contribution is, ultimately, a claim about byte-determinism: that the bytes a contributor's code emits agree with the bytes every other implementation emits for the same canonical formula.
+Sugar is a polyglot protocol. The thesis only holds if the protocol bytes match across implementations. Every contribution is, ultimately, a claim about byte-determinism: that the bytes a contributor's code emits agree with the bytes every other implementation emits for the same canonical formula.
 
 This page is the contributor on-ramp. Pick the row that matches what you want to do.
 
@@ -20,7 +20,7 @@ This page is the contributor on-ramp. Pick the row that matches what you want to
 
 ## The social contract
 
-Every implementation in ProvekIt is held to one rule: **the bytes you emit for a canonical formula must equal the bytes any other implementation emits for the same canonical formula**. The contract is enforced by the conformance harness; running `make ci` re-derives every spec CID, mints every kit's self-contracts, and fails on any drift.
+Every implementation in Sugar is held to one rule: **the bytes you emit for a canonical formula must equal the bytes any other implementation emits for the same canonical formula**. The contract is enforced by the conformance harness; running `make ci` re-derives every spec CID, mints every kit's self-contracts, and fails on any drift.
 
 This means contributions land or don't land on a single empirical question: does your code produce the canonical bytes? The harness has a `conformance` target for each kit. Make it green, and the kit is conformant. Don't make it green, and the kit is broken, regardless of how good the code looks.
 
