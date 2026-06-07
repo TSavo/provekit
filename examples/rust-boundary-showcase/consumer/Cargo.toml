@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-provekit = { package = "provekit-sugar", path = "../../../implementations/rust/provekit-sugar" }
+provekit = { package = "sugar-lifter", path = "../../../implementations/rust/sugar-lifter" }
 
 [lib]
 path = "src/lib.rs"

@@ -64,9 +64,9 @@ echo "=========================================="
 echo ""
 
 # --- Rust (canonical reference) ---
-echo "[Rust] cargo test -p provekit-ir-symbolic"
+echo "[Rust] cargo test -p sugar-ir-symbolic"
 if need_tool cargo rust; then
-    if (cd implementations/rust && run_quiet cargo test -p provekit-ir-symbolic --lib); then
+    if (cd implementations/rust && run_quiet cargo test -p sugar-ir-symbolic --lib); then
         report "rust" "PASS" "canonical reference matches pinned fixtures"
     else
         report "rust" "FAIL" "cargo test failed"

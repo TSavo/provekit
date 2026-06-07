@@ -1,0 +1,258 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Stage 4 handshake: Tier 1 (hash equality) and Tier 2 (cached
+// implication memento) discharge for cross-language pre/post pairs.
+//
+// The handshake fires when a callsite's `arg_term` is itself a Ctor
+// whose name is also bridged: the inner ctor names a producer
+// function whose post-condition we can compare against the outer
+// callsite's pre.
+//
+// Tier 1: BLAKE3-512(JCS(producer.post)) == BLAKE3-512(JCS(consumer.pre))
+//         => discharged in zero solver work.
+//
+// Tier 2: there is a signed implication memento in the per-project
+//         cache directory whose property hash equals
+//         `BLAKE3("implication:" || producer.post.hash || ":" ||
+//          consumer.pre.hash)`.
+//         => signature verified, antecedent/consequent re-derived,
+//         discharged.
+//
+// Tier 3: the existing Z3 path (in `runner::work_one`). On unsat the
+//         caller mints + caches a fresh implication memento.
+//
+// All hashes here are full BLAKE3-512 with the `"blake3-512:"` tag,
+// matching the protocol grammar.
+
+use std::path::Path;
+
+use serde_json::Value as Json;
+
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use sugar_proof_envelope::ed25519_verify_string;
+
+use crate::cbor_decode::decode;
+
+/// Outcome of a handshake attempt.
+#[derive(Debug, Clone)]
+pub enum HandshakeOutcome {
+    /// Tier 1: producer.post hash == consumer.pre hash.
+    Tier1HashEq {
+        producer_post_hash: String,
+        consumer_pre_hash: String,
+    },
+    /// Tier 2: signed implication memento found in the cache.
+    Tier2CacheHit {
+        implication_cid: String,
+        producer_post_hash: String,
+        consumer_pre_hash: String,
+    },
+    /// Tier 1 + Tier 2 missed; caller falls back to Tier 3 (Z3).
+    /// Carries the post/pre hashes so the caller can mint and cache.
+    Miss {
+        producer_post_hash: Option<String>,
+        consumer_pre_hash: Option<String>,
+    },
+}
+
+impl HandshakeOutcome {
+    pub fn discharged(&self) -> bool {
+        matches!(
+            self,
+            HandshakeOutcome::Tier1HashEq { .. } | HandshakeOutcome::Tier2CacheHit { .. }
+        )
+    }
+}
+
+/// Return JCS-canonical BLAKE3-512 of an IR formula expressed as a
+/// `serde_json::Value`. Used both for Tier 1 equality checks and for
+/// keying implication-memento cache lookups.
+pub fn formula_hash(formula: &Json) -> String {
+    let v = serde_to_canonical(formula);
+    let bytes = encode_jcs(&v);
+    blake3_512_of(bytes.as_bytes())
+}
+
+/// Property hash an implication memento covers, derived from the
+/// (antecedent, consequent) pair. Must match the grammar formula:
+///   propertyHash = BLAKE3("implication:" || ah || ":" || ch).
+pub fn implication_property_hash(antecedent_hash: &str, consequent_hash: &str) -> String {
+    blake3_512_of(format!("implication:{antecedent_hash}:{consequent_hash}").as_bytes())
+}
+
+/// Serialize a `serde_json::Value` into the canonical-form `Value`
+/// the JCS encoder operates on. Mirrors the encoder used by the
+/// claim-envelope minter so byte-by-byte hashes line up.
+fn serde_to_canonical(v: &Json) -> std::sync::Arc<Value> {
+    match v {
+        Json::Null => Value::null(),
+        Json::Bool(b) => Value::boolean(*b),
+        Json::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::integer(i)
+            } else if let Some(u) = n.as_u64() {
+                Value::integer(u as i64)
+            } else if let Some(f) = n.as_f64() {
+                if f == (f as i64 as f64) {
+                    Value::integer(f as i64)
+                } else {
+                    Value::string(f.to_string())
+                }
+            } else {
+                Value::null()
+            }
+        }
+        Json::String(s) => Value::string(s.clone()),
+        Json::Array(arr) => Value::array(arr.iter().map(serde_to_canonical).collect()),
+        Json::Object(map) => Value::object(
+            map.iter()
+                .map(|(k, val)| (k.as_str(), serde_to_canonical(val)))
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+/// Locate the producer (post) contract memento that the callsite's
+/// inner Ctor references. Returns `(post_formula, post_hash)` if
+/// the chain resolves: arg_term is a ctor whose name is in
+/// `pool.bridges_by_symbol`, and that bridge's targetContractCid
+/// names a contract memento with a `post` slot.
+pub fn locate_producer_post(
+    arg_term: &Option<Json>,
+    pool_mementos: &std::collections::BTreeMap<String, Json>,
+    bridges_by_symbol: &std::collections::BTreeMap<String, Json>,
+) -> Option<(Json, String)> {
+    let arg = arg_term.as_ref()?;
+    if arg.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
+        return None;
+    }
+    let inner_name = arg.get("name").and_then(|v| v.as_str())?;
+    let producer_bridge = bridges_by_symbol.get(inner_name)?;
+    // Shape-agnostic: production mint emits v1.2-layered mementos (fields on
+    // `header`); only v1.1-flat carries them on `evidence.body`. Reading the
+    // flat path alone meant the producer post never resolved for harvested
+    // calls, so the callsite fell through to the bare `instantiate` form
+    // instead of the real `producer_post -> consumer_pre` implication.
+    let bridge_body = crate::types::memento_body(producer_bridge)?;
+    let target_cid = bridge_body
+        .get("targetContractCid")
+        .and_then(|v| v.as_str())?;
+    let producer_contract = pool_mementos.get(target_cid)?;
+    let producer_body = crate::types::memento_body(producer_contract)?;
+    let post = producer_body
+        .get("post")
+        .filter(|v| v.is_object())
+        .cloned()?;
+    // The post relates the producer's output to its inputs via the carrier
+    // variable `result` (e.g. `result == value`). Quantify over that carrier
+    // so `build_implication_obligation` can unify it with the consumer's
+    // formal: `forall _h0. producer_post[result:=_h0] -> consumer_pre[formal:=_h0]`.
+    // Already-quantified posts pass through untouched.
+    let post = wrap_post_forall(post, producer_body);
+    let post_hash = formula_hash(&post);
+    Some((post, post_hash))
+}
+
+/// Wrap a bare producer post in `forall result. post`, binding the output
+/// carrier variable `result`. Sort is taken from the producer's first formal
+/// sort (its return width in the single-formal model) or `Int`. An
+/// already-quantified post passes through untouched.
+fn wrap_post_forall(post: Json, producer_body: &Json) -> Json {
+    if post.get("kind").and_then(|v| v.as_str()) == Some("forall") {
+        return post;
+    }
+    // The carrier `result` is the producer's RETURN value, not a parameter, so
+    // its sort is NOT `formalSorts[i]` (those model parameter sorts, paired
+    // with `formals`). The verifier reasons in LIA; bind the carrier as the
+    // canonical `Int`, matching `build_implication_obligation`'s default. A
+    // non-Int return would need the contract's return sort, which the memento
+    // does not expose separately today.
+    let _ = producer_body;
+    let sort = serde_json::json!({"kind": "primitive", "name": "Int"});
+    serde_json::json!({"kind": "forall", "name": "result", "sort": sort, "body": post})
+}
+
+/// Tier 1: literal equality of canonical hashes.
+pub fn try_tier1(producer_post_hash: &str, consumer_pre_hash: &str) -> bool {
+    producer_post_hash == consumer_pre_hash
+}
+
+/// Tier 2: search a per-project cache directory for a `.proof` file
+/// containing an implication memento whose `propertyHash` matches the
+/// expected value derived from `(producer_post_hash,
+/// consumer_pre_hash)`. The implication memento's signature is
+/// verified before discharge.
+///
+/// Returns `Some(implication_cid)` on cache hit, `None` on miss.
+pub fn try_tier2(
+    cache_dir: &Path,
+    producer_post_hash: &str,
+    consumer_pre_hash: &str,
+) -> Option<String> {
+    if !cache_dir.exists() {
+        return None;
+    }
+    let want_property_hash = implication_property_hash(producer_post_hash, consumer_pre_hash);
+    let entries = std::fs::read_dir(cache_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("proof") {
+            continue;
+        }
+        if let Some(cid) = scan_proof_for_implication(&path, &want_property_hash) {
+            return Some(cid);
+        }
+    }
+    None
+}
+
+fn scan_proof_for_implication(path: &Path, want_property_hash: &str) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let v = decode(&bytes).ok()?;
+    let root = v.as_map()?;
+    let members = root.get("members")?.as_map()?;
+    for (cid, env_v) in members {
+        let cid = cid.clone();
+        let env_bytes = env_v.as_bstr()?;
+        let env_text = std::str::from_utf8(env_bytes).ok()?;
+        let env: Json = serde_json::from_str(env_text).ok()?;
+
+        // Only consider implication mementos.
+        if env.pointer("/evidence/kind").and_then(|v| v.as_str()) != Some("implication") {
+            continue;
+        }
+        let prop = env.get("propertyHash").and_then(|v| v.as_str())?;
+        if prop != want_property_hash {
+            continue;
+        }
+
+        // Verify the producer signature.
+        let sig = env.get("producerSignature").and_then(|v| v.as_str())?;
+        // Re-build the unsigned canonical bytes and verify.
+        let unsigned = strip_cid_and_sig(&env);
+        let unsigned_v = serde_to_canonical(&unsigned);
+        let unsigned_bytes = encode_jcs(&unsigned_v);
+
+        // The cached memento must carry a `signerCid`-equivalent
+        // (we don't have a key store here yet; for the demo the
+        // implication memento embeds `producerPubkey` in its body
+        // when minted by `cache_implication_memento`).
+        let pubkey_str = env
+            .pointer("/evidence/body/producerPubkey")
+            .and_then(|v| v.as_str())?;
+        if !ed25519_verify_string(pubkey_str, sig, unsigned_bytes.as_bytes()) {
+            continue;
+        }
+        return Some(cid);
+    }
+    None
+}
+
+fn strip_cid_and_sig(env: &Json) -> Json {
+    let mut out = env.clone();
+    if let Json::Object(map) = &mut out {
+        map.remove("cid");
+        map.remove("producerSignature");
+    }
+    out
+}

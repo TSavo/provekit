@@ -9,18 +9,18 @@ build = "build.rs"
 
 # Note: this demo crate is a workspace MEMBER so it picks up workspace
 # deps via path. In a real consumer, the entry would be a published
-# `provekit-build = "0.1"` line under `[build-dependencies]`.
+# `sugar-build = "0.1"` line under `[build-dependencies]`.
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
-provekit-macros = { path = "../../provekit-macros" }
-provekit-macros-rt = { path = "../../provekit-macros-rt" }
-provekit-ir-symbolic = { path = "../../provekit-ir-symbolic" }
+sugar-macros = { path = "../../sugar-macros" }
+sugar-macros-rt = { path = "../../sugar-macros-rt" }
+sugar-ir-symbolic = { path = "../../sugar-ir-symbolic" }
 
 [build-dependencies]
-provekit-build = { path = "../../provekit-build" }
+sugar-build = { path = "../../sugar-build" }
 
 [package.metadata.provekit]
 # Opportunistic Tier-3 verification at build time. `strict = false`

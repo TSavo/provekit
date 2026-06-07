@@ -17,14 +17,14 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || { echo "not in the provekit repo"; exit 1; }
 
 BIN=implementations/rust/target/debug/provekit
-CLI=implementations/rust/provekit-cli
+CLI=implementations/rust/sugar-cli
 IMPORTS="$CLI/.provekit/imports"
 SCRATCH=/tmp/self-apply
 LOG="$SCRATCH/run.log"
 ORACLE_ENV=()
 [ "${1:-}" != "--no-oracle" ] && ORACLE_ENV=(PROVEKIT_RESOLVE_ORACLE=rust-analyzer)
 
-[ -x "$BIN" ] || { echo "build first: (cd implementations/rust && cargo build -p provekit-cli -p provekit-walk)"; exit 1; }
+[ -x "$BIN" ] || { echo "build first: (cd implementations/rust && cargo build -p sugar-cli -p sugar-walk)"; exit 1; }
 rm -rf "$SCRATCH"; mkdir -p "$SCRATCH" "$IMPORTS"; rm -f "$IMPORTS"/*.proof; : > "$LOG"
 
 mint_dep () {  # <project-dir> <short-name>
@@ -38,7 +38,7 @@ mint_dep () {  # <project-dir> <short-name>
   echo ">> placed $(basename "$p") ($(wc -c <"$p") bytes) into imports" | tee -a "$LOG"
 }
 
-mint_dep implementations/rust/libprovekit          libprovekit
+mint_dep implementations/rust/libsugar          libprovekit
 mint_dep examples/provekit-shim-rust-std           shim-std
 
 echo "==== mint provekit-cli (oracle: ${ORACLE_ENV:+on}${ORACLE_ENV:-off}) ====" | tee -a "$LOG"

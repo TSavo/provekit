@@ -3,7 +3,7 @@
 # The panic-freedom-fixture uses `Option<i64>` DIRECTLY, so its `.unwrap()`
 # def-jumps cleanly to std's `option.rs` and the OLD definition-file-stem
 # heuristic already resolves it -- a green test there proves nothing about
-# hover. This fixture instead mirrors the real provekit-cli census shape:
+# hover. This fixture instead mirrors the real sugar-cli census shape:
 # `serde_json::to_string(&value).unwrap()`, where the `.unwrap()` receiver is a
 # workspace-local expression of std `Result` type. That is the case the hover
 # refinement was built for. Standalone (one crate) so rust-analyzer indexes it

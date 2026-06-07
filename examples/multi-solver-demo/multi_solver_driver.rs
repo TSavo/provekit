@@ -8,7 +8,7 @@
 // Spec: protocol/specs/2026-04-30-multi-solver-protocol.md
 //
 // Run with:
-//   cargo run --release -p provekit-verifier --example multi_solver_demo
+//   cargo run --release -p sugar-verifier --example multi_solver_demo
 //
 // The driver is self-contained: it builds an in-memory SolversConfig
 // for each mode, calls run_plan against a tiny fixture SMT script and
@@ -16,11 +16,11 @@
 
 use std::time::Duration;
 
-use provekit_verifier::solvers::{
+use sugar_verifier::solvers::{
     plan::{run_plan, Registry},
     registry, SolverPlan, SolversConfig,
 };
-use provekit_verifier::types::ObligationVerdict;
+use sugar_verifier::types::ObligationVerdict;
 
 fn fixture_smt() -> String {
     // Trivial unsat: assert (not (=> true true)) -> unsat.
@@ -36,7 +36,7 @@ fn header(name: &str) {
 fn print_report(
     verdict: ObligationVerdict,
     reason: &str,
-    invs: &[provekit_verifier::solvers::plan::SolverInvocation],
+    invs: &[sugar_verifier::solvers::plan::SolverInvocation],
 ) {
     println!("  verdict: {}", verdict.as_str());
     println!("  reason : {}", reason);

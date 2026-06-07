@@ -41,7 +41,7 @@ body:
       label: 3. Linker
       options:
         - label: Cross-kit bridge linkage participation per spec #114
-        - label: Linkerd dispatch arm at `implementations/rust/provekit-linkerd/src/methods.rs` invokes the kit's binary (not `LifterUnavailable`)
+        - label: Linkerd dispatch arm at `implementations/rust/sugar-linkerd/src/methods.rs` invokes the kit's binary (not `LifterUnavailable`)
   - type: checkboxes
     id: lsp
     attributes:

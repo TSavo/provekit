@@ -36,14 +36,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use provekit_canonicalizer::blake3_512_of;
-use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
-use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{begin_collecting, eq, finish, must, num, parse_int, reset_collector};
-use provekit_proof_envelope::{
+use sugar_canonicalizer::blake3_512_of;
+use sugar_claim_envelope::{mint_contract, Authoring, MintContractArgs};
+use sugar_ir_symbolic::serialize::formula_to_value;
+use sugar_ir_symbolic::{begin_collecting, eq, finish, must, num, parse_int, reset_collector};
+use sugar_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
-use provekit_verifier::{Runner, RunnerConfig};
+use sugar_verifier::{Runner, RunnerConfig};
 
 fn copy_file(src: &Path, dst: &Path) -> std::io::Result<()> {
     if let Some(parent) = dst.parent() {

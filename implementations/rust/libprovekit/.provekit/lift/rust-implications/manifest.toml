@@ -1,5 +1,0 @@
-name = "rust-implications-lift"
-method = "provekit.plugin.lift_implications"
-phase = "consumer"
-command = ["../target/debug/provekit-walk-rpc", "--rpc"]
-working_dir = "."

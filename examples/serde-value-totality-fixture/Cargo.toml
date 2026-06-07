@@ -14,7 +14,7 @@
 # rust-analyzer index this crate independently, avoiding the monorepo stall.
 #
 # The deterministic tests (PANIC-SAFE on the Value site + undecidable on the
-# control) live in provekit-cli/src/cmd_verify.rs (where verify_one_claim is
+# control) live in sugar-cli/src/cmd_verify.rs (where verify_one_claim is
 # accessible), mirroring the panic-freedom-fixture test pattern.
 
 [workspace]

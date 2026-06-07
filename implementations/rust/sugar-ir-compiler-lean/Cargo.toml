@@ -1,0 +1,21 @@
+[package]
+name = "sugar-ir-compiler-lean"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: Lean 4 and mathlib IR compiler."
+
+[dependencies]
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+sugar-ir-compiler = { path = "../sugar-ir-compiler" }
+sugar-ir-types = { path = "../sugar-ir-types" }
+serde_json.workspace = true
+
+[[bin]]
+name = "provekit-ir-lean"
+path = "src/main.rs"
+
+[lib]
+name = "sugar_ir_compiler_lean"
+path = "src/lib.rs"

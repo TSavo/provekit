@@ -1,0 +1,21 @@
+[package]
+name = "sugar-linker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Pure linker algebra for ProvekIt: derives bridges from (contracts ∪ call-edges) per spec 2026-05-03-bridge-linkage-protocol.md. Used by both `provekit link` (CLI) and `sugar-linkerd` (daemon, LSP+linker step 2)."
+
+[lib]
+name = "sugar_linker"
+path = "src/lib.rs"
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
+
+[dependencies]
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+sugar-verifier = { path = "../sugar-verifier" }
+sugar-ir-compiler-smt-lib = { path = "../sugar-ir-compiler-smt-lib" }
+serde = { workspace = true }
+serde_json = { workspace = true }

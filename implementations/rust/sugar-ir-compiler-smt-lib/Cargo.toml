@@ -1,0 +1,21 @@
+[package]
+name = "sugar-ir-compiler-smt-lib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt bundled SMT-LIB v2.6 IR compiler. Lib + standalone subprocess binary."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "provekit-ir-smt-lib"
+path = "src/bin/provekit_ir_smt_lib.rs"
+
+[dependencies]
+sugar-ir-compiler = { path = "../sugar-ir-compiler" }
+sugar-ir-types = { path = "../sugar-ir-types" }
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+serde = { workspace = true }
+serde_json = { workspace = true }

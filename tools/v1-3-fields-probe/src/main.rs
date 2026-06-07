@@ -14,7 +14,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 
 fn evidence_value() -> Arc<Value> {
     Value::object([

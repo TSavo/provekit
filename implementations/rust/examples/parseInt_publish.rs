@@ -19,12 +19,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use provekit_claim_envelope::{
+use sugar_claim_envelope::{
     mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
 };
-use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{begin_collecting, finish, forall, gt, must, num, reset_collector, Int};
-use provekit_proof_envelope::{
+use sugar_ir_symbolic::serialize::formula_to_value;
+use sugar_ir_symbolic::{begin_collecting, finish, forall, gt, must, num, reset_collector, Int};
+use sugar_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 
@@ -125,7 +125,7 @@ fn main() -> ExitCode {
     // (the public-key memento isn't authored in this demo, but we
     // produce a content-addressed signer reference).
     let signer_pubkey = ed25519_pubkey_string(&signer_seed);
-    let signer_cid = provekit_canonicalizer::blake3_512_of(signer_pubkey.as_bytes());
+    let signer_cid = sugar_canonicalizer::blake3_512_of(signer_pubkey.as_bytes());
 
     let proof_input = ProofEnvelopeInput {
         name: "@example/rust-kit".into(),

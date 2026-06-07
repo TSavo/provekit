@@ -22,10 +22,10 @@ if [ "${POLARS_SHOWCASE_ON_REMOTE:-0}" != "1" ] \
   && [ "$(uname -s)" != "Linux" ]; then
   echo "== run polars showcase on battleaxe via bcargo =="
   "$REPO/bin/bcargo" build --manifest-path "$RUST/Cargo.toml" \
-    -p provekit-cli --bin provekit \
-    -p provekit-lift-rust-tests --bin rust_test_assertions_rpc \
-    -p provekit-lift-rust-cargo-test-witness --bin witness_rpc \
-    -p provekit-lift-rust-cargo-test-witness --bin discharge_cli >/dev/null
+    -p sugar-cli --bin provekit \
+    -p sugar-lift-rust-tests --bin rust_test_assertions_rpc \
+    -p sugar-lift-rust-cargo-test-witness --bin witness_rpc \
+    -p sugar-lift-rust-cargo-test-witness --bin discharge_cli >/dev/null
 
   remote_host="${BCARGO_REMOTE_HOST:-battleaxe}"
   remote_tag="$(printf '%s' "$(cd "$REPO" && pwd -P)" | shasum 2>/dev/null | cut -c1-12)"
@@ -40,10 +40,10 @@ fi
 if [ "${POLARS_SHOWCASE_SKIP_LOCAL_BUILD:-0}" != "1" ]; then
   echo "== build local proof binaries =="
   cargo build --manifest-path "$RUST/Cargo.toml" \
-    -p provekit-cli --bin provekit \
-    -p provekit-lift-rust-tests --bin rust_test_assertions_rpc \
-    -p provekit-lift-rust-cargo-test-witness --bin witness_rpc \
-    -p provekit-lift-rust-cargo-test-witness --bin discharge_cli >/dev/null
+    -p sugar-cli --bin provekit \
+    -p sugar-lift-rust-tests --bin rust_test_assertions_rpc \
+    -p sugar-lift-rust-cargo-test-witness --bin witness_rpc \
+    -p sugar-lift-rust-cargo-test-witness --bin discharge_cli >/dev/null
 fi
 
 for bin in "$PROVEKIT" "$ASSERT_RPC" "$WITNESS_RPC" "$DISCHARGE_CLI"; do

@@ -40,18 +40,18 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
 
-use provekit_canonicalizer::blake3_512_of;
-use provekit_claim_envelope::{
+use sugar_canonicalizer::blake3_512_of;
+use sugar_claim_envelope::{
     mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
 };
-use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{
+use sugar_ir_symbolic::serialize::formula_to_value;
+use sugar_ir_symbolic::{
     atomic_, begin_collecting, finish, forall, gt, must, num, reset_collector, Int, Term,
 };
-use provekit_proof_envelope::{
+use sugar_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
-use provekit_verifier::{Runner, RunnerConfig};
+use sugar_verifier::{Runner, RunnerConfig};
 
 fn parse_args() -> Result<DemoArgs, String> {
     let mut go_proof: Option<PathBuf> = None;
@@ -254,8 +254,8 @@ fn run() -> Result<(), String> {
     let validate_term = ctor1(
         "validateInput",
         Rc::new(Term::Const {
-            value: provekit_ir_symbolic::ConstValue::String("user-input".into()),
-            sort: provekit_ir_symbolic::Sort::string(),
+            value: sugar_ir_symbolic::ConstValue::String("user-input".into()),
+            sort: sugar_ir_symbolic::Sort::string(),
         }),
     );
     let parse_call = ctor1("parseInt", validate_term);

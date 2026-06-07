@@ -9,9 +9,9 @@
 
 use std::rc::Rc;
 
-use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use sugar_ir_symbolic::serialize::formula_to_value;
+use sugar_ir_symbolic::{
     and_, atomic_, connective_, eq, make_var, num, str_const, Formula, Int, Term,
 };
 

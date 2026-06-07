@@ -1,0 +1,55 @@
+[package]
+name = "sugar-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt user-facing CLI: prove / verify / hash / dump / search / ask / init."
+
+[[bin]]
+name = "provekit"
+path = "src/main.rs"
+
+[lib]
+name = "sugar_cli"
+path = "src/lib.rs"
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
+
+[dependencies]
+# Workspace-internal libs.
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+sugar-plugin-loader = { path = "../sugar-plugin-loader" }
+sugar-proof-envelope = { path = "../sugar-proof-envelope" }
+sugar-claim-envelope = { path = "../sugar-claim-envelope" }
+sugar-ir-symbolic = { path = "../sugar-ir-symbolic" }
+sugar-verifier = { path = "../sugar-verifier" }
+sugar-lift = { path = "../sugar-lift" }
+sugar-linker = { path = "../sugar-linker" }
+libsugar = { path = "../libsugar" }
+sugar-ir-types = { path = "../sugar-ir-types" }
+sugar-ir-compiler = { path = "../sugar-ir-compiler" }
+sugar-ir-compiler-coq = { path = "../sugar-ir-compiler-coq" }
+sugar-ir-compiler-smt-lib = { path = "../sugar-ir-compiler-smt-lib" }
+syn = { workspace = true }
+
+# External.
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["clock"] }
+anyhow = "1"
+owo-colors = "4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+walkdir = { workspace = true }
+thiserror = { workspace = true }
+base64 = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+sugar-linker = { path = "../sugar-linker" }
+serial_test = "3"
+tempfile = "3"

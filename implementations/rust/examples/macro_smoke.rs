@@ -12,7 +12,7 @@
 //
 //   1. The decorator on each function emits a hidden static
 //      ContractRegistration registered via `inventory`.
-//   2. `provekit_macros_rt::collect_all_contracts()` walks the
+//   2. `sugar_macros_rt::collect_all_contracts()` walks the
 //      registrations and returns ContractDecls (the same type the
 //      `.invariant.rs` surface drops into the kit's
 //      thread-local CONTRACT_COLLECTOR).
@@ -27,9 +27,9 @@
 //     enumeration walker) is a follow-up task. Here we only show the
 //     marker registers in the inventory slice.
 
-use provekit_ir_symbolic::{eq, forall, gt, lt, num, Int, String_};
-use provekit_macros::{contract, verify};
-use provekit_macros_rt::{collect_all_contracts, registered_contracts, registered_verify_targets};
+use sugar_ir_symbolic::{eq, forall, gt, lt, num, Int, String_};
+use sugar_macros::{contract, verify};
+use sugar_macros_rt::{collect_all_contracts, registered_contracts, registered_verify_targets};
 
 // A function with only a precondition. Default name = function ident.
 #[contract(pre = forall(Int(), |n| gt(n, num(0))))]

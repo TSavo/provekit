@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Target-scoped panic-site residue annotations for libsugar self-check.
+# Cross-target propagation into consumers requires proof-bundle annotation
+# mementos and is tracked separately.
+#
+# The sole prior entry annotated a `.expect` panic site in the rust
+# realize/lower dispatcher module that Engine Sever cut 2 removed. No
+# panic-site residue remains for libsugar.

@@ -97,7 +97,7 @@ build-rust:
 
 .PHONY: build-rust-cli
 build-rust-cli:
-	$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+	$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p sugar-cli
 
 .PHONY: build-cpp
 build-cpp:
@@ -264,12 +264,12 @@ test-python: build-python
 	(cd implementations/python/provekit-lift-python-source && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest blake3 && \
+		python -m pip install --quiet -e ../sugar-lift-py-tests -e . pytest blake3 && \
 		pytest) || failed="$$failed provekit-lift-python-source"; \
 	(cd implementations/python/provekit-lift-py-pytest-witness && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest pynacl blake3 cbor2 && \
+		python -m pip install --quiet -e ../sugar-lift-py-tests -e . pytest pynacl blake3 cbor2 && \
 		pytest) || failed="$$failed provekit-lift-py-pytest-witness"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
@@ -333,7 +333,7 @@ self-lift-canonicalizer: build-rust
 	@mkdir -p $(SELF_LIFT_DIR)
 	@rm -f $(SELF_LIFT_DIR)/blake3-512:*.proof
 	@out=$$($(PROVEKIT_LIFT) \
-		--workspace implementations/rust/provekit-canonicalizer \
+		--workspace implementations/rust/sugar-canonicalizer \
 		--target-dir $(SELF_LIFT_DIR) --quiet); \
 	  echo "  cid: $$out"; \
 	  test -f $(SELF_LIFT_DIR)/$$out.proof || \

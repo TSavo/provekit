@@ -12,10 +12,10 @@ PROVEKIT="$BIN_DIR/provekit"
 
 echo "== build the CLI + rust test-assertion lifter =="
 cargo build --manifest-path "$RUST/Cargo.toml" \
-  -p provekit-cli \
-  -p provekit-lift-rust-tests \
+  -p sugar-cli \
+  -p sugar-lift-rust-tests \
   --bins >/dev/null 2>&1 || cargo build --manifest-path "$RUST/Cargo.toml" \
-  -p provekit-cli -p provekit-lift-rust-tests --bins
+  -p sugar-cli -p sugar-lift-rust-tests --bins
 
 [ -x "$PROVEKIT" ] || { echo "FAIL: provekit binary not built at $PROVEKIT"; exit 1; }
 [ -x "$BIN_DIR/rust_test_assertions_rpc" ] || { echo "FAIL: rust_test_assertions_rpc not built"; exit 1; }
