@@ -1,0 +1,15 @@
+# rust cargo-test WITNESS showcase (BAD suite -- a deliberately failing test).
+#
+# Same surface as the good suite. The bundle still content-addresses + reproduces
+# (the run is honest), but the failing test makes `discharge_bundle` REFUSE on the
+# all-passed check. You cannot witness a suite right that runs wrong.
+[[plugins]]
+name = "rust-cargo-test-witness-lift"
+kind = "lift"
+surface = "rust-cargo-test-witness"
+
+[solvers]
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

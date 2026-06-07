@@ -1,0 +1,36 @@
+{
+  "totalCallsites": 0,
+  "discharged": 0,
+  "violations": 1,
+  "refused": 0,
+  "dischargeSplit": {
+    "panicSafe": 0,
+    "reflexive": 0,
+    "solverSubstantive": 0,
+    "vacuous": 0,
+    "hashTier": 0,
+    "undecidable": 1,
+    "falsePass": 0
+  },
+  "rows": [
+    {
+      "bridge": "",
+      "targetCid": "",
+      "sourceLayer": "",
+      "targetLayer": "",
+      "property": "consistency:witness-package:blake3-512:9d4bf858b47d5a3fea71d39bcea29f9cfb9ac134b5f08af7fcce9009432c8c860b42fd987c774808583591eaaff3ac23e1314a5fa78208179b8c6bc97af89844",
+      "propertyCid": "blake3-512:edd0fcf71b6ad8bef1635a790721af77d9236dfa69cb3e4991a3b8cee638136b7b5c794835e1d732bdb339766584c778375c14da806fada7fee3915477502a50",
+      "status": "unsatisfied",
+      "reason": "witness REFUSED by recompute: bundle reproduced but 1/2 tests failed: tests::adds_two_numbers",
+      "dischargeMethod": "consistency",
+      "bodyDischargeTier": null,
+      "file": null,
+      "line": null,
+      "callee": null,
+      "callsiteBundleCid": null,
+      "panicSite": false
+    }
+  ],
+  "loadErrors": [],
+  "callEdges": []
+}

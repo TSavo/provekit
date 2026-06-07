@@ -1361,6 +1361,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-rust-cargo-test-witness"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "provekit-canonicalizer",
+ "provekit-ir-symbolic",
+ "provekit-ir-types",
+ "provekit-proof-envelope",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-lift-rust-tests"
 version = "0.1.0"
 dependencies = [

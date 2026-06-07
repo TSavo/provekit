@@ -1,0 +1,10 @@
+# Standalone fixture crate: an ALL-PASSING test suite. The cargo-test witness
+# lifter runs `cargo test` here, content-addresses the per-test outcomes into one
+# witness package, and the contract DISCHARGES (every per-test witness passed).
+# An empty [workspace] table detaches this crate from any enclosing workspace.
+[package]
+name = "witness-good"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]

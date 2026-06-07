@@ -1,0 +1,36 @@
+{
+  "totalCallsites": 0,
+  "discharged": 1,
+  "violations": 0,
+  "refused": 0,
+  "dischargeSplit": {
+    "panicSafe": 0,
+    "reflexive": 0,
+    "solverSubstantive": 1,
+    "vacuous": 0,
+    "hashTier": 0,
+    "undecidable": 0,
+    "falsePass": 0
+  },
+  "rows": [
+    {
+      "bridge": "",
+      "targetCid": "",
+      "sourceLayer": "",
+      "targetLayer": "",
+      "property": "consistency:witness-package:blake3-512:72e7578c5a1591e5e91c8de328c28683249a18f0e8abb16f90b48dc490dce551523a35a67159814fc8854df16fb8ec96b31b499c270f147ff41ca92a208721f0",
+      "propertyCid": "blake3-512:2ecac3438541b370424604be7609ff47ff5f0a5ddc0b9fc8956fac1cb461e40bd3b7e01d95c3d57675d215a69b616eb2ed77f0f1ed12fa34dfbc0f878a86c2ec",
+      "status": "discharged",
+      "reason": "witnessed by recompute (kit): suite re-ran; all 3 per-test witnesses reproduced and passed",
+      "dischargeMethod": "consistency",
+      "bodyDischargeTier": null,
+      "file": null,
+      "line": null,
+      "callee": null,
+      "callsiteBundleCid": null,
+      "panicSite": false
+    }
+  ],
+  "loadErrors": [],
+  "callEdges": []
+}

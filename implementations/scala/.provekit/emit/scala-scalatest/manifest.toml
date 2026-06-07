@@ -1,4 +1,0 @@
-name = "scala-scalatest"
-command = ["scala-cli", "run", "provekit-emit-scala-scalatest", "--server=false", "--", "--rpc"]
-working_dir = "."
-protocol_versions = ["pep/1.7.0"]

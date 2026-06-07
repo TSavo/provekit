@@ -1,3 +1,0 @@
-name = "swift-lift"
-command = ["provekit-lift-swift", "--rpc"]
-working_dir = "."

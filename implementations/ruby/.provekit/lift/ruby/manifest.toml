@@ -1,3 +1,0 @@
-name = "ruby-lift"
-command = ["provekit-lift-ruby", "--rpc"]
-working_dir = "."
