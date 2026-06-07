@@ -79,7 +79,7 @@ use std::collections::HashMap;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_symbolic::{
-    and_, eq, gt, gte, lt, lte, make_var, ne, num, serialize::formula_to_value, str_const,
+    and_, eq, gt, gte, lt, lte, make_var, ne, num, or_, serialize::formula_to_value, str_const,
     ConstValue, ContractDecl, Formula, Sort, Term,
 };
 use provekit_ir_types::{
@@ -708,6 +708,11 @@ fn assertion_observed_exprs(mac: &syn::Macro) -> Result<Vec<syn::Expr>, String> 
                 .map_err(|e| format!("assert_abs_diff_eq: parse: {e}"))?;
             Ok(vec![args.a, args.b])
         }
+        "assert_relative_eq" | "assert_ulps_eq" => {
+            let args: RelativeArgs = syn::parse2(mac.tokens.clone())
+                .map_err(|e| format!("{path}: parse: {e}"))?;
+            Ok(vec![args.a, args.b])
+        }
         other => Err(format!("not an assertion macro: {other}")),
     }
 }
@@ -1122,9 +1127,11 @@ fn is_assertion_macro(mac: &syn::Macro) -> bool {
     matches!(
         p.as_str(),
         "assert_eq" | "assert_ne" | "assert" | "assert_matches"
-            // the `approx` crate's tolerance assertion (the Rust mirror of numpy's
-            // assert_almost_equal): lifted as a real two-sided bound, not refused.
-            | "assert_abs_diff_eq"
+            // the `approx` crate's tolerance assertions. abs_diff lifts as a real
+            // two-sided bound (mirror of assert_almost_equal); relative lifts as the
+            // faithful relative bound; ulps is claimed + refused (ULP is not
+            // algebraic). Recognising them keeps nothing real silently skipped.
+            | "assert_abs_diff_eq" | "assert_relative_eq" | "assert_ulps_eq"
     )
 }
 
@@ -1175,20 +1182,79 @@ fn real_const(decimal: &str) -> Rc<Term> {
     })
 }
 
-/// `(+eps, -eps)` canonical decimal strings from an `epsilon` literal. None if the
-/// expression is not a numeric literal (refuse: the tolerance is not computable).
-fn abs_diff_bound_strings(eps: &syn::Expr) -> Option<(String, String)> {
-    let lit = match eps {
+/// A positive numeric literal as a canonical decimal string; None if not a numeric
+/// literal (refuse: the tolerance is not computable).
+fn decimal_from_literal(expr: &syn::Expr) -> Option<String> {
+    let lit = match expr {
         syn::Expr::Lit(l) => &l.lit,
         _ => return None,
     };
-    let pos = match lit {
-        syn::Lit::Float(f) => normalize_decimal(f.base10_digits())?,
-        syn::Lit::Int(i) => normalize_decimal(i.base10_digits())?,
-        _ => return None,
-    };
+    match lit {
+        syn::Lit::Float(f) => normalize_decimal(f.base10_digits()),
+        syn::Lit::Int(i) => normalize_decimal(i.base10_digits()),
+        _ => None,
+    }
+}
+
+/// `(+eps, -eps)` canonical decimal strings from an `epsilon` literal.
+fn abs_diff_bound_strings(eps: &syn::Expr) -> Option<(String, String)> {
+    let pos = decimal_from_literal(eps)?;
     let neg = format!("-{pos}");
     Some((pos, neg))
+}
+
+/// Build a Term constructor (`abs`/`max`/`*` -- uninterpreted to the solvers, but a
+/// FAITHFUL statement of the relation in the contract).
+fn term_ctor(name: &str, args: Vec<Rc<Term>>) -> Rc<Term> {
+    Rc::new(Term::Ctor {
+        name: name.to_string(),
+        args,
+    })
+}
+
+/// `assert_relative_eq!(a, b, epsilon = <e>, max_relative = <m>)` from `approx`. We
+/// require `max_relative = <numeric literal>`; `epsilon = <literal>` (optional) adds
+/// the abs-fallback disjunct, matching approx's `|a-b| <= eps || |a-b| <= max(|a|,|b|)*max_rel`.
+struct RelativeArgs {
+    a: syn::Expr,
+    b: syn::Expr,
+    epsilon: Option<syn::Expr>,
+    max_relative: Option<syn::Expr>,
+}
+
+impl syn::parse::Parse for RelativeArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let a: syn::Expr = input.parse()?;
+        let _: syn::Token![,] = input.parse()?;
+        let b: syn::Expr = input.parse()?;
+        let mut epsilon = None;
+        let mut max_relative = None;
+        while input.peek(syn::Token![,]) {
+            let _: syn::Token![,] = input.parse()?;
+            if input.is_empty() {
+                break;
+            }
+            if input.peek(syn::Ident) && input.peek2(syn::Token![=]) {
+                let name: syn::Ident = input.parse()?;
+                let _: syn::Token![=] = input.parse()?;
+                let val: syn::Expr = input.parse()?;
+                if name == "epsilon" {
+                    epsilon = Some(val);
+                } else if name == "max_relative" {
+                    max_relative = Some(val);
+                }
+            } else {
+                let _: proc_macro2::TokenStream = input.parse()?;
+                break;
+            }
+        }
+        Ok(RelativeArgs {
+            a,
+            b,
+            epsilon,
+            max_relative,
+        })
+    }
 }
 
 /// Normalize a positive base-10 numeric literal (with an optional `e` exponent) to a
@@ -1281,6 +1347,50 @@ fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
                 gte(diff, real_const(&neg)),
             ]))
         }
+        "assert_relative_eq" => {
+            // approx: `|a-b| <= eps  ||  |a-b| <= max_relative * max(|a|,|b|)`. Lifted
+            // FAITHFULLY with `abs`/`max`/`*` ctors (uninterpreted to solvers, like
+            // the deferred Python allclose -- the witness carries discharge; the
+            // contract states the relation). `max_relative` literal required.
+            let args: RelativeArgs = syn::parse2(mac.tokens.clone())
+                .map_err(|e| format!("assert_relative_eq: parse: {e}"))?;
+            let max_rel = args.max_relative.as_ref().ok_or_else(|| {
+                "assert_relative_eq without `max_relative = <literal>` uses a type-default; \
+                 refused (not a fixed liftable bound)"
+                    .to_string()
+            })?;
+            let max_rel_dec = decimal_from_literal(max_rel).ok_or_else(|| {
+                "assert_relative_eq: `max_relative` is not a numeric literal; not computable"
+                    .to_string()
+            })?;
+            let l = translate_term(&args.a)?;
+            let r = translate_term(&args.b)?;
+            let abs_diff = term_ctor("abs", vec![term_ctor("-", vec![l.clone(), r.clone()])]);
+            let relative = lte(
+                abs_diff.clone(),
+                term_ctor(
+                    "*",
+                    vec![
+                        real_const(&max_rel_dec),
+                        term_ctor("max", vec![term_ctor("abs", vec![l]), term_ctor("abs", vec![r])]),
+                    ],
+                ),
+            );
+            match &args.epsilon {
+                Some(eps) => {
+                    let eps_dec = decimal_from_literal(eps).ok_or_else(|| {
+                        "assert_relative_eq: `epsilon` is not a numeric literal; not computable"
+                            .to_string()
+                    })?;
+                    Ok(or_(vec![lte(abs_diff, real_const(&eps_dec)), relative]))
+                }
+                None => Ok(relative),
+            }
+        }
+        "assert_ulps_eq" => Err(
+            "assert_ulps_eq compares ULP distance; not algebraic, refused (no fixed real bound)"
+                .to_string(),
+        ),
         other => Err(format!("not an assertion macro: {other}")),
     }
 }
@@ -1719,6 +1829,42 @@ mod tests {
         assert_eq!(normalize_decimal("0.001").as_deref(), Some("0.001"));
         assert_eq!(normalize_decimal("2").as_deref(), Some("2.0"));
         assert!(normalize_decimal("nan").is_none());
+    }
+
+    #[test]
+    fn relative_eq_lifts_the_faithful_relative_bound() {
+        let mac: syn::Macro = syn::parse_quote!(assert_relative_eq!(x, y, max_relative = 0.01));
+        let f = lift_assertion_macro(&mac).expect("relative_eq must lift");
+        let dump = format!("{f:?}");
+        assert!(dump.contains("max"), "uses max(|a|,|b|): {dump}");
+        assert!(dump.contains("abs"), "uses abs: {dump}");
+        assert!(dump.contains("0.01"), "max_relative bound present: {dump}");
+    }
+
+    #[test]
+    fn relative_eq_with_epsilon_adds_the_abs_fallback_disjunct() {
+        let mac: syn::Macro =
+            syn::parse_quote!(assert_relative_eq!(x, y, epsilon = 1e-6, max_relative = 0.01));
+        let f = lift_assertion_macro(&mac).expect("lift");
+        assert!(
+            matches!(&*f, Formula::Connective { kind, .. } if kind == "or"),
+            "epsilon adds an OR fallback: {f:?}"
+        );
+    }
+
+    #[test]
+    fn relative_eq_without_max_relative_is_refused() {
+        let mac: syn::Macro = syn::parse_quote!(assert_relative_eq!(x, y));
+        assert!(lift_assertion_macro(&mac).is_err());
+    }
+
+    #[test]
+    fn ulps_eq_is_recognized_but_refused() {
+        // ULP distance is not algebraic: claimed (so it is not silently skipped)
+        // but loud-refused.
+        let mac: syn::Macro = syn::parse_quote!(assert_ulps_eq!(x, y, max_ulps = 4));
+        assert!(is_assertion_macro(&mac));
+        assert!(lift_assertion_macro(&mac).is_err());
     }
 
     fn assert_callsite_name(name: &str, callee: &str) {
