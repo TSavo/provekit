@@ -1270,6 +1270,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-rust-tests"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "quote",
+ "serde_json",
+ "syn",
+ "walkdir",
+]
+
+[[package]]
 name = "provekit-linker"
 version = "0.1.0"
 dependencies = [
