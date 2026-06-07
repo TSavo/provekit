@@ -70,7 +70,6 @@ const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f
 const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
 const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
 const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
-const BODY_TEXT_CANONICALIZATION: &str = "trim-outer-whitespace-v1";
 
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 
@@ -198,7 +197,7 @@ fn handle_line(line: &str) -> Value {
         // Materialize (#1359, rust mirror of the python bind_rpc materializer).
         // Finds `#[provekit::boundary(library, call)]` stubs in the consumer
         // source, asks the SOURCE ORACLE to resolve each bound vendor function's
-        // REAL body from on-disk source (CID-verified against the lean
+        // REAL body from on-disk source (CID-verified against the
         // SourceMemento the vendor sugar-lift minted), and rewrites the stub
         // body in place. On a CID-misalign (source drift) the oracle REFUSES and
         // the site is reported `outcome:"refused"` with NO write. Same kit, same
@@ -267,9 +266,8 @@ fn recognize(params: &Value) -> Result<Value, String> {
         .collect();
 
     // Index bindings by template_cid for O(1) lookup. The kit reads the
-    // template_cid the lifter emitted (or, equivalently, recomputes it
-    // from the supplied ast_template). `binding_templates` remains accepted
-    // for older direct kit tests, but the CLI does not send it; real template
+    // template_cid the lifter emitted; `binding_templates` remains accepted for
+    // older direct kit tests, but the CLI does not send it. Real template
     // authority comes from proof catalogs the Rust kit resolves itself.
     let mut bindings_by_cid: HashMap<String, RecognizeBindingTemplate> = HashMap::new();
     if let Some(binding_templates) = params.get("binding_templates").and_then(|v| v.as_array()) {
@@ -466,12 +464,10 @@ fn binding_template_from_sugar_entry(
         .cloned()
         .unwrap_or(Value::Null);
     let body_source = entry.get("body_source")?;
-    let ast_template = body_source.get("ast_template")?.clone();
     let template_cid = body_source
         .get("template_cid")
         .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(|| blake3_512_of(ast_template.to_string().as_bytes()));
+        .map(str::to_string)?;
     let param_names = body_source
         .get("param_names")
         .or_else(|| entry.get("param_names"))
@@ -482,7 +478,6 @@ fn binding_template_from_sugar_entry(
         "concept_name": concept_name,
         "library_tag": library_tag,
         "family": entry.get("family").cloned().unwrap_or(Value::Null),
-        "ast_template": ast_template,
         "template_cid": template_cid,
         "param_names": param_names,
         "contract_cid": entry.get("contract_cid").cloned().unwrap_or(Value::Null),
@@ -4033,7 +4028,7 @@ fn binding_rank(binding: &Value) -> u8 {
 // ---------------------------------------------------------------------------
 // Source Oracle + materialize (#1359). The rust mirror of the python kit's
 // `source_oracle.py` + `bind_rpc.py::materialize_impl`. The `.proof` carries a
-// LEAN SourceMemento (locus + source_cid/template_cid, no inline body); the
+// SourceMemento (locus + source_cid/template_cid, no inline body); the
 // oracle reconstructs the body from on-disk source IFF it recomputes to the
 // pinned CIDs, else REFUSES. Exact-or-refuse, no silent loss.
 // ---------------------------------------------------------------------------
@@ -4047,7 +4042,7 @@ struct SourceOracleRefusal {
     reason: String,
 }
 
-/// A SourceMemento: the locus + pins extracted from a lean sugar binding's
+/// A SourceMemento: the locus + pins extracted from a sugar binding's
 /// `body_source`. Zero content — the body lives on disk.
 #[derive(Debug)]
 struct SourceMemento {
@@ -4093,16 +4088,15 @@ fn resolve_source_memento(
         reason: format!("cannot parse source `{}`: {e}", path.display()),
     })?;
 
-    let item_fn = locate_boundary_source_fn(&file.items, memento).ok_or_else(|| {
-        SourceOracleRefusal {
+    let item_fn =
+        locate_boundary_source_fn(&file.items, memento).ok_or_else(|| SourceOracleRefusal {
             reason: format!(
                 "source function `{}` not found in `{}` near line {:?}",
                 memento.source_function_name.as_deref().unwrap_or("<any>"),
                 memento.file,
                 memento.start_line
             ),
-        }
-    })?;
+        })?;
 
     // Recompute with the producer's EXACT machinery (no reimplementation).
     let body_text = block_inner_source(&src, &item_fn.block)
@@ -4213,7 +4207,7 @@ struct VendorBinding {
     memento: SourceMemento,
 }
 
-/// Parse a lean `body_source` JSON into a SourceMemento.
+/// Parse a `body_source` JSON into a SourceMemento.
 fn source_memento_from_body_source(
     source_function_name: Option<String>,
     body_source: &Value,
@@ -4252,9 +4246,8 @@ fn source_memento_from_body_source(
 /// could never detect drift (the pin would track disk by construction).
 ///
 /// Mirrors python `_vendor_proof_binding_templates` + `_resolve_via_source_oracle`.
-/// Unlike the recognize loader (`binding_template_from_sugar_entry`), this does
-/// NOT require an inline `ast_template`: a lean binding has none, and dropping
-/// it is the whole point — we pull the SourceMemento (locus + pins) instead.
+/// Materialize pulls the SourceMemento (locus + pins) and resolves the body via
+/// the oracle; recognize only needs the pinned `template_cid`.
 fn vendor_bindings_from_proofs(project_root: &Path) -> Result<Vec<VendorBinding>, String> {
     let proof_paths = resolve_recognizer_proof_paths(project_root)?;
     let mut bindings = Vec::new();
@@ -4360,7 +4353,10 @@ fn materialize(params: &Value) -> Result<Value, String> {
         .iter()
         .filter_map(|v| v.as_str().map(str::to_string))
         .collect();
-    let write = params.get("write").and_then(Value::as_bool).unwrap_or(false);
+    let write = params
+        .get("write")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     let vendor_root = params
         .get("vendor_root")
@@ -4392,9 +4388,9 @@ fn materialize(params: &Value) -> Result<Value, String> {
         let mut edits: Vec<BoundaryBodyEdit> = Vec::new();
         let mut file_refused = false;
         for (stub_fn, library, call) in &stubs {
-            let binding = vendor_bindings.iter().find(|b| {
-                &b.library_tag == library && &b.source_function_name == call
-            });
+            let binding = vendor_bindings
+                .iter()
+                .find(|b| &b.library_tag == library && &b.source_function_name == call);
             let Some(binding) = binding else {
                 results.push(json!({
                     "file": rel_path,
@@ -5796,7 +5792,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         // visibility) with NO `#[provekit::sugar]` and NO `#[provekit::boundary]`
         // attribute ALSO emits a `library-sugar-binding-entry` —
         // `binding_origin: "derived"`, `target_library_tag = <crate>`,
-        // `symbol = <crate>.<fn>`, carrying the SAME lean SourceMemento
+        // `symbol = <crate>.<fn>`, carrying the SAME SourceMemento
         // (`sugar_body_source`) the tagged path emits. The body source CIDs are
         // byte-identical to the tagged path for the same fn (same locus, same
         // hashing), so the Source Oracle resolves a derived binding exactly as it
@@ -5873,11 +5869,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 let param_sort_cids: Vec<String> = param_types
                     .iter()
                     .map(|t| {
-                        rust_source_type_to_concept_hub_sort_cid(
-                            t,
-                            &mut parametric_sort_expansions,
-                        )
-                        .unwrap_or_default()
+                        rust_source_type_to_concept_hub_sort_cid(t, &mut parametric_sort_expansions)
+                            .unwrap_or_default()
                     })
                     .collect();
                 let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(
@@ -5916,10 +5909,9 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     "doc_lines": doc_lines,
                 });
                 if !parametric_sort_expansions.is_empty() {
-                    entry["parametric_sort_expansions"] = serde_json::to_value(
-                        &parametric_sort_expansions,
-                    )
-                    .unwrap_or_else(|_| json!([]));
+                    entry["parametric_sort_expansions"] =
+                        serde_json::to_value(&parametric_sort_expansions)
+                            .unwrap_or_else(|_| json!([]));
                 }
                 entries.push(entry);
             }
@@ -8041,29 +8033,9 @@ fn sugar_type_surface(ty: &syn::Type) -> String {
     ty.to_token_stream().to_string().replace(' ', "")
 }
 
-/// When set in the environment, `sugar_body_source` emits a LEAN SourceMemento:
-/// it keeps the locus (`file`/`span`) and the two pins (`source_cid`/
-/// `template_cid`) + `param_names`, but DROPS the inline `body_text`/
-/// `ast_template`. The body then lives only on disk (the vendor shipped it);
-/// the consumer reconstructs it through the Source Oracle (`resolve_source_memento`),
-/// which recomputes the CIDs from on-disk source and refuses on drift. This
-/// mirrors the python kit's `PROVEKIT_LEAN_SOURCE=1` (see numpy-showcase/run.sh).
-///
-/// Off by default: the recognize lane + existing tests read the inline
-/// `body_text`/`ast_template`, and lean-by-default would break them. The CIDs
-/// are computed from the body BEFORE the drop, so lean and non-lean mint
-/// byte-identical `source_cid`/`template_cid` — the oracle's clean resolve
-/// byte-matches whichever form minted the pin.
-const LEAN_SOURCE_ENV: &str = "PROVEKIT_LEAN_SOURCE";
-
-fn lean_source_enabled() -> bool {
-    std::env::var_os(LEAN_SOURCE_ENV).is_some_and(|v| {
-        let v = v.to_string_lossy();
-        let v = v.trim();
-        !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
-    })
-}
-
+/// Emit the Rust SourceMemento shape: locus + pins only. Source and AST content
+/// stay in source files; proofs carry `file`, `span`, `source_cid`,
+/// `template_cid`, and `param_names`.
 fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
     let start = item_fn.sig.fn_token.span.start();
     let end = item_fn.block.brace_token.span.close().end();
@@ -8071,13 +8043,6 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         .map(canonical_sugar_body_text)
         .unwrap_or_default()
         .to_string();
-    // Phase 2 / Recognizer foundation (#81, #82): emit an identifier-canonical
-    // AST template alongside the body text. Same source-pass produces both:
-    // body_text drives `materialize` (the splice-in form), ast_template
-    // drives `recognize` (the structural pattern match against user code).
-    // Identifier canonicalization replaces the sugar's named params with
-    // $1, $2, … positional markers so user variants (`conn.execute(sql,args)`
-    // vs `c.execute(s,a)`) match the same template after alpha-equivalence.
     let param_names: Vec<String> = item_fn
         .sig
         .inputs
@@ -8092,11 +8057,9 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         .collect();
     let ast_template = block_to_ast_template(&item_fn.block, &param_names);
     let template_text = ast_template.to_string();
-    // CIDs are computed from the body BEFORE any lean drop, so lean and
-    // non-lean mints are byte-identical on the pins.
     let source_cid = blake3_512_of(body_text.as_bytes());
     let template_cid = blake3_512_of(template_text.as_bytes());
-    let mut out = json!({
+    json!({
         "file": rel,
         "span": {
             "start_line": start.line,
@@ -8105,19 +8068,9 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
             "end_col": end.column,
         },
         "source_cid": source_cid,
-        "body_text_canonicalization": BODY_TEXT_CANONICALIZATION,
         "template_cid": template_cid,
         "param_names": param_names,
-    });
-    // Lean SourceMemento: keep locus + pins, drop the inline body. The Source
-    // Oracle reconstructs `body_text`/`ast_template` from on-disk source.
-    if !lean_source_enabled() {
-        if let Value::Object(map) = &mut out {
-            map.insert("body_text".to_string(), json!(body_text));
-            map.insert("ast_template".to_string(), ast_template);
-        }
-    }
-    out
+    })
 }
 
 fn canonical_sugar_body_text(body: &str) -> &str {
@@ -10087,14 +10040,10 @@ mod tests {
 
     // ---- Source Oracle + materialize (#1359) --------------------------------
 
-    /// Mint a lean SourceMemento for `fn_name` in `src`, then return
+    /// Mint a SourceMemento for `fn_name` in `src`, then return
     /// (project_root, memento). Mirrors what the producer (`sugar_body_source`)
     /// emits + what the proof loader hands `resolve_source_memento`.
-    fn mint_memento_for(
-        dir: &Path,
-        fn_name: &str,
-        src: &str,
-    ) -> SourceMemento {
+    fn mint_memento_for(dir: &Path, fn_name: &str, src: &str) -> SourceMemento {
         let file_rel = "src/lib.rs";
         fs::create_dir_all(dir.join("src")).unwrap();
         fs::write(dir.join(file_rel), src).unwrap();
@@ -10108,8 +10057,7 @@ mod tests {
             })
             .unwrap();
         let body_source = sugar_body_source(file_rel, src, item_fn);
-        // body_source is non-lean here (env not set), but a memento only needs
-        // the locus + pins — exactly what a lean binding also carries.
+        // body_source carries only the locus + pins.
         source_memento_from_body_source(Some(fn_name.to_string()), &body_source).unwrap()
     }
 
@@ -10186,7 +10134,11 @@ mod tests {
         // Resolving the ORIGINAL pin against the renamed disk refuses on source_cid.
         fs::write(dir.join("src/lib.rs"), renamed).unwrap();
         let err = resolve_source_memento(&dir, &memento).expect_err("rename must refuse");
-        assert!(err.reason.contains("source CID misaligned"), "got: {}", err.reason);
+        assert!(
+            err.reason.contains("source CID misaligned"),
+            "got: {}",
+            err.reason
+        );
         fs::remove_dir_all(&dir).ok();
         fs::remove_dir_all(&dir2).ok();
     }
@@ -10197,18 +10149,14 @@ mod tests {
         let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
         // Replace with a file that has no `rev`.
-        fs::write(
-            dir.join("src/lib.rs"),
-            "pub fn other() -> u32 { 0 }\n",
-        )
-        .unwrap();
+        fs::write(dir.join("src/lib.rs"), "pub fn other() -> u32 { 0 }\n").unwrap();
         let err = resolve_source_memento(&dir, &memento).expect_err("absent fn must refuse");
         assert!(err.reason.contains("not found"), "got: {}", err.reason);
         fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn lean_source_drops_inline_body_but_keeps_pins() {
+    fn sugar_body_source_is_one_shape_without_inline_body_or_template() {
         let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let parsed = syn::parse_file(src).unwrap();
         let item_fn = parsed
@@ -10219,25 +10167,29 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        // Default (non-lean): inline body present.
-        let full = sugar_body_source("src/lib.rs", src, item_fn);
-        assert!(full.get("body_text").is_some());
-        assert!(full.get("ast_template").is_some());
-        let full_source_cid = full.get("source_cid").cloned();
-        let full_template_cid = full.get("template_cid").cloned();
-
-        // Lean: body dropped, pins byte-identical to the non-lean mint.
-        std::env::set_var(LEAN_SOURCE_ENV, "1");
-        let lean = sugar_body_source("src/lib.rs", src, item_fn);
-        std::env::remove_var(LEAN_SOURCE_ENV);
-        assert!(lean.get("body_text").is_none(), "lean must drop body_text");
-        assert!(
-            lean.get("ast_template").is_none(),
-            "lean must drop ast_template"
+        let body_source = sugar_body_source("src/lib.rs", src, item_fn);
+        let keys: BTreeSet<&str> = body_source
+            .as_object()
+            .expect("body_source object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from(["file", "span", "source_cid", "template_cid", "param_names"]),
+            "SourceMemento is one shape: no inline body, no inline AST"
         );
-        assert_eq!(lean.get("source_cid").cloned(), full_source_cid);
-        assert_eq!(lean.get("template_cid").cloned(), full_template_cid);
-        assert!(lean.get("span").is_some());
+        assert_eq!(
+            body_source["source_cid"],
+            blake3_512_of("s.chars().rev().collect()".as_bytes())
+        );
+        let param_names = vec!["s".to_string()];
+        let expected_template = block_to_ast_template(&item_fn.block, &param_names);
+        assert_eq!(
+            body_source["template_cid"],
+            blake3_512_of(expected_template.to_string().as_bytes())
+        );
+        assert!(body_source.get("span").is_some());
     }
 
     #[test]
@@ -10809,7 +10761,7 @@ async fn fetch_status(url: String) -> i64 {
     }
 
     #[test]
-    fn sugar_body_text_uses_rust_block_span_for_braces_inside_tokens() {
+    fn sugar_body_source_uses_rust_block_span_for_source_cid_without_storing_body() {
         let src = r####"
 #[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
 async fn render(url: String) -> String {
@@ -10829,9 +10781,6 @@ async fn render(url: String) -> String {
 }
 "####;
         let entry = single_sugar_entry_for_source("sugar_body_span_braces", src);
-        let body_text = entry["body_source"]["body_text"]
-            .as_str()
-            .expect("body_text string");
         let expected = r####"let normal = "}";
     let raw = r###"raw } braces { stay"###;
     // comment with } before the real block end
@@ -10846,45 +10795,31 @@ async fn render(url: String) -> String {
     };
     format!("{normal}:{raw}:{macro_value}:{}", future.await)"####;
 
-        assert_eq!(body_text, expected);
         assert_eq!(
             entry["body_source"]["source_cid"],
             blake3_512_of(expected.as_bytes())
         );
-        assert!(
-            !body_text.contains("async fn render"),
-            "body_text must not include the function signature: {body_text}"
-        );
-        assert!(
-            !body_text.contains("#[provekit::sugar"),
-            "body_text must not include the sugar attribute: {body_text}"
-        );
+        assert!(entry["body_source"].get("body_text").is_none());
     }
 
     #[test]
-    fn sugar_body_text_uses_byte_offsets_for_unicode_same_line_body() {
+    fn sugar_body_source_uses_byte_offsets_for_unicode_source_cid_without_storing_body() {
         let src = r#"
 #[provekit::sugar(concept = "concept:unicode", library = "unicode-lib")]
 pub fn snowman() -> &'static str { "☃ } still body" }
 "#;
         let entry = single_sugar_entry_for_source("sugar_body_unicode_byte_offsets", src);
-        let body_text = entry["body_source"]["body_text"]
-            .as_str()
-            .expect("body_text string");
         let expected = r#""☃ } still body""#;
 
-        assert_eq!(
-            body_text, expected,
-            "body_text must slice parser span byte offsets exactly"
-        );
         assert_eq!(
             entry["body_source"]["source_cid"],
             blake3_512_of(expected.as_bytes())
         );
+        assert!(entry["body_source"].get("body_text").is_none());
     }
 
     #[test]
-    fn sugar_body_source_declares_trimmed_body_canonicalization_for_cid() {
+    fn sugar_body_source_canonicalizes_trimmed_body_for_source_cid_without_storing_body() {
         let src_a = r#"
 #[provekit::sugar(concept = "concept:canonical-body", library = "test-lib")]
 pub fn canonical_body() -> i64 {
@@ -10903,41 +10838,42 @@ pub fn canonical_body() -> i64 {    41 + 1    }
         let body_source_a = &entry_a["body_source"];
         let body_source_b = &entry_b["body_source"];
 
-        assert_eq!(
-            body_source_a["body_text_canonicalization"],
-            "trim-outer-whitespace-v1"
-        );
-        assert_eq!(
-            body_source_b["body_text_canonicalization"],
-            "trim-outer-whitespace-v1"
-        );
-        assert_eq!(body_source_a["body_text"], body_source_b["body_text"]);
         assert_eq!(body_source_a["source_cid"], body_source_b["source_cid"]);
         assert_eq!(
             body_source_a["source_cid"],
             blake3_512_of("41 + 1".as_bytes())
         );
+        assert!(body_source_a.get("body_text").is_none());
+        assert!(body_source_b.get("body_text").is_none());
     }
 
     // ---------------------------------------------------------------------
-    // Recognizer foundation (#81 / #82): identifier-canonical AST template
-    // alongside body_text. Same source-pass extracts both; the .proof
-    // envelope carries body_text (for materialize) AND ast_template (for
-    // recognize). Param names canonicalize to $1, $2 positional markers so
-    // user-code variants alpha-equivalent to the sugar match the same
-    // template. T's directive: keep both in the lifter's output.
+    // Recognizer foundation (#81 / #82): source-pass computes source/template
+    // pins for the one-shape SourceMemento. The proof carries only CIDs; the
+    // recognizer recomputes candidate template_cid from user source and matches
+    // by content-address equality.
     // ---------------------------------------------------------------------
 
     #[test]
-    fn sugar_body_emits_ast_template_alongside_body_text() {
+    fn sugar_body_source_emits_template_cid_without_storing_template() {
         let src = r##"
 #[provekit::sugar(concept = "concept:json-parse", library = "serde_json")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
 "##;
-        let entry = single_sugar_entry_for_source("sugar_ast_template_basic", src);
-        let template = &entry["body_source"]["ast_template"];
+        let entry = single_sugar_entry_for_source("sugar_template_cid_basic", src);
+        let parsed = syn::parse_file(src).unwrap();
+        let item_fn = parsed
+            .items
+            .iter()
+            .find_map(|it| match it {
+                syn::Item::Fn(f) => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        let param_names = vec!["s".to_string()];
+        let template = block_to_ast_template(&item_fn.block, &param_names);
         assert_eq!(template["kind"], "block");
         let stmts = template["stmts"].as_array().expect("stmts array");
         assert_eq!(stmts.len(), 1, "one statement in body");
@@ -10952,6 +10888,11 @@ pub fn json_parse(s: &str) -> i64 {
         assert_eq!(args.len(), 1);
         assert_eq!(args[0]["kind"], "param_ref");
         assert_eq!(args[0]["index"], 1);
+        assert_eq!(
+            entry["body_source"]["template_cid"],
+            blake3_512_of(template.to_string().as_bytes())
+        );
+        assert!(entry["body_source"].get("ast_template").is_none());
     }
 
     #[test]
@@ -10962,8 +10903,18 @@ pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
     conn.execute(sql, args)
 }
 "##;
-        let entry = single_sugar_entry_for_source("sugar_ast_template_params", src);
-        let template = &entry["body_source"]["ast_template"];
+        let entry = single_sugar_entry_for_source("sugar_template_cid_params", src);
+        let parsed = syn::parse_file(src).unwrap();
+        let item_fn = parsed
+            .items
+            .iter()
+            .find_map(|it| match it {
+                syn::Item::Fn(f) => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        let param_names = vec!["conn".to_string(), "sql".to_string(), "args".to_string()];
+        let template = block_to_ast_template(&item_fn.block, &param_names);
         let stmt = &template["stmts"][0];
         let mc = &stmt["expr"];
         assert_eq!(mc["kind"], "method_call");
@@ -10978,6 +10929,11 @@ pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
         assert_eq!(mc_args[0]["index"], 2);
         assert_eq!(mc_args[1]["kind"], "param_ref");
         assert_eq!(mc_args[1]["index"], 3);
+        assert_eq!(
+            entry["body_source"]["template_cid"],
+            blake3_512_of(template.to_string().as_bytes())
+        );
+        assert!(entry["body_source"].get("ast_template").is_none());
     }
 
     #[test]
@@ -10996,30 +10952,20 @@ pub fn op(alpha: &i64, beta: &i64) -> i64 {
     alpha.add(beta)
 }
 "##;
-        let entry_a = single_sugar_entry_for_source("sugar_ast_template_alpha_a", src_a);
-        let entry_b = single_sugar_entry_for_source("sugar_ast_template_alpha_b", src_b);
-        let tpl_a = entry_a["body_source"]["ast_template"].to_string();
-        let tpl_b = entry_b["body_source"]["ast_template"].to_string();
-        assert_eq!(
-            tpl_a, tpl_b,
-            "alpha-equivalent sugars must produce byte-identical templates\nA: {tpl_a}\nB: {tpl_b}"
-        );
+        let entry_a = single_sugar_entry_for_source("sugar_template_cid_alpha_a", src_a);
+        let entry_b = single_sugar_entry_for_source("sugar_template_cid_alpha_b", src_b);
         assert_eq!(
             entry_a["body_source"]["template_cid"], entry_b["body_source"]["template_cid"],
             "template_cid must match across alpha-equivalent sugars"
-        );
-        // But body_text and source_cid DIFFER (they include the original
-        // parameter spellings). That asymmetry is intentional: body_text
-        // drives materialize (verbatim splice), ast_template drives
-        // recognize (canonical structural match).
-        assert_ne!(
-            entry_a["body_source"]["body_text"],
-            entry_b["body_source"]["body_text"]
         );
         assert_ne!(
             entry_a["body_source"]["source_cid"],
             entry_b["body_source"]["source_cid"]
         );
+        assert!(entry_a["body_source"].get("body_text").is_none());
+        assert!(entry_b["body_source"].get("body_text").is_none());
+        assert!(entry_a["body_source"].get("ast_template").is_none());
+        assert!(entry_b["body_source"].get("ast_template").is_none());
     }
 
     // ---------------------------------------------------------------------
@@ -11043,7 +10989,6 @@ pub fn json_parse(s: &str) -> i64 {
             "concept_name": sugar_entry["concept_name"],
             "library_tag": sugar_entry["target_library_tag"],
             "family": sugar_entry.get("family").cloned().unwrap_or(Value::Null),
-            "ast_template": sugar_entry["body_source"]["ast_template"],
             "template_cid": sugar_entry["body_source"]["template_cid"],
             "param_names": sugar_entry["body_source"]["param_names"],
             "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
@@ -11085,7 +11030,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     }
 
     #[test]
-    fn recognize_self_resolves_binding_templates_from_imported_proofs() {
+    fn recognize_loads_binding_templates_from_imported_proofs() {
         let sugar_src = r##"
 #[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
@@ -11135,7 +11080,64 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     }
 
     #[test]
-    fn recognize_self_resolves_binding_templates_from_cargo_dependency_proofs() {
+    fn recognize_matches_template_cid_only_imported_proof() {
+        let sugar_src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let mut sugar_entry =
+            single_sugar_entry_for_source("recognize_template_cid_only_sugar", sugar_src);
+        let contract_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let body_source = sugar_entry["body_source"]
+            .as_object_mut()
+            .expect("body_source object");
+        assert!(body_source.get("template_cid").is_some());
+        assert!(body_source.get("body_text").is_none());
+        assert!(body_source.get("ast_template").is_none());
+
+        let user_src = r##"
+pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(input)
+}
+"##;
+        let root = temp_workspace("recognize_template_cid_only_user");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let proof_cid = write_sugar_binding_proof(
+            &root.join(".provekit").join("imports"),
+            sugar_entry,
+            contract_cid,
+            "@test/rust-recognize-template-cid-only-shim",
+        );
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+        }))
+        .expect("recognize should succeed");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert_eq!(
+            tags.len(),
+            1,
+            "Rust recognizer must match imported sugar proofs by pinned template_cid alone: {tags:?}"
+        );
+        let tag = &tags[0];
+        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
+        assert_eq!(tag["contract_cid"], contract_cid);
+        assert_eq!(tag["target_proof_cid"], proof_cid);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognize_loads_binding_templates_from_cargo_dependency_proofs() {
         let sugar_src = r##"
 #[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
@@ -11221,7 +11223,6 @@ pub fn json_parse(s: &str) -> i64 {
         let binding_template = json!({
             "concept_name": sugar_entry["concept_name"],
             "library_tag": sugar_entry["target_library_tag"],
-            "ast_template": sugar_entry["body_source"]["ast_template"],
             "template_cid": sugar_entry["body_source"]["template_cid"],
             "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         });
@@ -11276,14 +11277,12 @@ pub fn sql_execute(conn: &i64, sql: &str, args: &i64) -> i64 {
             {
                 "concept_name": json_entry["concept_name"],
                 "library_tag": json_entry["target_library_tag"],
-                "ast_template": json_entry["body_source"]["ast_template"],
                 "template_cid": json_entry["body_source"]["template_cid"],
                 "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             },
             {
                 "concept_name": sql_entry["concept_name"],
                 "library_tag": sql_entry["target_library_tag"],
-                "ast_template": sql_entry["body_source"]["ast_template"],
                 "template_cid": sql_entry["body_source"]["template_cid"],
                 "contract_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
             }
@@ -11334,7 +11333,7 @@ pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
     conn.query_row(sql, params, mapper)
 }
 "##;
-        let entry = single_sugar_entry_for_source("sugar_ast_template_paramnames", src);
+        let entry = single_sugar_entry_for_source("sugar_template_cid_paramnames", src);
         let names = entry["body_source"]["param_names"]
             .as_array()
             .expect("param_names array");
@@ -11585,7 +11584,6 @@ fn missing_concept(url: String) -> i64 { 0 }
 
         let _ = fs::remove_dir_all(root);
     }
-
 
     #[test]
     fn term_shape_simple_add_is_canonical_gamma_literal() {
