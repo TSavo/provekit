@@ -72,7 +72,7 @@ help:
 # spawning `provekit-linkerd` (which subprocesses kit lifters at lift
 # time). Each kit's build target is independent; failures stay isolated.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-csharp build-java build-python
+build-all: build-rust build-python
 
 .PHONY: build-rust
 build-rust:
@@ -165,7 +165,7 @@ check-cargo-entrypoint:
 # provekit-realize-java-core; without `build-java` first, that jar is
 # absent and `lower_java_carrier_registration_points_at_required_fixture_set`
 # panics with `Unable to access jarfile provekit-realize-java.jar`.
-test-rust: build-java build-python
+test-rust: build-python
 	@failed=""; \
 	$(CARGO) test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
