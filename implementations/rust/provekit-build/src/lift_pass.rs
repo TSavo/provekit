@@ -17,9 +17,8 @@
 //     `source_walk::walk` and reported under
 //     `VerificationReport::contract_count`.
 //
-//   * "lift" lane: contracts produced by the eight third-party adapters
-//     (proptest, contracts, kani, prusti, creusot, flux, quickcheck,
-//     verus). Discovered here and reported under
+//   * "lift" lane: contracts produced by the contracts adapter.
+//     Discovered here and reported under
 //     `VerificationReport::lift_count`.
 //
 // The two lanes are kept parallel: we deliberately do NOT collapse the
@@ -40,16 +39,7 @@ use provekit_ir_symbolic::ContractDecl;
 /// canonical run order. The order is stable so that
 /// `[package.metadata.provekit] lift_adapters = [...]` whitelists
 /// produce deterministic output across machines.
-pub const ALL_ADAPTERS: &[&str] = &[
-    "proptest",
-    "contracts",
-    "kani",
-    "prusti",
-    "creusot",
-    "flux",
-    "quickcheck",
-    "verus",
-];
+pub const ALL_ADAPTERS: &[&str] = &["contracts"];
 
 /// One contract produced by a lift adapter. Wraps the rich
 /// `ContractDecl` from `provekit-ir-symbolic` plus the adapter that
@@ -155,36 +145,8 @@ pub fn run_lift_pass(manifest_dir: &Path, enabled: &[&str]) -> LiftPassReport {
                 continue;
             }
             let (decls, seen, lifted, warnings) = match count.adapter {
-                "proptest" => {
-                    let out = provekit_lift_proptest::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
-                }
                 "contracts" => {
                     let out = provekit_lift_contracts::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
-                }
-                "kani" => {
-                    let out = provekit_lift_kani::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
-                }
-                "prusti" => {
-                    let out = provekit_lift_prusti::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
-                }
-                "creusot" => {
-                    let out = provekit_lift_creusot::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
-                }
-                "flux" => {
-                    let out = provekit_lift_flux::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
-                }
-                "quickcheck" => {
-                    let out = provekit_lift_quickcheck::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
-                }
-                "verus" => {
-                    let out = provekit_lift_verus::lift_file(&parsed, &path_str);
                     (out.decls, out.seen, out.lifted, out.warnings.len())
                 }
                 // Unknown adapter name (caller's whitelist had a typo).

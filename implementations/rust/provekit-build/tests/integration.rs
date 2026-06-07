@@ -387,48 +387,44 @@ fn write_lift_fixture(name: &str, body: &str) -> tempfile::TempDir {
 /// Test 7: Lift adapter enabled by default.
 ///
 /// With no `lift_adapters` whitelist in config, every registered
-/// adapter runs. A proptest block in the source produces at least one
-/// lifted contract.
+/// adapter runs. A contracts-annotated function in the source produces
+/// at least one lifted contract.
 #[test]
 fn lift_adapters_enabled_by_default() {
     let tmp = write_lift_fixture(
         "lib.rs",
         r#"
-            proptest! {
-                #[test]
-                fn answer_is_42(x: i64) {
-                    prop_assert_eq!(x, 42);
-                }
-            }
+            #[requires(x > 0)]
+            #[ensures(ret >= 0)]
+            fn answer_is_42(x: i64) -> i64 { x }
         "#,
     );
     let cfg = ProvekitConfig::default();
     // The default whitelist resolves to every known adapter.
     assert_eq!(cfg.enabled_lift_adapters().len(), ALL_ADAPTERS.len());
     let report = run_lift_pass(tmp.path(), &cfg.enabled_lift_adapters());
-    let proptest_row = report
+    let contracts_row = report
         .breakdown
         .iter()
-        .find(|b| b.adapter == "proptest")
-        .expect("proptest row");
-    assert!(proptest_row.enabled);
+        .find(|b| b.adapter == "contracts")
+        .expect("contracts row");
+    assert!(contracts_row.enabled);
     assert!(
-        proptest_row.lifted >= 1,
-        "expected at least one lifted proptest contract, got {:?}",
+        contracts_row.lifted >= 1,
+        "expected at least one lifted contracts contract, got {:?}",
         report.breakdown
     );
     assert!(
-        report.lifted.iter().any(|l| l.adapter == "proptest"),
-        "expected a lifted contract from the proptest adapter"
+        report.lifted.iter().any(|l| l.adapter == "contracts"),
+        "expected a lifted contract from the contracts adapter"
     );
 }
 
 /// Test 8: Lift adapter whitelist via Cargo.toml metadata.
 ///
 /// `[package.metadata.provekit] lift_adapters = ["contracts"]` runs
-/// only the `contracts` adapter. A proptest block in the source is
-/// silently skipped (proptest adapter is gated off), and a
-/// `#[contracts::ensures]`-annotated function is lifted.
+/// only the `contracts` adapter, and a `#[contracts::ensures]`-annotated
+/// function is lifted.
 #[test]
 fn lift_adapter_whitelist_runs_only_listed() {
     let toml = r#"
@@ -447,14 +443,6 @@ lift_adapters = ["contracts"]
     let tmp = write_lift_fixture(
         "lib.rs",
         r#"
-            // This proptest! block should NOT be lifted (proptest not on whitelist).
-            proptest! {
-                #[test]
-                fn answer_is_42(x: i64) {
-                    prop_assert_eq!(x, 42);
-                }
-            }
-
             // This contracts-annotated function SHOULD be lifted.
             #[contracts::requires(x > 0)]
             #[contracts::ensures(ret >= 0)]
@@ -474,14 +462,6 @@ lift_adapters = ["contracts"]
         "expected contracts to lift sqrt, got: {:?}",
         report.breakdown
     );
-    // proptest adapter is disabled and produces nothing.
-    let proptest_row = report
-        .breakdown
-        .iter()
-        .find(|b| b.adapter == "proptest")
-        .expect("proptest row");
-    assert!(!proptest_row.enabled);
-    assert_eq!(proptest_row.lifted, 0);
     // The lifted set contains only contracts-derived items.
     assert!(report.lifted.iter().all(|l| l.adapter == "contracts"));
 }
@@ -568,30 +548,25 @@ fn lift_violation_drives_cargo_warning() {
     let tmp = write_lift_fixture(
         "lib.rs",
         r#"
-            // A proptest block whose body is intentionally narrow.
-            // Whether or not the underlying `prop_assert` is liftable in
-            // v0 is irrelevant for this test: we only need the proptest
+            // A contracts-annotated function: we only need the contracts
             // adapter to register a `seen` count on the breakdown so the
             // build script's summary line fires.
-            proptest! {
-                #[test]
-                fn xrange(x: i64) {
-                    prop_assert_eq!(x, 7);
-                }
-            }
+            #[requires(x > 0)]
+            #[ensures(ret >= 0)]
+            fn xrange(x: i64) -> i64 { x }
         "#,
     );
     let cfg = ProvekitConfig::default();
     let report = run_lift_pass(tmp.path(), &cfg.enabled_lift_adapters());
-    let proptest_row = report
+    let contracts_row = report
         .breakdown
         .iter()
-        .find(|b| b.adapter == "proptest")
-        .expect("proptest row");
-    assert!(proptest_row.seen >= 1);
+        .find(|b| b.adapter == "contracts")
+        .expect("contracts row");
+    assert!(contracts_row.seen >= 1);
     assert!(
-        report.lifted.iter().any(|l| l.adapter == "proptest"),
-        "expected proptest-derived contract; got: {:?}",
+        report.lifted.iter().any(|l| l.adapter == "contracts"),
+        "expected contracts-derived contract; got: {:?}",
         report.lifted
     );
     // Precondition for the cargo:warning= summary line in

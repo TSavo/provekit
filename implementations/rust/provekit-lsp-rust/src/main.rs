@@ -52,10 +52,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use provekit_ir_symbolic::serialize::marshal_declarations;
-use provekit_lift::{
-    adapter_contracts, adapter_creusot, adapter_flux, adapter_kani, adapter_proptest,
-    adapter_prusti, adapter_quickcheck, adapter_rust_tests, adapter_verus,
-};
+use provekit_lift::adapter_contracts;
 use provekit_lsp_rust::forward_propagator::ForwardPropagator;
 
 const KIT_ID: &str = "rust";
@@ -511,114 +508,12 @@ fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::
     let mut decls = Vec::new();
     let mut warnings: Vec<serde_json::Value> = Vec::new();
 
-    // Run adapters in the same order as provekit-lift dispatcher.
-
-    let p_out = adapter_proptest::lift_file(&file, path);
-    decls.extend(p_out.decls);
-    for w in &p_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "proptest",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
+    // Run the contracts adapter.
     let c_out = adapter_contracts::lift_file(&file, path);
     decls.extend(c_out.decls);
     for w in &c_out.warnings {
         warnings.push(serde_json::json!({
             "adapter": "contracts",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    let k_out = adapter_kani::lift_file(&file, path);
-    decls.extend(k_out.decls);
-    for w in &k_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "kani",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    let pr_out = adapter_prusti::lift_file(&file, path);
-    decls.extend(pr_out.decls);
-    for w in &pr_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "prusti",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    let cr_out = adapter_creusot::lift_file(&file, path);
-    decls.extend(cr_out.decls);
-    for w in &cr_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "creusot",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    let fl_out = adapter_flux::lift_file(&file, path);
-    decls.extend(fl_out.decls);
-    for w in &fl_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "flux",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    let qc_out = adapter_quickcheck::lift_file(&file, path);
-    decls.extend(qc_out.decls);
-    for w in &qc_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "quickcheck",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    let ve_out = adapter_verus::lift_file(&file, path);
-    decls.extend(ve_out.decls);
-    for w in &ve_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "verus",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    // rust-tests: Layer 2 first, then Layer 0 skipping claimed tests.
-    let l2_out = adapter_rust_tests::lift_file_layer2(&file, path);
-    let claimed = l2_out.claimed_tests.clone();
-    decls.extend(l2_out.decls);
-    for w in &l2_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "rust-tests-layer2",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    let rt_out = adapter_rust_tests::lift_file_with_skip(&file, path, &claimed);
-    decls.extend(rt_out.decls);
-    for w in &rt_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "rust-tests",
             "path": w.source_path,
             "item": w.item_name,
             "reason": w.reason

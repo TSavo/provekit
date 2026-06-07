@@ -33,16 +33,8 @@ provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 libprovekit = { path = "../libprovekit" }
 
-# Adapter crates (each owns its own shape walker).
-provekit-lift-proptest = { path = "../provekit-lift-proptest" }
+# Adapter crate (owns its own shape walker).
 provekit-lift-contracts = { path = "../provekit-lift-contracts" }
-provekit-lift-kani = { path = "../provekit-lift-kani" }
-provekit-lift-prusti = { path = "../provekit-lift-prusti" }
-provekit-lift-creusot = { path = "../provekit-lift-creusot" }
-provekit-lift-flux = { path = "../provekit-lift-flux" }
-provekit-lift-quickcheck = { path = "../provekit-lift-quickcheck" }
-provekit-lift-verus = { path = "../provekit-lift-verus" }
-provekit-lift-rust-tests = { path = "../provekit-lift-rust-tests" }
 
 # External.
 syn = { workspace = true }
