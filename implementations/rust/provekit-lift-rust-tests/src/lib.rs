@@ -202,6 +202,7 @@ pub fn lift_file_with_skip(
     source_path: &str,
     skip: &BTreeSet<String>,
 ) -> AdapterOutput {
+    load_assertion_exceptions_for(source_path);
     let mut out = AdapterOutput::default();
     walk_items(&file.items, source_path, skip, &mut out);
     out
@@ -230,6 +231,7 @@ pub fn lift_file_with_evidence_and_skip(
     source_bytes: &[u8],
     skip: &BTreeSet<String>,
 ) -> AdapterOutput {
+    load_assertion_exceptions_for(source_path);
     let source_cid = blake3_512_of(source_bytes);
     // Build a map from bare function name to &syn::ItemFn for all non-test top-level
     // functions in this file. Used by `visit_test_fn_with_evidence` to compute
@@ -1203,14 +1205,67 @@ fn subst_vars_in_term(t: &Rc<Term>, substitutions: &BTreeMap<String, Rc<Term>>) 
     }
 }
 
-/// Map an assertion-macro name to its canonical handler, LEARNING the kind from the
-/// name's shape rather than a closed hand-list. The std assertions are matched
-/// exactly; any other `assert*` macro is classified by the tolerance-family semantic
-/// its name carries (`abs_diff`/`relative`/`ulps`), so a sibling or re-exported macro
-/// (another crate's `assert_abs_diff_eq`, a `debug_assert_relative_eq`, ...) is
-/// recognised WITHOUT a hardcoded entry -- the Rust mirror of deriving the vocabulary
-/// from source, where the macro name is the readable signal. None for a non-assertion.
+thread_local! {
+    /// EXTERNALIZED per-workspace assertion-macro classifications, loaded at lift
+    /// time from `.provekit/vocab-exceptions/rust-assertions.json`. Maps a macro name
+    /// to a kind. A library/workspace classifies a macro whose NAME carries no
+    /// tolerance signal (e.g. float_cmp's `assert_approx_eq!`) by DROPPING this data
+    /// file -- no lifter code change -- the Rust mirror of the Python
+    /// `.provekit/vocab-exceptions/<module>.json`.
+    static ASSERTION_EXCEPTIONS: std::cell::RefCell<BTreeMap<String, String>> =
+        std::cell::RefCell::new(BTreeMap::new());
+}
+
+/// Walk up from `source_path` to a workspace `.provekit/vocab-exceptions/
+/// rust-assertions.json` and load its `{macro: kind}` classifications into the
+/// thread-local. Called at each lift entry; empty (no file) means pure name-learning.
+fn load_assertion_exceptions_for(source_path: &str) {
+    let map = read_assertion_exceptions(source_path).unwrap_or_default();
+    ASSERTION_EXCEPTIONS.with(|m| *m.borrow_mut() = map);
+}
+
+fn read_assertion_exceptions(source_path: &str) -> Option<BTreeMap<String, String>> {
+    let mut dir = std::path::Path::new(source_path).parent();
+    while let Some(d) = dir {
+        let candidate = d
+            .join(".provekit")
+            .join("vocab-exceptions")
+            .join("rust-assertions.json");
+        if candidate.is_file() {
+            let text = std::fs::read_to_string(&candidate).ok()?;
+            return serde_json::from_str::<BTreeMap<String, String>>(&text).ok();
+        }
+        dir = d.parent();
+    }
+    None
+}
+
+/// Map an externalized exception `kind` to a canonical handler. `refuse` routes to
+/// the ulps handler (claimed + loud-refused).
+fn kind_to_canonical(kind: &str) -> Option<&'static str> {
+    Some(match kind {
+        "eq" => "assert_eq",
+        "ne" => "assert_ne",
+        "truth" => "assert",
+        "matches" => "assert_matches",
+        "abs_diff" => "assert_abs_diff_eq",
+        "relative" => "assert_relative_eq",
+        "ulps" | "refuse" => "assert_ulps_eq",
+        _ => return None,
+    })
+}
+
+/// Map an assertion-macro name to its canonical handler. An EXTERNALIZED exception
+/// (workspace data) wins first; otherwise LEARN the kind from the name's shape rather
+/// than a closed hand-list. The std assertions match exactly; any other `assert*`
+/// macro is classified by the tolerance-family semantic its name carries
+/// (`abs_diff`/`relative`/`ulps`), so a sibling or re-exported macro is recognised
+/// WITHOUT a hardcoded entry -- the Rust mirror of deriving the vocabulary from
+/// source, where the macro name is the readable signal. None for a non-assertion.
 fn canonical_assertion_name(name: &str) -> Option<&'static str> {
+    if let Some(kind) = ASSERTION_EXCEPTIONS.with(|m| m.borrow().get(name).cloned()) {
+        return kind_to_canonical(&kind);
+    }
     match name {
         "assert_eq" => Some("assert_eq"),
         "assert_ne" => Some("assert_ne"),
@@ -1991,6 +2046,40 @@ mod tests {
         // non-assertions and unknown assert-shaped names are not misclassified
         assert_eq!(canonical_assertion_name("println"), None);
         assert_eq!(canonical_assertion_name("assert_something_else"), None);
+    }
+
+    #[test]
+    fn externalized_exception_classifies_a_non_semantic_macro_name() {
+        ASSERTION_EXCEPTIONS.with(|m| m.borrow_mut().clear());
+        // float_cmp's `assert_approx_eq!` carries no abs_diff/relative/ulps signal,
+        // so the name-learner alone returns None.
+        assert_eq!(canonical_assertion_name("assert_approx_eq"), None);
+        // a workspace classifies it as DATA -> recognised, no lifter code change.
+        ASSERTION_EXCEPTIONS.with(|m| {
+            m.borrow_mut().insert("assert_approx_eq".into(), "abs_diff".into());
+            m.borrow_mut().insert("strict_check".into(), "refuse".into());
+        });
+        assert_eq!(canonical_assertion_name("assert_approx_eq"), Some("assert_abs_diff_eq"));
+        // `refuse` routes to the claimed-but-refused handler
+        assert_eq!(canonical_assertion_name("strict_check"), Some("assert_ulps_eq"));
+        ASSERTION_EXCEPTIONS.with(|m| m.borrow_mut().clear());
+    }
+
+    #[test]
+    fn read_assertion_exceptions_walks_up_to_the_workspace_file() {
+        use std::io::Write;
+        let base = std::env::temp_dir().join(format!("pk-rust-exc-{}", std::process::id()));
+        let vx = base.join(".provekit").join("vocab-exceptions");
+        std::fs::create_dir_all(&vx).unwrap();
+        std::fs::File::create(vx.join("rust-assertions.json"))
+            .unwrap()
+            .write_all(br#"{"assert_approx_eq": "abs_diff"}"#)
+            .unwrap();
+        let src = base.join("tests").join("t.rs");
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        let map = read_assertion_exceptions(src.to_str().unwrap()).unwrap();
+        assert_eq!(map.get("assert_approx_eq").map(String::as_str), Some("abs_diff"));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
