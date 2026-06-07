@@ -65,7 +65,12 @@ class _CommentOccurrence:
     surface: str
 
 
-def lift_source(source: str, source_path: str, layer: str = "all") -> BindLiftResult:
+def lift_source(
+    source: str,
+    source_path: str,
+    layer: str = "all",
+    reexport_map: dict[str, tuple[str, str]] | None = None,
+) -> BindLiftResult:
     result = BindLiftResult()
     try:
         tree = ast.parse(source, filename=source_path)
@@ -91,7 +96,12 @@ def lift_source(source: str, source_path: str, layer: str = "all") -> BindLiftRe
         try:
             if emit_bind:
                 entry = _library_binding_entry_for_function(
-                    info.node, rel_path, lines, source_lines, layer == "library-bindings"
+                    info.node,
+                    rel_path,
+                    lines,
+                    source_lines,
+                    layer == "library-bindings",
+                    reexport_map=reexport_map,
                 )
                 if entry is not None:
                     result.ir.append(entry)
@@ -123,6 +133,12 @@ def lift_paths(
 ) -> BindLiftResult:
     result = BindLiftResult()
     root = Path(workspace_root or ".").resolve()
+    # The public re-export map (built once per lift from the package's own
+    # `__init__.py`) promotes private source-path symbols to the public symbols a
+    # consumer actually calls (`lib._function_base_impl.rot90` -> `numpy.rot90`).
+    # None when the lift root is not a package; the source-path symbol is then
+    # used verbatim (existing in-project behavior).
+    reexport_map = _public_reexport_map(root)
     paths = list(source_paths) or ["."]
     for requested in paths:
         path = Path(requested)
@@ -166,7 +182,9 @@ def lift_paths(
                 )
                 continue
             display_path = os.path.relpath(file_path, root).replace(os.sep, "/")
-            file_result = lift_source(source, display_path, layer=layer)
+            file_result = lift_source(
+                source, display_path, layer=layer, reexport_map=reexport_map
+            )
             result.ir.extend(file_result.ir)
             result.diagnostics.extend(file_result.diagnostics)
     return result
@@ -255,12 +273,78 @@ def _derive_symbol(rel_path: str, function_name: str) -> str | None:
     return f"{module}.{function_name}" if module else function_name
 
 
+def _public_reexport_map(workspace_root: Path) -> dict[str, tuple[str, str]] | None:
+    """Build the PUBLIC re-export map for a package being universal-lifted.
+
+    When lifting an installed library (e.g. `--project <site-packages>/numpy`),
+    a module-level function lives at a private source path
+    (`lib/_function_base_impl.py::rot90`) whose DERIVED symbol is the
+    source-path symbol (`lib._function_base_impl.rot90`). But materialize /
+    recognize match on the PUBLIC symbol (`numpy.rot90`, the name a consumer
+    actually calls). The public name is whatever the package's top-level
+    `__init__.py` re-exports it as: `from .lib._function_base_impl import rot90`
+    publishes `rot90` at `<package>.rot90`.
+
+    This reads the package root's `__init__.py` and returns a map keyed by the
+    SOURCE-PATH symbol the lifter derives, valued by the PUBLIC
+    `(library_tag, public_symbol)` pair:
+
+      `lib._function_base_impl.rot90` -> (`numpy`, `numpy.rot90`)
+
+    Nothing is hard-coded: the package name is the root directory's name, and
+    every name is DERIVED from the package's own `__init__` re-exports
+    (`from .sub.module import name` and `name` entries in `__all__` that resolve
+    to a `from`-import). Returns None when the root is not a package (no
+    `__init__.py`), leaving the source-path symbol untouched (the existing
+    in-project behavior).
+    """
+    root = workspace_root
+    init_path = root / "__init__.py"
+    if not init_path.is_file():
+        return None
+    package = root.name
+    if not package:
+        return None
+    try:
+        init_src = init_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        tree = ast.parse(init_src, filename=str(init_path))
+    except SyntaxError:
+        return None
+    mapping: dict[str, tuple[str, str]] = {}
+    for node in ast.walk(tree):
+        # Only direct, level-1 (`from .x.y import name`) re-exports from within
+        # this package establish a public alias. Absolute imports and deeper
+        # relative levels do not publish at `<package>.<name>` here.
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.level != 1 or not node.module:
+            continue
+        submodule = node.module  # e.g. "lib._function_base_impl"
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            source_name = alias.name
+            public_name = alias.asname or alias.name
+            # The lifter derives the source-path symbol from the file's relpath
+            # under the package root: `<submodule>.<source_name>` (the package
+            # name is NOT part of the derived symbol because the lift root IS the
+            # package). That derived symbol is the map key.
+            source_symbol = f"{submodule}.{source_name}"
+            public_symbol = f"{package}.{public_name}"
+            mapping.setdefault(source_symbol, (package, public_symbol))
+    return mapping or None
+
+
 def _library_binding_entry_for_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     rel_path: str,
     lines: list[str],
     source_lines: list[str],
     allow_derived: bool = False,
+    reexport_map: dict[str, tuple[str, str]] | None = None,
 ) -> Json | None:
     binding = _sugar_bind_decorator(node)
     if binding is None:
@@ -277,9 +361,21 @@ def _library_binding_entry_for_function(
         symbol = _derive_symbol(rel_path, node.name)
         if symbol is None:
             return None
+        # Default: the source-path symbol IS the library symbol, the first
+        # segment IS the library tag (in-project, zero-config behavior). When the
+        # package re-exports this function publicly (`from .lib._function_base_impl
+        # import rot90` in numpy's `__init__`), promote BOTH to the public form so
+        # materialize/recognize match on the symbol a consumer actually calls
+        # (`numpy.rot90`) and resolution keys the library by its real package
+        # (`numpy`), not the private source segment (`lib`). The body still
+        # resolves from the SourceMemento's real locus (unchanged below).
+        library_tag = symbol.split(".", 1)[0]
+        public = reexport_map.get(symbol) if reexport_map else None
+        if public is not None:
+            library_tag, symbol = public
         binding = {
             "symbol": symbol,
-            "target_library_tag": symbol.split(".", 1)[0],
+            "target_library_tag": library_tag,
             "binding_origin": "derived",
         }
 

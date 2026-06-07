@@ -1,3 +1,0 @@
-name = "cpp-lift"
-command = ["./target/provekit-lift-cpp"]
-working_dir = "."

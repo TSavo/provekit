@@ -133,6 +133,33 @@ def importlib_package_root(file: str) -> str | None:
     return str(Path(origin).parent) if origin else None
 
 
+def importlib_library_dir(library_tag: str) -> str | None:
+    """Directory D such that D/<file> is the installed source when a `.proof`'s
+    `file` is RELATIVE TO THE PACKAGE ITSELF (e.g. `lib/_function_base_impl.py`
+    for a binding minted with `--project <site-packages>/numpy`).
+
+    `importlib_package_root` returns the package's PARENT (good for `numpy/...`
+    file paths). This returns the package DIR ITSELF, keyed by the binding's
+    authoritative `target_library_tag` (`numpy`) rather than the file's first
+    path segment (`lib`, a private submodule that is not an importable package).
+    Found ecosystem-natively via importlib — pip already shipped the source."""
+    if not isinstance(library_tag, str) or not library_tag:
+        return None
+    try:
+        from importlib.util import find_spec
+
+        spec = find_spec(library_tag)
+    except Exception:
+        return None
+    if spec is None:
+        return None
+    locations = getattr(spec, "submodule_search_locations", None)
+    if locations:
+        return str(Path(next(iter(locations))))
+    origin = getattr(spec, "origin", None)
+    return str(Path(origin).parent) if origin else None
+
+
 def _locate_function(
     tree: ast.AST,
     function_name: Any,

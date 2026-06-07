@@ -1,7 +1,0 @@
--std=c11
--Wall
--Wextra
--Wpedantic
--DPK_C_ENABLE_CLANG_AST
--I../provekit-lift-core/include
--I/usr/local/Cellar/llvm/22.1.4/include

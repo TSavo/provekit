@@ -1,3 +1,0 @@
-name = "php-lift"
-command = ["php", "provekit-lift/src/lifter.php", "--rpc"]
-working_dir = "."

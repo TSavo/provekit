@@ -31,6 +31,7 @@ members = [
     "provekit-lift-quickcheck",
     "provekit-lift-verus",
     "provekit-lift-rust-tests",
+    "provekit-lift-rust-cargo-test-witness",
     "provekit-lift-openapi",
     "provekit-lift-native-surfaces",
     "provekit-linker",

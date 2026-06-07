@@ -1,5 +1,0 @@
--std=c11
--Wall
--Wextra
--Wpedantic
--I../provekit-lift-core/include

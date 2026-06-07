@@ -1,0 +1,10 @@
+# Standalone fixture crate: a suite with a DELIBERATELY FAILING test. The bundle
+# still content-addresses + reproduces (the run is honest), but `discharge_bundle`
+# REFUSES on the all-passed check -- a failing test refuses the whole package.
+# You cannot witness a suite right that runs wrong.
+[package]
+name = "witness-bad"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]

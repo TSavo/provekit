@@ -1,6 +1,0 @@
-name = "swift-xctest"
-version = "0.1.0"
-protocol_versions = ["pep/1.7.0"]
-kind = "emit"
-command = [".build/debug/provekit-emit-swift-xctest", "--rpc"]
-working_dir = "."

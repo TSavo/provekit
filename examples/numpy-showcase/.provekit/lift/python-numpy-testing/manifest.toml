@@ -4,12 +4,16 @@ protocol_version = "pep/1.7.0"
 kind = "lift"
 # The ONE assertion lifter. It learns numpy's vocabulary from each test file's
 # imports plus this workspace's .provekit/vocab-exceptions/numpy.testing.json
-# (the externalized structurally-opaque remainder). PYTHONPATH at the one lifter
-# (provekit-lift-py-tests) + the python-source helper. Resolved from working_dir.
+# (the externalized structurally-opaque remainder). It introspects the imported
+# numpy.testing module to classify the assertion vocabulary, so the interpreter
+# must be a numpy-bearing python -- the SAME witness venv (mirrors the
+# pandas-showcase pandas.testing manifest, which points at its pandas venv).
+# PYTHONPATH at the one lifter (provekit-lift-py-tests) + the python-source
+# helper. Resolved from working_dir.
 command = [
     "/usr/bin/env",
     "PYTHONPATH=../../implementations/python/provekit-lift-py-tests/src:../../implementations/python/provekit-lift-python-source/src",
-    "python3",
+    "/tmp/numpy-witness-venv/bin/python",
     "-m",
     "provekit_lift_py_tests.assertion_lsp",
 ]

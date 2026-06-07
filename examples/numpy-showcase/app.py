@@ -1,5 +1,5 @@
 import numpy as np
 
 
-def total(a, b):
-    return np.add(a, b)
+def turn(m):
+    return np.rot90(m)

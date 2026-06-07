@@ -1,3 +1,0 @@
-name = "provekit-lift-clr-bytecode"
-command = ["dotnet", "Provekit.Lift.CLR/bin/Release/net10.0/provekit-lift-clr-bytecode.dll", "--rpc"]
-working_dir = "."

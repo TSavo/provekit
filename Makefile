@@ -17,12 +17,10 @@
 .DEFAULT_GOAL := help
 
 PROVEKIT := implementations/rust/target/release/provekit
-RUBY ?= $(shell for p in /usr/local/opt/ruby/bin/ruby /opt/homebrew/opt/ruby/bin/ruby /usr/local/bin/ruby /opt/homebrew/bin/ruby; do if [ -x "$$p" ]; then echo "$$p"; exit; fi; done; command -v ruby || echo ruby)
 PYTHON ?= $(shell command -v python3 || echo python3)
 PIP ?= pip3 --python $(PYTHON)
 MVN ?= mvn
 LOCAL_BIN ?= /tmp/provekit-local-bin
-SCALA_CLI ?= scala-cli
 BCARGO ?= $(CURDIR)/bin/bcargo
 CARGO_LOCAL ?= cargo
 ifeq ($(CI),)
@@ -39,9 +37,9 @@ CARGO_SYNC_BINS = $(if $(BCARGO_ACTIVE),$(CARGO) $(foreach bin,$(1),--sync-bin $
 JAVA_HOME ?= $(shell for d in /usr/local/opt/openjdk /opt/homebrew/opt/openjdk; do if [ -x "$$d/bin/java" ]; then echo "$$d"; exit; fi; done)
 export JAVA_HOME
 ifeq ($(strip $(JAVA_HOME)),)
-export PATH := $(LOCAL_BIN):$(dir $(RUBY)):$(PATH)
+export PATH := $(LOCAL_BIN):$(PATH)
 else
-export PATH := $(LOCAL_BIN):$(dir $(RUBY)):$(JAVA_HOME)/bin:$(PATH)
+export PATH := $(LOCAL_BIN):$(JAVA_HOME)/bin:$(PATH)
 endif
 
 .PHONY: help
@@ -56,11 +54,11 @@ help:
 	@echo "  make build-rust     cargo build --release (workspace)"
 	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
 	@echo "  make build-python   pip-install Python realize kits and shim packages"
-	@echo "  make build-<lang>   go / cpp / csharp / ruby / scala / c / swift"
+	@echo "  make build-<lang>   go / cpp / csharp / c"
 	@echo ""
 	@echo "Per-language test:"
 	@echo "  make test-rust  test-python   (the proven provers)"
-	@echo "  make test-<lang>              go / ts / csharp / ruby / php / java / scala / c / swift"
+	@echo "  make test-<lang>              go / ts / csharp / php / java / c"
 	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
@@ -73,11 +71,8 @@ help:
 # Build every kit's binaries. Useful before `make conformance` or before
 # spawning `provekit-linkerd` (which subprocesses kit lifters at lift
 # time). Each kit's build target is independent; failures stay isolated.
-# NOTE: build-swift is intentionally excluded: it requires a macOS host
-# with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
-# directly on macOS.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-csharp build-java build-python build-ruby build-scala
+build-all: build-rust build-cpp build-go build-csharp build-java build-python
 
 .PHONY: build-rust
 build-rust:
@@ -145,28 +140,6 @@ build-python:
 		-e implementations/python/provekit-lift-python-source \
 		-e implementations/python/provekit-lift-py-pytest-witness
 
-.PHONY: build-scala
-build-scala:
-	$(SCALA_CLI) compile implementations/scala/provekit-emit-scala-scalatest --server=false --scalac-option -deprecation
-	$(SCALA_CLI) compile implementations/scala/provekit-lift-scala-source --server=false --scalac-option -deprecation
-
-.PHONY: build-ruby
-build-ruby:
-	cd implementations/ruby/ext/provekit_blake3 && $(RUBY) extconf.rb && $(MAKE)
-	cd implementations/ruby && $(RUBY) -S bundle exec $(RUBY) -Ilib -e 'require "provekit"; abort unless Provekit::Blake3.hex("provekit").start_with?("blake3-512:")'
-
-.PHONY: build-swift
-# Debug, not release. ~90% of this build is the swift-syntax dependency (the
-# Swift parser the source lifter needs), and compiling it with full release
-# optimization is most of the multi-minute tax. Debug is safe here: minted
-# CIDs are content-addressed (JCS+blake3 over contract data), so binary
-# optimization level cannot change them, and CI fixtures are tiny so lifter
-# runtime perf is irrelevant. Override with `SWIFT_BUILD_CONFIG=release` if a
-# release artifact is ever needed.
-SWIFT_BUILD_CONFIG ?= debug
-build-swift:
-	cd implementations/swift && swift build -c $(SWIFT_BUILD_CONFIG)
-
 # --- Mint targets ------------------------------------------------------------
 
 # Each mint target builds its peer + dispatches via a `--kit=<alias>` entry
@@ -201,14 +174,6 @@ test-rust: build-java build-python
 .PHONY: python-language-signature
 python-language-signature:
 	python3 menagerie/python-language-signature/generate_assets.py --check
-
-.PHONY: ruby-language-signature
-ruby-language-signature:
-	python3 menagerie/ruby-language-signature/generate_assets.py --check
-
-.PHONY: menagerie-zig-language-signature
-menagerie-zig-language-signature:
-	python3 menagerie/zig-language-signature/generate_assets.py
 
 .PHONY: test-go
 test-go:
@@ -282,10 +247,6 @@ test-python: build-python
 		pytest) || failed="$$failed provekit-lift-py-pytest-witness"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
-.PHONY: test-ruby
-test-ruby: build-ruby ruby-language-signature
-	cd implementations/ruby && $(RUBY) -S bundle exec rake test
-
 .PHONY: test-php
 test-php:
 	cd implementations/php && composer install && composer test
@@ -299,48 +260,6 @@ test-java: build-java
 	  || failed="$$failed provekit-realize-java-core"; \
 	if [ -n "$$failed" ]; then echo "test-java FAIL:$$failed"; exit 1; fi
 
-.PHONY: test-scala
-test-scala: build-scala
-	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_scala_scalatest \
-		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
-	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
-
-.PHONY: test-swift
-test-swift: build-swift
-	cd implementations/swift && swift test
-	cd implementations/swift && swift run conformance
-	cd implementations/swift && swift run test-swift-lsp
-	cd implementations/swift && swift run test-swift-crypto
-
-.PHONY: test-swift-source-lift
-test-swift-source-lift: build-swift
-	cd implementations/swift && swift run test-swift-source-lift
-
-.PHONY: test-zig
-test-zig:
-	cd implementations/zig/provekit-ir && zig build test
-	cd implementations/zig/provekit-lift-zig-tests && zig build test
-	cd implementations/zig/provekit-lift-zig-tests && zig build
-	cd implementations/zig/provekit-lift-zig-source && zig build test
-	cd implementations/zig/provekit-lift-zig-source && zig build
-	@echo "test-zig: lift-zig-tests and lift-zig-source binary builds verified"
-	cd implementations/zig/provekit-lsp-zig && zig build test
-	cd implementations/zig/provekit-lsp-zig && zig build
-	@echo "test-zig: LSP lifecycle integration test"
-	sh implementations/zig/provekit-lsp-zig/test_lsp.sh
-
-.PHONY: build-zig
-build-zig:
-	cd implementations/zig/provekit-ir && zig build
-	cd implementations/zig/provekit-lift-zig-tests && zig build
-	cd implementations/zig/provekit-lift-zig-source && zig build
-	cd implementations/zig/provekit-lsp-zig && zig build
-	cd implementations/zig/provekit-proof-envelope-zig && zig build
-
-# NOTE: test-swift is intentionally excluded from test-all: it requires a
-# macOS host with the Swift toolchain. Use `make test-swift` on macOS.
-#
 # The acid test: the two suites that actually prove real code with zero
 # changes. `test-rust` runs the rust workspace (including the crate-pair
 # inheritance E2E) and exercises the java / ts / python realize kits over RPC;

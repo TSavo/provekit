@@ -1,0 +1,24 @@
+# rust cargo-test WITNESS showcase (GOOD suite).
+#
+# The pytest-witness story, in Rust. One lift surface runs `cargo test`, content-
+# addresses the per-test pass/fail outcomes into ONE witness package, and emits a
+# signed WitnessPackageMemento + a custom-evidence contract.
+#
+#   mint   : run the suite -> one .proof carrying the witness-package contract +
+#            the signed memento.
+#   prove  : the custom evidence (tool="cargo-test") discharges by RECOMPUTE -- the
+#            kit re-runs the suite, rebuilds the bundle, confirms the pinned
+#            package cid reproduces AND every per-test witness passed.
+#   verify : the witness axis -- rust asks the kit oracle to RESOLVE the bundle
+#            body (package file, or re-run), blake3's the bytes itself, and
+#            compares to the pinned witness_cid. The oracle is untrusted.
+[[plugins]]
+name = "rust-cargo-test-witness-lift"
+kind = "lift"
+surface = "rust-cargo-test-witness"
+
+[solvers]
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
