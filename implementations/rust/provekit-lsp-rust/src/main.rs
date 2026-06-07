@@ -51,8 +51,6 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use provekit_ir_symbolic::serialize::marshal_declarations;
-use provekit_lift::adapter_contracts;
 use provekit_lsp_rust::forward_propagator::ForwardPropagator;
 
 const KIT_ID: &str = "rust";
@@ -505,31 +503,37 @@ fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::
         }
     };
 
-    let mut decls = Vec::new();
+    // The syn parse above is a fast in-process pre-check that yields a
+    // precise editor error. `file` is otherwise unused now: contract
+    // lifting goes OVER RPC (THE SEVER) instead of the old static
+    // the static contracts-adapter lift_file.
+    let _ = file;
+
     let mut warnings: Vec<serde_json::Value> = Vec::new();
 
-    // Run the contracts adapter.
-    let c_out = adapter_contracts::lift_file(&file, path);
-    decls.extend(c_out.decls);
-    for w in &c_out.warnings {
-        warnings.push(serde_json::json!({
-            "adapter": "contracts",
-            "path": w.source_path,
-            "item": w.item_name,
-            "reason": w.reason
-        }));
-    }
-
-    // Marshal declarations to kit-shape JSON array, then parse it back so
-    // it embeds as JSON (not a string) in the response envelope.
-    let decls_json_str = if decls.is_empty() {
-        "[]".to_string()
-    } else {
-        marshal_declarations(&decls)
+    // THE SEVER: dispatch the rust-contracts lift kit over RPC instead of
+    // statically linking `lift_file`. The editor hands us in-memory
+    // `source`; mirror linkerd's temp-dir pattern (the established way to
+    // feed in-memory source to the disk-reading lifter) — write the source
+    // to a fresh temp file, invoke the kit, and forward the returned
+    // ir-document `ir` array verbatim as `declarations` (it is already the
+    // marshalled `kind:"contract"` shape the old static path produced).
+    let decls_value: serde_json::Value = match rpc_lift_source(source, path) {
+        Ok((ir, gaps)) => {
+            for gap in gaps {
+                warnings.push(gap);
+            }
+            ir
+        }
+        Err(message) => {
+            warnings.push(serde_json::json!({
+                "adapter": "contracts",
+                "path": path,
+                "reason": format!("rpc lift failed: {message}")
+            }));
+            serde_json::Value::Array(vec![])
+        }
     };
-
-    let decls_value: serde_json::Value =
-        serde_json::from_str(&decls_json_str).unwrap_or(serde_json::Value::Array(vec![]));
 
     let floor_stmts = ForwardPropagator::lower_floor_source(source);
     let diagnostics: Vec<serde_json::Value> = ForwardPropagator::floor_v1_seed_index()
@@ -547,4 +551,61 @@ fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::
             "diagnostics": diagnostics
         }
     })
+}
+
+/// THE SEVER: lift `source`'s `#[requires]`/`#[ensures]` contracts by
+/// spawning the `contracts_rpc` kit (via `provekit-lift-rpc-client`),
+/// instead of statically calling the static contracts-adapter lift_file.
+///
+/// The editor supplies in-memory source. The kit reads from disk, so we
+/// write the source to a fresh temp file under a temp workspace (mirroring
+/// `provekit-linkerd::lift_rust_source`), invoke the kit against that one
+/// file, and return `(ir_array, lift_gap_warnings)`. The `ir` array is the
+/// marshalled `kind:"contract"` shape the static path produced verbatim.
+fn rpc_lift_source(
+    source: &str,
+    path: &str,
+) -> Result<(serde_json::Value, Vec<serde_json::Value>), String> {
+    let file_name = std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "lifted.rs".to_string());
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "provekit-lsp-rust-lift-{}-{nanos}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("create temp dir: {e}"))?;
+    let tmp_file = tmp_dir.join(&file_name);
+    std::fs::write(&tmp_file, source).map_err(|e| format!("write temp file: {e}"))?;
+
+    let result = provekit_lift_rpc_client::invoke_lift(&tmp_dir, &[file_name.clone()])
+        .map_err(|e| e.to_string());
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let doc = result?;
+
+    let ir = doc
+        .get("ir")
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::Array(vec![]));
+
+    // Carry lift-gap diagnostics through as `contracts` warnings (the kit
+    // reports parse/read failures and untranslatable predicates here).
+    let mut gaps: Vec<serde_json::Value> = Vec::new();
+    if let Some(arr) = doc.get("diagnostics").and_then(|d| d.as_array()) {
+        for d in arr {
+            gaps.push(serde_json::json!({
+                "adapter": "contracts",
+                "path": d.get("path").and_then(|v| v.as_str()).unwrap_or(path),
+                "item": d.get("item").and_then(|v| v.as_str()).unwrap_or(""),
+                "reason": d.get("reason").and_then(|v| v.as_str()).unwrap_or("lift-gap"),
+            }));
+        }
+    }
+
+    Ok((ir, gaps))
 }

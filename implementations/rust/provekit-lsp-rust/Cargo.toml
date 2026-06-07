@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "NDJSON LSP plugin for Rust. Thin shim around provekit-lift adapters; speaks the per-language plugin protocol (initialize/parse/shutdown)."
+description = "NDJSON LSP plugin for Rust. Thin shim that dispatches the rust-contracts lift kit over RPC; speaks the per-language plugin protocol (initialize/parse/shutdown)."
 
 [[bin]]
 name = "provekit-lsp-rust"
@@ -15,8 +15,11 @@ name = "provekit_lsp_rust"
 path = "src/lib.rs"
 
 [dependencies]
-provekit-lift = { path = "../provekit-lift" }
-provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+# THE SEVER: contract lifting now goes OVER RPC via the shared leaf client
+# (which spawns the `contracts_rpc` kit), not the statically-linked
+# `provekit-lift` / `provekit-lift-contracts` `lift_file`. This crate no
+# longer links the lifter or the IR-symbolic stack at all.
+provekit-lift-rpc-client = { path = "../provekit-lift-rpc-client" }
 serde_json = { workspace = true }
 syn = { workspace = true }
 blake3 = { workspace = true }

@@ -33,8 +33,12 @@ provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 libprovekit = { path = "../libprovekit" }
 
-# Adapter crate (owns its own shape walker).
-provekit-lift-contracts = { path = "../provekit-lift-contracts" }
+# THE SEVER: the rust-contracts lifter is no longer statically linked.
+# `lift_path` dispatches it over RPC (the `contracts_rpc` kit) through this
+# shared leaf client, then deserializes the ir-document via
+# `provekit-ir-symbolic::parse::parse_document`. `provekit-lift-contracts`
+# is now a DEV-dependency only (tests still exercise `lift_file` directly).
+provekit-lift-rpc-client = { path = "../provekit-lift-rpc-client" }
 
 # External.
 syn = { workspace = true }
@@ -47,3 +51,8 @@ base64 = { workspace = true }
 
 [dev-dependencies]
 provekit-verifier = { path = "../provekit-verifier" }
+# Tests exercise the lifter's `lift_file` directly (call_edges.rs,
+# end_to_end.rs) — that is the sanctioned way to keep lifter-behavior
+# coverage without spawning RPC inside a unit test. Production code paths
+# reach the lifter only over RPC (see the dependency note above).
+provekit-lift-contracts = { path = "../provekit-lift-contracts" }

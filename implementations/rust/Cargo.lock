@@ -1078,7 +1078,7 @@ dependencies = [
  "glob",
  "proc-macro2",
  "provekit-ir-symbolic",
- "provekit-lift-contracts",
+ "provekit-lift-rpc-client",
  "quote",
  "serde",
  "serde_json",
@@ -1129,7 +1129,6 @@ dependencies = [
  "provekit-ir-symbolic",
  "provekit-ir-types",
  "provekit-lift",
- "provekit-lift-contracts",
  "provekit-linker",
  "provekit-plugin-loader",
  "provekit-proof-envelope",
@@ -1145,16 +1144,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
-]
-
-[[package]]
-name = "provekit-emit-rust-cargo-test"
-version = "0.1.0"
-dependencies = [
- "provekit-ir-types",
- "serde",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -1238,6 +1227,7 @@ dependencies = [
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
  "provekit-lift-contracts",
+ "provekit-lift-rpc-client",
  "provekit-proof-envelope",
  "provekit-verifier",
  "quote",
@@ -1258,6 +1248,14 @@ dependencies = [
  "quote",
  "serde_json",
  "syn",
+ "walkdir",
+]
+
+[[package]]
+name = "provekit-lift-rpc-client"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -1329,8 +1327,7 @@ name = "provekit-lsp-rust"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "provekit-ir-symbolic",
- "provekit-lift",
+ "provekit-lift-rpc-client",
  "serde_json",
  "syn",
 ]

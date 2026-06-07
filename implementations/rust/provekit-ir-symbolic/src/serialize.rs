@@ -210,18 +210,28 @@ fn write_evidence(out: &mut String, e: &EvidenceTerm) {
 
 fn write_string(out: &mut String, s: &str) {
     out.push('"');
-    for b in s.as_bytes() {
-        let c = *b;
-        match c {
-            b'"' => out.push_str("\\\""),
-            b'\\' => out.push_str("\\\\"),
-            0x00..=0x1F => {
+    // Iterate by `char`, NOT by byte. Iterating bytes and doing
+    // `byte as char` mangles every multi-byte UTF-8 scalar: e.g. `≥`
+    // (U+2265 = bytes E2 89 A5) became the three code points U+00E2,
+    // U+0089, U+00A5, which then re-encode as 6 bytes of mojibake. The
+    // integer-comparison operators `≥`/`≤` are emitted by `gte`/`lte`,
+    // so this corrupted any contract carrying a `>=`/`<=` predicate when
+    // its IR-JSON was round-tripped through `parse_document` (the path the
+    // RPC lift transport newly exercises). Pushing whole `char`s keeps
+    // valid UTF-8, which is also conformant JSON (only `"`, `\`, and
+    // control chars < 0x20 require escaping).
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => {
                 const HEX: &[u8; 16] = b"0123456789abcdef";
+                let c = c as u32;
                 out.push_str("\\u00");
                 out.push(HEX[((c >> 4) & 0xF) as usize] as char);
                 out.push(HEX[(c & 0xF) as usize] as char);
             }
-            _ => out.push(c as char),
+            c => out.push(c),
         }
     }
     out.push('"');

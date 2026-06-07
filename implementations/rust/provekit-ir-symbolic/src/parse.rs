@@ -589,7 +589,9 @@ fn _unused_str_const_for_proptest_exemplar() -> Rc<Term> {
 mod tests {
     use super::*;
     use crate::serialize::{formula_to_value, marshal_declarations};
-    use crate::{and_, eq, gt, lt, must, not_, num, or_, reset_collector, str_const, ConstValue};
+    use crate::{
+        and_, eq, gt, gte, lt, lte, must, not_, num, or_, reset_collector, str_const, ConstValue,
+    };
 
     fn jcs_to_json(v: &std::sync::Arc<provekit_canonicalizer::Value>) -> Json {
         // Round-trip through JCS string -> serde_json::Value for tests.
@@ -684,6 +686,50 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].name, "compute_cid");
         assert_eq!(parsed[1].name, "BLAKE3_512");
+    }
+
+    /// Regression: non-ASCII operators `≥` (U+2265) / `≤` (U+2264),
+    /// emitted by `gte` / `lte`, must survive the
+    /// `marshal_declarations` -> `parse_document` round-trip BYTE-FOR-BYTE.
+    ///
+    /// The old `write_string` iterated `s.as_bytes()` and pushed each byte
+    /// as a `char`, mangling `≥`'s three UTF-8 bytes (E2 89 A5) into three
+    /// separate code points (U+00E2/U+0089/U+00A5) — double-encoded
+    /// mojibake. This silently corrupted any contract with a `>=`/`<=`
+    /// predicate whenever its IR-JSON was round-tripped (the exact path
+    /// the RPC lift transport exercises). The earlier ASCII-only round-trip
+    /// tests never caught it. This test locks the fix.
+    #[test]
+    fn round_trip_preserves_non_ascii_operators() {
+        reset_collector();
+        // A contract whose pre uses `≥` and whose inv uses `≤`.
+        must("ge_le_fn", {
+            crate::forall(crate::Int(), |x| {
+                and_(vec![
+                    gte(x.clone(), num(0)),
+                    lte(x.clone(), num(100)),
+                ])
+            })
+        });
+        let decls = finish();
+        let doc = marshal_declarations(&decls);
+        // The marshalled JSON must contain the real Unicode operators, not
+        // mojibake.
+        assert!(
+            doc.contains('\u{2265}'),
+            "marshalled doc must contain U+2265 `≥`, got: {doc}"
+        );
+        assert!(
+            doc.contains('\u{2264}'),
+            "marshalled doc must contain U+2264 `≤`, got: {doc}"
+        );
+        // Round-trip must be byte-stable: marshal(parse(marshal(x))) == marshal(x).
+        let reparsed = parse_document(&doc).expect("parse_document");
+        let remarshalled = marshal_declarations(&reparsed);
+        assert_eq!(
+            doc, remarshalled,
+            "non-ASCII operator round-trip must be byte-identical"
+        );
     }
 
     // ---- Negative tests -----------------------------------------------------

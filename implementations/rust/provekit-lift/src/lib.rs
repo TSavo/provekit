@@ -59,7 +59,13 @@ pub use call_edges::{
     extract_call_edges_from_file, mint_call_edge, CallEdgeMemento, CallSiteLocus,
 };
 
-pub use provekit_lift_contracts as adapter_contracts;
+// THE SEVER: the rust `#[requires]`/`#[ensures]` contract lifter is no
+// longer statically linked. `lift_path` dispatches it over RPC (the
+// `contracts_rpc` kit) via the shared leaf client, then deserializes the
+// returned ir-document back into `ContractDecl`s with the public
+// `parse_document` (the inverse of `marshal_declarations`). Downstream
+// (mint, call-edge extraction, linkerd's conversion) keeps consuming
+// `ContractDecl` UNCHANGED — the RPC seam is localized to `lift_path`.
 
 /// Per-adapter outcome. Counts what each adapter saw and what was
 /// liftable. The `warnings` are the honest "I saw it but couldn't
@@ -128,67 +134,106 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut report = LiftReport::default();
 
     // Per-adapter accumulators keyed by adapter name.
-    let mut contracts_seen = 0usize;
-    let mut contracts_lifted = 0usize;
     let mut contracts_warnings: Vec<AdapterWarning> = Vec::new();
 
-    // Retain (path_str, parsed_file) so the second pass (call-edge extraction)
-    // can re-use them without re-parsing. Only successfully parsed files are kept.
-    let mut parsed_files: Vec<(String, syn::File)> = Vec::new();
+    // Enumerate the workspace's `.rs` files once. The same relative POSIX
+    // paths are the cross-platform-deterministic source locators passed to
+    // the lift kit AND used for call-edge extraction (absolute paths embed
+    // the machine's directory prefix; relative POSIX paths are identical for
+    // identical source trees on any host).
+    let rs_files = enumerate_rs_files(root);
+    report.files_scanned = rs_files.len();
+    let source_paths: Vec<String> = rs_files.iter().map(|(rel, _)| rel.clone()).collect();
 
-    for (rel_posix, abs_path) in enumerate_rs_files(root) {
-        report.files_scanned += 1;
-        let bytes = match std::fs::read(&abs_path) {
-            Ok(b) => b,
-            Err(e) => {
-                report
-                    .parse_errors
-                    .push((rel_posix.clone(), format!("read: {e}")));
-                continue;
+    // THE SEVER: dispatch the rust-contracts lift kit over RPC instead of
+    // calling the contracts adapter's lift_file statically. One dispatch over
+    // the whole workspace; the kit walks the supplied `source_paths` and
+    // returns an ir-document. We deserialize its `ir` array back into
+    // `ContractDecl`s via the public `parse_document` (the enforced inverse
+    // of `marshal_declarations`), so every downstream consumer — mint,
+    // call-edge extraction, linkerd's conversion — keeps seeing
+    // `ContractDecl` exactly as before.
+    match provekit_lift_rpc_client::invoke_lift(root, &source_paths) {
+        Ok(doc) => {
+            // Surface kit diagnostics (read/parse failures, lift gaps) on the
+            // report's parse_errors / warnings, mirroring the old static path.
+            if let Some(diags) = doc.get("diagnostics").and_then(|d| d.as_array()) {
+                for d in diags {
+                    let path = d
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let reason = d
+                        .get("reason")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("lift-gap")
+                        .to_string();
+                    if reason.starts_with("read:") || reason.starts_with("parse:") {
+                        report.parse_errors.push((path, reason));
+                    } else {
+                        contracts_warnings.push(AdapterWarning {
+                            adapter: "contracts",
+                            source_path: path,
+                            item_name: d
+                                .get("item")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            reason,
+                        });
+                    }
+                }
             }
-        };
-        let src = match std::str::from_utf8(&bytes) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let file = match syn::parse_file(src) {
-            Ok(f) => f,
-            Err(e) => {
-                report
+            // Deserialize the ir-document's `ir` array into typed decls.
+            // Render the `ir` array back to a JSON string for the public
+            // `parse_document` entry point (its inverse, `marshal_declarations`,
+            // also produces a string — this is the enforced round-trip pair).
+            let ir_str = match doc.get("ir") {
+                Some(ir) => ir.to_string(),
+                None => "[]".to_string(),
+            };
+            match provekit_ir_symbolic::parse::parse_document(&ir_str) {
+                Ok(decls) => report.decls.extend(decls),
+                Err(e) => report
                     .parse_errors
-                    .push((rel_posix.clone(), format!("parse: {e}")));
-                continue;
+                    .push((String::new(), format!("ir-document parse: {e}"))),
             }
-        };
-        // Use the relative POSIX path (not the absolute host path) as the
-        // path_str passed to every adapter and to call-edge extraction.
-        // This is the fix for cross-platform CID non-determinism: absolute
-        // paths embed the machine's directory prefix; relative POSIX paths
-        // are identical for identical source trees on any host.
-        let path_str = rel_posix.clone();
-        parsed_files.push((path_str.clone(), file.clone()));
-
-        // Adapter: contracts.
-        let c_out = adapter_contracts::lift_file(&file, &path_str);
-        contracts_seen += c_out.seen;
-        contracts_lifted += c_out.lifted;
-        for w in c_out.warnings {
-            contracts_warnings.push(AdapterWarning {
-                adapter: "contracts",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
         }
-        report.decls.extend(c_out.decls);
+        Err(e) => {
+            // A spawn/protocol failure is surfaced loudly, not silently
+            // swallowed: record it so callers see the lifter is unreachable.
+            report
+                .parse_errors
+                .push((String::new(), format!("contracts kit rpc: {e}")));
+        }
     }
 
+    let contracts_lifted = report.decls.len();
     report.adapter_reports.push(AdapterReport {
         adapter: "contracts",
-        seen: contracts_seen,
+        // `seen` and `lifted` collapse to the lifted count: the kit owns the
+        // per-function seen/skip bookkeeping now and reports gaps as
+        // diagnostics; the substrate counts what it received.
+        seen: contracts_lifted,
         lifted: contracts_lifted,
         warnings: contracts_warnings,
     });
+
+    // Re-parse files locally (syn) ONLY for call-edge extraction, which
+    // needs the `syn::File` AST. Contract lifting itself is done (over RPC).
+    let mut parsed_files: Vec<(String, syn::File)> = Vec::new();
+    for (rel_posix, abs_path) in &rs_files {
+        let Ok(bytes) = std::fs::read(abs_path) else {
+            continue;
+        };
+        let Ok(src) = std::str::from_utf8(&bytes) else {
+            continue;
+        };
+        if let Ok(file) = syn::parse_file(src) {
+            parsed_files.push((rel_posix.clone(), file));
+        }
+    }
 
     // --- Second pass: call-edge extraction (spec #114 §1 R1) ----------------
     //
@@ -1063,19 +1108,30 @@ fn answer_is_42(x: i64) -> i64 {{ x }}
     }
 
     fn sample_contract_decl(name: &str) -> ContractDecl {
-        let src = r#"
-#[requires(x > 0)]
-#[ensures(ret >= 0)]
-fn lifted_property(x: i64) -> i64 { x }
-"#;
-        let parsed = syn::parse_file(src).expect("fixture parses");
-        let mut decl = adapter_contracts::lift_file(&parsed, "src/lib.rs")
-            .decls
+        // THE SEVER: this test helper used to call the static
+        // the static contracts-adapter lift_file. The lifter is no longer statically
+        // linked here (it is an RPC kit), so build the fixture decl from the
+        // IR-JSON shape the lifter emits — the SAME `kind:"contract"` shape
+        // marshalled across the wire — via the public `parse_document`
+        // deserializer (the inverse of `marshal_declarations`). This
+        // reproduces what `#[requires(x > 0)]` / `#[ensures(ret >= 0)]`
+        // lifts to, with no compile-time dependency on the lifter.
+        let doc = format!(
+            r#"[{{"kind":"contract","name":{name:?},"outBinding":"out",
+                "pre":{{"kind":"forall","name":"x","sort":{{"kind":"primitive","name":"Int"}},
+                    "body":{{"kind":"atomic","name":">","args":[
+                        {{"kind":"var","name":"x"}},
+                        {{"kind":"const","value":0,"sort":{{"kind":"primitive","name":"Int"}}}}]}}}},
+                "post":{{"kind":"forall","name":"x","sort":{{"kind":"primitive","name":"Int"}},
+                    "body":{{"kind":"atomic","name":">=","args":[
+                        {{"kind":"var","name":"ret"}},
+                        {{"kind":"const","value":0,"sort":{{"kind":"primitive","name":"Int"}}}}]}}}}}}]"#
+        );
+        provekit_ir_symbolic::parse::parse_document(&doc)
+            .expect("fixture document parses")
             .into_iter()
             .next()
-            .expect("fixture lifts one contract");
-        decl.name = name.to_string();
-        decl
+            .expect("fixture yields one contract")
     }
 
     fn sample_panic_locus_at(line: i64, panic_line: i64) -> Arc<Value> {

@@ -22,6 +22,7 @@ members = [
     "provekit-sugar",
     "provekit-lift",
     "provekit-lift-contracts",
+    "provekit-lift-rpc-client",
     "provekit-lift-rust-cargo-test-witness",
     "provekit-linker",
     "provekit-lsp",

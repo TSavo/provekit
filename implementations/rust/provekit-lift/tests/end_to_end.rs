@@ -107,8 +107,8 @@ fn dedup_collapses_identical_ir_across_files() {
         fn p_equal_42(x: i64) -> i64 { x }
     "#;
     let f = syn::parse_file(src).unwrap();
-    let a = provekit_lift::adapter_contracts::lift_file(&f, "a.rs");
-    let b = provekit_lift::adapter_contracts::lift_file(&f, "b.rs");
+    let a = provekit_lift_contracts::lift_file(&f, "a.rs");
+    let b = provekit_lift_contracts::lift_file(&f, "b.rs");
     let mut decls = a.decls;
     // Same name same IR: should dedup at mint.
     decls.extend(b.decls);
@@ -141,8 +141,8 @@ fn name_collision_on_different_ir_conjoins_for_the_solver() {
     "#;
     let af = syn::parse_file(a_src).unwrap();
     let bf = syn::parse_file(b_src).unwrap();
-    let mut decls = provekit_lift::adapter_contracts::lift_file(&af, "a.rs").decls;
-    decls.extend(provekit_lift::adapter_contracts::lift_file(&bf, "b.rs").decls);
+    let mut decls = provekit_lift_contracts::lift_file(&af, "a.rs").decls;
+    decls.extend(provekit_lift_contracts::lift_file(&bf, "b.rs").decls);
     let opts = LiftOptions::default();
     let minted =
         mint_proof(&decls, &opts).expect("distinct facts under one name conjoin; they do not fail at mint");
