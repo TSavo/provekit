@@ -258,7 +258,7 @@ test-python: build-python
 	(cd implementations/python/provekit-lift-py-tests && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e . pytest && \
+		python -m pip install --quiet -e . pytest numpy pandas scikit-learn && \
 		pytest) || failed="$$failed provekit-lift-py-tests"; \
 	(cd implementations/python/provekit-emit-python-pytest && \
 		python3 -m venv .venv && \
@@ -280,21 +280,6 @@ test-python: build-python
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest pynacl blake3 cbor2 && \
 		pytest) || failed="$$failed provekit-lift-py-pytest-witness"; \
-	(cd implementations/python/provekit-lift-py-numpy-testing && \
-		python3 -m venv .venv && \
-		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-lift-py-tests -e ../provekit-lift-python-source -e ../provekit-lift-py-pytest-witness -e . pytest numpy blake3 pynacl cbor2 && \
-		pytest) || failed="$$failed provekit-lift-py-numpy-testing"; \
-	(cd implementations/python/provekit-lift-py-pandas-testing && \
-		python3 -m venv .venv && \
-		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest pandas && \
-		pytest) || failed="$$failed provekit-lift-py-pandas-testing"; \
-	(cd implementations/python/provekit-lift-py-sklearn-testing && \
-		python3 -m venv .venv && \
-		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest numpy scikit-learn && \
-		pytest) || failed="$$failed provekit-lift-py-sklearn-testing"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-ruby
