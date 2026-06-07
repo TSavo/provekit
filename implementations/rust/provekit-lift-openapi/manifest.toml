@@ -1,9 +1,0 @@
-name = "openapi"
-version = "1.0.0"
-protocol_version = "pep/1.7.0"
-command = ["provekit-lift-openapi", "--rpc"]
-
-[capabilities]
-authoring_surfaces = ["openapi", "swagger", "protobuf"]
-ir_version = "v1.1.0"
-emits_signed_mementos = false
