@@ -60,14 +60,6 @@ pub use call_edges::{
 };
 
 pub use provekit_lift_contracts as adapter_contracts;
-pub use provekit_lift_creusot as adapter_creusot;
-pub use provekit_lift_flux as adapter_flux;
-pub use provekit_lift_kani as adapter_kani;
-pub use provekit_lift_proptest as adapter_proptest;
-pub use provekit_lift_prusti as adapter_prusti;
-pub use provekit_lift_quickcheck as adapter_quickcheck;
-pub use provekit_lift_rust_tests as adapter_rust_tests;
-pub use provekit_lift_verus as adapter_verus;
 
 /// Per-adapter outcome. Counts what each adapter saw and what was
 /// liftable. The `warnings` are the honest "I saw it but couldn't
@@ -136,44 +128,9 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut report = LiftReport::default();
 
     // Per-adapter accumulators keyed by adapter name.
-    let mut proptest_seen = 0usize;
-    let mut proptest_lifted = 0usize;
-    let mut proptest_warnings: Vec<AdapterWarning> = Vec::new();
     let mut contracts_seen = 0usize;
     let mut contracts_lifted = 0usize;
     let mut contracts_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut kani_seen = 0usize;
-    let mut kani_lifted = 0usize;
-    let mut kani_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut prusti_seen = 0usize;
-    let mut prusti_lifted = 0usize;
-    let mut prusti_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut creusot_seen = 0usize;
-    let mut creusot_lifted = 0usize;
-    let mut creusot_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut flux_seen = 0usize;
-    let mut flux_lifted = 0usize;
-    let mut flux_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut quickcheck_seen = 0usize;
-    let mut quickcheck_lifted = 0usize;
-    let mut quickcheck_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut verus_seen = 0usize;
-    let mut verus_lifted = 0usize;
-    let mut verus_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut rust_tests_seen = 0usize;
-    let mut rust_tests_lifted = 0usize;
-    let mut rust_tests_warnings: Vec<AdapterWarning> = Vec::new();
-    let mut rust_tests_l2_seen = 0usize;
-    let mut rust_tests_l2_lifted = 0usize;
-    let mut rust_tests_l2_warnings: Vec<AdapterWarning> = Vec::new();
-    // Pattern-split counters for the CLI summary (printed as a single
-    // breakdown line; not currently surfaced in AdapterReport).
-    let mut l2_bounded_loop_lifted = 0usize;
-    let mut l2_bounded_loop_skipped = 0usize;
-    let mut l2_helper_lifted = 0usize;
-    let mut l2_helper_skipped = 0usize;
-    let mut l2_char_lifted = 0usize;
-    let mut l2_char_skipped = 0usize;
 
     // Retain (path_str, parsed_file) so the second pass (call-edge extraction)
     // can re-use them without re-parsing. Only successfully parsed files are kept.
@@ -211,20 +168,6 @@ pub fn lift_path(root: &Path) -> LiftReport {
         let path_str = rel_posix.clone();
         parsed_files.push((path_str.clone(), file.clone()));
 
-        // Adapter: proptest.
-        let p_out = adapter_proptest::lift_file(&file, &path_str);
-        proptest_seen += p_out.seen;
-        proptest_lifted += p_out.lifted;
-        for w in p_out.warnings {
-            proptest_warnings.push(AdapterWarning {
-                adapter: "proptest",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(p_out.decls);
-
         // Adapter: contracts.
         let c_out = adapter_contracts::lift_file(&file, &path_str);
         contracts_seen += c_out.seen;
@@ -238,201 +181,14 @@ pub fn lift_path(root: &Path) -> LiftReport {
             });
         }
         report.decls.extend(c_out.decls);
-
-        // Adapter: kani.
-        let k_out = adapter_kani::lift_file(&file, &path_str);
-        kani_seen += k_out.seen;
-        kani_lifted += k_out.lifted;
-        for w in k_out.warnings {
-            kani_warnings.push(AdapterWarning {
-                adapter: "kani",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(k_out.decls);
-
-        // Adapter: prusti.
-        let pr_out = adapter_prusti::lift_file(&file, &path_str);
-        prusti_seen += pr_out.seen;
-        prusti_lifted += pr_out.lifted;
-        for w in pr_out.warnings {
-            prusti_warnings.push(AdapterWarning {
-                adapter: "prusti",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(pr_out.decls);
-
-        // Adapter: creusot.
-        let cr_out = adapter_creusot::lift_file(&file, &path_str);
-        creusot_seen += cr_out.seen;
-        creusot_lifted += cr_out.lifted;
-        for w in cr_out.warnings {
-            creusot_warnings.push(AdapterWarning {
-                adapter: "creusot",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(cr_out.decls);
-
-        // Adapter: flux.
-        let fx_out = adapter_flux::lift_file(&file, &path_str);
-        flux_seen += fx_out.seen;
-        flux_lifted += fx_out.lifted;
-        for w in fx_out.warnings {
-            flux_warnings.push(AdapterWarning {
-                adapter: "flux",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(fx_out.decls);
-
-        // Adapter: quickcheck.
-        let qc_out = adapter_quickcheck::lift_file(&file, &path_str);
-        quickcheck_seen += qc_out.seen;
-        quickcheck_lifted += qc_out.lifted;
-        for w in qc_out.warnings {
-            quickcheck_warnings.push(AdapterWarning {
-                adapter: "quickcheck",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(qc_out.decls);
-
-        // Adapter: verus.
-        let vr_out = adapter_verus::lift_file(&file, &path_str);
-        verus_seen += vr_out.seen;
-        verus_lifted += vr_out.lifted;
-        for w in vr_out.warnings {
-            verus_warnings.push(AdapterWarning {
-                adapter: "verus",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(vr_out.decls);
-
-        // Adapter: rust-tests / Layer 2 (bounded loops, helper inlining,
-        // characterization conjunction). Run BEFORE Layer 0 so it can
-        // claim test fns it owns; Layer 0 then skips the claimed names.
-        let l2_out = adapter_rust_tests::lift_file_layer2(&file, &path_str);
-        rust_tests_l2_seen += l2_out.seen;
-        rust_tests_l2_lifted += l2_out.lifted;
-        l2_bounded_loop_lifted += l2_out.bounded_loop_lifted;
-        l2_bounded_loop_skipped += l2_out.bounded_loop_skipped;
-        l2_helper_lifted += l2_out.helper_inlined_lifted;
-        l2_helper_skipped += l2_out.helper_inlined_skipped;
-        l2_char_lifted += l2_out.characterization_lifted;
-        l2_char_skipped += l2_out.characterization_skipped;
-        for w in l2_out.warnings {
-            rust_tests_l2_warnings.push(AdapterWarning {
-                adapter: "rust-tests-layer2",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(l2_out.decls);
-        let claimed = l2_out.claimed_tests;
-
-        // Adapter: rust-tests / Layer 0 (#[test] / #[tokio::test] -> per-assertion
-        // mementos). Skip tests that Layer 2 claimed.
-        let rt_out = adapter_rust_tests::lift_file_with_skip(&file, &path_str, &claimed);
-        rust_tests_seen += rt_out.seen;
-        rust_tests_lifted += rt_out.lifted;
-        for w in rt_out.warnings {
-            rust_tests_warnings.push(AdapterWarning {
-                adapter: "rust-tests",
-                source_path: w.source_path,
-                item_name: w.item_name,
-                reason: w.reason,
-            });
-        }
-        report.decls.extend(rt_out.decls);
     }
 
-    report.adapter_reports.push(AdapterReport {
-        adapter: "proptest",
-        seen: proptest_seen,
-        lifted: proptest_lifted,
-        warnings: proptest_warnings,
-    });
     report.adapter_reports.push(AdapterReport {
         adapter: "contracts",
         seen: contracts_seen,
         lifted: contracts_lifted,
         warnings: contracts_warnings,
     });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "kani",
-        seen: kani_seen,
-        lifted: kani_lifted,
-        warnings: kani_warnings,
-    });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "prusti",
-        seen: prusti_seen,
-        lifted: prusti_lifted,
-        warnings: prusti_warnings,
-    });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "creusot",
-        seen: creusot_seen,
-        lifted: creusot_lifted,
-        warnings: creusot_warnings,
-    });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "flux",
-        seen: flux_seen,
-        lifted: flux_lifted,
-        warnings: flux_warnings,
-    });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "quickcheck",
-        seen: quickcheck_seen,
-        lifted: quickcheck_lifted,
-        warnings: quickcheck_warnings,
-    });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "verus",
-        seen: verus_seen,
-        lifted: verus_lifted,
-        warnings: verus_warnings,
-    });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "rust-tests",
-        seen: rust_tests_seen,
-        lifted: rust_tests_lifted,
-        warnings: rust_tests_warnings,
-    });
-    report.adapter_reports.push(AdapterReport {
-        adapter: "rust-tests-layer2",
-        seen: rust_tests_l2_seen,
-        lifted: rust_tests_l2_lifted,
-        warnings: rust_tests_l2_warnings,
-    });
-    // Cargo-cult unused-suppress: pattern-split counters are surfaced
-    // through the CLI summary path (run_cli below), not here. Keep them
-    // alive so dead-code lint stays clean.
-    let _ = (
-        l2_bounded_loop_lifted,
-        l2_bounded_loop_skipped,
-        l2_helper_lifted,
-        l2_helper_skipped,
-        l2_char_lifted,
-        l2_char_skipped,
-    );
 
     // --- Second pass: call-edge extraction (spec #114 §1 R1) ----------------
     //
@@ -1222,21 +978,18 @@ mod tests {
         tempdir_compat::TempDir::new("provekit-lift-test").unwrap()
     }
 
-    /// Smallest possible "test workspace": one .rs file with one
-    /// proptest block and one contracts-annotated function, plus a
-    /// duplicate proptest block in a second file (dedup case).
+    /// Smallest possible "test workspace": one .rs file with two
+    /// contracts-annotated functions, plus a duplicate of one of them in
+    /// a second file (dedup case).
     fn write_fixture(dir: &Path) {
         let a = dir.join("a.rs");
         let mut f = std::fs::File::create(&a).unwrap();
         writeln!(
             f,
             r#"
-proptest! {{
-    #[test]
-    fn answer_is_42(x: i64) {{
-        prop_assert_eq!(x, 42);
-    }}
-}}
+#[requires(x > 0)]
+#[ensures(ret >= 0)]
+fn answer_is_42(x: i64) -> i64 {{ x }}
 
 #[requires(x > 0)]
 #[ensures(ret >= 0)]
@@ -1246,16 +999,13 @@ fn sqrt(x: i64) -> i64 {{ x }}
         .unwrap();
         let b = dir.join("b.rs");
         let mut f = std::fs::File::create(&b).unwrap();
-        // Same property, expressed identically: should dedup.
+        // Same contract, expressed identically: should dedup.
         writeln!(
             f,
             r#"
-proptest! {{
-    #[test]
-    fn answer_is_42(x: i64) {{
-        prop_assert_eq!(x, 42);
-    }}
-}}
+#[requires(x > 0)]
+#[ensures(ret >= 0)]
+fn answer_is_42(x: i64) -> i64 {{ x }}
 "#
         )
         .unwrap();
@@ -1268,20 +1018,14 @@ proptest! {{
         let opts = LiftOptions::default();
         let (report, minted, path) =
             lift_and_mint(td.path(), td.path(), &opts).expect("lift_and_mint");
-        // 2 proptest fns seen across the two files, 1 sqrt fn.
-        let proptest = report
-            .adapter_reports
-            .iter()
-            .find(|a| a.adapter == "proptest")
-            .unwrap();
+        // 2 `answer_is_42` fns across the two files + 1 `sqrt` fn = 3 seen.
         let contracts = report
             .adapter_reports
             .iter()
             .find(|a| a.adapter == "contracts")
             .unwrap();
-        assert_eq!(proptest.seen, 2);
-        assert_eq!(proptest.lifted, 2);
-        assert_eq!(contracts.lifted, 1);
+        assert_eq!(contracts.seen, 3);
+        assert_eq!(contracts.lifted, 3);
         // Dedup: two `answer_is_42` collapse to one minted member; sqrt
         // adds one more = 2 members.
         assert_eq!(minted.member_count, 2, "expected dedup; got {minted:?}");
@@ -1318,17 +1062,14 @@ proptest! {{
         assert_eq!(flags.workspace.as_deref(), Some(Path::new("/a")));
     }
 
-    fn proptest_contract_decl(name: &str) -> ContractDecl {
+    fn sample_contract_decl(name: &str) -> ContractDecl {
         let src = r#"
-proptest! {
-    #[test]
-    fn lifted_property(x: i64) {
-        prop_assert_eq!(x, 42);
-    }
-}
+#[requires(x > 0)]
+#[ensures(ret >= 0)]
+fn lifted_property(x: i64) -> i64 { x }
 "#;
         let parsed = syn::parse_file(src).expect("fixture parses");
-        let mut decl = adapter_proptest::lift_file(&parsed, "src/lib.rs")
+        let mut decl = adapter_contracts::lift_file(&parsed, "src/lib.rs")
             .decls
             .into_iter()
             .next()
@@ -1391,7 +1132,7 @@ proptest! {
 
     #[test]
     fn mint_proof_preserves_panic_loci_in_contract_header() {
-        let mut decl = proptest_contract_decl("panic_loci_fixture");
+        let mut decl = sample_contract_decl("panic_loci_fixture");
         let locus = sample_panic_locus_at(12, 13);
         decl.panic_loci = vec![locus.clone()];
 
@@ -1425,7 +1166,7 @@ proptest! {
             ("array", Value::array(vec![]), "array"),
             ("null", Value::null(), "null"),
         ] {
-            let mut decl = proptest_contract_decl("malformed_panic_locus");
+            let mut decl = sample_contract_decl("malformed_panic_locus");
             decl.panic_loci = vec![locus];
 
             let err = mint_proof(&[decl], &LiftOptions::default())
@@ -1442,7 +1183,7 @@ proptest! {
 
     #[test]
     fn mint_proof_keeps_absent_empty_and_nonempty_panic_loci_out_of_contract_set_cid() {
-        let absent = proptest_contract_decl("panic_loci_identity");
+        let absent = sample_contract_decl("panic_loci_identity");
         let mut empty = absent.clone();
         empty.panic_loci = Vec::new();
         let mut nonempty = absent.clone();
@@ -1473,7 +1214,7 @@ proptest! {
 
     #[test]
     fn lift_path_panic_loci_prepass_contract_cid_matches_real_minted_header_cid() {
-        let mut decl = proptest_contract_decl("panic_loci_prepass_equivalence");
+        let mut decl = sample_contract_decl("panic_loci_prepass_equivalence");
         decl.panic_loci = vec![sample_panic_locus_at(22, 23)];
 
         let prepass_cid = contract_cid_for_lift_path_prepass(&decl);
@@ -1494,9 +1235,9 @@ proptest! {
     fn mint_proof_normalizes_panic_loci_order_for_deterministic_headers() {
         let first = sample_panic_locus_at(30, 31);
         let second = sample_panic_locus_at(40, 41);
-        let mut forward = proptest_contract_decl("panic_loci_order");
+        let mut forward = sample_contract_decl("panic_loci_order");
         forward.panic_loci = vec![first.clone(), second.clone()];
-        let mut reverse = proptest_contract_decl("panic_loci_order");
+        let mut reverse = sample_contract_decl("panic_loci_order");
         reverse.panic_loci = vec![second, first];
 
         let forward_mint = mint_proof(&[forward], &LiftOptions::default()).expect("forward mint");
@@ -1510,9 +1251,9 @@ proptest! {
 
     #[test]
     fn mint_proof_coalesces_same_name_panic_loci_without_dropping_provenance() {
-        let mut first = proptest_contract_decl("panic_loci_coalesce");
+        let mut first = sample_contract_decl("panic_loci_coalesce");
         first.panic_loci = vec![sample_panic_locus_at(50, 51)];
-        let mut second = proptest_contract_decl("panic_loci_coalesce");
+        let mut second = sample_contract_decl("panic_loci_coalesce");
         second.panic_loci = vec![sample_panic_locus_at(60, 61)];
 
         let minted = mint_proof(&[first, second], &LiftOptions::default()).expect("mint");

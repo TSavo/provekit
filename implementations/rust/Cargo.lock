@@ -1079,13 +1079,6 @@ dependencies = [
  "proc-macro2",
  "provekit-ir-symbolic",
  "provekit-lift-contracts",
- "provekit-lift-creusot",
- "provekit-lift-flux",
- "provekit-lift-kani",
- "provekit-lift-proptest",
- "provekit-lift-prusti",
- "provekit-lift-quickcheck",
- "provekit-lift-verus",
  "quote",
  "serde",
  "serde_json",
@@ -1245,14 +1238,6 @@ dependencies = [
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
  "provekit-lift-contracts",
- "provekit-lift-creusot",
- "provekit-lift-flux",
- "provekit-lift-kani",
- "provekit-lift-proptest",
- "provekit-lift-prusti",
- "provekit-lift-quickcheck",
- "provekit-lift-rust-tests",
- "provekit-lift-verus",
  "provekit-proof-envelope",
  "provekit-verifier",
  "quote",
@@ -1276,91 +1261,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "provekit-lift-creusot"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "provekit-lift-flux"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "provekit-lift-kani"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "provekit-lift",
- "provekit-verifier",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "provekit-lift-native-surfaces"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "provekit-ir-types",
- "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-lift-openapi"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-lift-proptest"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "provekit-lift-prusti"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "provekit-lift-quickcheck"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "provekit-lift-rust-cargo-test-witness"
 version = "0.1.0"
 dependencies = [
@@ -1370,33 +1270,6 @@ dependencies = [
  "provekit-ir-types",
  "provekit-proof-envelope",
  "serde_json",
-]
-
-[[package]]
-name = "provekit-lift-rust-tests"
-version = "0.1.0"
-dependencies = [
- "libprovekit",
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-ir-symbolic",
- "provekit-ir-types",
- "provekit-lift",
- "provekit-verifier",
- "provekit-walk",
- "quote",
- "serde_json",
- "syn",
-]
-
-[[package]]
-name = "provekit-lift-verus"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -1643,18 +1516,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags 2.11.1",
-]
-
-[[package]]
-name = "regex"
-version = "1.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
 ]
 
 [[package]]

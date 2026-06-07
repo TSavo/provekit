@@ -18,98 +18,19 @@ fn fixtures_dir() -> PathBuf {
 }
 
 #[test]
-fn lifts_proptest_and_contracts_from_fixtures() {
+fn lifts_contracts_from_fixtures() {
     let report = lift_path(&fixtures_dir());
-    let proptest = report
-        .adapter_reports
-        .iter()
-        .find(|a| a.adapter == "proptest")
-        .unwrap();
     let contracts = report
         .adapter_reports
         .iter()
         .find(|a| a.adapter == "contracts")
         .unwrap();
     assert!(
-        proptest.lifted >= 5,
-        "expected >=5 proptest lifts, got {} ({} seen, {} warnings)",
-        proptest.lifted,
-        proptest.seen,
-        proptest.warnings.len()
-    );
-    assert!(
         contracts.lifted >= 3,
-        "expected >=3 contracts lifts, got {}",
-        contracts.lifted
-    );
-}
-
-#[test]
-fn lifts_prusti_creusot_flux_quickcheck_verus_from_fixtures() {
-    let report = lift_path(&fixtures_dir());
-
-    let find = |name: &str| {
-        report
-            .adapter_reports
-            .iter()
-            .find(|a| a.adapter == name)
-            .unwrap_or_else(|| panic!("missing adapter report: {name}"))
-    };
-
-    let prusti = find("prusti");
-    let creusot = find("creusot");
-    let flux = find("flux");
-    let quickcheck = find("quickcheck");
-    let verus = find("verus");
-
-    assert!(
-        prusti.lifted >= 3,
-        "expected >=3 prusti lifts, got {} ({} seen, {} warnings)",
-        prusti.lifted,
-        prusti.seen,
-        prusti.warnings.len()
-    );
-    assert!(
-        creusot.lifted >= 3,
-        "expected >=3 creusot lifts, got {}",
-        creusot.lifted
-    );
-    assert!(
-        flux.lifted >= 3,
-        "expected >=3 flux lifts, got {}",
-        flux.lifted
-    );
-    assert!(
-        quickcheck.lifted >= 3,
-        "expected >=3 quickcheck lifts, got {}",
-        quickcheck.lifted
-    );
-
-    // verus v0 is "skip everything with structured warning". Lift count
-    // is 0 by design; we instead assert non-empty warnings.
-    assert_eq!(verus.lifted, 0, "verus v0 must not lift anything");
-    assert!(
-        !verus.warnings.is_empty(),
-        "verus v0 must emit at least one structured warning"
-    );
-
-    // Each non-verus adapter has exactly one deliberately-skipped
-    // pattern in its fixture. That gives at least one warning each.
-    assert!(
-        !prusti.warnings.is_empty(),
-        "prusti fixture has a #[prusti::predicate] item that should warn"
-    );
-    assert!(
-        !creusot.warnings.is_empty(),
-        "creusot fixture has a #[creusot::law] item that should warn"
-    );
-    assert!(
-        !flux.warnings.is_empty(),
-        "flux fixture has a #[flux::trusted] item that should warn"
-    );
-    assert!(
-        !quickcheck.warnings.is_empty(),
-        "quickcheck fixture has a TestResult-returning property that should warn"
+        "expected >=3 contracts lifts, got {} ({} seen, {} warnings)",
+        contracts.lifted,
+        contracts.seen,
+        contracts.warnings.len()
     );
 }
 
@@ -160,7 +81,7 @@ fn lifted_proof_loads_through_verifier() {
     let (_report, minted, path) =
         lift_and_mint(&fixtures_dir(), &out_dir, &opts).expect("lift_and_mint");
     assert!(path.exists(), "proof file written");
-    assert!(minted.member_count >= 8);
+    assert!(minted.member_count >= 3);
 
     let pool = provekit_verifier::load_all_proofs::run(&out_dir);
     assert!(
@@ -179,18 +100,15 @@ fn lifted_proof_loads_through_verifier() {
 
 #[test]
 fn dedup_collapses_identical_ir_across_files() {
-    // Build two declarations with identical IR via the proptest adapter.
+    // Build two declarations with identical IR via the contracts adapter.
     let src = r#"
-        proptest! {
-            #[test]
-            fn p_equal_42(x: i64) {
-                prop_assert_eq!(x, 42);
-            }
-        }
+        #[requires(x > 0)]
+        #[ensures(ret >= 0)]
+        fn p_equal_42(x: i64) -> i64 { x }
     "#;
     let f = syn::parse_file(src).unwrap();
-    let a = provekit_lift::adapter_proptest::lift_file(&f, "a.rs");
-    let b = provekit_lift::adapter_proptest::lift_file(&f, "b.rs");
+    let a = provekit_lift::adapter_contracts::lift_file(&f, "a.rs");
+    let b = provekit_lift::adapter_contracts::lift_file(&f, "b.rs");
     let mut decls = a.decls;
     // Same name same IR: should dedup at mint.
     decls.extend(b.decls);
@@ -214,25 +132,17 @@ fn name_collision_on_different_ir_conjoins_for_the_solver() {
     // job is to assemble the honest total fact about the name and hand it on;
     // routing the contradiction to the solver is the whole point of the system.
     let a_src = r#"
-        proptest! {
-            #[test]
-            fn p_eq(x: i64) {
-                prop_assert_eq!(x, 42);
-            }
-        }
+        #[requires(x == 42)]
+        fn p_eq(x: i64) -> i64 { x }
     "#;
     let b_src = r#"
-        proptest! {
-            #[test]
-            fn p_eq(x: i64) {
-                prop_assert_eq!(x, 99);
-            }
-        }
+        #[requires(x == 99)]
+        fn p_eq(x: i64) -> i64 { x }
     "#;
     let af = syn::parse_file(a_src).unwrap();
     let bf = syn::parse_file(b_src).unwrap();
-    let mut decls = provekit_lift::adapter_proptest::lift_file(&af, "a.rs").decls;
-    decls.extend(provekit_lift::adapter_proptest::lift_file(&bf, "b.rs").decls);
+    let mut decls = provekit_lift::adapter_contracts::lift_file(&af, "a.rs").decls;
+    decls.extend(provekit_lift::adapter_contracts::lift_file(&bf, "b.rs").decls);
     let opts = LiftOptions::default();
     let minted =
         mint_proof(&decls, &opts).expect("distinct facts under one name conjoin; they do not fail at mint");
