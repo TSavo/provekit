@@ -1,0 +1,4 @@
+{
+  "extra_modules": ["pandas._testing"],
+  "harmless_kwargs": ["obj"]
+}

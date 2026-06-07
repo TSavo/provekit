@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # pandas showcase: the same two-axis correctness claim as numpy-showcase, one
-# rung up the ladder. The next package after numpy is JUST ANOTHER LIFTER
-# PACKAGE (provekit-lift-py-pandas-testing); this example differs from
-# numpy-showcase only by swapping in that seat and pointing the witness venv at
-# pandas.
+# rung up the ladder. The next library after numpy is NOT a new package -- it is
+# the SAME one lifter (provekit_lift_py_tests.assertion_lsp), which learns pandas's
+# vocabulary from each test file's imports plus a dropped-in data file,
+# .provekit/vocab-exceptions/pandas.testing.json. This example differs from
+# numpy-showcase only by that exception file and pointing the witness venv at pandas.
 #
-#   mint   — three lift seats run over the project: the plain pytest CONSISTENCY
-#            seat (scalar assertions), the pandas.testing seat (frame assertions,
-#            approximate-by-default REFUSED unless check_exact pinned), and the
-#            pytest-witness seat (RUNS the tests under real pandas).
+#   mint   — three lift surfaces run over the project: the plain pytest CONSISTENCY
+#            surface (scalar assertions), the one assertion lifter learning
+#            pandas.testing (frame assertions, approximate-by-default REFUSED unless
+#            check_exact pinned), and the pytest-witness surface (RUNS the tests
+#            under real pandas).
 #   prove  — discharges two ways:
 #              CONSISTENT : z3 finds the good contracts mutually consistent and
 #                           the contradictory one UNSAT.
