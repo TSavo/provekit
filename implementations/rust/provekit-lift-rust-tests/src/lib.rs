@@ -1543,11 +1543,20 @@ fn translate_term(expr: &syn::Expr) -> Result<Rc<Term>, String> {
                     args: vec![str_const(s)],
                 }))
             }
-            syn::Lit::Bool(lb) => {
-                Ok(bool_ctor(lb.value))
+            syn::Lit::Float(lf) => {
+                // A float literal lifts as a `Real` const (canonical decimal) -- the
+                // numeric-real counterpart to an integer literal's `Int`. This is the
+                // integral/real distinction the numeric hierarchy needs: i16/i32/i64
+                // literals stay integral (`num`); float literals are Real.
+                let dec = normalize_decimal(lf.base10_digits()).ok_or_else(|| {
+                    format!("float literal not normalizable: {}", lf.base10_digits())
+                })?;
+                Ok(real_const(&dec))
             }
+            syn::Lit::Bool(lb) => Ok(bool_ctor(lb.value)),
             _ => Err(
-                "only integer, string, byte-string, and bool literals are liftable in v0.5".into(),
+                "only integer, float, string, byte-string, and bool literals are liftable in v0.5"
+                    .into(),
             ),
         },
         syn::Expr::Paren(p) => translate_term(&p.expr),
@@ -1865,6 +1874,20 @@ mod tests {
         let mac: syn::Macro = syn::parse_quote!(assert_ulps_eq!(x, y, max_ulps = 4));
         assert!(is_assertion_macro(&mac));
         assert!(lift_assertion_macro(&mac).is_err());
+    }
+
+    #[test]
+    fn integer_and_float_literals_take_distinct_sorts() {
+        // the integral/real distinction at the literal level: i16/i32/i64 literals
+        // stay Int (integral); float literals are Real.
+        let int_eq: syn::Macro = syn::parse_quote!(assert_eq!(f(a), 5));
+        let idump = format!("{:?}", lift_assertion_macro(&int_eq).unwrap());
+        assert!(idump.contains("Int"), "integer literal is Int: {idump}");
+
+        let float_eq: syn::Macro = syn::parse_quote!(assert_eq!(g(a), 2.5));
+        let fdump = format!("{:?}", lift_assertion_macro(&float_eq).unwrap());
+        assert!(fdump.contains("Real"), "float literal is Real: {fdump}");
+        assert!(fdump.contains("2.5"), "float decimal preserved: {fdump}");
     }
 
     fn assert_callsite_name(name: &str, callee: &str) {
