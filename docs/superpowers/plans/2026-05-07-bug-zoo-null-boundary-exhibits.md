@@ -1000,7 +1000,7 @@ the same ProofIR precondition: `neq(name, null)`.
 
 ## Exhibits
 
-- `java/`: ProvekIt-native annotations and Spring Web `@RequestParam`.
+- `java/`: Sugar-native annotations and Spring Web `@RequestParam`.
 - `typescript/`: zod and class-validator.
 - `csharp/`: DataAnnotations, `//provekit:` annotations, and LINQ.
 
@@ -1125,7 +1125,7 @@ The current zoo includes one null-boundary species:
 - `BZ-SHAPE-005`: null boundary through Java, TypeScript, and C# language
   exhibits.
 
-The Java exhibit uses ProvekIt-native annotations and Spring Web
+The Java exhibit uses Sugar-native annotations and Spring Web
 `@RequestParam`. The TypeScript exhibit uses zod and class-validator. The C#
 exhibit uses DataAnnotations, `//provekit:` annotations, and LINQ.
 ```

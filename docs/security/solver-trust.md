@@ -1,6 +1,6 @@
 # Solver trust: Z3 (and others) as TCB
 
-ProvekIt is a protocol for content-addressing formal verifications. The verifications themselves come from solvers. The protocol does not endorse any solver's correctness; it transports the solver's output as portable, signed evidence.
+Sugar is a protocol for content-addressing formal verifications. The verifications themselves come from solvers. The protocol does not endorse any solver's correctness; it transports the solver's output as portable, signed evidence.
 
 This means solver trust is a load-bearing user decision. This doc walks the implications.
 
@@ -110,7 +110,7 @@ The protocol's value-add is that this audit can happen *anywhere*, by anyone, as
 
 A consumer trusts a memento only if they trust the signer. The signer might trust their kit; the kit might trust the canonicalizer; the canonicalizer might trust the JCS implementation; the verifier might trust the prover.
 
-Each link in this chain is a trust decision. ProvekIt makes the chain visible: every step is signed, every step is auditable, every step's evidence is portable.
+Each link in this chain is a trust decision. Sugar makes the chain visible: every step is signed, every step is auditable, every step's evidence is portable.
 
 This is more trust than a typical "I ran tests" claim provides. It is less trust than a full Coq certificate provides. The protocol is in the middle: a substrate over which trust decisions are made, not a guarantee of trust.
 
@@ -128,7 +128,7 @@ What the protocol does:
 - Make solver outputs reusable across the dependency graph.
 - Provide a substrate for users to make their own trust decisions.
 
-If you read "ProvekIt verifies your code" as "ProvekIt mathematically proves your code is correct," you've misread. The mathematical proof comes from the solver. ProvekIt is the protocol that makes the solver's proof distributable and composable.
+If you read "Sugar verifies your code" as "Sugar mathematically proves your code is correct," you've misread. The mathematical proof comes from the solver. Sugar is the protocol that makes the solver's proof distributable and composable.
 
 ## Operational recommendation
 

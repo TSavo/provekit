@@ -156,7 +156,7 @@ If you have two implementations of `parseInt` and no shared reference contract:
 - Cross-language consumers cannot inherit the verification.
 - Each consumer must re-verify independently.
 
-This is the world without ProvekIt's bridge mechanism. It is the world most polyglot codebases live in today: every team verifies independently, no transfer.
+This is the world without Sugar's bridge mechanism. It is the world most polyglot codebases live in today: every team verifies independently, no transfer.
 
 ## What gets verified at Tier 1 vs. Tier 2
 

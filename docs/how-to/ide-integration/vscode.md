@@ -1,16 +1,16 @@
 # VSCode integration
 
-VSCode is the most-deployed editor for ProvekIt LSPs. The official extensions live in the marketplace under the `provekit` publisher (when published). Each shipping kit has its own extension.
+VSCode is the most-deployed editor for Sugar LSPs. The official extensions live in the marketplace under the `provekit` publisher (when published). Each shipping kit has its own extension.
 
 ## Extensions per shipping kit
 
 | Kit | Extension ID | Marketplace name |
 |---|---|---|
-| Rust | `provekit.rust-extension` | "ProvekIt for Rust" |
-| Python | `provekit.python-extension` | "ProvekIt for Python" |
-| Zig | `provekit.zig-extension` | "ProvekIt for Zig" |
-| Ruby | `provekit.ruby-extension` | "ProvekIt for Ruby" |
-| C# | `provekit.csharp-extension` | "ProvekIt for C#" |
+| Rust | `provekit.rust-extension` | "Sugar for Rust" |
+| Python | `provekit.python-extension` | "Sugar for Python" |
+| Zig | `provekit.zig-extension` | "Sugar for Zig" |
+| Ruby | `provekit.ruby-extension` | "Sugar for Ruby" |
+| C# | `provekit.csharp-extension` | "Sugar for C#" |
 
 > Extension IDs and marketplace names are placeholder; actual identifiers will be set when the extensions are published. Until then, the extensions live as workspace-local installs (`.vsix` files in `tools/vscode/`).
 
@@ -22,7 +22,7 @@ code --install-extension provekit.python-extension
 # (etc, one per language you use)
 ```
 
-Or via the VSCode UI: Extensions tab → search "ProvekIt" → Install.
+Or via the VSCode UI: Extensions tab → search "Sugar" → Install.
 
 ## Installation (workspace-local)
 
@@ -76,13 +76,13 @@ proptest! {
 
 After a brief delay (the LSP is loading the lattice), you should see:
 
-- ProvekIt as a source in the Problems tab.
+- Sugar as a source in the Problems tab.
 - Hovering over `s.parse::<i32>()` shows the contract: "for short numeric strings, no panic occurs."
-- A small ProvekIt indicator in the status bar (showing discharge fraction).
+- A small Sugar indicator in the status bar (showing discharge fraction).
 
 If you don't see these:
 
-1. Open the Output panel → ProvekIt LSP. Read the log.
+1. Open the Output panel → Sugar LSP. Read the log.
 2. Common causes:
    - The LSP binary isn't on PATH and the auto-detect failed.
    - The protocol version mismatches your install.
@@ -94,7 +94,7 @@ If you don't see these:
 ### Squigglies don't appear
 
 - Check `provekit verify-protocol` from a terminal. If this fails, the install is broken.
-- Check the Output panel → ProvekIt LSP for errors.
+- Check the Output panel → Sugar LSP for errors.
 - Verify the file extension matches what the lift adapter expects (e.g., `.rs` for Rust, `.py` for Python).
 
 ### LSP repeatedly restarts
@@ -108,7 +108,7 @@ If you don't see these:
 
 ### Performance is bad
 
-- Open the Output panel → ProvekIt LSP. Look for log entries indicating Tier 3 invocations are slow.
+- Open the Output panel → Sugar LSP. Look for log entries indicating Tier 3 invocations are slow.
 - Lower `tier3Timeout` to fail fast on slow Tier 3 cases.
 - Check `provekit prove` from the terminal; if Tier 3 is dominating, the lattice is cold.
 
@@ -130,13 +130,13 @@ Quick fix support varies by kit version. Check the extension's CHANGELOG.
 
 The Rust extension reads `Cargo.toml` to determine the workspace root. Lift adapters for `proptest`, `contracts` are auto-loaded.
 
-The extension can be configured to run alongside rust-analyzer (default; ProvekIt diagnostics appear separately) or to delegate to rust-analyzer for parsing (lower memory usage).
+The extension can be configured to run alongside rust-analyzer (default; Sugar diagnostics appear separately) or to delegate to rust-analyzer for parsing (lower memory usage).
 
 ### Python
 
 The Python extension reads `pyproject.toml` to determine the project root. Lift adapters for `pydantic` are auto-loaded.
 
-For best results, enable Pyright or pylsp alongside ProvekIt. ProvekIt focuses on contract verification; type checking is the host language server's job.
+For best results, enable Pyright or pylsp alongside Sugar. Sugar focuses on contract verification; type checking is the host language server's job.
 
 ### Zig
 

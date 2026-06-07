@@ -1,4 +1,4 @@
-# ProvekIt — Shared Language
+# Sugar — Shared Language
 
 > The dictionary. T defines each term, plainly, once. Claude records exactly what
 > was said — no reverse-engineered models, no additions, no running ahead.
@@ -83,7 +83,7 @@ The asymmetry with the contract is the load-bearing fact of the whole substrate:
   has no required shape because the world has no required shape.
 
 What the separation buys: **you can place a dischargeable obligation on something you can
-never formalize.** ProvekIt models *nothing* about the subject — the sugar stays itself,
+never formalize.** Sugar models *nothing* about the subject — the sugar stays itself,
 opaque — and the only formal object is the obligation on it. **Law over subject.** Federation
 across domains then falls out for free: because every contract is FOL, the sugar's wildness
 never touches the logic; the domain lives entirely in the sugar and the sugar never enters
@@ -202,7 +202,7 @@ A kit is a **language-specific implementation of these ideas**. The **Java kit**
 ## Concept equivalence — vendor's call
 
 Whether several sugars sharing a concept mean the *same* FOL is **entirely the vendor's
-decision. ProvekIt sets nothing.** (Mechanism: three-axis pinning — below.)
+decision. Sugar sets nothing.** (Mechanism: three-axis pinning — below.)
 
 ## Emitter — the contract-facet of lower
 

@@ -24,7 +24,7 @@ The leak is not that prose is bad. Prose is how humans understand intent. The le
 
 Protocol evolution today is real, but it is not first-class data.
 
-ProvekIt makes it first-class data.
+Sugar makes it first-class data.
 
 A protocol version can be represented as a content-addressed graph:
 
@@ -116,7 +116,7 @@ A protocol is not merely a document. It is a collection of boundary obligations:
 - downgrade/refusal obligations;
 - migration obligations.
 
-Those obligations are exactly the kind of object ProvekIt can name.
+Those obligations are exactly the kind of object Sugar can name.
 
 The protocol's prose remains essential. Humans still need rationale, examples, intent, warnings, and explanatory structure. But the prose is not the whole artifact. The machine-checkable boundary of the protocol can be lifted into CIDs, grammars, invariants, witnesses, and policy.
 
@@ -153,7 +153,7 @@ Protocol evolution stops being hidden in the gap between prose and implementatio
 
 A traditional protocol specification is a document. It may contain ABNF, diagrams, state machines, examples, test vectors, and normative words: MUST, SHOULD, MAY, MUST NOT. Implementers read it and build software.
 
-A ProvekIt protocol artifact is a graph.
+A Sugar protocol artifact is a graph.
 
 For a protocol profile `P`, the graph may include:
 
@@ -376,7 +376,7 @@ Version changes are where the old model leaks most.
 
 A protocol version changes from `v1` to `v2`. The changelog says "backward compatible except for X." Implementers update. Some clients lag. Some middleboxes ossify. Some servers run mixed behavior. Tooling adds feature flags. Docs accumulate tables. Security profiles fork. The standard moves forward; reality drags a graph behind it.
 
-ProvekIt makes the graph explicit.
+Sugar makes the graph explicit.
 
 ```
 protocolV1RootCid
@@ -712,7 +712,7 @@ protocol adoption is local policy
 protocol evolution is data
 ```
 
-The internet has always evolved by accumulating compatibility facts. ProvekIt gives those facts a substrate.
+The internet has always evolved by accumulating compatibility facts. Sugar gives those facts a substrate.
 
 The deep consequence is simple:
 
@@ -724,4 +724,4 @@ That is how protocols actually evolve.
 
 Cite as:
 
-> ProvekIt Papers (2026). *After Protocol Specs: How Protocols Actually Evolve*. Draft whitepaper.
+> Sugar Papers (2026). *After Protocol Specs: How Protocols Actually Evolve*. Draft whitepaper.

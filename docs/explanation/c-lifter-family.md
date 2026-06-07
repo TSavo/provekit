@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-ProvekIt has three C lifters today (`kernel-doc`, `sparse`, `assertions`), all annotation-driven. Most kernel C has no annotations, so they emit zero `declarations[]` on most files. The Rust walker (`provekit-walk`) and Java JUnit extractor demonstrate two synthesis patterns we should port to C: **defensive-pattern derivation** (`if cond panic` → `¬cond`) and **test-body derivation** (assertion in test → contract on function under test).
+Sugar has three C lifters today (`kernel-doc`, `sparse`, `assertions`), all annotation-driven. Most kernel C has no annotations, so they emit zero `declarations[]` on most files. The Rust walker (`provekit-walk`) and Java JUnit extractor demonstrate two synthesis patterns we should port to C: **defensive-pattern derivation** (`if cond panic` → `¬cond`) and **test-body derivation** (assertion in test → contract on function under test).
 
 This doc proposes **two new lifters + one extension** that together unblock the gold pipeline (lift → compose → prove → K ∩ M'') against unannotated kernel C.
 

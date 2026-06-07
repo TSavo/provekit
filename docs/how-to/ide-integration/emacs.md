@@ -1,10 +1,10 @@
 # Emacs integration
 
-Emacs has multiple LSP frontends; ProvekIt LSPs work with all of them. This doc covers `lsp-mode` (most common) and `eglot` (built-in, Emacs 29+).
+Emacs has multiple LSP frontends; Sugar LSPs work with all of them. This doc covers `lsp-mode` (most common) and `eglot` (built-in, Emacs 29+).
 
 ## lsp-mode
 
-Add ProvekIt LSPs to your `lsp-mode` configuration:
+Add Sugar LSPs to your `lsp-mode` configuration:
 
 ```elisp
 (use-package lsp-mode
@@ -12,7 +12,7 @@ Add ProvekIt LSPs to your `lsp-mode` configuration:
   (setq lsp-keymap-prefix "C-c l")
   :commands lsp
   :config
-  ;; Register each ProvekIt LSP
+  ;; Register each Sugar LSP
   (lsp-register-client
     (make-lsp-client
       :new-connection (lsp-stdio-connection "provekit-lsp-rust")
@@ -55,7 +55,7 @@ Add ProvekIt LSPs to your `lsp-mode` configuration:
 )
 ```
 
-`priority 0` keeps the ProvekIt LSP at the same level as your primary language LSP (rust-analyzer, pylsp, etc.); both run; both publish diagnostics.
+`priority 0` keeps the Sugar LSP at the same level as your primary language LSP (rust-analyzer, pylsp, etc.); both run; both publish diagnostics.
 
 ## eglot (Emacs 29+)
 
@@ -74,7 +74,7 @@ Add ProvekIt LSPs to your `lsp-mode` configuration:
                '(csharp-mode . ("provekit-lsp-csharp"))))
 ```
 
-Note: eglot only manages one LSP per buffer. To run ProvekIt alongside another LSP, use `lsp-mode` or compose via a wrapper.
+Note: eglot only manages one LSP per buffer. To run Sugar alongside another LSP, use `lsp-mode` or compose via a wrapper.
 
 ## Diagnostics display
 
@@ -89,20 +89,20 @@ Both `lsp-mode` and `eglot` use Emacs's standard `flymake` or `flycheck` for dia
 (setq eglot-stay-out-of '(eldoc-documentation-functions))
 ```
 
-ProvekIt diagnostics will appear in the modeline (`flycheck-mode-line`) and inline (with `flycheck-list-errors` to see the full list).
+Sugar diagnostics will appear in the modeline (`flycheck-mode-line`) and inline (with `flycheck-list-errors` to see the full list).
 
-## Filter to ProvekIt only
+## Filter to Sugar only
 
 ```elisp
 (defun my/provekit-only-errors ()
-  "Show only ProvekIt errors in the current buffer."
+  "Show only Sugar errors in the current buffer."
   (interactive)
   (let ((errors (flycheck-overlay-errors-in (point-min) (point-max))))
     (let ((provekit-errors
            (cl-remove-if-not
             (lambda (e) (string= "provekit" (flycheck-error-checker e)))
             errors)))
-      (with-output-to-temp-buffer "*ProvekIt Errors*"
+      (with-output-to-temp-buffer "*Sugar Errors*"
         (dolist (e provekit-errors)
           (princ (format "%s\n" (flycheck-error-message e))))))))
 ```
@@ -140,7 +140,7 @@ Use `.dir-locals.el` for per-project configuration:
 
 - Check `*Messages*` buffer for LSP errors.
 - Confirm `lsp-mode` is active in the buffer (`C-h v lsp-mode-active`).
-- Run `M-x flycheck-list-errors` to see all diagnostics; if ProvekIt isn't a source, it didn't connect.
+- Run `M-x flycheck-list-errors` to see all diagnostics; if Sugar isn't a source, it didn't connect.
 
 ### LSP repeatedly restarts
 

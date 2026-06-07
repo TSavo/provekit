@@ -1,7 +1,7 @@
-# ProvekIt: a proof supply chain for existing software
+# Sugar: a proof supply chain for existing software
 
 Modern dependency stacks, protocol stacks, and CI supply chains are deep.
-ProvekIt turns their load-bearing claims into content-addressed proof data.
+Sugar turns their load-bearing claims into content-addressed proof data.
 
 ```bash
 cargo install --path implementations/rust/provekit-cli
@@ -32,7 +32,7 @@ identity; new semantic obligations still need proof.
 
 Verification at supply-chain scale has the same shape as currency, source history, content distribution, and the addressable web. Each was once thought to need a central authority. Each turned out to admit a content-addressed protocol with no central party. Bitcoin proved you can mint trust without a mint. Git proved a content-addressed graph holds a software project's full history. BitTorrent proved a swarm can distribute petabytes without a server. IPFS proved that "the address is the content" generalizes.
 
-ProvekIt is one more application of the same primitive. The "registry" is the
+Sugar is one more application of the same primitive. The "registry" is the
 BLAKE3-512 hashspace plus local policy over signed proof data. There is no
 master copy. There is no service that mediates membership. There is no party
 whose downtime stops the protocol. The protocol asks no one's permission to
@@ -42,7 +42,7 @@ publish; it provides bytes that verify themselves.
 
 Every annotation library in wide deployment already contains specifications. `proptest` invariants. `contracts` pre/post-conditions. `kani` proofs. `prusti` annotations. `pydantic` schemas. `zod` validators. `class-validator` decorators. `bean-validation` annotations. JML predicates. `go-playground/validator` tags. Each is a spec the codebase already maintains.
 
-ProvekIt does not compete with these libraries. It sits beneath them. Whatever
+Sugar does not compete with these libraries. It sits beneath them. Whatever
 annotation library a codebase already uses, the lift adapter promotes the
 recognized annotations to content-addressed signed contract mementos, with no
 rewrites and no parallel spec to maintain. Authoring stays where the developer
@@ -93,7 +93,7 @@ There is no central authority that decides what a protocol version means. The by
 
 - [README.md](../../README.md) for the install path.
 - [pitch.md](pitch.md) for the launch post.
-- [product.md](product.md) for what ProvekIt replaces and complements.
+- [product.md](product.md) for what Sugar replaces and complements.
 - [architecture.md](architecture.md) for the four-layer model and handshake.
 - [thesis.md](thesis.md) for the deeper architectural claim.
 - [docs/tutorials/rust.md](../tutorials/rust.md) for the five-minute walkthrough.

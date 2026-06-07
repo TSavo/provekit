@@ -1,6 +1,6 @@
-# ProvekIt compared to runtime testing frameworks
+# Sugar compared to runtime testing frameworks
 
-Tests catch what proofs don't; proofs catch what tests don't. They are complementary, not competitive. ProvekIt does not replace tests. This doc walks the boundary.
+Tests catch what proofs don't; proofs catch what tests don't. They are complementary, not competitive. Sugar does not replace tests. This doc walks the boundary.
 
 ## The fundamental difference
 
@@ -51,7 +51,7 @@ A function that returns the correct value in time exponential in input size sati
 
 ### 4. The unverified slice
 
-ProvekIt's lattice covers the contracts the lift adapter could lift. Coverage is per-adapter and tier-graded. The residue (the slice not covered by any adapter) is unverified. Tests are the only coverage for this slice.
+Sugar's lattice covers the contracts the lift adapter could lift. Coverage is per-adapter and tier-graded. The residue (the slice not covered by any adapter) is unverified. Tests are the only coverage for this slice.
 
 ### 5. Regressions
 
@@ -95,7 +95,7 @@ Property-based testing (Hypothesis, fast-check, proptest, QuickCheck) sits betwe
 - Like proofs, expresses properties over input domains.
 - Unlike proofs, only checks a sample of the domain (not every input).
 
-ProvekIt's lift adapters for `proptest` and `hypothesis` (planned) lift the property-test specifications into canonical IR. The lifted contracts are the same shape as proof-level contracts; the property-test author's specification becomes a proof candidate.
+Sugar's lift adapters for `proptest` and `hypothesis` (planned) lift the property-test specifications into canonical IR. The lifted contracts are the same shape as proof-level contracts; the property-test author's specification becomes a proof candidate.
 
 This is a sweet spot: property tests are easier to write than proofs, and the lift adapter promotes them into the protocol's substrate. Whether the property is then re-verified by Z3 (or another backend) at Tier 3 (promoting the test into a proof) is the verifier's choice.
 
@@ -110,19 +110,19 @@ Do you have time for both proofs and tests?
 
 Goal: dependency boundary correctness.
   ↓
-Tests at your boundary aren't enough. The proof of dependency contracts comes from the dependency, not your tests. Use ProvekIt.
+Tests at your boundary aren't enough. The proof of dependency contracts comes from the dependency, not your tests. Use Sugar.
 
 Goal: supply-chain verification.
   ↓
-Tests don't help. ProvekIt's rank-3 pin (`contractCid`, `witnessCid`, `binaryCid` per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md)) plus signed contracts is the path.
+Tests don't help. Sugar's rank-3 pin (`contractCid`, `witnessCid`, `binaryCid` per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md)) plus signed contracts is the path.
 
 Goal: cross-language behavioral guarantees.
   ↓
-Tests in language A don't help language B. ProvekIt's bridges are the path.
+Tests in language A don't help language B. Sugar's bridges are the path.
 
 Goal: small startup, ship fast, low budget.
   ↓
-Tests, especially property-based tests. ProvekIt is value-add as the codebase scales.
+Tests, especially property-based tests. Sugar is value-add as the codebase scales.
 ```
 
 ## What a `.proof` can replace from a testing point of view
@@ -133,19 +133,19 @@ Tests, especially property-based tests. ProvekIt is value-add as the codebase sc
 
 What a `.proof` does not replace: real-world tests, performance tests, fuzz tests for the unverified slice, integration tests at higher abstraction levels.
 
-## Where existing testing literature gets ProvekIt wrong
+## Where existing testing literature gets Sugar wrong
 
-A common misreading: "ProvekIt is just verification, so it replaces tests." This misreads on two axes.
+A common misreading: "Sugar is just verification, so it replaces tests." This misreads on two axes.
 
-First, ProvekIt is not a verifier; it's a substrate over which verifications are published. The verifier (Z3, Coq, Kani, etc.) is a separate question.
+First, Sugar is not a verifier; it's a substrate over which verifications are published. The verifier (Z3, Coq, Kani, etc.) is a separate question.
 
 Second, behavioral contracts at a function's boundary are specifically the kind of property tests would test if you wrote enough property tests. The lift adapter lifts property-style annotations; Z3 (or another backend) discharges them. The work tests would do is amortized into the lattice.
 
-The right framing: ProvekIt formalizes and federates the contract-style work tests cover. Tests for non-contract-style work (timing, integration with real I/O, environmental dependencies) remain.
+The right framing: Sugar formalizes and federates the contract-style work tests cover. Tests for non-contract-style work (timing, integration with real I/O, environmental dependencies) remain.
 
 ## Read next
 
 - [coq-fstar-lean.md](coq-fstar-lean.md): interactive theorem provers.
 - [kani-prusti-creusot.md](kani-prusti-creusot.md): Rust-specific provers.
-- [`../boundaries.md`](../boundaries.md): what ProvekIt is NOT.
+- [`../boundaries.md`](../boundaries.md): what Sugar is NOT.
 - [`../cold-start.md`](../cold-start.md): when proofs amortize and when they don't.

@@ -1,16 +1,16 @@
 # Cold-start: the bootstrap problem, addressed honestly
 
-ProvekIt's headline metric, the hash-discharge fraction at Tier 1, depends on the lattice of cached implications being well-populated. A populated lattice means the typical `(post, pre)` pair the verifier sees has already been discharged by some earlier verifier; the current run discharges it for free.
+Sugar's headline metric, the hash-discharge fraction at Tier 1, depends on the lattice of cached implications being well-populated. A populated lattice means the typical `(post, pre)` pair the verifier sees has already been discharged by some earlier verifier; the current run discharges it for free.
 
 An empty lattice means every pair falls through to Tier 3 (Z3 invocation), which is slow. Early adopters land here. This document is honest about the cold-start problem and the path through it.
 
 ## What "cold start" means concretely
 
-Imagine three milestones in a project's adoption of ProvekIt:
+Imagine three milestones in a project's adoption of Sugar:
 
 ### Day 1: empty lattice
 
-The project just adopted ProvekIt. No mementos exist for any of its dependencies. Every contract is novel. Every `(post, pre)` pair the handshake tries triggers Tier 3.
+The project just adopted Sugar. No mementos exist for any of its dependencies. Every contract is novel. Every `(post, pre)` pair the handshake tries triggers Tier 3.
 
 Discharge breakdown looks like:
 
@@ -58,7 +58,7 @@ is the hot path; Tier 3 semantic proving is rare.
 
 The above trajectory only happens if **adoption is spread across enough independent users** that the implication server (or shared lattice) accumulates results from many projects. A single isolated user never reaches Day 365's discharge fraction; they reach Day 30 and stay there.
 
-This is the bootstrap problem. ProvekIt's value compounds with adoption. Adoption requires value. Closed loops of "you should adopt because everyone else has" do not generate first adopters.
+This is the bootstrap problem. Sugar's value compounds with adoption. Adoption requires value. Closed loops of "you should adopt because everyone else has" do not generate first adopters.
 
 ## What works (and what doesn't)
 
@@ -80,7 +80,7 @@ This handles the most common call sites (comparisons, basic numeric checks, stri
 
 When `lodash` (or any popular dependency) ships a `.proof` alongside its npm package, every consumer who upgrades inherits all of `lodash`'s contracts. The lattice grows transitively as upstream projects adopt.
 
-This is the path of least resistance: a few tens of widely-depended-upon packages adopting ProvekIt seed the lattice for thousands of downstream consumers.
+This is the path of least resistance: a few tens of widely-depended-upon packages adopting Sugar seed the lattice for thousands of downstream consumers.
 
 ### Works partially: implication servers
 
@@ -114,7 +114,7 @@ So the asymptote (Tier 1 fraction approaches 95%) is reachable. The question is 
 
 ## Honest expectations for early adopters
 
-If you adopt ProvekIt in 2026 (today), here's what's realistic:
+If you adopt Sugar in 2026 (today), here's what's realistic:
 
 - **Day 1**: 10-15% Tier 1 (kit self-contracts seed). Most call sites Tier 3. Builds are slow.
 - **Day 30**: 50-70% Tier 1+2 within your project. Builds are moderate.
@@ -125,7 +125,7 @@ The ceiling is not the protocol's; it's the network effect.
 
 ## Suggested adoption pattern for early adopters
 
-1. **Adopt internally first.** Use ProvekIt within a single team / project / company. Build up a private implication server. Internal cold-start is faster than ecosystem cold-start.
+1. **Adopt internally first.** Use Sugar within a single team / project / company. Build up a private implication server. Internal cold-start is faster than ecosystem cold-start.
 2. **Publish to a public implication server when ready.** Once your team has working `.proof` flows, contribute mementos to a shared server. This helps every other adopter and accelerates ecosystem cold-start.
 3. **Bridge to reference contracts.** Wherever possible, bind your implementations to canonical bridge anchors. Cross-language transfer happens for free once bridges exist.
 4. **Be patient.** The protocol's value proposition is asymptotic. Early adopters bear bootstrap cost; they receive the long-term reward of having shaped the substrate.
@@ -138,11 +138,11 @@ The cold-start is "broken" (i.e., new adopters reach high Tier 1 fractions on da
 - A public implication server is widely used and contains millions of cached pairs.
 - A curated reference-contracts library covers the common cross-language bridge points.
 
-This is the network-effect milestone. Years out, plausibly. ProvekIt's protocol design is correctly shaped to support this scenario; the actual achievement of it is a social and adoption question, not a technical one.
+This is the network-effect milestone. Years out, plausibly. Sugar's protocol design is correctly shaped to support this scenario; the actual achievement of it is a social and adoption question, not a technical one.
 
 ## What this section concedes
 
-ProvekIt does not solve the cold-start problem alone. It provides a substrate that, given adoption, accelerates over time. Early adopters pay the bootstrap cost and receive the long-term reward of having shaped the substrate. Late adopters get the asymptote for free.
+Sugar does not solve the cold-start problem alone. It provides a substrate that, given adoption, accelerates over time. Early adopters pay the bootstrap cost and receive the long-term reward of having shaped the substrate. Late adopters get the asymptote for free.
 
 This is honest. The thesis is monotonic provability and amortizing solver cost across the dependency graph; the thesis is achieved at the asymptote. Early adopters do not see the asymptote.
 
@@ -151,7 +151,7 @@ The decision to adopt early is a bet on the protocol reaching the asymptote; a b
 ## Read next
 
 - [thesis.md](thesis.md): the central claim.
-- [boundaries.md](boundaries.md): what ProvekIt is not.
+- [boundaries.md](boundaries.md): what Sugar is not.
 - [../tutorials/polyglot-stack.md](../tutorials/polyglot-stack.md): the cross-domain bootstrap accelerant.
 - [../reference-contracts/README.md](../reference-contracts/README.md) (when written): curated bridge anchors.
 - [../security/threat-model.md](../security/threat-model.md) (when written): what trust looks like in a partially-populated lattice.

@@ -1,10 +1,10 @@
 # Neovim integration
 
-Neovim's LSP support is built around `nvim-lspconfig`. ProvekIt LSP plugins integrate as standard LSP servers.
+Neovim's LSP support is built around `nvim-lspconfig`. Sugar LSP plugins integrate as standard LSP servers.
 
 ## Install via nvim-lspconfig
 
-Plugin manager-agnostic. Add a config entry per ProvekIt kit:
+Plugin manager-agnostic. Add a config entry per Sugar kit:
 
 ```lua
 local lspconfig = require('lspconfig')
@@ -85,9 +85,9 @@ Use whichever diagnostic viewer you have installed. Recommended:
 - `vim.diagnostic.config({ signs = true })` for gutter signs.
 - A floating-window diagnostic viewer like `lsp_lines.nvim` or `trouble.nvim` for verbose messages.
 
-## Filtering ProvekIt diagnostics
+## Filtering Sugar diagnostics
 
-ProvekIt diagnostics use source `"provekit"`. Filter for "show only ProvekIt issues":
+Sugar diagnostics use source `"provekit"`. Filter for "show only Sugar issues":
 
 ```vim
 :lua require('telescope.builtin').diagnostics({ source = 'provekit' })
@@ -124,10 +124,10 @@ lspconfig.provekit_rust.setup{
 
 ## Multiple kits in one project
 
-A polyglot project (e.g., a Rust backend with Python ML and TypeScript frontend) runs multiple ProvekIt LSPs simultaneously. Each `setup{}` registers a separate LSP. Filetype routing handles which LSP processes which file.
+A polyglot project (e.g., a Rust backend with Python ML and TypeScript frontend) runs multiple Sugar LSPs simultaneously. Each `setup{}` registers a separate LSP. Filetype routing handles which LSP processes which file.
 
 ```lua
--- All shipping ProvekIt kits, in one config
+-- All shipping Sugar kits, in one config
 lspconfig.provekit_rust.setup{}
 lspconfig.provekit_python.setup{}
 lspconfig.provekit_zig.setup{}
@@ -166,7 +166,7 @@ The Rust LSP is most often run alongside `rust-analyzer`. Both publish diagnosti
 
 ### Python
 
-The Python LSP works alongside `pylsp` or `pyright`. ProvekIt focuses on contracts; the type checker handles types.
+The Python LSP works alongside `pylsp` or `pyright`. Sugar focuses on contracts; the type checker handles types.
 
 ### Zig
 

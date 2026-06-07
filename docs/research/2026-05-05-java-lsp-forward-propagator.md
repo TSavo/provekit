@@ -2,7 +2,7 @@
 
 ## Scope
 
-This note documents the current state of the Java kit in the Provekit monorepo, whether an LSP plugin exists, what AST infrastructure is available, and what the ForwardPropagator (#319) will need to build. The goal is to provide enough context for a low-context agent to implement #319 without further investigation.
+This note documents the current state of the Java kit in the Sugar monorepo, whether an LSP plugin exists, what AST infrastructure is available, and what the ForwardPropagator (#319) will need to build. The goal is to provide enough context for a low-context agent to implement #319 without further investigation.
 
 ## Findings
 
@@ -62,7 +62,7 @@ The Java kit uses `javaparser-symbol-solver-core` (v3.26.4) as a Maven dependenc
 1. Parse Java source into a `CompilationUnit`
 2. Walk the AST for `// @provekit-contract` annotations or Javadoc tags
 3. Extract method signatures, parameter types, return types
-4. Lift to Provekit IR (`Declaration`, `ContractDecl`)
+4. Lift to Sugar IR (`Declaration`, `ContractDecl`)
 
 The `provekit-ir` module provides the Java IR types:
 

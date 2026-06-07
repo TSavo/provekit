@@ -1,6 +1,6 @@
 # The Plugin Lifter Is The Adoption Surface
 
-ProvekIt's substrate is bounded. The canonical IR is finite. Content addressing is finite. The proof file format is finite. The catalog is signed and frozen. Once specced, the protocol substrate does not grow.
+Sugar's substrate is bounded. The canonical IR is finite. Content addressing is finite. The proof file format is finite. The catalog is signed and frozen. Once specced, the protocol substrate does not grow.
 
 The universe of things people want to verify is unbounded. Software contracts. Sensor telemetry. Scientific consensus. Legal attestations. Identity assertions. FDA forms. SOC2 controls. SystemVerilog assertions. Banking transaction validity. Supply chain provenance. Medical device interlock. Aircraft control software. Insurance claim adjudication. Any line of business code that filters, joins, asserts, or aggregates data is a candidate proposition. Anyone could add a domain tomorrow.
 
@@ -28,7 +28,7 @@ A legal firm writes a contract-clause lifter. Plain-English clauses become canon
 
 A sensor manufacturer writes a telemetry lifter. Each reading mints a memento citing the upstream calibration mementos. Tampering breaks the chain.
 
-None of these required involvement from anyone shipping ProvekIt. The protocol substrate didn't grow. The plugin lifter dispatched.
+None of these required involvement from anyone shipping Sugar. The protocol substrate didn't grow. The plugin lifter dispatched.
 
 ## LINQ is the existence proof
 
@@ -50,15 +50,15 @@ SQL has `WHERE`. Same.
 
 Every business-logic codebase already contains thousands of lines of predicate syntax that lift mechanically into canonical first-order propositions. The contracts are already written. They live in production code as queries, filters, comprehensions, assertions, where-clauses.
 
-Without the plugin lifter, ProvekIt has to ship a Roslyn-based C# AST walker plus a Babel-based JS AST walker plus a libcst-based Python walker plus a JavaParser-based Java walker plus a SQL-grammar parser plus an unbounded surface in one binary. The matrix again. Unbounded.
+Without the plugin lifter, Sugar has to ship a Roslyn-based C# AST walker plus a Babel-based JS AST walker plus a libcst-based Python walker plus a JavaParser-based Java walker plus a SQL-grammar parser plus an unbounded surface in one binary. The matrix again. Unbounded.
 
 With the plugin lifter, each is an independent process speaking JSON-RPC. Each is a few hundred LOC of native-AST-walking + canonical IR emission. Anyone writes one in any language. The Rust CLI dispatches.
 
-**The trojan horse goes deeper than annotation libraries.** ProvekIt's adoption surface includes every line of LINQ, every Stream, every Pydantic validator, every Zod schema, every assert in every test, every WHERE clause in every query. The contracts are already in the source. Lifters recognize them. Plugin lifter dispatch makes the recognition pluggable.
+**The trojan horse goes deeper than annotation libraries.** Sugar's adoption surface includes every line of LINQ, every Stream, every Pydantic validator, every Zod schema, every assert in every test, every WHERE clause in every query. The contracts are already in the source. Lifters recognize them. Plugin lifter dispatch makes the recognition pluggable.
 
 ## The architectural punchline
 
-ProvekIt has two parts.
+Sugar has two parts.
 
 The first part is bounded: canonical IR, content addressing, signing, the proof DAG. This is the protocol. It is finite, specced, signed, frozen.
 
@@ -66,9 +66,9 @@ The second part is unbounded: every host language's predicate syntax, every anno
 
 The plugin lifter is the seam between the two.
 
-Without it, ProvekIt is a tool: bounded protocol, bounded set of supported surfaces, bounded adoption ceiling.
+Without it, Sugar is a tool: bounded protocol, bounded set of supported surfaces, bounded adoption ceiling.
 
-With it, ProvekIt is a protocol in the LSP / MCP / SMTP sense: bounded substrate, unbounded ecosystem, anyone speaks it, no one owns it.
+With it, Sugar is a protocol in the LSP / MCP / SMTP sense: bounded substrate, unbounded ecosystem, anyone speaks it, no one owns it.
 
 The substrate scales because it doesn't grow.
 
@@ -80,7 +80,7 @@ That is why the plugin lifter is critical.
 
 It is the architectural mechanism that lets a finite, signed, content-addressed protocol serve every domain humans will ever want to verify, without the protocol's authors ever needing to know about those domains.
 
-It is how ProvekIt becomes a substrate instead of a tool.
+It is how Sugar becomes a substrate instead of a tool.
 
 It is the only place in the architecture where the bounded protocol meets the unbounded universe.
 

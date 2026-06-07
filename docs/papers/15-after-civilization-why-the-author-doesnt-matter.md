@@ -42,7 +42,7 @@ That property should be stated without mysticism. The relevant fact is not that 
 
 The substrate applies that move to correctness.
 
-Bitcoin solved the problem of running a global financial object without trusting an identifiable operator. The ProvekIt substrate solves the problem of running a global correctness object without trusting an identifiable author. In both cases the social source can disappear because the artifact carries its own verification surface.
+Bitcoin solved the problem of running a global financial object without trusting an identifiable operator. The Sugar substrate solves the problem of running a global correctness object without trusting an identifiable author. In both cases the social source can disappear because the artifact carries its own verification surface.
 
 Satoshi chose to disappear. A `.proof` makes disappearance structurally cheap. The producer can be anonymous on day one, dead on day ten thousand, discredited next year, coerced by a state, or erased from the archive. None of those facts changes whether the existing bundle checks.
 
@@ -166,7 +166,7 @@ The substrate is therefore less than Bitcoin in machinery. No chain. No miners. 
 
 The substrate is more than Bitcoin in scope. It is not limited to money or ledger state. It applies to software behavior, hardware claims, legal obligations, financial invariants, medical-device safety cases, regulatory controls, supply-chain edges, and any domain whose claims can be lifted into content-addressed predicates with accepted receipts.
 
-The cypherpunk thesis is the common root: replace the trusted third party with public, recomputable math. Bitcoin applies that thesis to money and ordering. ProvekIt applies it to correctness and bounded claims. One is not a generalized version of the other. Both instantiate the same older move against different trust objects.
+The cypherpunk thesis is the common root: replace the trusted third party with public, recomputable math. Bitcoin applies that thesis to money and ordering. Sugar applies it to correctness and bounded claims. One is not a generalized version of the other. Both instantiate the same older move against different trust objects.
 
 ## §8: Lemmas
 

@@ -1,4 +1,4 @@
-# ProvekIt v1.6.4: Pattern Predicates and Contract Composition
+# Sugar v1.6.4: Pattern Predicates and Contract Composition
 
 **Catalog CID:** `blake3-512:09ccf7b1464622eceb4ac0e9bae3b435ba92d87c19e89f93724e6be75f4afce9eb3dedb7b8ebe2536de054143efefcb3cb622e6e5b4140bb26e6156a9bc9adf3`
 
@@ -63,7 +63,7 @@ Each step is a witnessed PEP migration edge. The chain itself is the authority.
 **Tagging command (when ready to ship):**
 
 ```sh
-git tag -s v1.6.4 -m "ProvekIt v1.6.4: protocol catalog 09ccf7b14646..."
+git tag -s v1.6.4 -m "Sugar v1.6.4: protocol catalog 09ccf7b14646..."
 git push origin v1.6.4
 gh release create v1.6.4 --notes-file docs/launch/release-notes-v1.6.4.md
 ```

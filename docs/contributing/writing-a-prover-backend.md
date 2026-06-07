@@ -122,7 +122,7 @@ The kit checks this configuration when verifying implication mementos. Mementos 
 
 A backend's soundness is the user's TCB, not the protocol's. The protocol is a vehicle for portable evidence; it does not endorse any backend's correctness.
 
-This is a load-bearing claim of the protocol design. ProvekIt does not say "Z3 is sound." It says "if you trust Z3, here's a way to publish Z3's findings as portable, signed mementos." Users who reject Z3 reject the mementos signed by the Z3 backend. Users who accept Z3 accept those mementos.
+This is a load-bearing claim of the protocol design. Sugar does not say "Z3 is sound." It says "if you trust Z3, here's a way to publish Z3's findings as portable, signed mementos." Users who reject Z3 reject the mementos signed by the Z3 backend. Users who accept Z3 accept those mementos.
 
 A backend's documentation should make its soundness claims explicit:
 
@@ -151,7 +151,7 @@ The lattice growing means that the backend's load decreases over time per projec
 
 The backend is shipping. Users who configure it as trusted can verify their codebase against this backend's soundness claim. Implication mementos signed by this backend land in the lattice and are reusable by any verifier that also trusts the backend.
 
-A new prover backend is a TCB choice for users; ProvekIt's protocol is the vehicle that transports its evidence.
+A new prover backend is a TCB choice for users; Sugar's protocol is the vehicle that transports its evidence.
 
 ## Read next
 

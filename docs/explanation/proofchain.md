@@ -6,7 +6,7 @@ and content-addressed artifacts into a locally verifiable chain. Anyone
 holding the chain can recompute the CIDs, verify the signatures, check the
 witnesses, and decide whether the claim holds under their policy.
 
-ProvekIt already builds proofchains. The term names the high-level primitive
+Sugar already builds proofchains. The term names the high-level primitive
 formed by the existing pieces: ProofIR claims, signed mementos, `.proof`
 bundles, implication witnesses, bridge attestations, and verifier policy.
 
@@ -44,7 +44,7 @@ implications together.
 ## What It Contains
 
 At the implementation layer, a proofchain is the linked evidence object that
-existing ProvekIt artifacts already form.
+existing Sugar artifacts already form.
 
 | Layer | Existing artifact |
 |---|---|
@@ -108,12 +108,12 @@ The repo has long described the mechanics: name the proposition by CID, name
 the evidence by CID, sign the edge, and fail closed when the graph does not
 carry the claim. "Proofchain" names that whole thing.
 
-The name also separates ProvekIt's trust model from ordinary logs and CI
+The name also separates Sugar's trust model from ordinary logs and CI
 statuses. A normal status says a tool reported success. A proofchain carries
 the formal claims, evidence, signatures, and policies required to re-check the
 result locally.
 
-This is why a ProvekIt result can move across languages, repositories, package
+This is why a Sugar result can move across languages, repositories, package
 ecosystems, CI systems, generated repairs, and time. The result is not just a
 statement. It is a proofchain.
 

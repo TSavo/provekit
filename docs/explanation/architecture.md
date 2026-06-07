@@ -1,6 +1,6 @@
-# ProvekIt Architecture
+# Sugar Architecture
 
-ProvekIt is a pipeline for turning native software evidence into portable proof
+Sugar is a pipeline for turning native software evidence into portable proof
 data, then computing over that proof data without keeping language-specific
 logic in the core CLI.
 
@@ -99,7 +99,7 @@ changed, or newly composed semantic claims still require semantic work.
 ## Composition
 
 Traditional local verification asks whether one artifact satisfies one local
-contract. ProvekIt asks whether the assembled claim graph carries the edges the
+contract. Sugar asks whether the assembled claim graph carries the edges the
 consumer needs.
 
 That matters because local success can compose into global contradiction. A
@@ -108,7 +108,7 @@ consumer assumes. A bridge can type-check while dropping a boundary condition. A
 generated artifact can compile while failing to re-lift to the claim it was
 supposed to realize.
 
-ProvekIt handles this by conjoining and composing normalized claims. If the
+Sugar handles this by conjoining and composing normalized claims. If the
 assembled graph cannot satisfy the obligation, the result is a proof violation,
 unresolved residue, explicit bounded loss, or refusal, not a silent pass.
 

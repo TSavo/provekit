@@ -1,4 +1,4 @@
-# ProvekIt: The `.proof` File
+# Sugar: The `.proof` File
 
 Status: Executive summary by T Savo. The formal protocol specification is the [bluepaper](02-bluepaper.md). The closing argument is [paper 14](14-after-trust-the-universal-correctness-bundle.md).
 
@@ -30,7 +30,7 @@ Those numbers come from `docs/launch/showcase-results.md`, measured against a fi
 
 Every prior verification approach has a cost that grows with what is verified. Type systems type-check the program. Theorem provers discharge from axioms. Static analyzers traverse code. SBOMs enumerate dependencies. Certification packets get larger as systems get larger. Even when the result is useful, the check is coupled to the size and complexity of the thing being checked.
 
-Content-addressed systems escape that shape. Bitcoin, Git, IPFS, and BitTorrent are the canonical lineage. Bitcoin content-addresses transactions and blocks. Git content-addresses source history. IPFS content-addresses files. BitTorrent content-addresses chunks. Each system replaces an authority bottleneck with local verification of content identity. ProvekIt extends the lineage by one rung: content-addressed trust-free systems for verifiable propositions.
+Content-addressed systems escape that shape. Bitcoin, Git, IPFS, and BitTorrent are the canonical lineage. Bitcoin content-addresses transactions and blocks. Git content-addresses source history. IPFS content-addresses files. BitTorrent content-addresses chunks. Each system replaces an authority bottleneck with local verification of content identity. Sugar extends the lineage by one rung: content-addressed trust-free systems for verifiable propositions.
 
 The key is that any sub-DAG is a self-contained trust unit. Stop at any node; the node is your verification anchor. Walk deeper only when your local policy requires it. Trust depth is configuration:
 
@@ -46,7 +46,7 @@ A CI system can stop at its own release catalog. A library author can stop at th
 
 Above the anchor: math. Below the anchor: trust.
 
-That line is not rhetorical. It is the operational split. ProvekIt does not demand that every user verify all the way down. It lets every user state the depth at which trust begins, then makes everything above that anchor locally checkable.
+That line is not rhetorical. It is the operational split. Sugar does not demand that every user verify all the way down. It lets every user state the depth at which trust begins, then makes everything above that anchor locally checkable.
 
 ## 3. After Trust
 
@@ -68,7 +68,7 @@ The bedrock thesis is literal, not metaphorical. The runtime layer of essentiall
 
 Linux kernel: C. glibc and musl: C. Node.js: C++ under the JavaScript surface. V8: C++. CPython: C. PHP Zend: C. Ruby MRI: C. OpenJDK HotSpot: C++. .NET CoreCLR: C++. Erlang BEAM, GHC RTS, Lua, Perl, and Tcl: C. PostgreSQL, MySQL, Redis, SQLite, nginx, Apache httpd, OpenSSL, libuv, libcurl, ffmpeg, ImageMagick, git, bash, zsh, and tmux: C.
 
-That fact matters because ProvekIt does not need a new civilizational rewrite before the catalog becomes useful. The existing C lifter chain, `collectors-defensive`, `kunit`, `assertions`, `kernel-doc`, `sparse`, and `walk-c`, handles every one of these projects today, unmodified. There is no new class of engineering required: clone the repo, add a target stanza, run the pipeline.
+That fact matters because Sugar does not need a new civilizational rewrite before the catalog becomes useful. The existing C lifter chain, `collectors-defensive`, `kunit`, `assertions`, `kernel-doc`, `sparse`, and `walk-c`, handles every one of these projects today, unmodified. There is no new class of engineering required: clone the repo, add a target stanza, run the pipeline.
 
 The scale is also tractable. Across roughly twenty major bedrock projects, the total surface is about 80 to 150 million lines of C and C++ source. At measured throughput of 25 to 31 ms per file per lifter on a 32-core machine, the whole bedrock lifts in 4 to 8 hours. That is one overnight ingestion run, not a decade-long rewrite campaign.
 
@@ -86,13 +86,13 @@ A registry lifter mints mementos for those facts. Package version identity becom
 
 The native boundary is the hard part today, and it is exactly where the bedrock catalog pays off. Registry lifters can cross-link packages to the native C and C++ source they wrap: `sharp` to libvips, `bcrypt` to native crypto, `node-sass` to libsass, `better-sqlite3` to SQLite, `canvas` to Cairo, and brotli, zlib, snappy, and lz4 wrappers to native compression libraries. Once bedrock is in the catalog, those wrappers' native trust surface is already verifiable.
 
-Postinstall sabotage becomes a detectable graph pattern rather than a registry morality play. Incidents like eslint-scope credential theft, ua-parser-js malware, colors.js self-sabotage, and left-pad descendants are different stories at the social layer, but they rhyme at the graph layer: unexpected install behavior, maintainer or release discontinuity, new artifact bytes, new dependency reachability, and policy refusal receipts. A ProvekIt registry lifter can express that pattern without pretending every package maintainer is a formal methods expert.
+Postinstall sabotage becomes a detectable graph pattern rather than a registry morality play. Incidents like eslint-scope credential theft, ua-parser-js malware, colors.js self-sabotage, and left-pad descendants are different stories at the social layer, but they rhyme at the graph layer: unexpected install behavior, maintainer or release discontinuity, new artifact bytes, new dependency reachability, and policy refusal receipts. A Sugar registry lifter can express that pattern without pretending every package maintainer is a formal methods expert.
 
 CVE blast-radius becomes a `SELECT` over content-addressed facts plus reachability, not a prose exercise over guessed version ranges. Which shipped artifacts contain this vulnerable source CID. Which packages wrap it. Which Docker images include those packages. Which services deployed those images. Which `.proof` files still accept the affected path under policy. That is a database query over signed facts, not a spreadsheet assembled during an incident.
 
 ## 6. Who It Is For
 
-ProvekIt has three primary audiences and three CLI paths.
+Sugar has three primary audiences and three CLI paths.
 
 Developers with existing test cultures get the surface plugin layer and `provekit lift`. A `proptest` strategy becomes a forall contract memento. A Zod schema becomes a precondition memento. A `kani` harness becomes an invariant memento. Unit tests, property tests, schemas, harnesses, annotations, and language-specific contract surfaces lift into the same predicate envelope. There is no migration. The developer keeps their test culture; the lift adapters in the Rust workspace translate existing evidence into catalog material.
 
@@ -110,19 +110,19 @@ These paths are intentionally ordinary. `provekit lift` over an existing test co
 
 ## 7. The Prove Portfolio
 
-No single proving engine owns correctness. ProvekIt uses a portfolio because different theories have different authorities.
+No single proving engine owns correctness. Sugar uses a portfolio because different theories have different authorities.
 
 The current portfolio is z3, cvc5, Vampire, and Coq. z3 and cvc5 cover the SMT workhorse path. Vampire covers equational reasoning via superposition. Coq covers proof terms, induction, and ring and field tactics. Each compiler is the authority on what its target theory soundly handles. The verifier's authority is composition, not translation.
 
-That distinction is load-bearing. ProvekIt does not claim that any English sentence, annotation, schema, or legal clause magically becomes true after translation. A compiler emits a bounded predicate into a theory. A solver or proof assistant produces evidence under that theory. The memento records the binding, property, evidence, producer, and signature. Composition records how one bounded claim implies another. The verifier checks the receipts under policy.
+That distinction is load-bearing. Sugar does not claim that any English sentence, annotation, schema, or legal clause magically becomes true after translation. A compiler emits a bounded predicate into a theory. A solver or proof assistant produces evidence under that theory. The memento records the binding, property, evidence, producer, and signature. Composition records how one bounded claim implies another. The verifier checks the receipts under policy.
 
 The portfolio is extensible. A Maude equational backend with a CeTA-certified termination and confluence gate is in flight. A Lean 4 plus mathlib backend is in flight. Those additions grow the range of claims that can be discharged soundly; they do not change the `.proof` envelope or the local verification model.
 
 ## 8. What It Is Not
 
-ProvekIt is not a better static analyzer. Static analyzers find facts and warnings inside code. ProvekIt transports bounded correctness claims as signed, content-addressed artifacts and lets other tools contribute evidence.
+Sugar is not a better static analyzer. Static analyzers find facts and warnings inside code. Sugar transports bounded correctness claims as signed, content-addressed artifacts and lets other tools contribute evidence.
 
-It is not a package manager with proofs attached. Package managers resolve and install artifacts. ProvekIt can lift package registries into proof graphs, but the `.proof` file is the common envelope, not a registry replacement.
+It is not a package manager with proofs attached. Package managers resolve and install artifacts. Sugar can lift package registries into proof graphs, but the `.proof` file is the common envelope, not a registry replacement.
 
 It is not a blockchain. There is no consensus protocol in the verifier path, no token, no global ordering requirement, and no need to ask the network whether a local claim checks. [Paper 3](03-substrate-not-blockchain.md) gives the consensus-free validity argument and the pin-as-rank-N-tuple discipline.
 
@@ -134,13 +134,13 @@ Institutions do not vanish. They set policy, decide acceptable portfolios, defin
 
 ## 9. The Ladder
 
-This paper is the pitch: the shortest path from hearing the name ProvekIt to understanding the move. [Paper 2](02-bluepaper.md), the bluepaper, is the formal specification: canonicalization, memento shape, proof-file format, verifier semantics, lattice tractability, and the executable verification discipline. Papers 3 through 14 are the After X ladder: each rung says, given what the prior paper established, here is what changes.
+This paper is the pitch: the shortest path from hearing the name Sugar to understanding the move. [Paper 2](02-bluepaper.md), the bluepaper, is the formal specification: canonicalization, memento shape, proof-file format, verifier semantics, lattice tractability, and the executable verification discipline. Papers 3 through 14 are the After X ladder: each rung says, given what the prior paper established, here is what changes.
 
 New readers should especially read three rungs.
 
 [Paper 2](02-bluepaper.md) defines the protocol. If a claim in this paper sounds too convenient, the bluepaper is where the bytes, grammars, and proofs are pinned.
 
-[Paper 3](03-substrate-not-blockchain.md) explains why this is substrate, not blockchain. Its core point is consensus-free validity: local content identity plus pinned policy is enough for the check ProvekIt needs. Its pin-as-rank-N-tuple discipline names how protocol, portfolio, policy, and artifact identities remain explicit instead of collapsing into social trust.
+[Paper 3](03-substrate-not-blockchain.md) explains why this is substrate, not blockchain. Its core point is consensus-free validity: local content identity plus pinned policy is enough for the check Sugar needs. Its pin-as-rank-N-tuple discipline names how protocol, portfolio, policy, and artifact identities remain explicit instead of collapsing into social trust.
 
 [Paper 14](14-after-trust-the-universal-correctness-bundle.md) is the closing argument. It names the universal correctness bundle and states the six load-bearing lemmas: bedrock dominance, Bridge minimality, plateau finiteness, domain agnosticism, constant-size verification preserved under composition, and CVE blast-radius is SELECT.
 
@@ -158,7 +158,7 @@ The intended public package shape is the same CLI surface. The repo path is curr
 
 ## 10. The Trojan Horse
 
-ProvekIt ships as a normal developer tool: a CI step, a `.proof` file beside an artifact, a `provekit lift` over an existing test corpus, a Docker label, an admission check, a release receipt. That is the adoption path because it matches how software already moves.
+Sugar ships as a normal developer tool: a CI step, a `.proof` file beside an artifact, a `provekit lift` over an existing test corpus, a Docker label, an admission check, a release receipt. That is the adoption path because it matches how software already moves.
 
 The structure underneath is the cypherpunk endgame: verification without authority, local check, trust replaced by math. Adoption does not require anyone to believe the endgame. It requires `provekit lift` to be cheap and `provekit verify` to be a `memcmp`. The catalog grows by use. Every lifted test, schema, harness, package edge, native wrapper, release artifact, and bedrock source claim adds another signed fact to the lattice. The next verifier does not pay again for the whole world. It checks the bytes it needs under the policy it chose.
 

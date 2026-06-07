@@ -76,7 +76,7 @@ This is the moment your kit becomes load-bearing. You are now claiming, by pinni
 
 When the protocol catalog version changes (v1.1.0 → v1.2.0), the canonical content of self-contracts may change. The pinned CIDs change. Every kit re-mints and re-pins.
 
-This is one of the few coordinated activities in ProvekIt. A v1.2.0 release is gated on every kit re-minting and re-pinning successfully. If a kit fails to re-mint (because v1.2.0 added a new IR primitive the kit doesn't yet support, for example), the kit falls back to "v1.1.0 only" until it adds support.
+This is one of the few coordinated activities in Sugar. A v1.2.0 release is gated on every kit re-minting and re-pinning successfully. If a kit fails to re-mint (because v1.2.0 added a new IR primitive the kit doesn't yet support, for example), the kit falls back to "v1.1.0 only" until it adds support.
 
 ## Common mistakes
 

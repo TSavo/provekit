@@ -14,7 +14,7 @@ When the verifier rejects that implication, the LSP plugin emits one `provekit.l
 
 This shape is for precondition failures found by the thin forward-propagation loop in [forward-propagation-floor-v1.md](forward-propagation-floor-v1.md). It is not the shape for parse errors, missing CIDs, signature failures, protocol catalog mismatches, or unresolved baseline artifacts.
 
-Those failures use the stable ProvekIt diagnostic codes in [../reference/error-codes.md](../reference/error-codes.md).
+Those failures use the stable Sugar diagnostic codes in [../reference/error-codes.md](../reference/error-codes.md).
 
 ## Constants
 
@@ -99,7 +99,7 @@ An LSP plugin emits this diagnostic only when all of the following hold:
 
 If the accumulated post is `top`, the plugin suppresses this diagnostic. The floor spec treats `top` as a loss of precision, not as a user-visible contract violation.
 
-If lookup, verification, or trust-policy evaluation fails before the implication query can run, the plugin emits a more specific ProvekIt diagnostic code instead of `provekit.lsp.implication_failed`.
+If lookup, verification, or trust-policy evaluation fails before the implication query can run, the plugin emits a more specific Sugar diagnostic code instead of `provekit.lsp.implication_failed`.
 
 ## Hover Content
 

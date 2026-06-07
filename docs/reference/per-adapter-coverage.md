@@ -1,6 +1,6 @@
 # Lift adoption paths
 
-ProvekIt does not compete with the annotation libraries already deployed in the wild. It sits beneath them. Whatever library a codebase already uses, the lift adapter promotes those annotations to content-addressed signed contract mementos. This document is the per-source-library adoption guide.
+Sugar does not compete with the annotation libraries already deployed in the wild. It sits beneath them. Whatever library a codebase already uses, the lift adapter promotes those annotations to content-addressed signed contract mementos. This document is the per-source-library adoption guide.
 
 The pattern is uniform across host languages: a lift adapter walks the source library's idiom, emits canonical IR, mints a signed contract memento, and publishes. Authoring stays where the developer already is; only verification moves underneath.
 
@@ -219,7 +219,7 @@ This is the cross-language conformance property in action. A Rust consumer of a 
 
 Lifting does not change what the source library expresses. If `proptest` covers a property over the input domain via random sampling, the lifted contract memento covers the same property in the same logical fragment; it does not magically extend coverage to inputs the original library could not reach. The contract memento is a portable, signed, content-addressed encoding of the source library's existing claim.
 
-Lifting does not validate that the source library's claim is correct. The contract memento records "this annotation said this"; if the annotation was wrong (a `proptest!` block that misstates the property, a `pydantic` constraint that does not match the runtime behavior), the lifted memento carries the same defect. ProvekIt's protocol guarantees signature unforgeability and hash determinism; it does not guarantee the source library's correctness.
+Lifting does not validate that the source library's claim is correct. The contract memento records "this annotation said this"; if the annotation was wrong (a `proptest!` block that misstates the property, a `pydantic` constraint that does not match the runtime behavior), the lifted memento carries the same defect. Sugar's protocol guarantees signature unforgeability and hash determinism; it does not guarantee the source library's correctness.
 
 Lifting does not require the source library at runtime. Once the `.proof` is produced, the consumer's verifier reads the catalog and runs the handshake; the original `proptest` runner, `contracts` macro expansion, or `pydantic` validator is not needed. The `.proof` is portable across machines that do not have the source library installed.
 

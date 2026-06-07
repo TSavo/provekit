@@ -42,7 +42,7 @@ If the compiler is backdoored, and the backdoor is in place when the developer m
 
 The whole pipeline is poisoned. The proof is internally consistent (binary matches CID) and externally signed by an honest developer who didn't realize their compiler was backdoored. The verifier sees no anomaly.
 
-This is the residue of Thompson's "Trusting Trust" attack within ProvekIt. The defense is bootstrappable systems and reproducible builds (cross-compiling with multiple compiler vendors, comparing outputs). ProvekIt does not solve Trusting Trust; it complements solutions that do.
+This is the residue of Thompson's "Trusting Trust" attack within Sugar. The defense is bootstrappable systems and reproducible builds (cross-compiling with multiple compiler vendors, comparing outputs). Sugar does not solve Trusting Trust; it complements solutions that do.
 
 ## Compromise of the developer's signing key
 
@@ -67,7 +67,7 @@ The protocol does not prescribe these. They are operational practices around the
 
 These attacks happen after verification. `binaryCid` says "the binary you loaded matches the proof"; it doesn't say "the binary you're running right now hasn't been modified since you loaded it."
 
-Mitigations: runtime integrity monitoring (Linux IMA, Windows Code Integrity), hardware-based attestation (TPM, Intel SGX, ARM TrustZone), execution-time integrity checks. These are systems-level defenses, complementary to ProvekIt.
+Mitigations: runtime integrity monitoring (Linux IMA, Windows Code Integrity), hardware-based attestation (TPM, Intel SGX, ARM TrustZone), execution-time integrity checks. These are systems-level defenses, complementary to Sugar.
 
 ## Substitution of indirect dependencies
 
@@ -85,7 +85,7 @@ A binary that satisfies its behavioral contract may still leak information throu
 
 Behavioral contracts are about input-output relations. Side channels are non-functional properties. The protocol does not capture them.
 
-Mitigation: side-channel analysis is a separate discipline. Cryptographic libraries publish constant-time guarantees outside ProvekIt's scope. ProvekIt complements but does not replace.
+Mitigation: side-channel analysis is a separate discipline. Cryptographic libraries publish constant-time guarantees outside Sugar's scope. Sugar complements but does not replace.
 
 ## Resource exhaustion
 
@@ -97,7 +97,7 @@ Mitigation: resource bounds need their own contracts and their own canonical pre
 
 A binary that satisfies its behavioral contract may exploit a runtime sandbox bug to escape its intended permissions. The contract describes intended behavior; the exploit is unintended behavior outside the formal model.
 
-Mitigation: sandboxes need their own integrity. ProvekIt does not validate sandbox correctness.
+Mitigation: sandboxes need their own integrity. Sugar does not validate sandbox correctness.
 
 ## Time-of-check vs. time-of-use
 
@@ -135,11 +135,11 @@ Mitigation: contracts should be explicit about environmental assumptions (treat 
 - Time-of-check / time-of-use gaps.
 - Environmental dependencies.
 
-The first item is the most consequential. `binaryCid` plus tampering detection plus per-member CID checks closes a real and large slice of supply-chain risk. The remaining items require complementary defenses; ProvekIt explicitly does not pretend to address them.
+The first item is the most consequential. `binaryCid` plus tampering detection plus per-member CID checks closes a real and large slice of supply-chain risk. The remaining items require complementary defenses; Sugar explicitly does not pretend to address them.
 
 ## Defense-in-depth posture
 
-ProvekIt is one layer. The realistic security posture for a project that uses ProvekIt:
+Sugar is one layer. The realistic security posture for a project that uses Sugar:
 
 1. **Source review**: does the source say what we think it says?
 2. **Reproducible builds**: does the source compile to the same bytes everywhere?
@@ -149,7 +149,7 @@ ProvekIt is one layer. The realistic security posture for a project that uses Pr
 6. **Network and sandbox isolation**: what can the binary affect even if it's malicious?
 7. **Audit logging**: what did the program actually do at runtime?
 
-ProvekIt covers (3) and (4). Other layers cover (1), (2), (5), (6), (7).
+Sugar covers (3) and (4). Other layers cover (1), (2), (5), (6), (7).
 
 ## Read next
 

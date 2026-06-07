@@ -1,6 +1,6 @@
 # Error Codes
 
-ProvekIt diagnostic codes are stable handles for verifier, lift, bridge, and extension failures. Messages may improve over time; codes should remain suitable for editor filters, CI policy, and support searches.
+Sugar diagnostic codes are stable handles for verifier, lift, bridge, and extension failures. Messages may improve over time; codes should remain suitable for editor filters, CI policy, and support searches.
 
 | Code | Meaning | Typical next step |
 |---|---|---|

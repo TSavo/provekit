@@ -1,13 +1,13 @@
-# ProvekIt: Product
+# Sugar: Product
 
-## What ProvekIt is
+## What Sugar is
 
-ProvekIt is a proof supply chain for code and packages that already exist.
+Sugar is a proof supply chain for code and packages that already exist.
 
 Most projects already contain evidence about behavior: tests, assertions,
 contracts, schemas, validators, type annotations, framework annotations, package
 metadata, CI results, and proof-tool output. Today that evidence usually stays
-inside one language, one test runner, one repository, or one build. ProvekIt
+inside one language, one test runner, one repository, or one build. Sugar
 promotes it into portable ProofIR or protocol claims, wraps those claims in
 signed mementos, and distributes them as content-addressed `.proof` artifacts.
 
@@ -22,7 +22,7 @@ The product has two main actors:
   proof bundles, and proves obligations. It should not need to know Maven, npm,
   Cargo, Spring, Zod, JML, or Rust proc-macro semantics directly.
 
-That is the important boundary. ProvekIt is not a verifier for one language and
+That is the important boundary. Sugar is not a verifier for one language and
 not another test runner. It is a substrate where claims from many local tools
 can be compared, composed, signed, and rejected when they contradict.
 
@@ -37,7 +37,7 @@ packages disagree about a boundary value, a generated bridge drops a condition,
 or a dependency update changes a contract set while the application still
 expects the old one.
 
-ProvekIt makes the claims fight together. It lifts the local evidence into a
+Sugar makes the claims fight together. It lifts the local evidence into a
 shared proof graph, composes the claims, and reports proof violations or
 unresolved residue when the graph cannot justify the assembled system.
 
@@ -55,7 +55,7 @@ parametrized `consumer-agrees-PROVEN` and `consumer-contradicts-REFUSED`; the
 cross-proof conjoin is locked by `cross_proof_same_named_contracts_are_conjoined`
 in `implementations/rust/provekit-verifier/src/consistency.rs`.)
 
-That makes ProvekIt a supply-chain tool as much as a verification tool. The
+That makes Sugar a supply-chain tool as much as a verification tool. The
 question is not only "did this package pass its own checks?" The question is
 "do the claims this package ships still hold when combined with the claims its
 consumers, dependencies, bridges, and generated artifacts rely on?"
@@ -108,31 +108,31 @@ ordinary function contracts: proof-file conformance, protocol catalog evolution,
 CI input closure, generated repair closure, package inspection, and
 materialization receipts.
 
-## What ProvekIt replaces
+## What Sugar replaces
 
-ProvekIt replaces the missing portable layer under existing tools.
+Sugar replaces the missing portable layer under existing tools.
 
 It does not replace `cargo test`, `npm test`, `go test`, JUnit, pytest, Kani,
 Prusti, Coq, Lean, F*, Dafny, TLA+, Z3, schema validators, or static analyzers.
-Those tools remain the source of evidence. ProvekIt gives their claims stable
+Those tools remain the source of evidence. Sugar gives their claims stable
 bytes, CIDs, signatures, and a proof graph where downstream consumers can reuse
 or reject them.
 
-## What ProvekIt is not
+## What Sugar is not
 
-ProvekIt is not a soundness-certified compliance product. If a deployment
+Sugar is not a soundness-certified compliance product. If a deployment
 requires a regulator-recognized proof artifact from Coq, Isabelle, F*, or a
 specific certified toolchain, that toolchain remains the authority.
 
-ProvekIt is not a substitute for runtime testing. Tests are often the evidence
+Sugar is not a substitute for runtime testing. Tests are often the evidence
 that gets lifted. Adapter coverage is empirical, and each kit only sees the
 idioms it knows how to walk.
 
-ProvekIt is not a central registry. A `.proof` artifact verifies from its bytes,
+Sugar is not a central registry. A `.proof` artifact verifies from its bytes,
 CIDs, signatures, witnesses, and local policy. A server can index proof data for
 discovery, but the server is not the source of truth.
 
-ProvekIt is not a promise that every boundary can be materialized exactly.
+Sugar is not a promise that every boundary can be materialized exactly.
 Materialization can produce exact output, bounded lossy output with an explicit
 loss record, or refusal. Silent loss is the forbidden case.
 

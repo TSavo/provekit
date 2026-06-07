@@ -143,7 +143,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Add `menagerie/README.md`**
 
-Create a README that defines Menagerie as ProvekIt's executable proof-workflow map and lists these destinations:
+Create a README that defines Menagerie as Sugar's executable proof-workflow map and lists these destinations:
 
 ```text
 Bug Zoo

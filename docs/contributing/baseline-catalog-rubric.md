@@ -87,7 +87,7 @@ Verbatim base text + per-language addendum. The base ensures consumers learn one
 Foundation baseline catalog: advisory only.
 
 This catalog asserts hidden predicates about the named language's
-standard library. It is signed by the ProvekIt foundation key as a
+standard library. It is signed by the Sugar foundation key as a
 starting point for users who want to verify proofs about code in
 this language.
 

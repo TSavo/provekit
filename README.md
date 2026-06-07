@@ -1,19 +1,23 @@
-# ProvekIt
+# Sugar
+**The Correctness Suite**
 
-ProvekIt is a proof supply chain for software that already exists. It is
+> **Sugar in, `.proof` out.**
+
+Sugar is a proof supply chain for software that already exists. It is
 Git/IPFS/Sigstore for *correctness*: signed, content-addressed `.proof`
 artifacts that anyone can re-verify by recomputation, without trusting the
 original test runner and without re-running the original proof.
 
-It does not ask every team to rewrite code in a proof language. It takes the
-evidence teams already maintain in their native ecosystems, including tests,
-assertions, contracts, schemas, validators, framework annotations, and
-boundary/library sugar, and turns that evidence into portable claims. Those
-claims are packaged as signed, content-addressed `.proof` artifacts that other
-packages, tools, and languages can verify by recomputation. CIDs are
-BLAKE3-512; signatures are Ed25519.
+It does not ask anyone to rewrite code in a proof language. Feed it the ordinary
+surface you already write — the *sugar*: tests, assertions, contracts, schemas,
+validators, framework annotations, boundary and library bindings — and it turns
+that evidence into portable claims, packaged as signed, content-addressed
+`.proof` artifacts that other packages, tools, and languages can verify by
+recomputation. "Just sugar," the surface everyone waves off as not-the-real-thing,
+is exactly where correctness turns out to live. CIDs are BLAKE3-512; signatures
+are Ed25519.
 
-## The claim ProvekIt makes checkable
+## The claim Sugar makes checkable
 
 Correctness is `k(I) = t`: a program `k` applied to an input/precondition `I`
 produces an output/postcondition `t`. A `.proof` is a kept promise made
@@ -118,7 +122,7 @@ unit test `cross_proof_same_named_contracts_are_conjoined` in
 
 ## The shape: kits own language, the CLI owns proof
 
-ProvekIt has two deliberately separate responsibilities.
+Sugar has two deliberately separate responsibilities.
 
 **Kits own language reality.** A kit knows the language, package manager,
 compiler, test framework, annotation library, and ecosystem conventions. A Rust
@@ -139,7 +143,7 @@ know what a Maven classifier, npm workspace, Rust proc macro, or Spring
 annotation means. The kit translates those surfaces to proof data; the CLI
 computes over the proof data.
 
-That boundary is the product. ProvekIt is not "a better Rust verifier" or "a
+That boundary is the product. Sugar is not "a better Rust verifier" or "a
 new test runner." It is the place where language-native evidence becomes a
 portable, recomputable claim that survives package boundaries. For the canonical
 definitions of sugar, boundary, lift, lower, concept, and contract, see
@@ -167,10 +171,16 @@ native evidence -> kit lift -> ProofIR / protocol claim
 Previously minted, unchanged commitments can often be checked cheaply by CID
 equality, signature checks, and graph walking. Semantic proving still happens
 when claims are minted, changed, or newly composed in a way the DAG does not
-already justify. ProvekIt does not make all proving constant-time. It amortizes
+already justify. Sugar does not make all proving constant-time. It amortizes
 expensive proof work by making prior commitments content-addressed and reusable.
 
 ## What the CLI does
+
+> _Naming: the project is now **Sugar**, but the CLI binary and crates still
+> carry the `provekit` name until the code cutover. The rename is staged because
+> it is content-addressed — renaming the kits re-mints every `.proof` — so it
+> lands as one coordinated swing. Commands below use today's `provekit`; they
+> become `sugar <verb>` after the cutover._
 
 The canonical CLI is the Rust `provekit` binary. Run `provekit --help` for the
 authoritative list; the current subcommands include:
@@ -230,7 +240,7 @@ provekit verify-protocol
 
 For project setup and first runs, start with
 [docs/quickstart-end-user.md](docs/quickstart-end-user.md). If you are working
-on ProvekIt itself, see [docs/contributing/build.md](docs/contributing/build.md)
+on Sugar itself, see [docs/contributing/build.md](docs/contributing/build.md)
 for the polyglot Make targets, system dependencies, and per-implementation build
 commands.
 
@@ -284,20 +294,20 @@ The numpy demos provision their own venv on first run.
 
 For the full docs map, see [docs/index.md](docs/index.md).
 
-## What ProvekIt is not
+## What Sugar is not
 
-ProvekIt is not a replacement for tests. Tests remain the source of much of the
+Sugar is not a replacement for tests. Tests remain the source of much of the
 evidence that kits lift.
 
-ProvekIt is not a replacement for Kani, Prusti, Coq, Lean, F*, Dafny, TLA+, z3,
-or other verification tools. Those tools produce evidence; ProvekIt gives that
+Sugar is not a replacement for Kani, Prusti, Coq, Lean, F*, Dafny, TLA+, z3,
+or other verification tools. Those tools produce evidence; Sugar gives that
 evidence a portable, content-addressed, recomputable supply chain.
 
-ProvekIt is not a central registry. `.proof` artifacts verify from their bytes,
+Sugar is not a central registry. `.proof` artifacts verify from their bytes,
 CIDs, signatures, witnesses, and local policy. A server may index proof data for
 convenience, but it is not the authority.
 
-ProvekIt is not a promise that any current kit sees every useful contract in a
+Sugar is not a promise that any current kit sees every useful contract in a
 codebase. Adapter coverage is empirical. Unknown, unsupported, or lossy surfaces
 must be reported honestly as residue, loss, or refusal.
 

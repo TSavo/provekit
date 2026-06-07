@@ -1,6 +1,6 @@
 # Content-addressing, not a registry
 
-ProvekIt's "registry" is the BLAKE3-512 hashspace. There is no master copy. There is no service that mediates membership. There is no party whose downtime stops the protocol.
+Sugar's "registry" is the BLAKE3-512 hashspace. There is no master copy. There is no service that mediates membership. There is no party whose downtime stops the protocol.
 
 This doc unpacks why content-addressing is the right primitive, and what it changes about how the protocol can be operated, scaled, and trusted.
 
@@ -22,7 +22,7 @@ GET blake3-512:9d57c5e4...
 
 The address is a hash of the content. Any party with the content can produce it; no one without the content can. The client can verify the response against the address: hash the bytes, compare to the address.
 
-Bitcoin, Git, BitTorrent, IPFS all use this primitive. ProvekIt does too.
+Bitcoin, Git, BitTorrent, IPFS all use this primitive. Sugar does too.
 
 ## What changes when you content-address
 
@@ -30,7 +30,7 @@ Bitcoin, Git, BitTorrent, IPFS all use this primitive. ProvekIt does too.
 
 Bitcoin has no central mint; coin custody is decided by signatures over UTXOs. Git has no master copy; the same commit hash exists in every clone. BitTorrent has no central server; the seeders, leechers, and trackers are interchangeable. IPFS has no registry; the content addresses are the lookup keys.
 
-ProvekIt has no central registry. Mementos are content-addressed; anyone with the bytes can verify; no party's permission is required to publish or consume.
+Sugar has no central registry. Mementos are content-addressed; anyone with the bytes can verify; no party's permission is required to publish or consume.
 
 This is structural. The protocol's correctness does not depend on any party being honest, online, or available.
 
@@ -44,7 +44,7 @@ This is the absence of cache invalidation. In a conventional cache:
 - Stale entries can lead to wrong answers.
 - Cache invalidation is a continuous coordination problem.
 
-In ProvekIt:
+In Sugar:
 
 - A memento is only valid for the bytes it pinned.
 - If the bytes change, the new bytes hash to a different CID; the old memento is irrelevant to the new bytes; the new bytes need a new memento.
@@ -66,7 +66,7 @@ If a consumer wants a public registry-like experience, they can run an indexer. 
 
 ### Permissionless publication
 
-ProvekIt asks no party's permission to publish. The act of publishing is the act of producing bytes that verify themselves: a signed memento whose CID is its content. Anyone with a key pair can mint mementos. Anyone with the spec can verify them.
+Sugar asks no party's permission to publish. The act of publishing is the act of producing bytes that verify themselves: a signed memento whose CID is its content. Anyone with a key pair can mint mementos. Anyone with the spec can verify them.
 
 This is the lineage of Bitcoin, BitTorrent, Tor: protocols that operate without permission because they do not need one. The trust comes from the protocol's primitives, not from a gatekeeper.
 
@@ -96,7 +96,7 @@ Content-addressing fixes this. All mirrors serve the same CID; the bytes either 
 
 Content-addressing alone doesn't solve discovery. You need to know the CID to fetch. Indexers and registries can map names to CIDs, but the indexer is a convenience, not a source of truth.
 
-In ProvekIt's specific case: a consumer's `.proof` references dependencies' contract CIDs. The consumer fetches each by CID; resolution is by direct lookup, not by name. Publishers publicize CIDs (via package metadata, registries, or word of mouth); consumers fetch by CID.
+In Sugar's specific case: a consumer's `.proof` references dependencies' contract CIDs. The consumer fetches each by CID; resolution is by direct lookup, not by name. Publishers publicize CIDs (via package metadata, registries, or word of mouth); consumers fetch by CID.
 
 ## What problems content-addressing doesn't solve
 
@@ -104,7 +104,7 @@ In ProvekIt's specific case: a consumer's `.proof` references dependencies' cont
 
 You can fetch by CID if you know the CID. You don't always know the CID. Indexers are the practical answer; running an indexer is straightforward but not free.
 
-ProvekIt does not prescribe how indexers should work. Multiple competing indexers can exist; all are correct as long as they verify the CIDs they advertise.
+Sugar does not prescribe how indexers should work. Multiple competing indexers can exist; all are correct as long as they verify the CIDs they advertise.
 
 ### Trust decisions are still local
 
@@ -130,7 +130,7 @@ Bitcoin showed that content-addressing scales for currency without a central min
 
 In each case, the conventional wisdom was that a central authority was structurally required. In each case, content-addressing showed it wasn't. The pattern is robust: domains thought to require central authorities admit content-addressed protocols.
 
-ProvekIt is one more application of the same primitive. The domain is behavioral verification. The conventional wisdom would say "of course you need a central authority to certify proofs." ProvekIt says: no, the bytes are the certificate; the authority is the math.
+Sugar is one more application of the same primitive. The domain is behavioral verification. The conventional wisdom would say "of course you need a central authority to certify proofs." Sugar says: no, the bytes are the certificate; the authority is the math.
 
 ## Operational consequences
 

@@ -1,6 +1,6 @@
 # Canonical Form
 
-Canonical form is the byte representation that ProvekIt hashes, signs, and compares. A verifier never hashes an in-memory object. It hashes the canonical bytes emitted from that object.
+Canonical form is the byte representation that Sugar hashes, signs, and compares. A verifier never hashes an in-memory object. It hashes the canonical bytes emitted from that object.
 
 ## Rule
 

@@ -1,4 +1,4 @@
-# ProvekIt v1.6.3: Protocol Evolution
+# Sugar v1.6.3: Protocol Evolution
 
 **Catalog CID:** `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d`
 
@@ -77,7 +77,7 @@ Each step is a witnessed PEP migration edge. The chain itself is the authority.
 **Tagging command (when ready to ship):**
 
 ```sh
-git tag -s v1.6.3 -m "ProvekIt v1.6.3: protocol catalog dd0cc79889ee..."
+git tag -s v1.6.3 -m "Sugar v1.6.3: protocol catalog dd0cc79889ee..."
 git push origin v1.6.3
 gh release create v1.6.3 --notes-file .staged/release-notes-v1.6.3.md
 ```

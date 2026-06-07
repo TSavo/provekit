@@ -8,7 +8,7 @@
 
 ## Stakes
 
-ProvekIt's v1 contract requires the developer to hand-author `must(...)`
+Sugar's v1 contract requires the developer to hand-author `must(...)`
 calls inside `.invariant.ts` files. Adoption is gated on that authoring
 step. The corpus of existing TypeScript that has *no* invariants has
 zero coverage today. Lift is the retrospective on-ramp: point it at an
@@ -307,7 +307,7 @@ and the specific reason. No silent skip. No best-effort defaults.
    or (c) inline the prompt as a TS string export. Option (a) keeps
    the "editable prose" promise intact for installed consumers.
 
-4. **LLM provider injection.** ProvekIt has no LLM client today (the
+4. **LLM provider injection.** Sugar has no LLM client today (the
    `formulate` stage's LLM is in `src/fix/stages/formulateInvariant.ts`
    and is owned by the bug-fix workflow). v0 lift takes a `LiftLLM`
    interface as a constructor arg; the CLI wiring uses an

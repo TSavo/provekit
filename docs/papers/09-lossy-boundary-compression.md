@@ -37,11 +37,11 @@ Within that domain, lossy compression is not a defect. It is the design. A lifte
 
 The more precise name is **obligation-preserving loss**. The lift is allowed to lose source detail only when the lost detail is outside the boundary obligation being preserved. "Lossy" here does not mean approximate. It means the equivalence relation is drawn at the contract boundary rather than at the full implementation.
 
-This is what lets the same boundary predicate be lifted from a Spring annotation, a ProvekIt-native annotation, an OpenAPI schema, a Zod validator, and a historical OSS commit. The source implementations are not equivalent. The boundary obligations are.
+This is what lets the same boundary predicate be lifted from a Spring annotation, a Sugar-native annotation, an OpenAPI schema, a Zod validator, and a historical OSS commit. The source implementations are not equivalent. The boundary obligations are.
 
-The difference matters because adoption depends on it. ProvekIt-native contracts are a reference surface, not a required authoring style. Existing code already contains latent contracts in Spring, Bean Validation, Swagger/OpenAPI, Zod, Pydantic, JML, Cofoja, tests, types, schemas, comments, metadata, framework declarations, and old patches. ProvekIt's move is to lift those latent contracts into universal, comparable, solvable, translatable, content-addressable, signable ProofIR edges.
+The difference matters because adoption depends on it. Sugar-native contracts are a reference surface, not a required authoring style. Existing code already contains latent contracts in Spring, Bean Validation, Swagger/OpenAPI, Zod, Pydantic, JML, Cofoja, tests, types, schemas, comments, metadata, framework declarations, and old patches. Sugar's move is to lift those latent contracts into universal, comparable, solvable, translatable, content-addressable, signable ProofIR edges.
 
-The substrate does not begin when developers agree to write ProvekIt-native annotations. The substrate begins when their existing boundary claims can be read.
+The substrate does not begin when developers agree to write Sugar-native annotations. The substrate begins when their existing boundary claims can be read.
 
 ## §1: The lemma
 
@@ -97,9 +97,9 @@ to:
 Does the model's output lift to boundary edges that close?
 ```
 
-That is a codomain restriction. The model may sample from a huge space of syntactically plausible patches, schemas, validators, annotations, migrations, and tests. ProvekIt narrows that space after generation to the subset whose boundary predicates satisfy the required edges. The narrowing is not a prompt trick. It is not "be careful" in system-message form. It is a mechanical acceptance gate over lifted output.
+That is a codomain restriction. The model may sample from a huge space of syntactically plausible patches, schemas, validators, annotations, migrations, and tests. Sugar narrows that space after generation to the subset whose boundary predicates satisfy the required edges. The narrowing is not a prompt trick. It is not "be careful" in system-message form. It is a mechanical acceptance gate over lifted output.
 
-This connects to the earlier constraint-driven-development spec: each fix mints a permanent constraint on what the codebase cannot become. It also connects to paper 07's generative-completion section: models may generate candidate code, but the substrate verifies mechanically whether the candidate closes the DAG. This paper adds the boundary-compression reason that loop can be cross-language and cross-framework. The model can output Spring, Zod, OpenAPI, Pydantic, JML, Cofoja, SQL migrations, tests, or ProvekIt-native declarations. The substrate does not need to trust the surface. It lifts the boundary obligation and checks the edge.
+This connects to the earlier constraint-driven-development spec: each fix mints a permanent constraint on what the codebase cannot become. It also connects to paper 07's generative-completion section: models may generate candidate code, but the substrate verifies mechanically whether the candidate closes the DAG. This paper adds the boundary-compression reason that loop can be cross-language and cross-framework. The model can output Spring, Zod, OpenAPI, Pydantic, JML, Cofoja, SQL migrations, tests, or Sugar-native declarations. The substrate does not need to trust the surface. It lifts the boundary obligation and checks the edge.
 
 This is why obligation-preserving loss is stronger than faithful re-expression for AI-produced artifacts. A faithful host-language IR would inherit the model's implementation sprawl and make every candidate hard to compare. A boundary IR discards the sprawl and asks the only admissibility question that matters at the contract layer: did this output preserve or strengthen the required obligation?
 
@@ -121,7 +121,7 @@ The domain cut is the whole architecture.
 
 Prior formal methods often fail adoption by asking developers to move their authoring surface into the verifier's preferred language. Write the spec in this syntax. Rewrite the function in that subset. Add annotations in the verifier's house style. Avoid framework features the tool cannot understand. Use the blessed encoding. The work may be sound, but the adoption path is narrow: become the kind of team that authors formal contracts directly.
 
-ProvekIt reverses the posture.
+Sugar reverses the posture.
 
 The world already writes contracts. It just does not call them that consistently.
 
@@ -137,9 +137,9 @@ requires input.amount >= 1
 requires input.amount <= 100
 ```
 
-That predicate can arrive from an annotation, a schema, a validator, a native ProvekIt declaration, a test, or a patch. Once lifted, its origin is provenance, not semantics. The semantics are the canonical predicate and its implication edges.
+That predicate can arrive from an annotation, a schema, a validator, a native Sugar declaration, a test, or a patch. Once lifted, its origin is provenance, not semantics. The semantics are the canonical predicate and its implication edges.
 
-This is why ProvekIt-native contracts must be understood as a reference surface, not a required authoring style. Native contracts matter because they show the substrate's object model cleanly. They give authors a direct way to write the thing itself. But requiring native authoring as the adoption path would throw away the largest contract corpus in existence: the contracts already embedded in ordinary code.
+This is why Sugar-native contracts must be understood as a reference surface, not a required authoring style. Native contracts matter because they show the substrate's object model cleanly. They give authors a direct way to write the thing itself. But requiring native authoring as the adoption path would throw away the largest contract corpus in existence: the contracts already embedded in ordinary code.
 
 The substrate does not need developers to become formal-methods people before it can read them. It needs lifters that can see the formal boundary claims they are already making.
 
@@ -212,11 +212,11 @@ The same predicate CID can be shared by:
 - a JML-specified method in a university verification suite;
 - a Cofoja contract in an old enterprise Java codebase;
 - a Bean Validation DTO in a payment processor;
-- a ProvekIt-native declaration in a new service.
+- a Sugar-native declaration in a new service.
 
 The Java implementations are not equivalent. The boundary predicate is.
 
-Once they lift to the same predicate CID, their implication edges can be compared, solved, signed, and reused. If one organization has a signed witness that `1 <= amount <= 10000` implies `amount > 0`, every other organization can reuse that edge, regardless of whether its source surface was Spring, JML, Cofoja, or ProvekIt-native.
+Once they lift to the same predicate CID, their implication edges can be compared, solved, signed, and reused. If one organization has a signed witness that `1 <= amount <= 10000` implies `amount > 0`, every other organization can reuse that edge, regardless of whether its source surface was Spring, JML, Cofoja, or Sugar-native.
 
 That is the substrate doing the thing. It is not translating Java into another Java. It is extracting the obligation from Java-shaped surfaces and placing that obligation into a shared contract-boundary edge space.
 
@@ -302,7 +302,7 @@ The result is not "Java and TypeScript are equivalent." They are not. The result
 
 The adoption corollary is more important than the technical point.
 
-If ProvekIt required native annotations everywhere, adoption would depend on a rewrite of developer behavior. That is the wrong shape. The world's software supply chain is not going to stop and re-author itself in a new contract language before receiving value.
+If Sugar required native annotations everywhere, adoption would depend on a rewrite of developer behavior. That is the wrong shape. The world's software supply chain is not going to stop and re-author itself in a new contract language before receiving value.
 
 The better claim is stronger:
 
@@ -356,13 +356,13 @@ requires len <= MAX_PACKET before read
 
 The patch does not need to have been authored as a specification. It became one by fixing a missing obligation.
 
-This is the lift-not-author posture. ProvekIt-native contracts are clean and useful, but the substrate's bootstrapping path is extraction. Read what exists. Canonicalize the boundary predicate. Preserve provenance. Sign the edge. Make it comparable.
+This is the lift-not-author posture. Sugar-native contracts are clean and useful, but the substrate's bootstrapping path is extraction. Read what exists. Canonicalize the boundary predicate. Preserve provenance. Sign the edge. Make it comparable.
 
 This is also why lossy compression must be permitted. A lifter that tries to preserve all source texture becomes a host-language reimplementation project. A lifter that preserves boundary obligations becomes feasible, useful, and compositional. The difference between those two projects is the difference between never shipping and becoming infrastructure.
 
 ## §6: Constraint-driven development needs a boundary cut
 
-The constraint-driven-development spec gave ProvekIt its development methodology: every fix mints a permanent constraint on what the codebase cannot become. The change request is the trigger; the constraint is the product; the accumulated constraint corpus monotonically reduces the codebase's degrees of freedom.
+The constraint-driven-development spec gave Sugar its development methodology: every fix mints a permanent constraint on what the codebase cannot become. The change request is the trigger; the constraint is the product; the accumulated constraint corpus monotonically reduces the codebase's degrees of freedom.
 
 This paper supplies the boundary-theoretic reason that methodology can work across ordinary software.
 
@@ -424,7 +424,7 @@ untrusted(input) -> parameterized_query(query) -> safe_for_sql(query)
 
 Patch A may close only if `escapeSql` has an accepted signer, precise dialect scope, and an edge from its output to `safe_for_sql` for this sink. Patch C may close a numeric-domain predicate but still fail the SQL-safety edge unless the query construction rule and database dialect make that implication valid under policy.
 
-The point is not that prepared statements are always the only acceptable fix. The point is that admissibility is not the model's confidence, the prettiness of the code, or the presence of a test. Admissibility is edge closure under policy. The LLM generated candidates. ProvekIt constrained the output set.
+The point is not that prepared statements are always the only acceptable fix. The point is that admissibility is not the model's confidence, the prettiness of the code, or the presence of a test. Admissibility is edge closure under policy. The LLM generated candidates. Sugar constrained the output set.
 
 This is the clean CDD posture for probabilistic software production: let the model search, let the substrate reject.
 
@@ -481,7 +481,7 @@ This is the operational consequence of the lemma. Lossy boundary compression pro
 
 Without loss, no identity. If every annotation-retention policy, framework exception type, validator stack trace, AST location, source formatting choice, and helper-function name remains part of the canonical object, then two artifacts almost never hash together. The cache fragments. Cross-language equivalence fails. The substrate degenerates into one silo per framework.
 
-With disciplined loss, the cache compounds. The same predicate lifted from Spring, ProvekIt-native annotations, OpenAPI, Zod, Pydantic, JML, Cofoja, tests, and historical commits lands in the same address space. Every signed edge against that predicate becomes reusable.
+With disciplined loss, the cache compounds. The same predicate lifted from Spring, Sugar-native annotations, OpenAPI, Zod, Pydantic, JML, Cofoja, tests, and historical commits lands in the same address space. Every signed edge against that predicate becomes reusable.
 
 The substrate's economic claim rests on this. The global lemma cache works only if common obligations collapse to common addresses. Common addresses require forgetting everything outside the obligation.
 
@@ -501,7 +501,7 @@ Stable boundary identity is not merely a nice property of the IR. It changes the
 
 **Droppers get a target, not a vibe.** A dropper cannot safely generate "the code that seems right." It needs a missing edge. Lossy boundary compression gives it one. If the substrate says the missing edge is `untrusted(query) -> safe_for_sql(query)`, the dropper may choose a host-language idiom: prepared statement in Java, parameterized query in Python, tagged SQL template in TypeScript, query builder in Ruby. The generated code differs; the target edge is the same. This is what makes cross-language repair possible without pretending languages share implementation semantics.
 
-**Standard libraries become lemma libraries.** Once boundary predicates have stable addresses, every framework's common validators and guards become reusable theorem material. `@Email`, `z.string().email()`, `format: email`, `EmailStr`, and a ProvekIt-native `email(x)` predicate can all point at the same obligation when their accepted domains align. The common validators stop being isolated helpers and become entry points into a shared implication graph.
+**Standard libraries become lemma libraries.** Once boundary predicates have stable addresses, every framework's common validators and guards become reusable theorem material. `@Email`, `z.string().email()`, `format: email`, `EmailStr`, and a Sugar-native `email(x)` predicate can all point at the same obligation when their accepted domains align. The common validators stop being isolated helpers and become entry points into a shared implication graph.
 
 These are not downstream conveniences. They are the reason the lemma matters. If the lifter preserves too much, none of this composes. If it preserves too little, it is unsound. The engineering art is preserving exactly the boundary obligation, then letting the consequences compound.
 
@@ -664,7 +664,7 @@ Unsoundness comes from drawing the boundary wrong, not from loss as such.
 
 Yes. That is the point.
 
-A Spring annotation, a ProvekIt-native annotation, an OpenAPI schema, a Zod validator, and a historical OSS commit are not equivalent source artifacts. They differ dramatically. The claim is not source equivalence. The claim is boundary-obligation equivalence.
+A Spring annotation, a Sugar-native annotation, an OpenAPI schema, a Zod validator, and a historical OSS commit are not equivalent source artifacts. They differ dramatically. The claim is not source equivalence. The claim is boundary-obligation equivalence.
 
 The source implementations are not equivalent; the boundary obligations are.
 
@@ -684,11 +684,11 @@ A test that rejects `amount = 0` does not by itself prove `amount >= 1`. It prov
 
 This is another place where provenance matters. A predicate lifted from a formal JML `requires` clause, an OpenAPI schema, and one unit test may canonically state the same boundary only if policy accepts the lifting evidence. The predicate identity can be the same; the trust in its provenance can differ.
 
-### "Native ProvekIt annotations are clearer."
+### "Native Sugar annotations are clearer."
 
 Yes. They are the clean reference surface.
 
-For new code that wants maximum explicitness, ProvekIt-native contracts may be the best authoring style. The point is adoption, not aesthetics. The substrate cannot require the world to begin there. It must be able to lift latent contracts first and let native authoring grow where teams want it.
+For new code that wants maximum explicitness, Sugar-native contracts may be the best authoring style. The point is adoption, not aesthetics. The substrate cannot require the world to begin there. It must be able to lift latent contracts first and let native authoring grow where teams want it.
 
 ### "ProofIR is too narrow."
 
@@ -723,7 +723,7 @@ It says:
 - Keep your tests.
 - Keep your database constraints.
 - Keep your historical patches.
-- Add ProvekIt-native contracts where they make sense.
+- Add Sugar-native contracts where they make sense.
 
 The substrate will read the boundary obligations underneath those surfaces and place them into the shared edge space.
 
@@ -733,17 +733,17 @@ Once canonicalized, those claims become comparable. Once comparable, they become
 
 The first move is forgetting the right things.
 
-The larger implication is that ProvekIt can become useful before it becomes culturally dominant.
+The larger implication is that Sugar can become useful before it becomes culturally dominant.
 
 That is rare. Most verification systems require cultural conversion before first value: write in this language, adopt this proof assistant, annotate in this style, restrict this dynamic feature, train the team in this logic. The value arrives after the organization has paid the conversion cost.
 
-Lossy boundary compression reverses the curve. A team can get value from contracts it already wrote accidentally. The first useful artifact might be an OpenAPI file, not a ProvekIt-native annotation. The first signed edge might come from a historical bug fix, not a new proof effort. The first cross-service compatibility check might compare a Java DTO to a Zod validator, not two formal specs. The first compliance packet might cite lifted framework annotations, not a hand-authored proof document.
+Lossy boundary compression reverses the curve. A team can get value from contracts it already wrote accidentally. The first useful artifact might be an OpenAPI file, not a Sugar-native annotation. The first signed edge might come from a historical bug fix, not a new proof effort. The first cross-service compatibility check might compare a Java DTO to a Zod validator, not two formal specs. The first compliance packet might cite lifted framework annotations, not a hand-authored proof document.
 
-This changes the adoption politics. ProvekIt-native authoring becomes the high-fidelity path for teams ready to be explicit. Lifting becomes the low-friction path for everyone else. The two paths meet in the same ProofIR edge space. Early adopters do not strand their work in a private formalism; late adopters do not have to rewrite their software before joining the substrate.
+This changes the adoption politics. Sugar-native authoring becomes the high-fidelity path for teams ready to be explicit. Lifting becomes the low-friction path for everyone else. The two paths meet in the same ProofIR edge space. Early adopters do not strand their work in a private formalism; late adopters do not have to rewrite their software before joining the substrate.
 
 It also changes the supply-chain story. A dependency does not need to expose its source implementation to expose its boundary obligations. A vendor can sign the predicates its package promises at public boundaries. A consumer can check whether local calls imply those predicates. A distributor can compare version `n` and version `n+1` by the predicates that changed. A regulator can ask for signed boundary claims without demanding the proprietary implementation behind them. Lossy compression is what makes that politically possible: the compressed object is small enough to share and precise enough to verify.
 
-And it changes standardization. Standards bodies do not need to standardize every host language's contract syntax. They need to standardize the boundary object, its canonical bytes, its implication-edge form, its witness envelope, and its signing/provenance discipline. Spring, Zod, OpenAPI, Pydantic, JML, Cofoja, and ProvekIt-native annotations can keep evolving. The standard sits beneath them at the obligation layer. That is a tractable standardization target.
+And it changes standardization. Standards bodies do not need to standardize every host language's contract syntax. They need to standardize the boundary object, its canonical bytes, its implication-edge form, its witness envelope, and its signing/provenance discipline. Spring, Zod, OpenAPI, Pydantic, JML, Cofoja, and Sugar-native annotations can keep evolving. The standard sits beneath them at the obligation layer. That is a tractable standardization target.
 
 This is the paper's strategic claim: the substrate wins not by replacing the world's authoring surfaces, but by making them comparable after the fact.
 
@@ -757,13 +757,13 @@ It is not a license for sloppy lifting. Obligation-preserving loss is precise: a
 
 It is not a claim that ProofIR plus a set of values compiles into host-language implementation. Droppers emit native repair candidates for missing boundary edges; their output is accepted only after re-lift proves closure.
 
-It is not a mandate to author ProvekIt-native contracts. Native contracts are the reference surface and often the cleanest one. They are not the required starting point for adoption.
+It is not a mandate to author Sugar-native contracts. Native contracts are the reference surface and often the cleanest one. They are not the required starting point for adoption.
 
 It is not a Bug Zoo design document, and it is not a claim that trust disappears. Bug Zoo appears as receipt infrastructure; signing, provenance, witness policy, and curator choice remain essential.
 
 ## §14: The compressed future
 
-The substrate's future is not a world where every codebase looks ProvekIt-native.
+The substrate's future is not a world where every codebase looks Sugar-native.
 
 It is a world where a Java annotation, a TypeScript validator, an OpenAPI schema, a Python model, a formal method contract, a database constraint, a unit test, and a ten-year-old vulnerability patch can all point at the same boundary predicate.
 
@@ -787,4 +787,4 @@ The compressed object is the promise the program makes at its boundary.
 
 Cite as:
 
-> ProvekIt Substrate Working Notes (2026). *Lossy Boundary Compression: Why ProofIR Is Universal Because It Forgets*. Paper 09 of the After-X arc.
+> Sugar Substrate Working Notes (2026). *Lossy Boundary Compression: Why ProofIR Is Universal Because It Forgets*. Paper 09 of the After-X arc.

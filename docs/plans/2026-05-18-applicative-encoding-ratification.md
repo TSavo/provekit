@@ -44,7 +44,7 @@ Four load-bearing reasons, in priority order:
 
 1. **M+N hub federation literal.** Per the transport architecture (`project_provekit_transport_architecture` memory): cross-language transport via the `concept:*` hub. Applicative encoding makes `concept:op-application` THE hub. Every kit implements one primitive (apply-this-CID-to-args) instead of M op-shapes. Adding a new concept-op never requires kit-side syntax additions; it just registers a CID. The transport becomes "lift to op-application form, transport CIDs, realize via apply-by-CID."
 
-2. **Content-addressing alignment.** ProvekIt's substrate is content-addressed: `k(I)=t` is a claim about CIDs. `concept:add` is a NAME for human readability; the CID is what the substrate compares. Applicative encoding puts the CID where it's load-bearing (as a value), not where it's a label (as op_name). The substrate's syntax matches its semantics.
+2. **Content-addressing alignment.** Sugar's substrate is content-addressed: `k(I)=t` is a claim about CIDs. `concept:add` is a NAME for human readability; the CID is what the substrate compares. Applicative encoding puts the CID where it's load-bearing (as a value), not where it's a label (as op_name). The substrate's syntax matches its semantics.
 
 3. **Higher-order is on the roadmap.** The abstraction-layer impl chain (closure, dynamic-dispatch, exception, reference, iterator, generic) requires operations to be first-class values. Direct encoding would force special-case syntax for each higher-order primitive. Applicative gets them all uniformly because operations-as-values is the default.
 

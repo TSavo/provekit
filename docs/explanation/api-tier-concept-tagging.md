@@ -1,6 +1,6 @@
 # API-tier concept tagging: how cross-library transport dissolves without a translation matrix
 
-The earliest concept mints in ProvekIt's catalog described primitive operations: `concept:add`, `concept:conditional`, `concept:option`, `concept:linear-iteration`. Those got us across languages by giving each language's primitive its own CID, namespaced by language, and recording a discharged morphism to a shared concept-hub CID. Paper 13 names the algebra; paper 17 names the address space; paper 18 names the hub. Cross-language transport at the operation tier is M+N, not M×N, because the hub mediates.
+The earliest concept mints in Sugar's catalog described primitive operations: `concept:add`, `concept:conditional`, `concept:option`, `concept:linear-iteration`. Those got us across languages by giving each language's primitive its own CID, namespaced by language, and recording a discharged morphism to a shared concept-hub CID. Paper 13 names the algebra; paper 17 names the address space; paper 18 names the hub. Cross-language transport at the operation tier is M+N, not M×N, because the hub mediates.
 
 The same mechanism handles cross-library transport, but only if the catalog admits API-tier concepts on equal footing with primitive-tier ones. The general claim, sharpened by Sir, 2026-05-13:
 

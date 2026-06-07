@@ -130,7 +130,7 @@ Column meanings:
 
 **CLI:** Native TypeScript CLI planned. Use the Rust CLI (`provekit prove`) for verification; the TypeScript libs handle authoring and lifting.
 
-**LSP Plugin:** Yes. `provekit-lsp` implements the ProvekIt NDJSON LSP plugin protocol (daemon mode over stdio) with `initialize`, `parse`, and `shutdown`.
+**LSP Plugin:** Yes. `provekit-lsp` implements the Sugar NDJSON LSP plugin protocol (daemon mode over stdio) with `initialize`, `parse`, and `shutdown`.
 
 ## Go
 
@@ -150,7 +150,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `provekit-lsp-go` implements the ProvekIt NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`. Scans Go source for `//provekit:` annotations.
+**LSP Plugin:** Yes. `provekit-lsp-go` implements the Sugar NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`. Scans Go source for `//provekit:` annotations.
 
 ## C++
 
@@ -172,7 +172,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `provekit-lsp-cpp` implements the ProvekIt NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`.
+**LSP Plugin:** Yes. `provekit-lsp-cpp` implements the Sugar NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`.
 
 ## Python
 
@@ -195,7 +195,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `provekit.lsp` implements the ProvekIt LSP plugin protocol (NDJSON over stdio) with `initialize`, `parse`, and `shutdown` methods.
+**LSP Plugin:** Yes. `provekit.lsp` implements the Sugar LSP plugin protocol (NDJSON over stdio) with `initialize`, `parse`, and `shutdown` methods.
 
 ## Java / JVM
 
@@ -237,7 +237,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `provekit-lsp-c` implements the ProvekIt NDJSON LSP plugin protocol (provekit-lsp-plugin/1 over stdio) with `initialize`, `parse`, and `shutdown`.
+**LSP Plugin:** Yes. `provekit-lsp-c` implements the Sugar NDJSON LSP plugin protocol (provekit-lsp-plugin/1 over stdio) with `initialize`, `parse`, and `shutdown`.
 
 ## Zig
 
@@ -253,7 +253,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `provekit-lift-zig --rpc` implements the ProvekIt NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`.
+**LSP Plugin:** Yes. `provekit-lift-zig --rpc` implements the Sugar NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`.
 
 ## Ruby
 
@@ -272,9 +272,9 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `bin/provekit-lsp-ruby` implements the ProvekIt NDJSON LSP plugin protocol.
+**LSP Plugin:** Yes. `bin/provekit-lsp-ruby` implements the Sugar NDJSON LSP plugin protocol.
 
-**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. The migration target is the layered shape with a tagged-union `target` field. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
+**Bridge IR gap:** `Sugar::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. The migration target is the layered shape with a tagged-union `target` field. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
 
 ## C#
 
@@ -292,7 +292,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `Provekit.Lsp.Plugin` implements the ProvekIt NDJSON LSP plugin protocol.
+**LSP Plugin:** Yes. `Provekit.Lsp.Plugin` implements the Sugar NDJSON LSP plugin protocol.
 
 **Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)`, a lift-adapter helper, not the spec Bridge shape. The migration target is the layered shape with a tagged-union `target` field. Self-contracts attestation IS signed (the bundle CID is pinned, and `contractSetCid` is emitted), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
 
@@ -310,7 +310,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `ProveKitLSPSwift` implements the ProvekIt NDJSON LSP plugin protocol (parse-protocol v1) with `initialize`, `parse`, and `shutdown`.
+**LSP Plugin:** Yes. `ProveKitLSPSwift` implements the Sugar NDJSON LSP plugin protocol (parse-protocol v1) with `initialize`, `parse`, and `shutdown`.
 
 **Bridge IR:** The historical flat bridge shape is supported (`Declaration.bridge` enum case round-trips byte-identical to the `bridge_decl` fixture, per PR #76). The kit still needs to migrate bridge emission to the layered shape with a tagged-union `target` field. Self-contracts package and Phase 2 lift-plugin-protocol bridges deferred until the kit accumulates a runtime surface beyond conformance.
 
@@ -328,7 +328,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** In progress. `implementations/php/provekit-lift/src/lspd.php` implements the ProvekIt NDJSON LSP plugin protocol; not yet shipped.
+**LSP Plugin:** In progress. `implementations/php/provekit-lift/src/lspd.php` implements the Sugar NDJSON LSP plugin protocol; not yet shipped.
 
 ## Cross-language conformance
 

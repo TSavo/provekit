@@ -34,7 +34,7 @@ Reasons for skipping:
 
 The adapter doesn't know what to do with the annotation. The library has evolved, or the user is using an extension the adapter wasn't aware of.
 
-The adapter silently ignores. No warning (because the adapter doesn't know it's a ProvekIt-relevant annotation; it might be a third-party annotation entirely unrelated).
+The adapter silently ignores. No warning (because the adapter doesn't know it's a Sugar-relevant annotation; it might be a third-party annotation entirely unrelated).
 
 ### D: malformed
 

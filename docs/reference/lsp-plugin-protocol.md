@@ -8,7 +8,7 @@ Its canonical machine-readable catalog is
 whose `protocol_catalog_cid` is
 `blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c`.
 
-ProvekIt editor plugins speak a small line-delimited JSON protocol to kit-local helpers. The editor owns Language Server Protocol wiring; the helper owns ProvekIt parsing, lifting, and handshake checks.
+Sugar editor plugins speak a small line-delimited JSON protocol to kit-local helpers. The editor owns Language Server Protocol wiring; the helper owns Sugar parsing, lifting, and handshake checks.
 
 ## Transport
 

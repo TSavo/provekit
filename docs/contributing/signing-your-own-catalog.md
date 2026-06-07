@@ -1,12 +1,12 @@
 # Signing your own catalog
 
-ProvekIt's protocol is content-addressable and signature-agnostic. Anyone with standing to make claims about a piece of code can sign a catalog of those claims. The substrate verifies signatures against their own embedded signer (per #248); trust is callsite policy, not protocol primitive.
+Sugar's protocol is content-addressable and signature-agnostic. Anyone with standing to make claims about a piece of code can sign a catalog of those claims. The substrate verifies signatures against their own embedded signer (per #248); trust is callsite policy, not protocol primitive.
 
 This doc walks through the signing ceremony for a third party who wants to sign their own catalog of contracts about a language, library, or codebase. The foundation baselines are the worked example; this is the path for everyone else.
 
 ## Why this exists
 
-The foundation key signs ProvekIt's own protocol. It does not have standing to sign authoritative contracts about TypeScript, Rust, Python, or PHP, those are the language stewards' to sign. Foundation baselines (per the [baseline catalog rubric](baseline-catalog-rubric.md)) are explicitly advisory: a starting point until stewards step up.
+The foundation key signs Sugar's own protocol. It does not have standing to sign authoritative contracts about TypeScript, Rust, Python, or PHP, those are the language stewards' to sign. Foundation baselines (per the [baseline catalog rubric](baseline-catalog-rubric.md)) are explicitly advisory: a starting point until stewards step up.
 
 The protocol's value is creating room for actual stewards to sign. This doc is that room.
 
@@ -17,7 +17,7 @@ You have standing to sign a catalog about a thing when you wrote the thing, main
 - The rust-lang team has standing to sign claims about `std::*`.
 - A library maintainer has standing to sign claims about their library's public API.
 - A consultant who has audited a closed-source binary has standing to sign claims about its observed behavior, **as advisory** (their signer_role is `community`, not `language-steward`).
-- The foundation has standing to sign claims about ProvekIt's own protocol. It does NOT have standing to sign authoritative contracts about other languages, only foundation-baseline advisory.
+- The foundation has standing to sign claims about Sugar's own protocol. It does NOT have standing to sign authoritative contracts about other languages, only foundation-baseline advisory.
 
 The protocol does not enforce standing. It records who signed. Consumers decide whose signatures they trust by pinning specific signer keys.
 

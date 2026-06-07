@@ -1,6 +1,6 @@
-# Quickstart: Extend ProvekIt
+# Quickstart: Extend Sugar
 
-ProvekIt is a substrate, not a tool. This document walks through the architecture and shows you the three high-leverage extension points: writing a new kit lifter, extending the protocol via a normative spec, and adding a new lift adapter for an existing annotation library.
+Sugar is a substrate, not a tool. This document walks through the architecture and shows you the three high-leverage extension points: writing a new kit lifter, extending the protocol via a normative spec, and adding a new lift adapter for an existing annotation library.
 
 Before reading further: the architectural derivation (`docs/launch/the-pieces-on-the-table.md`) and the manifesto (`docs/launch/substrate-not-blockchain.md`) are required reading, not supplemental. The extension points only make sense against that backdrop. If you have not read them, read them first.
 
@@ -31,7 +31,7 @@ The pipeline has four stages, each with a clean seam:
    [editor]               -- red squiggle at the call site
 ```
 
-**Kit lifter.** A binary that speaks the `provekit-lsp-plugin/1` NDJSON protocol over stdio. It receives `initialize` / `parse` / `shutdown` JSON-RPC calls and responds. The `parse` method receives `{uri, text}` for a source file and returns `{annotations: [...]}` plus optionally `{callEdges: [...]}`. The lifter does one thing: translate the host language's contract syntax into ProvekIt IR.
+**Kit lifter.** A binary that speaks the `provekit-lsp-plugin/1` NDJSON protocol over stdio. It receives `initialize` / `parse` / `shutdown` JSON-RPC calls and responds. The `parse` method receives `{uri, text}` for a source file and returns `{annotations: [...]}` plus optionally `{callEdges: [...]}`. The lifter does one thing: translate the host language's contract syntax into Sugar IR.
 
 **Linker daemon (`provekit-linkerd`).** The daemon holds the union of all kits' contract and call-edge streams in memory. When a kit lifter (via the LSP server) sends a `parseFile` RPC, the daemon lifts the file, re-derives affected bridges, and returns `{diagnostics: [...]}`. The daemon owns cross-language linkage. It is the only component that sees all kits at once.
 
@@ -457,7 +457,7 @@ To debug a `catalog-verify` failure: you added or changed a spec file. Run `carg
 
 ## The contribution shape
 
-A contribution to ProvekIt is one of:
+A contribution to Sugar is one of:
 
 - **A new kit lifter binary**: implement the `provekit-lsp-plugin/1` protocol, add a daemon dispatch arm, add conformance tests, open a PR.
 - **A new lift adapter**: add pattern recognition to an existing lifter, add a conformance test asserting byte-identical IR for a known annotation, open a PR.
