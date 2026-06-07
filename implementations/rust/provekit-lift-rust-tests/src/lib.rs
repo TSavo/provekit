@@ -79,8 +79,8 @@ use std::collections::HashMap;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_symbolic::{
-    eq, gt, gte, lt, lte, make_var, ne, num, serialize::formula_to_value, str_const, ContractDecl,
-    Formula, Term,
+    and_, eq, gt, gte, lt, lte, make_var, ne, num, serialize::formula_to_value, str_const,
+    ConstValue, ContractDecl, Formula, Sort, Term,
 };
 use provekit_ir_types::{
     EvidenceMemento, IrFormula, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
@@ -703,6 +703,11 @@ fn assertion_observed_exprs(mac: &syn::Macro) -> Result<Vec<syn::Expr>, String> 
                 .map_err(|e| format!("assert_matches: parse: {e}"))?;
             Ok(vec![pair.scrutinee])
         }
+        "assert_abs_diff_eq" => {
+            let args: AbsDiffArgs = syn::parse2(mac.tokens.clone())
+                .map_err(|e| format!("assert_abs_diff_eq: parse: {e}"))?;
+            Ok(vec![args.a, args.b])
+        }
         other => Err(format!("not an assertion macro: {other}")),
     }
 }
@@ -1117,7 +1122,102 @@ fn is_assertion_macro(mac: &syn::Macro) -> bool {
     matches!(
         p.as_str(),
         "assert_eq" | "assert_ne" | "assert" | "assert_matches"
+            // the `approx` crate's tolerance assertion (the Rust mirror of numpy's
+            // assert_almost_equal): lifted as a real two-sided bound, not refused.
+            | "assert_abs_diff_eq"
     )
+}
+
+/// `assert_abs_diff_eq!(a, b, epsilon = <e>)` from the `approx` crate. We take the
+/// two values under test plus an explicit `epsilon = <numeric literal>`; any
+/// further named args are ignored. Omitted/non-literal epsilon is refused upstream
+/// (a type-default tolerance is not a fixed liftable bound).
+struct AbsDiffArgs {
+    a: syn::Expr,
+    b: syn::Expr,
+    epsilon: Option<syn::Expr>,
+}
+
+impl syn::parse::Parse for AbsDiffArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let a: syn::Expr = input.parse()?;
+        let _: syn::Token![,] = input.parse()?;
+        let b: syn::Expr = input.parse()?;
+        let mut epsilon = None;
+        while input.peek(syn::Token![,]) {
+            let _: syn::Token![,] = input.parse()?;
+            if input.is_empty() {
+                break;
+            }
+            if input.peek(syn::Ident) && input.peek2(syn::Token![=]) {
+                let name: syn::Ident = input.parse()?;
+                let _: syn::Token![=] = input.parse()?;
+                let val: syn::Expr = input.parse()?;
+                if name == "epsilon" {
+                    epsilon = Some(val);
+                }
+            } else {
+                let _: proc_macro2::TokenStream = input.parse()?;
+                break;
+            }
+        }
+        Ok(AbsDiffArgs { a, b, epsilon })
+    }
+}
+
+/// A `Real`-sorted constant carried as a CANONICAL DECIMAL STRING -- the wire form
+/// the four solver compilers lower as a real literal (the rust mirror of the Python
+/// producer's `_ConstReal`). Discriminated from a string literal by its `Real` sort.
+fn real_const(decimal: &str) -> Rc<Term> {
+    Rc::new(Term::Const {
+        value: ConstValue::String(decimal.to_string()),
+        sort: Sort::real(),
+    })
+}
+
+/// `(+eps, -eps)` canonical decimal strings from an `epsilon` literal. None if the
+/// expression is not a numeric literal (refuse: the tolerance is not computable).
+fn abs_diff_bound_strings(eps: &syn::Expr) -> Option<(String, String)> {
+    let lit = match eps {
+        syn::Expr::Lit(l) => &l.lit,
+        _ => return None,
+    };
+    let pos = match lit {
+        syn::Lit::Float(f) => normalize_decimal(f.base10_digits())?,
+        syn::Lit::Int(i) => normalize_decimal(i.base10_digits())?,
+        _ => return None,
+    };
+    let neg = format!("-{pos}");
+    Some((pos, neg))
+}
+
+/// Normalize a positive base-10 numeric literal (with an optional `e` exponent) to a
+/// fixed-point decimal string, by shifting the decimal point with STRING arithmetic
+/// -- never through an `f64`, which would lose the determinism the contract CID needs.
+fn normalize_decimal(text: &str) -> Option<String> {
+    let t = text.trim();
+    let (mantissa, exp) = match t.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e.parse::<i32>().ok()?),
+        None => (t, 0),
+    };
+    let (int_part, frac_part) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    if !int_part.bytes().all(|c| c.is_ascii_digit())
+        || !frac_part.bytes().all(|c| c.is_ascii_digit())
+        || (int_part.is_empty() && frac_part.is_empty())
+    {
+        return None;
+    }
+    let digits = format!("{int_part}{frac_part}");
+    let point = int_part.len() as i32 + exp; // decimal point sits after `point` digits
+    let s = if point <= 0 {
+        format!("0.{}{}", "0".repeat((-point) as usize), digits)
+    } else if (point as usize) >= digits.len() {
+        format!("{}{}.0", digits, "0".repeat(point as usize - digits.len()))
+    } else {
+        let (a, b) = digits.split_at(point as usize);
+        format!("{a}.{b}")
+    };
+    Some(s)
 }
 
 fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
@@ -1153,6 +1253,33 @@ fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
             let scrutinee = translate_term(&pair.scrutinee)?;
             let rhs = translate_pattern_to_term(&pair.pattern)?;
             Ok(eq(scrutinee, rhs))
+        }
+        "assert_abs_diff_eq" => {
+            // approx: `|a - b| <= epsilon`. Lifted two-sided -- `(a-b) <= eps ∧
+            // (a-b) >= -eps` -- needing only `-` and `<=`/`>=`; no abs term. The
+            // bound rides as a `Real` const (canonical decimal). Mirror of numpy's
+            // assert_almost_equal.
+            let args: AbsDiffArgs = syn::parse2(mac.tokens.clone())
+                .map_err(|e| format!("assert_abs_diff_eq: parse: {e}"))?;
+            let eps = args.epsilon.as_ref().ok_or_else(|| {
+                "assert_abs_diff_eq without `epsilon = <literal>` uses a type-default \
+                 tolerance; refused (not a fixed liftable bound)"
+                    .to_string()
+            })?;
+            let (pos, neg) = abs_diff_bound_strings(eps).ok_or_else(|| {
+                "assert_abs_diff_eq: `epsilon` is not a numeric literal; tolerance not computable"
+                    .to_string()
+            })?;
+            let l = translate_term(&args.a)?;
+            let r = translate_term(&args.b)?;
+            let diff = Rc::new(Term::Ctor {
+                name: "-".into(),
+                args: vec![l, r],
+            });
+            Ok(and_(vec![
+                lte(diff.clone(), real_const(&pos)),
+                gte(diff, real_const(&neg)),
+            ]))
         }
         other => Err(format!("not an assertion macro: {other}")),
     }
@@ -1545,6 +1672,53 @@ mod tests {
 
     fn parse(src: &str) -> syn::File {
         syn::parse_file(src).unwrap()
+    }
+
+    // --- approx::assert_abs_diff_eq! -> real tolerance bound (mirror of numpy's
+    //     assert_almost_equal) ---------------------------------------------------
+
+    #[test]
+    fn abs_diff_eq_is_recognized_as_an_assertion_macro() {
+        let mac: syn::Macro = syn::parse_quote!(assert_abs_diff_eq!(x, y, epsilon = 0.001));
+        assert!(is_assertion_macro(&mac));
+    }
+
+    #[test]
+    fn abs_diff_eq_lifts_to_two_sided_real_bound() {
+        let mac: syn::Macro = syn::parse_quote!(assert_abs_diff_eq!(x, y, epsilon = 1e-6));
+        let f = lift_assertion_macro(&mac).expect("abs_diff_eq must lift");
+        let dump = format!("{f:?}");
+        // a conjunction of two comparisons over the difference, bounded by a Real.
+        assert!(
+            matches!(&*f, Formula::Connective { kind, .. } if kind == "and"),
+            "expected an `and` conjunction: {dump}"
+        );
+        assert!(dump.contains("Real"), "bound must be Real-sorted: {dump}");
+        assert!(dump.contains("0.000001"), "1e-6 normalized to decimal: {dump}");
+        assert!(dump.contains("-0.000001"), "two-sided lower bound: {dump}");
+    }
+
+    #[test]
+    fn abs_diff_eq_without_epsilon_is_refused() {
+        // a type-default tolerance is not a fixed liftable bound.
+        let mac: syn::Macro = syn::parse_quote!(assert_abs_diff_eq!(x, y));
+        assert!(lift_assertion_macro(&mac).is_err());
+    }
+
+    #[test]
+    fn abs_diff_eq_non_literal_epsilon_is_refused() {
+        // tolerance not computable at lift time -> refuse, never guess.
+        let mac: syn::Macro = syn::parse_quote!(assert_abs_diff_eq!(x, y, epsilon = tol));
+        assert!(lift_assertion_macro(&mac).is_err());
+    }
+
+    #[test]
+    fn normalize_decimal_shifts_the_point_without_floats() {
+        assert_eq!(normalize_decimal("1e-6").as_deref(), Some("0.000001"));
+        assert_eq!(normalize_decimal("1.5e-3").as_deref(), Some("0.0015"));
+        assert_eq!(normalize_decimal("0.001").as_deref(), Some("0.001"));
+        assert_eq!(normalize_decimal("2").as_deref(), Some("2.0"));
+        assert!(normalize_decimal("nan").is_none());
     }
 
     fn assert_callsite_name(name: &str, callee: &str) {
