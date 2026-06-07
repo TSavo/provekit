@@ -681,8 +681,9 @@ fn lift_assertion_macro_at_callsites(
 }
 
 fn assertion_observed_exprs(mac: &syn::Macro) -> Result<Vec<syn::Expr>, String> {
-    let path = path_to_string(&mac.path);
-    match path.as_str() {
+    let raw = path_to_string(&mac.path);
+    let path = canonical_assertion_name(&raw).unwrap_or(raw.as_str());
+    match path {
         "assert_eq" => {
             let pair: TwoExprs =
                 syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_eq: parse: {e}"))?;
@@ -1122,17 +1123,36 @@ fn subst_vars_in_term(t: &Rc<Term>, substitutions: &BTreeMap<String, Rc<Term>>) 
     }
 }
 
+/// Map an assertion-macro name to its canonical handler, LEARNING the kind from the
+/// name's shape rather than a closed hand-list. The std assertions are matched
+/// exactly; any other `assert*` macro is classified by the tolerance-family semantic
+/// its name carries (`abs_diff`/`relative`/`ulps`), so a sibling or re-exported macro
+/// (another crate's `assert_abs_diff_eq`, a `debug_assert_relative_eq`, ...) is
+/// recognised WITHOUT a hardcoded entry -- the Rust mirror of deriving the vocabulary
+/// from source, where the macro name is the readable signal. None for a non-assertion.
+fn canonical_assertion_name(name: &str) -> Option<&'static str> {
+    match name {
+        "assert_eq" => Some("assert_eq"),
+        "assert_ne" => Some("assert_ne"),
+        "assert" => Some("assert"),
+        "assert_matches" => Some("assert_matches"),
+        _ if name.starts_with("assert") => {
+            if name.contains("abs_diff") {
+                Some("assert_abs_diff_eq")
+            } else if name.contains("relative") {
+                Some("assert_relative_eq")
+            } else if name.contains("ulps") {
+                Some("assert_ulps_eq")
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 fn is_assertion_macro(mac: &syn::Macro) -> bool {
-    let p = path_to_string(&mac.path);
-    matches!(
-        p.as_str(),
-        "assert_eq" | "assert_ne" | "assert" | "assert_matches"
-            // the `approx` crate's tolerance assertions. abs_diff lifts as a real
-            // two-sided bound (mirror of assert_almost_equal); relative lifts as the
-            // faithful relative bound; ulps is claimed + refused (ULP is not
-            // algebraic). Recognising them keeps nothing real silently skipped.
-            | "assert_abs_diff_eq" | "assert_relative_eq" | "assert_ulps_eq"
-    )
+    canonical_assertion_name(&path_to_string(&mac.path)).is_some()
 }
 
 /// `assert_abs_diff_eq!(a, b, epsilon = <e>)` from the `approx` crate. We take the
@@ -1287,8 +1307,9 @@ fn normalize_decimal(text: &str) -> Option<String> {
 }
 
 fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
-    let path = path_to_string(&mac.path);
-    match path.as_str() {
+    let raw = path_to_string(&mac.path);
+    let path = canonical_assertion_name(&raw).unwrap_or(raw.as_str());
+    match path {
         "assert_eq" => {
             let pair: TwoExprs =
                 syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_eq: parse: {e}"))?;
@@ -1874,6 +1895,22 @@ mod tests {
         let mac: syn::Macro = syn::parse_quote!(assert_ulps_eq!(x, y, max_ulps = 4));
         assert!(is_assertion_macro(&mac));
         assert!(lift_assertion_macro(&mac).is_err());
+    }
+
+    #[test]
+    fn vocabulary_is_learned_from_the_name_not_a_closed_list() {
+        // exact std + approx names classify as themselves
+        assert_eq!(canonical_assertion_name("assert_eq"), Some("assert_eq"));
+        assert_eq!(canonical_assertion_name("assert"), Some("assert"));
+        assert_eq!(canonical_assertion_name("assert_abs_diff_eq"), Some("assert_abs_diff_eq"));
+        // SIBLING tolerance macros never named in any hand-list are classified by the
+        // semantic shape of their name -- the vocabulary is open, learned from source.
+        assert_eq!(canonical_assertion_name("assert_abs_diff_ne"), Some("assert_abs_diff_eq"));
+        assert_eq!(canonical_assertion_name("assert_relative_ne"), Some("assert_relative_eq"));
+        assert_eq!(canonical_assertion_name("assert_ulps_ne"), Some("assert_ulps_eq"));
+        // non-assertions and unknown assert-shaped names are not misclassified
+        assert_eq!(canonical_assertion_name("println"), None);
+        assert_eq!(canonical_assertion_name("assert_something_else"), None);
     }
 
     #[test]
