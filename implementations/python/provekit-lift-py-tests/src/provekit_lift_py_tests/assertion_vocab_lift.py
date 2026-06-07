@@ -48,6 +48,13 @@ _TOLERANCE_PARAMS = frozenset({
     "rtol", "atol", "decimal", "significant", "nulp", "maxulp", "places", "delta",
 })
 
+# An "exactness toggle": a boolean parameter that turns an approximate-by-default
+# assertion into an exact one when pinned True (pandas's ``check_exact``). A function
+# carrying BOTH a tolerance param AND such a toggle is CONDITIONAL equality -- exact
+# only when the toggle is pinned -- so it is classified `equality` with the toggle
+# recorded as a `require_true` kwarg, not refused as pure `approx`.
+_EXACTNESS_TOGGLES = frozenset({"check_exact"})
+
 
 def _params(fn: ast.AST) -> Set[str]:
     a = fn.args  # type: ignore[attr-defined]
@@ -65,12 +72,20 @@ def _delegates_eq(fn: ast.AST) -> bool:
     return False
 
 
-def _classify(fn: ast.AST) -> str:
-    if _params(fn) & _TOLERANCE_PARAMS:
-        return "approx"
+def _classify(fn: ast.AST) -> Tuple[str, FrozenSet[str]]:
+    """Classify one assert function -> (category, exactness-toggles). Toggles are
+    non-empty only for conditional-equality (approximate-by-default with a toggle)."""
+    params = _params(fn)
+    tol = params & _TOLERANCE_PARAMS
+    toggles = params & _EXACTNESS_TOGGLES
+    if tol and toggles:
+        # approximate by default, exact when the toggle is pinned True
+        return "equality", frozenset(toggles)
+    if tol:
+        return "approx", frozenset()
     if _delegates_eq(fn):
-        return "equality"
-    return "other"
+        return "equality", frozenset()
+    return "other", frozenset()
 
 
 def derive_vocab(
@@ -80,27 +95,45 @@ def derive_vocab(
     harmless_kwargs: "Optional[FrozenSet[str]]" = None,
     require_true_kwargs: FrozenSet[str] = frozenset(),
     tolerances: "Tuple[ToleranceSpec, ...]" = (),
+    extra_modules: "Tuple[str, ...]" = (),
 ) -> AssertionVocab:
     """Derive an AssertionVocab by reading ``module_name``'s assert functions.
 
     ``overrides`` maps a category (``equality``/``truth``/``approx``/``other``) to
     names to FORCE into it -- the small structurally-opaque remainder. A name in
-    an override is removed from every derived set first, so the override wins."""
-    mod = importlib.import_module(module_name)
+    an override is removed from every derived set first, so the override wins.
+
+    ``extra_modules`` are additional modules to read (a library's public testing
+    module plus its sibling implementation module, e.g. ``pandas.testing`` +
+    ``pandas._testing``). The first module to define a name classifies it; later
+    modules only ADD names. A conditional-equality function (tolerance + exactness
+    toggle, e.g. pandas's ``check_exact``) makes its toggle a derived
+    ``require_true`` kwarg and a harmless kwarg, so it lifts as exact equality only
+    when the toggle is pinned True."""
     cats: Dict[str, Set[str]] = {"equality": set(), "truth": set(), "approx": set(), "other": set()}
-    for name in dir(mod):
-        if not name.startswith("assert_"):
-            continue
-        obj = getattr(mod, name)
-        if not callable(obj):
-            continue
+    derived_toggles: Set[str] = set()
+    seen: Set[str] = set()
+    for mname in (module_name, *extra_modules):
         try:
-            src = textwrap.dedent(inspect.getsource(obj))
-            fn = next(n for n in ast.parse(src).body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
-        except (OSError, TypeError, SyntaxError, StopIteration):
-            cats["other"].add(name)
+            mod = importlib.import_module(mname)
+        except Exception:
             continue
-        cats[_classify(fn)].add(name)
+        for name in dir(mod):
+            if not name.startswith("assert_") or name in seen:
+                continue
+            obj = getattr(mod, name)
+            if not callable(obj):
+                continue
+            seen.add(name)
+            try:
+                src = textwrap.dedent(inspect.getsource(obj))
+                fn = next(n for n in ast.parse(src).body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+            except (OSError, TypeError, SyntaxError, StopIteration):
+                cats["other"].add(name)
+                continue
+            cat, toggles = _classify(fn)
+            cats[cat].add(name)
+            derived_toggles |= toggles
 
     forced = set().union(*overrides.values()) if overrides else set()
     for cat in cats:
@@ -109,7 +142,9 @@ def derive_vocab(
         for cat, names in overrides.items():
             cats[cat] |= set(names)
 
-    kw = harmless_kwargs if harmless_kwargs is not None else frozenset({"err_msg", "verbose"})
+    base_kw = harmless_kwargs if harmless_kwargs is not None else frozenset({"err_msg", "verbose"})
+    kw = base_kw | frozenset(derived_toggles)
+    require_true = frozenset(require_true_kwargs) | frozenset(derived_toggles)
     return AssertionVocab(
         label=label,
         equality=frozenset(cats["equality"]),
@@ -117,7 +152,7 @@ def derive_vocab(
         approx=frozenset(cats["approx"]),
         other=frozenset(cats["other"]),
         harmless_kwargs=kw,
-        require_true_kwargs=require_true_kwargs,
+        require_true_kwargs=require_true,
         tolerances=tolerances,
     )
 
@@ -152,6 +187,7 @@ def learn_vocab(module_name: str, exception_dirs: Tuple[str, ...] = ()) -> Asser
     tolerances = tuple(ToleranceSpec(**t) for t in exc.get("tolerances", []))
     harmless = frozenset(exc["harmless_kwargs"]) if "harmless_kwargs" in exc else None
     require_true = frozenset(exc.get("require_true_kwargs", []))
+    extra_modules = tuple(exc.get("extra_modules", []))
     return derive_vocab(
         module_name,
         exc.get("label", module_name),
@@ -159,6 +195,7 @@ def learn_vocab(module_name: str, exception_dirs: Tuple[str, ...] = ()) -> Asser
         harmless_kwargs=harmless,
         require_true_kwargs=require_true,
         tolerances=tolerances,
+        extra_modules=extra_modules,
     )
 
 

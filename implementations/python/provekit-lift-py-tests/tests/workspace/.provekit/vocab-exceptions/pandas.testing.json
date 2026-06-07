@@ -1,31 +1,4 @@
 {
-  "overrides": {
-    "equality": [
-      "assert_extension_array_equal",
-      "assert_frame_equal",
-      "assert_index_equal",
-      "assert_series_equal"
-    ],
-    "other": [
-      "assert_almost_equal",
-      "assert_attr_equal",
-      "assert_categorical_equal",
-      "assert_class_equal",
-      "assert_contains_all",
-      "assert_copy",
-      "assert_datetime_array_equal",
-      "assert_dict_equal",
-      "assert_indexing_slices_equivalent",
-      "assert_interval_array_equal",
-      "assert_is_sorted",
-      "assert_metadata_equivalent",
-      "assert_numpy_array_equal",
-      "assert_period_array_equal",
-      "assert_produces_warning",
-      "assert_sp_array_equal",
-      "assert_timedelta_array_equal"
-    ]
-  },
-  "harmless_kwargs": ["check_exact", "obj"],
-  "require_true_kwargs": ["check_exact"]
+  "extra_modules": ["pandas._testing"],
+  "harmless_kwargs": ["obj"]
 }
