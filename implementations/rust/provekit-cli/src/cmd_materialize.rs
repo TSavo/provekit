@@ -10,8 +10,8 @@ use std::path::{Component, Path, PathBuf};
 use clap::Parser;
 use libprovekit::core::emit_obligation::{build_bridge_body, member_envelope_canonical};
 use libprovekit::core::{
-    execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
-    RealizedSource, Verb,
+    execute_path, ConformanceDeclaration, HashMapInputCatalog, Input, KitRegistry, LowerKit,
+    Path as CorePath, PathAlgebra, RealizedSource, Verb,
 };
 // Source-transform primitives live in libprovekit (#1335 Phase A). The glob
 // re-export keeps the carrier-parsing surface available to `materialize_source_text`
@@ -601,7 +601,7 @@ impl<'root> MaterializeKit<'root> {
             }],
         }));
         let mut registry = KitRegistry::default();
-        registry.register_with_platform_semantics(
+        registry.register(
             kit_name,
             LowerKit::new(
                 self.project_root.to_path_buf(),
@@ -609,11 +609,12 @@ impl<'root> MaterializeKit<'root> {
                 self.library_tag.clone(),
                 DispatchRealizeTransport,
             ),
-            &self.target_lang,
-            self.project_root.join(format!(
-                "implementations/{}/conformance/fixtures",
-                self.target_lang
-            )),
+            ConformanceDeclaration::Carrier {
+                fixtures_path: self.project_root.join(format!(
+                    "implementations/{}/conformance/fixtures",
+                    self.target_lang
+                )),
+            },
         );
         let chain = execute_path(&path, &registry, &inputs).map_err(|error| {
             error

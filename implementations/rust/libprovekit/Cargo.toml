@@ -21,10 +21,3 @@ provekit-ir-types = { path = "../provekit-ir-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
-# The d7_* loss-record tests call provekit_realize_rust_core::emit_from_resolved_*.
-# Previously linked transitively via the (now-removed) libprovekit-rpc-cross-platform
-# workspace member; declare it explicitly so the test build links it regardless of
-# the rest of the workspace graph.
-provekit-realize-rust-core = { path = "../provekit-realize-rust-core" }

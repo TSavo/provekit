@@ -3,11 +3,7 @@
 # Target-scoped panic-site residue annotations for libprovekit self-check.
 # Cross-target propagation into consumers requires proof-bundle annotation
 # mementos and is tracked separately.
-
-[[residue]]
-file = "src/core/platform_semantics.rs"
-line = 42
-callee = "method:expect"
-category = "platform_semantics_runtime_residue"
-tier_to_close = "irreducible"
-reason = "python_kit_declaration assumes the configured Python kit serves a valid platform semantics declaration over RPC at runtime; external plugin availability is outside this static proof."
+#
+# The sole prior entry annotated a `.expect` panic site in the rust
+# realize/lower dispatcher module that Engine Sever cut 2 removed. No
+# panic-site residue remains for libprovekit.

@@ -851,7 +851,6 @@ dependencies = [
  "provekit-canonicalizer",
  "provekit-ir-types",
  "provekit-proof-envelope",
- "provekit-realize-rust-core",
  "serde",
  "serde_json",
  "thiserror",
@@ -1386,21 +1385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "provekit-realize-rust-core"
-version = "0.1.0"
-dependencies = [
- "base64",
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-ir-types",
- "provekit-proof-envelope",
- "quote",
- "serde",
- "serde_json",
- "syn",
-]
-
-[[package]]
 name = "provekit-sugar"
 version = "0.1.0"
 
@@ -1452,7 +1436,6 @@ dependencies = [
  "provekit-ir-types",
  "provekit-lift-contracts",
  "provekit-proof-envelope",
- "provekit-realize-rust-core",
  "quote",
  "serde_json",
  "syn",
