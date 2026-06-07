@@ -11,7 +11,11 @@
 
 use std::collections::BTreeMap;
 
-use provekit_lift::adapter_contracts;
+// THE SEVER: the lifter is no longer re-exported from provekit-lift (it is
+// now an RPC kit). This test exercises the lifter's `lift_file` directly via
+// the dev-dependency on `provekit-lift-contracts` — the sanctioned way to
+// keep lifter-behavior coverage without spawning RPC in a unit test.
+use provekit_lift_contracts as adapter_contracts;
 use provekit_lift::extract_call_edges_from_file;
 
 use provekit_claim_envelope::{contract_cid as compute_contract_cid, Authoring, MintContractArgs};

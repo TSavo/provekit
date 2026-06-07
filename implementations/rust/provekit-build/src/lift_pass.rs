@@ -123,18 +123,18 @@ pub fn run_lift_pass(manifest_dir: &Path, enabled: &[&str]) -> LiftPassReport {
             }
         };
         report.files_scanned += 1;
-        let parsed = match syn::parse_file(&text) {
-            Ok(p) => p,
-            Err(e) => {
-                // Lifters don't own parse errors: this is the same
-                // tree rustc is about to compile. Log silently and move
-                // on so a single bad file doesn't kill the build.
-                report
-                    .parse_failures
-                    .push((path.to_path_buf(), format!("parse: {e}")));
-                continue;
-            }
-        };
+        // Parse only to keep the build-honest "this is the same tree rustc
+        // is about to compile" check: a parse failure is logged and skipped
+        // so one bad file doesn't kill the build. (The contract lifting
+        // itself now happens over RPC, which re-parses; the kit owns its own
+        // parse handling. We keep this pre-check for the existing
+        // parse_failures bookkeeping the report contract promises.)
+        if let Err(e) = syn::parse_file(&text) {
+            report
+                .parse_failures
+                .push((path.to_path_buf(), format!("parse: {e}")));
+            continue;
+        }
         let path_str = path.display().to_string();
 
         // Dispatch to each enabled adapter. We keep the dispatch table
@@ -146,8 +146,14 @@ pub fn run_lift_pass(manifest_dir: &Path, enabled: &[&str]) -> LiftPassReport {
             }
             let (decls, seen, lifted, warnings) = match count.adapter {
                 "contracts" => {
-                    let out = provekit_lift_contracts::lift_file(&parsed, &path_str);
-                    (out.decls, out.seen, out.lifted, out.warnings.len())
+                    // THE SEVER: lift this file's contracts over RPC (the
+                    // `contracts_rpc` kit) via the shared leaf client, instead
+                    // of statically calling the contracts-adapter lift_file.
+                    // The kit reads relative to `workspace_root`, so pass the
+                    // file's directory as the root and its name as the single
+                    // source path; deserialize the ir-document into typed
+                    // `ContractDecl`s via the public `parse_document`.
+                    rpc_lift_contracts(path)
                 }
                 // Unknown adapter name (caller's whitelist had a typo).
                 // Skip silently here; `ProvekitConfig::unknown_lift_adapters`
@@ -178,6 +184,45 @@ pub fn run_lift_pass(manifest_dir: &Path, enabled: &[&str]) -> LiftPassReport {
 
     report.breakdown = counts;
     report
+}
+
+/// THE SEVER: lift one file's `#[requires]`/`#[ensures]` contracts by
+/// spawning the `contracts_rpc` kit (via `provekit-lift-rpc-client`),
+/// instead of statically calling the contracts-adapter lift_file.
+///
+/// Returns `(decls, seen, lifted, warnings)` matching the old static arm's
+/// shape. `seen` and `lifted` collapse to the lifted count: the kit owns
+/// the per-function seen/skip bookkeeping now and reports untranslatable
+/// predicates as diagnostics (counted as warnings here).
+fn rpc_lift_contracts(path: &Path) -> (Vec<ContractDecl>, usize, usize, usize) {
+    // The kit reads relative to a workspace root. Use the file's directory
+    // as the root and its name as the single source path.
+    let (root, file_name) = match (path.parent(), path.file_name()) {
+        (Some(dir), Some(name)) => (dir.to_path_buf(), name.to_string_lossy().into_owned()),
+        _ => return (Vec::new(), 0, 0, 0),
+    };
+
+    let doc = match provekit_lift_rpc_client::invoke_lift(&root, &[file_name]) {
+        Ok(doc) => doc,
+        // A spawn/protocol failure yields no contracts for this file. The
+        // build does not hard-fail on a missing lifter (mirrors mint's
+        // missing-lifter tolerance); the empty result is honest.
+        Err(_) => return (Vec::new(), 0, 0, 0),
+    };
+
+    let warnings = doc
+        .get("diagnostics")
+        .and_then(|d| d.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    let ir_str = match doc.get("ir") {
+        Some(ir) => ir.to_string(),
+        None => "[]".to_string(),
+    };
+    let decls = provekit_ir_symbolic::parse::parse_document(&ir_str).unwrap_or_default();
+    let n = decls.len();
+    (decls, n, n, warnings)
 }
 
 #[cfg(test)]

@@ -26,14 +26,15 @@ toml = "0.8"
 glob = "0.3"
 blake3 = { workspace = true }
 
-# IR types: `lift_file()` returns Vec<ContractDecl> from this crate.
+# IR types + the ir-document deserializer (`parse::parse_document`) used to
+# turn the RPC kit's ir-document back into `Vec<ContractDecl>`.
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 
-# Lift adapter. We pull the adapter in directly (NOT the heavier
-# `provekit-lift` core, which would drag the claim-envelope + proof-envelope
-# crypto stack into every consumer's build-dependency graph). The adapter
-# is a leaf library that only needs `syn` + the IR types.
-provekit-lift-contracts   = { path = "../provekit-lift-contracts" }
+# THE SEVER: contract lifting goes OVER RPC (the `contracts_rpc` kit) via the
+# shared leaf client, NOT a static link of `provekit-lift-contracts`. The
+# client is serde_json + std only, so the build crate stays free of both the
+# lifter and the proof/crypto stack its own comment warns against.
+provekit-lift-rpc-client = { path = "../provekit-lift-rpc-client" }
 
 [dev-dependencies]
 tempfile = "3"

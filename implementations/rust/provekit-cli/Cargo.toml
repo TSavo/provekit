@@ -32,7 +32,6 @@ provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-ir-compiler = { path = "../provekit-ir-compiler" }
 provekit-ir-compiler-coq = { path = "../provekit-ir-compiler-coq" }
 provekit-ir-compiler-smt-lib = { path = "../provekit-ir-compiler-smt-lib" }
-provekit-lift-contracts = { path = "../provekit-lift-contracts" }
 syn = { workspace = true }
 
 # External.
