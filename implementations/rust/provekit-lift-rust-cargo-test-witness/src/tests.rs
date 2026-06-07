@@ -270,7 +270,10 @@ fn per_test_recompute_returns_rerun_body_when_memento_reconstructs() {
         },
     )
     .expect("a reconstructing memento must resolve");
-    assert!(ran.get(), "the runner MUST have executed once the pre-check passed");
+    assert!(
+        ran.get(),
+        "the runner MUST have executed once the pre-check passed"
+    );
     // The returned body is the re-run body; it blake3's to the pinned cid (the
     // witness reproduced) -- this is what the verifier checks itself.
     assert_eq!(blake3_512_of(&body), wit.cid);
@@ -325,7 +328,9 @@ fn anti_tamper_refuses_before_running_when_memento_does_not_reconstruct() {
     let err = res.expect_err("a tampered memento must be REFUSED");
     // Byte-for-byte the python guard message shape.
     assert!(
-        err.contains(&format!("memento fields do not reconstruct witness_cid {tampered_cid}")),
+        err.contains(&format!(
+            "memento fields do not reconstruct witness_cid {tampered_cid}"
+        )),
         "guard message must name the pinned cid; got: {err}"
     );
     assert!(

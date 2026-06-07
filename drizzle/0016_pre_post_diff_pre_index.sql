@@ -1,1 +1,0 @@
-CREATE INDEX `pre_post_diff_by_pre_location` ON `pre_post_diff` (`context`,`file_path`,`pre_start`,`pre_kind`);

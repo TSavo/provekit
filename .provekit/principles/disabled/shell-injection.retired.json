@@ -1,9 +1,0 @@
-{
-  "name": "shell-injection",
-  "retired": {
-    "at": "2026-04-27T00:00:00.000Z",
-    "reason": "domain-specific (not a universal axiom); DSL-pending taint-tracking capability.",
-    "task": "#129",
-    "spec": "docs/specs/2026-04-27-constraint-driven-development.md"
-  }
-}

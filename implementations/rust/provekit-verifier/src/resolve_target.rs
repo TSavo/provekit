@@ -31,17 +31,14 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
             cs.bridge_ir_name
         ));
     }
-    let env = pool
-        .mementos
-        .get(&cs.bridge_target_cid)
-        .ok_or_else(|| {
-            warn!(
-                bridge = %cs.bridge_ir_name,
-                target_cid = %cs.bridge_target_cid,
-                "resolve_target: bridge target CID not in pool"
-            );
-            format!("bridge target CID {} not in pool", cs.bridge_target_cid)
-        })?;
+    let env = pool.mementos.get(&cs.bridge_target_cid).ok_or_else(|| {
+        warn!(
+            bridge = %cs.bridge_ir_name,
+            target_cid = %cs.bridge_target_cid,
+            "resolve_target: bridge target CID not in pool"
+        );
+        format!("bridge target CID {} not in pool", cs.bridge_target_cid)
+    })?;
     if memento_kind(env) != Some("contract") {
         warn!(
             bridge = %cs.bridge_ir_name,

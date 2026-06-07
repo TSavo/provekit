@@ -147,16 +147,6 @@ else
     report "zig" "SKIP" "zig toolchain not at $zig_pinned and not on PATH"
 fi
 
-# --- TypeScript ---
-echo "[TypeScript] bun test"
-if need_tool bun typescript; then
-    if (cd implementations/typescript && run_quiet bun test src/lift/*.test.ts); then
-        report "typescript" "PASS" "29 tests, adapters prove equivalence"
-    else
-        report "typescript" "FAIL" "bun test failed"
-    fi
-fi
-
 # --- C# ---
 echo "[C#] dotnet test"
 if need_tool dotnet csharp; then

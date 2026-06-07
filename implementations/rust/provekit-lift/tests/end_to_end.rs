@@ -144,8 +144,8 @@ fn name_collision_on_different_ir_conjoins_for_the_solver() {
     let mut decls = provekit_lift_contracts::lift_file(&af, "a.rs").decls;
     decls.extend(provekit_lift_contracts::lift_file(&bf, "b.rs").decls);
     let opts = LiftOptions::default();
-    let minted =
-        mint_proof(&decls, &opts).expect("distinct facts under one name conjoin; they do not fail at mint");
+    let minted = mint_proof(&decls, &opts)
+        .expect("distinct facts under one name conjoin; they do not fail at mint");
     assert_eq!(
         minted.member_count, 1,
         "the two p_eq facts coalesce into one conjoined contract"

@@ -337,7 +337,9 @@ fn probe_linkerd_rust_analyzer_ready(binary: &Path) -> Result<String, String> {
     )
     .and_then(|resp| {
         let Some(result) = resp.get("result") else {
-            return Err(format!("rustAnalyzerReady returned non-result response: {resp}"));
+            return Err(format!(
+                "rustAnalyzerReady returned non-result response: {resp}"
+            ));
         };
         let ready = result
             .get("ready")

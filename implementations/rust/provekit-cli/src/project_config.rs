@@ -408,13 +408,6 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "rust-verus",
     "rust-proptest",
     "rust-quickcheck",
-    "ts-zod",
-    "typescript-source",
-    "ts-class-validator",
-    "ts-fast-check",
-    "ts-jsdoc",
-    "ts-joi",
-    "ts-ajv",
     "python-pydantic",
     "python-deal",
     "python-hypothesis",
@@ -492,14 +485,15 @@ family = "concept:family:hash"
 
     #[test]
     fn parses_surface_default() {
-        let cfg = parse_config("[authoring]\nsurface = \"ts-zod\"\n");
-        assert_eq!(cfg.surface_for("lift").as_deref(), Some("ts-zod"));
+        let cfg = parse_config("[authoring]\nsurface = \"python-source\"\n");
+        assert_eq!(cfg.surface_for("lift").as_deref(), Some("python-source"));
     }
 
     #[test]
     fn lift_surface_overrides_default() {
-        let cfg =
-            parse_config("[authoring]\nsurface = \"ts-zod\"\n[authoring.lift]\nsurface = \"rust\"");
+        let cfg = parse_config(
+            "[authoring]\nsurface = \"python-source\"\n[authoring.lift]\nsurface = \"rust\"",
+        );
         assert_eq!(cfg.surface_for("lift").as_deref(), Some("rust"));
     }
 
@@ -571,10 +565,10 @@ surface = "java"
     fn parses_kit_alias_entries() {
         let cfg = parse_config(
             r#"[[kits]]
-alias = "ts"
-project = "implementations/typescript"
-surface = "typescript-self-contracts"
-lang = "ts"
+alias = "rust-local"
+project = "implementations/rust"
+surface = "rust-contracts-crate"
+lang = "rust"
 
 [[kits]]
 alias = "third-party"
@@ -585,10 +579,10 @@ lang = "third-party"
         );
 
         assert_eq!(cfg.kits.len(), 2);
-        assert_eq!(cfg.kits[0].alias, "ts");
-        assert_eq!(cfg.kits[0].project, "implementations/typescript");
-        assert_eq!(cfg.kits[0].surface, "typescript-self-contracts");
-        assert_eq!(cfg.kits[0].lang, "ts");
+        assert_eq!(cfg.kits[0].alias, "rust-local");
+        assert_eq!(cfg.kits[0].project, "implementations/rust");
+        assert_eq!(cfg.kits[0].surface, "rust-contracts-crate");
+        assert_eq!(cfg.kits[0].lang, "rust");
         assert_eq!(cfg.kits[1].alias, "third-party");
         assert_eq!(cfg.kits[1].project, "/opt/provekit/kits/third-party");
         assert_eq!(cfg.kits[1].surface, "third-party-surface");
@@ -628,8 +622,6 @@ surface = "java-testng"
     #[test]
     fn known_lists_include_anchor_entries() {
         assert!(KNOWN_SURFACES.contains(&"default"));
-        assert!(KNOWN_SURFACES.contains(&"ts-zod"));
-        assert!(KNOWN_SURFACES.contains(&"typescript-source"));
         assert!(KNOWN_SURFACES.contains(&"php-source"));
         assert!(KNOWN_SURFACES.contains(&"ruby-source"));
         assert!(KNOWN_SURFACES.contains(&"csharp-source"));

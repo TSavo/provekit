@@ -1071,8 +1071,7 @@ fn transform_source_text_one_pass_collecting_refusals(
             let outcome = kit.transform_site(&carrier)?;
 
             match &outcome {
-                SiteOutcome::Materialize { body, .. }
-                | SiteOutcome::LoudlyLossy { body, .. } => {
+                SiteOutcome::Materialize { body, .. } | SiteOutcome::LoudlyLossy { body, .. } => {
                     let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
                         splice_realized_body_into_stub_signature(stub, body.as_str())
                     } else {

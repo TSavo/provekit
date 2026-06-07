@@ -5,7 +5,6 @@
 // Realizes concept:family:json concepts via Jackson (com.fasterxml.jackson.databind).
 // Sister shim to:
 //   - rust: provekit-shim-serde-json-rust (serde_json)
-//   - ts:   provekit-shim-json-typescript (JSON.parse / JSON.stringify, follow-up)
 //   - python: provekit-shim-json-python (stdlib `json`, follow-up)
 // All anchor to boundary:rfc8259-json.
 //

@@ -31,8 +31,8 @@ pub struct OutputFlags {
     pub quiet: bool,
 }
 
-pub mod cmd_self_check;
 pub mod cmd_release_gate;
+pub mod cmd_self_check;
 #[allow(dead_code)]
 pub mod doctor;
 #[allow(dead_code)]

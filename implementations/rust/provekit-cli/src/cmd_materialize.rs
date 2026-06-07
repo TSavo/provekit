@@ -36,7 +36,7 @@ const MATERIALIZE_BRIDGE_SIGNER_SEED: Ed25519Seed = [0x6d; 32];
 
 #[derive(Parser, Debug, Clone)]
 pub struct MaterializeArgs {
-    /// Library surface to materialize, e.g. `typescript-better-sqlite3` or `better-sqlite3`.
+    /// Library surface to materialize, e.g. `python-requests` or `requests`.
     #[arg(long)]
     pub library: String,
     /// Source directory to scan for `provekit-concept:` carriers.
@@ -475,7 +475,7 @@ fn is_safe_relative_path(path: &Path) -> bool {
 fn is_supported_source_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|ext| ext.to_str()),
-        Some("ts" | "tsx" | "js" | "jsx" | "py" | "java")
+        Some("py" | "java")
     )
 }
 

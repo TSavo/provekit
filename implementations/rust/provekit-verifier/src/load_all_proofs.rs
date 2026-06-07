@@ -30,8 +30,7 @@ const HASH_TAG_PREFIX: &str = "blake3-512:";
 const SIG_TAG_PREFIX: &str = "ed25519:";
 const PANIC_FREEDOM_EFFECT: &str = "concept:panic-freedom";
 const EFFECT_SITE_ANNOTATION_LOAD_ERROR_TAG: &str = "[effect-site-annotation]";
-const EFFECT_SITE_ANNOTATION_DUPLICATE_LOAD_ERROR_TAG: &str =
-    "[effect-site-annotation-duplicate]";
+const EFFECT_SITE_ANNOTATION_DUPLICATE_LOAD_ERROR_TAG: &str = "[effect-site-annotation-duplicate]";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofBytes {
@@ -337,7 +336,9 @@ fn load_catalog_bytes(
                                 line,
                                 sym.to_string(),
                             );
-                            pool.bridges_by_callsite.entry(key).or_insert_with(|| env.clone());
+                            pool.bridges_by_callsite
+                                .entry(key)
+                                .or_insert_with(|| env.clone());
                         }
                     }
                 }
@@ -414,12 +415,7 @@ fn index_effect_site_annotation(
         return;
     };
 
-    let key = (
-        bundle_cid.to_string(),
-        file.clone(),
-        line,
-        callee.clone(),
-    );
+    let key = (bundle_cid.to_string(), file.clone(), line, callee.clone());
     let annotation = EffectSiteAnnotation {
         effect_kind,
         file,
@@ -452,7 +448,10 @@ fn required_annotation_string(
     field: &str,
     pool: &mut MementoPool,
 ) -> Option<String> {
-    let value = body.get(field).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    let value = body
+        .get(field)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
     match value {
         Some(value) => Some(value.to_string()),
         None => {

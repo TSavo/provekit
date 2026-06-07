@@ -1,1 +1,0 @@
-ALTER TABLE `files` ADD `root_node_id` text DEFAULT '' NOT NULL;

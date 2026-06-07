@@ -16,8 +16,6 @@ Environment:
   BCARGO_REMOTE_HOST   SSH host alias to use (default: battleaxe)
   BCARGO_REMOTE_ROOT   Remote scratch root (default: /home/tsavo/remote/provekit-bcargo)
   BCARGO_PYTHON_ENV    Set to 0 to skip remote Python kit env provisioning
-  BCARGO_TYPESCRIPT_ENV
-                       Set to 0 to skip remote TypeScript kit env provisioning
 EOF
 }
 
@@ -93,9 +91,7 @@ remote_repo="$remote_root/provekit"
 remote_python_venv="$remote_root/python-kit-env"
 remote_python_bin="$remote_python_venv/bin"
 remote_python="$remote_python_bin/python"
-remote_typescript_env="$remote_root/typescript-kit-env"
 provision_python_env="${BCARGO_PYTHON_ENV:-1}"
-provision_typescript_env="${BCARGO_TYPESCRIPT_ENV:-1}"
 ssh_bin="${BCARGO_SSH:-ssh}"
 rsync_bin="${BCARGO_RSYNC:-rsync}"
 
@@ -182,6 +178,13 @@ sync_file() {
   "$rsync_bin" -az "$local_path" "$remote_host:$remote_path"
 }
 
+remove_remote_dir() {
+  local rel_path="$1"
+  local remote_path="$remote_repo/$rel_path"
+
+  run_ssh "rm -rf $(quote_sh "$remote_path")"
+}
+
 sync_file Cargo.toml
 sync_file Cargo.lock
 sync_file Makefile
@@ -201,9 +204,11 @@ sync_dir implementations/rust
 sync_dir implementations/python
 sync_dir implementations/go
 sync_dir implementations/java
-sync_dir implementations/typescript
 sync_dir examples
-sync_dir menagerie
+remove_remote_dir menagerie
+sync_dir menagerie/concept-shapes/catalog
+sync_dir menagerie/csharp-language-signature/specs
+sync_dir menagerie/python-language-signature/specs
 sync_dir tools
 sync_dir protocol
 sync_dir docs/self-application
@@ -269,15 +274,11 @@ done
 
 provision_steps=()
 cargo_env=()
-cargo_env+=("BCARGO_TYPESCRIPT_ENV=$(quote_sh "$provision_typescript_env")")
 path_prefix="$remote_target_dir/$profile"
 if [[ "$provision_python_env" != "0" ]]; then
   provision_steps+=("BCARGO_PYTHON_VENV=$(quote_sh "$remote_python_venv") make --quiet bcargo-python-kit-env")
   cargo_env+=("PYTHON=$(quote_sh "$remote_python")")
   path_prefix="$path_prefix:$remote_python_bin"
-fi
-if [[ "$provision_typescript_env" != "0" ]]; then
-  provision_steps+=("BCARGO_TYPESCRIPT_ENV_DIR=$(quote_sh "$remote_typescript_env") make --quiet bcargo-typescript-kit-env")
 fi
 cargo_env+=("PATH=$(quote_sh "$path_prefix"):\$PATH")
 

@@ -10,19 +10,36 @@
 #   make test-all: the acid test -- test-rust + test-python
 #
 # `test-rust` runs the rust workspace (including the crate-pair inheritance
-# E2E) and exercises the java / ts / python realize kits over RPC; `test-python`
+# E2E) and exercises the java / python realize kits over RPC; `test-python`
 # runs the python kit including the numpy proof. Other per-language suites
-# (test-go / test-ts / test-java / ...) exist but are not part of the gate.
+# (test-go / test-java / ...) exist but are not part of the gate.
 
 .DEFAULT_GOAL := help
 
 PROVEKIT := implementations/rust/target/release/provekit
-PYTHON ?= $(shell command -v python3 || echo python3)
-PIP ?= pip3 --python $(PYTHON)
+PYTHON ?= python3
+PYTHON := $(shell command -v '$(PYTHON)' 2>/dev/null || printf '%s\n' '$(PYTHON)')
 MVN ?= mvn
 LOCAL_BIN ?= /tmp/provekit-local-bin
 BCARGO ?= $(CURDIR)/bin/bcargo
 CARGO_LOCAL ?= cargo
+PYTHON_KIT_VENV ?= /tmp/provekit-python-kit-env
+PYTHON_KIT_BIN := $(PYTHON_KIT_VENV)/bin
+PYTHON_KIT := $(PYTHON_KIT_BIN)/python
+PYTHON_KIT_PIP := $(PYTHON_KIT) -m pip
+BCARGO_PYTHON_VENV ?= /tmp/provekit-bcargo-python-kit-env
+BCARGO_PYTHON_BIN := $(BCARGO_PYTHON_VENV)/bin
+BCARGO_PYTHON := $(BCARGO_PYTHON_BIN)/python
+BCARGO_PYTHON_ENV_STAMP := $(BCARGO_PYTHON_VENV)/.provekit-python-kits.stamp
+PYTHON_KIT_EDITABLES = \
+	-e implementations/python/libprovekit-py \
+	-e implementations/python/provekit-emit-python-hypothesis \
+	-e implementations/python/provekit-emit-python-pytest \
+	-e implementations/python/provekit-emit-python-unittest \
+	-e implementations/python/provekit-lift-py-pytest-witness \
+	-e implementations/python/provekit-lift-py-tests \
+	-e implementations/python/provekit-lift-python-source \
+	-e implementations/python/provekit-realize-python-core
 ifeq ($(CI),)
 ifeq ($(USE_BCARGO),0)
 CARGO ?= $(CARGO_LOCAL)
@@ -58,7 +75,7 @@ help:
 	@echo ""
 	@echo "Per-language test:"
 	@echo "  make test-rust  test-python   (the proven provers)"
-	@echo "  make test-<lang>              go / ts / csharp / php / java / c"
+	@echo "  make test-<lang>              go / csharp / php / java / c"
 	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
@@ -130,15 +147,27 @@ build-java:
 
 .PHONY: build-python
 build-python:
-	$(PIP) install --quiet --no-cache-dir \
+	$(PYTHON) -m venv $(PYTHON_KIT_VENV)
+	$(PYTHON_KIT_PIP) install --quiet --upgrade pip
+	$(PYTHON_KIT_PIP) install --quiet --no-cache-dir \
 		-e implementations/python/provekit-realize-python-core
 	# The rust integration suite spawns the python lifter over RPC
 	# (python3 -m provekit_lift_py_tests...). Install the lift packages into the
 	# same interpreter so those cross-language tests find it.
-	$(PIP) install --quiet --no-cache-dir \
+	$(PYTHON_KIT_PIP) install --quiet --no-cache-dir \
 		-e implementations/python/provekit-lift-py-tests \
 		-e implementations/python/provekit-lift-python-source \
 		-e implementations/python/provekit-lift-py-pytest-witness
+
+.PHONY: bcargo-python-kit-env
+bcargo-python-kit-env: $(BCARGO_PYTHON_ENV_STAMP)
+
+$(BCARGO_PYTHON_ENV_STAMP): Makefile $(wildcard implementations/python/*/pyproject.toml)
+	$(PYTHON) -m venv $(BCARGO_PYTHON_VENV)
+	$(BCARGO_PYTHON) -m pip install --quiet --upgrade pip
+	$(BCARGO_PYTHON) -m pip install --quiet --no-cache-dir pytest $(PYTHON_KIT_EDITABLES)
+	mkdir -p $(dir $(BCARGO_PYTHON_ENV_STAMP))
+	touch $(BCARGO_PYTHON_ENV_STAMP)
 
 # --- Mint targets ------------------------------------------------------------
 
@@ -167,13 +196,10 @@ check-cargo-entrypoint:
 # panics with `Unable to access jarfile provekit-realize-java.jar`.
 test-rust: build-python
 	@failed=""; \
-	$(CARGO) test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
+	PATH="$(PYTHON_KIT_BIN):$$PATH" \
+	  $(CARGO) test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
 	if [ -n "$$failed" ]; then echo "test-rust FAIL:$$failed"; exit 1; fi
-
-.PHONY: python-language-signature
-python-language-signature:
-	python3 menagerie/python-language-signature/generate_assets.py --check
 
 .PHONY: test-go
 test-go:
@@ -262,7 +288,7 @@ test-java: build-java
 
 # The acid test: the two suites that actually prove real code with zero
 # changes. `test-rust` runs the rust workspace (including the crate-pair
-# inheritance E2E) and exercises the java / ts / python realize kits over RPC;
+# inheritance E2E) and exercises the java / python realize kits over RPC;
 # `test-python` runs the python kit including the numpy proof. NON-FAIL-FAST:
 # both run regardless of prior failure; results summarize at the end.
 .PHONY: test-all

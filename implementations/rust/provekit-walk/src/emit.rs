@@ -19,9 +19,8 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
     rc::Rc,
-    sync::{Arc, OnceLock},
+    sync::Arc,
 };
 
 use provekit_canonicalizer::{blake3_512_of, Value};
@@ -193,9 +192,6 @@ const PROC_MACRO_INVOCATION_CONCEPT: &str = "concept:proc-macro-invocation";
 
 /// Typed subcase for Rust derive attributes.
 const DERIVE_ATTRIBUTE_CONCEPT: &str = "concept:derive-attribute";
-
-const CONCEPT_OP_DEFINITION_INDEX_REL: &str =
-    "menagerie/concept-shapes/specs/op-definitions/index.cids.json";
 
 /// Accepted-loss dimension for associated type declarations on impl blocks
 /// that are not carried into the emitted function term.
@@ -1137,40 +1133,7 @@ fn normalize_attr_tokens(raw: String) -> String {
 }
 
 fn concept_op_definition_cid(concept_name: &str) -> String {
-    concept_op_definition_cids()
-        .get(concept_name)
-        .cloned()
-        .unwrap_or_else(|| concept_name.to_string())
-}
-
-fn concept_op_definition_cids() -> &'static HashMap<String, String> {
-    static CIDS: OnceLock<HashMap<String, String>> = OnceLock::new();
-    CIDS.get_or_init(|| {
-        find_repo_file(Path::new(CONCEPT_OP_DEFINITION_INDEX_REL))
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .and_then(|raw| serde_json::from_str::<HashMap<String, String>>(&raw).ok())
-            .unwrap_or_default()
-    })
-}
-
-fn find_repo_file(relative: &Path) -> Option<PathBuf> {
-    let mut bases = Vec::new();
-    if let Some(root) = std::env::var_os("PROVEKIT_REPO_ROOT") {
-        bases.push(PathBuf::from(root));
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        bases.extend(cwd.ancestors().map(Path::to_path_buf));
-    }
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    bases.extend(manifest_dir.ancestors().map(Path::to_path_buf));
-
-    for base in bases {
-        let candidate = base.join(relative);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+    blake3_512_of(concept_name.as_bytes())
 }
 
 fn lower_function_body_to_term(

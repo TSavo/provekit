@@ -334,16 +334,49 @@ fn materialize_does_not_expose_source_lang_discovery_mode() {
 
 #[test]
 fn lift_identify_only_delegates_from_project_config() {
-    let root = repo_root();
-    let output = Command::new(provekit_bin())
-        .arg("lift")
-        .arg(root.join("menagerie/bridgeworks/checked-add-u8"))
-        .arg("--identify-only")
-        .arg("--json")
-        .arg("--quiet")
-        .current_dir(&root)
-        .output()
-        .expect("spawn provekit lift --identify-only");
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let manifest_dir = project.join(".provekit/lift/identify");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        "[authoring.lift]\nsurface = \"identify\"\n",
+    )
+    .expect("write config");
+    let plugin = dir.path().join("identify-plugin.sh");
+    write_executable(
+        &plugin,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"identify","protocol_version":"pep/1.7.0","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"identity-document","identities":[{"domain":"software","claim":"checked_add_u8.postcondition"}]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"identify\"\ncommand = [\"{}\"]\n",
+            plugin.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("lift")
+            .arg(&project)
+            .arg("--identify-only")
+            .arg("--json")
+            .arg("--quiet"),
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -355,7 +388,7 @@ fn lift_identify_only_delegates_from_project_config() {
         serde_json::from_str(&stdout).expect("identify-only lift JSON parses");
     assert_eq!(report["kind"], "identity-document");
     let identities = report["identities"].as_array().expect("identities array");
-    assert_eq!(identities.len(), 8);
+    assert_eq!(identities.len(), 1);
     assert!(identities.iter().any(|identity| {
         identity["domain"] == "software" && identity["claim"] == "checked_add_u8.postcondition"
     }));
@@ -854,8 +887,7 @@ done
             .arg("--project")
             .arg(&project)
             .arg("--out")
-            .arg(&out_dir)
-            ,
+            .arg(&out_dir),
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);

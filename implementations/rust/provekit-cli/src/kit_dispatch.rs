@@ -1301,7 +1301,13 @@ fn invoke_realize(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
+    command.stderr(
+        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        },
+    );
 
     let mut child = command
         .spawn()
@@ -1739,7 +1745,13 @@ fn invoke_emit(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
+    command.stderr(
+        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        },
+    );
 
     let mut child = command
         .spawn()
@@ -1813,7 +1825,13 @@ fn invoke_emit_check(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
+    command.stderr(
+        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        },
+    );
 
     let mut child = command
         .spawn()
@@ -1974,7 +1992,13 @@ fn invoke_materialize_source(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
+    command.stderr(
+        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        },
+    );
 
     let mut child = command.spawn().map_err(|e| {
         MaterializeSourceError::Failed(format!("spawn materialize source kit: {e}"))
@@ -2111,7 +2135,13 @@ pub fn dispatch_assemble(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
+    command.stderr(
+        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        },
+    );
 
     let mut child = command
         .spawn()
@@ -2238,7 +2268,13 @@ pub fn dispatch_materialize_check(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
+    command.stderr(
+        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        },
+    );
 
     let mut child = command
         .spawn()
@@ -2442,11 +2478,11 @@ fn realize_request_params(request: &RealizeRequest) -> Value {
 ///
 /// Substrate-uniform convention: extension = lang identifier. Kits whose
 /// language name differs from the file extension (e.g., python -> "py",
-/// typescript -> "ts", rust -> "rs") MUST declare `extension` in their
+/// rust -> "rs") MUST declare `extension` in their
 /// realize RPC response. The dispatcher does not enumerate kits.
 ///
 /// Per #1270 Tier 1.3: removed the hardcoded `match` table that listed
-/// "python", "ruby", "typescript", "csharp", "rust" extensions. Kits that
+/// "python", "ruby", "csharp", "rust" extensions. Kits that
 /// need non-identity file extensions declare `extension` in their realize
 /// responses, so the table was dead code masking the substrate violation.
 fn extension_from_convention(lang: &str) -> String {

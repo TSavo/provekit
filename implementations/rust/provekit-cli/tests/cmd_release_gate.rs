@@ -119,8 +119,7 @@ path = "examples/custom"
 
     let config_arg = config.to_string_lossy().to_string();
     let args =
-        ReleaseGateArgs::try_parse_from(["release-gate", "--config", config_arg.as_str()])
-            .unwrap();
+        ReleaseGateArgs::try_parse_from(["release-gate", "--config", config_arg.as_str()]).unwrap();
     let plan = release_gate_plan(&args).expect("custom release-gate plan");
 
     assert_eq!(plan.len(), 2);
@@ -182,7 +181,10 @@ fn any_failed_gate_marks_release_not_ready_and_names_failure() {
     let receipt = run_release_gate_with_executor(args, &mut executor).expect("release receipt");
 
     assert!(!receipt.release_ready, "{receipt:#?}");
-    assert_eq!(release_gate_exit_code(&receipt), provekit_cli::EXIT_VERIFY_FAIL);
+    assert_eq!(
+        release_gate_exit_code(&receipt),
+        provekit_cli::EXIT_VERIFY_FAIL
+    );
     assert_eq!(receipt.failures.len(), 1);
     assert_eq!(receipt.failures[0].target, "provekit-cli");
     assert_eq!(receipt.failures[0].command, "self-check");
@@ -239,12 +241,9 @@ fn total_callsites_zero_in_self_check_json_fails_floor_aggregation() {
         .expect("provekit-cli target");
 
     assert!(!receipt.release_ready, "{receipt:#?}");
-    assert!(cli
-        .floor_report
-        .checks
-        .iter()
-        .any(|check| check.id == "floor.total_callsites.nonzero"
-            && check.status.as_str() == "fail"));
+    assert!(cli.floor_report.checks.iter().any(|check| check.id
+        == "floor.total_callsites.nonzero"
+        && check.status.as_str() == "fail"));
 }
 
 #[test]
@@ -307,7 +306,12 @@ fn ok_doctor(target: &str) -> GateOutput {
     }
 }
 
-fn ok_self_check(target: &str, panic_safe: u64, total_callsites: u64, residue: usize) -> GateOutput {
+fn ok_self_check(
+    target: &str,
+    panic_safe: u64,
+    total_callsites: u64,
+    residue: usize,
+) -> GateOutput {
     GateOutput {
         exit_code: 0,
         stdout: self_check_json(target, panic_safe, total_callsites, residue).to_string(),

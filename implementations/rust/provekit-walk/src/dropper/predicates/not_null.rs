@@ -136,9 +136,8 @@ fn formula_contains_guard_for(formula: &IrFormula, var_name: &str) -> bool {
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    let is_guard =
-                        panic_freedom::normalize_option_predicate_name(name.as_str())
-                            == panic_freedom::IS_NONE;
+                    let is_guard = panic_freedom::normalize_option_predicate_name(name.as_str())
+                        == panic_freedom::IS_NONE;
                     let has_var = args.iter().any(|t| match t {
                         IrTerm::Var { name } => name == var_name,
                         _ => false,
@@ -324,10 +323,7 @@ mod tests {
 
         assert!(is_guard_for(&not_is_none, "x"));
         assert!(NotNullPredicate.guard_discharged(&not_is_none, "x"));
-        assert!(NotNullPredicate.is_premise_guarded(
-            &implies_not_null(not_is_none, "x"),
-            "x"
-        ));
+        assert!(NotNullPredicate.is_premise_guarded(&implies_not_null(not_is_none, "x"), "x"));
     }
 
     #[test]

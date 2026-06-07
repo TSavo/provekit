@@ -1,6 +1,0 @@
-{
-  "kind": "effect-signature",
-  "name": "unresolved_call",
-  "effect": "cpp:unresolved_call",
-  "locus": "menagerie/cpp-language-signature/README.md"
-}

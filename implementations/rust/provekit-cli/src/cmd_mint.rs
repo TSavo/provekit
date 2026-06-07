@@ -55,8 +55,7 @@ use provekit_claim_envelope::{
 };
 use provekit_ir_types::Sort;
 use provekit_proof_envelope::{
-    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed,
-    ProofEnvelopeInput,
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 
 use crate::lift_plugin::{self, LiftPluginError, LiftPluginOptions};
@@ -1821,8 +1820,8 @@ fn mint_ir_document(
         // that are NOT inv-only (pre/post-bearing or function-contract).
         // We preserve original order via a combined stream.
         enum CoalesceEntry {
-            InvOnly(String),          // name key -> resolved from inv_only_groups
-            Passthrough(Value),       // emitted as-is
+            InvOnly(String),    // name key -> resolved from inv_only_groups
+            Passthrough(Value), // emitted as-is
         }
         let mut stream: Vec<CoalesceEntry> = Vec::new();
         let mut inv_only_name_emitted: std::collections::HashSet<String> =
@@ -1906,8 +1905,7 @@ fn mint_ir_document(
                             for op in group.operands {
                                 // If this operand is itself `{kind:"and", operands:[...]}`,
                                 // flatten its children rather than nesting another `and`.
-                                let is_and = op.get("kind").and_then(|v| v.as_str())
-                                    == Some("and");
+                                let is_and = op.get("kind").and_then(|v| v.as_str()) == Some("and");
                                 let children: Vec<Value> = if is_and {
                                     op.get("operands")
                                         .and_then(|v| v.as_array())
@@ -2027,11 +2025,7 @@ fn mint_ir_document(
                 .or_else(|| decl.get("body_discharge_refusal_reason")),
             decl.get("dischargePolicy"),
         );
-        log_body_discharge_policy_warnings(
-            "mint-ir-contract-decl",
-            &name,
-            &body_policy.warnings,
-        );
+        log_body_discharge_policy_warnings("mint-ir-contract-decl", &name, &body_policy.warnings);
         let body_discharge_eligible = body_policy.body_discharge_eligible;
         let body_discharge_refusal_reason = body_policy.body_discharge_refusal_reason;
         // A bridge is written only when this contract is a body-bearing
@@ -2464,14 +2458,8 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
     if let Some(concept_name) = concept_name {
         header.insert("conceptName".to_string(), json!(concept_name));
     }
-    header.insert(
-        "kind".to_string(),
-        json!("library-sugar-binding-entry"),
-    );
-    header.insert(
-        "signatureShapeCid".to_string(),
-        json!(signature_shape_cid),
-    );
+    header.insert("kind".to_string(), json!("library-sugar-binding-entry"));
+    header.insert("signatureShapeCid".to_string(), json!(signature_shape_cid));
     if let Some(symbol) = symbol {
         header.insert("symbol".to_string(), json!(symbol));
     }
@@ -2947,7 +2935,6 @@ mod tests {
         root
     }
 
-
     // -----------------------------------------------------------------
     // #1358 / #1355: stamp_platform_profile fills absent fields from
     // the project's platform_profile (per-shim default). Annotation-pinned
@@ -3055,25 +3042,29 @@ mod tests {
 
         let project_cfg = ProjectConfig {
             kits: vec![KitAliasEntry {
-                alias: "ts".to_string(),
-                project: "implementations/typescript".to_string(),
-                surface: "typescript-self-contracts".to_string(),
-                lang: "ts".to_string(),
+                alias: "rust-local".to_string(),
+                project: "implementations/rust".to_string(),
+                surface: "rust-contracts-crate".to_string(),
+                lang: "rust".to_string(),
             }],
             ..ProjectConfig::default()
         };
         let user_cfg = ProjectConfig::default();
 
-        let resolved =
-            resolve_kit_from_configs("ts", Path::new("/workspace"), &project_cfg, &user_cfg)
-                .expect("configured kit alias must resolve");
+        let resolved = resolve_kit_from_configs(
+            "rust-local",
+            Path::new("/workspace"),
+            &project_cfg,
+            &user_cfg,
+        )
+        .expect("configured kit alias must resolve");
 
         assert_eq!(
             resolved.project_root,
-            PathBuf::from("/workspace/implementations/typescript")
+            PathBuf::from("/workspace/implementations/rust")
         );
-        assert_eq!(resolved.surface, "typescript-self-contracts");
-        assert_eq!(resolved.lang_key, "ts");
+        assert_eq!(resolved.surface, "rust-contracts-crate");
+        assert_eq!(resolved.lang_key, "rust");
     }
 
     #[test]
@@ -3212,7 +3203,7 @@ mod tests {
     fn mint_input_can_request_library_binding_layer() {
         let input = mint_input(
             std::path::Path::new("."),
-            "typescript-bind",
+            "python-source",
             std::path::Path::new("out"),
             true,
             true,
@@ -4071,8 +4062,11 @@ mod tests {
             signer_seed,
             declared_at: produced_at,
         });
-        std::fs::write(imports_dir.join(format!("{}.proof", proof.cid)), proof.bytes)
-            .expect("write dependency proof");
+        std::fs::write(
+            imports_dir.join(format!("{}.proof", proof.cid)),
+            proof.bytes,
+        )
+        .expect("write dependency proof");
 
         let bindings = contract_bindings_from_dependency_proofs(&root);
         let binding = bindings
@@ -4112,21 +4106,23 @@ mod tests {
             }
         })];
 
-        let minted =
-            mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint");
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint");
         let binding = minted
             .contract_bindings
             .iter()
             .find(|binding| binding["name"] == "totality_axiom")
-            .unwrap_or_else(|| panic!("missing totality_axiom binding: {:#?}", minted.contract_bindings));
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing totality_axiom binding: {:#?}",
+                    minted.contract_bindings
+                )
+            });
 
         assert_eq!(binding["bodyDischargeEligible"], false);
         assert_eq!(binding["bodyDischargeRefusalReason"], "totality-axiom");
 
         let _ = std::fs::remove_dir_all(root);
     }
-
-
 
     #[test]
     fn mint_from_ir_document_links_contract_to_authority_memento() {
@@ -4310,15 +4306,18 @@ mod tests {
             }),
         ];
         let tempdir = tempfile::tempdir().expect("tempdir");
-        let (bytes, _, _) = mint_from_ir_document(
-            &ir, None, None, None,
-            Path::new("."), tempdir.path(), true,
-        )
-        .expect("mint should succeed");
+        let (bytes, _, _) =
+            mint_from_ir_document(&ir, None, None, None, Path::new("."), tempdir.path(), true)
+                .expect("mint should succeed");
         // Decode and find the contract member.
         let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode catalog");
-        let members = catalog.as_map().expect("catalog map")
-            .get("members").expect("members").as_map().expect("members map");
+        let members = catalog
+            .as_map()
+            .expect("catalog map")
+            .get("members")
+            .expect("members")
+            .as_map()
+            .expect("members map");
         let contract_entries: Vec<_> = members
             .values()
             .filter_map(|v| {
@@ -4334,7 +4333,8 @@ mod tests {
             .collect();
         // POSITIVE: exactly one contract (the two were coalesced, not doubled)
         assert_eq!(
-            contract_entries.len(), 1,
+            contract_entries.len(),
+            1,
             "expected one conjoined contract, got {}: {contract_entries:#?}",
             contract_entries.len()
         );
@@ -4343,13 +4343,17 @@ mod tests {
             .pointer("/header/inv")
             .expect("contract must have inv");
         assert_eq!(
-            inv.get("kind").and_then(|k| k.as_str()), Some("and"),
+            inv.get("kind").and_then(|k| k.as_str()),
+            Some("and"),
             "conjoined inv must be kind=and; got: {inv}"
         );
-        let operands = inv.get("operands").and_then(|o| o.as_array())
+        let operands = inv
+            .get("operands")
+            .and_then(|o| o.as_array())
             .expect("and must have operands array");
         assert_eq!(
-            operands.len(), 2,
+            operands.len(),
+            2,
             "conjoined inv must have 2 operands; got: {operands:#?}"
         );
     }
@@ -4373,14 +4377,17 @@ mod tests {
             }),
         ];
         let tempdir = tempfile::tempdir().expect("tempdir");
-        let (bytes, _, _) = mint_from_ir_document(
-            &ir, None, None, None,
-            Path::new("."), tempdir.path(), true,
-        )
-        .expect("mint should succeed");
+        let (bytes, _, _) =
+            mint_from_ir_document(&ir, None, None, None, Path::new("."), tempdir.path(), true)
+                .expect("mint should succeed");
         let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode catalog");
-        let members = catalog.as_map().expect("catalog map")
-            .get("members").expect("members").as_map().expect("members map");
+        let members = catalog
+            .as_map()
+            .expect("catalog map")
+            .get("members")
+            .expect("members")
+            .as_map()
+            .expect("members map");
         let contract_entries: Vec<_> = members
             .values()
             .filter_map(|v| {
@@ -4396,7 +4403,8 @@ mod tests {
             .collect();
         // POSITIVE: exactly one contract (deduped, not doubled)
         assert_eq!(
-            contract_entries.len(), 1,
+            contract_entries.len(),
+            1,
             "identical inv must yield one deduped contract, got {}",
             contract_entries.len()
         );
@@ -4405,7 +4413,8 @@ mod tests {
             .pointer("/header/inv")
             .expect("contract must have inv");
         assert_ne!(
-            inv.get("kind").and_then(|k| k.as_str()), Some("and"),
+            inv.get("kind").and_then(|k| k.as_str()),
+            Some("and"),
             "identical inv must NOT be wrapped in `and`; got: {inv}"
         );
     }
@@ -4432,14 +4441,17 @@ mod tests {
         });
         let ir = vec![pre_bearing, inv_only];
         let tempdir = tempfile::tempdir().expect("tempdir");
-        let (bytes, _, _) = mint_from_ir_document(
-            &ir, None, None, None,
-            Path::new("."), tempdir.path(), true,
-        )
-        .expect("mint should succeed");
+        let (bytes, _, _) =
+            mint_from_ir_document(&ir, None, None, None, Path::new("."), tempdir.path(), true)
+                .expect("mint should succeed");
         let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode catalog");
-        let members = catalog.as_map().expect("catalog map")
-            .get("members").expect("members").as_map().expect("members map");
+        let members = catalog
+            .as_map()
+            .expect("catalog map")
+            .get("members")
+            .expect("members")
+            .as_map()
+            .expect("members map");
         let contract_entries: Vec<_> = members
             .values()
             .filter_map(|v| {
@@ -4461,9 +4473,9 @@ mod tests {
             contract_entries.len()
         );
         // The pre-bearing one must still carry `pre`
-        let has_pre_bearing = contract_entries.iter().any(|env| {
-            env.pointer("/header/pre").is_some()
-        });
+        let has_pre_bearing = contract_entries
+            .iter()
+            .any(|env| env.pointer("/header/pre").is_some());
         assert!(
             has_pre_bearing,
             "pre-bearing contract must not be merged away"

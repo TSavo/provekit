@@ -4,8 +4,6 @@ CDDL-based code generator for ProvekIt IR.
 
 Usage:
     python tools/generate-from-cddl.py protocol/provekit-ir.cddl rust > ir_generated.rs
-    python tools/generate-from-cddl.py protocol/provekit-ir.cddl typescript > ir_generated.ts
-    python tools/generate-from-cddl.py protocol/provekit-ir.cddl go > ir_generated.go
 
 This script reads the machine-readable CDDL grammar and generates:
 - Type definitions (structs/enums)
@@ -206,160 +204,11 @@ def generate_rust(rules: dict) -> str:
     return "\n".join(output)
 
 
-def generate_typescript(rules: dict) -> str:
-    """Generate TypeScript types from CDDL rules."""
-    output = []
-    output.append("/**")
-    output.append(" * GENERATED FILE: DO NOT EDIT")
-    output.append(" * Source: protocol/provekit-ir.cddl")
-    output.append(" * Generator: tools/generate-from-cddl.py")
-    output.append(" */")
-    output.append("")
-
-    # Generate Sort type
-    output.append("export type PrimitiveSortName = 'Int' | 'Real' | 'Bool' | 'String';")
-    output.append("")
-    output.append("export interface PrimitiveSort {")
-    output.append("  kind: 'primitive';")
-    output.append("  name: PrimitiveSortName;")
-    output.append("}")
-    output.append("")
-    output.append("export type Sort = PrimitiveSort;")
-    output.append("")
-
-    # Generate Term types
-    output.append("export interface VarTerm {")
-    output.append("  kind: 'var';")
-    output.append("  name: string;")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface ConstTerm {")
-    output.append("  kind: 'const';")
-    output.append("  value: unknown;")
-    output.append("  sort: Sort;")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface CtorTerm {")
-    output.append("  kind: 'ctor';")
-    output.append("  name: string;")
-    output.append("  args: IrTerm[];")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface LambdaTerm {")
-    output.append("  kind: 'lambda';")
-    output.append("  paramName: string;")
-    output.append("  paramSort: Sort;")
-    output.append("  body: IrTerm;")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface LetBinding {")
-    output.append("  name: string;")
-    output.append("  boundTerm: IrTerm;")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface LetTerm {")
-    output.append("  kind: 'let';")
-    output.append("  bindings: LetBinding[];")
-    output.append("  body: IrTerm;")
-    output.append("}")
-    output.append("")
-
-    output.append(
-        "export type IrTerm = VarTerm | ConstTerm | CtorTerm | LambdaTerm | LetTerm;"
-    )
-    output.append("")
-
-    # Generate Formula types
-    output.append("export interface AtomicFormula {")
-    output.append("  kind: 'atomic';")
-    output.append("  name: string;")
-    output.append("  args: IrTerm[];")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface ConnectiveFormula {")
-    output.append("  kind: 'and' | 'or' | 'not' | 'implies';")
-    output.append("  operands: IrFormula[];")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface QuantifierFormula {")
-    output.append("  kind: 'forall' | 'exists';")
-    output.append("  name: string;")
-    output.append("  sort: Sort;")
-    output.append("  body: IrFormula;")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface ChoiceFormula {")
-    output.append("  kind: 'choice';")
-    output.append("  varName: string;")
-    output.append("  sort: Sort;")
-    output.append("  body: IrFormula;")
-    output.append("}")
-    output.append("")
-
-    output.append(
-        "export type IrFormula = AtomicFormula | ConnectiveFormula | QuantifierFormula | ChoiceFormula;"
-    )
-    output.append("")
-
-    # Generate Evidence
-    output.append("export interface EvidenceCertificate {")
-    output.append("  tool: string;")
-    output.append("  version: string;")
-    output.append("  formulaHash: string;")
-    output.append("  proofData: string;")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface EvidenceTerm {")
-    output.append("  kind: 'evidence';")
-    output.append("  proofType: 'smt-lib' | 'coq' | 'custom';")
-    output.append("  certificate: EvidenceCertificate;")
-    output.append("}")
-    output.append("")
-
-    # Generate Declaration
-    output.append("export interface ContractDeclaration {")
-    output.append("  kind: 'contract';")
-    output.append("  name: string;")
-    output.append("  outBinding: string;")
-    output.append("  pre?: IrFormula;")
-    output.append("  post?: IrFormula;")
-    output.append("  inv?: IrFormula;")
-    output.append("  evidence?: EvidenceTerm;")
-    output.append("}")
-    output.append("")
-
-    output.append("export interface BridgeDeclaration {")
-    output.append("  kind: 'bridge';")
-    output.append("  name: string;")
-    output.append("  sourceSymbol: string;")
-    output.append("  sourceLayer: string;")
-    output.append("  targetContractCid: string;")
-    output.append("  targetLayer: string;")
-    output.append("  notes?: string;")
-    output.append("}")
-    output.append("")
-
-    output.append("export type Declaration = ContractDeclaration | BridgeDeclaration;")
-    output.append("")
-    output.append("export type Document = Declaration[];")
-    output.append("")
-
-    return "\n".join(output)
-
 
 def main():
     if len(sys.argv) < 3:
         print("Usage: generate-from-cddl.py <cddl-file> <language>")
-        print("  language: rust | typescript | go")
+        print("  language: rust")
         sys.exit(1)
 
     cddl_path = Path(sys.argv[1])
@@ -370,8 +219,6 @@ def main():
 
     if language == "rust":
         print(generate_rust(rules))
-    elif language == "typescript":
-        print(generate_typescript(rules))
     else:
         print(f"Unsupported language: {language}", file=sys.stderr)
         sys.exit(1)

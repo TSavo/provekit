@@ -1,7 +1,0 @@
-{
-  "kind": "sort",
-  "fn_name": "csharp:Bool",
-  "formals": [],
-  "return_sort": {"kind": "kind", "name": "*"},
-  "post": {"kind": "sort-description", "name": "Bool", "description": "C# truth values (System.Boolean)."}
-}

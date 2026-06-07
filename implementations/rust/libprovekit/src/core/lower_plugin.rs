@@ -191,15 +191,32 @@ pub enum KitSourceAliasEntry {
     },
 }
 
-/// Load all KitSourceAliasMemento files for a given kit from the catalog.
-/// Returns a map: source-text token → KitSourceAliasEntry.
-///
-/// Walks up from CWD to find menagerie/, then reads
-/// concept-shapes/catalog/kit-source-aliases/<kit>-*.json.
+const CONCEPT_INT_CID: &str =
+    "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+const CONCEPT_STRING_CID: &str =
+    "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+const CONCEPT_BOOL_CID: &str =
+    "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+const CONCEPT_FLOAT_CID: &str =
+    "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const CONCEPT_UNIT_CID: &str =
+    "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b";
+const CONCEPT_BYTES_CID: &str =
+    "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+const CONCEPT_LIST_CID: &str =
+    "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2";
+const CONCEPT_MAP_CID: &str =
+    "blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1";
+const CONCEPT_REF_CID: &str =
+    "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534";
+
+/// Load source-token aliases for a kit. Rust aliases are source-lifter-owned;
+/// the legacy catalog read remains only as a transitional supplement for
+/// retained catalog slices.
 pub fn load_kit_source_aliases(
     kit: &str,
 ) -> std::collections::BTreeMap<String, KitSourceAliasEntry> {
-    let mut map = std::collections::BTreeMap::new();
+    let mut map = builtin_kit_source_aliases(kit);
     let Some(root) = find_menagerie_root() else {
         return map;
     };
@@ -287,6 +304,71 @@ pub fn load_kit_source_aliases(
         }
     }
     map
+}
+
+fn builtin_kit_source_aliases(
+    kit: &str,
+) -> std::collections::BTreeMap<String, KitSourceAliasEntry> {
+    let mut map = std::collections::BTreeMap::new();
+    if kit != "rust" {
+        return map;
+    }
+
+    insert_primitive_aliases(
+        &mut map,
+        &[
+            "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
+        ],
+        CONCEPT_INT_CID,
+    );
+    insert_primitive_aliases(&mut map, &["str", "String", "&str"], CONCEPT_STRING_CID);
+    insert_primitive_aliases(&mut map, &["bool"], CONCEPT_BOOL_CID);
+    insert_primitive_aliases(&mut map, &["f32", "f64"], CONCEPT_FLOAT_CID);
+    insert_primitive_aliases(&mut map, &["()"], CONCEPT_UNIT_CID);
+    insert_primitive_aliases(&mut map, &["Vec<u8>", "[u8]"], CONCEPT_BYTES_CID);
+
+    insert_constructor_aliases(&mut map, &["Vec"], CONCEPT_LIST_CID, 1);
+    insert_constructor_aliases(
+        &mut map,
+        &["HashMap", "BTreeMap", "Map"],
+        CONCEPT_MAP_CID,
+        2,
+    );
+    insert_constructor_aliases(&mut map, &["RefMut", "Box", "&mut"], CONCEPT_REF_CID, 1);
+
+    map
+}
+
+fn insert_primitive_aliases(
+    map: &mut std::collections::BTreeMap<String, KitSourceAliasEntry>,
+    aliases: &[&str],
+    target_cid: &str,
+) {
+    for alias in aliases {
+        map.insert(
+            (*alias).to_string(),
+            KitSourceAliasEntry::Primitive {
+                target_cid: target_cid.to_string(),
+            },
+        );
+    }
+}
+
+fn insert_constructor_aliases(
+    map: &mut std::collections::BTreeMap<String, KitSourceAliasEntry>,
+    aliases: &[&str],
+    constructor_cid: &str,
+    arity: usize,
+) {
+    for alias in aliases {
+        map.insert(
+            (*alias).to_string(),
+            KitSourceAliasEntry::Constructor {
+                constructor_cid: constructor_cid.to_string(),
+                arity,
+            },
+        );
+    }
 }
 
 fn find_menagerie_root() -> Option<std::path::PathBuf> {

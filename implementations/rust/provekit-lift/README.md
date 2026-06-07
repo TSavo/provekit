@@ -189,10 +189,6 @@ to handle: method-call chains, multi-statement loop bodies, nested
 quantifiers, characterization conjunctions whose atoms exceed the v0
 operand whitelist.
 
-The TypeScript `vitest-tests.ts` adapter mirrors the same three
-patterns for `for (let i = lo; i </<= hi; i++)` loops, helper-function
-calls, and multi-`expect()` characterization.
-
 ## Content-addressed dedup
 
 If two source files express the same property, both lift to the same

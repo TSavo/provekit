@@ -41,24 +41,45 @@ fn tolerance_bound() -> serde_json::Value {
 #[test]
 fn operands_meeting_a_real_bound_are_declared_real() {
     let s = emit(&tolerance_bound()).expect("emit");
-    assert!(s.contains("(declare-const a Real)"), "`a` must declare as Real:\n{s}");
-    assert!(s.contains("(declare-const b Real)"), "`b` must declare as Real:\n{s}");
+    assert!(
+        s.contains("(declare-const a Real)"),
+        "`a` must declare as Real:\n{s}"
+    );
+    assert!(
+        s.contains("(declare-const b Real)"),
+        "`b` must declare as Real:\n{s}"
+    );
     // and NOT as Int -- the operand sort follows the bound it meets.
-    assert!(!s.contains("(declare-const a Int)"), "`a` must not be Int:\n{s}");
+    assert!(
+        !s.contains("(declare-const a Int)"),
+        "`a` must not be Int:\n{s}"
+    );
 }
 
 #[test]
 fn real_literal_emitted_verbatim_with_negative_as_unary_minus() {
     let s = emit(&tolerance_bound()).expect("emit");
-    assert!(s.contains("0.00000015"), "the real literal must appear verbatim:\n{s}");
-    assert!(s.contains("(- 0.00000015)"), "a negative real must render as `(- X)`:\n{s}");
+    assert!(
+        s.contains("0.00000015"),
+        "the real literal must appear verbatim:\n{s}"
+    );
+    assert!(
+        s.contains("(- 0.00000015)"),
+        "a negative real must render as `(- X)`:\n{s}"
+    );
 }
 
 #[test]
 fn minus_stays_interpreted_over_reals() {
     let s = emit(&tolerance_bound()).expect("emit");
-    assert!(!s.contains("(declare-fun -"), "`-` is a theory builtin, never declared:\n{s}");
-    assert!(s.contains("(- a b)"), "the difference must render as the builtin `(- a b)`:\n{s}");
+    assert!(
+        !s.contains("(declare-fun -"),
+        "`-` is a theory builtin, never declared:\n{s}"
+    );
+    assert!(
+        s.contains("(- a b)"),
+        "the difference must render as the builtin `(- a b)`:\n{s}"
+    );
 }
 
 // Discrimination: a Real-free formula collects exactly as before -- its vars stay
@@ -71,5 +92,8 @@ fn real_free_formula_keeps_int_operands() {
                  {"kind": "const", "value": 5, "sort": {"kind": "primitive", "name": "Int"}}]
     });
     let s = emit(&f).expect("emit");
-    assert!(s.contains("(declare-const x Int)"), "Real-free var must stay Int:\n{s}");
+    assert!(
+        s.contains("(declare-const x Int)"),
+        "Real-free var must stay Int:\n{s}"
+    );
 }

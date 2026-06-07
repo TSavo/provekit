@@ -705,10 +705,7 @@ mod tests {
         // A contract whose pre uses `≥` and whose inv uses `≤`.
         must("ge_le_fn", {
             crate::forall(crate::Int(), |x| {
-                and_(vec![
-                    gte(x.clone(), num(0)),
-                    lte(x.clone(), num(100)),
-                ])
+                and_(vec![gte(x.clone(), num(0)), lte(x.clone(), num(100))])
             })
         });
         let decls = finish();

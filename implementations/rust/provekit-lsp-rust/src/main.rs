@@ -269,10 +269,7 @@ fn project_cid_from_socket(socket_path: &PathBuf) -> String {
     format!("{:016x}", h.finish())
 }
 
-fn handle_analyze_document(
-    id: serde_json::Value,
-    params: serde_json::Value,
-) -> serde_json::Value {
+fn handle_analyze_document(id: serde_json::Value, params: serde_json::Value) -> serde_json::Value {
     let file = params
         .get("file")
         .or_else(|| params.get("path"))
@@ -426,10 +423,7 @@ fn lsp_range_to_source_range(range: &serde_json::Value) -> serde_json::Value {
     let start = range.get("start").unwrap_or(&serde_json::Value::Null);
     let end = range.get("end").unwrap_or(&serde_json::Value::Null);
     let start_line = start.get("line").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
-    let start_col = start
-        .get("character")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let start_col = start.get("character").and_then(|v| v.as_u64()).unwrap_or(0);
     let end_line = end.get("line").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
     let end_col = end
         .get("character")

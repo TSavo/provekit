@@ -3,7 +3,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{json, Value as Json};
 
@@ -71,17 +70,13 @@ fn write_executable(path: &Path, body: &str) {
 }
 
 fn build_python_lift_source() -> PathBuf {
-    static SEQ: AtomicU64 = AtomicU64::new(0);
     let pythonpath = python_source_lift_src()
         .into_os_string()
         .into_string()
         .expect("Python lift source root must be UTF-8");
     let quoted_pythonpath = shell_single_quote(&pythonpath);
-    let script = std::env::temp_dir().join(format!(
-        "provekit-lift-python-source-{}-{}.sh",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
+    let script_dir = unique_dir("lift-script");
+    let script = script_dir.join("provekit-lift-python-source.sh");
     let body = format!(
         "#!/bin/sh\nPYTHON=${{PYTHON:-python3}}\n\
          PYTHONPATH={quoted_pythonpath}${{PYTHONPATH:+:$PYTHONPATH}}\n\

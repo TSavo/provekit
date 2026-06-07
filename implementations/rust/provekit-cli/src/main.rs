@@ -38,7 +38,6 @@ mod cmd_release_gate;
 mod cmd_self_check;
 mod cmd_verify;
 mod cmd_version;
-mod witness_verify;
 mod doctor;
 mod doctor_oracle;
 pub mod floor_runtime_check;
@@ -49,6 +48,7 @@ pub mod panic_annotations_runtime;
 mod project_config;
 mod report_fmt;
 mod sort_morphism_catalog;
+mod witness_verify;
 
 /// Exit codes used across subcommands.
 pub const EXIT_OK: u8 = 0;

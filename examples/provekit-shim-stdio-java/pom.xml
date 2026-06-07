@@ -16,7 +16,6 @@
         Concept names aligned with provekit-shim-stdio-rust for cross-library cluster
         membership under concept:family:stdio-stream. Sister shim to:
           - rust:  provekit-shim-stdio-rust (std::io)
-          - ts:    provekit-shim-stdio-typescript (node:readline + process.stdout)
           - python: provekit-shim-stdio-python (sys.stdin / sys.stdout / sys.stderr)
         All anchor to boundary:stdio-line-stream.
     </description>

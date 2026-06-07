@@ -162,12 +162,18 @@ fn handle_resolve_witness(id: &Value, params: &Value) -> Value {
                 format!("per-test witness memento {cid} is missing a `test` field"),
             );
         };
-        let code_cid = memento.get("code_cid").and_then(|v| v.as_str()).unwrap_or("");
+        let code_cid = memento
+            .get("code_cid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let runtime_cid = memento
             .get("runtime_cid")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let outcome = memento.get("outcome").and_then(|v| v.as_str()).unwrap_or("");
+        let outcome = memento
+            .get("outcome")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let wsp = ws.to_string();
         match kit::recompute_one_test_body(
             &cid,

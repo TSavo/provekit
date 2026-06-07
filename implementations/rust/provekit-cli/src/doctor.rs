@@ -2903,8 +2903,9 @@ mod tests {
                         detail: "engagement is observed at self-check time".to_string(),
                     },
                     convergence: OracleResolutionConvergence::Deferred {
-                        detail: "oracle readiness cannot be established until the host is locatable"
-                            .to_string(),
+                        detail:
+                            "oracle readiness cannot be established until the host is locatable"
+                                .to_string(),
                     },
                 },
             }
@@ -3254,7 +3255,9 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
                 .evidence
                 .get("manifestPath")
                 .and_then(Value::as_str)
-                .is_some_and(|path| path.ends_with(".provekit/lift/rust-fn-contracts/manifest.toml")),
+                .is_some_and(
+                    |path| path.ends_with(".provekit/lift/rust-fn-contracts/manifest.toml")
+                ),
             "version check evidence should name the manifest path: {version_check:#?}"
         );
     }
@@ -3400,11 +3403,6 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
     }
 
     #[test]
-    fn doctor_collects_manifest_declared_authoring_typescript_source_surface() {
-        assert_manifest_declared_authoring_surface_is_collected("typescript-source");
-    }
-
-    #[test]
     fn doctor_collects_manifest_declared_authoring_go_source_surface() {
         assert_manifest_declared_authoring_surface_is_collected("go-source");
     }
@@ -3424,10 +3422,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         let td = TempDir::new().unwrap();
         let kit = td.path();
         let plugin = kit.join("unclaimed-plugin");
-        make_kit_declaration_plugin(
-            &plugin,
-            valid_panic_freedom_declaration("unclaimed-source"),
-        );
+        make_kit_declaration_plugin(&plugin, valid_panic_freedom_declaration("unclaimed-source"));
         write_kit(kit, "");
         write_manifest_with_capabilities(
             kit,
@@ -3443,11 +3438,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
-        assert_no_check_by_id_and_surface(
-            &report,
-            "kit.declaration.available",
-            "unclaimed-source",
-        );
+        assert_no_check_by_id_and_surface(&report, "kit.declaration.available", "unclaimed-source");
     }
 
     #[test]

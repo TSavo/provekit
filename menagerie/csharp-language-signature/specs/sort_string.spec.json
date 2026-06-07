@@ -1,7 +1,0 @@
-{
-  "kind": "sort",
-  "fn_name": "csharp:String",
-  "formals": [],
-  "return_sort": {"kind": "kind", "name": "*"},
-  "post": {"kind": "sort-description", "name": "String", "description": "C# string sort (System.String, UTF-16)."}
-}

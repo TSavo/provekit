@@ -91,7 +91,6 @@ impl KitRegistry {
             ProveKit::CONFORMANCE,
         );
     }
-
 }
 
 /// Executed path output with terminal and per-step inspection accessors.

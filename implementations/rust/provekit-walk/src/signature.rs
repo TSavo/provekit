@@ -2,17 +2,16 @@
 //
 // Rust language signature lookup.
 //
-// The CIDs are minted in menagerie/rust-language-signature. This module
-// embeds the component list so lifted Rust terms can resolve surface
-// constructors into the rust:rust operation address space.
+// Lifted Rust terms resolve surface constructors into the rust:rust operation
+// address space. The old menagerie catalog is gone; derive stable local
+// operation CIDs from canonical operation names instead of reading a side table.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-pub const RUST_LANGUAGE_SIGNATURE_CID: &str = "blake3-512:6e96976ee181cc32de6dfb326b9b9a96e5f47b7ba8afef9606d93cee15984fc1c81de78491da094a788bf50725b26824e22b16d79a5b80dc76cd169c59aa844c";
+use provekit_canonicalizer::blake3_512_of;
 
-const COMPONENT_CIDS_JSON: &str =
-    include_str!("../../../../menagerie/rust-language-signature/component-cids.json");
+pub const RUST_LANGUAGE_SIGNATURE_CID: &str = "blake3-512:6e96976ee181cc32de6dfb326b9b9a96e5f47b7ba8afef9606d93cee15984fc1c81de78491da094a788bf50725b26824e22b16d79a5b80dc76cd169c59aa844c";
 
 static OP_CIDS: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
@@ -64,116 +63,94 @@ pub fn canonical_operation_name(surface_name: &str) -> Option<&str> {
 }
 
 fn load_op_cids() -> HashMap<&'static str, &'static str> {
-    let rows: serde_json::Value =
-        serde_json::from_str(COMPONENT_CIDS_JSON).expect("embedded component-cids.json is valid");
-    let mut by_spec = HashMap::new();
-    let Some(items) = rows.as_array() else {
-        return by_spec;
-    };
-    for item in items {
-        if item.get("kind").and_then(|v| v.as_str()) != Some("algorithm") {
-            continue;
-        }
-        let Some(spec) = item.get("spec").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if !spec.starts_with("op_") {
-            continue;
-        }
-        let Some(cid) = item.get("cid").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(op_name) = op_name_from_spec(spec) else {
-            continue;
-        };
-        by_spec.insert(
-            op_name,
+    let mut by_name = HashMap::new();
+    for op_name in KNOWN_OP_NAMES {
+        let cid = blake3_512_of(format!("provekit:rust-op:{op_name}").as_bytes());
+        by_name.insert(
+            *op_name,
             Box::leak(cid.to_string().into_boxed_str()) as &'static str,
         );
     }
-    by_spec
+    by_name
 }
 
-fn op_name_from_spec(spec: &str) -> Option<&'static str> {
-    match spec {
-        "op_add.spec.json" => Some("add"),
-        "op_and.spec.json" => Some("and"),
-        "op_arm.spec.json" => Some("arm"),
-        "op_arms.spec.json" => Some("arms"),
-        "op_array.spec.json" => Some("array"),
-        "op_array_repeat.spec.json" => Some("array_repeat"),
-        "op_assign.spec.json" => Some("assign"),
-        "op_await.spec.json" => Some("await"),
-        "op_bit_and.spec.json" => Some("bit_and"),
-        "op_bit_not.spec.json" => Some("bit_not"),
-        "op_bit_or.spec.json" => Some("bit_or"),
-        "op_bit_xor.spec.json" => Some("bit_xor"),
-        "op_borrow.spec.json" => Some("borrow"),
-        "op_borrow_mut.spec.json" => Some("borrow_mut"),
-        "op_box_new.spec.json" => Some("box_new"),
-        "op_break.spec.json" => Some("break"),
-        "op_call.spec.json" => Some("call"),
-        "op_call_result.spec.json" => Some("call_result"),
-        "op_cast.spec.json" => Some("cast"),
-        "op_closure.spec.json" => Some("closure"),
-        "op_closure_call.spec.json" => Some("closure_call"),
-        "op_continue.spec.json" => Some("continue"),
-        "op_deref.spec.json" => Some("deref"),
-        "op_deref_raw.spec.json" => Some("deref_raw"),
-        "op_div.spec.json" => Some("div"),
-        "op_drop.spec.json" => Some("drop"),
-        "op_eq.spec.json" => Some("eq"),
-        "op_field.spec.json" => Some("field"),
-        "op_for.spec.json" => Some("for"),
-        "op_ge.spec.json" => Some("ge"),
-        "op_gt.spec.json" => Some("gt"),
-        "op_guarded_arm.spec.json" => Some("guarded_arm"),
-        "op_if.spec.json" => Some("if"),
-        "op_if_let.spec.json" => Some("if_let"),
-        "op_index.spec.json" => Some("index"),
-        "op_into_iter.spec.json" => Some("into_iter"),
-        "op_ite.spec.json" => Some("ite"),
-        "op_le.spec.json" => Some("le"),
-        "op_len.spec.json" => Some("len"),
-        "op_let.spec.json" => Some("let"),
-        "op_loop.spec.json" => Some("loop"),
-        "op_lt.spec.json" => Some("lt"),
-        "op_match.spec.json" => Some("match"),
-        "op_match_expr.spec.json" => Some("match_expr"),
-        "op_member.spec.json" => Some("member"),
-        "op_method_call.spec.json" => Some("method_call"),
-        "op_move.spec.json" => Some("move"),
-        "op_mul.spec.json" => Some("mul"),
-        "op_ne.spec.json" => Some("ne"),
-        "op_neg.spec.json" => Some("neg"),
-        "op_next.spec.json" => Some("next"),
-        "op_not.spec.json" => Some("not"),
-        "op_or.spec.json" => Some("or"),
-        "op_panic.spec.json" => Some("panic"),
-        "op_pattern_bind.spec.json" => Some("pattern_bind"),
-        "op_pattern_err.spec.json" => Some("pattern_err"),
-        "op_pattern_none.spec.json" => Some("pattern_none"),
-        "op_pattern_ok.spec.json" => Some("pattern_ok"),
-        "op_pattern_some.spec.json" => Some("pattern_some"),
-        "op_pattern_wild.spec.json" => Some("pattern_wild"),
-        "op_range.spec.json" => Some("range"),
-        "op_range_incl.spec.json" => Some("range_incl"),
-        "op_rem.spec.json" => Some("rem"),
-        "op_return.spec.json" => Some("return"),
-        "op_seq.spec.json" => Some("seq"),
-        "op_shl.spec.json" => Some("shl"),
-        "op_shr.spec.json" => Some("shr"),
-        "op_skip.spec.json" => Some("skip"),
-        "op_sub.spec.json" => Some("sub"),
-        "op_switch.spec.json" => Some("switch"),
-        "op_try.spec.json" => Some("try"),
-        "op_try_option.spec.json" => Some("try_option"),
-        "op_tuple.spec.json" => Some("tuple"),
-        "op_while.spec.json" => Some("while"),
-        "op_while_let.spec.json" => Some("while_let"),
-        _ => None,
-    }
-}
+const KNOWN_OP_NAMES: &[&str] = &[
+    "add",
+    "and",
+    "arm",
+    "arms",
+    "array",
+    "array_repeat",
+    "assign",
+    "await",
+    "bit_and",
+    "bit_not",
+    "bit_or",
+    "bit_xor",
+    "borrow",
+    "borrow_mut",
+    "box_new",
+    "break",
+    "call",
+    "call_result",
+    "cast",
+    "closure",
+    "closure_call",
+    "continue",
+    "deref",
+    "deref_raw",
+    "div",
+    "drop",
+    "eq",
+    "field",
+    "for",
+    "ge",
+    "gt",
+    "guarded_arm",
+    "if",
+    "if_let",
+    "index",
+    "into_iter",
+    "ite",
+    "le",
+    "len",
+    "let",
+    "loop",
+    "lt",
+    "match",
+    "match_expr",
+    "member",
+    "method_call",
+    "move",
+    "mul",
+    "ne",
+    "neg",
+    "next",
+    "not",
+    "or",
+    "panic",
+    "pattern_bind",
+    "pattern_err",
+    "pattern_none",
+    "pattern_ok",
+    "pattern_some",
+    "pattern_wild",
+    "range",
+    "range_incl",
+    "rem",
+    "return",
+    "seq",
+    "shl",
+    "shr",
+    "skip",
+    "sub",
+    "switch",
+    "try",
+    "try_option",
+    "tuple",
+    "while",
+    "while_let",
+];
 
 #[cfg(test)]
 mod tests {

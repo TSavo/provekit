@@ -267,7 +267,10 @@ fn analyze_document_floor_fixture_emits_shared_callsite_diagnostic() {
         result["statuses"].as_array().is_some(),
         "statuses must be an array: {result}"
     );
-    assert!(result["project"].is_null(), "project state must be null: {result}");
+    assert!(
+        result["project"].is_null(),
+        "project state must be null: {result}"
+    );
 
     let diagnostics = result["diagnostics"]
         .as_array()
@@ -287,10 +290,7 @@ fn analyze_document_floor_fixture_emits_shared_callsite_diagnostic() {
     assert_eq!(diagnostic["kit_id"].as_str(), Some("rust"));
     assert_eq!(diagnostic["range"]["start_line"].as_u64(), Some(20));
     assert_eq!(diagnostic["range"]["start_col"].as_u64(), Some(17));
-    assert_eq!(
-        diagnostic["data"]["callee"].as_str(),
-        Some("checkPositive")
-    );
+    assert_eq!(diagnostic["data"]["callee"].as_str(), Some("checkPositive"));
 
     let _ = plugin.exchange(&json!({"jsonrpc":"2.0","id":99,"method":"shutdown"}));
     let _ = plugin.wait_for_exit(Duration::from_secs(10));

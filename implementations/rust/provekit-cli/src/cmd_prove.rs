@@ -125,7 +125,6 @@ fn find_manifest(project_root: &std::path::Path, surface: &str) -> Result<Plugin
     ))
 }
 
-
 // ---------------------------------------------------------------------------
 // pub fn run: entry point from main.rs
 // ---------------------------------------------------------------------------
@@ -395,4 +394,3 @@ fn read_json_value(path: &Path) -> Result<Value, String> {
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))
 }
-

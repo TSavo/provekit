@@ -17,11 +17,5 @@ provekit-realize-python = "provekit_realize_python_core.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/provekit_realize_python_core"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"../../../menagerie/python-language-signature/specs/body-templates/python-canonical-bodies.json" = "provekit_realize_python_core/body_templates/python-canonical-bodies.json"
-"../../../menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-libprovekit.json" = "provekit_realize_python_core/body_templates/python-canonical-bodies-libprovekit.json"
-"../../../menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-rust-runtime.json" = "provekit_realize_python_core/body_templates/python-canonical-bodies-rust-runtime.json"
-"../../../menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-blake3.json" = "provekit_realize_python_core/body_templates/python-canonical-bodies-blake3.json"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]

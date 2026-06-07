@@ -1,3 +1,0 @@
-forall_int_gt_zero
-eq_parseint_zero_zero
-forall_string_parseint_gte_zero

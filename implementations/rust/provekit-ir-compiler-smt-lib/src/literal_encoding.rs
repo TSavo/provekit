@@ -283,13 +283,22 @@ mod tests {
     use serde_json::json;
 
     fn str_c(s: &str) -> Term {
-        serde_json::from_value(json!({"kind":"const","value":s,"sort":{"kind":"primitive","name":"String"}})).unwrap()
+        serde_json::from_value(
+            json!({"kind":"const","value":s,"sort":{"kind":"primitive","name":"String"}}),
+        )
+        .unwrap()
     }
     fn int_c(n: i64) -> Term {
-        serde_json::from_value(json!({"kind":"const","value":n,"sort":{"kind":"primitive","name":"Int"}})).unwrap()
+        serde_json::from_value(
+            json!({"kind":"const","value":n,"sort":{"kind":"primitive","name":"Int"}}),
+        )
+        .unwrap()
     }
     fn bool_c(b: bool) -> Term {
-        serde_json::from_value(json!({"kind":"const","value":b,"sort":{"kind":"primitive","name":"Bool"}})).unwrap()
+        serde_json::from_value(
+            json!({"kind":"const","value":b,"sort":{"kind":"primitive","name":"Bool"}}),
+        )
+        .unwrap()
     }
     fn none_c() -> Term {
         serde_json::from_value(json!({"kind":"ctor","name":"None","args":[]})).unwrap()
@@ -301,7 +310,9 @@ mod tests {
         }
     }
     fn and(a: Formula, b: Formula) -> Formula {
-        Formula::And { operands: vec![a, b] }
+        Formula::And {
+            operands: vec![a, b],
+        }
     }
     fn var(n: &str) -> Term {
         serde_json::from_value(json!({"kind":"var","name":n})).unwrap()
@@ -328,7 +339,11 @@ mod tests {
         // Pure arithmetic: two int literals, no string/None -> no distinct line.
         let f = and(atomic_eq(var("r"), int_c(5)), atomic_eq(var("r"), int_c(6)));
         let lc = LiteralConstants::from_formula(&f);
-        assert_eq!(lc.preamble(), "", "no opaque literal -> byte-identical (empty)");
+        assert_eq!(
+            lc.preamble(),
+            "",
+            "no opaque literal -> byte-identical (empty)"
+        );
     }
 
     #[test]
@@ -336,7 +351,11 @@ mod tests {
         // Single `≠(x, None)` style: one opaque, no other member -> no axiom.
         let f = atomic_eq(var("x"), none_c());
         let lc = LiteralConstants::from_formula(&f);
-        assert_eq!(lc.preamble(), "", "lone None -> no distinctness axiom (byte-identical)");
+        assert_eq!(
+            lc.preamble(),
+            "",
+            "lone None -> no distinctness axiom (byte-identical)"
+        );
     }
 
     #[test]
@@ -344,38 +363,66 @@ mod tests {
         let f = atomic_eq(var("r"), str_c("a"));
         let lc = LiteralConstants::from_formula(&f);
         let p = lc.preamble();
-        assert!(p.contains("(declare-const strlit_"), "declares the strlit const: {p}");
-        assert!(!p.contains("(assert (distinct"), "no distinct for a lone string: {p}");
+        assert!(
+            p.contains("(declare-const strlit_"),
+            "declares the strlit const: {p}"
+        );
+        assert!(
+            !p.contains("(assert (distinct"),
+            "no distinct for a lone string: {p}"
+        );
     }
 
     #[test]
     fn str_and_int_get_distinctness() {
-        let f = and(atomic_eq(var("r"), str_c("5")), atomic_eq(var("r"), int_c(5)));
+        let f = and(
+            atomic_eq(var("r"), str_c("5")),
+            atomic_eq(var("r"), int_c(5)),
+        );
         let p = LiteralConstants::from_formula(&f).preamble();
-        assert!(p.contains("(assert (distinct strlit_"), "str vs int -> distinct: {p}");
+        assert!(
+            p.contains("(assert (distinct strlit_"),
+            "str vs int -> distinct: {p}"
+        );
         assert!(p.contains(" 5)"), "distinct includes the int value 5: {p}");
     }
 
     #[test]
     fn none_and_bool_false_get_distinctness_over_zero() {
         // None vs False(=0): the opaque None must be distinct from concrete 0.
-        let f = and(atomic_eq(var("r"), none_c()), atomic_eq(var("r"), bool_c(false)));
+        let f = and(
+            atomic_eq(var("r"), none_c()),
+            atomic_eq(var("r"), bool_c(false)),
+        );
         let p = LiteralConstants::from_formula(&f).preamble();
-        assert!(p.contains("(assert (distinct None 0))"), "None distinct from 0: {p}");
+        assert!(
+            p.contains("(assert (distinct None 0))"),
+            "None distinct from 0: {p}"
+        );
     }
 
     #[test]
     fn bool_true_int_one_no_distinct_member_collision() {
         // True(=1) and int 1: both concrete, no opaque -> no distinct, and the
         // concrete set coalesces 1 (so they remain EQUAL -> consistent).
-        let f = and(atomic_eq(var("r"), bool_c(true)), atomic_eq(var("r"), int_c(1)));
+        let f = and(
+            atomic_eq(var("r"), bool_c(true)),
+            atomic_eq(var("r"), int_c(1)),
+        );
         let lc = LiteralConstants::from_formula(&f);
-        assert_eq!(lc.preamble(), "", "bool+int both concrete, no opaque -> no axiom");
+        assert_eq!(
+            lc.preamble(),
+            "",
+            "bool+int both concrete, no opaque -> no axiom"
+        );
     }
 
     #[test]
     fn negative_int_rendered_as_smt_neg() {
-        let f = and(atomic_eq(var("r"), str_c("x")), atomic_eq(var("r"), int_c(-3)));
+        let f = and(
+            atomic_eq(var("r"), str_c("x")),
+            atomic_eq(var("r"), int_c(-3)),
+        );
         let p = LiteralConstants::from_formula(&f).preamble();
         assert!(p.contains("(- 3)"), "negative int rendered as (- 3): {p}");
     }
@@ -390,7 +437,10 @@ mod tests {
             json!({"kind":"const","value":5.0,"sort":{"kind":"primitive","name":"Real"}}),
         )
         .unwrap();
-        let f = and(atomic_eq(var("r"), str_c("x")), atomic_eq(var("r"), float_c));
+        let f = and(
+            atomic_eq(var("r"), str_c("x")),
+            atomic_eq(var("r"), float_c),
+        );
         let p = LiteralConstants::from_formula(&f).preamble();
         assert!(
             p.contains("(declare-const strlit_"),
@@ -400,7 +450,10 @@ mod tests {
             !p.contains("(assert (distinct"),
             "float must not pull a distinctness axiom (residual): {p}"
         );
-        assert!(!p.contains("5.0"), "float value must not appear in preamble: {p}");
+        assert!(
+            !p.contains("5.0"),
+            "float value must not appear in preamble: {p}"
+        );
     }
 
     #[test]
@@ -415,7 +468,10 @@ mod tests {
             json!({"kind":"const","value":true,"sort":{"kind":"primitive","name":"Int"}}),
         )
         .unwrap();
-        let f = and(atomic_eq(var("r"), str_c("x")), atomic_eq(var("r"), bool_int));
+        let f = and(
+            atomic_eq(var("r"), str_c("x")),
+            atomic_eq(var("r"), bool_int),
+        );
         let p = LiteralConstants::from_formula(&f).preamble();
         assert!(
             p.contains("(assert (distinct strlit_") && p.trim_end().ends_with(" 1))"),

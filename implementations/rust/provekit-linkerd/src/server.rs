@@ -321,9 +321,7 @@ async fn handle_client(
             "parseFile" => handle_parse_file(state.clone(), &params, &id).await,
             "getDiagnostics" => handle_get_diagnostics(state.clone(), &params, &id).await,
             "projectStatus" => handle_project_status(state.clone(), &params, &id).await,
-            "rustAnalyzerReady" => {
-                handle_rust_analyzer_ready(ra_host.clone(), &params, &id).await
-            }
+            "rustAnalyzerReady" => handle_rust_analyzer_ready(ra_host.clone(), &params, &id).await,
             "flushCache" => handle_flush_cache(state.clone(), &params, &id).await,
             "resolveReceiverCrate" => {
                 handle_resolve_receiver_crate(

@@ -116,10 +116,7 @@ pub fn run(args: MaterializeBoundaryArgs) -> u8 {
     let results = match invoke_plugin(&manifest, &project_root, &req) {
         Ok(resp) => {
             if let Some(err) = resp.get("error") {
-                eprintln!(
-                    "{}: materialize kit error: {err}",
-                    "error".red().bold()
-                );
+                eprintln!("{}: materialize kit error: {err}", "error".red().bold());
                 return EXIT_VERIFY_FAIL;
             }
             match resp
@@ -139,10 +136,7 @@ pub fn run(args: MaterializeBoundaryArgs) -> u8 {
             }
         }
         Err(e) => {
-            eprintln!(
-                "{}: materialize dispatch failed: {e}",
-                "error".red().bold()
-            );
+            eprintln!("{}: materialize dispatch failed: {e}", "error".red().bold());
             return EXIT_VERIFY_FAIL;
         }
     };

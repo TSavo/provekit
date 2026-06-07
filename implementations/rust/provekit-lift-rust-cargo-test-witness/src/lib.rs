@@ -40,9 +40,7 @@ use std::process::Command;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_symbolic::{
-    atomic_,
-    serialize::marshal_declarations,
-    ContractDecl, EvidenceCertificate, EvidenceTerm,
+    atomic_, serialize::marshal_declarations, ContractDecl, EvidenceCertificate, EvidenceTerm,
 };
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
 
@@ -150,7 +148,7 @@ pub struct Witness {
     pub code_cid: String,
     pub runtime_cid: String,
     pub test_id: String,
-    pub outcome: String, // "passed" | "failed"
+    pub outcome: String,         // "passed" | "failed"
     pub code_files: Vec<String>, // project-relative, sorted
     pub cid: String,
 }
@@ -695,7 +693,12 @@ where
     R: FnOnce(&str, &[String]) -> Result<Witness, String>,
 {
     let probe = probe_witness(
-        pinned_cid, code_cid, runtime_cid, test_id, outcome, code_files,
+        pinned_cid,
+        code_cid,
+        runtime_cid,
+        test_id,
+        outcome,
+        code_files,
     );
     // PRE-CHECK BEFORE ANY EXECUTION. Byte-for-byte the python guard message.
     if blake3_512_of(&witness_body(&probe)) != pinned_cid {
@@ -790,14 +793,8 @@ pub fn lift_project(project_dir: &Path) -> Result<Option<LiftResult>, String> {
     let passed = witnesses.iter().filter(|w| w.outcome == "passed").count();
     let count = witnesses.len();
     let rc = runtime_cid();
-    let contract = witness_package_contract_ir(
-        &bundle_cid,
-        &rc,
-        &test_files,
-        &code_files,
-        count,
-        passed,
-    );
+    let contract =
+        witness_package_contract_ir(&bundle_cid, &rc, &test_files, &code_files, count, passed);
     let memento =
         witness_package_memento(&bundle_cid, &test_files, &code_files, count, passed, None)?;
     Ok(Some(LiftResult {
@@ -818,9 +815,7 @@ pub fn blake3_of(bytes: &[u8]) -> String {
 /// Read the proofData JSON out of a serialized custom-evidence EvidenceTerm (the
 /// shape `prove` writes to the temp `.proof` and hands the discharge bin):
 ///   {"kind":"evidence","proofType":"custom","certificate":{...,"proofData":"<json>"}}
-pub fn parse_evidence_proof_data(
-    evidence_json: &str,
-) -> Result<serde_json::Value, String> {
+pub fn parse_evidence_proof_data(evidence_json: &str) -> Result<serde_json::Value, String> {
     let env: serde_json::Value =
         serde_json::from_str(evidence_json).map_err(|e| format!("parse evidence: {e}"))?;
     let pd = env

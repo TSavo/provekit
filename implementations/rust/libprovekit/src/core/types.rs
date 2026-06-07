@@ -800,9 +800,7 @@ pub enum Dialect {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ConformanceDeclaration {
     /// Kit emits target source and pins the fixture directory that proves it.
-    Carrier {
-        fixtures_path: PathBuf,
-    },
+    Carrier { fixtures_path: PathBuf },
     /// Kit does not emit target source; `reason` records the audit premise.
     NonCarrier { reason: &'static str },
 }

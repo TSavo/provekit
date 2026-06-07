@@ -1,7 +1,0 @@
-{
-  "kind": "sort",
-  "fn_name": "csharp:Stmt",
-  "formals": [],
-  "return_sort": {"kind": "kind", "name": "*"},
-  "post": {"kind": "sort-description", "name": "Stmt", "description": "C# statement term sort."}
-}

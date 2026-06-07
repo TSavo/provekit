@@ -1,7 +1,0 @@
-{
-  "kind": "sort",
-  "fn_name": "csharp:Int",
-  "formals": [],
-  "return_sort": {"kind": "kind", "name": "*"},
-  "post": {"kind": "sort-description", "name": "Int", "description": "C# 32-bit signed integer (System.Int32)."}
-}

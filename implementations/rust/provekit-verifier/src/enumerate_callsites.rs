@@ -110,9 +110,7 @@ fn panic_loci_from_body(body: &Json) -> Vec<Json> {
     let old = json_array_field(body, "panicLoci");
     let new = json_array_field(body, "effectLoci")
         .into_iter()
-        .filter(|locus| {
-            locus.get("effectKind").and_then(|v| v.as_str()) == Some(PANIC_EFFECT_KIND)
-        })
+        .filter(|locus| locus.get("effectKind").and_then(|v| v.as_str()) == Some(PANIC_EFFECT_KIND))
         .collect::<Vec<_>>();
 
     if old.is_empty() {
@@ -1694,8 +1692,10 @@ mod guard_propagation_tests {
             panic_freedom::IS_OK_CONCEPT,
         ] {
             let body = cf_guarded(pred("pred_a"), leaf_call(bad_name));
-            let sites =
-                run(&pool_with_leaf_scoped_panic_bridge(body, panic_freedom::METHOD_UNWRAP));
+            let sites = run(&pool_with_leaf_scoped_panic_bridge(
+                body,
+                panic_freedom::METHOD_UNWRAP,
+            ));
             let cs = leaf_callsite(&sites, panic_freedom::METHOD_UNWRAP);
             assert!(
                 cs.guard_facts.is_empty(),

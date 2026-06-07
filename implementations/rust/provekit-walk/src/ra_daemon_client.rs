@@ -270,8 +270,8 @@ fn parse_pos_key(key: &str) -> Option<(String, u32, u32)> {
 /// the SAME project share ONE warm daemon (the entire point of residency). We
 /// canonicalize first so `.` / symlink variants of the same root collapse.
 fn project_cid_from_workspace(workspace_root: &Path) -> String {
-    let canonical = std::fs::canonicalize(workspace_root)
-        .unwrap_or_else(|_| workspace_root.to_path_buf());
+    let canonical =
+        std::fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
     let mut h = std::collections::hash_map::DefaultHasher::new();
     canonical.to_string_lossy().hash(&mut h);
     // Prefix so it is visibly the RA-resolution daemon, distinct from any
@@ -318,7 +318,8 @@ fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Result<Un
 
     // Inherit PROVEKIT_RESOLVE_ORACLE / PROVEKIT_RUST_ANALYZER so the daemon's
     // RA host honours the same opt-in as the cold path did.
-    let binary = std::env::var("PROVEKIT_LINKERD_BIN").unwrap_or_else(|_| "provekit-linkerd".into());
+    let binary =
+        std::env::var("PROVEKIT_LINKERD_BIN").unwrap_or_else(|_| "provekit-linkerd".into());
     debug!(binary = %binary, socket = %socket_path.display(), "ra-daemon: spawning provekit-linkerd");
     // The daemon detaches its stdio. For diagnosis, PROVEKIT_LINKERD_LOG can
     // redirect the daemon's stderr to a file (otherwise it is discarded so the

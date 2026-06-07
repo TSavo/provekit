@@ -205,12 +205,15 @@ fn try_witness_discharge(
         Ok(p) if !p.trim().is_empty() => p,
         _ => {
             return Some(undecidable(
-                "custom witness present but PROVEKIT_WITNESS_PROJECT_DIR unset (fail-closed)".into(),
+                "custom witness present but PROVEKIT_WITNESS_PROJECT_DIR unset (fail-closed)"
+                    .into(),
             ))
         }
     };
-    let tmp = std::env::temp_dir()
-        .join(format!("{}.witness.proof", contract_cid.replace([':', '/'], "_")));
+    let tmp = std::env::temp_dir().join(format!(
+        "{}.witness.proof",
+        contract_cid.replace([':', '/'], "_")
+    ));
     if let Err(e) = std::fs::write(&tmp, evidence.to_string()) {
         return Some(undecidable(format!("witness temp write failed: {e}")));
     }
@@ -235,7 +238,11 @@ fn try_witness_discharge(
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: Json = match serde_json::from_str(stdout.lines().last().unwrap_or("")) {
         Ok(j) => j,
-        Err(e) => return Some(undecidable(format!("witness discharge output unparseable: {e}"))),
+        Err(e) => {
+            return Some(undecidable(format!(
+                "witness discharge output unparseable: {e}"
+            )))
+        }
     };
     let verdict_str = parsed
         .get("verdict")
@@ -501,10 +508,19 @@ mod tests {
 
         // consumer ==6 + imported numpy ==5 (distinct CIDs) -> and(==5,==6) -> REFUSED
         let mut pool = MementoPool::default();
-        insert_contract(&mut pool, "blake3-512:consumer6", name, eqf(var("r"), int(6)));
+        insert_contract(
+            &mut pool,
+            "blake3-512:consumer6",
+            name,
+            eqf(var("r"), int(6)),
+        );
         insert_contract(&mut pool, "blake3-512:numpy5", name, eqf(var("r"), int(5)));
         let res = verify_consistency(&pool, &plan, &reg);
-        assert_eq!(res.len(), 1, "same-named contracts collapse to one obligation: {res:?}");
+        assert_eq!(
+            res.len(),
+            1,
+            "same-named contracts collapse to one obligation: {res:?}"
+        );
         assert_eq!(
             res[0].verdict,
             ObligationVerdict::Unsatisfied,
@@ -552,7 +568,8 @@ mod tests {
         insert_contract(&mut pool, "blake3-512:c6", name, eqf(var("r"), int(6)));
         let res = verify_consistency(&pool, &plan, &reg);
         assert!(
-            res.iter().any(|r| r.verdict == ObligationVerdict::Unsatisfied),
+            res.iter()
+                .any(|r| r.verdict == ObligationVerdict::Unsatisfied),
             "the contradiction must surface despite a witness member: {res:?}"
         );
     }
@@ -566,13 +583,28 @@ mod tests {
         let mut pool = MementoPool::default();
         // Two same-named, contradictory-looking contracts under a BARE test name.
         // They are about independent subjects; conjoining would falsely refuse.
-        insert_contract(&mut pool, "blake3-512:t1", "test_add", eqf(var("r"), int(5)));
-        insert_contract(&mut pool, "blake3-512:t2", "test_add", eqf(var("r"), int(6)));
+        insert_contract(
+            &mut pool,
+            "blake3-512:t1",
+            "test_add",
+            eqf(var("r"), int(5)),
+        );
+        insert_contract(
+            &mut pool,
+            "blake3-512:t2",
+            "test_add",
+            eqf(var("r"), int(6)),
+        );
         let res = verify_consistency(&pool, &plan, &reg);
         // per-contract: each is internally satisfiable -> both Discharged, none refused.
-        assert_eq!(res.len(), 2, "bare names must NOT collapse into one obligation: {res:?}");
+        assert_eq!(
+            res.len(),
+            2,
+            "bare names must NOT collapse into one obligation: {res:?}"
+        );
         assert!(
-            res.iter().all(|r| r.verdict == ObligationVerdict::Discharged),
+            res.iter()
+                .all(|r| r.verdict == ObligationVerdict::Discharged),
             "independent same-test-name contracts must not be conjoined: {res:?}"
         );
     }
@@ -604,9 +636,8 @@ mod tests {
             "evidence": {"kind":"evidence","proofType":"custom",
                          "certificate":{"tool":"stubtool","proofData":"{}"}},
         });
-        let call = || {
-            try_witness_discharge(&body, "blake3-512:cid".into(), "test_x".into()).unwrap()
-        };
+        let call =
+            || try_witness_discharge(&body, "blake3-512:cid".into(), "test_x".into()).unwrap();
 
         std::env::set_var("PROVEKIT_WITNESS_PROJECT_DIR", &dir);
         // routed to PROVEKIT_WITNESS_DISCHARGE_STUBTOOL (tool="stubtool")

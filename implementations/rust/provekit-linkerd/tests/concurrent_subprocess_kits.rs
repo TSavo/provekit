@@ -251,9 +251,6 @@ func Negate(x int) int {
     //
     // Heuristic: if all N requests ran sequentially, total would be > 1s (5 requests * 200ms).
     // If they ran in parallel, total should be < 1s. We allow 2s as a generous bound.
-    let expected_serial_time = Duration::from_secs_f64(
-        0.3 * NUM_CONCURRENT_REQUESTS as f64, // 0.3s per request * N
-    );
     let parallelism_threshold = Duration::from_millis(800);
 
     println!(

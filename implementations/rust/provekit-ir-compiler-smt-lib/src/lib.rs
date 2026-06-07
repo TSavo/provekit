@@ -315,16 +315,18 @@ mod tests {
             return;
         };
 
-        let reflexive = compile_to_parts(&eq(ctor("Ok", vec![var("x")]), ctor("Ok", vec![var("x")])))
-            .expect("compile reflexive");
+        let reflexive =
+            compile_to_parts(&eq(ctor("Ok", vec![var("x")]), ctor("Ok", vec![var("x")])))
+                .expect("compile reflexive");
         let r_out = run_z3(&z3, &format!("{}{}", reflexive.preamble, reflexive.body));
         assert!(
             r_out.contains("unsat"),
             "reflexive `Ok(x) == Ok(x)` must be unsat (discharged): {r_out}"
         );
 
-        let distinct = compile_to_parts(&eq(ctor("Ok", vec![var("x")]), ctor("Err", vec![var("x")])))
-            .expect("compile distinct");
+        let distinct =
+            compile_to_parts(&eq(ctor("Ok", vec![var("x")]), ctor("Err", vec![var("x")])))
+                .expect("compile distinct");
         let d_out = run_z3(&z3, &format!("{}{}", distinct.preamble, distinct.body));
         assert!(
             d_out.contains("sat") && !d_out.contains("unsat"),
@@ -333,7 +335,12 @@ mod tests {
     }
 
     fn which_z3() -> Option<String> {
-        for cand in ["z3", "/opt/homebrew/bin/z3", "/usr/local/bin/z3", "/usr/bin/z3"] {
+        for cand in [
+            "z3",
+            "/opt/homebrew/bin/z3",
+            "/usr/local/bin/z3",
+            "/usr/bin/z3",
+        ] {
             if std::process::Command::new(cand)
                 .arg("--version")
                 .output()
@@ -409,10 +416,10 @@ mod tests {
         // All must compile without parse error and give a real verdict.
         let z3 = which_z3().expect("z3 must be present for string-literal soundness check");
         let weird_cases = vec![
-            r#"{"a":"x"}"#,       // braces
-            r#"path\to\file"#,   // backslashes
-            "\x01",              // control char
-            "≥ ≤ ≠",            // unicode operators
+            r#"{"a":"x"}"#,    // braces
+            r#"path\to\file"#, // backslashes
+            "\x01",            // control char
+            "≥ ≤ ≠",           // unicode operators
         ];
         for s in weird_cases {
             let inv = eq(var("r"), string_const(s));
@@ -756,7 +763,7 @@ mod tests {
         // POSITIVE case: `forall x:opaque. true` must be discharged (negation unsat).
         let z3 = which_z3().expect(
             "z3 must be available for opaque-sort soundness check; \
-             install z3 and re-run (a missing z3 is a false green)"
+             install z3 and re-run (a missing z3 is a false green)",
         );
         let ir = serde_json::json!({
             "kind": "forall",
@@ -787,7 +794,7 @@ mod tests {
         // (negation sat). Before fix this falsely returned `unsat` (false pass).
         let z3 = which_z3().expect(
             "z3 must be available for opaque-sort soundness check; \
-             install z3 and re-run (a missing z3 is a false green)"
+             install z3 and re-run (a missing z3 is a false green)",
         );
         let ir = serde_json::json!({
             "kind": "forall",

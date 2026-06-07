@@ -193,11 +193,8 @@ pub fn run_release_gate_with_executor(
         }
 
         let floor = floor_signals_from_self_check_json(&self_check.stdout_json);
-        let floor_report = report_from_floor_signals(
-            Path::new(&target_path),
-            DoctorMode::ReleaseGate,
-            floor,
-        );
+        let floor_report =
+            report_from_floor_signals(Path::new(&target_path), DoctorMode::ReleaseGate, floor);
         if !floor_report.ok {
             failures.push(ReleaseGateFailure {
                 target: target_name.clone(),
@@ -357,10 +354,9 @@ fn floor_signals_from_self_check_json(json: &Value) -> FloorSignals {
             .get("droppedSites")
             .and_then(Value::as_array)
             .map_or(0, Vec::len),
-        panic_census_unnamed_count: json
-            .get("panicCensus")
-            .and_then(Value::as_array)
-            .map_or(0, |rows| {
+        panic_census_unnamed_count: json.get("panicCensus").and_then(Value::as_array).map_or(
+            0,
+            |rows| {
                 rows.iter()
                     .filter(|row| {
                         row.get("status").and_then(Value::as_str) != Some("proven")
@@ -368,7 +364,8 @@ fn floor_signals_from_self_check_json(json: &Value) -> FloorSignals {
                             && row.get("tierToClose").is_none()
                     })
                     .count()
-            }),
+            },
+        ),
         total_callsites: json
             .get("totalCallsites")
             .and_then(Value::as_u64)
@@ -466,7 +463,9 @@ fn discover_repo_root() -> Result<PathBuf, String> {
         if dir
             .join("implementations/rust/provekit-cli/Cargo.toml")
             .is_file()
-            && dir.join("implementations/rust/libprovekit/Cargo.toml").is_file()
+            && dir
+                .join("implementations/rust/libprovekit/Cargo.toml")
+                .is_file()
         {
             return Ok(dir);
         }
@@ -479,7 +478,11 @@ fn discover_repo_root() -> Result<PathBuf, String> {
 fn print_human(receipt: &ReleaseGateReceipt) {
     println!("ProvekIt release-gate");
     for target in &receipt.targets {
-        let status = if target.release_ready { "ready" } else { "blocked" };
+        let status = if target.release_ready {
+            "ready"
+        } else {
+            "blocked"
+        };
         println!(
             "target: {} ({}) K={} residue={} tierToClose={} rawUnproven={}",
             target.name,

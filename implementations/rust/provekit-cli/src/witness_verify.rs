@@ -74,7 +74,10 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
         // ENVELOPE INTEGRITY: the content must match its metadata. The body's
         // own witness_cid must equal the header's witnessCid, or the envelope
         // was tampered (content swapped under unchanged metadata).
-        let body_cid = body.get("witness_cid").and_then(|v| v.as_str()).unwrap_or("");
+        let body_cid = body
+            .get("witness_cid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if body_cid != witness_cid {
             out.push(WitnessVerifyResult {
                 witness_cid,
@@ -482,8 +485,12 @@ mod tests {
         let cid = blake3_512_of(body);
         let bad = fake_resolver(r#"{"jsonrpc":"2.0","id":1,"error":{"message":"unrelated kit"}}"#);
         let good = fake_resolver(&good_reply(body));
-        let forward =
-            resolve_over_resolvers(&[bad.clone(), good.clone()], &std::env::temp_dir(), &json!({}), &cid);
+        let forward = resolve_over_resolvers(
+            &[bad.clone(), good.clone()],
+            &std::env::temp_dir(),
+            &json!({}),
+            &cid,
+        );
         assert!(
             matches!(forward, Resolution::Verified { .. }),
             "bad-then-good must verify; got {forward:?}"
