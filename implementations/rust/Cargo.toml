@@ -17,7 +17,6 @@ members = [
     "libprovekit-rpc",
     "provekit-cli",
     "provekit-realize-rust-core",
-    "provekit-emit-rust-cargo-test",
     "provekit-macros",
     "provekit-macros-rt",
     "provekit-sugar",
