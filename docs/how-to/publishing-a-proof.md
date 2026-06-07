@@ -107,7 +107,7 @@ same call meets your contract about it. If a consumer stages your `.proof` in
 `.provekit/imports/` and asserts something that contradicts your contract, the
 verifier conjoins the two same-callsite contracts and refuses. This is
 demonstrated end to end in
-`implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py`;
+`implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py`;
 see [../explanation/product.md](../explanation/product.md).
 
 ---

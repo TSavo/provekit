@@ -131,7 +131,7 @@ and is proven. Identical assertions dedupe by CID and a lone contract is
 untouched, so consistent compositions stay proven and there is no false refusal.
 (`implementations/rust/provekit-verifier/src/consistency.rs:278-300`, locked by
 the `cross_proof_same_named_contracts_are_conjoined` test; end-to-end in
-`implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py`.)
+`implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py`.)
 
 ## Kit RPC
 

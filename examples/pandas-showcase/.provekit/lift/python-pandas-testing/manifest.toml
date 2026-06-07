@@ -2,16 +2,18 @@ name = "python-pandas-testing-lift"
 version = "0.1.0-draft"
 protocol_version = "pep/1.7.0"
 kind = "lift"
-# The pandas.testing assertion seat. Relative PYTHONPATH at the seat src + the
-# pytest seat it reuses for term machinery. Resolved from working_dir (project
-# root). AST-only: it does not import pandas, so the interpreter choice is
-# incidental (shares the witness venv).
+# The ONE assertion lifter -- the SAME lifter numpy-showcase uses. The "next
+# package" is no longer a package: pandas is just another testing library the one
+# lifter learns from imports, plus this workspace's
+# .provekit/vocab-exceptions/pandas.testing.json (extra_modules + the obj kwarg).
+# It imports pandas at lift time to derive the vocabulary, so the interpreter is
+# the witness venv (which has pandas). PYTHONPATH at the one lifter.
 command = [
     "/usr/bin/env",
-    "PYTHONPATH=../../implementations/python/provekit-lift-py-pandas-testing/src:../../implementations/python/provekit-lift-py-tests/src",
+    "PYTHONPATH=../../implementations/python/provekit-lift-py-tests/src",
     "/tmp/pandas-witness-venv/bin/python",
     "-m",
-    "provekit_lift_py_pandas_testing.lsp",
+    "provekit_lift_py_tests.assertion_lsp",
 ]
 working_dir = "."
 

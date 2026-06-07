@@ -104,12 +104,23 @@ class _ConstBool:
 
 
 @dataclass(frozen=True)
+class _ConstReal:
+    # The value is a CANONICAL DECIMAL STRING (e.g. "0.0000015"), never a Python
+    # float: a float has no deterministic textual form, and this term is hashed
+    # into the contract CID. The decimal string is exact and content-addressable;
+    # every solver compiler parses it as a real literal of `Real` sort. Tolerances
+    # like ``1.5 * 10**(-decimal)`` are exact decimals, so this is lossless.
+    value: str
+    sort: Sort
+
+
+@dataclass(frozen=True)
 class _Ctor:
     name: str
     args: Tuple["Term", ...]
 
 
-Term = Union[_Var, _ConstInt, _ConstStr, _ConstBool, _Ctor]
+Term = Union[_Var, _ConstInt, _ConstStr, _ConstBool, _ConstReal, _Ctor]
 
 
 def make_var(name: str) -> Term:
@@ -122,6 +133,15 @@ def num(n: int) -> Term:
 
 def str_const(s: str) -> Term:
     return _ConstStr(s, String())
+
+
+def real_lit(decimal_string: str) -> Term:
+    """A real literal carried as a canonical decimal string (e.g. "0.0000015").
+
+    NEVER pass a Python float: the value is hashed into the contract CID and a
+    float has no deterministic text form. Build the string exactly (e.g. with
+    ``decimal.Decimal``) so every solver compiler reads the same literal."""
+    return _ConstReal(decimal_string, Real())
 
 
 def bool_const(b: bool) -> Term:
@@ -355,6 +375,17 @@ def term_to_value(t: Term) -> Value:
             [
                 ("kind", vstr("const")),
                 ("value", vbool(t.value)),
+                ("sort", sort_to_value(t.sort)),
+            ]
+        )
+    if isinstance(t, _ConstReal):
+        # The real value rides as a STRING (canonical decimal) so the CID is
+        # deterministic. Discriminated from a string literal by its `Real` sort:
+        # every compiler dispatches on sort to parse it as a real literal.
+        return vobj(
+            [
+                ("kind", vstr("const")),
+                ("value", vstr(t.value)),
                 ("sort", sort_to_value(t.sort)),
             ]
         )

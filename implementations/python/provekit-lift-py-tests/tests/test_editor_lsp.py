@@ -215,7 +215,7 @@ _REPO = Path(__file__).resolve().parents[4]
 _BIN = _REPO / "implementations" / "rust" / "target" / "debug" / "provekit"
 _PYSRC = ":".join(
     str(_REPO / "implementations" / "python" / pkg / "src")
-    for pkg in ("provekit-lift-py-tests", "provekit-lift-python-source", "provekit-lift-py-numpy-testing")
+    for pkg in ("provekit-lift-py-tests", "provekit-lift-python-source")
 )
 try:
     import numpy  # noqa: F401
@@ -225,7 +225,7 @@ except Exception:
     _numpy_ok = False
 
 
-def _live_project(tmp_path, surface, module):
+def _live_project(tmp_path, surface, module, exceptions=None):
     solvers = (
         '[solvers]\ndefault = "z3"\n[solvers.dispatch]\n'
         'linear_arithmetic = "z3"\ndefault = "z3"\n[solvers.z3]\nbinary = "z3"\nflags = ["-smt2", "-in"]\n'
@@ -233,6 +233,11 @@ def _live_project(tmp_path, surface, module):
     d = tmp_path
     (d / ".provekit" / "lift" / surface).mkdir(parents=True, exist_ok=True)
     (d / ".provekit" / "imports").mkdir(parents=True, exist_ok=True)
+    if exceptions:
+        vx = d / ".provekit" / "vocab-exceptions"
+        vx.mkdir(parents=True, exist_ok=True)
+        for mod, data in exceptions.items():
+            (vx / f"{mod}.json").write_text(json.dumps(data))
     (d / ".provekit" / "config.toml").write_text(
         f'[[plugins]]\nname = "{surface}-lift"\nkind = "lift"\nsurface = "{surface}"\n{solvers}'
     )
@@ -259,7 +264,16 @@ def test_live_cli_squiggle_tracks_source(tmp_path, monkeypatch, asserted, expect
     monkeypatch.setenv("PYTHONPATH", _PYSRC)
     env = dict(os.environ, PYTHONPATH=_PYSRC)
 
-    vendor = _live_project(tmp_path / "vendor", "python-numpy-testing", "provekit_lift_py_numpy_testing.lsp")
+    vendor = _live_project(
+        tmp_path / "vendor", "python-testing", "provekit_lift_py_tests.assertion_lsp",
+        exceptions={"numpy.testing": {
+            "overrides": {"equality": ["assert_equal", "assert_equals"], "truth": ["assert_"]},
+            "tolerances": [
+                {"name": "assert_almost_equal", "decimal_default": 7},
+                {"name": "assert_array_almost_equal", "decimal_default": 6},
+            ],
+        }},
+    )
     (vendor / "test_vendor.py").write_text(
         "import numpy as np\nfrom numpy.testing import assert_equal\n"
         "def test_vendor():\n    assert_equal(np.add(2, 3), 5)\n"

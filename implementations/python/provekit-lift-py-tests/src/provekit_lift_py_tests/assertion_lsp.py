@@ -1,23 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Minimal lift plugin (provekit-lift/1, NDJSON over stdio) for the
-# pandas.testing assertion seat.  Reuses the pytest seat's IR serialization so
-# the emitted ir-document is byte-shaped identically; only the lift function
-# differs (lift_file_pandas_testing instead of lift_file_layer2).
+# The ONE assertion-vocabulary lift plugin (provekit-lift/1, NDJSON over stdio).
+# Point it at a project of test files and it LEARNS the assertion vocabulary from
+# each file's imports (numpy.testing, pandas.testing, sklearn.utils._testing, ...)
+# via `lift_test_file`, applying any externalized `.provekit/vocab-exceptions/`
+# declaration. There is no per-library seat: one lifter serves every testing
+# library. Reuses the pytest IR serialization so the ir-document is byte-shaped
+# identically; only the lift function differs.
 from __future__ import annotations
 
 import json
 import os
 import sys
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-from provekit_lift_py_tests.ir import declarations_to_value
+from provekit_lift_py_tests.assertion_vocab_lift import lift_test_file
 from provekit_lift_py_tests.canonicalizer import encode_jcs
+from provekit_lift_py_tests.ir import declarations_to_value
 
-from .pandas_testing_layer import lift_file_pandas_testing
-
-KIT_ID = "python-pandas-testing"
+KIT_ID = "python-testing"
 KIT_VERSION = "0.1.0"
 KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
 SHARED_LSP_PROTOCOL_VERSION = "provekit-lsp-shared/1"
@@ -61,12 +63,12 @@ def handle_initialize(msg_id: Any) -> None:
         "jsonrpc": "2.0",
         "id": msg_id,
         "result": {
-            "name": "provekit-lsp-pandas-testing",
+            "name": "provekit-lsp-testing",
             "version": KIT_VERSION,
             "protocol_version": SHARED_LSP_PROTOCOL_VERSION,
             "kit_id": KIT_ID,
             "capabilities": {
-                "source_surfaces": ["python-pandas-testing"],
+                "source_surfaces": ["python-testing"],
                 "entry_kinds": [],
                 "diagnostic_codes": ["provekit.lsp.parse_error"],
                 "status_kinds": ["prove"],
@@ -110,7 +112,9 @@ def handle_lift(msg_id: Any, params: dict) -> None:
             except OSError as e:
                 warnings.append({"source_path": path, "item_name": "<file>", "reason": f"read failed: {e}"})
                 continue
-            out = lift_file_pandas_testing(source, path)
+            # learn the vocabulary from this file's imports + the workspace's
+            # externalized exceptions, then lift.
+            out = lift_test_file(source, path, workspace_root=workspace_root)
             decls.extend(out.decls)
             warnings.extend(w.__dict__ for w in out.warnings)
 
@@ -154,7 +158,6 @@ def main() -> None:
             _send({"jsonrpc": "2.0", "id": msg_id, "result": None})
             break
         elif msg_id is not None:
-            # Unknown method: reply null so the dispatcher doesn't stall.
             _send({"jsonrpc": "2.0", "id": msg_id, "result": None})
 
 

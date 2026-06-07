@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # THE CAPSTONE, as a committed CLI-level E2E (skips cleanly when the toolchain
-# isn't present). A numpy VENDOR mints a `.proof` carrying `np.add(2,3)==5`; a
-# CONSUMER stages it in `.provekit/imports/` and runs `prove`. The consumer that
-# asserts the WRONG value is REFUSED; the consumer that agrees is PROVEN. The
-# consumer inherits numpy's correctness and is caught contradicting it.
+# isn't present). A numpy VENDOR mints a `.proof` carrying `np.add(2,3)==5`, lifted
+# by the ONE assertion lifter (provekit_lift_py_tests.assertion_lsp) which learns
+# numpy's vocabulary from the file's imports + the workspace's externalized
+# `.provekit/vocab-exceptions/numpy.testing.json`. A CONSUMER stages the proof in
+# `.provekit/imports/` and runs `prove`: the consumer asserting the WRONG value is
+# REFUSED, the one that agrees is PROVEN. The consumer inherits numpy's correctness
+# and is caught contradicting it.
 #
-# Hermetic + clean-room: everything in tmp_path, no shared/stale state (the polluted
-# -dir false positive that hid this once is exactly what a clean tmp_path prevents).
+# Hermetic + clean-room: everything in tmp_path, no shared/stale state.
+import json
 import os
 import re
 import shutil
@@ -21,12 +24,17 @@ _REPO = Path(__file__).resolve().parents[4]
 _BIN = _REPO / "implementations" / "rust" / "target" / "debug" / "provekit"
 _PYSRC = ":".join(
     str(_REPO / "implementations" / "python" / pkg / "src")
-    for pkg in (
-        "provekit-lift-py-tests",
-        "provekit-lift-python-source",
-        "provekit-lift-py-numpy-testing",
-    )
+    for pkg in ("provekit-lift-py-tests", "provekit-lift-python-source")
 )
+
+# numpy.testing's externalized vocab exception (the structurally-opaque remainder).
+_NUMPY_EXCEPTION = {
+    "overrides": {"equality": ["assert_equal", "assert_equals"], "truth": ["assert_"]},
+    "tolerances": [
+        {"name": "assert_almost_equal", "decimal_default": 7},
+        {"name": "assert_array_almost_equal", "decimal_default": 6},
+    ],
+}
 
 
 def _have(binary: str) -> bool:
@@ -34,7 +42,7 @@ def _have(binary: str) -> bool:
 
 
 _numpy_ok = True
-try:  # the lifters import numpy when they RUN the assertion lift; z3 discharges.
+try:  # the lifter imports numpy when it RUNS the assertion lift; z3 discharges.
     import numpy  # noqa: F401
 except Exception:
     _numpy_ok = False
@@ -71,7 +79,7 @@ _SOLVERS = (
 )
 
 
-def _project(tmp: Path, surface: str, module: str) -> Path:
+def _project(tmp: Path, surface: str, module: str, exceptions: dict = None) -> Path:
     d = tmp
     (d / ".provekit" / "lift" / surface).mkdir(parents=True, exist_ok=True)
     (d / ".provekit" / "imports").mkdir(parents=True, exist_ok=True)
@@ -81,6 +89,11 @@ def _project(tmp: Path, surface: str, module: str) -> Path:
     (d / ".provekit" / "lift" / surface / "manifest.toml").write_text(
         _manifest(surface, module, d)
     )
+    if exceptions:
+        vx = d / ".provekit" / "vocab-exceptions"
+        vx.mkdir(parents=True, exist_ok=True)
+        for mod, data in exceptions.items():
+            (vx / f"{mod}.json").write_text(json.dumps(data))
     return d
 
 
@@ -100,8 +113,11 @@ def _verdict(out: str):
 @pytest.fixture
 def numpy_vendor_proof(tmp_path: Path) -> Path:
     """A numpy VENDOR `.proof` carrying the callsite-keyed contract np.add(2,3)==5,
-    minted by the numpy-testing lifter (DIRECT form so it keys to the callsite)."""
-    v = _project(tmp_path / "vendor", "python-numpy-testing", "provekit_lift_py_numpy_testing.lsp")
+    minted by the ONE assertion lifter (DIRECT form so it keys to the callsite)."""
+    v = _project(
+        tmp_path / "vendor", "python-testing", "provekit_lift_py_tests.assertion_lsp",
+        exceptions={"numpy.testing": _NUMPY_EXCEPTION},
+    )
     (v / "test_vendor.py").write_text(
         "import numpy as np\nfrom numpy.testing import assert_equal\n"
         "def test_vendor():\n    assert_equal(np.add(2, 3), 5)\n"

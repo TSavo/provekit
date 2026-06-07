@@ -1,0 +1,10 @@
+{
+  "overrides": {
+    "equality": ["assert_equal", "assert_equals"],
+    "truth": ["assert_"]
+  },
+  "tolerances": [
+    {"name": "assert_almost_equal", "decimal_default": 7},
+    {"name": "assert_array_almost_equal", "decimal_default": 6}
+  ]
+}

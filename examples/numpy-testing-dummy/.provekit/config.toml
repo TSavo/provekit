@@ -1,6 +1,7 @@
-# Minimal project for the numpy.testing assertion seat
-# (provekit-lift-py-numpy-testing). Lifts assert_equal/assert_array_equal/...
-# into ProofIR consistency facts; approximate assertions are loudly refused.
+# Minimal project for the one assertion lifter (provekit_lift_py_tests.assertion_lsp),
+# which learns numpy's vocabulary from each test file's imports plus
+# .provekit/vocab-exceptions/numpy.testing.json. Lifts assert_equal/assert_array_equal/
+# ... into ProofIR consistency facts; approximate assertions are loudly refused.
 [[plugins]]
 name = "python-numpy-testing-lift"
 kind = "lift"

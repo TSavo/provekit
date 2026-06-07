@@ -170,7 +170,8 @@ pub fn emit_formula(formula: &Formula) -> String {
 fn emit_sort(sort: &Sort) -> String {
     match sort {
         Sort::Primitive { name } => match name.as_str() {
-            "Int" | "Real" => "Z".to_string(),
+            "Int" => "Z".to_string(),
+            "Real" => "R".to_string(),
             "String" => "string".to_string(),
             "Bool" => "bool".to_string(),
             _ => "Z".to_string(),
@@ -227,7 +228,8 @@ fn emit_sort_paren(sort: &Sort) -> String {
 fn sort_to_coq(sort: &Sort) -> String {
     match sort {
         Sort::Primitive { name } => match name.as_str() {
-            "Int" | "Real" => "Z".to_string(),
+            "Int" => "Z".to_string(),
+            "Real" => "R".to_string(),
             "String" => "string".to_string(),
             "Bool" => "bool".to_string(),
             _ => "Z".to_string(),
@@ -283,6 +285,11 @@ fn coq_binop(name: &str) -> Option<&'static str> {
         "<=" | "\u{2264}" => Some("<=?"),
         ">=" | "\u{2265}" => Some(">=?"),
         "=" => Some("=?"),
+        // Interpreted homogeneous arithmetic, infix and scope-polymorphic (Z or R
+        // depending on the open scope), never a sanitized uninterpreted symbol.
+        "+" => Some("+"),
+        "-" => Some("-"),
+        "*" => Some("*"),
         _ => None,
     }
 }
@@ -298,7 +305,63 @@ fn coq_ident(name: &str) -> String {
         .collect()
 }
 
-fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
+/// A `Real` const arrives as a canonical decimal string (e.g. "0.00000015").
+/// Coq's `R` has no decimal literal, so emit the EXACT rational `(num / den)%R`,
+/// where under `Open Scope R` the numerals are reals via R's number notation and
+/// `/` is `Rdiv`. `1.5 * 10**(-decimal)` is exact, so this is lossless and
+/// content-stable. `lra` discharges goals with such rational constants.
+fn coq_real_literal(decimal: &str) -> String {
+    let (neg, body) = match decimal.strip_prefix('-') {
+        Some(b) => (true, b),
+        None => (false, decimal),
+    };
+    let (int_part, frac_part) = body.split_once('.').unwrap_or((body, ""));
+    let mut digits = String::from(int_part);
+    digits.push_str(frac_part);
+    let trimmed = digits.trim_start_matches('0');
+    let num = if trimmed.is_empty() { "0" } else { trimmed };
+    let den = format!("1{}", "0".repeat(frac_part.len()));
+    if neg {
+        format!("(- ({num} / {den}))%R")
+    } else {
+        format!("({num} / {den})%R")
+    }
+}
+
+/// True iff the term carries a `Real`-sorted constant anywhere. A formula that
+/// does is lowered over Coq's `R` with `lra`, rather than `Z` with `lia`.
+fn term_has_real_const(term: &Term) -> bool {
+    match term {
+        Term::Const { sort, .. } => matches!(sort, Sort::Primitive { name } if name == "Real"),
+        Term::Ctor { args, .. } => args.iter().any(term_has_real_const),
+        Term::Lambda { body, .. } => term_has_real_const(body),
+        Term::Let { bindings, body, .. } => {
+            bindings.iter().any(|b| term_has_real_const(&b.bound_term)) || term_has_real_const(body)
+        }
+        Term::Var { .. } => false,
+    }
+}
+
+fn formula_has_real_const(formula: &Formula) -> bool {
+    match formula {
+        Formula::Atomic { args, .. } => args.iter().any(term_has_real_const),
+        Formula::And { operands }
+        | Formula::Or { operands }
+        | Formula::Not { operands }
+        | Formula::Implies { operands } => operands.iter().any(formula_has_real_const),
+        Formula::Forall { body, .. }
+        | Formula::Exists { body, .. }
+        | Formula::Choice { body, .. } => formula_has_real_const(body),
+        _ => false,
+    }
+}
+
+fn emit_const_value(value: &serde_json::Value, sort_name: &str) -> String {
+    if sort_name == "Real" {
+        if let serde_json::Value::String(s) = value {
+            return coq_real_literal(s);
+        }
+    }
     match value {
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
@@ -324,32 +387,44 @@ pub fn compile_formula(formula: &Formula) -> (String, String, Vec<FreeVar>) {
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
     collect_free_vars_formula(formula, &mut free_vars, &bound);
+    // A Real-bearing obligation is lowered over Coq's `R` (lra), not `Z` (lia).
+    // The Python tolerance corpus is homogeneously real; integers embed in R and
+    // lra handles them, so every free var declares as `R`. A real+string mix is
+    // the deferred Number-base conflict case (see the smt-lib rung).
+    let is_real = formula_has_real_const(formula);
     let mut body = String::new();
     for (name, sort) in free_vars.iter() {
-        let coq_sort = match sort.as_str() {
-            "Int" | "Real" => "Z",
-            "String" => "string",
-            "Bool" => "bool",
-            _ => "Z",
+        let coq_sort = if is_real {
+            "R"
+        } else {
+            match sort.as_str() {
+                "Int" | "Real" => "Z",
+                "String" => "string",
+                "Bool" => "bool",
+                _ => "Z",
+            }
         };
         body.push_str(&format!("Parameter {} : {}.\n", coq_ident(name), coq_sort));
     }
     body.push_str("\nGoal ");
     body.push_str(&emit_formula(formula));
     body.push_str(".\n");
-    // `lia` (with Zify) discharges linear integer-arithmetic and bool-comparison
-    // goals (Z.ltb/Z.leb/Z.eqb). `intros` first so any implication antecedents
-    // become hypotheses. A real proof closed by `Qed` is the soundness gate: Coq
-    // rejects an incomplete proof at `Qed`, so a clean exit means the goal holds.
-    // Goals outside linear arithmetic make `lia` fail -> coqc exits non-zero ->
-    // the seat reports Undecidable (Coq is a prover, not a model-finder).
-    body.push_str("Proof.\n  intros.\n  lia.\nQed.\n");
-    // Open Z scope LAST so it dominates: these obligations are arithmetic/bool,
-    // so the integer notations (`<?`, literals, `=`) must resolve in Z, not
-    // string. Opening string first keeps string literals available without
-    // shadowing the arithmetic operators the proofs depend on.
-    let preamble =
-        "Require Import ZArith String List Lia.\nOpen Scope string.\nOpen Scope Z.\n\n".to_string();
+    // A real proof closed by `Qed` is the soundness gate: Coq rejects an
+    // incomplete proof at `Qed`, so a clean exit means the goal holds. `intros`
+    // first so any implication antecedents become hypotheses. `lia` discharges
+    // linear INTEGER arithmetic; `lra` discharges linear REAL arithmetic (the
+    // tolerance bounds). A goal outside the chosen theory makes the tactic fail
+    // -> coqc exits non-zero -> the seat reports Undecidable.
+    let tactic = if is_real { "lra" } else { "lia" };
+    body.push_str(&format!("Proof.\n  intros.\n  {tactic}.\nQed.\n"));
+    // Open the arithmetic scope LAST so it dominates the string scope: the
+    // numeral/operator notations must resolve in the proof's theory (R or Z),
+    // not string. Opening string first keeps string literals available.
+    let preamble = if is_real {
+        "Require Import Reals String List Lra.\nOpen Scope string.\nOpen Scope R.\n\n".to_string()
+    } else {
+        "Require Import ZArith String List Lia.\nOpen Scope string.\nOpen Scope Z.\n\n".to_string()
+    };
     let free_vars_vec = free_vars
         .into_iter()
         .map(|(name, sort)| FreeVar { name, sort });

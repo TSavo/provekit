@@ -111,7 +111,7 @@ same-named contracts across proofs before the SAT check. The consumer inherits
 the vendor's correctness and is caught contradicting it.
 
 Verified end to end:
-`implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py`
+`implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py`
 (parametrized: `consumer-agrees-PROVEN`, `consumer-contradicts-REFUSED`) and the
 unit test `cross_proof_same_named_contracts_are_conjoined` in
 `implementations/rust/provekit-verifier/src/consistency.rs`.
@@ -242,7 +242,7 @@ The numpy demos provision their own venv on first run.
 |---|---|---|
 | Vendor a whole library | ~2900 numpy functions sugar-lifted into one `.proof`, no shim, witness package, consumer `verify` recomputes | [examples/numpy-vendor/](examples/numpy-vendor/) |
 | Discharge two ways | one operation, `numpy.add`, proven consistent (z3) AND witnessed (recompute); `discharged: 2` | [examples/numpy-showcase/](examples/numpy-showcase/) |
-| Inheritance capstone | a consumer inherits numpy's contract and is refused when it contradicts it | [test_inheritance_e2e.py](implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py) |
+| Inheritance capstone | a consumer inherits numpy's contract and is refused when it contradicts it | [test_inheritance_e2e.py](implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py) |
 
 ## Current status
 
