@@ -50,7 +50,7 @@ consumer that asserts `== 5` agrees and is PROVEN. The consumer inherits the
 vendor's correctness and is caught contradicting it. This works because contracts
 key to the callsite under test, not to the test, so a downstream assertion about
 the same call meets the upstream contract about it.
-(`implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py`,
+(`implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py`,
 parametrized `consumer-agrees-PROVEN` and `consumer-contradicts-REFUSED`; the
 cross-proof conjoin is locked by `cross_proof_same_named_contracts_are_conjoined`
 in `implementations/rust/provekit-verifier/src/consistency.rs`.)

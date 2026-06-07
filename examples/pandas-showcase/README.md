@@ -1,10 +1,12 @@
 # pandas showcase
 
-The next package up the ladder from numpy is **pandas**, and standing it up is
-not a research project: it is **just another lifter package**,
-`provekit-lift-py-pandas-testing`, the exact sibling of the numpy.testing seat.
-This example differs from [`numpy-showcase`](../numpy-showcase) only by swapping
-that seat in and pointing the witness venv at pandas.
+The next library up the ladder from numpy is **pandas**, and standing it up is
+not a research project: it is **not even a new package**. It is the **same one
+lifter** (`provekit_lift_py_tests.assertion_lsp`), which learns pandas's vocabulary
+from each test file's imports plus a dropped-in data file,
+`.provekit/vocab-exceptions/pandas.testing.json` (the structurally-opaque remainder,
+no code). This example differs from [`numpy-showcase`](../numpy-showcase) only by
+that exception file and pointing the witness venv at pandas.
 
 ```sh
 ./run.sh

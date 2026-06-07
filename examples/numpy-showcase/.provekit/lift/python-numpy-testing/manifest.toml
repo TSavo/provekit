@@ -2,14 +2,16 @@ name = "python-numpy-testing-lift"
 version = "0.1.0-draft"
 protocol_version = "pep/1.7.0"
 kind = "lift"
-# Relative PYTHONPATH at the seat src + the pytest seat it reuses for term
-# machinery + the python-source helper. Resolved from working_dir (project root).
+# The ONE assertion lifter. It learns numpy's vocabulary from each test file's
+# imports plus this workspace's .provekit/vocab-exceptions/numpy.testing.json
+# (the externalized structurally-opaque remainder). PYTHONPATH at the one lifter
+# (provekit-lift-py-tests) + the python-source helper. Resolved from working_dir.
 command = [
     "/usr/bin/env",
-    "PYTHONPATH=../../implementations/python/provekit-lift-py-numpy-testing/src:../../implementations/python/provekit-lift-py-tests/src:../../implementations/python/provekit-lift-python-source/src",
+    "PYTHONPATH=../../implementations/python/provekit-lift-py-tests/src:../../implementations/python/provekit-lift-python-source/src",
     "python3",
     "-m",
-    "provekit_lift_py_numpy_testing.lsp",
+    "provekit_lift_py_tests.assertion_lsp",
 ]
 working_dir = "."
 

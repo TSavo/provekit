@@ -306,6 +306,14 @@ fn collect_term(
         Term::Const { sort, .. } => {
             let _ = emit_sort(sort, ctx)?;
         }
+        Term::Ctor { name, args } if is_builtin_arith(name) && args.len() == 2 => {
+            // Interpreted homogeneous arithmetic (+, -, *): the operands share the
+            // result sort, and the operator is a builtin, NOT an uninterpreted
+            // function. So `(- a b)` against a `Real` bound makes `a`, `b` Real.
+            for arg in args {
+                collect_term(arg, ctx, bound, expected)?;
+            }
+        }
         Term::Ctor { name, args } => {
             let lean_name = lean_ident(name);
             let bound_function =
@@ -460,6 +468,13 @@ fn emit_term(term: &Term, ctx: &mut EmitContext) -> Result<String, CompileError>
     match term {
         Term::Var { name } => Ok(lean_ident(name)),
         Term::Const { value, sort } => emit_const(value, sort),
+        Term::Ctor { name, args } if is_builtin_arith(name) && args.len() == 2 => {
+            // Interpreted arithmetic renders infix: `(a - b)`, not a prefix
+            // application of a sanitized identifier.
+            let lhs = emit_term(&args[0], ctx)?;
+            let rhs = emit_term(&args[1], ctx)?;
+            Ok(format!("({lhs} {name} {rhs})"))
+        }
         Term::Ctor { name, args } => {
             let name = lean_ident(name);
             let args = args
@@ -498,6 +513,14 @@ fn emit_term(term: &Term, ctx: &mut EmitContext) -> Result<String, CompileError>
 }
 
 fn emit_const(value: &Json, sort: &Sort) -> Result<String, CompileError> {
+    // A `Real` const is carried as a canonical decimal STRING (e.g. "0.00000015",
+    // or "-0.00000015"). Emit it as an ascribed Lean real literal, not a quoted
+    // string, so Mathlib reads it as `Real` rather than a `Nat`/`String`.
+    if primitive_sort_name(sort) == "Real" {
+        if let Json::String(s) = value {
+            return Ok(format!("({s} : Real)"));
+        }
+    }
     match value {
         Json::Number(n) => {
             if let Some(i) = n.as_i64() {
@@ -656,6 +679,13 @@ fn is_builtin_atomic(name: &str) -> bool {
         lean_atomic_name(name).as_str(),
         "True" | "False" | "=" | "≠" | "<" | "<=" | ">" | ">="
     )
+}
+
+/// Interpreted homogeneous arithmetic operators: lowered infix over the operand
+/// sort, never as uninterpreted functions. Matches the smt-lib interpreted set
+/// (`+ - *`); integer `/`/`%` stay uninterpreted there and are not lowered here.
+fn is_builtin_arith(name: &str) -> bool {
+    matches!(name, "+" | "-" | "*")
 }
 
 fn lean_atomic_name(name: &str) -> String {

@@ -307,10 +307,21 @@ use crate::literal_encoding::{emit_const_value as encode_const, LiteralConstants
 use crate::isinstance_encoding::IsinstanceClauses;
 
 fn emit_const_value(value: &serde_json::Value, sort_name: &str) -> String {
-    // sort_name is unused: literals are encoded into the Int universe
-    // (concrete ints for int/bool, hash-named uninterpreted consts for str)
-    // independent of the declared sort label.
-    let _ = sort_name;
+    // A `Real`-sorted const is a real literal carried as a CANONICAL DECIMAL
+    // STRING (e.g. "0.00000015") so its CID is deterministic. Emit it verbatim as
+    // an SMT-LIB Real literal. SMT-LIB has no negative real *literal*, so a
+    // leading "-" renders as the unary-minus application `(- X)`.
+    if sort_name == "Real" {
+        if let Some(s) = value.as_str() {
+            return match s.strip_prefix('-') {
+                Some(mag) => format!("(- {mag})"),
+                None => s.to_string(),
+            };
+        }
+    }
+    // Every other sort: the Int-universe literal encoding (int/bool -> int value,
+    // string/None -> hash-named uninterpreted Int const). Unchanged, so every
+    // pre-existing (Real-free) formula is byte-for-byte identical.
     encode_const(value)
 }
 
@@ -530,8 +541,13 @@ pub fn collect_free_vars_formula(
 ) {
     match formula {
         Formula::Atomic { args, .. } => {
+            // A var in an atom that carries a `Real` const is a real-arithmetic
+            // operand (e.g. `(< (- a b) 0.00000015)`): declare it `Real`, not
+            // `Int`. Atoms with no Real const collect exactly as before, so all
+            // pre-existing (Real-free) formulas are byte-for-byte identical.
+            let real_ctx = args.iter().any(term_has_real_const);
             for a in args {
-                collect_free_vars_term(a, out, bound);
+                collect_free_vars_term_ctx(a, out, bound, real_ctx);
             }
         }
         Formula::And { operands } => {
@@ -597,21 +613,45 @@ pub fn collect_free_vars_formula(
     }
 }
 
-pub fn collect_free_vars_term(
+/// True iff the term contains a `Real`-sorted constant anywhere. Used to mark an
+/// enclosing atom as real-arithmetic so its variable operands declare as `Real`.
+fn term_has_real_const(term: &Term) -> bool {
+    match term {
+        Term::Const { sort, .. } => {
+            matches!(sort, Sort::Primitive { name } if name == "Real")
+        }
+        Term::Ctor { args, .. } => args.iter().any(term_has_real_const),
+        Term::Lambda { body, .. } => term_has_real_const(body),
+        Term::Let { bindings, body, .. } => {
+            bindings.iter().any(|b| term_has_real_const(&b.bound_term))
+                || term_has_real_const(body)
+        }
+        Term::Var { .. } => false,
+    }
+}
+
+fn collect_free_vars_term_ctx(
     term: &Term,
     out: &mut BTreeMap<String, String>,
     bound: &BTreeSet<String>,
+    real_ctx: bool,
 ) {
     match term {
         Term::Var { name, .. } => {
             if !bound.contains(name) {
-                out.entry(name.clone()).or_insert("Int".to_string());
+                if real_ctx {
+                    // Real dominates Int: a var used as a real operand anywhere is
+                    // declared Real regardless of collection order.
+                    out.insert(name.clone(), "Real".to_string());
+                } else {
+                    out.entry(name.clone()).or_insert_with(|| "Int".to_string());
+                }
             }
         }
         Term::Const { .. } => {}
         Term::Ctor { args, .. } => {
             for a in args {
-                collect_free_vars_term(a, out, bound);
+                collect_free_vars_term_ctx(a, out, bound, real_ctx);
             }
         }
         Term::Lambda {
@@ -622,15 +662,15 @@ pub fn collect_free_vars_term(
         } => {
             let mut nb = bound.clone();
             nb.insert(param_name.clone());
-            collect_free_vars_term(body, out, &nb);
+            collect_free_vars_term_ctx(body, out, &nb, real_ctx);
         }
         Term::Let { bindings, body, .. } => {
             let mut current_bound = bound.clone();
             for b in bindings {
-                collect_free_vars_term(&b.bound_term, out, &current_bound);
+                collect_free_vars_term_ctx(&b.bound_term, out, &current_bound, real_ctx);
                 current_bound.insert(b.name.clone());
             }
-            collect_free_vars_term(body, out, &current_bound);
+            collect_free_vars_term_ctx(body, out, &current_bound, real_ctx);
         }
     }
 }

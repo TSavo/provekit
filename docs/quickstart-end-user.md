@@ -145,9 +145,9 @@ the python kit packages on `PYTHONPATH`; it skips cleanly when any are missing.
 Using the venv the numpy demos already built:
 
 ```sh
-PYTHONPATH="implementations/python/provekit-lift-py-tests/src:implementations/python/provekit-lift-python-source/src:implementations/python/provekit-lift-py-numpy-testing/src" \
+PYTHONPATH="implementations/python/provekit-lift-py-tests/src:implementations/python/provekit-lift-python-source/src" \
   python3 -m pytest \
-  implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py
+  implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py
 ```
 
 Both parametrizations pass: `consumer-agrees-PROVEN` and
