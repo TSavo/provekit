@@ -288,6 +288,7 @@ SHOWCASE_RUNS = \
 	examples/java-real-lib-commons-io/run.sh \
 	examples/java-real-lib-commons-text/run.sh \
 	examples/java-real-lib-gson/run.sh \
+	examples/java-toy-compose/run.sh \
 	examples/testng-assertion-consistency/run.sh
 
 .PHONY: test-showcases
