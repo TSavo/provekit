@@ -15,10 +15,10 @@
 //   `provekit-lift` reads what's already there and promotes it to a
 //   content-addressed signed contract.
 //
-//   The macros in `provekit-macros` are a fallback for greenfield code
-//   where the developer doesn't already have an annotation library.
-//   Adoption path looks like: lift first, mint-via-macros only when
-//   greenfield.
+//   There is no bespoke contract-authoring macro. Greenfield code is
+//   handled the same way: write the contract in a native annotation
+//   library (or as native source the adapters understand), then lift it.
+//   A contract only enters the substrate by being lifted.
 //
 // LIBRARY API:
 //
@@ -704,8 +704,8 @@ fn print_help() {
            ProvekIt does NOT compete with proptest, contracts, kani, prusti,\n  \
            hypothesis-py, deal-py, bean-validation-java, zod-ts. It sits\n  \
            BENEATH them. We promote what you already have to content-addressed\n  \
-           signed contracts. The macros in provekit-macros are the fallback\n  \
-           for greenfield code."
+           signed contracts. A contract only enters the substrate by being\n  \
+           lifted from native source, never via a bespoke authoring macro."
     );
 }
 

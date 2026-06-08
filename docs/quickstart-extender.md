@@ -426,7 +426,6 @@ docs/
 
 examples/
   polyglot-rust-go/   -- canonical cross-language demo (rust callee + go caller)
-  build_script_demo/  -- provekit-build build.rs integration
 
 .provekit/
   self-contracts-attestations/  -- per-kit signed attestation envelopes
