@@ -274,6 +274,7 @@ SHOWCASE_RUNS = \
 	examples/rust-boundary-showcase/run.sh \
 	examples/rust-witness-showcase/run.sh \
 	examples/rust-test-assertion-consistency/run.sh \
+	examples/tokio-effect-consistency/run.sh \
 	examples/polars-showcase/run.sh \
 	examples/numpy-attribute-safety-showcase/run.sh \
 	examples/java-test-assertion-consistency/run.sh

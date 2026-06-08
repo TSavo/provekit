@@ -247,6 +247,10 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
                 args,
             }))
         }
+        Expr::Await(await_expr) => Ok(Rc::new(Term::Ctor {
+            name: "await".to_string(),
+            args: vec![translate_term(&await_expr.base)?],
+        })),
         Expr::Field(field) => Ok(Rc::new(Term::Ctor {
             name: format!("field:{}", token_key(&field.member)),
             args: vec![translate_term(&field.base)?],
