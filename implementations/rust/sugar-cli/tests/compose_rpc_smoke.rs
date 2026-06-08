@@ -28,8 +28,8 @@ const PINNED_CID: &str = "blake3-512:36212b7bf7b9ccf264950940a33d64e1cfe88b6f4d8
 fn provekit_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
-    let release = workspace.join("target").join("release").join("provekit");
-    let debug = workspace.join("target").join("debug").join("provekit");
+    let release = workspace.join("target").join("release").join("sugar");
+    let debug = workspace.join("target").join("debug").join("sugar");
     if release.exists() {
         release
     } else if debug.exists() {

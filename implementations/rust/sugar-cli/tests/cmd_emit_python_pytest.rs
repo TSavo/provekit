@@ -7,7 +7,7 @@ use std::process::Command;
 use serde_json::Value;
 
 fn provekit_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 fn repo_root() -> PathBuf {

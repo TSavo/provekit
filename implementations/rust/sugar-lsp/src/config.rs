@@ -94,7 +94,7 @@ fn default_server() -> ServerConfig {
 }
 
 fn default_backend() -> String {
-    "provekit".to_string()
+    "sugar".to_string()
 }
 
 pub fn load_config(path: impl AsRef<Path>) -> Result<LspConfig, String> {

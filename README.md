@@ -23,7 +23,7 @@ Correctness is `k(I) = t`: a program `k` applied to an input/precondition `I`
 produces an output/postcondition `t`. A `.proof` is a kept promise made
 checkable. The program, the input, and the result are each content-addressed
 and pinned, so the claim names exactly what it is about and cannot be silently
-rebound. `provekit verify` lets a stranger recompute the guarantee.
+rebound. `sugar verify` lets a stranger recompute the guarantee.
 
 A `.proof` is discharged **two independent ways, and both must agree**:
 
@@ -34,7 +34,7 @@ A `.proof` is discharged **two independent ways, and both must agree**:
   refused.
 
 The numpy showcase (`examples/numpy-showcase/`) discharges both on a real
-library operation. `provekit prove` reports `discharged: 2`: one obligation
+library operation. `sugar prove` reports `discharged: 2`: one obligation
 "test assertions mutually consistent ... [solver 'z3' returned sat]", one
 "witnessed by recompute (kit): re-ran on pinned code; assertions held; witness
 CID reproduced." A `np.add(2,3)` asserted both `== 5` and `== 6` is refused
@@ -65,7 +65,7 @@ all of numpy inside it.
   RESOLVES the witness body. The Rust CLI BLAKE3's the body itself and compares
   to the pinned CID. A wrong body for a CID (broken oracle) is distinguished
   from an honest re-run that differs (drift).
-  (`implementations/rust/provekit-cli/src/witness_verify.rs`,
+  (`implementations/rust/sugar-cli/src/witness_verify.rs`,
   `implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/witness_oracle.py`.)
 - A contract is already a CID. So the `.proof` is pure correctness identity:
   source, witness, and contract are all resolved-and-recomputed, never trusted.
@@ -82,7 +82,7 @@ numpy version. `numpy.add` is a C ufunc with no python body, so it is simply not
 among the python functions lifted; the thousands that are python all lift.
 
 The vendor ships the `.proof` plus a separately deployed witness package
-(`<cid>.witness`, the audit material). A consumer runs `provekit verify`, which
+(`<cid>.witness`, the audit material). A consumer runs `sugar verify`, which
 recomputes everything:
 
 ```
@@ -135,7 +135,7 @@ sugar-facet is a materializer), and resolve dependency `.proof` artifacts
 through the package manager and filesystem rules of their ecosystem. Kits never
 verify: they only resolve bodies over RPC.
 
-**The CLI owns proof computation over normalized data.** The `provekit` CLI is
+**The CLI owns proof computation over normalized data.** The `sugar` CLI is
 language-agnostic. It loads `.proof` artifacts, speaks RPC to configured kits,
 normalizes claims, composes implications, conjoins same-named contracts, runs
 the solver, recomputes witnesses, and reports discharge status. The CLI does not
@@ -176,51 +176,52 @@ expensive proof work by making prior commitments content-addressed and reusable.
 
 ## What the CLI does
 
-> _Naming: the project is now **Sugar**, but the CLI binary and crates still
-> carry the `provekit` name until the code cutover. The rename is staged because
-> it is content-addressed — renaming the kits re-mints every `.proof` — so it
-> lands as one coordinated swing. Commands below use today's `provekit`; they
-> become `sugar <verb>` after the cutover._
+> _Naming: the project is **Sugar**. The Rust crates (`sugar-*`) and the CLI
+> binary (`sugar`) have been renamed. The proofchain identity layer — kit ids,
+> wire tokens, and `.proof` producer strings — still carries the `provekit`
+> name, frozen on purpose: it is content-addressed, so re-minting it under the
+> `sugar` name is a separate, deliberate swing. The dependency graph is sugar;
+> the CID identity is still provekit. Names are sugar, CID is identity._
 
-The canonical CLI is the Rust `provekit` binary. Run `provekit --help` for the
+The canonical CLI is the Rust `sugar` binary. Run `sugar --help` for the
 authoritative list; the current subcommands include:
 
-- `provekit mint`: dispatch the configured lift plugins and write `.proof`
+- `sugar mint`: dispatch the configured lift plugins and write `.proof`
   artifacts. This is the verb that actually drives lifting in every example
   here.
-- `provekit prove`: run the six-stage verifier. Load proofs, resolve dependency
+- `sugar prove`: run the six-stage verifier. Load proofs, resolve dependency
   proofs through kits, enumerate callsites, conjoin same-named contracts, solve
   obligations, recompute witnesses, and report discharge status.
-- `provekit verify`: verify a kit end to end. Lift its contract claims,
+- `sugar verify`: verify a kit end to end. Lift its contract claims,
   discharge each via the solver-dispatch table, recompute witnesses with the kit
   oracle untrusted, and emit a signed per-claim receipt. This is the gate verb.
-- `provekit dump`: pretty-print a `.proof` envelope (members, bodies,
+- `sugar dump`: pretty-print a `.proof` envelope (members, bodies,
   signatures).
-- `provekit hash`: compute the BLAKE3-512 CID of a file or stdin.
-- `provekit implicate` (alias `imp`): mint an implication memento (antecedent
+- `sugar hash`: compute the BLAKE3-512 CID of a file or stdin.
+- `sugar implicate` (alias `imp`): mint an implication memento (antecedent
   CID to consequent CID) via z3.
-- `provekit compose`: the JSON-RPC transport for the canonical compose
+- `sugar compose`: the JSON-RPC transport for the canonical compose
   primitive.
-- `provekit recognize`: scan source for shapes matching published sugar binding
+- `sugar recognize`: scan source for shapes matching published sugar binding
   templates and emit tags (the reverse direction of `materialize`).
-- `provekit materialize`: materialize concept-citation carriers into
+- `sugar materialize`: materialize concept-citation carriers into
   library-bound source via realize kits.
-- `provekit bind`: bind concept contracts to source code (the eight-verb
+- `sugar bind`: bind concept contracts to source code (the eight-verb
   pipeline against arbitrary user code).
-- `provekit emit`: emit target/framework test artifacts from neutral contract
+- `sugar emit`: emit target/framework test artifacts from neutral contract
   predicates.
-- `provekit protocol` / `provekit verify-protocol`: work with protocol catalog
+- `sugar protocol` / `sugar verify-protocol`: work with protocol catalog
   evolution artifacts, and confirm the local install conforms to its embedded
   protocol-catalog CID.
-- `provekit doctor`: validate a kit's config and manifest wiring before a run.
-- `provekit init`: scaffold a project (`provekit.toml`, `.provekit/`, sample
+- `sugar doctor`: validate a kit's config and manifest wiring before a run.
+- `sugar init`: scaffold a project (`provekit.toml`, `.provekit/`, sample
   invariant, GitHub Action).
 
-- `provekit lift`: dispatch the configured lift surface and write its ProofIR
+- `sugar lift`: dispatch the configured lift surface and write its ProofIR
   term JSON. `lift` stops at the lifted terms; `mint` is the verb that envelopes
   them into a signed `.proof`, which is what every example here uses.
 
-The command surface keeps moving as protocol work lands; `provekit --help` is the
+The command surface keeps moving as protocol work lands; `sugar --help` is the
 source of truth.
 
 ## Install
@@ -229,13 +230,13 @@ This repository is build-from-source today. Crates.io publishing is still future
 work. The current install path is:
 
 ```sh
-cargo install --path implementations/rust/provekit-cli
+cargo install --path implementations/rust/sugar-cli
 ```
 
 Verify the installed CLI's embedded protocol catalog:
 
 ```sh
-provekit verify-protocol
+sugar verify-protocol
 ```
 
 For project setup and first runs, start with
@@ -257,7 +258,7 @@ The numpy demos provision their own venv on first run.
 ## Current status
 
 - **Canonical implementation:** the Rust CLI in
-  `implementations/rust/provekit-cli`.
+  `implementations/rust/sugar-cli`.
 - **Protocol catalog:** embedded in the CLI and verified by `provekit
   verify-protocol`. The reference matrix
   ([docs/reference/per-language-status.md](docs/reference/per-language-status.md))

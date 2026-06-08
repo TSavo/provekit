@@ -40,12 +40,12 @@ pub fn run(args: VersionArgs) -> u8 {
 
     if args.out.json {
         let payload = json!({
-            "name": "provekit",
+            "name": "sugar",
             "version": CLI_VERSION,
         });
         println!("{}", serde_json::to_string_pretty(&payload).unwrap());
     } else {
-        println!("{} {}", "provekit".bold(), CLI_VERSION);
+        println!("{} {}", "sugar".bold(), CLI_VERSION);
     }
     crate::EXIT_OK
 }

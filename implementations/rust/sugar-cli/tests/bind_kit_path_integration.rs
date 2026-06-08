@@ -22,7 +22,7 @@ use sugar_ir_types::Sort;
 use serde_json::{json, Value};
 
 fn provekit_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 fn primitive_sort(name: &str) -> Sort {

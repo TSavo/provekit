@@ -29,14 +29,14 @@ pub fn verify_project() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=.provekit/");
     
     // Run provekit verify
-    let output = Command::new("provekit")
+    let output = Command::new("sugar")
         .arg("verify")
         .current_dir(&manifest_dir)
         .output()?;
     
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("provekit verify failed:\n{}", stderr).into());
+        return Err(format!("sugar verify failed:\n{}", stderr).into());
     }
     
     Ok(())

@@ -57,12 +57,12 @@ pub const EXIT_SOLVER_FAIL: u8 = 3;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "provekit",
+    name = "sugar",
     version,
-    about = "ProvekIt CLI: per-codebase invariant enforcement at git-commit speed.",
-    long_about = "ProvekIt CLI. Walk .proof catalogs, verify property mementos, \
+    about = "Sugar CLI: per-codebase invariant enforcement at git-commit speed.",
+    long_about = "Sugar CLI. Walk .proof catalogs, verify property mementos, \
 mint implications, hash content. Each subcommand wraps an existing \
-ProvekIt Rust library; the CLI is routing only."
+Sugar Rust library; the CLI is routing only."
 )]
 struct Cli {
     #[command(subcommand)]

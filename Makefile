@@ -93,7 +93,7 @@ build-all: build-rust build-python
 
 .PHONY: build-rust
 build-rust:
-	$(call CARGO_SYNC_BINS,provekit provekit-lift) build --release --manifest-path implementations/rust/Cargo.toml
+	$(call CARGO_SYNC_BINS,sugar provekit-lift) build --release --manifest-path implementations/rust/Cargo.toml
 
 .PHONY: build-rust-cli
 build-rust-cli:

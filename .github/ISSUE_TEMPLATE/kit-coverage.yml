@@ -56,7 +56,7 @@ body:
       label: Conformance dogfood
       options:
         - label: "`.provekit/self-contracts-attestations/<kit>.json` produced via substrate-side mint (no kit-specific mint code)"
-        - label: "`provekit prove --kit=<kit>` passes against canonical contracts"
+        - label: "`sugar prove --kit=<kit>` passes against canonical contracts"
         - label: Bundle CID is real (not a placeholder)
   - type: textarea
     id: status
