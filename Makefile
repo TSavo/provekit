@@ -277,6 +277,7 @@ SHOWCASE_RUNS = \
 	examples/tokio-effect-consistency/run.sh \
 	examples/tokio-await-implication-edge/run.sh \
 	examples/tokio-channel-implication-edge/run.sh \
+	examples/tokio-mutex-implication-edge/run.sh \
 	examples/polars-showcase/run.sh \
 	examples/numpy-attribute-safety-showcase/run.sh \
 	examples/java-test-assertion-consistency/run.sh

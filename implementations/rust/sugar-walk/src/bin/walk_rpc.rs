@@ -691,8 +691,21 @@ struct TrackedChannelConduit {
     recv_sites: Vec<(usize, usize)>,
 }
 
+#[derive(Debug, Clone)]
+struct TrackedMutexConduit {
+    mutex: String,
+    producer: Option<String>,
+    escaped: bool,
+    lock_sites: BTreeSet<(usize, usize)>,
+    allowed_lock_sites: BTreeSet<(usize, usize)>,
+}
+
 fn channel_recv_source_symbol(rx: &str) -> String {
     format!("channel:recv:{rx}")
+}
+
+fn mutex_guard_source_symbol(mutex: &str) -> String {
+    format!("mutex:guard:{mutex}")
 }
 
 fn collect_tokio_mpsc_channel_conduit_callsites(file: &syn::File, rel_path: &str) -> Vec<CallSite> {
@@ -886,6 +899,174 @@ fn collect_tokio_mpsc_channel_conduit_callsites(file: &syn::File, rel_path: &str
     visitor.into_callsites()
 }
 
+fn collect_tokio_mutex_guard_conduit_callsites(file: &syn::File, rel_path: &str) -> Vec<CallSite> {
+    use syn::visit::Visit;
+
+    struct V<'a> {
+        rel_path: &'a str,
+        mutexes: Vec<TrackedMutexConduit>,
+    }
+
+    impl<'a> V<'a> {
+        fn mutex_by_name_mut(&mut self, name: &str) -> Option<&mut TrackedMutexConduit> {
+            self.mutexes.iter_mut().find(|mutex| mutex.mutex == name)
+        }
+
+        fn mutex_names(&self) -> BTreeSet<String> {
+            self.mutexes
+                .iter()
+                .map(|mutex| mutex.mutex.clone())
+                .collect()
+        }
+
+        fn mark_escaped_if_mutex_is_used_opaquely(&mut self, expr: &syn::Expr) {
+            let mutexes = self.mutex_names();
+            if mutexes.is_empty() {
+                return;
+            }
+            for name in expr_ident_roots(expr) {
+                if mutexes.contains(&name) {
+                    if let Some(mutex) = self.mutex_by_name_mut(&name) {
+                        mutex.escaped = true;
+                    }
+                }
+            }
+        }
+
+        fn mark_allowed_mutex_guard_arg(&mut self, expr: &syn::Expr) -> bool {
+            let mut matched = false;
+            for mutex in &mut self.mutexes {
+                if let Some(site) = mutex_guard_access_lock_site(expr, &mutex.mutex) {
+                    mutex.allowed_lock_sites.insert(site);
+                    matched = true;
+                }
+            }
+            matched
+        }
+
+        fn into_callsites(self) -> Vec<CallSite> {
+            let mut out = Vec::new();
+            for mutex in self.mutexes {
+                if mutex.escaped || mutex.lock_sites != mutex.allowed_lock_sites {
+                    continue;
+                }
+                let Some(producer) = mutex.producer else {
+                    continue;
+                };
+                for (line, col) in mutex.lock_sites {
+                    out.push(CallSite {
+                        callee: mutex_guard_source_symbol(&mutex.mutex),
+                        contract_callee: producer.clone(),
+                        callee_crate: None,
+                        is_method: false,
+                        disambiguated_callee: None,
+                        disambiguated_crate: None,
+                        unsupported_reason: None,
+                        file: self.rel_path.to_string(),
+                        line,
+                        col,
+                    });
+                }
+            }
+            out
+        }
+    }
+
+    impl<'ast, 'a> Visit<'ast> for V<'a> {
+        fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+            let saved = std::mem::take(&mut self.mutexes);
+            syn::visit::visit_item_fn(self, node);
+            let current = std::mem::take(&mut self.mutexes);
+            self.mutexes = saved;
+            self.mutexes.extend(current);
+        }
+
+        fn visit_local(&mut self, node: &'ast syn::Local) {
+            if let Some((mutex, producer)) = tokio_mutex_binding(node) {
+                self.mutexes.push(TrackedMutexConduit {
+                    mutex,
+                    producer,
+                    escaped: false,
+                    lock_sites: BTreeSet::new(),
+                    allowed_lock_sites: BTreeSet::new(),
+                });
+                syn::visit::visit_local(self, node);
+                return;
+            }
+
+            let mutex_names = self.mutex_names();
+            for bound in pat_bound_idents(&node.pat) {
+                if mutex_names.contains(&bound) {
+                    if let Some(mutex) = self.mutex_by_name_mut(&bound) {
+                        mutex.escaped = true;
+                    }
+                }
+            }
+            if let Some(init) = &node.init {
+                let uses_mutex = expr_ident_roots(&init.expr)
+                    .iter()
+                    .any(|name| mutex_names.contains(name));
+                if uses_mutex && expr_as_call(&init.expr).is_none() {
+                    self.mark_escaped_if_mutex_is_used_opaquely(&init.expr);
+                }
+            }
+            syn::visit::visit_local(self, node);
+        }
+
+        fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+            for arg in &node.args {
+                if !self.mark_allowed_mutex_guard_arg(arg) {
+                    self.mark_escaped_if_mutex_is_used_opaquely(arg);
+                }
+            }
+            syn::visit::visit_expr_call(self, node);
+        }
+
+        fn visit_expr_assign(&mut self, node: &'ast syn::ExprAssign) {
+            let roots = expr_assignment_roots(&node.left);
+            for mutex in &mut self.mutexes {
+                if roots.contains(&mutex.mutex) {
+                    mutex.escaped = true;
+                }
+            }
+            syn::visit::visit_expr_assign(self, node);
+        }
+
+        fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
+            if binop_is_assignment(&node.op) {
+                let roots = expr_assignment_roots(&node.left);
+                for mutex in &mut self.mutexes {
+                    if roots.contains(&mutex.mutex) {
+                        mutex.escaped = true;
+                    }
+                }
+            }
+            syn::visit::visit_expr_binary(self, node);
+        }
+
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            if let Some(mutex_name) = expr_bare_ident_name(&node.receiver) {
+                if let Some(mutex) = self.mutex_by_name_mut(&mutex_name) {
+                    if node.method == "lock" && node.args.is_empty() {
+                        let start = node.method.span().start();
+                        mutex.lock_sites.insert((start.line, start.column));
+                    } else {
+                        mutex.escaped = true;
+                    }
+                }
+            }
+            syn::visit::visit_expr_method_call(self, node);
+        }
+    }
+
+    let mut visitor = V {
+        rel_path,
+        mutexes: Vec::new(),
+    };
+    visitor.visit_file(file);
+    visitor.into_callsites()
+}
+
 fn tokio_mpsc_channel_binding(local: &syn::Local) -> Option<(String, String)> {
     let init = local.init.as_ref()?;
     if !expr_is_tokio_mpsc_channel_call(&init.expr) {
@@ -900,6 +1081,13 @@ fn tokio_mpsc_channel_binding(local: &syn::Local) -> Option<(String, String)> {
     let tx = pat_single_ident(tuple.elems.first()?)?;
     let rx = pat_single_ident(tuple.elems.iter().nth(1)?)?;
     Some((tx, rx))
+}
+
+fn tokio_mutex_binding(local: &syn::Local) -> Option<(String, Option<String>)> {
+    let init = local.init.as_ref()?;
+    let producer = tokio_mutex_new_producer(&init.expr)?;
+    let mutex = pat_single_ident(&local.pat)?;
+    Some((mutex, producer))
 }
 
 fn pat_single_ident(pat: &syn::Pat) -> Option<String> {
@@ -927,19 +1115,78 @@ fn expr_is_tokio_mpsc_channel_call(expr: &syn::Expr) -> bool {
         && segments.iter().any(|segment| segment == "mpsc")
 }
 
+fn tokio_mutex_new_producer(expr: &syn::Expr) -> Option<Option<String>> {
+    let syn::Expr::Call(call) = expr else {
+        return None;
+    };
+    let syn::Expr::Path(path) = &*call.func else {
+        return None;
+    };
+    let segments = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    if segments.last().is_some_and(|leaf| leaf == "new")
+        && segments.iter().any(|segment| segment == "Mutex")
+        && call.args.len() == 1
+    {
+        Some(
+            call.args
+                .first()
+                .and_then(channel_send_payload_zero_arg_producer),
+        )
+    } else {
+        None
+    }
+}
+
 fn channel_send_payload_zero_arg_producer(expr: &syn::Expr) -> Option<String> {
     match expr {
         syn::Expr::Await(await_expr) => channel_send_payload_zero_arg_producer(&await_expr.base),
         syn::Expr::Paren(paren) => channel_send_payload_zero_arg_producer(&paren.expr),
         syn::Expr::Group(group) => channel_send_payload_zero_arg_producer(&group.expr),
-        syn::Expr::Reference(reference) => {
-            channel_send_payload_zero_arg_producer(&reference.expr)
-        }
+        syn::Expr::Reference(reference) => channel_send_payload_zero_arg_producer(&reference.expr),
         syn::Expr::Call(call) if call.args.is_empty() => {
             let syn::Expr::Path(path) = &*call.func else {
                 return None;
             };
-            path.path.segments.last().map(|segment| segment.ident.to_string())
+            path.path
+                .segments
+                .last()
+                .map(|segment| segment.ident.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn mutex_guard_access_lock_site(expr: &syn::Expr, mutex: &str) -> Option<(usize, usize)> {
+    match expr {
+        syn::Expr::Unary(unary) => match unary.op {
+            syn::UnOp::Deref(_) => mutex_lock_site(&unary.expr, mutex),
+            _ => None,
+        },
+        syn::Expr::Paren(paren) => mutex_guard_access_lock_site(&paren.expr, mutex),
+        syn::Expr::Group(group) => mutex_guard_access_lock_site(&group.expr, mutex),
+        syn::Expr::Reference(reference) => mutex_guard_access_lock_site(&reference.expr, mutex),
+        _ => None,
+    }
+}
+
+fn mutex_lock_site(expr: &syn::Expr, mutex: &str) -> Option<(usize, usize)> {
+    match expr {
+        syn::Expr::Await(await_expr) => mutex_lock_site(&await_expr.base, mutex),
+        syn::Expr::Paren(paren) => mutex_lock_site(&paren.expr, mutex),
+        syn::Expr::Group(group) => mutex_lock_site(&group.expr, mutex),
+        syn::Expr::Reference(reference) => mutex_lock_site(&reference.expr, mutex),
+        syn::Expr::MethodCall(method) if method.method == "lock" && method.args.is_empty() => {
+            if expr_bare_ident_name(&method.receiver).as_deref() == Some(mutex) {
+                let start = method.method.span().start();
+                Some((start.line, start.column))
+            } else {
+                None
+            }
         }
         _ => None,
     }
@@ -5059,6 +5306,9 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         callsites.extend(collect_tokio_mpsc_channel_conduit_callsites(
             &file, &rel_path,
         ));
+        callsites.extend(collect_tokio_mutex_guard_conduit_callsites(
+            &file, &rel_path,
+        ));
         let file_callsite_count = callsites.len();
         if file_callsite_count > 0 {
             debug!(
@@ -7264,8 +7514,7 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
     for attr in &item_fn.attrs {
         let path = attr.path();
         let segments: Vec<_> = path.segments.iter().collect();
-        if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "boundary"
-        {
+        if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "boundary" {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
                 let concept = args.string("concept").unwrap_or_default();
@@ -13072,6 +13321,116 @@ pub async fn edge(flag: bool) -> i64 {
             !ir.iter()
                 .any(|entry| entry["sourceSymbol"] == "channel:recv:rx"),
             "ambiguous sends must not produce a channel conduit bridge"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_emits_mutex_guard_conduit_bridge_from_protected_value() {
+        let src = r##"
+pub async fn producer() -> i64 {
+    6
+}
+
+pub fn consumer(x: i64) -> i64 {
+    assert!(x == 6);
+    6
+}
+
+pub async fn edge() -> i64 {
+    let m = tokio::sync::Mutex::new(producer().await);
+    {
+        let x = consumer(*m.lock().await);
+        x
+    }
+}
+"##;
+        let root = temp_workspace("lift_implications_mutex_guard_conduit");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                { "name": "producer@src/lib.rs:2:4",
+                  "contract_cid": "blake3-512:666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666" },
+                { "name": "consumer@src/lib.rs:6:4",
+                  "contract_cid": "blake3-512:777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777" }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let mutex = ir
+            .iter()
+            .find(|e| e["sourceSymbol"] == "mutex:guard:m")
+            .expect("mutex guard conduit bridge");
+        assert_eq!(mutex["kind"], "bridge");
+        assert_eq!(
+            mutex["targetContractCid"],
+            "blake3-512:666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_mutex_guard_conduit_when_protected_value_is_ambiguous() {
+        let src = r##"
+pub async fn producer_six() -> i64 {
+    6
+}
+
+pub async fn producer_five() -> i64 {
+    5
+}
+
+pub fn consumer(x: i64) -> i64 {
+    assert!(x == 6);
+    6
+}
+
+pub async fn edge(flag: bool) -> i64 {
+    let m = tokio::sync::Mutex::new(if flag {
+        producer_six().await
+    } else {
+        producer_five().await
+    });
+    {
+        let x = consumer(*m.lock().await);
+        x
+    }
+}
+"##;
+        let root = temp_workspace("lift_implications_mutex_ambiguous_protected_value");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                { "name": "producer_six@src/lib.rs:2:4",
+                  "contract_cid": "blake3-512:888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888" },
+                { "name": "producer_five@src/lib.rs:6:4",
+                  "contract_cid": "blake3-512:999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999" },
+                { "name": "consumer@src/lib.rs:10:4",
+                  "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "mutex:guard:m"),
+            "ambiguous protected values must not produce a mutex guard conduit bridge"
         );
 
         let _ = fs::remove_dir_all(root);

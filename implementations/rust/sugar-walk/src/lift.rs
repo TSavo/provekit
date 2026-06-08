@@ -2615,6 +2615,10 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                 expr_root_ident(&m.receiver)
                     .map(|rx| format!("channel:recv:{rx}"))
                     .unwrap_or_else(|| format!("method:{}", m.method))
+            } else if m.method == "lock" && m.args.is_empty() {
+                expr_root_ident(&m.receiver)
+                    .map(|mutex| format!("mutex:guard:{mutex}"))
+                    .unwrap_or_else(|| format!("method:{}", m.method))
             } else {
                 format!("method:{}", m.method)
             };
@@ -2783,8 +2787,13 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
         }
         Expr::Block(block_expr) => {
             // A block expression `{ ...; tail }` lifts to the lift of its
-            // trailing expression (the block's value). Leading statements
-            // do not contribute to the returned value term.
+            // trailing expression (the block's value). For the compiler-forced
+            // pattern `{ let x = value; x }`, substitute the immediately
+            // preceding immutable binding into the tail so the returned value
+            // term survives without broader data-flow analysis.
+            if let Some(term) = lift_immediate_block_result_binding(&block_expr.block.stmts, ctx) {
+                return Some(term);
+            }
             let tail = block_expr.block.stmts.last()?;
             match tail {
                 Stmt::Expr(e, None) => lift_expr_to_term_inner(e, ctx),
@@ -2911,6 +2920,22 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
         }
         _ => None,
     }
+}
+
+fn lift_immediate_block_result_binding(stmts: &[Stmt], ctx: &mut LiftCtx) -> Option<IrTerm> {
+    let [prefix @ .., Stmt::Expr(Expr::Path(tail), None)] = stmts else {
+        return None;
+    };
+    let tail_name = tail.path.get_ident()?.to_string();
+    let Stmt::Local(local) = prefix.last()? else {
+        return None;
+    };
+    let (bound_name, mutable) = local_binding_ident(local)?;
+    if mutable || bound_name != tail_name {
+        return None;
+    }
+    let init = &local.init.as_ref()?.expr;
+    lift_expr_to_term_inner(init, ctx)
 }
 
 fn bin_op_to_predicate_name(op: &BinOp) -> Option<&'static str> {
@@ -3163,6 +3188,48 @@ mod tests {
                         "kind": "ctor",
                         "name": "channel:recv:rx",
                         "args": [{"kind": "var", "name": "rx"}]
+                    }]
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn tokio_mutex_lock_lifts_as_receiver_specific_guard_conduit() {
+        let expr: Expr = syn::parse_str("*m.lock().await").unwrap();
+        let term = lift_expr_to_term(&expr).unwrap();
+        let json = serde_json::to_value(&term).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "kind": "ctor",
+                "name": "await",
+                "args": [{
+                    "kind": "ctor",
+                    "name": "mutex:guard:m",
+                    "args": [{"kind": "var", "name": "m"}]
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn block_result_binding_preserves_mutex_guard_conduit_term() {
+        let expr: Expr = syn::parse_str("{ let x = consumer(*m.lock().await); x }").unwrap();
+        let term = lift_expr_to_term(&expr).unwrap();
+        let json = serde_json::to_value(&term).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "kind": "ctor",
+                "name": "consumer",
+                "args": [{
+                    "kind": "ctor",
+                    "name": "await",
+                    "args": [{
+                        "kind": "ctor",
+                        "name": "mutex:guard:m",
+                        "args": [{"kind": "var", "name": "m"}]
                     }]
                 }]
             })
