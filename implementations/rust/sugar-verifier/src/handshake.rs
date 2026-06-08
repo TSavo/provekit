@@ -122,7 +122,7 @@ pub fn locate_producer_post(
     pool_mementos: &std::collections::BTreeMap<String, Json>,
     bridges_by_symbol: &std::collections::BTreeMap<String, Json>,
 ) -> Option<(Json, String)> {
-    let arg = arg_term.as_ref()?;
+    let arg = producer_lookup_term(arg_term.as_ref()?);
     if arg.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
         return None;
     }
@@ -151,6 +151,19 @@ pub fn locate_producer_post(
     let post = wrap_post_forall(post, producer_body);
     let post_hash = formula_hash(&post);
     Some((post, post_hash))
+}
+
+fn producer_lookup_term(arg: &Json) -> &Json {
+    let Some("ctor") = arg.get("kind").and_then(|v| v.as_str()) else {
+        return arg;
+    };
+    if arg.get("name").and_then(|v| v.as_str()) != Some("await") {
+        return arg;
+    }
+    arg.get("args")
+        .and_then(|v| v.as_array())
+        .and_then(|args| args.first())
+        .unwrap_or(arg)
 }
 
 /// Wrap a bare producer post in `forall result. post`, binding the output
@@ -255,4 +268,87 @@ fn strip_cid_and_sig(env: &Json) -> Json {
         map.remove("producerSignature");
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    fn contract_with_post(post_value: i64) -> Json {
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "name": "producer",
+                    "formals": [],
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "result"},
+                            {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": post_value}
+                        ]
+                    }
+                }
+            }
+        })
+    }
+
+    fn bridge_to(cid: &str) -> Json {
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "producer",
+                    "targetContractCid": cid
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn locate_producer_post_resolves_through_single_await_seam() {
+        let producer_cid = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let mut pool_mementos = BTreeMap::new();
+        pool_mementos.insert(producer_cid.to_string(), contract_with_post(6));
+        let mut bridges_by_symbol = BTreeMap::new();
+        bridges_by_symbol.insert("producer".to_string(), bridge_to(producer_cid));
+
+        let arg_term = Some(json!({
+            "kind": "ctor",
+            "name": "await",
+            "args": [
+                {"kind": "ctor", "name": "producer", "args": []}
+            ]
+        }));
+
+        let (post, _) = locate_producer_post(&arg_term, &pool_mementos, &bridges_by_symbol)
+            .expect("await seam should resolve to producer post");
+        assert_eq!(post["kind"], "forall");
+        assert_eq!(post["name"], "result");
+    }
+
+    #[test]
+    fn locate_producer_post_refuses_non_producer_await_base() {
+        let producer_cid = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let mut pool_mementos = BTreeMap::new();
+        pool_mementos.insert(producer_cid.to_string(), contract_with_post(6));
+        let mut bridges_by_symbol = BTreeMap::new();
+        bridges_by_symbol.insert("producer".to_string(), bridge_to(producer_cid));
+
+        let arg_term = Some(json!({
+            "kind": "ctor",
+            "name": "await",
+            "args": [
+                {"kind": "var", "name": "future"}
+            ]
+        }));
+
+        assert!(
+            locate_producer_post(&arg_term, &pool_mementos, &bridges_by_symbol).is_none(),
+            "await over a non-call term must not invent a producer post"
+        );
+    }
 }

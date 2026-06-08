@@ -12574,6 +12574,49 @@ pub fn caller(input: &str) -> i64 {
     }
 
     #[test]
+    fn lift_implications_harvests_producer_call_inside_await_seam() {
+        let src = r##"
+pub async fn producer() -> i64 {
+    6
+}
+
+pub async fn caller() -> i64 {
+    producer().await
+}
+"##;
+        let root = temp_workspace("lift_implications_await_producer");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "producer@src/lib.rs:2:4",
+              "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let producer = ir
+            .iter()
+            .find(|e| e["sourceSymbol"] == "producer")
+            .expect("producer bridge under await seam");
+        assert_eq!(producer["kind"], "bridge");
+        assert_eq!(
+            producer["targetContractCid"],
+            "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn lift_implications_emits_residue_manifest_annotations() {
         let root = temp_workspace("lift_implications_residue_annotations");
         let src_dir = root.join("src");

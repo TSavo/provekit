@@ -177,11 +177,14 @@ fn multi_arg_closure_nests() {
 }
 
 #[test]
-fn await_passes_through_to_inner() {
-    // future.await lifts as just `future`.
+fn await_lifts_as_structural_seam() {
+    // `future.await` is the explicit async seam. It must survive as a term so
+    // the verifier can reuse the existing producer.post -> consumer.pre edge
+    // across the suspension boundary.
     let awaited = lift_expr_to_term(&parse_expr("future.await")).unwrap();
-    let direct = lift_expr_to_term(&parse_expr("future")).unwrap();
-    assert_eq!(awaited, direct);
+    let json = serde_json::to_string(&awaited).unwrap();
+    assert!(json.contains("\"await\""), "await seam missing: {json}");
+    assert!(json.contains("\"future\""), "awaited base missing: {json}");
 }
 
 #[test]

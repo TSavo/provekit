@@ -413,6 +413,9 @@ fn walk_expr_for_callsites(
         Expr::Try(t) => {
             walk_expr_for_callsites(&t.expr, callee_name, conditions, inner_stmts, hits);
         }
+        Expr::Await(a) => {
+            walk_expr_for_callsites(&a.base, callee_name, conditions, inner_stmts, hits);
+        }
         // Return statements: recurse into the returned expression for
         // callsite discovery.
         Expr::Return(r) => {
@@ -802,6 +805,39 @@ mod tests {
         assert!(
             !json.contains("<expr:"),
             "binary arg must not use token-string placeholder: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn awaited_let_binding_reaches_later_consumer_pre_as_structural_seam() {
+        let caller_src = r#"
+            async fn caller() {
+                let x = producer().await;
+                consumer(x);
+            }
+        "#;
+        let caller_fn: ItemFn = parse_fn(caller_src);
+        let pre = atomic_ge(var("x"), const_int(6));
+
+        let walks = walk_callsites_to_entry(&caller_fn, "consumer", &["x".to_string()], pre);
+
+        assert_eq!(walks.len(), 1, "consumer callsite should be found");
+        let entry_wp = walks[0].entry_wp();
+        let json = serde_json::to_string(entry_wp.as_formula()).unwrap();
+        assert!(
+            json.contains("\"await\""),
+            "await seam should survive let-substitution into consumer pre: {}",
+            json
+        );
+        assert!(
+            json.contains("\"producer\""),
+            "producer call should survive under await seam: {}",
+            json
+        );
+        assert!(
+            !json.contains("\"x\""),
+            "the local x should be substituted by producer().await: {}",
             json
         );
     }
