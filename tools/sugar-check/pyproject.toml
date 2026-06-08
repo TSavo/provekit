@@ -1,0 +1,19 @@
+[project]
+name = "sugar-check"
+version = "0.1.0"
+description = "Behavioral semver for Python packages: sugar diff over the harvested pytest contracts."
+requires-python = ">=3.9"
+# Requires the sugar pytest lifter importable in this interpreter, and the
+# `sugar` binary on PATH (or SUGAR_BIN). sugar-lift-py-tests is published from
+# this monorepo; install it alongside (pip install -e implementations/python/sugar-lift-py-tests).
+dependencies = []
+
+[project.scripts]
+sugar-check = "sugar_check.__main__:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
