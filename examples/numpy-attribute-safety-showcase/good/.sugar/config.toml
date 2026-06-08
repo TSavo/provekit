@@ -1,0 +1,23 @@
+[[plugins]]
+name = "python-source"
+kind = "lift"
+surface = "python-source"
+workspace_override = "src"
+emit = "ir-document"
+
+[[plugins]]
+name = "pytest-witness-lift"
+kind = "lift"
+surface = "python-pytest-witness"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+

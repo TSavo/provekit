@@ -6,7 +6,7 @@
 #
 # Mainline targets:
 #   make help: print this help
-#   make ci: check-cargo-entrypoint + the acid test (test-all)
+#   make ci: check-cargo-entrypoint + the acid test + showcase receipts
 #   make test-all: the acid test -- test-rust + test-python
 #
 # `test-rust` runs the rust workspace (including the crate-pair inheritance
@@ -56,8 +56,9 @@ help:
 	@echo "Sugar: top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             check-cargo-entrypoint + the acid test (test-all)"
+	@echo "  make ci             check-cargo-entrypoint + the acid test + showcase receipts"
 	@echo "  make test-all       the acid test: test-rust + test-python"
+	@echo "  make test-showcases run the checked-in end-to-end showcase receipts"
 	@echo ""
 	@echo "Per-language build:"
 	@echo "  make build-rust     cargo build --release (workspace)"
@@ -267,10 +268,52 @@ test-all: check-no-concept-name
 	fi; \
 	echo "==== test-all: PASS ===="
 
+SHOWCASE_RUNS = \
+	examples/numpy-showcase/run.sh \
+	examples/pandas-showcase/run.sh \
+	examples/rust-boundary-showcase/run.sh \
+	examples/rust-witness-showcase/run.sh \
+	examples/rust-test-assertion-consistency/run.sh \
+	examples/polars-showcase/run.sh \
+	examples/numpy-attribute-safety-showcase/run.sh
+
+.PHONY: test-showcases
+test-showcases:
+	@set -e; \
+	if [ "$${SHOWCASES_ON_REMOTE:-0}" != "1" ] && [ "$$(uname -s)" != "Linux" ] && [ "$${USE_BCARGO:-1}" != "0" ]; then \
+	  echo "==== test-showcases on battleaxe via bcargo ===="; \
+	  $(BCARGO) build --manifest-path implementations/rust/Cargo.toml \
+	    -p sugar-cli --bin sugar \
+	    -p sugar-walk --bin sugar-walk-rpc \
+	    -p sugar-lift-rust-cargo-test-witness --bin witness_rpc \
+	    -p sugar-lift-rust-cargo-test-witness --bin discharge_cli \
+	    -p sugar-lift-rust-tests --bin rust_test_assertions_rpc >/dev/null || exit $$?; \
+	  remote_host="$${BCARGO_REMOTE_HOST:-battleaxe}"; \
+	  remote_tag="$$(printf '%s' "$$(pwd -P)" | shasum 2>/dev/null | cut -c1-12)"; \
+	  remote_tag="$${remote_tag:-default}"; \
+	  remote_root="$${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/sugar-bcargo-$$remote_tag}"; \
+	  remote_repo="$$remote_root/sugar"; \
+	  remote_cmd="cd $$(printf '%q' "$$remote_repo") && SHOWCASES_ON_REMOTE=1 POLARS_SHOWCASE_ON_REMOTE=1 POLARS_SHOWCASE_SKIP_LOCAL_BUILD=1 NUMPY_ATTR_SHOWCASE_ON_REMOTE=1 NUMPY_ATTR_SHOWCASE_SKIP_LOCAL_BUILD=1 make test-showcases"; \
+	  ssh -o BatchMode=yes "$$remote_host" "bash -lc $$(printf '%q' "$$remote_cmd")"; \
+	  exit $$?; \
+	fi; \
+	failed=""; \
+	for s in $(SHOWCASE_RUNS); do \
+	  echo ""; \
+	  echo "==== $$s ===="; \
+	  "$$s" || failed="$$failed $$s"; \
+	done; \
+	echo ""; \
+	if [ -n "$$failed" ]; then \
+	  echo "==== test-showcases FAIL:$$failed ===="; \
+	  exit 1; \
+	fi; \
+	echo "==== test-showcases: PASS ===="
+
 # --- CI alias ----------------------------------------------------------------
 
 .PHONY: ci
-ci: check-cargo-entrypoint test-all
+ci: check-cargo-entrypoint test-all test-showcases
 	@echo ""
 	@echo "==== ci: PASS ===="
 
