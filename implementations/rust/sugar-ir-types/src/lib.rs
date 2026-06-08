@@ -9,6 +9,12 @@ use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
 pub mod realization_tags;
 
+// Manual extension (not codegen): CLI-side canonicalization of ProofIR for
+// behavior identity. The kits emit ProofIR; the substrate computes the canonical
+// form before hashing. Alpha + pure-let normal form, solver-free.
+pub mod canonicalize;
+pub use canonicalize::{canonicalize_formula, canonicalize_property};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Declaration {
