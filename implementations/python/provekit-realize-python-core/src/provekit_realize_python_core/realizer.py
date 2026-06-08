@@ -49,6 +49,7 @@ class BodyTemplateEntry:
     requires_return_type: str | None
     loss_record_contribution: dict[str, Any] | None = None
     target_library_tag: str | None = None
+    op_cid: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,10 @@ class BodyTemplateResourceError(Exception):
         self.missing_resources = missing_resources
 
 
+class BodyTemplateOpCidError(Exception):
+    pass
+
+
 class OperandBindingMisalignmentError(Exception):
     def __init__(self, missing_positions: list[list[int]], extra_positions: list[list[int]]):
         self.missing_positions = missing_positions
@@ -112,6 +117,7 @@ def emit_stub(
     param_types: list[str],
     return_type: str,
     concept_name: str,
+    op_cid: str | None = None,
     contract: dict[str, Any] | None = None,
     transported_op: dict[str, Any] | None = None,
     sugar_cids: list[str] | None = None,
@@ -213,7 +219,13 @@ def emit_stub(
                 )
                 if missing:
                     raise MissingTemplateError(missing)
-            body = body_template_for(concept_name, params, param_types, return_type)
+            body = body_template_for(
+                concept_name,
+                params,
+                param_types,
+                return_type,
+                op_cid=op_cid,
+            )
             if body is None:
                 missing = missing_templates_for(
                     function,
@@ -667,6 +679,8 @@ def body_template_for(
     params: list[str],
     param_types: list[str],
     return_type: str,
+    *,
+    op_cid: str | None = None,
 ) -> str | None:
     return _body_template_for_entries(
         entries(),
@@ -674,6 +688,7 @@ def body_template_for(
         params,
         param_types,
         return_type,
+        op_cid=op_cid,
     )
 
 
@@ -769,6 +784,7 @@ class _MissingTemplateCollector:
                     template_params,
                     template_types,
                     self.return_type,
+                    op_cid=_tree_op_cid(tree),
                 )
                 is None
             ):
@@ -1372,7 +1388,13 @@ def _lower_shape_expression(
         )
     if concept_name in {"concept:skip", "skip"} and not arg_exprs:
         return TermExpression(text="None", type_name="None")
-    template = _body_template_expression_for(concept_name, arg_exprs, arg_types, context.return_type)
+    template = _body_template_expression_for(
+        concept_name,
+        arg_exprs,
+        arg_types,
+        context.return_type,
+        op_cid=_shape_op_cid(shape),
+    )
     if template is None:
         return None
     return TermExpression(
@@ -1441,6 +1463,12 @@ def _literal_term(value: Any) -> TermExpression:
 def _shape_concept_name(shape: dict[str, Any]) -> str:
     value = shape.get("concept_name", shape.get("conceptName"))
     return value.strip() if isinstance(value, str) else ""
+
+
+def _shape_op_cid(shape: dict[str, Any]) -> str | None:
+    value = shape.get("op_cid", shape.get("opCid"))
+    stripped = value.strip() if isinstance(value, str) else ""
+    return stripped or None
 
 
 def _shape_args(shape: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1513,7 +1541,13 @@ def _lower_tree_body(
             return None
         if child_body.body:
             child_bodies.append(child_body.body)
-    body = body_template_for(concept_name, params, param_types, return_type)
+    body = body_template_for(
+        concept_name,
+        params,
+        param_types,
+        return_type,
+        op_cid=_tree_op_cid(tree),
+    )
     if body is None:
         return None
     if child_bodies:
@@ -1524,6 +1558,12 @@ def _lower_tree_body(
 def _tree_concept_name(tree: dict[str, Any]) -> str:
     value = tree.get("conceptName", tree.get("concept_name"))
     return value.strip() if isinstance(value, str) else ""
+
+
+def _tree_op_cid(tree: dict[str, Any]) -> str | None:
+    value = tree.get("opCid", tree.get("op_cid"))
+    stripped = value.strip() if isinstance(value, str) else ""
+    return stripped or None
 
 
 def _tree_operation_kind(tree: dict[str, Any]) -> str:
@@ -1556,12 +1596,37 @@ def _body_template_for_entries(
     params: list[str],
     param_types: list[str],
     return_type: str,
+    *,
+    op_cid: str | None = None,
 ) -> str | None:
     mapped_param_types = [map_source_type(ty) for ty in param_types]
     mapped_return_type = map_source_type(return_type)
-    for entry in body_entries:
-        if entry.concept_name not in candidate_names:
-            continue
+    if op_cid:
+        has_op_cid_index = any(entry.op_cid for entry in body_entries)
+        op_entries = tuple(entry for entry in body_entries if entry.op_cid == op_cid)
+        if not op_entries and has_op_cid_index:
+            raise BodyTemplateOpCidError(f"op_cid not found in body templates: {op_cid}")
+        if op_entries:
+            op_names = {entry.concept_name for entry in op_entries}
+            if len(op_names) > 1:
+                names = ", ".join(sorted(op_names))
+                raise BodyTemplateOpCidError(f"op_cid collision for {op_cid}: {names}")
+            if candidate_names and op_names.isdisjoint(candidate_names):
+                expected = ", ".join(candidate_names)
+                actual = ", ".join(sorted(op_names))
+                raise BodyTemplateOpCidError(
+                    f"op_cid mismatch for {op_cid}: candidate={expected}; template={actual}"
+                )
+            search_entries = op_entries
+        else:
+            search_entries = tuple(
+                entry for entry in body_entries if entry.concept_name in candidate_names
+            )
+    else:
+        search_entries = tuple(
+            entry for entry in body_entries if entry.concept_name in candidate_names
+        )
+    for entry in search_entries:
         if not _entry_signature_matches(
             entry,
             len(params),
@@ -1861,12 +1926,15 @@ def _body_template_expression_for(
     params: list[str],
     param_types: list[str],
     return_type: str,
+    *,
+    op_cid: str | None = None,
 ) -> str | None:
     return _body_template_expression_for_candidates(
         (concept_name, concept_name.removeprefix("concept:")),
         params,
         param_types,
         return_type,
+        op_cid=op_cid,
     )
 
 
@@ -1875,6 +1943,8 @@ def _body_template_expression_for_candidates(
     params: list[str],
     param_types: list[str],
     return_type: str,
+    *,
+    op_cid: str | None = None,
 ) -> str | None:
     body = _body_template_for_entries(
         entries(),
@@ -1882,6 +1952,7 @@ def _body_template_expression_for_candidates(
         params,
         param_types,
         return_type,
+        op_cid=op_cid,
     )
     if body is None:
         return None
@@ -2469,6 +2540,7 @@ def _parse_entry_array(
         if not isinstance(guard, dict):
             guard = {}
         concept_name = item.get("concept_name")
+        op_cid = item.get("op_cid", item.get("opCid"))
         template_kind = template.get("kind")
         template_text = template.get("template")
         loss_record_contribution = item.get("loss_record_contribution")
@@ -2497,6 +2569,7 @@ def _parse_entry_array(
                 target_library_tag=target_library_tag
                 if isinstance(target_library_tag, str)
                 else default_library_tag,
+                op_cid=op_cid if isinstance(op_cid, str) else None,
             )
         )
     return tuple(out)

@@ -11,6 +11,7 @@ from typing import Any, Iterable
 from provekit_lift_py_tests.canonicalizer import blake3_512_of, encode_jcs
 from provekit_lift_py_tests.decorators import _parse_expr_string
 from provekit_lift_py_tests.ir import formula_to_value
+from provekit_lift_py_tests.op_cid import local_op_cid
 
 from .ast_template import function_body_template, function_param_names
 from .canonical import cid_of_json, template_cid_of_json
@@ -422,6 +423,9 @@ def _library_binding_entry_for_function(
     concept_name = binding.get("concept_name")
     if concept_name:
         entry["concept_name"] = concept_name
+    op_cid = binding.get("op_cid")
+    if op_cid:
+        entry["op_cid"] = op_cid
     # Provenance: `derived` marks a zero-code universal-lift binding (no
     # @sugar.bind), distinct from a `declared` one. Emitted only when derived,
     # so tagged shims stay byte-identical. Lets recognize keep the project's own
@@ -454,6 +458,7 @@ def _sugar_bind_decorator(
         concept = _keyword_str(decorator, "concept")
         library = _keyword_str(decorator, "library")
         symbol = _keyword_str(decorator, "symbol")
+        op_cid = _keyword_str(decorator, "op_cid")
         # Symbol-keyed identity is the path forward (e.g. `numpy.add`): a sugar
         # binding IS its fully-qualified library symbol — the join key the linker
         # resolves against and the recognizer canonicalizes aliased calls to
@@ -465,6 +470,8 @@ def _sugar_bind_decorator(
                 result["symbol"] = symbol
             if concept:
                 result["concept_name"] = concept
+            if op_cid:
+                result["op_cid"] = op_cid
             loss = _keyword_str_list(decorator, "loss")
             if loss is not None:
                 result["loss"] = loss
@@ -978,9 +985,9 @@ def _operand_symbol(node: ast.AST) -> str | None:
 def _operand_slot(value: Json) -> Json:
     if (
         isinstance(value, dict)
-        and isinstance(value.get("concept_name"), str)
         and isinstance(value.get("op_cid"), str)
         and isinstance(value.get("args"), list)
+        and ("concept_name" not in value or isinstance(value.get("concept_name"), str))
     ):
         return value
     if isinstance(value, dict) and (
@@ -1587,7 +1594,7 @@ def _concept_citation_diag(
 
 
 def _local_op_cid(name: str) -> str:
-    return cid_of_json({"kind": "local-operator", "name": name})
+    return local_op_cid(name)
 
 
 def _valid_emitted_by(value: Json) -> bool:

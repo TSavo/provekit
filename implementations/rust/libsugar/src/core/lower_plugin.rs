@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use sugar_ir_types::Sort;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sugar_ir_types::Sort;
 
 use super::bind::{concept_bind_result_cid, named_term_document_from_bind_payload, NamedTerm};
 use super::primitives::address;
@@ -25,6 +25,13 @@ pub struct RealizeRequest {
     pub param_types: Vec<String>,
     pub return_type: String,
     pub concept_name: String,
+    #[serde(
+        default,
+        rename = "opCid",
+        alias = "op_cid",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub op_cid: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub named_term_tree: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -840,6 +847,7 @@ fn invocation_from_tree_node(
         param_types,
         return_type,
         concept_name,
+        op_cid: node_string(node, &["opCid", "op_cid"]),
         named_term_tree: Some(node.clone()),
         term_shape: node
             .get("termShape")
@@ -1307,6 +1315,7 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         param_types: string_array_field(spec, &["paramTypes", "param_types"])?,
         return_type: required_string_field(spec, &["returnType", "return_type"])?,
         concept_name: required_string_field(spec, &["conceptName", "concept_name"])?,
+        op_cid: string_field_optional(spec, &["opCid", "op_cid"]),
         named_term_tree: non_null_field(spec, &["namedTermTree", "named_term_tree"]).cloned(),
         term_shape: non_null_field(spec, &["termShape", "term_shape"]).cloned(),
         operand_bindings: value_array_field(spec, &["operandBindings", "operand_bindings"]),

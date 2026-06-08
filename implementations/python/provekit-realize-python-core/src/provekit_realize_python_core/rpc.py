@@ -146,6 +146,9 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         param_types=_string_list(params.get("param_types")),
         return_type=str(params.get("return_type", "")),
         concept_name=str(params.get("concept_name", "")),
+        op_cid=params.get("op_cid", params.get("opCid"))
+        if isinstance(params.get("op_cid", params.get("opCid")), str)
+        else None,
         contract=params.get("contract") if isinstance(params.get("contract"), dict) else None,
         transported_op=params.get("transported_op")
         if isinstance(params.get("transported_op"), dict)
@@ -245,6 +248,8 @@ def _body_template_entry_json(entry: Any) -> dict[str, Any]:
         "emission_template": {"kind": entry.template_kind, "template": entry.template},
         "signature_guard": guard,
     }
+    if entry.op_cid is not None:
+        result["op_cid"] = entry.op_cid
     if entry.target_library_tag is not None:
         result["target_library_tag"] = entry.target_library_tag
     return result

@@ -19,7 +19,7 @@ if str(PKG_SRC) not in sys.path:
 if str(REALIZER_SRC) not in sys.path:
     sys.path.insert(0, str(REALIZER_SRC))
 
-from provekit_lift_python_source.bind_lifter import lift_source
+from provekit_lift_python_source.bind_lifter import _operand_slot, lift_source
 from provekit_lift_python_source.bind_rpc import dispatch, initialize_result
 from provekit_lift_py_tests.canonicalizer import blake3_512_of
 from provekit_lift_python_source.canonical import cid_of_json
@@ -695,6 +695,15 @@ def test_bind_lift_preserves_operator_concept_cid_atoms() -> None:
         assert set(atoms[0]) == {"args", "concept_name", "op_cid"}
         assert all(arg == {} for arg in atoms[0]["args"])
         _assert_absent_keys(atoms[0], {"kind", "op", "file", "fn_line", "line", "column"})
+
+
+def test_operand_slot_accepts_op_cid_only_operation_atoms() -> None:
+    atom = {
+        "op_cid": _local_op_cid("concept:add"),
+        "args": [{}, {}],
+    }
+
+    assert _operand_slot(atom) == atom
 
 
 def test_bind_lift_operator_atoms_make_distinct_term_shape_cids() -> None:
