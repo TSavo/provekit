@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn provekit_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 fn write_fake_recognizer_project(project: &Path) -> PathBuf {

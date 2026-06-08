@@ -44,7 +44,7 @@ use std::process::Command;
 use serde_json::{json, Value as Json};
 
 fn provekit_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 fn z3_available() -> bool {
@@ -275,7 +275,7 @@ fn rust_division_seam_transcript() {
 /// `lift::lift_function_postcondition`); it is `syn`-based, no charon needed.
 /// Returns the op-symbol the lifter actually emits for the body's `/`.
 fn production_post_op_for_division() -> String {
-    let bin = std::env::var("CARGO_BIN_EXE_provekit")
+    let bin = std::env::var("CARGO_BIN_EXE_sugar")
         .ok()
         .and_then(|p| {
             // The walk-rpc binary sits next to the provekit binary in the

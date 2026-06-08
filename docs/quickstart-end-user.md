@@ -28,7 +28,7 @@ z3 --version
 From the repo root:
 
 ```sh
-cargo install --path implementations/rust/provekit-cli
+cargo install --path implementations/rust/sugar-cli
 ```
 
 This installs `provekit` to `~/.cargo/bin/`. If that directory is not on your
@@ -46,7 +46,7 @@ provekit --version
 Confirm the install conforms to the protocol catalog it was built against:
 
 ```sh
-provekit verify-protocol
+sugar verify-protocol
 ```
 
 This prints the expected and actual catalog CIDs and `status: match`. The binary
@@ -159,10 +159,10 @@ cross-proof contract conjoin that makes inherited correctness work.
 ## Step 5: try it on your own project
 
 ```sh
-provekit init
+sugar init
 ```
 
-`provekit init` scaffolds `provekit.toml`, a `.provekit/` directory, a sample
+`sugar init` scaffolds `provekit.toml`, a `.provekit/` directory, a sample
 invariant, and a GitHub Action. From there the flow is:
 
 1. Declare your lift plugins in `.provekit/config.toml` and a manifest under
@@ -179,7 +179,7 @@ invariant, and a GitHub Action. From there the flow is:
 4. `provekit verify --project .` verifies a kit end to end and emits a signed
    per-claim receipt.
 
-The exact manifest wiring depends on your kit. `provekit doctor` validates a
+The exact manifest wiring depends on your kit. `sugar doctor` validates a
 kit's config and manifest before a run.
 
 ## Editor integration

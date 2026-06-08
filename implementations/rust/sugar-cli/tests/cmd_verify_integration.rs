@@ -192,7 +192,7 @@ fn publish_violated_claim_project() -> PathBuf {
 fn provekit_bin() -> PathBuf {
     // CARGO_BIN_EXE_<name> is set by cargo for integration tests of a
     // binary crate.
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 fn z3_available() -> bool {

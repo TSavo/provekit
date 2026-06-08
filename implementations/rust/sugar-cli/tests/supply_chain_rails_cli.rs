@@ -46,7 +46,7 @@ fn write_json(path: &Path, value: &Value) {
 }
 
 fn run_provekit(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_provekit"))
+    Command::new(env!("CARGO_BIN_EXE_sugar"))
         .args(args)
         .output()
         .unwrap_or_else(|e| panic!("spawn provekit {}: {e}", args.join(" ")))

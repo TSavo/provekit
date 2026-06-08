@@ -42,7 +42,7 @@ use serde_json::Value as Json;
 mod contradiction;
 
 fn provekit_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 /// CARGO_MANIFEST_DIR = .../implementations/rust/sugar-cli; three parents up

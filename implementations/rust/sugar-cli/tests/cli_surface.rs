@@ -11,7 +11,7 @@ use libsugar::core::{address, Input, Path as CorePath, PathAlgebra, PathDocument
 use serde_json::json;
 
 fn provekit_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 fn repo_root() -> PathBuf {

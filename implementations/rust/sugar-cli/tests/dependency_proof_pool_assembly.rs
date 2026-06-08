@@ -343,7 +343,7 @@ fn voltron_pool_refuses_cross_dependency_violation() {
     install_dependency_proof_stub(&project, &bundle_cid, &proof_bytes);
     fs::remove_file(&proof_path).expect("remove dependency proof path after kit reads it");
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_provekit"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_sugar"))
         .arg("prove")
         .arg(&project)
         .arg("--z3")
@@ -369,7 +369,7 @@ fn prove_reports_violation_for_contradictory_implication() {
     }
 
     let project = publish_contradictory_implication_project();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_provekit"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_sugar"))
         .arg("prove")
         .arg(&project)
         .arg("--z3")

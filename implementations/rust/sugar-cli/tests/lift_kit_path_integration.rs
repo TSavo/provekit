@@ -13,7 +13,7 @@ use sugar_ir_types::Sort;
 use serde_json::json;
 
 fn provekit_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
 fn write_executable(path: &Path, contents: &str) {

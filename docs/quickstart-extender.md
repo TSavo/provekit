@@ -8,7 +8,7 @@ Before reading further: the architectural derivation (`docs/launch/the-pieces-on
 
 Note on the editor path below: the four-stage editor-squiggle pipeline
 (linker daemon plus LSP server plus editor) is the roadmap target, not the
-shipped path. What runs today is a batch plugin protocol: the `provekit` CLI
+shipped path. What runs today is a batch plugin protocol: the `sugar` CLI
 spawns each kit as a subprocess per invocation, drives it over JSON-RPC, and
 reads the result. See "The kit plugin RPC surface" below for the protocol the
 kits actually speak now. The diagram is the intended end state.
@@ -232,7 +232,7 @@ over `resolve_witness`, BLAKE3's those bytes itself, and compares to the pinned
 `witness_cid`. A body the oracle returns that does not recompute is a broken
 oracle, caught because Rust does the math anyway; an honest re-run that differs
 is drift. Both refuse, loudly, and are distinguished.
-(`implementations/rust/provekit-cli/src/witness_verify.rs:1-18`.)
+(`implementations/rust/sugar-cli/src/witness_verify.rs:1-18`.)
 
 So a kit that ships witnesses implements exactly one new method,
 `provekit.plugin.resolve_witness`, declares it in the manifest, and writes a
@@ -242,7 +242,7 @@ grades itself.
 
 ### A real editor LSP (shipped for Python)
 
-A real editor language server, where a `provekit prove` or `verify`
+A real editor language server, where a `sugar prove` or `verify`
 contradiction surfaces as an inline diagnostic (a red squiggle on the offending
 line), exists for Python:
 `implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/editor_lsp.py`,
@@ -252,7 +252,7 @@ invocation), this is a persistent stdio server speaking the LSP base wire
 protocol (Content-Length-framed JSON-RPC): `initialize`, `didOpen`, `didChange`,
 `didSave`, `publishDiagnostics`.
 
-It is a thin client over `provekit prove`. On open and save it runs `provekit
+It is a thin client over `sugar prove`. On open and save it runs `provekit
 prove --json` over the document's project, and for each unsatisfied obligation it
 recovers the callsite from the report's `#euf#` property term, matches it against
 the document AST, and publishes an `Error`-severity diagnostic on that call. The

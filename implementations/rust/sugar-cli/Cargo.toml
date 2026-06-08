@@ -7,7 +7,7 @@ authors.workspace = true
 description = "ProvekIt user-facing CLI: prove / verify / hash / dump / search / ask / init."
 
 [[bin]]
-name = "provekit"
+name = "sugar"
 path = "src/main.rs"
 
 [lib]
