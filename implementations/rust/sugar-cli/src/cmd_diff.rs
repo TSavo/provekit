@@ -3,42 +3,50 @@
 //! Everything else in the suite mints proofs. `diff` is the verb that *reads*
 //! two of them and reports what changed in terms of meaning, not text.
 //!
-//! Each proof set lifts to a `{contract-name -> CID}` table (`name_to_cid` in
-//! the loaded `MementoPool`). The CID is the name-stripped, content-addressed
-//! identity of the contract's pre/post: its *behavior*.
+//! Two modes, same comparison:
+//!   default     BEFORE and AFTER are project roots holding minted proofs.
+//!   --git       BEFORE and AFTER are git revisions; the project's proofs are
+//!               extracted from each revision's tree and diffed. This is the
+//!               behavioral-VCS hat: "when did this last change what it does."
 //!
-//! The verdict is driven by the CID SET, not the name set, because names are
-//! sugar. We invert each table to `CID -> {names}` and classify by behavior:
+//! Each proof set lifts to a `{contract-name -> CID}` table (`name_to_cid`). The
+//! CID is the name-stripped, content-addressed identity of the contract's
+//! pre/post: its *behavior*. The verdict is driven by the CID SET, not the name
+//! set, because names are sugar. We invert each table to `CID -> {names}`:
 //!
 //!   held      a CID present both sides under the same name(s)
-//!   renamed   a CID present both sides, but its name(s) changed (pure rename)
-//!   new       a CID only in AFTER  (genuinely new behavior -- additive)
-//!   lost      a CID only in BEFORE (behavior actually gone -- breaking)
+//!   renamed   a CID present both sides, name(s) changed (a pure rename)
+//!   new       a CID only in AFTER  (genuinely new behavior, additive)
+//!   lost      a CID only in BEFORE (behavior actually gone, breaking)
 //!
-//! A pure rename has zero new and zero lost behaviors, so it is `bump: none`,
-//! exit 0. That is the whole point: rename a contract, churn its implementation,
-//! reformat 2700 files -- as long as no behavior-CID appears or disappears, the
-//! behavior delta is none and the gate stays green. Only a CID that vanishes
-//! (lost) or appears (new) moves the needle.
-//!
-//! The exit code is the product: nonzero when a behavior is lost. That one fact
-//! makes the same binary a CI gate, a pre-publish hook (refuse a dishonest
-//! version bump), and an install-time hook (refuse a silent dependency mutation).
+//! Exit nonzero iff a behavior is lost. A pure rename, an implementation rewrite,
+//! a reformat of the world: as long as no behavior-CID appears or disappears,
+//! the delta is none and the gate stays green. That one exit code makes the same
+//! binary a CI gate, a pre-publish hook, and an install-time supply-chain hook.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
 use clap::Args;
-use sugar_verifier::load_all_proofs;
+use sugar_verifier::{load_all_proofs, MementoPool};
 
-use crate::{EXIT_OK, EXIT_VERIFY_FAIL};
+use crate::{EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 #[derive(Args, Debug)]
 pub struct DiffArgs {
-    /// Baseline project root: the "before" proof set.
-    pub before: PathBuf,
-    /// Comparison project root: the "after" proof set.
-    pub after: PathBuf,
+    /// BEFORE: a project root, or a git revision when --git is set.
+    pub before: String,
+    /// AFTER: a project root, or a git revision when --git is set.
+    pub after: String,
+    /// Treat BEFORE and AFTER as git revisions and diff a project's proofs
+    /// across history ("when did this last change what it does").
+    #[arg(long)]
+    pub git: bool,
+    /// In --git mode, the project subdirectory within each revision's tree.
+    #[arg(long, default_value = ".")]
+    pub path: String,
 }
 
 /// `name -> CID`, as loaded from a proof set.
@@ -84,7 +92,6 @@ impl Summary {
 }
 
 fn short(cid: &str) -> String {
-    // strip the `blake3-512:` prefix if present, keep a recognizable head
     let hex = cid.rsplit(':').next().unwrap_or(cid);
     format!("{}…", &hex[..hex.len().min(12)])
 }
@@ -94,7 +101,7 @@ fn names(set: &BTreeSet<String>) -> String {
 }
 
 /// Pure comparison: classify every behavior CID across both tables. This is the
-/// whole feature; `run` is just IO around it.
+/// whole feature; everything else is IO around it.
 pub fn summarize(before: &Table, after: &Table) -> Summary {
     let b = invert(before);
     let a = invert(after);
@@ -103,7 +110,6 @@ pub fn summarize(before: &Table, after: &Table) -> Summary {
     for cid in cids {
         match (b.get(cid), a.get(cid)) {
             (Some(bn), Some(an)) => {
-                // behavior preserved on both sides
                 s.held += bn.intersection(an).count() as u32;
                 if bn != an {
                     s.renamed += 1;
@@ -133,11 +139,90 @@ pub fn summarize(before: &Table, after: &Table) -> Summary {
     s
 }
 
-pub fn run(args: DiffArgs) -> u8 {
-    let before = load_all_proofs::run(&args.before);
-    let after = load_all_proofs::run(&args.after);
-    let s = summarize(&before.name_to_cid, &after.name_to_cid);
+fn git_toplevel() -> Result<String, String> {
+    let out = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| format!("git: {e}"))?;
+    if !out.status.success() {
+        return Err("not in a git repository (--git must run from inside one)".into());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
 
+fn sanitize(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+/// Extract `rev:path` from `repo` into a temp dir via `git archive | tar`, load
+/// its proofs, and clean up. No worktree state, no checkout of the live tree.
+fn load_git(repo: &str, rev: &str, path: &str, label: &str) -> Result<MementoPool, String> {
+    let tmp = std::env::temp_dir().join(format!("sugar-diff-{label}-{}", sanitize(rev)));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).map_err(|e| format!("mkdir {}: {e}", tmp.display()))?;
+
+    let treeish = if path == "." || path.is_empty() {
+        rev.to_string()
+    } else {
+        format!("{rev}:{path}")
+    };
+    let archive = Command::new("git")
+        .args(["-C", repo, "archive", "--format=tar", &treeish])
+        .output()
+        .map_err(|e| format!("git archive: {e}"))?;
+    if !archive.status.success() {
+        return Err(format!(
+            "git archive {treeish}: {}",
+            String::from_utf8_lossy(&archive.stderr).trim()
+        ));
+    }
+    let mut tar = Command::new("tar")
+        .args(["-x", "-C", &tmp.to_string_lossy()])
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("tar: {e}"))?;
+    tar.stdin
+        .take()
+        .expect("tar stdin")
+        .write_all(&archive.stdout)
+        .map_err(|e| format!("tar stdin: {e}"))?;
+    if !tar.wait().map_err(|e| format!("tar wait: {e}"))?.success() {
+        return Err(format!("tar extract failed for {treeish}"));
+    }
+
+    let pool = load_all_proofs::run(&tmp);
+    let _ = std::fs::remove_dir_all(&tmp);
+    Ok(pool)
+}
+
+pub fn run(args: DiffArgs) -> u8 {
+    let (before, after) = if args.git {
+        let repo = match git_toplevel() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return EXIT_USER_ERROR;
+            }
+        };
+        let pair = load_git(&repo, &args.before, &args.path, "before")
+            .and_then(|b| load_git(&repo, &args.after, &args.path, "after").map(|a| (b, a)));
+        match pair {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return EXIT_USER_ERROR;
+            }
+        }
+    } else {
+        (
+            load_all_proofs::run(Path::new(&args.before)),
+            load_all_proofs::run(Path::new(&args.after)),
+        )
+    };
+
+    let s = summarize(&before.name_to_cid, &after.name_to_cid);
     for line in &s.lines {
         println!("{line}");
     }
@@ -179,8 +264,6 @@ mod tests {
 
     #[test]
     fn pure_rename_is_renamed_not_breaking() {
-        // THE headline: same behavior CID, new contract name. Names are sugar,
-        // so this is `renamed`, zero behavior delta, bump none, exit ok.
         let s = summarize(&table(&[("old_name", "cidA")]), &table(&[("new_name", "cidA")]));
         assert_eq!((s.renamed, s.new_behaviors, s.lost_behaviors, s.held), (1, 0, 0, 0));
         assert!(!s.breaking());
@@ -189,7 +272,6 @@ mod tests {
 
     #[test]
     fn behavior_moved_under_stable_name_is_major() {
-        // name held, CID replaced: old behavior lost, new behavior gained.
         let s = summarize(&table(&[("f", "cid1")]), &table(&[("f", "cid2")]));
         assert_eq!((s.lost_behaviors, s.new_behaviors), (1, 1));
         assert!(s.breaking());
@@ -216,5 +298,67 @@ mod tests {
         assert_eq!((s.lost_behaviors, s.held), (1, 1));
         assert!(s.breaking());
         assert_eq!(s.bump(), "MAJOR");
+    }
+
+    // --- git mode: build a throwaway repo from the real committed example
+    // proofs, commit two different proof sets, and diff across the two refs. ---
+
+    fn cp_r(src: &Path, dst: &Path) {
+        assert!(Command::new("cp")
+            .arg("-r")
+            .arg(src)
+            .arg(dst)
+            .status()
+            .expect("cp -r")
+            .success());
+    }
+
+    #[test]
+    fn git_diff_across_two_commits_of_real_proofs() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .find(|p| p.join("examples/numpy-showcase").is_dir())
+            .expect("repo root with examples/");
+        let set_a = repo_root.join("examples/numpy-showcase");
+        let set_b = repo_root.join("examples/numpy-consumer-demo");
+
+        let tmp = std::env::temp_dir().join(format!("sugar-diff-git-it-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let git = |a: &[&str]| {
+            Command::new("git")
+                .args(["-C", &tmp.to_string_lossy()])
+                .args(a)
+                .output()
+                .unwrap()
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "t"]);
+
+        // commit 1: proj = numpy-showcase's proofs
+        cp_r(&set_a, &tmp.join("proj"));
+        git(&["add", "-Af"]);
+        git(&["commit", "-qm", "c1"]);
+
+        // commit 2: proj = numpy-consumer-demo's proofs (a different contract set)
+        std::fs::remove_dir_all(tmp.join("proj")).unwrap();
+        cp_r(&set_b, &tmp.join("proj"));
+        git(&["add", "-Af"]);
+        git(&["commit", "-qm", "c2"]);
+
+        let repo = tmp.to_string_lossy().to_string();
+        let before = load_git(&repo, "HEAD~1", "proj", "test_before").expect("load before");
+        let after = load_git(&repo, "HEAD", "proj", "test_after").expect("load after");
+        let s = summarize(&before.name_to_cid, &after.name_to_cid);
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // the two real proof sets denote different behaviors, so the cross-ref
+        // diff must show behaviors both appearing and disappearing.
+        assert!(
+            s.new_behaviors > 0 && s.lost_behaviors > 0,
+            "expected a real behavior delta across the two committed proof sets, got {s:?}"
+        );
+        assert!(s.breaking());
     }
 }
