@@ -21,14 +21,14 @@ A walkthrough for Java / JVM developers. By the end you have a `.proof` catalog 
 
 ```bash
 # the canonical verifier (Rust CLI)
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 # the Java kit (multi-module Maven, ServiceLoader-discovered)
 cd implementations/java && mvn install
 ```
 
-The Java kit uses an SLF4J-style architecture: `provekit-lift-java-core` (facade) plus per-annotation binding JARs discovered via `java.util.ServiceLoader`. Add the bindings you need to your `pom.xml`.
+The Java kit uses an SLF4J-style architecture: `sugar-lift-java-core` (facade) plus per-annotation binding JARs discovered via `java.util.ServiceLoader`. Add the bindings you need to your `pom.xml`.
 
 ## 4. Lift your first contract
 
@@ -65,7 +65,7 @@ public User register(
 All three lift to byte-identical IR for equivalent constraints. Run the lifter:
 
 ```bash
-mvn provekit:lift
+mvn sugar:lift
 ```
 
 Output: `target/.proof`.
@@ -73,7 +73,7 @@ Output: `target/.proof`.
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 Same handshake, same discharge shape as the [Rust tutorial step 4](rust.md#step-4-verify).
@@ -97,4 +97,4 @@ This is what makes mixed-style codebases (Spring + JML + Bean Validation) partic
 
 ---
 
-*This tutorial is a stub. Contributions welcome (see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual `mvn provekit:lift` plugin coordinates, end-to-end runnable example.*)
+*This tutorial is a stub. Contributions welcome (see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual `mvn sugar:lift` plugin coordinates, end-to-end runnable example.*)

@@ -107,7 +107,7 @@ fn main() {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     members.insert(m.cid.clone(), m.canonical_bytes.clone());
     let proof_input = ProofEnvelopeInput {
-        name: "@provekit/c-test".into(),
+        name: "@sugar/c-test".into(),
         version: "0.0.1".into(),
         binary_cid: None,
         metadata: None,

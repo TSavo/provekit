@@ -527,7 +527,7 @@ lifted_from:
   path: src/main/java/.../TransferController.java
   commit: ...
   signer: ...
-  lifter: provekit-java-kit
+  lifter: sugar-java-kit
 ```
 
 or:

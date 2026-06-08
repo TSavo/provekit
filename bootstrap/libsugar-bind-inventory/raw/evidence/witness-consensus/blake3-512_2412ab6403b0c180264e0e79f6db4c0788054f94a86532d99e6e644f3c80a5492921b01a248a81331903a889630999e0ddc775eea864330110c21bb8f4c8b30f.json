@@ -1,0 +1,31 @@
+{
+  "cid": "blake3-512:2412ab6403b0c180264e0e79f6db4c0788054f94a86532d99e6e644f3c80a5492921b01a248a81331903a889630999e0ddc775eea864330110c21bb8f4c8b30f",
+  "fixture_state_cid": "blake3-512:0a60d7ca71f95e9bded386b46e40535d08040f07ef16d5af96c435fe94897d0d2beaf8a33d166c3aaffc6d5f97e6e833733afd545986f19b00dc37a98c7b31a7",
+  "kind": "witness",
+  "measurements": {
+    "cluster": {
+      "mapped_site_count": 29,
+      "ordinal": 10,
+      "reported_cardinality": 29,
+      "source": "bootstrap/libsugar-bind-inventory/raw"
+    },
+    "observer": {
+      "language": "rust",
+      "library_tag": "libsugar",
+      "loss_dims_exercised": []
+    },
+    "row_schema": {
+      "agreement": "intra-vendor-bind-cluster",
+      "candidate": "concept:guard-then-commit",
+      "representative_fixture_cid": "blake3-512:0a60d7ca71f95e9bded386b46e40535d08040f07ef16d5af96c435fe94897d0d2beaf8a33d166c3aaffc6d5f97e6e833733afd545986f19b00dc37a98c7b31a7"
+    }
+  },
+  "observed_at": "2026-05-14T00:00:00.000Z",
+  "outcome": "pass",
+  "sample_count": 1,
+  "schemaVersion": "1",
+  "signature": null,
+  "signed_by": null,
+  "subject": "blake3-512:39ddb00109279bafee365d67113784f1ceec83fa02bb73871e7f4c8af65d5687855d5037d9a9c889440ef58a7792f2700085f5520a47120a644e41a14f13d2b6",
+  "witness_for": "concept:guard-then-commit"
+}

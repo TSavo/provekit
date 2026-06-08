@@ -95,7 +95,7 @@ work only through contracts, the exhibit has shown the primitive in action.
 
 ## Runner Shape
 
-The first executable Bridgeworks runner should invoke the Rust `provekit` CLI to
+The first executable Bridgeworks runner should invoke the Rust `sugar` CLI to
 run the lift-plugin surface and mint `.proof` output. Bridgeworks owns exhibit
 orchestration and fixtures; the CLI owns ProofIR validation, memento minting,
 implication mementos, and deterministic `.proof` bytes.
@@ -103,8 +103,8 @@ implication mementos, and deterministic `.proof` bytes.
 The first runner should:
 
 1. load the exhibit manifest;
-2. call `provekit mint` for the exhibit's lift surface;
-3. call `provekit prove` against the emitted project proof graph;
+2. call `sugar mint` for the exhibit's lift surface;
+3. call `sugar prove` against the emitted project proof graph;
 4. compare the observed claim and implication receipts with expected fixtures;
 5. emit a compressed top-level receipt for the checked-add postcondition;
 6. run mutation cases that fail closed when any layer weakens or drops an

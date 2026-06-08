@@ -2,7 +2,7 @@
 
 ## STEP 1 empirical result (real python source lifter on `def double(x: int) -> int: return x * 2`)
 
-Driven via `python3 -m provekit_lift_python_source --rpc`, the real source lifter emits a
+Driven via `python3 -m sugar_lift_python_source --rpc`, the real source lifter emits a
 `function-contract` for `double.double`:
 
 ```
@@ -32,17 +32,17 @@ to stay sound and mirror Go, leave ALL three uninterpreted -> Undecidable, never
 discharge. Regression mirrors `cmd_verify_go_division_unsound.rs`.
 
 ## STEP 2 build
-- New verify-facing transform in `provekit_lift_python_source` (e.g. `verify_dialect.py`):
+- New verify-facing transform in `sugar_lift_python_source` (e.g. `verify_dialect.py`):
   takes a lifted `function-contract`, returns the dischargeable form (result var, unwrap
   return, core ops, Int sorts) or refuses (returns None / diagnostic) when not faithful.
 - New leaf-assertion harvester for pytest `assert double(3) == 6` -> `contract{inv = =(double(3), 6)}`
   with `double(3)` a `ctor`. Mirror Go `LiftLeafAssertions` whitelist.
-- New binary `provekit-lift-python-verify` (`--rpc`): emits the verify-facing
+- New binary `sugar-lift-python-verify` (`--rpc`): emits the verify-facing
   function-contracts (+ `bridgeSourceSymbol`) from non-test .py + harvested callsites from
   `*_test.py` / `test_*.py`. Modes: bare / bindings(library-bindings) / contracts(ir-document)
   mirroring Go's `liftMode`.
-- `examples/python-double/` fixture: `double.py`, `test_double.py`, `.provekit/config.toml`,
-  `.provekit/lift/python/manifest.toml`.
+- `examples/python-double/` fixture: `double.py`, `test_double.py`, `.sugar/config.toml`,
+  `.sugar/lift/python/manifest.toml`.
 - Rust test `cmd_verify_python_production_bridge.rs` (mirror Go): real lifter -> mint
   (auto-bridge, assert via `bridges_by_symbol`) -> verify positive (discharge, witness,
   exit 0) + negative (broken body x*3 -> unsatisfied, exit 1, no witness).
@@ -52,6 +52,6 @@ discharge. Regression mirrors `cmd_verify_go_division_unsound.rs`.
 ## STEP 3 authoring surface
 Python ALREADY has `@sugar.bind(concept=, library=)` -> `library-sugar-binding-entry` and
 `@contract(pre=,post=,inv=)` decorators (bind_lifter.py). Parity gap: gate the verify-facing
-function-contract emission on a `@provekit.boundary(...)` / `@provekit.sugar(...)` declaration
+function-contract emission on a `@sugar.boundary(...)` / `@sugar.sugar(...)` declaration
 (mirror Go `AnnotatedOnly`) so "declare -> get contract" holds. Close loop: declare -> contract
 -> discharge (STEP 2) -> realize back to python via existing realize kit.

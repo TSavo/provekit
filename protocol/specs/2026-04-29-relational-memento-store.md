@@ -1,8 +1,8 @@
-# ProvekIt: the real spec
+# Sugar: the real spec
 
 ## Thesis
 
-ProvekIt is a **relational memento store for code-shape verifications**.
+Sugar is a **relational memento store for code-shape verifications**.
 
 Not a verifier. Not a Z3 wrapper. Not a smart linter. Not AI-assisted
 code review.
@@ -82,7 +82,7 @@ Concrete consequences:
   survive into the era of whatever-comes-after-Z3-or-LLMs. The
   corpus is the asset; producers are the things you swap to fill it.
 
-This is the deepest architectural property: ProvekIt's correctness
+This is the deepest architectural property: Sugar's correctness
 story isn't "the LLM is trustworthy" or "Z3 is sound" — it's
 **"refuse to use any verdict whose hash key doesn't match a row
 produced by some producer in the corpus."** Producers are a
@@ -110,7 +110,7 @@ Same primitive, three artifacts:
 3. **Verifications** become content-addressable; the engine and the
    developer are no longer trusted, only the memento is.
 
-ProvekIt isn't novel architecture. It's the obvious next application
+Sugar isn't novel architecture. It's the obvious next application
 of an architecture that has been right for thirty years. The novelty
 is that nobody has applied it to *correctness* before, only to files
 and transactions.
@@ -243,7 +243,7 @@ The swarm topology is whichever you prefer (DHT, tracker-mediated,
 P2P with BEP-style discovery). The trust model is identical to
 BitTorrent's: trust the hash, not the source.
 
-This is the genuinely novel contribution of ProvekIt as a product:
+This is the genuinely novel contribution of Sugar as a product:
 not "we run Z3 on your code" — many tools do that — but **"we
 distribute verifications across teams and projects via the same
 swarm primitive that distributes files in BitTorrent."** Once enough
@@ -254,7 +254,7 @@ the property surface that the swarm has already covered.
 
 | Aspect | Current | After |
 |---|---|---|
-| Corpus | Flat JSON files in `.provekit/invariants/`, one per invariant | Relational store (SQLite locally + swarm index), rows are mementos |
+| Corpus | Flat JSON files in `.sugar/invariants/`, one per invariant | Relational store (SQLite locally + swarm index), rows are mementos |
 | Verification | Run path-checker + Z3 every time | SQL lookup; engine only on cache miss |
 | Engines | Two parallel IRs (DSL → SQL, formula → Z3) | Multiple producers, one memento format, dispatched by property kind |
 | LLM stages | Re-invoked every run | Memento-cached; skipped when hash inputs match prior |
@@ -333,7 +333,7 @@ here. A retrofit plan would:
 3. Add the cache-lookup short-circuit to each producer site.
 4. Lift the producer registry pattern.
 5. Add swarm-distribution (CID export/import).
-6. Migrate `.provekit/invariants/` JSON files into the table as
+6. Migrate `.sugar/invariants/` JSON files into the table as
    a one-time seed.
 
 Steps 1-3 are mechanical and provide cache benefit immediately. Step
@@ -348,19 +348,19 @@ invariant-runtime spec, the attack-surfaces analysis, the rewrite-from-
 scratch notes. Each captures part of the architecture.
 
 This is the document that captures the *load-bearing architectural
-identity*: ProvekIt is a relational memento store for code-shape
+identity*: Sugar is a relational memento store for code-shape
 verifications, with producers as a marketplace and the table as the
 trust layer. Every other architectural decision is downstream of
 that.
 
 A reader who understands only this document understands what
-ProvekIt fundamentally IS. The other specs explain how the pieces
+Sugar fundamentally IS. The other specs explain how the pieces
 fit together; this one explains why the pieces are the shape they
 are.
 
 ## The pitch, in one paragraph
 
-ProvekIt is what happens when you apply BitTorrent-grade hash-trust
+Sugar is what happens when you apply BitTorrent-grade hash-trust
 to verification instead of file distribution. The verifications
 table is the asset; engines and LLMs are interchangeable producers
 that populate it; the swarm distributes the verdicts the same way
@@ -369,5 +369,5 @@ verification becomes a near-free lookup against the swarm's
 accumulated history; engines fire only at the leading edge of the
 corpus. The architectural primitive — content-addressable mementos
 in a relational store — is the same one that made BitTorrent and
-Bitcoin durable. ProvekIt is the third application: hash-trust,
+Bitcoin durable. Sugar is the third application: hash-trust,
 applied to correctness.

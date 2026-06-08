@@ -8,7 +8,7 @@ use super::types::{
 use super::walks::walk_premises_to_root_with_failure_steps;
 
 const CHAIN_INTEGRITY_SCHEMA_VERSION: u32 = 1;
-const PROVEKIT_CONFORMANCE_REASON: &str =
+const SUGAR_CONFORMANCE_REASON: &str =
     "discharges claims via chain-integrity verification; no source emission";
 
 /// Built-in kit that discharges claims by walking their premise chain to a root CID.
@@ -21,7 +21,7 @@ pub struct ProveKit {
 impl ProveKit {
     /// Public registry declaration for the built-in `prove` kit.
     pub const CONFORMANCE: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {
-        reason: PROVEKIT_CONFORMANCE_REASON,
+        reason: SUGAR_CONFORMANCE_REASON,
     };
 
     /// Build a ProveKit rooted at `origin_cid` using `catalog` for premise lookup.

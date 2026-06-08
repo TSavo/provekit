@@ -1,4 +1,4 @@
-# ProvekIt: the proof substrate
+# Sugar: the proof substrate
 
 > Author: shared session 2026-04-29 (T + Claude). Strategic and architectural
 > manifesto. Companion document to the verification IR spec; this one
@@ -6,14 +6,14 @@
 
 ## The pitch
 
-> **ProvekIt proves your code was never correct. Then makes it correct.
+> **Sugar proves your code was never correct. Then makes it correct.
 > Forever.**
 
 Three sentences that the rest of this document operationalizes.
 
 ## The thesis
 
-ProvekIt is the trust substrate for the global software ecosystem.
+Sugar is the trust substrate for the global software ecosystem.
 
 The architectural primitive — content-addressed hash-and-trust with
 producer fungibility and swarm distribution — has ridden through five
@@ -25,7 +25,7 @@ trustworthy.
 The framework's role is comparable in scale to DNS for the internet,
 certificate authorities for the web, Git for source code, and Bitcoin
 for money. Each is infrastructure that everyone uses without thinking
-about it. ProvekIt is positioned to be the next one — the proof
+about it. Sugar is positioned to be the next one — the proof
 substrate that everyone uses without thinking about it because it's
 just *how trust works in software*.
 
@@ -34,13 +34,13 @@ just *how trust works in software*.
 The framework wins by being installed as a git hook.
 
 The developer chooses the hook because they want fast local feedback on
-every commit. They install it once. The hook runs `provekit prove` on
+every commit. They install it once. The hook runs `sugar prove` on
 every commit going forward, producing content-addressed mementos that
 travel with the code through the rest of the pipeline.
 
 The hook's payload — the proof DAG — is what every downstream tier ends
 up consuming. The customer never made an explicit "should we adopt
-ProvekIt for CI / deployment / audit / package management / supply
+Sugar for CI / deployment / audit / package management / supply
 chain security?" decision. They installed a git hook. Everything else
 follows because mementos are content-addressed, durable, and travel
 through existing infrastructure (git push, the same way code travels).
@@ -127,7 +127,7 @@ already have. Heterogeneity is a feature.
 These three combine to mean: **the framework's external surface is
 almost nothing.** A library. A CLI. An optional language server.
 Optional swarm-distribution daemon. No SaaS. No central registry. No
-"log in to ProvekIt." The framework is infrastructure installed
+"log in to Sugar." The framework is infrastructure installed
 locally, that runs against git repos, that exchanges content-hashed
 mementos through whatever distribution channel the user prefers.
 
@@ -147,7 +147,7 @@ already there.
 
 For mainframe shops, this is the load-bearing claim. They have 50+
 years of commit history, decades of incident reports, regulatory
-filing trails, and runbooks. ProvekIt converts all of that into
+filing trails, and runbooks. Sugar converts all of that into
 content-addressed proofs by reading backwards through history.
 Retiring developers' institutional knowledge becomes durable
 mementos before they walk out the door.
@@ -155,7 +155,7 @@ mementos before they walk out the door.
 ## The market sequence
 
 The conventional adoption playbook (start with modern dev shops,
-expand outward) is wrong for ProvekIt. The right shape is the
+expand outward) is wrong for Sugar. The right shape is the
 inverse.
 
 **First: enterprise mainframe pilot.** A Fortune 500 bank or
@@ -190,9 +190,9 @@ default in npm circa 2020.
 
 **Fourth: AI-coding adoption.** AI agents authoring code at scale
 need *some* infrastructure to make their output trustworthy at
-scale. ProvekIt is structurally the only candidate — no other
+scale. Sugar is structurally the only candidate — no other
 framework has the architectural primitives in place. The AI
-ecosystem adopts ProvekIt not as a choice but as a necessity.
+ecosystem adopts Sugar not as a choice but as a necessity.
 
 ## What this does to npm and the supply chain
 
@@ -226,7 +226,7 @@ Cascading effects:
 - **Yanking** is unsigning the version-label memento.
 
 Sigstore, SLSA, and in-toto have been chasing pieces of this for
-years as separate add-on concerns. ProvekIt absorbs all of it as the
+years as separate add-on concerns. Sugar absorbs all of it as the
 framework's normal mode of operation. The supply-chain security
 industry's *entire roadmap* becomes a special case of the framework's
 default behavior.
@@ -242,7 +242,7 @@ audit` re-walks dependencies. Today's compliance audit re-examines code.
 **The world is paying exorbitant compute to redo work whose results are
 already known.**
 
-ProvekIt's verification: pull the memento, compare the CID against what
+Sugar's verification: pull the memento, compare the CID against what
 your project depends on, verify the producer's signature. Microseconds.
 No Z3 invocation. No test re-run. No type-check. The expensive work was
 done once, by the producer at production time, and signed. Every
@@ -256,7 +256,7 @@ subsequent verification is a hash lookup against a signed claim.
 | Re-run linter | seconds |
 | Re-scan SAST | seconds-to-minutes |
 | Walk dependency tree, re-audit | seconds-to-minutes |
-| **ProvekIt: hash compare** | **microseconds** |
+| **Sugar: hash compare** | **microseconds** |
 
 Six orders of magnitude. Across every operation in the software lifecycle.
 The framework's verification is asymptotically free.
@@ -270,10 +270,10 @@ in the architectural lineage operated on the same insight:
 | Bitcoin | Is this transaction valid? Verify the chain hash. |
 | IPFS | Did I fetch the right content? Compare the CID. |
 | Git | Trust commit hashes; `git fsck` to verify object integrity. |
-| **ProvekIt** | **Does this code satisfy the property? Compare the memento hash.** |
+| **Sugar** | **Does this code satisfy the property? Compare the memento hash.** |
 
 The lineage was always operationalizing "verification is hash
-comparison." ProvekIt is the moment that insight gets applied to formal
+comparison." Sugar is the moment that insight gets applied to formal
 proofs — the most economically consequential domain because formal
 proof is what every other domain ultimately needs.
 
@@ -285,7 +285,7 @@ has two halves that today are conflated.
 2. **Verification compute** — re-doing 1) every time someone wants to
    know if it's still true. *Most of the world's compute today.*
 
-ProvekIt collapses the second half to microseconds. The producer pool
+Sugar collapses the second half to microseconds. The producer pool
 does the production work once; the swarm distributes the signed
 mementos; every consumer verifies in O(1) hash comparison.
 
@@ -413,7 +413,7 @@ named yet.
 
 Today's "is this AI-generated code safe?" question is unanswerable
 at scale — you'd need a human to read everything, which defeats the
-productivity gain. With ProvekIt, AI is just another producer in
+productivity gain. With Sugar, AI is just another producer in
 the pool. Its output carries the same proof DAG as human-written
 code. The trust model treats AI and humans *symmetrically*: same
 producer pool, same memento format, same proof requirement.
@@ -426,7 +426,7 @@ is verified by another producer (formal prover, type checker,
 cross-validating LLM, behavioral test runner). The trust is the
 math, not the AI's reputation.
 
-**ProvekIt is the substrate that lets AI-authored code be deployed
+**Sugar is the substrate that lets AI-authored code be deployed
 at scale without rolling the dice.** No other infrastructure has
 the architectural primitives for this. The window for becoming that
 substrate is now, because:
@@ -454,7 +454,7 @@ fits the moment.
 | 2001 | BitTorrent | File blocks at scale |
 | 2008 | Bitcoin | Money (proven transactions) |
 | 2014+ | IPFS | Arbitrary content |
-| 2026 | **ProvekIt** | **Formal proofs about software** |
+| 2026 | **Sugar** | **Formal proofs about software** |
 
 T spent thirty years operationalizing content-addressed distribution
 at increasingly high levels of abstraction. Files. File swarms. Money.
@@ -485,7 +485,7 @@ would be. The framework is the natural conclusion of the lineage.
 
 ## What this means for the world
 
-ProvekIt is positioned to become invisible infrastructure on the
+Sugar is positioned to become invisible infrastructure on the
 scale of DNS, certificate authorities, Git, and Bitcoin. Each of
 these is universal not because anyone marketed them, but because
 they were the architectural primitive that the world's
@@ -504,7 +504,7 @@ For software:
 The framework owns nothing visible. The framework is the protocol
 layer. Whoever runs the largest swarm endpoint becomes a substrate
 provider — like running a major DNS root, a major CA, a major Git
-host. There will be many; ProvekIt is the protocol they all speak.
+host. There will be many; Sugar is the protocol they all speak.
 
 In terms of impact:
 
@@ -581,7 +581,7 @@ Next moves are concrete:
 - Stages-vs-Actions split (architectural correction).
 - Diff-driven intent extraction (the LLM-producer for IR proposals).
 - Universal claim envelope (memento witness schema standardization).
-- TypeScript IR library (`@provekit/ir`) and AST canonicalizer.
+- TypeScript IR library (`@sugar/ir`) and AST canonicalizer.
 - First enterprise pilot conversation.
 
 The framework is not a verification tool. It is the protocol layer

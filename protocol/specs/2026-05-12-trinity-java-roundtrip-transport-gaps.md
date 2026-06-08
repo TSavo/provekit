@@ -4,13 +4,13 @@
 **Status:** empirical finding (v0)
 **Branch:** feat/trinity-java-roundtrip
 **Companion spec:** 2026-05-14-transport-gap-and-partial-morphism-protocol.md
-**Companion test:** implementations/java/provekit-lift-java-source/src/test/java/com/provekit/lift/java_source/TrinityRoundtripLiftTest.java
+**Companion test:** implementations/java/sugar-lift-java-source/src/test/java/com/sugar/lift/java_source/TrinityRoundtripLiftTest.java
 
 ## Summary
 
 The trinity round-trip fixture (11 catalog concepts + retry-loop) was run through
-`provekit bind --rewrite=canonical --target-language=java` and the emitted Java was
-re-lifted with `provekit-lift-java-source`. This document records the per-concept
+`sugar bind --rewrite=canonical --target-language=java` and the emitted Java was
+re-lifted with `sugar-lift-java-source`. This document records the per-concept
 verdicts and the gap reasons per the transport-gap spec trichotomy
 (Exact / Loudly-Bounded-Lossy / Refuse).
 
@@ -19,8 +19,8 @@ verdicts and the gap reasons per the transport-gap spec trichotomy
 ## How the bind was run
 
 ```
-cargo run -p provekit-cli --quiet -- bind \
-  --root implementations/rust/provekit-cli/tests/fixtures/trinity_roundtrip \
+cargo run -p sugar-cli --quiet -- bind \
+  --root implementations/rust/sugar-cli/tests/fixtures/trinity_roundtrip \
   --lang rust \
   --target-language java \
   --rewrite canonical \
@@ -40,7 +40,7 @@ for the bind-side records.
 
 **Source:** bind v0 canonical rewrite emits stub bodies for all Java classes:
 ```java
-throw new UnsupportedOperationException("provekit-bind canonical: <concept>");
+throw new UnsupportedOperationException("sugar-bind canonical: <concept>");
 ```
 
 The original Rust function bodies are not translated. No term graph representing
@@ -97,7 +97,7 @@ Java representation of `&[T]` (Java array or `long[]`).
 (confirmed in emitted lib.java annotations and `/tmp/java-out-trinity/index.json`).
 
 ```java
-// @provekit_monitor(concept = "pair")
+// @sugar_monitor(concept = "pair")
 final class WrapIdentityTransported {
     // concept: pair
     public static long wrap_identity(long x) { ... }
@@ -127,7 +127,7 @@ single-parameter identity and boolean-negation patterns.
 ```java
 final class DoNothingTransported {
     public static void do_nothing() {
-        throw new UnsupportedOperationException("provekit-bind canonical: unit");
+        throw new UnsupportedOperationException("sugar-bind canonical: unit");
     }
 }
 ```
@@ -187,14 +187,14 @@ right." Gap 1 is in the second category until the bind realizer emits real bodie
 
 The round-trip is not entirely without value. Each lifted method's post-condition is:
 ```
-post: eq(return_value, java:throw(java:new("UnsupportedOperationException", "provekit-bind canonical: <concept>")))
+post: eq(return_value, java:throw(java:new("UnsupportedOperationException", "sugar-bind canonical: <concept>")))
 effects: [panics]
 ```
 
 The recoverable information from the round-trip:
 1. Function signature (parameter names and types, modulo &i64 erasure for slice params)
 2. Class name (e.g. `MaybeFirstTransported`)
-3. Concept annotation (from `@provekit_monitor` comment -- parsed as a comment, not a declaration)
+3. Concept annotation (from `@sugar_monitor` comment -- parsed as a comment, not a declaration)
 4. Memento-CID comment (for algebra-synthesis origin classes; the CID is in the comment)
 
 The original Rust function bodies are absent. No concept logic is preserved.

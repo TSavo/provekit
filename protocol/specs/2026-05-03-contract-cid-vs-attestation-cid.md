@@ -5,7 +5,7 @@
 
 ## §0. Why this spec exists
 
-ProvekIt's substrate guarantee is content addressing: anyone holding the same data computes the same CID. For contracts, this means anyone with the contract declaration can compute the contract's identity without help from the original signer.
+Sugar's substrate guarantee is content addressing: anyone holding the same data computes the same CID. For contracts, this means anyone with the contract declaration can compute the contract's identity without help from the original signer.
 
 The current implementations conflate two distinct hashes under one term ("contract CID"):
 
@@ -89,7 +89,7 @@ The `mint_contract` flow remains correct for producing signed attestations. The 
 
 ## §5. Migration
 
-Existing on-disk attestations under `.provekit/self-contracts-attestations/<lang>.json` MUST be re-emitted with both CIDs surfaced:
+Existing on-disk attestations under `.sugar/self-contracts-attestations/<lang>.json` MUST be re-emitted with both CIDs surfaced:
 
 ```json
 {

@@ -6,7 +6,7 @@
 //
 //	kind: "linker-error", errorKind: "unprovable-obligation"
 //
-// Run: provekit link examples/polyglot-rust-go/fixture-fail/
+// Run: sugar link examples/polyglot-rust-go/fixture-fail/
 // Expected: link-bundle.json with 1 linker-error, exit code 1.
 package caller
 
@@ -17,7 +17,7 @@ extern int process(int n);
 */
 import "C"
 
-//provekit:contract
+//sugar:contract
 func GoCallerFail(n int) int {
 	// BUG: passes n directly without checking n > 0.
 	// The rust callee requires n > 0, but we have no post-condition

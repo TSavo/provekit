@@ -4,7 +4,7 @@
 //
 // Source of truth:
 //   protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.1, §2.2, §2.4
-//   protocol/provekit-ir.cddl  (ConceptAbstractionMemento, RealizationDesugaringMemento)
+//   protocol/sugar-ir.cddl  (ConceptAbstractionMemento, RealizationDesugaringMemento)
 //
 // These tests pin:
 //   * The Rust abstraction-layer types deserialize from the wire shape the
@@ -17,7 +17,7 @@
 //   * `LossRecord` with `structural_divergence` round-trips correctly.
 //
 // Byte-exact CID pinning lives in
-//   provekit-claim-envelope/tests/abstraction_layer_cid_pin.rs
+//   sugar-claim-envelope/tests/abstraction_layer_cid_pin.rs
 // because this crate has no JCS encoder.
 
 use std::collections::BTreeMap;

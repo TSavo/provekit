@@ -59,7 +59,7 @@ FRP does not replace ORP. It names the object downstream systems can cache, audi
   "policyCid": "blake3-512:...",
   "producer": {
     "kind": "llm|human|dropper|ide|migration-tool",
-    "name": "provekit-realize-java",
+    "name": "sugar-realize-java",
     "version": "0.1.0"
   }
 }

@@ -11,16 +11,16 @@ Value::null was already BYTE_IDENTICAL from D7-v3.
 Value::string stayed CHARACTERIZED_DIFF.
 
 The remaining string fixture is:
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_string.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_string.json.
 Its surface is:
 return(call:new(Arc::new, [call:String(Value::String, [method:into(s, [])])])).
 
 The original source is:
-implementations/rust/provekit-canonicalizer/src/value.rs.
+implementations/rust/sugar-canonicalizer/src/value.rs.
 The checked body is:
 Arc::new(Value::String(s.into())).
 
-D7-v6 extends only provekit-realize-rust-core.
+D7-v6 extends only sugar-realize-rust-core.
 The touched entrypoint is emit_from_resolved.
 The new accepted argument form is:
 method:<method_name>(<first_param>, []).
@@ -52,5 +52,5 @@ All four are BYTE_IDENTICAL.
 The n=1 scalar constructor cluster is closed for the current fixtures.
 This is not a module-level source identity claim.
 It is the input for D7-v7.
-D7-v7 should sweep implementations/rust/provekit-canonicalizer/src/value.rs at module scope.
+D7-v7 should sweep implementations/rust/sugar-canonicalizer/src/value.rs at module scope.
 That sweep should keep Value::array and Value::object as separate debt unless their fixtures close independently.

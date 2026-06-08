@@ -13,12 +13,12 @@ once per mode defined in
 Uses `binary = "stub:..."` solvers so the demo runs in CI without any
 solver binaries installed. Swap to a real binary path
 (`binary = "z3"`, `binary = "cvc5"`, ...) in your project's
-`.provekit/config.toml` to drive real solvers.
+`.sugar/config.toml` to drive real solvers.
 
 ## Run
 
 ```sh
-cargo run --release -p provekit-verifier --example multi_solver_demo
+cargo run --release -p sugar-verifier --example multi_solver_demo
 ```
 
 ## Sample output (abbreviated)

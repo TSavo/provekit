@@ -1,13 +1,13 @@
-# ProvekIt LSP from Protocol Spec — Sufficiency Analysis
+# Sugar LSP from Protocol Spec — Sufficiency Analysis
 
 **Date:** 2026-04-30
 **Status:** Investigation note. Companion to the `scripts/lsp-from-spec/` prototype.
-**Question being answered:** Can a Language Server Protocol (LSP) implementation surface ProvekIt-aware diagnostics, hovers, and navigation by reading the protocol spec stack alone, without depending on the `provekit` reference implementation?
+**Question being answered:** Can a Language Server Protocol (LSP) implementation surface Sugar-aware diagnostics, hovers, and navigation by reading the protocol spec stack alone, without depending on the `sugar` reference implementation?
 **Short answer:** Yes for the read-only capabilities (hover, diagnostics, document symbols, semantic tokens, code lens). Partial for navigation (go-to-definition, find-references, code actions) — the gaps are listed in §6.
 
 ## 1. Why this matters
 
-If the protocol stack is sufficient, the architectural promise of ProvekIt holds: any IDE vendor, any language server, any third-party tooling can implement ProvekIt-aware features by reading the published specs and pinning a protocol-catalog CID. The reference implementation in `src/` is one realization, not the source of truth. If the protocol stack is *not* sufficient, then the framework is in practice a single-implementation product with extra documentation, and the "protocol-leads" posture is aspirational.
+If the protocol stack is sufficient, the architectural promise of Sugar holds: any IDE vendor, any language server, any third-party tooling can implement Sugar-aware features by reading the published specs and pinning a protocol-catalog CID. The reference implementation in `src/` is one realization, not the source of truth. If the protocol stack is *not* sufficient, then the framework is in practice a single-implementation product with extra documentation, and the "protocol-leads" posture is aspirational.
 
 This doc is the audit. We walk through every LSP capability, identify which spec sections supply the necessary information, and flag the gaps.
 
@@ -45,7 +45,7 @@ For each LSP capability commonly expected of a language server, we enumerate (a)
 
 ### 3.2 Hover (`textDocument/hover`)
 
-**Need:** When the user hovers over a piece of an IR formula in a `.provekit/invariants/<id>.json` file, surface useful info: node kind, sort, semantic content if it's an extension, propertyHash CID for the enclosing formula.
+**Need:** When the user hovers over a piece of an IR formula in a `.sugar/invariants/<id>.json` file, surface useful info: node kind, sort, semantic content if it's an extension, propertyHash CID for the enclosing formula.
 
 **Spec source:**
 - Node kind / sort / locked key order: ir-formal-grammar productions.
@@ -70,9 +70,9 @@ For each LSP capability commonly expected of a language server, we enumerate (a)
 
 **Need:** Find every IR formula in the workspace that uses a given predicate, constructor, sort, or extension CID.
 
-**Spec source:** Trivially derivable by parsing every `.provekit/invariants/<id>.json` (per ir-formal-grammar) and walking the AST.
+**Spec source:** Trivially derivable by parsing every `.sugar/invariants/<id>.json` (per ir-formal-grammar) and walking the AST.
 
-**Sufficiency:** **Sufficient.** The LSP just needs to discover the workspace's invariant files. Convention is implicit but standard ("`.provekit/invariants/`"); spec edit candidate **G2** would write this layout into the protocol.
+**Sufficiency:** **Sufficient.** The LSP just needs to discover the workspace's invariant files. Convention is implicit but standard ("`.sugar/invariants/`"); spec edit candidate **G2** would write this layout into the protocol.
 
 ### 3.5 Autocomplete (`textDocument/completion`)
 
@@ -112,7 +112,7 @@ For each LSP capability commonly expected of a language server, we enumerate (a)
 
 **Spec source:** canonicalization §8.2 ALIAS_TABLE gives the rewrite for `==` → `=`. Pass 4 gives the implies → or(not, c) rewrite. Pass 5 NEGATE_PREDICATE gives `not(=)` → `≠`.
 
-**Sufficiency:** **Sufficient for the rewrites the canonicalizer already specifies.** For richer refactors (introducing a quantifier, splitting a conjunction), the spec is silent — but those are beyond what a "ProvekIt-aware LSP" needs to commit to.
+**Sufficiency:** **Sufficient for the rewrites the canonicalizer already specifies.** For richer refactors (introducing a quantifier, splitting a conjunction), the spec is silent — but those are beyond what a "Sugar-aware LSP" needs to commit to.
 
 ## 4. Worked example: hovering over `parseInt(s)`
 
@@ -156,8 +156,8 @@ This single hover exercises four of seven specs (ir-formal-grammar, canonicaliza
 
 `scripts/lsp-from-spec/` demonstrates the simplest end-to-end path:
 
-1. Read a fake `.provekit/invariants/<id>.json` file.
-2. Parse it per ir-formal-grammar (inline parser, no `provekit` import).
+1. Read a fake `.sugar/invariants/<id>.json` file.
+2. Parse it per ir-formal-grammar (inline parser, no `sugar` import).
 3. Compute the propertyHash per canonicalization §3 + §7.3 (JCS, simplified — see §6 below for what's elided) + §9.
 4. Surface hover info containing the CID over LSP `textDocument/hover`.
 
@@ -169,9 +169,9 @@ These are places where a from-spec implementer hits an interpretive question and
 
 **G1. Extension resolver scope is unspecified.** ir-extension-protocol §5.3 mandates fail-closed on collisions in "the resolver's scope" without defining what that scope is. An LSP needs to know: workspace-relative directory? `package.json` field? Per-project memento store? This blocks go-to-definition, autocomplete, and the parseInt hover example above.
 
-**G2. Workspace layout convention is implicit.** The protocol nowhere mandates `.provekit/invariants/<id>.json` as the on-disk convention. The reference tooling uses it; a spec-only LSP author has to read the reference code or guess. Spec edit: a one-section "Workspace conventions" entry naming the directory.
+**G2. Workspace layout convention is implicit.** The protocol nowhere mandates `.sugar/invariants/<id>.json` as the on-disk convention. The reference tooling uses it; a spec-only LSP author has to read the reference code or guess. Spec edit: a one-section "Workspace conventions" entry naming the directory.
 
-**G3. CDDL/EBNF mismatch on IR formula reference.** memento-envelope-grammar imports `ProvekitIrFormula` (CDDL rule name `ir-formula`) "by name" from ir-formal-grammar, but ir-formal-grammar specifies the IR JSON as EBNF, not CDDL. A CDDL validator can't import an EBNF rule. The protocol either needs a CDDL translation of the IR JSON grammar or an explicit alias section.
+**G3. CDDL/EBNF mismatch on IR formula reference.** memento-envelope-grammar imports `SugarIrFormula` (CDDL rule name `ir-formula`) "by name" from ir-formal-grammar, but ir-formal-grammar specifies the IR JSON as EBNF, not CDDL. A CDDL validator can't import an EBNF rule. The protocol either needs a CDDL translation of the IR JSON grammar or an explicit alias section.
 
 **G4. Canonicalization §17 alignment items mean the reference TS does not yet match the protocol.** A from-spec LSP that computes propertyHash per the spec will produce hashes that DIFFER from the reference TS in three documented cases:
 - spec defaults to `cbor-rfc8949`, TS reference emits `jcs-rfc8785`;
@@ -188,7 +188,7 @@ This is the protocol-leads posture working as intended (the TS reference is a fo
 
 ## 7. Sufficiency conclusion
 
-The protocol stack is **sufficient for a read-only ProvekIt-aware LSP** providing diagnostics, hover, document symbols, semantic tokens, and code lens for IR JSON files, **modulo the seven gaps in §6**. None of the gaps is architectural; each is an under-specified detail that becomes a one-paragraph spec edit.
+The protocol stack is **sufficient for a read-only Sugar-aware LSP** providing diagnostics, hover, document symbols, semantic tokens, and code lens for IR JSON files, **modulo the seven gaps in §6**. None of the gaps is architectural; each is an under-specified detail that becomes a one-paragraph spec edit.
 
 Navigation features (go-to-definition, find-references, code actions involving extensions) inherit gap G1 and require resolver-scope clarification before a clean implementation is possible.
 

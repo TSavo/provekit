@@ -15,7 +15,7 @@ runtime turns each invariant into a permanent, source-controlled
 obligation that the codebase pledges to satisfy on every commit, checked
 mechanically, no LLM in the verification path.
 
-The architectural claim: every fix shipped through provekit *permanently
+The architectural claim: every fix shipped through sugar *permanently
 shrinks the bug surface forward*. Existing bug surface shrinks (regression
 test). Future regression surface shrinks (Z3-checkable invariant fires on
 recurrence). Architectural-drift surface shrinks (binding decay alarm
@@ -101,7 +101,7 @@ diffable, source-controlled, queryable. Schema:
   "outputBundle": {
     "patch": "<diff if change is needed>",
     "addedTests": ["<test code if missing>"],
-    "constraintArtifact": ".provekit/invariants/<sha>.json"
+    "constraintArtifact": ".sugar/invariants/<sha>.json"
   }
 }
 ```
@@ -114,7 +114,7 @@ intents, each with constraint candidates and missing-test flags.
 The retrospective direction enables two operations the prospective-only
 loop cannot:
 
-1. **Bootstrap from history.** `provekit mine-history` runs B0 in batch
+1. **Bootstrap from history.** `sugar mine-history` runs B0 in batch
    over every commit in the existing log, populating the constraint
    corpus from changes nobody filed problem statements for. A
    five-year-old codebase arrives at adoption with thousands of mined
@@ -152,10 +152,10 @@ extractor proposes; the gates dispose. No LLM in the verification path.
 ## Goals
 
 - Source-controlled, content-addressable invariant store at
-  `.provekit/invariants/<sha>.json`.
+  `.sugar/invariants/<sha>.json`.
 - Path enumerator over the shadow AST: `pathsTo(callsiteNodeId): Path[]`.
 - Path-level Z3 checker: per-path symbolic execution + invariant evaluation.
-- `provekit verify` CLI with three verdict categories: holds, decay, violation.
+- `sugar verify` CLI with three verdict categories: holds, decay, violation.
 - Cross-path adversarial scan as a flag on verify.
 - Cache layer keyed on binding hashes; typical commit re-checks <5% of
   invariants in <5 seconds.
@@ -168,10 +168,10 @@ Five composable pieces, each independently testable and shippable:
 fix loop produces invariant
     │
     ▼
-.provekit/invariants/<sha>.json  ◄── invariant store
+.sugar/invariants/<sha>.json  ◄── invariant store
     │
     ▼
-provekit verify
+sugar verify
     │
     ├── re-resolve bindings ──► binding-resolver
     │       │
@@ -196,7 +196,7 @@ provekit verify
 
 ### 1. Invariant store
 
-**Location:** `.provekit/invariants/<sha>.json`
+**Location:** `.sugar/invariants/<sha>.json`
 
 **Identity:** Filename is the sha256 prefix of `(SMT assertion + bindings)`.
 Two runs producing the same invariant write the same file. Idempotent.
@@ -253,7 +253,7 @@ travel together.
   walks backward from the sink across the entire dataflow graph.
   `--adversarial` mode targets sink-scoped invariants.
 
-**Retirement:** explicit. `provekit invariant retire <id> --reason "<text>"`
+**Retirement:** explicit. `sugar invariant retire <id> --reason "<text>"`
 writes a tombstone to the `retired` field with timestamp + reason. Retired
 invariants are skipped by `verify` but kept in the store for audit.
 
@@ -330,12 +330,12 @@ and external calls model as nondeterministic havoc; Z3 will return
 `undecidable` more often than a research-grade analyzer. That's fine —
 undecidable is honest, not a regression.
 
-### 5. `provekit verify` CLI
+### 5. `sugar verify` CLI
 
-**Command:** `provekit verify [--ci] [--invariant <id>] [--adversarial] [--max-paths N] [--timeout SECONDS]`
+**Command:** `sugar verify [--ci] [--invariant <id>] [--adversarial] [--max-paths N] [--timeout SECONDS]`
 
 **Behavior:**
-1. Load every invariant in `.provekit/invariants/` (skipping retired ones)
+1. Load every invariant in `.sugar/invariants/` (skipping retired ones)
 2. For each: resolve bindings against current substrate
 3. Resolved bindings → enumerate paths → check each path
 4. Decayed bindings → emit decay verdict, skip path checks
@@ -344,12 +344,12 @@ undecidable is honest, not a regression.
 **Output (`--ci` mode):**
 
 ```
-provekit verify: 12 invariants
+sugar verify: 12 invariants
   ✓ holds (10): forRevision-most-recent-k, divide-guard, ...
   ⚠ decay (1): order-by-date-asc
       file: src/store/sqlite/repositories.ts:120
       reason: bound nodeId 4f7c... no longer resolves; content changed
-      remediation: re-run `provekit fix` on this locus or retire the invariant
+      remediation: re-run `sugar fix` on this locus or retire the invariant
   ✗ violated (1): unique-keys-in-allow-header
       file: src/lib/http.ts:42
       via path: <node-list>
@@ -365,14 +365,14 @@ cache: 8/12 hit, 4 re-evaluated (3.2s)
 - 2: at least one decay (no violations)
 - 3: internal error (Z3 crashed, substrate unreadable, etc.)
 
-**CI integration:** git pre-commit hook can run `provekit verify --ci`.
+**CI integration:** git pre-commit hook can run `sugar verify --ci`.
 Cache lookup keyed on binding hashes means typical commits re-check only
 invariants whose bindings touch changed files. Target: <5s wall time on
 a 100-invariant repo with a typical 5-file commit.
 
 ### 6. Adversarial cross-path scan
 
-**Trigger:** `provekit verify --adversarial`
+**Trigger:** `sugar verify --adversarial`
 
 **Targets:** invariants with `scope: "sink"`.
 
@@ -398,7 +398,7 @@ opt-in per CI run or per invariant via `--invariant <id> --adversarial`.
 
 **Invalidation:** any binding's resolved nodeId or content hash changes.
 
-**Storage:** `.provekit/cache/verify.json`. Can be deleted; rebuilds on
+**Storage:** `.sugar/cache/verify.json`. Can be deleted; rebuilds on
 next run. Not source-controlled (gitignored).
 
 **Effect:** on a clean repo (no changes since last verify), 100% cache
@@ -412,13 +412,13 @@ A binding decays when the substrate no longer agrees with what the
 invariant claims it bound to. v1 surfaces decays as exit-code-2 with a
 yellow alarm. The remediation is one of:
 
-1. **Cosmetic edit (rename, reformat):** re-run `provekit fix` on the
+1. **Cosmetic edit (rename, reformat):** re-run `sugar fix` on the
    renamed locus. The fix loop re-derives the invariant against the new
    substrate; the new invariant gets a new sha256, the old one is retired
    with reason `"superseded by <new-id>"`.
 
 2. **Architectural change (data path removed/replaced):** invariant no
-   longer applies. Run `provekit invariant retire <id> --reason "..."`.
+   longer applies. Run `sugar invariant retire <id> --reason "..."`.
 
 3. **Drift signal (the bound concept no longer exists in any form):** the
    decay IS the signal. The codebase has moved out from under a
@@ -448,14 +448,14 @@ Each step is independently shippable; users get value at each stage.
 
 1. **Invariant store** (schema + emitter from fix loop + reader from CLI).
    Smallest piece. Blocks everything else. Ship first.
-2. **`provekit verify` skeleton:** load store, re-resolve bindings, report
+2. **`sugar verify` skeleton:** load store, re-resolve bindings, report
    decays only. No path enumeration, no Z3. This alone is useful: tells
    users which of their invariants are stale.
 3. **Path enumerator.** Self-contained, testable in isolation against the
    substrate.
 4. **Z3 path checker.** Composes with #3. Testable against synthesized
    path/invariant pairs.
-5. **Wire #3 + #4 into `provekit verify`.** Now `verify` returns full
+5. **Wire #3 + #4 into `sugar verify`.** Now `verify` returns full
    verdicts.
 6. **Cache layer.** Performance pass; cache invariant verdicts keyed on
    binding hashes.
@@ -469,7 +469,7 @@ Each step is independently shippable; users get value at each stage.
 10. **Missing-test generation.** When B0 (either direction) reports an
     intent without a regression test, plumb that signal into C5 so the
     output bundle includes the missing test as a first-class artifact.
-11. **`provekit mine-history`** CLI: runs B0 retrospective in batch over
+11. **`sugar mine-history`** CLI: runs B0 retrospective in batch over
     the existing commit log. Bootstrap-from-history product surface.
 
 Steps 1-2 give a working `verify` that detects decays. Steps 3-5 add
@@ -482,15 +482,15 @@ The runtime is shippable when:
 
 1. The fix loop's existing dogfood proof (planted asc/desc bug in promptlib)
    continues to ship a bundle, AND emits an invariant to
-   `.provekit/invariants/<sha>.json`.
-2. `provekit verify` on the post-fix promptlib repo: green (1 invariant,
+   `.sugar/invariants/<sha>.json`.
+2. `sugar verify` on the post-fix promptlib repo: green (1 invariant,
    holds).
-3. Manual revert of the fix in promptlib: `provekit verify` reports
+3. Manual revert of the fix in promptlib: `sugar verify` reports
    1 violation with the correct path and Z3 witness.
 4. Manual rename of `forRevision` to `forRevisionDesc` in promptlib:
-   `provekit verify` reports 1 decay with the correct remediation.
+   `sugar verify` reports 1 decay with the correct remediation.
 5. Adding a new repository method `forRevisionUnsorted` that hits the same
-   sink: `provekit verify --adversarial` reports 1 violation against the
+   sink: `sugar verify --adversarial` reports 1 violation against the
    new method.
 6. Performance: a 100-invariant test repo verifies in <5s on a typical
    commit, <100ms with no changes.
@@ -503,7 +503,7 @@ doc for the full A/B framing). This spec is about Part A — the gate
 that consumes invariants. Part B is the producer side, and B is
 **explicitly a plugin slot, not a fixed implementation**.
 
-ProvekIt ships a reference B that uses claude-agent-sdk + ts-morph +
+Sugar ships a reference B that uses claude-agent-sdk + ts-morph +
 git worktrees. Integrators (IDEs, agent runtimes, on-prem deployments)
 can swap the entire B with their own implementation without touching A.
 
@@ -517,7 +517,7 @@ Any valid Part B implementation must produce two artifact shapes:
    (hasRegressionTest, testGenerationOpportunity).
 
 2. **A `StoredInvariant` JSON file** at
-   `.provekit/invariants/<id>.json` for any constraint that survives
+   `.sugar/invariants/<id>.json` for any constraint that survives
    the downstream gates (Z3 SAT, fidelity checks, mutation
    verification). Schema is the one defined in this spec's invariant
    store section.
@@ -548,8 +548,8 @@ When a third-party B replaces ours, these pieces change:
 - **Diff process.** How proposed code changes are represented and
   applied. We produce unified diffs against a worktree; an IDE's B
   might produce in-editor edits via the IDE's diff model.
-- **PR flow.** Where the output ends up. We emit `provekit-fix.patch` +
-  `provekit-fix.md`. An integrator's B might open a PR through the
+- **PR flow.** Where the output ends up. We emit `sugar-fix.patch` +
+  `sugar-fix.md`. An integrator's B might open a PR through the
   IDE's source-control API, post to a ticket system, or drop a
   follow-up commit.
 
@@ -562,14 +562,14 @@ re-implement the gate; they just have to produce its inputs.
 
 The contract surface is therefore the smallest possible Part-A-Part-B
 coupling: two JSON shapes (`IntentReport`, `StoredInvariant`) and one
-filesystem location (`.provekit/invariants/`). Everything else inside B
+filesystem location (`.sugar/invariants/`). Everything else inside B
 is the integrator's choice.
 
 ### Strategic consequence
 
 Part A is the moat — small, mechanical, free, ubiquitous. Part B is the
 moving target — improves with every frontier-model release on someone
-else's R&D budget. ProvekIt's reference B exists to bootstrap adoption;
+else's R&D budget. Sugar's reference B exists to bootstrap adoption;
 it's not the long-term product. The long-term product is the gate plus
 the constraint corpus it accumulates per codebase. B is a plugin that
 gets better around it.
@@ -579,12 +579,12 @@ gets better around it.
 The runtime ships through two artifacts; everything else is downstream
 of these.
 
-**Artifact 1 — `provekit` CLI binary + GitHub Action.** Single Node
+**Artifact 1 — `sugar` CLI binary + GitHub Action.** Single Node
 package, single entry point, single command. The CLI exposes:
-`provekit verify` (the standing-runtime gate), `provekit fix` (the LLM
-pipeline), `provekit invariants list/verify/retire/paths` (the
-constraint-store inspection commands), `provekit mine-history` (the
-historical-bootstrap command). The GitHub Action wraps `provekit verify`
+`sugar verify` (the standing-runtime gate), `sugar fix` (the LLM
+pipeline), `sugar invariants list/verify/retire/paths` (the
+constraint-store inspection commands), `sugar mine-history` (the
+historical-bootstrap command). The GitHub Action wraps `sugar verify`
 and exposes its verdict to the existing PR check surface every developer
 already understands. Channel 1: every developer adds it to their CI.
 
@@ -593,14 +593,14 @@ agent runtime, or platform can integrate. The four canonical entry
 points: `runFixLoop` (full pipeline), `verifyAll` (the standing-runtime
 gate), `extractIntent` (B0 retrospective), `readInvariants` /
 `writeInvariant` (constraint store I/O). Channel 2: every IDE
-integrates ProvekIt to prove correctness; Holyship integrates it as a
+integrates Sugar to prove correctness; Holyship integrates it as a
 gate in its gate library; future agent runtimes plug into the same
 surface.
 
 **What's not in the distribution surface.** Linear webhooks, Slack
 bots, GitHub Issues subscribers, email connectors, per-IDE plugins,
 custom event-bus adapters — these are third-party integrations
-downstream of the CLI and library. ProvekIt doesn't ship or maintain
+downstream of the CLI and library. Sugar doesn't ship or maintain
 them. Integrators write them by composing the two artifacts above.
 
 The acceptance criteria below verify both artifacts: criterion #6 (the
@@ -612,7 +612,7 @@ imports them.
 
 The marketing claim becomes provable:
 
-*ProvekIt doesn't fix your bugs. ProvekIt makes the bug class permanently
+*Sugar doesn't fix your bugs. Sugar makes the bug class permanently
 un-shippable. Every fix is a contract your codebase pledges to keep.
 Refactor freely; the contracts move with you.*
 

@@ -190,7 +190,7 @@ fn portfolio_consensus_coq_alone_discharges_when_smt_undecidable() {
 // Real-binary tests. Skip cleanly when the binaries are not on PATH.
 // ---------------------------------------------------------------------------
 
-/// Real-binary smoke. The current `provekit-ir-compiler-coq` emits
+/// Real-binary smoke. The current `sugar-ir-compiler-coq` emits
 /// proofs using the `admit. Qed.` placeholder (see notes.md in that
 /// crate), so `coqc` exits non-zero on the generated `.v` file.
 /// That gap belongs to the Coq IR-compiler, not the solver wiring

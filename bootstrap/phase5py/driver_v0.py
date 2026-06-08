@@ -14,13 +14,13 @@ ARC = "Phase-5-Py-v0"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "bootstrap/phase5py"
 RECEIPT_PATH = OUT_DIR / "v0_receipt.json"
-MODULE_PATH = OUT_DIR / "libprovekit_py_v0.py"
+MODULE_PATH = OUT_DIR / "libsugar_py_v0.py"
 README_PATH = OUT_DIR / "README.md"
 
 CASE_SPECS = [
     {
         "name": "null",
-        "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json",
+        "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json",
         "function": "null",
         "params": [],
         "param_types": [],
@@ -28,7 +28,7 @@ CASE_SPECS = [
     },
     {
         "name": "boolean",
-        "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_boolean.json",
+        "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_boolean.json",
         "function": "boolean",
         "params": ["b"],
         "param_types": ["bool"],
@@ -36,7 +36,7 @@ CASE_SPECS = [
     },
     {
         "name": "integer",
-        "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_integer.json",
+        "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_integer.json",
         "function": "integer",
         "params": ["n"],
         "param_types": ["int"],
@@ -44,7 +44,7 @@ CASE_SPECS = [
     },
     {
         "name": "string",
-        "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_string.json",
+        "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_string.json",
         "function": "string",
         "params": ["s"],
         "param_types": ["str"],
@@ -58,16 +58,16 @@ def main() -> int:
     _prepare_import_path()
 
     try:
-        from provekit_lift_py_tests.canonicalizer import blake3_512_of
-        from provekit_lift_python_source.canonical import cid_of_json
-        from provekit_lift_python_source.lifter import lift_source
-        from provekit_realize_python_core.realizer import emit_stub
+        from sugar_lift_py_tests.canonicalizer import blake3_512_of
+        from sugar_lift_python_source.canonical import cid_of_json
+        from sugar_lift_python_source.lifter import lift_source
+        from sugar_realize_python_core.realizer import emit_stub
     except Exception as exc:
         _write_import_failure_receipt(exc)
         print(f"{ARC}: kit import failed, receipt recorded at {RECEIPT_PATH}")
         return 0
 
-    os.environ.setdefault("PROVEKIT_REPO_ROOT", str(REPO_ROOT))
+    os.environ.setdefault("SUGAR_REPO_ROOT", str(REPO_ROOT))
     cases: list[dict[str, Any]] = []
     emitted_sources: list[str] = []
 
@@ -84,7 +84,7 @@ def main() -> int:
             "term_surface": fixture.get("term_surface"),
             "rust_fixture_substrate_cid": cid_of_json(fixture["proofir_term"]),
             "realize_python_invocation": {
-                "entrypoint": "provekit_realize_python_core.realizer.emit_stub",
+                "entrypoint": "sugar_realize_python_core.realizer.emit_stub",
                 "function": spec["function"],
                 "params": spec["params"],
                 "param_types": spec["param_types"],
@@ -124,7 +124,7 @@ def main() -> int:
                     "emitted_python_source": source,
                     "emitted_python_source_cid": source_cid,
                     "python_ast_parse": "ok",
-                    "lift_python_entrypoint": "provekit_lift_python_source.lifter.lift_source",
+                    "lift_python_entrypoint": "sugar_lift_python_source.lifter.lift_source",
                     "lift_python_source_path": source_path,
                     "lift_python_refusals": lift_result.refusals,
                     "lift_python_diagnostics": lift_result.diagnostics,
@@ -193,7 +193,7 @@ def _reexec_with_kit_runtime_if_needed() -> None:
 
 def _find_python_runtime() -> str | None:
     candidates = [
-        os.environ.get("PROVEKIT_PHASE5PY_PYTHON"),
+        os.environ.get("SUGAR_PHASE5PY_PYTHON"),
         sys.executable,
         "/usr/local/bin/python3",
         "/opt/homebrew/bin/python3",
@@ -231,9 +231,9 @@ def _find_python_runtime() -> str | None:
 
 def _prepare_import_path() -> None:
     paths = [
-        REPO_ROOT / "implementations/python/provekit-realize-python-core/src",
-        REPO_ROOT / "implementations/python/provekit-lift-python-source/src",
-        REPO_ROOT / "implementations/python/provekit-lift-py-tests/src",
+        REPO_ROOT / "implementations/python/sugar-realize-python-core/src",
+        REPO_ROOT / "implementations/python/sugar-lift-python-source/src",
+        REPO_ROOT / "implementations/python/sugar-lift-py-tests/src",
     ]
     for path in reversed(paths):
         text = str(path)
@@ -263,16 +263,16 @@ def _diff_record(
     if is_stub:
         classification = "realize-python-template-gap"
         responsible = (
-            "provekit-realize-python-core emitted its fallback stub because "
+            "sugar-realize-python-core emitted its fallback stub because "
             "python-canonical-bodies.json has no D7 Value constructor template."
         )
     elif lift_refusals:
         classification = "lift-python-refusal"
-        responsible = "provekit-lift-python-source refused part of the emitted Python body."
+        responsible = "sugar-lift-python-source refused part of the emitted Python body."
     else:
         classification = "lift-python-substrate-namespace-mismatch"
         responsible = (
-            "provekit-lift-python-source emitted python:* body terms rather than "
+            "sugar-lift-python-source emitted python:* body terms rather than "
             "the D7 ProofIR return/call:new term."
         )
     return {
@@ -352,8 +352,8 @@ def _receipt(cases: list[dict[str, Any]], module_source_cid: str) -> dict[str, A
             "new_memento_types": False,
         },
         "kits": {
-            "realize_python": "implementations/python/provekit-realize-python-core",
-            "lift_python": "implementations/python/provekit-lift-python-source",
+            "realize_python": "implementations/python/sugar-realize-python-core",
+            "lift_python": "implementations/python/sugar-lift-python-source",
             "python_body_templates": (
                 "menagerie/python-language-signature/specs/body-templates/"
                 "python-canonical-bodies.json"
@@ -389,7 +389,7 @@ def _readme(cases: list[dict[str, Any]]) -> str:
         "",
         status + ".",
         "",
-        "This directory records the Python n=1 case for the libprovekit self-host arc.",
+        "This directory records the Python n=1 case for the libsugar self-host arc.",
         "The case starts from the four D7 Value constructor fixtures and asks whether the",
         "existing Python realization and Python source lift kits can close the same",
         "substrate-CID loop that D7 closed for Rust source.",
@@ -397,22 +397,22 @@ def _readme(cases: list[dict[str, Any]]) -> str:
         "The self-trip under test is:",
         "",
         "1. read the D7 Rust lift fixture",
-        "2. invoke provekit-realize-python-core",
+        "2. invoke sugar-realize-python-core",
         "3. parse the emitted Python with ast.parse",
-        "4. invoke provekit-lift-python-source on that source",
+        "4. invoke sugar-lift-python-source on that source",
         "5. compare the lifted Python body CID with the fixture ProofIR term CID",
         "",
         "Fixtures used:",
         "",
-        "- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json",
-        "- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_boolean.json",
-        "- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_integer.json",
-        "- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_string.json",
+        "- implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json",
+        "- implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_boolean.json",
+        "- implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_integer.json",
+        "- implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_string.json",
         "",
         "Generated artifacts:",
         "",
         "- bootstrap/phase5py/driver_v0.py",
-        "- bootstrap/phase5py/libprovekit_py_v0.py",
+        "- bootstrap/phase5py/libsugar_py_v0.py",
         "- bootstrap/phase5py/v0_receipt.json",
         "- bootstrap/phase5py/README.md",
         "",
@@ -423,7 +423,7 @@ def _readme(cases: list[dict[str, Any]]) -> str:
         *rows,
         "",
         "The current result is a realize-python template gap.",
-        "provekit-realize-python-core accepts the invocations, but the canonical Python",
+        "sugar-realize-python-core accepts the invocations, but the canonical Python",
         "body template catalog has no entries for the D7 Value constructor surfaces.",
         "The kit therefore emits its documented fallback stubs.",
         "Those stubs are valid Python and lift back into python:* body terms.",

@@ -10,7 +10,7 @@
 T's correction is correct and the question is unified, not three.
 
 1. **Schema:** `PlatformSemanticTag` is a flat memento with a `dimensions: BTreeMap<String, Cid>` field. Keys are open kit-minted dimension names. Values are CIDs of `DimensionValueMemento`s (each value is itself a separately-minted content-addressed memento). The substrate enumerates nothing.
-2. **Composition machinery:** Substrate computes a `LossRecord` (already `BTreeMap<String, IrFormula>` per `provekit-ir-types/src/lib.rs:508`) by **pairwise dimension comparison on the intersection of key sets**, with CID-equality as the equivalence relation and the kit-minted `DimensionValueMemento`'s declared `compare_to` formula as the divergence-characterizer.
+2. **Composition machinery:** Substrate computes a `LossRecord` (already `BTreeMap<String, IrFormula>` per `sugar-ir-types/src/lib.rs:508`) by **pairwise dimension comparison on the intersection of key sets**, with CID-equality as the equivalence relation and the kit-minted `DimensionValueMemento`'s declared `compare_to` formula as the divergence-characterizer.
 3. **Refusal pattern:** Asymmetric set-difference on dimension keys is a hard refusal, not a partial loss. The substrate emits a `RefusalMemento` with `kind: "uncharacterizable_platform_divergence"` listing `source_only_dimensions` and `target_only_dimensions`. The port halts. This is the third leg of the trichotomy at the platform-semantics boundary.
 
 The three faces are one decision: open-keyed map at the schema layer forces pairwise-intersection at the composition layer forces hard-refuse-on-asymmetric-keys at the trichotomy layer. Each layer's correctness depends on the next layer's shape. They lock together.
@@ -146,7 +146,7 @@ This is a hard halt. The port does not proceed with a partial LossRecord.
 
 ### Why hard-refuse, not per-dimension fallback
 
-The trichotomy locked in `project_provekit_first_principle` is exact / loudly-bounded-lossy / refuse. A partial LossRecord covering only shared dimensions would be **lossy in the loss-characterization itself**: the receipt would say "loss in X, Y" but silently drop the fact that target couldn't even express dimension Y. That is exactly the silent-platform-behavior-loss this whole architecture exists to prevent.
+The trichotomy locked in `project_sugar_first_principle` is exact / loudly-bounded-lossy / refuse. A partial LossRecord covering only shared dimensions would be **lossy in the loss-characterization itself**: the receipt would say "loss in X, Y" but silently drop the fact that target couldn't even express dimension Y. That is exactly the silent-platform-behavior-loss this whole architecture exists to prevent.
 
 The fact that source-kit declares a dimension target-kit doesn't expose is a structural statement: target-kit's model of this op's semantics is **categorically smaller** than source-kit's. The substrate cannot honestly bound the loss because it has no `compare_to` formula for the missing dimension on the target side. There is nothing to compose against. The honest answer is refusal.
 
@@ -182,9 +182,9 @@ The other tradeoff: kits must mint `DimensionValueMemento`s with real `compare_t
 
 When this ruling lands:
 
-1. `PlatformSemanticTag` and `DimensionValueMemento` types exist in `provekit-ir-types/src/lib.rs` with the exact field order and JCS key-order specified above.
+1. `PlatformSemanticTag` and `DimensionValueMemento` types exist in `sugar-ir-types/src/lib.rs` with the exact field order and JCS key-order specified above.
 2. `IrFormula::DivergenceBetween { source, target }` variant exists.
-3. `compose_loss(&PlatformSemanticTag, &PlatformSemanticTag) -> Result<LossRecord, RefusalMemento>` exists in `libprovekit::core` and is called by `execute_path` at every cross-platform port site per op in the algebra.
+3. `compose_loss(&PlatformSemanticTag, &PlatformSemanticTag) -> Result<LossRecord, RefusalMemento>` exists in `libsugar::core` and is called by `execute_path` at every cross-platform port site per op in the algebra.
 4. `MigrateReceiptEnvelope.refusal_mementos` carries `kind: "refusal"` with `reason: "uncharacterizable_platform_divergence"` whenever dimension-key sets differ.
 5. Tests cover: (a) byte-identical tags yield empty `LossRecord` (exact leg); (b) tags differing in one dimension's CID yield single-entry `LossRecord` with that dimension's name as key (lossy leg); (c) tags with asymmetric dimension key sets yield `RefusalMemento` with both `source_only_dimensions` and `target_only_dimensions` populated (refuse leg); (d) two kits minting same-string-name dimension values with different `compare_to` formulas correctly report divergence under CID-inequality despite string-equal `value_name`.
 
@@ -193,7 +193,7 @@ When this ruling lands:
 - `docs/plans/2026-05-16-platform-semantics-via-loss-records.md`: the locked architectural ruling this schema implements
 - `docs/plans/2026-05-16-canonical-term-shape-form.md`: the γ ruling whose substrate-provides-schema-kits-mint-values principle this propagates
 - `docs/plans/2026-05-16-operand-binding-sidecar-schema.md`: the β ruling whose flat-keyed-map sidecar pattern this preserves
-- `implementations/rust/provekit-ir-types/src/lib.rs:508`: existing `LossRecord = BTreeMap<String, IrFormula>` that this composes against
-- `implementations/rust/provekit-ir-types/src/lib.rs:4744`: existing `RefusalMemento` reused for the third leg
-- `implementations/rust/libprovekit/src/core/types.rs:808`: existing `ConformanceDeclaration::Carrier` to be extended with `PlatformSemanticsDeclaration` carrying `HashMap<Cid, Cid>` from `op_cid` to `PlatformSemanticTag` CID
-- `project_provekit_first_principle` (Supra omnia, rectum) and the trichotomy
+- `implementations/rust/sugar-ir-types/src/lib.rs:508`: existing `LossRecord = BTreeMap<String, IrFormula>` that this composes against
+- `implementations/rust/sugar-ir-types/src/lib.rs:4744`: existing `RefusalMemento` reused for the third leg
+- `implementations/rust/libsugar/src/core/types.rs:808`: existing `ConformanceDeclaration::Carrier` to be extended with `PlatformSemanticsDeclaration` carrying `HashMap<Cid, Cid>` from `op_cid` to `PlatformSemanticTag` CID
+- `project_sugar_first_principle` (Supra omnia, rectum) and the trichotomy

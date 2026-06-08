@@ -102,7 +102,7 @@ The canonical v1 occurrence kinds are:
 - `PossibleAliasing`
 - `Drop`
 
-The classification mapping for each kind appears in §4 and is anchored against `2026-05-06-effect-discharge-classification.md`. Any effect kind already present in the classifier or in libprovekit that is NOT listed above MUST be lifted into the legacy synthesis path in §6 (treated as `LegacyUnknown`, fails closed) until added to this list under a `schemaVersion` bump.
+The classification mapping for each kind appears in §4 and is anchored against `2026-05-06-effect-discharge-classification.md`. Any effect kind already present in the classifier or in libsugar that is NOT listed above MUST be lifted into the legacy synthesis path in §6 (treated as `LegacyUnknown`, fails closed) until added to this list under a `schemaVersion` bump.
 
 ### `Reads`
 

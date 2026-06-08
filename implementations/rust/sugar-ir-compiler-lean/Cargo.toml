@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt: Lean 4 and mathlib IR compiler."
+description = "Sugar: Lean 4 and mathlib IR compiler."
 
 [dependencies]
 sugar-canonicalizer = { path = "../sugar-canonicalizer" }
@@ -13,7 +13,7 @@ sugar-ir-types = { path = "../sugar-ir-types" }
 serde_json.workspace = true
 
 [[bin]]
-name = "provekit-ir-lean"
+name = "sugar-ir-lean"
 path = "src/main.rs"
 
 [lib]

@@ -1,15 +1,15 @@
-// ProvekIt LSP Language Plugin: Zig
+// Sugar LSP Language Plugin: Zig
 //
-// A standalone binary that speaks provekit-lsp-plugin/1 over stdio.
-// Parses Zig source files and extracts provekit annotations.
+// A standalone binary that speaks sugar-lsp-plugin/1 over stdio.
+// Parses Zig source files and extracts sugar annotations.
 //
-// Usage: zig build-exe main.zig -o provekit-lsp-zig && ./provekit-lsp-zig --rpc
+// Usage: zig build-exe main.zig -o sugar-lsp-zig && ./sugar-lsp-zig --rpc
 //
-// To use this plugin, add to `.provekit/config.toml`:
+// To use this plugin, add to `.sugar/config.toml`:
 //   [[language]]
 //   name = "zig"
 //   extensions = [".zig"]
-//   plugin = "provekit-lsp-zig"
+//   plugin = "sugar-lsp-zig"
 
 const std = @import("std");
 const json = std.json;
@@ -61,7 +61,7 @@ fn parseZig(allocator: std.mem.Allocator, text: []const u8) ![]Annotation {
     for (lines.items, 0..) |line, i| {
         const line_num: u32 = @intCast(i);
 
-        if (std.mem.indexOf(u8, line, "//provekit:implement ")) |idx| {
+        if (std.mem.indexOf(u8, line, "//sugar:implement ")) |idx| {
             const after = line[idx + 20 ..];
             const end = std.mem.indexOfAny(u8, after, " \n\t") orelse after.len;
             const cid = after[0..end];
@@ -77,7 +77,7 @@ fn parseZig(allocator: std.mem.Allocator, text: []const u8) ![]Annotation {
             });
         }
 
-        if (std.mem.indexOf(u8, line, "//provekit:contract") != null) {
+        if (std.mem.indexOf(u8, line, "//sugar:contract") != null) {
             const fn_name = findAhead(lines.items, i, "fn ");
             try annotations.append(.{
                 .function_name = fn_name,
@@ -89,7 +89,7 @@ fn parseZig(allocator: std.mem.Allocator, text: []const u8) ![]Annotation {
             });
         }
 
-        if (std.mem.indexOf(u8, line, "//provekit:verify") != null) {
+        if (std.mem.indexOf(u8, line, "//sugar:verify") != null) {
             const fn_name = findAhead(lines.items, i, "fn ");
             try annotations.append(.{
                 .function_name = fn_name,
@@ -141,7 +141,7 @@ pub fn main() !void {
     }
 
     if (!rpc_mode) {
-        std.debug.print("Usage: provekit-lsp-zig --rpc\n", .{});
+        std.debug.print("Usage: sugar-lsp-zig --rpc\n", .{});
         std.process.exit(1);
     }
 
@@ -168,7 +168,7 @@ pub fn main() !void {
         }
 
         if (has_init) {
-            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lsp-zig\",\"version\":\"0.1.0\",\"capabilities\":[]}}}}\n", .{id});
+            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"sugar-lsp-zig\",\"version\":\"0.1.0\",\"capabilities\":[]}}}}\n", .{id});
         } else if (has_parse) {
             // Extract text field: naive
             var text: []const u8 = "";

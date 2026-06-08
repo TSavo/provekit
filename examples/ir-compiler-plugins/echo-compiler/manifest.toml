@@ -1,9 +1,9 @@
 # Reference manifest for the echo IR compiler plugin.
 #
-# Install: copy this directory to ~/.config/provekit/ir-compilers/echo-compiler
+# Install: copy this directory to ~/.config/sugar/ir-compilers/echo-compiler
 # (or symlink it). The dispatcher will discover it on next CLI invocation.
 name = "echo-compiler"
 version = "0.1.0"
-protocol_version = "provekit-ir-compiler/1"
+protocol_version = "sugar-ir-compiler/1"
 binary = "echo_compiler.py"
 dialects = ["echo"]

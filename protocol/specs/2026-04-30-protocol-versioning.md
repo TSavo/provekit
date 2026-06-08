@@ -1,4 +1,4 @@
-# ProvekIt: Protocol Versioning via Self-Reference
+# Sugar: Protocol Versioning via Self-Reference
 
 > Author: shared session 2026-04-30 (T + Claude). The protocol is
 > content-addressed, including the protocol's own spec.
@@ -37,13 +37,13 @@ implementation in `tools/recompute-spec-cids/` that anyone can
 re-run; `--verify` mode re-derives every CID and fails on any
 drift.
 
-**This CID is `provekit.proofHash` for ProvekIt itself.** The same
+**This CID is `sugar.proofHash` for Sugar itself.** The same
 field a library carries in its `package.json` to declare its
-proof-chain root, ProvekIt carries to declare its own protocol
+proof-chain root, Sugar carries to declare its own protocol
 version. The framework eats itself: a library's proofHash is the
-CID of its property catalog; ProvekIt's proofHash is the CID of
+CID of its property catalog; Sugar's proofHash is the CID of
 its protocol-spec catalog. Same primitive, same field name, same
-math. ProvekIt is one more library, and the protocol is one more
+math. Sugar is one more library, and the protocol is one more
 property catalog.
 
 This CID names a catalog whose entries are (each spec doc's CID is
@@ -73,7 +73,7 @@ conforms to via the same shape any consumer references a library:
 
 ```yaml
 # in an implementation's metadata
-provekit-protocol-conformance:
+sugar-protocol-conformance:
   - cid: blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106
     version: v1.1.0
 ```
@@ -91,16 +91,16 @@ the bootstrap subsection below). Catalog **attestation** lives in a
 separate sidecar file:
 
 ```
-.provekit/catalog-signatures/v1.1.0.json
+.sugar/catalog-signatures/v1.1.0.json
 ```
 
 The attestation is the canonical bytes of a six-field JSON object,
-signed under the ProvekIt Foundation Root Key:
+signed under the Sugar Foundation Root Key:
 
 ```json
 {
   "schemaVersion": "1",
-  "protocolName": "provekit-protocol",
+  "protocolName": "sugar-protocol",
   "protocolVersion": "v1.1.0",
   "catalogCid": "blake3-512:<hex>",
   "declaredAt": "<iso8601>",
@@ -120,7 +120,7 @@ foundation public key.
 public key: ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=
 ```
 
-Pinned at `.provekit/keys/foundation-v0.pub`. The CLI binary embeds
+Pinned at `.sugar/keys/foundation-v0.pub`. The CLI binary embeds
 this file at compile time so `verify-protocol --signed` works without
 filesystem state.
 
@@ -156,7 +156,7 @@ forward to v1).
 ## Signature verification procedure
 
 ```
-provekit verify-protocol --signed
+sugar verify-protocol --signed
 ```
 
 The CLI checks four things and reports each:
@@ -194,7 +194,7 @@ without rebuilding the CLI).
 
 4. **Bootstrap signing.** v1.1.0's catalog JSON is still flagged
    `_unsigned` in its own metadata, but a signed attestation
-   (`.provekit/catalog-signatures/v1.1.0.json`) over the catalog's
+   (`.sugar/catalog-signatures/v1.1.0.json`) over the catalog's
    CID exists, signed by the v0 foundation key. The signature path
    is real and verifiable; the trust anchor is the deterministic
    test seed `[0x42; 32]`. v1.2 may promote the catalog itself into
@@ -217,7 +217,7 @@ without rebuilding the CLI).
 
 ## The recursive payoff
 
-ProvekIt's protocol uses content addressing as its core primitive. The
+Sugar's protocol uses content addressing as its core primitive. The
 spec describing that protocol is itself content-addressed via the same
 machinery. The version of the protocol is a CID. Implementations
 verify their conformance via CID comparison. There is no
@@ -228,11 +228,11 @@ the bytes whose JCS-canonical form hashes (BLAKE3-512) to
 This is the same self-reference shape as Git (commit hashes refer to
 trees that may include other commits), IPFS (DAG addresses include
 references to other DAGs), and Bitcoin (block hashes chain backward
-through prior blocks). ProvekIt is one more application of the same
+through prior blocks). Sugar is one more application of the same
 primitive.
 
 The framework's promise is total within its scope. The version is a
 CID. Conformance is a CID comparison. The TypeScript implementation
 in this repository is one realization; alternative implementations in
 any language conform to the same CID-pinned spec set or they are not
-ProvekIt.
+Sugar.

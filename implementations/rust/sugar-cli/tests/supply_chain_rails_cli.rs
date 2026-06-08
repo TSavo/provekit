@@ -14,7 +14,7 @@ fn tmp_dir(name: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("provekit-scr-cli-{stamp}-{name}"));
+    let dir = std::env::temp_dir().join(format!("sugar-scr-cli-{stamp}-{name}"));
     fs::create_dir_all(&dir).expect("mkdir temp dir");
     dir
 }
@@ -45,11 +45,11 @@ fn write_json(path: &Path, value: &Value) {
     write(path, &text);
 }
 
-fn run_provekit(args: &[&str]) -> Output {
+fn run_sugar(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_sugar"))
         .args(args)
         .output()
-        .unwrap_or_else(|e| panic!("spawn provekit {}: {e}", args.join(" ")))
+        .unwrap_or_else(|e| panic!("spawn sugar {}: {e}", args.join(" ")))
 }
 
 fn parse_stdout(output: &Output) -> Value {
@@ -68,7 +68,7 @@ fn make_npm_package(root: &Path, name: &str, version: &str, tarball: &str) {
         &json!({
             "name": name,
             "version": version,
-            "description": "Small JSON boundary utility with explicit ProvekIt contracts",
+            "description": "Small JSON boundary utility with explicit Sugar contracts",
             "main": "index.js",
             "scripts": {"test": "node test.js"}
         }),
@@ -84,10 +84,10 @@ fn make_npm_package(root: &Path, name: &str, version: &str, tarball: &str) {
 fn package_inspect_reports_npm_identity_and_binary_cid() {
     let dir = tmp_dir("package-inspect");
     make_npm_package(&dir, "safe-json", "1.4.2", "safe tarball bytes");
-    let manifest_dir = dir.join(".provekit/lift/npm-test-inspector");
+    let manifest_dir = dir.join(".sugar/lift/npm-test-inspector");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     write(
-        &dir.join(".provekit/config.toml"),
+        &dir.join(".sugar/config.toml"),
         "[authoring.lift]\nsurface = \"npm-test-inspector\"\n",
     );
     let binary_cid = blake3_512_of("safe tarball bytes".as_bytes());
@@ -118,7 +118,7 @@ done
         ),
     );
 
-    let output = run_provekit(&[
+    let output = run_sugar(&[
         "package",
         "inspect",
         dir.to_str().unwrap(),
@@ -144,10 +144,10 @@ done
 fn package_inspect_delegates_to_configured_lifter() {
     let dir = tmp_dir("delegated-package-inspect");
     let project = dir.join("custom-release");
-    let manifest_dir = project.join(".provekit/lift/custom-supply");
+    let manifest_dir = project.join(".sugar/lift/custom-supply");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     write(
-        &project.join(".provekit/config.toml"),
+        &project.join(".sugar/config.toml"),
         "[authoring.lift]\nsurface = \"custom-supply\"\n",
     );
     let plugin = dir.join("custom-supply-lifter.sh");
@@ -179,7 +179,7 @@ done
         ),
     );
 
-    let output = run_provekit(&[
+    let output = run_sugar(&[
         "package",
         "inspect",
         project.to_str().unwrap(),
@@ -226,7 +226,7 @@ fn version_check_extension_rejects_removed_contract() {
         }),
     );
 
-    let output = run_provekit(&[
+    let output = run_sugar(&[
         "version",
         "check-extension",
         "--previous",
@@ -278,7 +278,7 @@ fn version_check_extension_rejects_cross_package_reuse() {
         }),
     );
 
-    let output = run_provekit(&[
+    let output = run_sugar(&[
         "version",
         "check-extension",
         "--previous",
@@ -322,7 +322,7 @@ fn version_check_extension_rejects_missing_candidate_contract_set_cid() {
         }),
     );
 
-    let output = run_provekit(&[
+    let output = run_sugar(&[
         "version",
         "check-extension",
         "--previous",
@@ -360,7 +360,7 @@ fn verify_artifact_rejects_binary_cid_mismatch() {
         }),
     );
 
-    let output = run_provekit(&[
+    let output = run_sugar(&[
         "verify",
         "--artifact",
         artifact.to_str().unwrap(),
@@ -408,7 +408,7 @@ fn verify_artifact_and_policy_runs_both_rails() {
         }),
     );
 
-    let output = run_provekit(&[
+    let output = run_sugar(&[
         "verify",
         "--artifact",
         artifact.to_str().unwrap(),

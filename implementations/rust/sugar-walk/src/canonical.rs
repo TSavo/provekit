@@ -30,7 +30,7 @@ pub fn serde_to_canonical(j: JsonValue) -> Arc<Value> {
                 // address distinctness. Use a tagged object to distinguish the
                 // source type from a literal string value.
                 Value::object(vec![(
-                    "__provekit_non_i64_number__".to_string(),
+                    "__sugar_non_i64_number__".to_string(),
                     Value::string(n.to_string()),
                 )])
             }
@@ -53,14 +53,14 @@ pub fn serde_to_canonical(j: JsonValue) -> Arc<Value> {
 /// Canonicalize an `IrFormula` into a JCS-canonicalizer Value tree.
 pub fn formula_to_canonical(f: &IrFormula) -> Arc<Value> {
     let serde =
-        serde_json::to_value(f).expect("IrFormula serializes (provekit-ir-types is generated)");
+        serde_json::to_value(f).expect("IrFormula serializes (sugar-ir-types is generated)");
     serde_to_canonical(serde)
 }
 
 /// Canonicalize an `IrTerm` into a JCS-canonicalizer Value tree.
 pub fn term_to_canonical(t: &IrTerm) -> Arc<Value> {
     let serde =
-        serde_json::to_value(t).expect("IrTerm serializes (provekit-ir-types is generated)");
+        serde_json::to_value(t).expect("IrTerm serializes (sugar-ir-types is generated)");
     serde_to_canonical(serde)
 }
 

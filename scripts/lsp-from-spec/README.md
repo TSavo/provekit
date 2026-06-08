@@ -1,12 +1,12 @@
 # lsp-from-spec
 
-Prototype Language Server demonstrating that a third-party IDE vendor can implement ProvekIt-aware features by reading the protocol spec stack alone, without depending on the `provekit` framework or its TypeScript reference implementation.
+Prototype Language Server demonstrating that a third-party IDE vendor can implement Sugar-aware features by reading the protocol spec stack alone, without depending on the `sugar` framework or its TypeScript reference implementation.
 
 Companion to `protocol/specs/2026-04-30-lsp-from-protocol.md`.
 
 ## What this prototype does
 
-1. **Parses** a `.provekit/invariants/<id>.json` file per `protocol/specs/2026-04-30-ir-formal-grammar.md`. The parser is inline (`parse.mjs`); it does not import from `src/`.
+1. **Parses** a `.sugar/invariants/<id>.json` file per `protocol/specs/2026-04-30-ir-formal-grammar.md`. The parser is inline (`parse.mjs`); it does not import from `src/`.
 
 2. **Computes propertyHash** per `protocol/specs/2026-04-30-canonicalization-grammar.md`:
    - Passes 1..6 (de Bruijn, predicate canonicalization, sort canonicalization, implies removal, NNF, AC normalization) per §8.

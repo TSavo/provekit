@@ -1,15 +1,15 @@
-// Language plugin RPC client for the ProvekIt LSP server.
+// Language plugin RPC client for the Sugar LSP server.
 //
-// Mirrors the lift-plugin protocol from `provekit-cli/src/cmd_mint.rs`.
+// Mirrors the lift-plugin protocol from `sugar-cli/src/cmd_mint.rs`.
 // Each language plugin is a binary that speaks NDJSON-over-stdio JSON-RPC.
 //
 // Plugin manifest lives at:
-//   .provekit/lsp/<name>/manifest.toml   (project-local)
-//   ~/.config/provekit/lsp/<name>/manifest.toml   (user-global)
+//   .sugar/lsp/<name>/manifest.toml   (project-local)
+//   ~/.config/sugar/lsp/<name>/manifest.toml   (user-global)
 //
 // Manifest format:
-//   name = "provekit-lsp-rust"
-//   command = ["provekit-lsp-rust"]
+//   name = "sugar-lsp-rust"
+//   command = ["sugar-lsp-rust"]
 //   # optional:
 //   # working_dir = "./subproject"
 //
@@ -92,7 +92,7 @@ fn parse_manifest(path: &Path) -> Result<PluginManifest, String> {
 /// Find a plugin manifest by name.
 fn find_manifest(project_root: &Path, name: &str) -> Result<PluginManifest, String> {
     let project_local = project_root
-        .join(".provekit")
+        .join(".sugar")
         .join("lsp")
         .join(name)
         .join("manifest.toml");
@@ -102,7 +102,7 @@ fn find_manifest(project_root: &Path, name: &str) -> Result<PluginManifest, Stri
     if let Some(home) = std::env::var_os("HOME") {
         let user_global = PathBuf::from(home)
             .join(".config")
-            .join("provekit")
+            .join("sugar")
             .join("lsp")
             .join(name)
             .join("manifest.toml");
@@ -111,7 +111,7 @@ fn find_manifest(project_root: &Path, name: &str) -> Result<PluginManifest, Stri
         }
     }
     Err(format!(
-        "no plugin manifest for lsp language `{name}` (looked in .provekit/lsp/{name}/manifest.toml and ~/.config/provekit/lsp/{name}/manifest.toml)"
+        "no plugin manifest for lsp language `{name}` (looked in .sugar/lsp/{name}/manifest.toml and ~/.config/sugar/lsp/{name}/manifest.toml)"
     ))
 }
 
@@ -194,8 +194,8 @@ impl LanguagePlugin {
             "id": self.next_id(),
             "method": "initialize",
             "params": {
-                "client": {"name": "provekit-lsp", "version": env!("CARGO_PKG_VERSION")},
-                "protocol_version": "provekit-lsp-plugin/1",
+                "client": {"name": "sugar-lsp", "version": env!("CARGO_PKG_VERSION")},
+                "protocol_version": "sugar-lsp-plugin/1",
             }
         });
         let resp = self.exchange(&req)?;

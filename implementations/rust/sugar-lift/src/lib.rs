@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift: workspace lift toolchain.
+// sugar-lift: workspace lift toolchain.
 //
 // Walks a Rust workspace (or single crate), parses every `.rs` file
 // with syn, dispatches each parsed file to all registered adapters,
@@ -9,10 +9,10 @@
 //
 // STRATEGIC POSITIONING (read this before extending):
 //
-//   ProvekIt does NOT compete with proptest, contracts, kani, prusti,
+//   Sugar does NOT compete with proptest, contracts, kani, prusti,
 //   hypothesis-py, deal-py, bean-validation-java, zod-ts, etc. It sits
 //   BENEATH them. Developers keep their existing annotation library;
-//   `provekit-lift` reads what's already there and promotes it to a
+//   `sugar-lift` reads what's already there and promotes it to a
 //   content-addressed signed contract.
 //
 //   There is no bespoke contract-authoring macro. Greenfield code is
@@ -33,9 +33,9 @@
 //
 // CARGO SUBCOMMAND:
 //
-//   `cargo provekit-lift [--workspace <dir>] [--target-dir <out>]`
-//   wires through the bin `cargo-provekit-lift`. We also ship a plain
-//   `provekit-lift` bin for direct invocation.
+//   `cargo sugar-lift [--workspace <dir>] [--target-dir <out>]`
+//   wires through the bin `cargo-sugar-lift`. We also ship a plain
+//   `sugar-lift` bin for direct invocation.
 
 use base64::Engine;
 use std::collections::BTreeMap;
@@ -117,11 +117,11 @@ pub struct LiftOptions {
 impl Default for LiftOptions {
     fn default() -> Self {
         Self {
-            produced_by: "provekit-lift@0.1.0".into(),
+            produced_by: "sugar-lift@0.1.0".into(),
             produced_at: "2026-04-30T00:00:00.000Z".into(),
             signer_seed: [0x42; 32],
-            lifter: "provekit-lift".into(),
-            catalog_name: "@provekit/lift".into(),
+            lifter: "sugar-lift".into(),
+            catalog_name: "@sugar/lift".into(),
             catalog_version: "0.1.0".into(),
         }
     }
@@ -471,11 +471,11 @@ fn contract_cid_for_lift_path_prepass(d: &ContractDecl) -> String {
         post: d.post.as_deref().map(formula_to_value),
         inv: d.inv.as_deref().map(formula_to_value),
         out_binding: d.out_binding.clone(),
-        produced_by: "provekit-lift".into(),
+        produced_by: "sugar-lift".into(),
         produced_at: "2026-01-01T00:00:00.000Z".into(),
         input_cids: vec![],
         authoring: Authoring::Lift {
-            lifter: "provekit-lift".into(),
+            lifter: "sugar-lift".into(),
             evidence: String::new(),
             source_cid: None,
         },
@@ -675,12 +675,12 @@ pub fn parse_cli_flags(args: impl IntoIterator<Item = String>) -> CliFlags {
             }
             _ => {
                 // Cargo passes the subcommand name as argv[1] when
-                // invoked as `cargo provekit-lift ...`. Strip it.
-                if a == "provekit-lift" {
+                // invoked as `cargo sugar-lift ...`. Strip it.
+                if a == "sugar-lift" {
                     continue;
                 }
-                eprintln!("provekit-lift: unrecognized argument: {a}");
-                eprintln!("provekit-lift: try --help");
+                eprintln!("sugar-lift: unrecognized argument: {a}");
+                eprintln!("sugar-lift: try --help");
                 std::process::exit(2);
             }
         }
@@ -690,10 +690,10 @@ pub fn parse_cli_flags(args: impl IntoIterator<Item = String>) -> CliFlags {
 
 fn print_help() {
     println!(
-        "provekit-lift: promote existing Rust annotations to signed contracts.\n\n\
+        "sugar-lift: promote existing Rust annotations to signed contracts.\n\n\
          USAGE:\n  \
-           cargo provekit-lift [--workspace <dir>] [--target-dir <dir>] [--quiet]\n  \
-           provekit-lift     [--workspace <dir>] [--target-dir <dir>] [--quiet]\n\n\
+           cargo sugar-lift [--workspace <dir>] [--target-dir <dir>] [--quiet]\n  \
+           sugar-lift     [--workspace <dir>] [--target-dir <dir>] [--quiet]\n\n\
          FLAGS:\n  \
            --workspace <dir>   Workspace root to walk. Default: current directory.\n  \
            --target-dir <dir>  Output directory. Default: <workspace>/target/release.\n  \
@@ -701,7 +701,7 @@ fn print_help() {
            --rpc               Speak JSON-RPC over stdio (plugin mode).\n  \
            --help              Show this help.\n\n\
          POSITIONING:\n  \
-           ProvekIt does NOT compete with proptest, contracts, kani, prusti,\n  \
+           Sugar does NOT compete with proptest, contracts, kani, prusti,\n  \
            hypothesis-py, deal-py, bean-validation-java, zod-ts. It sits\n  \
            BENEATH them. We promote what you already have to content-addressed\n  \
            signed contracts. A contract only enters the substrate by being\n  \
@@ -734,7 +734,7 @@ fn run_rpc_mode() -> i32 {
                 // C1-C8 lift-plugin-protocol conformance: initialize MUST carry a
                 // string `protocol_version` (C1) and `capabilities.authoring_surfaces`
                 // as a non-empty array (C2/C4). The rust kit serves the `rust` surface.
-                let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"name":"provekit-lift","version":"1.0","protocol_version":"pep/1.7.0","capabilities":{"authoring_surfaces":["rust"],"ir_version":"v1.1.0"}}});
+                let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"name":"sugar-lift","version":"1.0","protocol_version":"pep/1.7.0","capabilities":{"authoring_surfaces":["rust"],"ir_version":"v1.1.0"}}});
                 let _ = writeln!(stdout, "{resp}");
             }
             KIT_DECLARATION_RPC_METHOD => {
@@ -854,7 +854,7 @@ const RUST_CONTRACTS_SURFACE: &str = "rust-contracts";
 fn kit_declaration_result() -> serde_json::Value {
     serde_json::json!({
         "kit": {
-            "id": "provekit-lift",
+            "id": "sugar-lift",
             "language": "rust",
             "version": env!("CARGO_PKG_VERSION")
         },
@@ -974,7 +974,7 @@ pub fn run_cli(flags: CliFlags) -> i32 {
     match lift_and_mint(&workspace, &out_dir, &opts) {
         Ok((report, minted, path)) => {
             if !flags.quiet {
-                println!("provekit-lift: scanned {} .rs files", report.files_scanned);
+                println!("sugar-lift: scanned {} .rs files", report.files_scanned);
                 for ar in &report.adapter_reports {
                     println!(
                         "  adapter `{}`: seen {}, lifted {}, skipped {}",
@@ -991,18 +991,18 @@ pub fn run_cli(flags: CliFlags) -> i32 {
                     );
                 }
                 println!(
-                    "provekit-lift: wrote {} ({} members)",
+                    "sugar-lift: wrote {} ({} members)",
                     path.display(),
                     minted.member_count
                 );
-                println!("provekit-lift: cid = {}", minted.cid);
+                println!("sugar-lift: cid = {}", minted.cid);
             } else {
                 println!("{}", minted.cid);
             }
             0
         }
         Err(e) => {
-            eprintln!("provekit-lift: {e}");
+            eprintln!("sugar-lift: {e}");
             1
         }
     }
@@ -1018,7 +1018,7 @@ mod tests {
     use sugar_proof_envelope::{cbor_decode, CborValue};
 
     fn tempdir() -> tempdir_compat::TempDir {
-        tempdir_compat::TempDir::new("provekit-lift-test").unwrap()
+        tempdir_compat::TempDir::new("sugar-lift-test").unwrap()
     }
 
     /// Smallest possible "test workspace": one .rs file with two
@@ -1094,11 +1094,11 @@ fn answer_is_42(x: i64) -> i64 {{ x }}
 
     #[test]
     fn cargo_subcommand_arg_is_stripped() {
-        // When invoked as `cargo provekit-lift --workspace /a`, Cargo
-        // calls `cargo-provekit-lift` with argv = ["provekit-lift",
-        // "--workspace", "/a"]. parse_cli_flags must skip "provekit-lift".
+        // When invoked as `cargo sugar-lift --workspace /a`, Cargo
+        // calls `cargo-sugar-lift` with argv = ["sugar-lift",
+        // "--workspace", "/a"]. parse_cli_flags must skip "sugar-lift".
         let flags = parse_cli_flags(
-            ["provekit-lift".into(), "--workspace".into(), "/a".into()]
+            ["sugar-lift".into(), "--workspace".into(), "/a".into()]
                 .into_iter()
                 .collect::<Vec<String>>(),
         );
@@ -1392,8 +1392,8 @@ fn nonzero(a: i64) -> i64 {{ a }}
     /// `contract_set_cid` and bundle `cid` are byte-identical.
     #[test]
     fn contract_set_cid_is_identical_across_different_absolute_roots() {
-        let td1 = tempdir_compat::TempDir::new("provekit-det-machine1").unwrap();
-        let td2 = tempdir_compat::TempDir::new("provekit-det-machine2").unwrap();
+        let td1 = tempdir_compat::TempDir::new("sugar-det-machine1").unwrap();
+        let td2 = tempdir_compat::TempDir::new("sugar-det-machine2").unwrap();
 
         write_determinism_fixture(td1.path());
         write_determinism_fixture(td2.path());
@@ -1434,7 +1434,7 @@ fn nonzero(a: i64) -> i64 {{ a }}
     /// Assert that target/ and .DS_Store artifacts are NOT in the lifted set.
     #[test]
     fn target_dir_and_ds_store_are_excluded() {
-        let td = tempdir_compat::TempDir::new("provekit-det-ignore").unwrap();
+        let td = tempdir_compat::TempDir::new("sugar-det-ignore").unwrap();
         write_determinism_fixture(td.path());
 
         let report = lift_path(td.path());
@@ -1452,7 +1452,7 @@ fn nonzero(a: i64) -> i64 {{ a }}
     /// paths, not absolute paths.
     #[test]
     fn call_edge_loci_use_relative_posix_paths() {
-        let td = tempdir_compat::TempDir::new("provekit-det-locus").unwrap();
+        let td = tempdir_compat::TempDir::new("sugar-det-locus").unwrap();
         write_determinism_fixture(td.path());
 
         let report = lift_path(td.path());
@@ -1492,7 +1492,7 @@ fn nonzero(a: i64) -> i64 {{ a }}
     /// Assert enumerate_rs_files output is sorted lexicographically.
     #[test]
     fn enumerate_rs_files_is_sorted() {
-        let td = tempdir_compat::TempDir::new("provekit-det-sort").unwrap();
+        let td = tempdir_compat::TempDir::new("sugar-det-sort").unwrap();
         write_determinism_fixture(td.path());
 
         let entries = enumerate_rs_files(td.path());

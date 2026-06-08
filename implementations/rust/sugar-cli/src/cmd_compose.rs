@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit compose --rpc`: JSON-RPC subprocess transport for the
+// `sugar compose --rpc`: JSON-RPC subprocess transport for the
 // canonical compose primitive per CCP §6.3.
 //
 // The CLI subcommand is a thin wrapper over `libsugar::compose::
 // compose_chain_contracts`. It is the third binding mode named by the
 // Contract Composition Protocol (after direct Rust linking and the
 // C ABI FFI). Consumers that cannot link Rust (TypeScript, Python,
-// Ruby, PHP lifters running in their own runtime) spawn `provekit
+// Ruby, PHP lifters running in their own runtime) spawn `sugar
 // compose --rpc` and exchange JSON-RPC messages over stdin / stdout.
 //
 // Wire shape, per CCP §6.3:
 //
 //   -> initialize { }
-//   <- result { protocol_version: "provekit-compose/1",
+//   <- result { protocol_version: "sugar-compose/1",
 //               ccp_version: "<libsugar::compose::CCP_VERSION>" }
 //
 //   -> compose  { atoms: [...], effects: [...] }
@@ -64,7 +64,7 @@ use sugar_ir_types::{composition_refusal_header_cid, CompositionRefusalMemento, 
 use crate::ComposeArgs;
 
 /// JSON-RPC method name for the canonical compose entry point.
-const PROTOCOL_VERSION: &str = "provekit-compose/1";
+const PROTOCOL_VERSION: &str = "sugar-compose/1";
 
 /// Error code for refused composition (impure input, formal index out
 /// of range, mismatched effects, schema mismatch). The numeric codes
@@ -77,7 +77,7 @@ const ERR_INTERNAL: i64 = -32603;
 pub fn run(args: ComposeArgs) -> u8 {
     if !args.rpc {
         eprintln!(
-            "error: `provekit compose` only supports the JSON-RPC transport today; pass --rpc"
+            "error: `sugar compose` only supports the JSON-RPC transport today; pass --rpc"
         );
         return crate::EXIT_USER_ERROR;
     }

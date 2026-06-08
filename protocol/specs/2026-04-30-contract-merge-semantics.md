@@ -7,20 +7,20 @@
 
 ## Why this exists
 
-ProvekIt's Rust kit ships two authoring surfaces for contracts:
+Sugar's Rust kit ships two authoring surfaces for contracts:
 
 1. **`.invariant.rs` files** sitting next to each public source file.
-   The `provekit-self-contracts` orchestrator pulls them in via
+   The `sugar-self-contracts` orchestrator pulls them in via
    `#[path]` and drains the kit's process-local `CONTRACT_COLLECTOR`
    after running each `invariants()`.
 
-2. **`#[provekit::contract(...)]` decorators** placed directly above
+2. **`#[sugar::contract(...)]` decorators** placed directly above
    the function being constrained. The decorator emits a hidden static
    `ContractRegistration` collected by the `inventory` crate's
    distributed slice.
 
 Both surfaces produce the same value: a
-`provekit_ir_symbolic::ContractDecl` with optional `pre` / `post` /
+`sugar_ir_symbolic::ContractDecl` with optional `pre` / `post` /
 `inv` formulas, a `name`, and an `out_binding`. Both are intended to
 be valid concurrently. Different authors will reach for the surface
 that fits the source file at hand. We need a deterministic, fail-loud
@@ -75,7 +75,7 @@ If `decl_a` and `decl_b` both populate the same slot (e.g. both have
 differ, this is a build-time error. The orchestrator emits:
 
 ```
-provekit-self-contracts: contract `<name>` has conflicting <slot>
+sugar-self-contracts: contract `<name>` has conflicting <slot>
   authored at <decl_a.source_path>:<decl_a.source_line>
   authored at <decl_b.source_path>:<decl_b.source_line>
 hash(decl_a.<slot>) = blake3-512:<...>
@@ -127,13 +127,13 @@ is a separate, content-addressed, verifiable memento. The bridge is not
 trusted; it is proven.
 
 The orchestrator's merge is scoped to a single `(language,
-implementation)` pair. The Rust `provekit-self-contracts` crate
+implementation)` pair. The Rust `sugar-self-contracts` crate
 merges only Rust-authored contracts; cross-language reconciliation
 happens at the verifier when bridge mementos discharge.
 
 ## Operational consequence
 
-The `provekit-self-contracts` orchestrator's pipeline becomes:
+The `sugar-self-contracts` orchestrator's pipeline becomes:
 
 ```
 1. Walk all `.invariant.rs` files; collect ContractDecls per slab.

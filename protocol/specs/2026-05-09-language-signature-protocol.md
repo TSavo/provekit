@@ -188,7 +188,7 @@ To mint `LanguageMorphismMemento` `M` from `S` to `T`:
 
 The morphism's homomorphism obligation is an IrFormula. Discharge:
 
-1. Lower to SMT-LIB or Coq via `provekit lower --to <target>`.
+1. Lower to SMT-LIB or Coq via `sugar lower --to <target>`.
 2. Run prove portfolio.
 3. Receive verdict: UNSAT (negation of obligation has no model) = morphism is verified.
 4. Mint `MorphismDischargeReceipt` with the portfolio's verdict and witness.
@@ -225,7 +225,7 @@ This is Lemma 2 of paper 13.
 LSP v0.1.0 is design. Implementation in sequence:
 
 - **v0.2.0:** finalize `EquationMemento` shape, integrate with AMP catalog, define the `Term(L)` constructor for the substrate's IR.
-- **v0.3.0:** mint signatures for ProvekIt's existing language ports (C/c11, Rust/1.75, Python/3.12, Java/17, Zig/0.13). Each signature is a JSON memento citing the sorts/operations/equations/effects from the existing lifters' implementations.
+- **v0.3.0:** mint signatures for Sugar's existing language ports (C/c11, Rust/1.75, Python/3.12, Java/17, Zig/0.13). Each signature is a JSON memento citing the sorts/operations/equations/effects from the existing lifters' implementations.
 - **v0.4.0:** mint morphisms for known FFI boundaries (Python ↔ Rust via PyO3, Rust ↔ C via cbindgen, Java ↔ C via JNI, etc.).
 - **v0.5.0:** discharge the morphism homomorphism obligations against the existing test corpora.
 
@@ -244,7 +244,7 @@ The following are intentionally NOT specified in v0.1.0:
 ## §9: Out of scope (this draft)
 
 - Implementing LSP. Design only. Reference implementation comes after review.
-- Migrating ProvekIt's existing lifters to use LSP-aware machinery.
+- Migrating Sugar's existing lifters to use LSP-aware machinery.
 - Resolving the algebraic-effects ProofIR extensions (separate spec).
 - Defining the canonical executable form for operations (deferred to AMP §11 resolution).
 

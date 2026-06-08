@@ -98,7 +98,7 @@ Draft body convention:
     "fuelUsed": 1842
   },
   "metadata": {
-    "producer": "provekit-tdp",
+    "producer": "sugar-tdp",
     "producerVersion": "0.1.0"
   }
 }
@@ -222,7 +222,7 @@ TruthDischargeWitness.result == true
 
 The CBP body-claim names the obligation CID, checker memento CID, bytecode CID, binding ABI CID, runtime CID, policy CID, and observed artifact CIDs.
 
-A CBP proof-acceptance witness for EVM, WASM, source-derived bytecode, or ProvekIt-native checker IR SHOULD be representable as a TDP witness or reference a TDP witness root.
+A CBP proof-acceptance witness for EVM, WASM, source-derived bytecode, or Sugar-native checker IR SHOULD be representable as a TDP witness or reference a TDP witness root.
 
 ## Section 9. Relationship to ORP
 
@@ -287,4 +287,4 @@ A TDP v0.1 implementation is conformant if it:
 
 Cite as:
 
-> ProvekIt Protocol Working Notes (2026). *Truth Discharge Protocol (TDP)*. Draft extension protocol v0.1.0.
+> Sugar Protocol Working Notes (2026). *Truth Discharge Protocol (TDP)*. Draft extension protocol v0.1.0.

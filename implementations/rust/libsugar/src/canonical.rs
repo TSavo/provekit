@@ -6,13 +6,13 @@ use serde::Serialize;
 use serde_json::Value as Json;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
-use crate::{ProvekitError, Result};
+use crate::{SugarError, Result};
 
 const LEGACY_CONCEPT_PREFIX: &str = "concept:";
 
 pub fn serializable_jcs<T: Serialize>(value: &T) -> Result<String> {
     let json = serde_json::to_value(value)
-        .map_err(|e| ProvekitError::Message(format!("serialize JSON: {e}")))?;
+        .map_err(|e| SugarError::Message(format!("serialize JSON: {e}")))?;
     json_jcs(&json)
 }
 
@@ -64,7 +64,7 @@ fn json_to_cvalue(value: &Json) -> Result<Arc<CValue>> {
         Json::Bool(b) => CValue::boolean(*b),
         Json::Number(n) => {
             let i = n.as_i64().ok_or_else(|| {
-                ProvekitError::Message(format!("non-i64 JSON number cannot be canonicalized: {n}"))
+                SugarError::Message(format!("non-i64 JSON number cannot be canonicalized: {n}"))
             })?;
             CValue::integer(i)
         }

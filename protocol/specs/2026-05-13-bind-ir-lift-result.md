@@ -1,6 +1,6 @@
 # Bind-IR Lift-Result Shape (`bind-ir/1`)
 
-**Status:** v1.1.0 normative draft for the `ir-document.ir[]` payload that lift plugins return when invoked from `provekit bind`.
+**Status:** v1.1.0 normative draft for the `ir-document.ir[]` payload that lift plugins return when invoked from `sugar bind`.
 **Date:** 2026-05-13
 **Author:** T Savo
 
@@ -12,7 +12,7 @@
 
 ## §0. Purpose
 
-`provekit bind` runs the eight-verb pipeline (Lift, Cluster, Name, Scope, Cluster, Identify, Realize, Witness). Verbs 2 through 7 are language-agnostic: they consume already-lifted records and produce concept clusters, scope assignments, identification edges, and discharge verdicts. Verb 1 (Lift) is language-specific.
+`sugar bind` runs the eight-verb pipeline (Lift, Cluster, Name, Scope, Cluster, Identify, Realize, Witness). Verbs 2 through 7 are language-agnostic: they consume already-lifted records and produce concept clusters, scope assignments, identification edges, and discharge verdicts. Verb 1 (Lift) is language-specific.
 
 Per Supra omnia, rectum and the algebra-is-the-portable-thing thesis, Verb 1 MUST be a content-addressed plugin: zero language knowledge in the CLI core. Any language with a `kind = "lift"` plugin registered through PEP 1.7.0 (`2026-05-12-plugin-protocol.md`) can drive bind by emitting the `ir-document` shape this spec defines.
 
@@ -109,7 +109,7 @@ source-kind = "annotation"
 |----------------------|----------|---------|
 | `attr_pre`           | yes      | LEGACY compatibility precondition text extracted from older annotation-only lift kits. New producers SHOULD emit `null` and place all contract evidence in `witnesses[]`. Consumers MUST use this field only when `witnesses[]` is empty. |
 | `attr_post`          | yes      | LEGACY compatibility postcondition text extracted from older annotation-only lift kits. New producers SHOULD emit `null` and place all contract evidence in `witnesses[]`. Consumers MUST use this field only when `witnesses[]` is empty. |
-| `concept_annotation` | yes      | The NAME from a `// concept: NAME` (or language-equivalent) comment immediately preceding the function, or from an emitted observation tag such as `provekit_monitor(concept = "NAME")` when that tag is the edited source surface. The kit MUST strip the `concept:` prefix; producers emit `identity`, not `concept:identity`. `null` when absent. |
+| `concept_annotation` | yes      | The NAME from a `// concept: NAME` (or language-equivalent) comment immediately preceding the function, or from an emitted observation tag such as `sugar_monitor(concept = "NAME")` when that tag is the edited source surface. The kit MUST strip the `concept:` prefix; producers emit `identity`, not `concept:identity`. `null` when absent. |
 | `file`               | yes      | Path relative to the project root (the `workspace_root` lift-params field). Forward slashes only; the kit MUST normalize. |
 | `fn_line`            | yes      | The 1-based line number of the function declaration (the line containing the `fn`/`def`/method keyword). |
 | `fn_name`            | yes      | The function identifier exactly as it appears in source (no module qualification). |
@@ -128,7 +128,7 @@ A `library-sugar-binding-entry` is a proof-native library shim authored as real 
 The body MUST be authored in the target language and cited through `body_source`. It is not authored as a string template and MUST NOT be reconstructed from `emission_template.template`. A library author writes ordinary code such as:
 
 ```python
-from provekit import sugar
+from sugar import sugar
 import requests
 
 @sugar.bind(concept="concept:http-request", library="requests")
@@ -154,7 +154,7 @@ When `witnesses[]` is non-empty, it is the complete contract evidence set for th
 ### §1.4 What is OUT OF scope for this entry
 
 - **Unmarried test streams.** Test-derived, native-surface, docstring, and type-signature producers that have not yet identified the target function/concept MAY still emit their own evidence surfaces. This bind entry carries the married form: the lifter has already associated the witness with the function named by `file` + `fn_name`.
-- **The full IR algebra term.** This entry is the BIND surface (clustering + naming + scoping); the full algebra term used by transport is requested separately via the realize-plugin protocol (`provekit.plugin.invoke` with `method: "lift"` on the realize side, see `2026-05-12-plugin-protocol.md` §4.2.2 and the body-template realize plugins).
+- **The full IR algebra term.** This entry is the BIND surface (clustering + naming + scoping); the full algebra term used by transport is requested separately via the realize-plugin protocol (`sugar.plugin.invoke` with `method: "lift"` on the realize side, see `2026-05-12-plugin-protocol.md` §4.2.2 and the body-template realize plugins).
 - **Concept-shape catalog matches.** The kit MUST emit `term_shape` + `term_shape_cid`; the catalog match is performed by cmd_bind (Verb 6: Identify), not the kit.
 
 ### §1.5 Name lifecycle loop
@@ -247,7 +247,7 @@ Wrapped in the standard `ir-document` envelope:
 ## §4. Compatibility
 
 - A `kind = "lift"` PEP 1.7.0 plugin MAY emit the bind-lift-entry or library-sugar-binding-entry shapes alongside other entry kinds in the same `ir-document.ir[]`. cmd_bind selects only entries with `kind = "bind-lift-entry"` for the eight-verb pipeline. Library-binding mint/materialize paths select `kind = "library-sugar-binding-entry"` and ignore unrelated entries.
-- The `provekit-lift` Rust binary (which emits `proof-envelope` results for `provekit prove`) is a DIFFERENT lift surface. Bind kits and prove kits MAY share an implementation but MUST honor the surface the caller requested through `lift-params.surface`.
+- The `sugar-lift` Rust binary (which emits `proof-envelope` results for `sugar prove`) is a DIFFERENT lift surface. Bind kits and prove kits MAY share an implementation but MUST honor the surface the caller requested through `lift-params.surface`.
 - Future entry kinds for unmatched evidence streams MAY extend the bind surface without breaking this v1.1.0 entry shape. Once a producer has married evidence to a function/concept site, it SHOULD use `witnesses[]`.
 
 ## §5. Refusal vs gap

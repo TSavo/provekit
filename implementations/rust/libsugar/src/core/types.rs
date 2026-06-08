@@ -673,7 +673,7 @@ impl From<Term> for IrTerm {
     }
 }
 
-/// The lossy formula stratum reused from `provekit-ir-types`.
+/// The lossy formula stratum reused from `sugar-ir-types`.
 ///
 /// `IrFormula` already has the required shape (`And`, `Or`, `Not`, `Implies`,
 /// `Atomic`, `Forall`, `Exists`, `Choice`) and is the type accepted by the
@@ -1144,7 +1144,7 @@ pub enum PathError {
 }
 
 /// Stable top-level kind for serialized path documents.
-pub const PATH_DOCUMENT_KIND: &str = "provekit-path/v1";
+pub const PATH_DOCUMENT_KIND: &str = "sugar-path/v1";
 
 /// Serializable, language-neutral path plus the materialized input catalog it
 /// needs to execute.
@@ -1815,13 +1815,13 @@ pub(crate) fn json_to_cvalue(value: JsonValue) -> Arc<CValue> {
                 match i64::try_from(value) {
                     Ok(value) => CValue::integer(value),
                     Err(_) => CValue::object([(
-                        "__provekit_non_i64_number__",
+                        "__sugar_non_i64_number__",
                         CValue::string(number.to_string()),
                     )]),
                 }
             } else {
                 CValue::object([(
-                    "__provekit_non_i64_number__",
+                    "__sugar_non_i64_number__",
                     CValue::string(number.to_string()),
                 )])
             }

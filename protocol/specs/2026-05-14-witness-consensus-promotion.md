@@ -12,7 +12,7 @@ The output is not a new receipt family. It is a `PromotionDecisionMemento` with 
 
 ## Operational Shape
 
-There is no public `provekit witness` command. Promotion is substrate computation
+There is no public `sugar witness` command. Promotion is substrate computation
 over already minted `WitnessMemento` data and belongs in the language-blind CLI,
 but it must be exposed through a current gate command such as `prove`/`verify` or
 a future dedicated promotion command. It must not read raw user-authored ProofIR

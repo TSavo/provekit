@@ -127,7 +127,7 @@ The Maude adapter records a two-part receipt in `solver_stdout`:
 }
 ```
 
-The module CID is `BLAKE3-512(JCS(<lowered module source as a JSON string>))` using `provekit-canonicalizer`. Certificate CIDs are `BLAKE3-512` over the certificate bytes using the same canonicalizer hash helper.
+The module CID is `BLAKE3-512(JCS(<lowered module source as a JSON string>))` using `sugar-canonicalizer`. Certificate CIDs are `BLAKE3-512` over the certificate bytes using the same canonicalizer hash helper.
 
 ## 8. Dispatch
 

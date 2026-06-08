@@ -8,7 +8,7 @@
 //     node_modules/@example/go-validate-kit/<go-publisher>.proof   (Go-published)
 //     node_modules/@example/rust-parse-kit/<parse-kit>.proof       (Rust-published)
 //     <rust-consumer>.proof                                        (Rust-published)
-//     .provekit/cache/                                             (implication mementos)
+//     .sugar/cache/                                             (implication mementos)
 //
 // The Go publisher is run separately (out of process) by the run.sh
 // script before invoking this binary; the demo passes its path with
@@ -24,7 +24,7 @@
 //      fire: arg_term IS a Ctor whose name maps to the Go-published
 //      bridge.
 //   3. Bundles each into v1.1.0 .proof files.
-//   4. Runs the Rust verifier with cfg.cache_dir = .provekit/cache/.
+//   4. Runs the Rust verifier with cfg.cache_dir = .sugar/cache/.
 //   5. Prints headline metrics: hash hits / cache hits / Z3+mints /
 //      residue / violations / Z3 invocations.
 //
@@ -123,7 +123,7 @@ fn run() -> Result<(), String> {
     }
     fs::create_dir_all(&args.project_dir)
         .map_err(|e| format!("create project_dir {}: {e}", args.project_dir.display()))?;
-    let cache_dir = args.project_dir.join(".provekit").join("cache");
+    let cache_dir = args.project_dir.join(".sugar").join("cache");
     fs::create_dir_all(&cache_dir)
         .map_err(|e| format!("create cache_dir {}: {e}", cache_dir.display()))?;
 
@@ -323,7 +323,7 @@ fn run() -> Result<(), String> {
     }
 
     // ---- Run the verifier with the handshake enabled -------------
-    let z3_path = std::env::var("PROVEKIT_Z3").unwrap_or_else(|_| "z3".into());
+    let z3_path = std::env::var("SUGAR_Z3").unwrap_or_else(|_| "z3".into());
     let cfg = RunnerConfig {
         project_root: args.project_dir.clone(),
         z3_path,

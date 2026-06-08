@@ -3,11 +3,11 @@
 // Minimal JSON-RPC stdio sidecar for tests.
 //
 // Reads one JSON-RPC request on stdin.  If the method is
-// `provekit.plugin.describe`, emits a canned plugin memento response and
+// `sugar.plugin.describe`, emits a canned plugin memento response and
 // exits 0.  Any other method returns a JSON-RPC error.
 //
 // Usage (for integration tests only):
-//   provekit-plugin-loader-stub-rpc [--kind <kind>]
+//   sugar-plugin-loader-stub-rpc [--kind <kind>]
 //
 // The CID embedded in the response is pre-computed over the fixture
 // plugin-memento payload so load_plugin_from_rpc can verify it.
@@ -48,7 +48,7 @@ fn main() {
         let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
         match method {
-            "provekit.plugin.describe" => {
+            "sugar.plugin.describe" => {
                 // Emit the canned fixture memento (pre-computed CID).
                 // The CID is computed in integration tests via compute_plugin_cid()
                 // over this exact payload.
@@ -59,7 +59,7 @@ fn main() {
                 });
                 writeln!(out, "{}", serde_json::to_string(&response).unwrap()).unwrap();
             }
-            "provekit.plugin.shutdown" => {
+            "sugar.plugin.shutdown" => {
                 let response = serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -134,7 +134,7 @@ fn fixture_plugin_memento() -> serde_json::Value {
             "version": "0.1.0"
         },
         "metadata": {
-            "note": "Test fixture for provekit-plugin-loader integration tests. Not a real plugin.",
+            "note": "Test fixture for sugar-plugin-loader integration tests. Not a real plugin.",
             "source_url": "tests/fixtures/dummy-sugar.json"
         }
     })

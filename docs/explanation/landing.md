@@ -4,11 +4,11 @@ Modern dependency stacks, protocol stacks, and CI supply chains are deep.
 Sugar turns their load-bearing claims into content-addressed proof data.
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 cd your-rust-crate
-cargo provekit-lift
-provekit prove
+cargo sugar-lift
+sugar prove
 ```
 
 Install once; then start lifting native evidence into `.proof` artifacts and
@@ -59,7 +59,7 @@ The CLI declares conformance to an embedded protocol catalog CID. Current
 binaries verify that embedded catalog with:
 
 ```bash
-provekit verify-protocol
+sugar verify-protocol
 ```
 
 The repository also ships a reference CID checker at `tools/recompute-spec-cids/`:
@@ -74,11 +74,11 @@ There is no central authority that decides what a protocol version means. The by
 
 ## What ships
 
-- A canonical Rust CLI: `provekit`. Subcommands include `prove`,
+- A canonical Rust CLI: `sugar`. Subcommands include `prove`,
   `verify-protocol`, `proof`, `protocol`, `mint`, `dump`, `hash`, `implicate`,
   `link`, `compose`, `emit`, `materialize`, and kit-oriented gates. Bug Zoo is
   checked by the self-contained runner under `menagerie/bug-zoo/`.
-- A Rust workspace of libraries: `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`, `provekit-verifier`, `provekit-lift`, `provekit-lift-proptest`, `provekit-lift-contracts`.
+- A Rust workspace of libraries: `sugar-canonicalizer`, `sugar-claim-envelope`, `sugar-proof-envelope`, `sugar-ir-symbolic`, `sugar-verifier`, `sugar-lift`, `sugar-lift-proptest`, `sugar-lift-contracts`.
 - Per-language kits, verifier libs, lift adapters, and self-contract attestations.
 - A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json`, protocol extension specs, proof-protocol fixtures, and PEP evolution witnesses.
 

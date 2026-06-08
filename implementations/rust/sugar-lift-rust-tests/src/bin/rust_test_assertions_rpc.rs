@@ -11,11 +11,11 @@ use sugar_lift_rust_tests::lift_file;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SURFACE: &str = "rust-test-assertions";
-const KIT_DECLARATION_RPC_METHOD: &str = "provekit.plugin.kit_declaration";
+const KIT_DECLARATION_RPC_METHOD: &str = "sugar.plugin.kit_declaration";
 
 fn initialize_result() -> Value {
     json!({
-        "name": "provekit-lift-rust-tests-rpc",
+        "name": "sugar-lift-rust-tests-rpc",
         "version": VERSION,
         "protocol_version": "pep/1.7.0",
         "capabilities": {

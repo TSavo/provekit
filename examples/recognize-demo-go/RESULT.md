@@ -4,7 +4,7 @@ This module is the Go-side peer of `examples/voltron-demo/` for the
 recognize verb. It keeps the shim local to the demo:
 
 - `internal-shim-stdlib-http/shim.go` declares two Go sugar functions with
-  `//provekit:sugar(...)`.
+  `//sugar:sugar(...)`.
 - `internal-shim-stdlib-http/blake3-512:095398490c8c99e21c0db81e954681cd98094d38a2dc2b3f2bfbdb3bf2a85fc41e80534cdbad220878bea4c12cb993bfda918729a30ea7a43b45d8c830b3f075.proof`
   is the minted binding source.
 - `pkg/ingest/ingest.go` and `pkg/persist/persist.go` are user code. Their
@@ -35,12 +35,12 @@ The demo builds, runs, and passes tests end-to-end:
 
 ```text
 $ go test ./...
-?   	github.com/provekit/recognize-demo-go/cmd/recognize-demo-go	[no test files]
-ok  	github.com/provekit/recognize-demo-go/internal/demoe2e	1.099s
-?   	github.com/provekit/recognize-demo-go/internal/memsqlite	[no test files]
-?   	github.com/provekit/recognize-demo-go/internal-shim-stdlib-http	[no test files]
-ok  	github.com/provekit/recognize-demo-go/pkg/ingest	3.637s
-ok  	github.com/provekit/recognize-demo-go/pkg/persist	1.945s
+?   	github.com/sugar/recognize-demo-go/cmd/recognize-demo-go	[no test files]
+ok  	github.com/sugar/recognize-demo-go/internal/demoe2e	1.099s
+?   	github.com/sugar/recognize-demo-go/internal/memsqlite	[no test files]
+?   	github.com/sugar/recognize-demo-go/internal-shim-stdlib-http	[no test files]
+ok  	github.com/sugar/recognize-demo-go/pkg/ingest	3.637s
+ok  	github.com/sugar/recognize-demo-go/pkg/persist	1.945s
 
 $ go run ./cmd/recognize-demo-go
 recognize-demo-go round-trip: status=200 body={"user":"alice","type":"signup"}
@@ -56,32 +56,32 @@ round trip.
 The local shim proof was minted from this demo directory:
 
 ```text
-$ provekit mint \
-    --project /Users/tsavo/provekit-demo-go/examples/recognize-demo-go \
+$ sugar mint \
+    --project /Users/tsavo/sugar-demo-go/examples/recognize-demo-go \
     --surface go-bind \
     --library-bindings \
-    --out /Users/tsavo/provekit-demo-go/examples/recognize-demo-go/internal-shim-stdlib-http \
+    --out /Users/tsavo/sugar-demo-go/examples/recognize-demo-go/internal-shim-stdlib-http \
     --no-attest
 
-dispatch: surface=`go-bind` plugin=`go-bind-lift` command=["go", "run", ".provekit/lift/go-bind/go-bind-rpc.go"]
-ok: plugin `provekit-lift-go-verify` ready
+dispatch: surface=`go-bind` plugin=`go-bind-lift` command=["go", "run", ".sugar/lift/go-bind/go-bind-rpc.go"]
+ok: plugin `sugar-lift-go-verify` ready
 
   catalog CID:        blake3-512:095398490c8c99e21c0db81e954681cd98094d38a2dc2b3f2bfbdb3bf2a85fc41e80534cdbad220878bea4c12cb993bfda918729a30ea7a43b45d8c830b3f075
   contractSetCid:     blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229
   proof bytes:        4224
-  .proof file:        /Users/tsavo/provekit-demo-go/examples/recognize-demo-go/internal-shim-stdlib-http/blake3-512:095398490c8c99e21c0db81e954681cd98094d38a2dc2b3f2bfbdb3bf2a85fc41e80534cdbad220878bea4c12cb993bfda918729a30ea7a43b45d8c830b3f075.proof
+  .proof file:        /Users/tsavo/sugar-demo-go/examples/recognize-demo-go/internal-shim-stdlib-http/blake3-512:095398490c8c99e21c0db81e954681cd98094d38a2dc2b3f2bfbdb3bf2a85fc41e80534cdbad220878bea4c12cb993bfda918729a30ea7a43b45d8c830b3f075.proof
 ```
 
 ## Recognizer pilot
 
-`provekit recognize` resolves the recognizer through project config and the
-surface manifest. The demo registers `go-bind` in `.provekit/config.toml` and
-the executable route lives at `.provekit/lift/go-bind/manifest.toml`; the CLI
+`sugar recognize` resolves the recognizer through project config and the
+surface manifest. The demo registers `go-bind` in `.sugar/config.toml` and
+the executable route lives at `.sugar/lift/go-bind/manifest.toml`; the CLI
 does not take or read shim proof paths.
 
 ```text
-$ provekit recognize \
-    --project /Users/tsavo/provekit-demo-go/examples/recognize-demo-go \
+$ sugar recognize \
+    --project /Users/tsavo/sugar-demo-go/examples/recognize-demo-go \
     --source pkg/ingest/ingest.go \
     --source pkg/persist/persist.go
 
@@ -102,10 +102,10 @@ text.
 demo's proof pool:
 
 ```text
-$ provekit recognize \
+$ sugar recognize \
     --write \
     --target go \
-    --project /Users/tsavo/provekit-demo-go/examples/recognize-demo-go \
+    --project /Users/tsavo/sugar-demo-go/examples/recognize-demo-go \
     --source pkg/ingest/ingest.go \
     --source pkg/persist/persist.go
 
@@ -113,14 +113,14 @@ dispatch: surface=`go-bind` sources=2
 recognize: 2 tag(s) emitted
   [0] concept:http-get @ pkg/ingest/ingest.go:5 (fn=FetchURL, exact)
   [1] concept:sql-open @ pkg/persist/persist.go:9 (fn=OpenStore, exact)
-write: minted 2 bridge(s) + 2 implication contract(s) into /Users/tsavo/provekit-demo-go/examples/recognize-demo-go/.provekit/recognize/blake3-512:6a7e3dc383dbd6c0a9b17aeea0e47ff75f9027c405f8b17bc9dab6a2b4dc98463b4a1ed313b16645c220a671cb65d9162d93bfedce50f071f15dfa87bea389de.proof
+write: minted 2 bridge(s) + 2 implication contract(s) into /Users/tsavo/sugar-demo-go/examples/recognize-demo-go/.sugar/recognize/blake3-512:6a7e3dc383dbd6c0a9b17aeea0e47ff75f9027c405f8b17bc9dab6a2b4dc98463b4a1ed313b16645c220a671cb65d9162d93bfedce50f071f15dfa87bea389de.proof
 ```
 
 The proof pool then discharges the two recognize callsites:
 
 ```text
-$ provekit prove /Users/tsavo/provekit-demo-go/examples/recognize-demo-go
-ProvekIt verifier report
+$ sugar prove /Users/tsavo/sugar-demo-go/examples/recognize-demo-go
+Sugar verifier report
   total callsites : 2
   discharged      : 2
   violations      : 0

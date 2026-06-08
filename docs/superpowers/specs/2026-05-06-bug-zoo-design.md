@@ -9,7 +9,7 @@ Bug Zoo is a reproducible laboratory of bug species. Its job is to turn broad Su
 
 1. a specimen-native library or project looks plausible and passes its normal gate;
 2. that specimen's own kit/lifter lifts contracts already latent in the specimen's code, framework annotations, schemas, tests, or metadata through the kit RPC boundary;
-3. the Rust `provekit` CLI orchestrates the specimen and reports the missing `p => q` edge as a red squiggle or build refusal;
+3. the Rust `sugar` CLI orchestrates the specimen and reports the missing `p => q` edge as a red squiggle or build refusal;
 4. an optional dropper pass independently emits a native-language edge-closing shape and re-verifies closure.
 
 Bug Zoo is not a patch museum. It does not lead with vulnerable-versus-fixed diffs, and it does not grade droppers by whether they match the historical remediation. The primary artifact is vulnerable-and-exposed: the same code engineers might ship, caught by Sugar before it ships. When a dropped specimen exists, the claim is that Sugar discovered the missing obligation and synthesized a verified closure from the exposed shape itself.
@@ -136,7 +136,7 @@ bug-zoo/
         kit-rpc/
           specimen-owned lifter command or adapter manifest
       exposed/
-        provekit-native/
+        sugar-native/
           harness/
             code that depends on the same lab library and exercises the Sugar reference surface
           kit-rpc/
@@ -181,7 +181,7 @@ bug-zoo/species/BZ-SHAPE-001-sql-identifier-injection/
     harness/
     kit-rpc/
   exposed/
-    provekit-native/
+    sugar-native/
       harness/
       kit-rpc/
       expected.proofir.json
@@ -248,7 +248,7 @@ Example Java-shaped exposed variants:
 
 ```text
 exposed/
-  provekit-native/
+  sugar-native/
     harness/
       pom.xml
       src/main/java/example/ReportController.java
@@ -294,15 +294,15 @@ paths:
   labHarness: lab/harness
   labKitRpc: lab/kit-rpc
 exposures:
-  - id: provekit-native
-    surface: typescript-provekit-native
-    harness: exposed/provekit-native/harness
-    kitRpc: exposed/provekit-native/kit-rpc
+  - id: sugar-native
+    surface: typescript-sugar-native
+    harness: exposed/sugar-native/harness
+    kitRpc: exposed/sugar-native/kit-rpc
     liftRpc:
-      cwd: exposed/provekit-native/kit-rpc
+      cwd: exposed/sugar-native/kit-rpc
       argv: ["pnpm", "start", "--", "--rpc", "../harness"]
-    proofIrFile: exposed/provekit-native/expected.proofir.json
-    diagnosticFile: exposed/provekit-native/expected-diagnostic.txt
+    proofIrFile: exposed/sugar-native/expected.proofir.json
+    diagnosticFile: exposed/sugar-native/expected-diagnostic.txt
   - id: zod-express
     surface: typescript-zod-express
     harness: exposed/zod-express/harness
@@ -314,7 +314,7 @@ exposures:
     diagnosticFile: exposed/zod-express/expected-diagnostic.txt
 equivalence:
   required:
-    - [provekit-native, zod-express]
+    - [sugar-native, zod-express]
 commands:
   hostCheck:
     cwd: lab/library
@@ -326,7 +326,7 @@ predicates:
 expectations:
   hostCompiler: pass
   ordinaryTests: pass
-  provekitVerify: fail
+  sugarVerify: fail
 exposure:
   satWitnessFile: exposed/sat-witness.json
 dropper:
@@ -336,7 +336,7 @@ wildSightings: []
 
 The command shape is intentionally generic so Java, Python, TypeScript, Rust, OpenAPI, and metadata specimens can remain native. The Rust CLI should understand command execution, kit RPC, and canonical ProofIR equivalence; it should not understand Spring, Zod, Maven, or Swagger semantics.
 
-Wild specimens extend this with pinned upstream context. A wild `specimen.yaml` must include exact advisory ID, project slug, vulnerable commit, affected paths, advisory URL, source URL, species ID, exposure artifact paths, and verdict fields for `provekitExposes` and `dropperAvailable`. Historical remediation links are optional context only. No fake or unresolved wild entry should merge.
+Wild specimens extend this with pinned upstream context. A wild `specimen.yaml` must include exact advisory ID, project slug, vulnerable commit, affected paths, advisory URL, source URL, species ID, exposure artifact paths, and verdict fields for `sugarExposes` and `dropperAvailable`. Historical remediation links are optional context only. No fake or unresolved wild entry should merge.
 
 ## Validation Rules
 
@@ -361,8 +361,8 @@ Execution checks, added incrementally:
 - invoke each exposure's lifter through the kit RPC command declared in `specimen.yaml`;
 - confirm required exposure pairs produce identical canonical ProofIR CIDs;
 - confirm exposure equivalence compares boundary predicates, not host implementation details;
-- run `provekit verify` through the Rust CLI orchestration and confirm fail for `lab/`;
-- when `dropped/` exists, invoke the dropped harness/lifter and confirm `provekit verify` passes;
+- run `sugar verify` through the Rust CLI orchestration and confirm fail for `lab/`;
+- when `dropped/` exists, invoke the dropped harness/lifter and confirm `sugar verify` passes;
 - for wild specimens, verify the pinned upstream commit exists and the affected file path resolves;
 - never compare dropped output to the historical remediation as an acceptance criterion.
 
@@ -375,7 +375,7 @@ Bug Zoo v0 is primarily an exposure suite. Droppers are a third-stage demonstrat
 3. dropper emits edge-closing native shape in the specimen's own language or artifact format;
 4. Rust CLI re-invokes the specimen lifter and confirms closure.
 
-The dropper is not trusted by itself. A dropped specimen is accepted only when the verifier confirms the dropped output closes the graph. This mirrors the existing Rust dropper pipeline in `implementations/rust/provekit-walk/src/dropper/`.
+The dropper is not trusted by itself. A dropped specimen is accepted only when the verifier confirms the dropped output closes the graph. This mirrors the existing Rust dropper pipeline in `implementations/rust/sugar-walk/src/dropper/`.
 
 The historical remediation for a wild bug is not an oracle. It can help a reader understand why the bug mattered, but it must not drive specimen construction, validator success, or dropper scoring. The stronger claim is independent rediscovery and independent closure.
 

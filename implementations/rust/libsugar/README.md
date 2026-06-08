@@ -1,7 +1,7 @@
-# libprovekit
+# libsugar
 
-`libprovekit` is the Rust reference library behind the universal
-`provekit` CLI.
+`libsugar` is the Rust reference library behind the universal
+`sugar` CLI.
 
 The protocol topology is:
 

@@ -1,7 +1,7 @@
 # Reference manifest for the echo agent plugin.
 #
-# Install: copy this directory to ~/.config/provekit/agents/echo-agent
-# (or symlink it). The CLI will discover it via `provekit agent list`.
+# Install: copy this directory to ~/.config/sugar/agents/echo-agent
+# (or symlink it). The CLI will discover it via `sugar agent list`.
 name = "echo-agent"
 version = "0.1.0"
 protocol_version = "pep/1.7.0"

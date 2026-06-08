@@ -19,7 +19,7 @@ multi-solver upgrade generalizes Stage 6 to compose any number of
 solvers under one of four execution modes.
 
 This spec defines:
-1. The `[solvers]` configuration grammar in `.provekit/config.toml`.
+1. The `[solvers]` configuration grammar in `.sugar/config.toml`.
 2. The four execution modes (single, chain, portfolio, dispatch) with
    exact semantics for each verdict.
 3. Disagreement handling under consensus mode.
@@ -169,7 +169,7 @@ reason.
 Each solver carries an `ir_compiler` tag (default: `smt-lib-v2.6`).
 The verifier consults this tag when emitting the SMT-LIB script for
 that solver. v0 only ships the `smt-lib-v2.6` compiler (in the
-`provekit-ir-compiler-smt-lib` crate that the IR-compiler agent
+`sugar-ir-compiler-smt-lib` crate that the IR-compiler agent
 landed); the field is plumbed through to the SolverConfig record so
 future compilers (`smt-lib-v2.6-bv` for Bitwuzla, `tptp` for Vampire,
 etc.) drop in by name with no other code changes.
@@ -204,7 +204,7 @@ distinct solvers to have signed an implication memento for a given
 `(antecedentHash, consequentHash)` pair before accepting a Tier 2
 cache hit.
 
-> **v0 status.** The field is parsed from `.provekit/config.toml` and
+> **v0 status.** The field is parsed from `.sugar/config.toml` and
 > stored in the SolversConfig but the runner does not enforce the
 > gate. Tier-2 cache hits in v0 require exactly one signed implication
 > memento. v0.1 will count distinct solvers per
@@ -244,11 +244,11 @@ The legacy `z3_invocations` field is retained as a method that returns
 ## 8. Acceptance
 
 This spec is satisfied by the implementation in
-`implementations/rust/provekit-verifier/src/solvers/` and the demo at
+`implementations/rust/sugar-verifier/src/solvers/` and the demo at
 `examples/multi-solver-demo/`.
 
-- `cargo build --release -p provekit-verifier` succeeds.
-- `cargo test --release -p provekit-verifier` passes (existing tests
+- `cargo build --release -p sugar-verifier` succeeds.
+- `cargo test --release -p sugar-verifier` passes (existing tests
   green plus integration coverage in
   `tests/multi_solver_modes.rs` and unit coverage in
   `src/solvers/{config,dispatch,plan,registry}.rs`).
@@ -270,4 +270,4 @@ This spec is satisfied by the implementation in
 - **Compiler-by-tag selection.** Once the IR-compiler agent ships the
   `IrCompilerRegistry`, route per-solver SMT emission through the
   `ir_compiler` tag instead of always using the bundled
-  `provekit-ir-compiler-smt-lib`.
+  `sugar-ir-compiler-smt-lib`.

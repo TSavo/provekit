@@ -14,9 +14,9 @@ Implemented in the worktree, but local commit creation is blocked by the gitdir 
 
 ## Verification
 
-- `cargo test -p provekit-walk --test term_emit_d2 -- return_type --nocapture`
-- `cargo test -p provekit-walk --test term_emit_d2`
-- `cargo test -p provekit-walk`
+- `cargo test -p sugar-walk --test term_emit_d2 -- return_type --nocapture`
+- `cargo test -p sugar-walk --test term_emit_d2`
+- `cargo test -p sugar-walk`
 - `python3 -m py_compile menagerie/concept-shapes/scripts/mint_core_sorts.py`
 - `jq empty menagerie/concept-shapes/specs/sort_shape.spec.json deleted concept-shapes catalog/index.json`
 - `git diff --check`
@@ -27,22 +27,22 @@ Implemented in the worktree, but local commit creation is blocked by the gitdir 
 `git add` cannot create the worktree index lock:
 
 ```text
-fatal: Unable to create '/Users/tsavo/provekit/.git/worktrees/pk-963-return-type/index.lock': Operation not permitted
+fatal: Unable to create '/Users/tsavo/sugar/.git/worktrees/pk-963-return-type/index.lock': Operation not permitted
 ```
 
 Alternate-index staging also cannot write objects:
 
 ```text
 error: unable to create temporary file: Operation not permitted
-error: implementations/rust/provekit-walk/src/emit.rs: failed to insert into database
-error: unable to index file 'implementations/rust/provekit-walk/src/emit.rs'
+error: implementations/rust/sugar-walk/src/emit.rs: failed to insert into database
+error: unable to index file 'implementations/rust/sugar-walk/src/emit.rs'
 fatal: updating files failed
 ```
 
 The affected gitdir and object database carry `com.apple.provenance`, and removing the attribute is also refused:
 
 ```text
-xattr: [Errno 1] Operation not permitted: '/Users/tsavo/provekit/.git/worktrees/pk-963-return-type'
+xattr: [Errno 1] Operation not permitted: '/Users/tsavo/sugar/.git/worktrees/pk-963-return-type'
 ```
 
 No GitHub writes were performed.

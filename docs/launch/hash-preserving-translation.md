@@ -6,7 +6,7 @@ The lift layer is not a translator. It is a hash-preserving projection. N host-l
 
 Every host language has many ways to express contracts. Java alone has thirteen mainstream notations: JSR-380 Bean Validation, JML, Cofoja, Hibernate validator constraints, Jackson schemas, Spring Web request constraints, Spring Security expressions, Swagger annotations, JPA constraints, OpenAPI Validator, Checker Framework qualifiers, Error Prone matchers, JUnit assertions. TypeScript has Zod, io-ts, runtime assertions, hand-rolled type guards, ArkType, valibot. Rust has `#[contract]` macros, Kani harnesses, Creusot specs, Prusti annotations, Flux refinements, doc-comment ensures/requires. Each notation captures different semantic dimensions and is loved by a different community.
 
-Sugar does not pick one. It admits all. Each is a separate **lifter**, written in the host language because each needs the host's parser and AST, spawned via JSON-RPC by the Rust CLI per `protocol/specs/2026-04-30-lift-plugin-protocol.md`. A project's `.provekit/config.toml` declares which lifters it uses. The CLI dispatches files to all applicable lifters and unions the results.
+Sugar does not pick one. It admits all. Each is a separate **lifter**, written in the host language because each needs the host's parser and AST, spawned via JSON-RPC by the Rust CLI per `protocol/specs/2026-04-30-lift-plugin-protocol.md`. A project's `.sugar/config.toml` declares which lifters it uses. The CLI dispatches files to all applicable lifters and unions the results.
 
 This pluralism is not a feature added to the framework. It IS the framework's lift layer. The seam is built to be plural because the world is plural.
 

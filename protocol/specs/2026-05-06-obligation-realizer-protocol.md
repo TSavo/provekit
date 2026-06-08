@@ -376,7 +376,7 @@ Canonical shape:
   "schemaVersion": "1",
   "proofPlanCid": "blake3-512:...",
   "kit": "java",
-  "surface": "java-provekit-native",
+  "surface": "java-sugar-native",
   "targetSymbol": "lookup",
   "bindings": [
     {
@@ -431,7 +431,7 @@ All ORP outputs share:
   "status": "witnessed",
   "planCid": "blake3-512:...",
   "realizer": {
-    "name": "provekit-ts-zod-witnesser",
+    "name": "sugar-ts-zod-witnesser",
     "version": "0.1.0",
     "kit": "typescript"
   },
@@ -454,7 +454,7 @@ All ORP outputs share:
   "evidenceCid": "blake3-512:...",
   "observedArtifactCids": ["blake3-512:..."],
   "realizer": {
-    "name": "provekit-ts-zod-witnesser",
+    "name": "sugar-ts-zod-witnesser",
     "version": "0.1.0",
     "kit": "typescript"
   },
@@ -482,7 +482,7 @@ The `evidenceCid` points to the memento or proof artifact whose bytes verify the
   "postLiftCid": "blake3-512:...",
   "closureWitnessCid": "blake3-512:...",
   "realizer": {
-    "name": "provekit-rust-not-null-dropper",
+    "name": "sugar-rust-not-null-dropper",
     "version": "0.1.0",
     "kit": "rust"
   },
@@ -518,7 +518,7 @@ accept closure evidence without a proof plan.
   "message": "predicate safe_for_sql is not supported by this realizer",
   "counterexampleCid": null,
   "realizer": {
-    "name": "provekit-ts-zod-witnesser",
+    "name": "sugar-ts-zod-witnesser",
     "version": "0.1.0",
     "kit": "typescript"
   },
@@ -582,7 +582,7 @@ The bytecode may be shared. The authority differs by placement.
 ORP can be implemented as an in-process kit API or as a JSON-RPC plugin. When exposed over RPC, the protocol version is:
 
 ```
-provekit-orp/1
+sugar-orp/1
 ```
 
 ### Section 6.1 `initialize`
@@ -591,8 +591,8 @@ Request:
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-  "client":{"name":"provekit-cli","version":"v1.5.0"},
-  "protocol_version":"provekit-orp/1",
+  "client":{"name":"sugar-cli","version":"v1.5.0"},
+  "protocol_version":"sugar-orp/1",
   "workspace_root":"/abs/path/to/workspace",
   "catalog_cid":"blake3-512:..."
 }}
@@ -602,9 +602,9 @@ Response:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "name":"provekit-rust-realizers",
+  "name":"sugar-rust-realizers",
   "version":"0.1.0",
-  "protocol_version":"provekit-orp/1",
+  "protocol_version":"sugar-orp/1",
   "capabilities":{
     "kits":["rust"],
     "modes":["attest","transform"],
@@ -635,7 +635,7 @@ Response:
 
 ### Section 6.3 `shutdown`
 
-Same lifecycle as other ProvekIt plugin protocols: complete in-flight requests, respond with `null`, then exit cleanly.
+Same lifecycle as other Sugar plugin protocols: complete in-flight requests, respond with `null`, then exit cleanly.
 
 ## Section 7. Trust rules
 
@@ -675,7 +675,7 @@ A conformant ORP kit:
 
 ### Section 9.1 Rust not-null dropper as ORP transform
 
-The current Rust dropper in `implementations/rust/provekit-walk/src/dropper/` is an ORP `transform` realizer.
+The current Rust dropper in `implementations/rust/sugar-walk/src/dropper/` is an ORP `transform` realizer.
 
 Input gap:
 
@@ -833,4 +833,4 @@ An ORP v0.1 implementation is conformant if it:
 
 Cite as:
 
-> ProvekIt Protocol Working Notes (2026). *Obligation Realizer Protocol (ORP)*. Draft protocol spec v0.1.0.
+> Sugar Protocol Working Notes (2026). *Obligation Realizer Protocol (ORP)*. Draft protocol spec v0.1.0.

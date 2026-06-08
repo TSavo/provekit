@@ -1,6 +1,6 @@
-# ProvekIt CI: the acid test
+# Sugar CI: the acid test
 #
-# Drop provekit into a project, prove correctness with zero code changes.
+# Drop sugar into a project, prove correctness with zero code changes.
 # `make ci` runs the two suites that actually do that: `test-rust` (the rust
 # workspace, including the crate-pair inheritance E2E, exercising the java / ts
 # / python realize kits over RPC) and `test-python` (the python kit, including

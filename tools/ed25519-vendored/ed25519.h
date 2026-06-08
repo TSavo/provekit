@@ -10,7 +10,7 @@
  * headers path.
  *
  * Rationale for OpenSSL over a self-rolled impl: the C++ kit already uses
- * OpenSSL EVP_PKEY_ED25519 (see implementations/cpp/provekit/proof-envelope/
+ * OpenSSL EVP_PKEY_ED25519 (see implementations/cpp/sugar/proof-envelope/
  * sign_ed25519.cpp). Using the same underlying library guarantees byte-level
  * agreement with the C++ kit without vendoring ~1500 LOC of field arithmetic.
  */

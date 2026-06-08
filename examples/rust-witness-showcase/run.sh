@@ -26,7 +26,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 RUST="$REPO/implementations/rust"
 BIN_DIR="$RUST/target/debug"
-PROVEKIT="$BIN_DIR/provekit"
+SUGAR="$BIN_DIR/sugar"
 
 echo "== build the CLI + the cargo-test-witness kit binaries =="
 cargo build --manifest-path "$RUST/Cargo.toml" \
@@ -35,14 +35,14 @@ cargo build --manifest-path "$RUST/Cargo.toml" \
   --bins >/dev/null 2>&1 || cargo build --manifest-path "$RUST/Cargo.toml" \
   -p sugar-cli -p sugar-lift-rust-cargo-test-witness
 
-[ -x "$PROVEKIT" ] || { echo "FAIL: provekit binary not built at $PROVEKIT"; exit 1; }
+[ -x "$SUGAR" ] || { echo "FAIL: sugar binary not built at $SUGAR"; exit 1; }
 [ -x "$BIN_DIR/witness_rpc" ] || { echo "FAIL: witness_rpc not built"; exit 1; }
 [ -x "$BIN_DIR/discharge_cli" ] || { echo "FAIL: discharge_cli not built"; exit 1; }
 
 # Materialize the per-crate manifests with the absolute binary dir.
 for suite in good bad; do
-  mfin="$HERE/$suite/.provekit/lift/rust-cargo-test-witness/manifest.toml.in"
-  mf="$HERE/$suite/.provekit/lift/rust-cargo-test-witness/manifest.toml"
+  mfin="$HERE/$suite/.sugar/lift/rust-cargo-test-witness/manifest.toml.in"
+  mf="$HERE/$suite/.sugar/lift/rust-cargo-test-witness/manifest.toml"
   sed "s#@BIN_DIR@#$BIN_DIR#g" "$mfin" > "$mf"
 done
 
@@ -50,7 +50,7 @@ done
 # Minted .proof files are named by their CID WITH a colon (blake3-512:...proof).
 for suite in good bad; do
   for p in "$HERE/$suite"/blake3-512:*.proof; do [ -e "$p" ] && rm -f "$p"; done
-  rm -rf "$HERE/$suite/.provekit/runs" "$HERE/$suite/.provekit/witnesses" 2>/dev/null || true
+  rm -rf "$HERE/$suite/.sugar/runs" "$HERE/$suite/.sugar/witnesses" 2>/dev/null || true
   rm -rf "$HERE/$suite/target" 2>/dev/null || true
 done
 
@@ -64,7 +64,7 @@ run_suite() {
   echo "==================== suite: $suite (expect $expect) ===================="
 
   echo "-- mint: run the suite -> witness-package .proof --"
-  ( cd "$dir" && "$PROVEKIT" mint --out . ) >/dev/null
+  ( cd "$dir" && "$SUGAR" mint --out . ) >/dev/null
 
   # Exactly one witness-package .proof should exist now (CID-named, colon form).
   local have_proof=0
@@ -77,7 +77,7 @@ run_suite() {
   # a failure regardless of the witness verdict. So we read the witness-package
   # ROW's status from --json, which carries the real discharge/refuse verdict.
   local prove_json="$dir/.prove.json"
-  ( cd "$dir" && "$PROVEKIT" prove . --json ) > "$prove_json" 2>/dev/null || true
+  ( cd "$dir" && "$SUGAR" prove . --json ) > "$prove_json" 2>/dev/null || true
 
   # The witness-package row's status. Status is lowercase: "discharged" on the
   # all-passed suite; "unsatisfied" when a per-test witness failed.
@@ -89,7 +89,7 @@ next((r.get('status') for r in d.get('rows',[]) if 'witness-package' in (r.get('
 
   echo "-- verify: rust recomputes the witness CID (oracle untrusted) --"
   local verify_json="$dir/.verify.json"
-  ( cd "$dir" && PATH="$BIN_DIR:$PATH" "$PROVEKIT" verify --project . --json ) > "$verify_json" 2>/dev/null || true
+  ( cd "$dir" && PATH="$BIN_DIR:$PATH" "$SUGAR" verify --project . --json ) > "$verify_json" 2>/dev/null || true
   local wverdict
   wverdict="$(pyget "$verify_json" "
 (d.get('witnessDimension',{}).get('witnesses') or [{}])[0].get('verdict','MISSING')
@@ -115,9 +115,9 @@ next((r.get('status') for r in d.get('rows',[]) if 'witness-package' in (r.get('
     # package and re-verify to exercise it -- this is the path an integrator hits
     # when they ship the .proof WITHOUT the audit package.
     echo "-- verify (RECOMPUTE): delete the package, re-run -> rebuild the bundle --"
-    rm -rf "$dir/.provekit/witnesses"
+    rm -rf "$dir/.sugar/witnesses"
     local recompute_json="$dir/.verify_recompute.json"
-    ( cd "$dir" && PATH="$BIN_DIR:$PATH" "$PROVEKIT" verify --project . --json ) > "$recompute_json" 2>/dev/null || true
+    ( cd "$dir" && PATH="$BIN_DIR:$PATH" "$SUGAR" verify --project . --json ) > "$recompute_json" 2>/dev/null || true
     local rverdict rchecks
     rverdict="$(pyget "$recompute_json" "
 (d.get('witnessDimension',{}).get('witnesses') or [{}])[0].get('verdict','MISSING')

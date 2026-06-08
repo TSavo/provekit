@@ -2,7 +2,7 @@
 
 **Version:** v0.1.0
 **Date:** 2026-05-25
-**Status:** cataloged by `protocol/catalogs/provekit-lsp-shared-1.catalog.json`
+**Status:** cataloged by `protocol/catalogs/sugar-lsp-shared-1.catalog.json`
 with `protocol_catalog_cid =
 blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c`.
 **Author:** T Savo
@@ -12,7 +12,7 @@ Terms: MUST, SHALL, SHOULD, MAY per RFC 2119.
 
 ## §0. Purpose
 
-This spec defines the shared protocol boundary for ProvekIt editor integrations.
+This spec defines the shared protocol boundary for Sugar editor integrations.
 The LSP surface is the editor-facing consumer of the current substrate: ProofIR
 claims, `concept:*` bindings, call edges, materialize/refusal state, emit/check
 state, and proof receipts. It is not a transpiler, not a source-to-source
@@ -29,7 +29,7 @@ Editor
   -> LSP coordinator
   -> kit LSP helper / kit lift helper
   -> normalized LSP document facts
-  -> provekit-linkerd / provekit verifier / kit status RPC
+  -> sugar-linkerd / sugar verifier / kit status RPC
   -> editor diagnostics, hovers, lenses, hints
 ```
 
@@ -62,7 +62,7 @@ standard Language Server Protocol to the coordinator.
 
 **LSP coordinator.** The process that owns LSP wiring: document sync, hover,
 code lens, diagnostics publication, code actions, routing, cache invalidation,
-and conversion between shared ProvekIt facts and LSP messages. It MUST NOT parse
+and conversion between shared Sugar facts and LSP messages. It MUST NOT parse
 host-language source.
 
 **Kit LSP helper.** A per-kit helper that accepts live document snapshots and
@@ -74,7 +74,7 @@ framework semantics, and host-language diagnostics.
 and package/proof-body availability for source sites owned by that kit. It MAY
 be the same process as the kit LSP helper.
 
-**Linker daemon.** `provekit-linkerd`, one process per project, owns the hot
+**Linker daemon.** `sugar-linkerd`, one process per project, owns the hot
 project union of contracts, call edges, derived bridges, and link-bundle state.
 It exposes project diagnostics and pins at editor speed.
 
@@ -84,16 +84,16 @@ receipts. It is not embedded in every kit LSP helper.
 ## §3. Transport
 
 Kit LSP helpers SHALL speak JSON-RPC 2.0 over NDJSON on stdio, matching the
-existing ProvekIt plugin family.
+existing Sugar plugin family.
 
 The protocol version token for this shared surface is:
 
 ```text
-provekit-lsp-shared/1
+sugar-lsp-shared/1
 ```
 
 The coordinator MAY accept legacy helper shapes during a migration window, but
-new in-tree helpers SHOULD emit `provekit-lsp-shared/1` from their `initialize`
+new in-tree helpers SHOULD emit `sugar-lsp-shared/1` from their `initialize`
 result and SHOULD expose the method set in §4.
 
 ## §4. Methods
@@ -108,10 +108,10 @@ Request:
   "id": 1,
   "method": "initialize",
   "params": {
-    "client": {"name": "provekit-lsp", "version": "0.0.0"},
-    "protocol_version": "provekit-lsp-shared/1",
+    "client": {"name": "sugar-lsp", "version": "0.0.0"},
+    "protocol_version": "sugar-lsp-shared/1",
     "workspace_root": "/project",
-    "config_path": ".provekit/config.toml"
+    "config_path": ".sugar/config.toml"
   }
 }
 ```
@@ -123,15 +123,15 @@ Result:
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "name": "provekit-lsp-python",
+    "name": "sugar-lsp-python",
     "version": "0.1.0",
-    "protocol_version": "provekit-lsp-shared/1",
+    "protocol_version": "sugar-lsp-shared/1",
     "kit_id": "python",
     "protocol_catalog_cid": "blake3-512:...",
     "capabilities": {
       "source_surfaces": ["python-source"],
       "entry_kinds": ["bind-lift-entry", "library-sugar-binding-entry", "call-edge"],
-      "diagnostic_codes": ["provekit.lsp.parse_error"],
+      "diagnostic_codes": ["sugar.lsp.parse_error"],
       "status_kinds": ["materialize", "emit", "check", "prove"]
     }
   }
@@ -281,7 +281,7 @@ to the editor client's native 0-based LSP positions. Producers MUST ensure
 
 ## §6. Diagnostics
 
-Diagnostics use source string `provekit` after conversion to LSP. Kit helpers
+Diagnostics use source string `sugar` after conversion to LSP. Kit helpers
 and daemons SHALL emit stable codes and MUST include a source range whenever the
 diagnostic is tied to source. Whole-file diagnostics MAY use the first byte of
 the document, but producers SHOULD prefer precise ranges.
@@ -309,19 +309,19 @@ Initial stable diagnostic codes:
 
 | Code | Producer | Meaning |
 |---|---|---|
-| `provekit.lsp.parse_error` | kit | The kit could not parse the live document snapshot. |
-| `provekit.lsp.lift_gap` | kit | The kit parsed the source but could not lift a source site into normalized facts. |
-| `provekit.lsp.catalog_mismatch` | kit/coordinator | The helper used a protocol catalog CID that does not match project policy. |
-| `provekit.lsp.materialize_unavailable` | materialize | The site has no resolvable materialize route for the requested target/library tuple. |
-| `provekit.lsp.materialize_refused` | materialize | The route exists but refuses under policy or loss budget. |
-| `provekit.lsp.emit_unavailable` | emit | The kit cannot emit the requested test/check artifact for this site. |
-| `provekit.lsp.check_failed` | check | A kit-owned host check failed. |
-| `provekit.lsp.unresolved_symbol` | linkerd | A call edge target could not be resolved in the project union. |
-| `provekit.lsp.unprovable_obligation` | linkerd/verifier | A call-site or bridge obligation could not be discharged. |
-| `provekit.lsp.implication_failed` | forward propagation | Current post facts do not establish the callee precondition. |
-| `provekit.lsp.vacuous_proof` | verifier | A proof path reported success without nonzero claims. |
+| `sugar.lsp.parse_error` | kit | The kit could not parse the live document snapshot. |
+| `sugar.lsp.lift_gap` | kit | The kit parsed the source but could not lift a source site into normalized facts. |
+| `sugar.lsp.catalog_mismatch` | kit/coordinator | The helper used a protocol catalog CID that does not match project policy. |
+| `sugar.lsp.materialize_unavailable` | materialize | The site has no resolvable materialize route for the requested target/library tuple. |
+| `sugar.lsp.materialize_refused` | materialize | The route exists but refuses under policy or loss budget. |
+| `sugar.lsp.emit_unavailable` | emit | The kit cannot emit the requested test/check artifact for this site. |
+| `sugar.lsp.check_failed` | check | A kit-owned host check failed. |
+| `sugar.lsp.unresolved_symbol` | linkerd | A call edge target could not be resolved in the project union. |
+| `sugar.lsp.unprovable_obligation` | linkerd/verifier | A call-site or bridge obligation could not be discharged. |
+| `sugar.lsp.implication_failed` | forward propagation | Current post facts do not establish the callee precondition. |
+| `sugar.lsp.vacuous_proof` | verifier | A proof path reported success without nonzero claims. |
 
-Forward propagation diagnostics MUST use `provekit.lsp.implication_failed` and
+Forward propagation diagnostics MUST use `sugar.lsp.implication_failed` and
 SHOULD include `callee`, `callee_contract_cid`, `callee_pre_cid`,
 `current_post_cid`, and `missing_conjuncts` in `data`.
 
@@ -391,7 +391,7 @@ receipts, or other content-addressed producers.
    MAY call legacy `parseFile` adapters during migration. A `parseFile` adapter
    MUST invoke the owning kit helper or a lossless adapter to that helper; it
    MUST NOT make linkerd the owner of host-language source parsing.
-7. The coordinator SHALL treat `provekit.lsp.vacuous_proof` as at least a
+7. The coordinator SHALL treat `sugar.lsp.vacuous_proof` as at least a
    warning.
 
 ## §10. Kit Helper Rules
@@ -407,7 +407,7 @@ receipts, or other content-addressed producers.
    CID mismatches.
 5. A kit helper MUST NOT report proof success for a vacuous zero-claim route.
 6. A kit helper MAY omit entries it cannot lift, but SHOULD emit a
-   `provekit.lsp.lift_gap` diagnostic for each omitted source site it can
+   `sugar.lsp.lift_gap` diagnostic for each omitted source site it can
    localize.
 
 ## §11. Linkerd and Verifier Integration
@@ -421,7 +421,7 @@ The preferred live route is:
 1. Kit helper analyzes the live document and emits normalized entries, ranges,
    diagnostics, and statuses.
 2. Coordinator forwards normalized document facts, contract streams, and
-   call-edge streams to `provekit-linkerd`.
+   call-edge streams to `sugar-linkerd`.
 3. Linkerd derives bridge/link diagnostics and project pins.
 4. Coordinator merges kit diagnostics/statuses with linkerd/verifier
    diagnostics/statuses.
@@ -444,7 +444,7 @@ This spec rebaselines the current LSP issue set:
    `project` from this spec.
 3. #1500 through #1503 depend on this shared protocol before per-kit
    implementation tickets are sufficient.
-4. Existing kit helpers using `parse`, legacy `provekit-lift/1` `lift`, or
+4. Existing kit helpers using `parse`, legacy `sugar-lift/1` `lift`, or
    ad hoc `declarations`/`callEdges` results should gain an adapter to
    `analyzeDocument`.
 5. The TypeScript verifier-shell LSP documentation should be marked historical
@@ -454,7 +454,7 @@ This spec rebaselines the current LSP issue set:
 
 A kit helper conforms to this spec if:
 
-1. `initialize` returns `protocol_version = "provekit-lsp-shared/1"`.
+1. `initialize` returns `protocol_version = "sugar-lsp-shared/1"`.
 2. `analyzeDocument` is deterministic for byte-identical `(kit_id, file, text,
    accepted_protocol_catalog_cids, policy_cids)` inputs.
 3. Returned source ranges point into the submitted document snapshot.
@@ -467,7 +467,7 @@ An LSP coordinator conforms if:
 
 1. It never parses host-language source.
 2. It routes source snapshots to kit helpers and preserves their source ranges.
-3. It converts shared diagnostics to LSP diagnostics with stable `provekit`
+3. It converts shared diagnostics to LSP diagnostics with stable `sugar`
    source and stable codes.
 4. It can merge kit and linkerd diagnostics for the same file.
 5. It treats zero-claim proof success as a warning or error.

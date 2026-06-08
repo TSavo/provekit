@@ -6,7 +6,7 @@ A walkthrough for Swift developers. **v1.1 is the conformance kit; lift adapters
 
 ## 1. What you'll have at the end
 
-In v1.1: a `.proof` file authored directly through `Sources/Provekit/IR.swift`. The conformance harness at `Sources/ConformanceRunner/main.swift` validates byte-identical emission against the canonical Rust output for `eq_atomic`, `pattern1_bounded_loop`, `contract_decl`, `bridge_decl`.
+In v1.1: a `.proof` file authored directly through `Sources/Sugar/IR.swift`. The conformance harness at `Sources/ConformanceRunner/main.swift` validates byte-identical emission against the canonical Rust output for `eq_atomic`, `pattern1_bounded_loop`, `contract_decl`, `bridge_decl`.
 
 In a later release: a `.proof` file lifted from Swift property wrappers and macros (Swift 5.9+).
 
@@ -19,8 +19,8 @@ In a later release: a `.proof` file lifted from Swift property wrappers and macr
 ## 3. Install
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 cd implementations/swift && swift build
 ```
@@ -39,7 +39,7 @@ let cid = try IR.canonicalize(formula).hash()
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 ## 6. Wire your IDE

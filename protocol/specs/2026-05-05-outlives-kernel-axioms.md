@@ -15,7 +15,7 @@
 
 ## §0. Purpose
 
-Rust functions carry lifetime parameters that constrain how long references remain valid. These constraints are part of a function's semantic contract: a caller that violates them triggers undefined behavior. ProvekIt must represent and discharge these constraints at the substrate level, not merely treat them as syntactic annotations.
+Rust functions carry lifetime parameters that constrain how long references remain valid. These constraints are part of a function's semantic contract: a caller that violates them triggers undefined behavior. Sugar must represent and discharge these constraints at the substrate level, not merely treat them as syntactic annotations.
 
 This spec defines:
 
@@ -267,7 +267,7 @@ Higher-Ranked Trait Bounds (HRTB) introduce regions that are quantified at the t
 
 **v1 decision:** This spec covers early-bound region behavior only. Late-bound regions are flagged as out of scope for v1.
 
-**Lifter behavior:** When the Rust lifter (provekit-walk) encounters a late-bound region in Charon's IR, it emits `Effect::HigherRankedRegion { binder_id: <string>, region_name: <string> }` into the function's effects list and does NOT emit an `Outlives` fact for that region. The function contract is marked opaque at that point.
+**Lifter behavior:** When the Rust lifter (sugar-walk) encounters a late-bound region in Charon's IR, it emits `Effect::HigherRankedRegion { binder_id: <string>, region_name: <string> }` into the function's effects list and does NOT emit an `Outlives` fact for that region. The function contract is marked opaque at that point.
 
 **Substrate behavior:** The substrate composition guard refuses to compose any `FunctionContractMemento` that contains an `Effect::HigherRankedRegion` effect. The error returned is `CompositionError::HigherRankedRegionUndischarged { binder_id, region_name }`. No discharge certificate is defined in v1; there is no `HigherRankedRegionMemento`.
 
@@ -345,8 +345,8 @@ When composition fails, the error payload MUST include every undischarged demand
 ## §9. Cross-references
 
 - The region sort is defined in `2026-04-30-ir-formal-grammar.md` as `Sort::Region { name: tstr }`.
-- The `compose_function_contracts` procedure lives in `implementations/rust/provekit-walk/src/contract.rs`. The region composition check defined in §4 MUST be inserted as a pre-check before the existing pre/post substitution steps.
-- The `Effect::HigherRankedRegion` variant is NEW. It must be added to the `Effect` enum in `implementations/rust/provekit-walk/src/contract.rs` and recognized by `EffectSet::check_opacity`.
+- The `compose_function_contracts` procedure lives in `implementations/rust/sugar-walk/src/contract.rs`. The region composition check defined in §4 MUST be inserted as a pre-check before the existing pre/post substitution steps.
+- The `Effect::HigherRankedRegion` variant is NEW. It must be added to the `Effect` enum in `implementations/rust/sugar-walk/src/contract.rs` and recognized by `EffectSet::check_opacity`.
 - The `FunctionContractMemento` formals list is defined in `2026-04-30-memento-envelope-grammar.md`. Region parameters are added as formals of sort `Sort::Region { name: ... }`.
 - `CompositionError::OutlivesNotDischarged` and `CompositionError::HigherRankedRegionUndischarged` are NEW error variants. They must be added to the `CompositionError` enum alongside the existing `OpacityError` variants.
 - For the implementation tracking issue, see #403 and #384 (C.9 theory work).

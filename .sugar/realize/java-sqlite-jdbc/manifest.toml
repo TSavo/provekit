@@ -1,0 +1,22 @@
+# PEP 1.7.0 realize plugin manifest for Java + sqlite-jdbc body emission.
+# Closes the manifest gap surfaced during the #1364 java kit audit:
+# menagerie/java-language-signature/specs/body-templates/java-canonical-bodies-sqlite-jdbc.json
+# declares 22 sql-* concepts but no realize manifest pointed at it,
+# so target_language=java + library_tag=sqlite-jdbc dispatch had no
+# registry entry.
+name = "java-realize-sqlite-jdbc"
+library_tag = "sqlite-jdbc"
+family = "concept:family:sql"
+library_version = "3.45.3.0"
+dependencies = [
+  "org.xerial:sqlite-jdbc:3.45.3.0",
+]
+# #1364 / #1355: per-kit concept coverage. Concept names aligned with
+# sugar-shim-rusqlite for cross-library cluster membership (per the
+# sqlite-jdbc shim's pom.xml description). #1468: the connection-/statement-level
+# query helpers return a raw java.sql.ResultSet (a lazy single-pass cursor the
+# caller walks), so they bind concept:sql-query-iterate; concept:sql-query is
+# retained for stmtExists (boolean projection). Both coexist additively.
+provides_concepts = ["concept:contract-observation", "concept:insert-and-get-id", "concept:sql-autocommit-control", "concept:sql-batch-execute", "concept:sql-busy-timeout", "concept:sql-catalog-reflection", "concept:sql-changes-count", "concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-connection-pool-acquire", "concept:sql-cursor-fetch-size", "concept:sql-execute", "concept:sql-prepare", "concept:sql-prepare-cached", "concept:sql-query", "concept:sql-query-iterate", "concept:sql-result-metadata", "concept:sql-row-get-column", "concept:sql-savepoint", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-isolation-level", "concept:sql-transaction-rollback"]
+command = ["java", "-jar", "implementations/java/sugar-realize-java-core/target/sugar-realize-java.jar", "--rpc"]
+working_dir = "."

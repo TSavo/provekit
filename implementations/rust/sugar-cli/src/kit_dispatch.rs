@@ -9,9 +9,9 @@
 // Dispatch surfaces:
 //
 //   1. `dispatch_emit(workspace_root, target_lang, framework, plan)`
-//      Resolves a `kind = "emit"` plugin by `.provekit/emit/<surface>/manifest.toml`,
+//      Resolves a `kind = "emit"` plugin by `.sugar/emit/<surface>/manifest.toml`,
 //      where surfaces are target/framework packages such as `go-testing`.
-//      Invokes `provekit.plugin.invoke` with the neutral EmitPlan. The kit owns
+//      Invokes `sugar.plugin.invoke` with the neutral EmitPlan. The kit owns
 //      all target/framework syntax; the CLI owns only dispatch/composition.
 //
 // Kit unavailability is a `kit-plugin-unavailable` gap, not a hidden error.
@@ -141,7 +141,7 @@ fn scan_manifest_plugins(workspace_root: &Path) -> Result<Vec<ManifestPluginRegi
     let mut plugins = Vec::new();
     let configured_emit_surfaces = configured_emit_surface_names(workspace_root);
     for kind in REGISTRY_MANIFEST_KINDS {
-        let kind_dir = workspace_root.join(".provekit").join(kind);
+        let kind_dir = workspace_root.join(".sugar").join(kind);
         let Ok(entries) = std::fs::read_dir(&kind_dir) else {
             continue;
         };
@@ -362,7 +362,7 @@ fn dependency_proofs_for_command(
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.resolve_dependency_proofs",
+        "method": "sugar.plugin.resolve_dependency_proofs",
         "params": {
             "project_root": workspace_root.display().to_string(),
         },
@@ -377,7 +377,7 @@ fn dependency_proofs_for_command(
     let shutdown = json!({
         "jsonrpc": "2.0",
         "id": 2,
-        "method": "provekit.plugin.shutdown",
+        "method": "sugar.plugin.shutdown",
     });
     let _ = writeln!(stdin, "{shutdown}");
     drop(stdin);
@@ -398,9 +398,9 @@ fn dependency_proofs_for_command(
         )
     })?;
     if let Some(error) = response.get("error") {
-        if rpc_error_is_method_not_supported(error, "provekit.plugin.resolve_dependency_proofs") {
+        if rpc_error_is_method_not_supported(error, "sugar.plugin.resolve_dependency_proofs") {
             record_dependency_proof_diagnostic(format!(
-                "dependency proof resolver {:?} does not implement provekit.plugin.resolve_dependency_proofs",
+                "dependency proof resolver {:?} does not implement sugar.plugin.resolve_dependency_proofs",
                 cmd_spec.argv
             ));
             return Ok(None);
@@ -741,7 +741,7 @@ fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
         .ok_or_else(|| "response missing `result`".to_string())
 }
 
-// Emit dispatch (PEP 1.7.0 kind = "emit", method `provekit.plugin.invoke`)
+// Emit dispatch (PEP 1.7.0 kind = "emit", method `sugar.plugin.invoke`)
 // ============================================================================
 
 /// Result of dispatching to an emit kit. The raw kit result is intentionally
@@ -852,8 +852,8 @@ fn resolve_emit_command(
         language: target_lang.to_string(),
         detail: format!(
             "no emit plugin for target `{target_lang}` and framework `{framework}`. \
-             expected a project [[plugins]] registration in .provekit/config.toml \
-             and a .provekit/emit/{target_lang}-{framework}/manifest.toml. \
+             expected a project [[plugins]] registration in .sugar/config.toml \
+             and a .sugar/emit/{target_lang}-{framework}/manifest.toml. \
              registered: {registered}"
         ),
     })
@@ -898,7 +898,7 @@ fn project_emit_candidates(
 
     let mut out = Vec::new();
     for surface in configured {
-        let path = workspace_root.join(".provekit").join("emit").join(&surface);
+        let path = workspace_root.join(".sugar").join("emit").join(&surface);
         let manifest = path.join("manifest.toml");
         if !manifest.exists() {
             continue;
@@ -1002,7 +1002,7 @@ fn invoke_emit(
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(
-        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+        if std::env::var("SUGAR_PLUGIN_STDERR").as_deref() == Ok("null") {
             Stdio::null()
         } else {
             Stdio::inherit()
@@ -1025,7 +1025,7 @@ fn invoke_emit(
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.invoke",
+        "method": "sugar.plugin.invoke",
         "params": plan,
     });
     writeln!(stdin, "{req}").map_err(|e| format!("write emit request: {e}"))?;
@@ -1039,7 +1039,7 @@ fn invoke_emit(
     let shutdown = json!({
         "jsonrpc": "2.0",
         "id": 2,
-        "method": "provekit.plugin.shutdown",
+        "method": "sugar.plugin.shutdown",
     });
     let _ = writeln!(stdin, "{shutdown}");
     drop(stdin);
@@ -1082,7 +1082,7 @@ fn invoke_emit_check(
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(
-        if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+        if std::env::var("SUGAR_PLUGIN_STDERR").as_deref() == Ok("null") {
             Stdio::null()
         } else {
             Stdio::inherit()
@@ -1105,7 +1105,7 @@ fn invoke_emit_check(
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.check",
+        "method": "sugar.plugin.check",
         "params": {
             "plan": plan,
             "out_dir": out_dir,
@@ -1124,7 +1124,7 @@ fn invoke_emit_check(
     let shutdown = json!({
         "jsonrpc": "2.0",
         "id": 2,
-        "method": "provekit.plugin.shutdown",
+        "method": "sugar.plugin.shutdown",
     });
     let _ = writeln!(stdin, "{shutdown}");
     drop(stdin);
@@ -1159,7 +1159,7 @@ fn resolve_emit_surface_command(
     let configured = configured_emit_surface_names(workspace_root);
     if !configured.contains(surface) {
         return Err(format!(
-            "no emit plugin registration for surface `{surface}` in .provekit/config.toml"
+            "no emit plugin registration for surface `{surface}` in .sugar/config.toml"
         ));
     }
 
@@ -1178,7 +1178,7 @@ fn resolve_emit_surface_command(
 
     record_fallback_diagnostic("emit", surface);
     let manifest = workspace_root
-        .join(".provekit")
+        .join(".sugar")
         .join("emit")
         .join(surface)
         .join("manifest.toml");
@@ -1239,7 +1239,7 @@ fn rpc_emit_witness(
     let emit_req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.invoke",
+        "method": "sugar.plugin.invoke",
         "params": {
             "surface": surface,
             "workspace_root": workspace_root.display().to_string(),
@@ -1251,7 +1251,7 @@ fn rpc_emit_witness(
     if let Err(message) = &response {
         let _ = writeln!(
             stdin,
-            "{{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"provekit.plugin.shutdown\"}}"
+            "{{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"sugar.plugin.shutdown\"}}"
         );
         drop(stdin);
         let _ = child.wait();
@@ -1269,7 +1269,7 @@ fn rpc_emit_witness(
     let shutdown_req = json!({
         "jsonrpc": "2.0",
         "id": 2,
-        "method": "provekit.plugin.shutdown"
+        "method": "sugar.plugin.shutdown"
     });
     let _ = writeln!(stdin, "{shutdown_req}");
     drop(stdin);
@@ -1287,15 +1287,15 @@ mod tests {
     fn optional_rpc_method_refusal_accepts_legacy_unknown_method_error() {
         assert!(rpc_error_is_method_not_supported(
             &json!({"code": -32601, "message": "method not found"}),
-            "provekit.plugin.resolve_dependency_proofs"
+            "sugar.plugin.resolve_dependency_proofs"
         ));
         assert!(rpc_error_is_method_not_supported(
-            &json!({"code": -32602, "message": "unknown method: provekit.plugin.resolve_dependency_proofs"}),
-            "provekit.plugin.resolve_dependency_proofs"
+            &json!({"code": -32602, "message": "unknown method: sugar.plugin.resolve_dependency_proofs"}),
+            "sugar.plugin.resolve_dependency_proofs"
         ));
         assert!(!rpc_error_is_method_not_supported(
             &json!({"code": -32602, "message": "invalid params"}),
-            "provekit.plugin.resolve_dependency_proofs"
+            "sugar.plugin.resolve_dependency_proofs"
         ));
     }
 

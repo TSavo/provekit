@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Design notes for provekit-ir-compiler-coq
+// Design notes for sugar-ir-compiler-coq
 //
 // The key insight: Coq lets us DEFINE what roundTrips means,
 // whereas SMT-LIB just leaves it uninterpreted.

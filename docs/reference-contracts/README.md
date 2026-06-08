@@ -76,7 +76,7 @@ If you're a consumer:
 
 1. Identify which reference contract applies to a call site (e.g., your `parseInt` call site applies `ref-parseInt-v1`).
 2. Express your pre-condition in canonical IR matching the reference. (Most often, the reference IS your pre-condition; canonical references are designed for this.)
-3. Run `provekit prove`. The handshake walks bridges from the implementation's contract to the reference, discharging at Tier 1 when CIDs match.
+3. Run `sugar prove`. The handshake walks bridges from the implementation's contract to the reference, discharging at Tier 1 when CIDs match.
 
 ## How a reference contract is added
 

@@ -5,7 +5,7 @@
 //
 //   * StubSolver           - when `binary = "stub:..."`.
 //   * CoqSubprocessSolver  - when `ir_compiler = "coq"` (or, for
-//                            forward compat, the `provekit-ir-compiler-coq`
+//                            forward compat, the `sugar-ir-compiler-coq`
 //                            DIALECT constant). Coq is a non-SMT solver:
 //                            it reads IR-JSON, compiles to Coq via
 //                            `CoqCompiler`, and runs `coqc` on the
@@ -49,7 +49,7 @@ pub fn build(cfg: &SolversConfig) -> HashMap<String, SolverHandle> {
 
 /// Returns true if the configured `ir_compiler` selects the Coq
 /// pipeline. Accepts the canonical `coq` value alongside the
-/// dialect constant exported by `provekit-ir-compiler-coq` so that
+/// dialect constant exported by `sugar-ir-compiler-coq` so that
 /// renaming the dialect at the compiler crate is the only edit
 /// required.
 fn is_coq_compiler(ir_compiler: &str) -> bool {
@@ -121,13 +121,13 @@ fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
 
 /// Convenience: build a registry with a single Z3 SubprocessSolver
 /// at the given binary path. Used by the legacy `RunnerConfig.z3_path`
-/// fallback when no `.provekit/config.toml` is present.
+/// fallback when no `.sugar/config.toml` is present.
 ///
 /// A 30-second per-invocation timeout is applied as defense-in-depth.
 /// Without a timeout, a Z3 invocation that reads from stdin without
 /// receiving EOF (e.g. when inherited in a subprocess chain) can block
 /// indefinitely.  30 s is a conservative upper bound for any SMT-LIB
-/// obligation that would arise from a ProvekIt proof graph.
+/// obligation that would arise from a Sugar proof graph.
 pub fn build_default_z3(z3_path: &str) -> HashMap<String, SolverHandle> {
     let mut out: HashMap<String, SolverHandle> = HashMap::new();
     out.insert(
@@ -240,7 +240,7 @@ ir_compiler = "lean"
     fn build_recognizes_default_workspace_portfolio() {
         // Closes #251 (cvc5) + #252 Tier 1 (Vampire).
         //
-        // Reads the canonical `.provekit/config.toml` from the repo
+        // Reads the canonical `.sugar/config.toml` from the repo
         // root (computed from CARGO_MANIFEST_DIR) and asserts that the
         // file parses cleanly and registers all five default-portfolio
         // solvers with the right ir_compiler tags. This is a
@@ -256,7 +256,7 @@ ir_compiler = "lean"
             .ancestors()
             .nth(3)
             .expect("could not find repository root");
-        let config_path = root.join(".provekit").join("config.toml");
+        let config_path = root.join(".sugar").join("config.toml");
         let body = std::fs::read_to_string(&config_path)
             .unwrap_or_else(|e| panic!("could not read {}: {e}", config_path.display()));
         let c = SolversConfig::from_toml(&body).expect("config parses");

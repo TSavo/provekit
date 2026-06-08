@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Panic-freedom fixture: a standalone crate whose only purpose is to exercise
-# the panic-freedom mechanism end-to-end. `provekit mint --project .` lifts its
+# the panic-freedom mechanism end-to-end. `sugar mint --project .` lifts its
 # two functions and bridges their `.unwrap()` call sites into the rust-std
 # shim's `option_unwrap` partial (pre = `is_some(opt)`). The verifier then:
 #   - discharges the GUARDED unwrap panic-safe (the `if opt.is_some()` guard
@@ -9,15 +9,15 @@
 #   - leaves the UNGUARDED unwrap undecidable (no guard -> pre unprovable),
 #     never vacuous-passing it.
 #
-# Not a workspace member: ProvekIt lifts the source by PARSING it, never by
-# compiling it as a workspace crate (same as examples/provekit-shim-rust-std).
+# Not a workspace member: Sugar lifts the source by PARSING it, never by
+# compiling it as a workspace crate (same as examples/sugar-shim-rust-std).
 [package]
-name = "provekit-panic-freedom-fixture"
+name = "sugar-panic-freedom-fixture"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 publish = false
-description = "ProvekIt panic-freedom demonstration fixture (guarded vs unguarded unwrap)."
+description = "Sugar panic-freedom demonstration fixture (guarded vs unguarded unwrap)."
 
 [lib]
 path = "src/lib.rs"

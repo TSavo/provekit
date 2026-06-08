@@ -8,7 +8,7 @@ The short version:
 
 ```text
 host evidence -> kit lift -> ProofIR/protocol claim -> signed memento
-             -> .proof DAG -> provekit compose/conjoin/prove/report
+             -> .proof DAG -> sugar compose/conjoin/prove/report
 ```
 
 ## The boundary
@@ -24,7 +24,7 @@ claims, materialize admitted claims back into native source when asked, and
 resolve dependency `.proof` artifacts in the way their ecosystem actually
 ships packages.
 
-**The CLI owns normalized proof computation.** The Rust `provekit` CLI loads
+**The CLI owns normalized proof computation.** The Rust `sugar` CLI loads
 `.proof` artifacts, speaks JSON-RPC style plugin protocols to configured kits,
 checks proof-file and protocol conformance, composes and conjoins claims,
 dispatches prover work, emits proof bundles, and reports the result. It should
@@ -119,7 +119,7 @@ Contracts key to the CALLSITE under test, not to the test that exercised them
 content-keyed callsite, so same name means same callsite. Before the
 satisfiability check, the verifier groups same-named contracts across all loaded
 `.proof` files, including imported dependency proofs staged in
-`.provekit/imports/`, and conjoins their invariants. Same name means sound to
+`.sugar/imports/`, and conjoins their invariants. Same name means sound to
 conjoin.
 
 This is the mechanism behind inherited correctness. A consumer that imports a
@@ -129,17 +129,17 @@ lands both contracts on the same callsite name. Conjoining gives
 contradicting the contract it inherited. A consumer that asserts `== 5` agrees
 and is proven. Identical assertions dedupe by CID and a lone contract is
 untouched, so consistent compositions stay proven and there is no false refusal.
-(`implementations/rust/provekit-verifier/src/consistency.rs:278-300`, locked by
+(`implementations/rust/sugar-verifier/src/consistency.rs:278-300`, locked by
 the `cross_proof_same_named_contracts_are_conjoined` test; end-to-end in
-`implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py`.)
+`implementations/python/sugar-lift-py-tests/tests/test_inheritance_e2e.py`.)
 
 ## Kit RPC
 
 Kit interaction is explicit. Current CLI paths dispatch configured plugins for
 lift, emit, materialize, package inspection, dependency proof resolution, and
 related surfaces. The plugin protocol uses request/response methods such as
-`provekit.plugin.invoke`, `provekit.plugin.assemble`,
-`provekit.plugin.resolve_dependency_proofs`, and shutdown handshakes over the
+`sugar.plugin.invoke`, `sugar.plugin.assemble`,
+`sugar.plugin.resolve_dependency_proofs`, and shutdown handshakes over the
 configured subprocess transport.
 
 The design goal is simple: native knowledge stays in the kit, proof computation
@@ -149,7 +149,7 @@ proof data.
 ### The kit oracle is untrusted
 
 When a verifier needs a body that the `.proof` only points at, it calls the kit
-oracle over RPC (for example `provekit.plugin.resolve_witness`). That oracle is
+oracle over RPC (for example `sugar.plugin.resolve_witness`). That oracle is
 UNTRUSTED. It RESOLVES bytes; it does not pronounce verdicts. The Rust CLI
 verifies the Ed25519 signature itself with the substrate's own primitive
 (`ed25519_verify_string`), then BLAKE3's the resolved bytes itself and compares
@@ -157,7 +157,7 @@ to the pinned CID. A body the oracle returns that does not recompute to the
 pinned CID is a broken oracle, caught because Rust does the math anyway. A body
 that recomputes but whose honest re-run differs is drift. Both refuse loudly and
 are distinguished. The rule is trust the recomputation, never the resolver.
-(`implementations/rust/provekit-cli/src/witness_verify.rs:1-18`.)
+(`implementations/rust/sugar-cli/src/witness_verify.rs:1-18`.)
 
 This is why verification lives in the language-blind CLI and not in the kit: the
 kit knows the language, but it must not be trusted to grade itself.

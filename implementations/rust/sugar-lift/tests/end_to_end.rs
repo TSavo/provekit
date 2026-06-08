@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// End-to-end integration tests for provekit-lift.
+// End-to-end integration tests for sugar-lift.
 //
 // 1. Walk the planted `tests/fixtures/` directory.
 // 2. Lift adapters mint per-shape ContractDecls.
 // 3. Bundle into a `.proof` catalog.
-// 4. Re-load through provekit-verifier::load_all_proofs and assert
+// 4. Re-load through sugar-verifier::load_all_proofs and assert
 //    every member envelope passes the trust-root + CID-redrive checks.
 
 use std::path::{Path, PathBuf};
@@ -44,11 +44,11 @@ fn proof_cid_is_deterministic_across_runs() {
         .unwrap()
         .as_nanos();
     let dir1 = std::env::temp_dir().join(format!(
-        "provekit-lift-det1-{}-{nanos1}",
+        "sugar-lift-det1-{}-{nanos1}",
         std::process::id()
     ));
     let dir2 = std::env::temp_dir().join(format!(
-        "provekit-lift-det2-{}-{nanos1}",
+        "sugar-lift-det2-{}-{nanos1}",
         std::process::id()
     ));
     let opts = LiftOptions::default();
@@ -75,7 +75,7 @@ fn lifted_proof_loads_through_verifier() {
         .unwrap()
         .as_nanos();
     let out_dir =
-        std::env::temp_dir().join(format!("provekit-lift-it-{}-{nanos}", std::process::id()));
+        std::env::temp_dir().join(format!("sugar-lift-it-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&out_dir).unwrap();
     let opts = LiftOptions::default();
     let (_report, minted, path) =
@@ -164,7 +164,7 @@ fn cli_runs_against_fixtures() {
         .unwrap()
         .as_nanos();
     let out =
-        std::env::temp_dir().join(format!("provekit-lift-cli-{}-{nanos}", std::process::id()));
+        std::env::temp_dir().join(format!("sugar-lift-cli-{}-{nanos}", std::process::id()));
     let flags = sugar_lift::CliFlags {
         workspace: Some(fixtures_dir()),
         target_dir: Some(out.clone()),

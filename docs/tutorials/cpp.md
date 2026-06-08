@@ -21,13 +21,13 @@ In v1.1: a `.proof` file authored directly through the C++ kit (header-only IR l
 ## 3. Install
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 cd implementations/cpp && make
 ```
 
-The C++ kit lives at [implementations/cpp/provekit-ir-symbolic](../../implementations/cpp/). It's header-only with CMake integration.
+The C++ kit lives at [implementations/cpp/sugar-ir-symbolic](../../implementations/cpp/). It's header-only with CMake integration.
 
 ## 4. Author or lift
 
@@ -43,7 +43,7 @@ int add_one_or_more(int x)
 ```
 
 ```bash
-provekit-lift-cpp
+sugar-lift-cpp
 ```
 
 In v1.1, author directly through the kit. See [implementations/cpp/](../../implementations/cpp/) for sample CMake integration.
@@ -51,7 +51,7 @@ In v1.1, author directly through the kit. See [implementations/cpp/](../../imple
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 ## 6. Wire your IDE

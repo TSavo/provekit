@@ -21,7 +21,7 @@ The binary doesn't know its envelope. The envelope knows the binary's hash. One-
 
 This shape is the resolution of the chicken-and-egg problem: "how does a binary attest to its own hash without containing its own hash?" It doesn't. The envelope does. The same pattern appears in Sigstore/cosign (the bundle references the artifact digest), Apple notarization (the ticket attests to a signed binary's hash), Authenticode (the catalog signs hashes of files), TLS server certs (the cert binds a public key to a name, not the bytes of the server), and JWT (the signature attests to a payload it does not contain). Prior art is uniform: the attestation names the artifact; the artifact never names the attestation.
 
-This spec is the protocol surface for that pattern in ProvekIt.
+This spec is the protocol surface for that pattern in Sugar.
 
 ## §1. Why this matters
 
@@ -59,7 +59,7 @@ The producer-side lifecycle is five steps. Each step's output is the next step's
 
 A `.proof` bundle is a separate file at `<bcid>.proof` (the existing convention from `2026-04-30-proof-file-format.md`). The bundle's filename is its content-address; the file's bytes hash to a CID equal to the filename.
 
-**Manifest hint is advisory.** A package manifest (`package.json.provekit.proofHash`, `Cargo.toml`'s equivalent, `go.mod`'s equivalent) MAY carry a hint pointing at the bundle. The hint accelerates discovery; it does NOT establish trust. The verifier validates by content (§4), not by manifest claim.
+**Manifest hint is advisory.** A package manifest (`package.json.sugar.proofHash`, `Cargo.toml`'s equivalent, `go.mod`'s equivalent) MAY carry a hint pointing at the bundle. The hint accelerates discovery; it does NOT establish trust. The verifier validates by content (§4), not by manifest claim.
 
 **Alternative considered: stapled bundles.** Stapling the bundle into the binary (Authenticode-style, OCSP-stapling-style) was considered and rejected. Two reasons:
 1. It complicates binary builds: the binary must be re-linked after the bundle is minted, which changes `bcid`, which invalidates the bundle, requiring fixed-point iteration.
@@ -119,7 +119,7 @@ Three architectural consequences:
 
 ## §7. Connection to witness minting
 
-Witness minting is the operational realization of monotonic envelope accretion. Given a binary at `bcid` and a set of discharge mementos under a chosen signer's key, the verifier/emitter path produces a new bundle attesting to that `bcid`. This is not a public raw-IR `provekit witness` command.
+Witness minting is the operational realization of monotonic envelope accretion. Given a binary at `bcid` and a set of discharge mementos under a chosen signer's key, the verifier/emitter path produces a new bundle attesting to that `bcid`. This is not a public raw-IR `sugar witness` command.
 
 This spec normatively documents what that witness-minting flow produces. The input contract:
 - A binary file path (or `bcid` directly, if the consumer already has it).
@@ -170,7 +170,7 @@ Three patterns are forbidden by this spec's design.
 
 This spec is satisfied by:
 
-- A reference verifier implementation that performs steps 1-5 of §4 end-to-end on the host platforms ProvekIt targets.
+- A reference verifier implementation that performs steps 1-5 of §4 end-to-end on the host platforms Sugar targets.
 - Witness minting produces bundles whose shape conforms to §2 and whose lifecycle conforms to §8.
 - Integration tests cover:
   - The §4 happy path: a binary at `bcid`, a bundle at `<bcid>.proof`, a successful verdict.

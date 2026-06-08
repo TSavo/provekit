@@ -18,13 +18,13 @@ fn binary_on_path(name: &str) -> bool {
 }
 
 fn lean_project_dir() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("PROVEKIT_LEAN_PROJECT") {
+    if let Ok(path) = std::env::var("SUGAR_LEAN_PROJECT") {
         let project = PathBuf::from(path);
         if project.join("lakefile.lean").is_file() {
             return Some(project);
         }
         eprintln!(
-            "skipping: PROVEKIT_LEAN_PROJECT does not contain lakefile.lean: {}",
+            "skipping: SUGAR_LEAN_PROJECT does not contain lakefile.lean: {}",
             project.display()
         );
         return None;
@@ -34,14 +34,14 @@ fn lean_project_dir() -> Option<PathBuf> {
     if project.join("lakefile.lean").is_file() {
         Some(project)
     } else {
-        eprintln!("skipping: PROVEKIT_LEAN_PROJECT is not set and /opt/lean-mathlib is absent");
+        eprintln!("skipping: SUGAR_LEAN_PROJECT is not set and /opt/lean-mathlib is absent");
         None
     }
 }
 
 #[test]
-fn lean_file_cid_uses_provekit_canonicalizer_hash() {
-    let source = "theorem provekit_obligation : True := by trivial\n";
+fn lean_file_cid_uses_sugar_canonicalizer_hash() {
+    let source = "theorem sugar_obligation : True := by trivial\n";
     assert_eq!(
         LeanSubprocessSolver::lean_file_cid(source),
         sugar_canonicalizer::blake3_512_of(source.as_bytes())
@@ -50,11 +50,11 @@ fn lean_file_cid_uses_provekit_canonicalizer_hash() {
 
 #[test]
 fn axiom_parser_detects_sorry_ax() {
-    let output = "axioms provekit_obligation: [propext, Quot.sound, sorryAx]\n";
-    let axioms = LeanSubprocessSolver::parse_axiom_set(output, "provekit_obligation");
+    let output = "axioms sugar_obligation: [propext, Quot.sound, sorryAx]\n";
+    let axioms = LeanSubprocessSolver::parse_axiom_set(output, "sugar_obligation");
     assert!(axioms.iter().any(|a| a == "sorryAx"));
     assert!(LeanSubprocessSolver::uses_sorry_or_sorry_ax(
-        "theorem provekit_obligation : True := by trivial\n",
+        "theorem sugar_obligation : True := by trivial\n",
         output
     ));
 }
@@ -113,7 +113,7 @@ ir_compiler = "lean"
 #[test]
 fn mathlib_commit_parser_reads_lake_manifest() {
     let dir = std::env::temp_dir().join(format!(
-        "provekit-lean-manifest-test-{}",
+        "sugar-lean-manifest-test-{}",
         std::process::id()
     ));
     std::fs::create_dir_all(&dir).expect("create temp dir");

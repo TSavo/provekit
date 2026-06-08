@@ -142,7 +142,7 @@ Empty-loss-is-minimum (§2.2): the empty record sums to `0`. Any non-empty recor
 
 Params: an RPC endpoint plus a timeout.
 
-The runtime delegates the entire ranking to the RPC plugin via `provekit.plugin.invoke` (per `2026-05-12-plugin-protocol.md` §4.2.2). The `params` shape for `invoke`:
+The runtime delegates the entire ranking to the RPC plugin via `sugar.plugin.invoke` (per `2026-05-12-plugin-protocol.md` §4.2.2). The `params` shape for `invoke`:
 
 ```json
 {

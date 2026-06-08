@@ -19,7 +19,7 @@
     "version": "0.1.0"
   },
   "metadata": {
-    "note": "Test fixture for provekit-plugin-loader integration tests. Not a real plugin.",
+    "note": "Test fixture for sugar-plugin-loader integration tests. Not a real plugin.",
     "source_url": "tests/fixtures/dummy-sugar.json"
   }
 }

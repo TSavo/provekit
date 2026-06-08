@@ -30,7 +30,7 @@ Required shape:
 ```json
 {
   "schema_version": 1,
-  "kind": "provekit.lsp.callsite_index",
+  "kind": "sugar.lsp.callsite_index",
   "language": "rust",
   "protocol_catalog_cid": "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f",
   "baseline_catalog_cid": "blake3-512:...",
@@ -112,7 +112,7 @@ The selected entry's `signer` and `signer_role` are copied into the diagnostic p
 | Swift | Type member | `String.count`, `Array.append` |
 | Zig | Module path | `std.mem.copy` |
 
-If a host language parser cannot resolve a dynamic call to one of these forms, the forward propagator uses `top` for that path and suppresses `provekit.lsp.implication_failed`.
+If a host language parser cannot resolve a dynamic call to one of these forms, the forward propagator uses `top` for that path and suppresses `sugar.lsp.implication_failed`.
 
 ## Performance
 
@@ -128,7 +128,7 @@ Changing any member of that tuple invalidates the cache.
 
 ## Issue Map
 
-- [#308](https://github.com/TSavo/provekit/issues/308): parent epic.
-- [#312](https://github.com/TSavo/provekit/issues/312): original callsite-resolution ticket.
-- [#478](https://github.com/TSavo/provekit/issues/478): v1.6.2 rebaseline ticket.
-- [#313](https://github.com/TSavo/provekit/issues/313), [#314](https://github.com/TSavo/provekit/issues/314), and [#324](https://github.com/TSavo/provekit/issues/324): representative per-kit forward propagators.
+- [#308](https://github.com/TSavo/sugar/issues/308): parent epic.
+- [#312](https://github.com/TSavo/sugar/issues/312): original callsite-resolution ticket.
+- [#478](https://github.com/TSavo/sugar/issues/478): v1.6.2 rebaseline ticket.
+- [#313](https://github.com/TSavo/sugar/issues/313), [#314](https://github.com/TSavo/sugar/issues/314), and [#324](https://github.com/TSavo/sugar/issues/324): representative per-kit forward propagators.

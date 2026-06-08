@@ -46,7 +46,7 @@ discharges those obligations.
 
 The artifact MAY be source code. It MAY be bytecode. It MAY be a schema,
 validator, wrapper, guard, witness value, fixture, protocol body, checker,
-or `.proof` envelope body. It is accepted only after the normal ProvekIt
+or `.proof` envelope body. It is accepted only after the normal Sugar
 loop reads it back or witnesses it under policy.
 
 The slogan:
@@ -127,7 +127,7 @@ admissible region carved out of future outputs.
 In ordinary probabilistic code generation, the output space is every
 syntactically plausible program the generator might write.
 
-In ProvekIt realization, the output space is:
+In Sugar realization, the output space is:
 
 ```
 { A | conforms(A, T) and binds(A, H) and discharges(A, O) and acceptable(A, P) }
@@ -750,7 +750,7 @@ more useful than editing a file automatically.
 The LSP is an interactive surface for realization. It is not the source
 of semantic truth.
 
-Current ProvekIt LSP code already follows this direction: the Rust LSP
+Current Sugar LSP code already follows this direction: the Rust LSP
 server exposes diagnostics, hover, code lenses, and code actions, and it
 delegates verification to a backend or daemon. Per-language plugins lift
 host artifacts. The next shape is to let code actions request
@@ -1070,10 +1070,10 @@ operator surface because it is already the all-language CLI.
 Possible commands:
 
 ```
-provekit realize <gap-or-obligation-cid> --target <surface> --policy <cid>
-provekit realize inspect <realization-result-cid>
-provekit realize witness <candidate-cid> --problem <cid>
-provekit realize drop <witnessed-candidate-cid> --kit <language>
+sugar realize <gap-or-obligation-cid> --target <surface> --policy <cid>
+sugar realize inspect <realization-result-cid>
+sugar realize witness <candidate-cid> --problem <cid>
+sugar realize drop <witnessed-candidate-cid> --kit <language>
 ```
 
 Library and RPC consumers should use the same data shapes. Other kits do
@@ -1114,7 +1114,7 @@ witnessed candidate -> optional drop -> re-lift -> fix receipt
 
 ## Section 13. Summary
 
-The realization compiler gives ProvekIt a disciplined way to generate
+The realization compiler gives Sugar a disciplined way to generate
 code without trusting generated code.
 
 It compiles:

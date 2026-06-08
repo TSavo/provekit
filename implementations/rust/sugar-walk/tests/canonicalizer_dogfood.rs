@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Walk-on-canonicalizer dogfood. Closes #368 AC #7:
-// "Dogfood on at least one function in `provekit-canonicalizer`."
+// "Dogfood on at least one function in `sugar-canonicalizer`."
 //
 // The canonicalizer is the substrate's own JCS + BLAKE3-512 layer
 // (the bytes that *every* memento goes through to produce its CID).
@@ -23,7 +23,7 @@ use sugar_walk::{wrap_function_contract_cached, EnvelopeCache, DEV_SIGNER_SEED};
 fn read_canonicalizer_source(filename: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("provekit-walk has a parent dir")
+        .expect("sugar-walk has a parent dir")
         .join("sugar-canonicalizer")
         .join("src")
         .join(filename);
@@ -57,7 +57,7 @@ fn walk_lifts_canonicalizer_blake3_function_to_envelope() {
     let contract = build_function_contract_with_file(
         item_fn,
         None,
-        Some("provekit-canonicalizer/src/hash.rs"),
+        Some("sugar-canonicalizer/src/hash.rs"),
     );
     assert_eq!(contract.fn_name, "blake3_512_of");
 
@@ -104,9 +104,9 @@ fn walk_lifts_multiple_canonicalizer_functions_into_one_cache() {
     let f_hex = first_function_named(&file, "blake3_512_hex").expect("blake3_512_hex present");
 
     let c_of =
-        build_function_contract_with_file(f_of, None, Some("provekit-canonicalizer/src/hash.rs"));
+        build_function_contract_with_file(f_of, None, Some("sugar-canonicalizer/src/hash.rs"));
     let c_hex =
-        build_function_contract_with_file(f_hex, None, Some("provekit-canonicalizer/src/hash.rs"));
+        build_function_contract_with_file(f_hex, None, Some("sugar-canonicalizer/src/hash.rs"));
 
     let mut cache = EnvelopeCache::new();
     let env_of_1 =
@@ -145,11 +145,11 @@ fn walk_canonicalizer_function_locus_carries_canonicalizer_path() {
     let contract = build_function_contract_with_file(
         item_fn,
         None,
-        Some("provekit-canonicalizer/src/hash.rs"),
+        Some("sugar-canonicalizer/src/hash.rs"),
     );
     assert_eq!(
         contract.locus.file.as_deref(),
-        Some("provekit-canonicalizer/src/hash.rs")
+        Some("sugar-canonicalizer/src/hash.rs")
     );
     assert!(contract.locus.line > 0, "locus line populated");
 }

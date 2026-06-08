@@ -20,7 +20,7 @@
 //!
 //! Usage:  hover_probe <crate-root> [<src-rel-path>]
 //!   defaults: crate-root="examples/oracle-hover-fixture", src="src/lib.rs"
-//! Requires PROVEKIT_RESOLVE_ORACLE=rust-analyzer (set here if unset).
+//! Requires SUGAR_RESOLVE_ORACLE=rust-analyzer (set here if unset).
 //! Exit: 0 = PASS (hover fired), 3 = NO-GO (hover inert / refused),
 //!       2 = could not run (oracle/RA unavailable).
 
@@ -55,8 +55,8 @@ fn main() {
     // blind to WHY a resolution refused (not-ready vs. genuine null).
     init_tracing();
 
-    if std::env::var("PROVEKIT_RESOLVE_ORACLE").ok().as_deref() != Some("rust-analyzer") {
-        std::env::set_var("PROVEKIT_RESOLVE_ORACLE", "rust-analyzer");
+    if std::env::var("SUGAR_RESOLVE_ORACLE").ok().as_deref() != Some("rust-analyzer") {
+        std::env::set_var("SUGAR_RESOLVE_ORACLE", "rust-analyzer");
     }
 
     let args: Vec<String> = std::env::args().collect();
@@ -91,7 +91,7 @@ fn main() {
         None => {
             eprintln!(
                 "PROBE COULD NOT RUN: RaOracle did not start \
-                 (rust-analyzer missing/disabled). Set PROVEKIT_RUST_ANALYZER \
+                 (rust-analyzer missing/disabled). Set SUGAR_RUST_ANALYZER \
                  or put rust-analyzer on PATH."
             );
             std::process::exit(2);
@@ -182,7 +182,7 @@ fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::builder()
         .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
         .from_env_lossy();
-    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+    if let Ok(path) = std::env::var("SUGAR_LOG_FILE") {
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -197,7 +197,7 @@ fn init_tracing() {
             }
             Err(error) => {
                 eprintln!(
-                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                    "warning: could not open SUGAR_LOG_FILE {path}: {error}; logging to stderr"
                 );
                 tracing_subscriber::fmt()
                     .with_writer(std::io::stderr)

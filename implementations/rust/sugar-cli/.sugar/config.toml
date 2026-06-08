@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# sugar-cli self-application config.
+#
+# This is the substrate proving itself: sugar-cli is the program;
+# four lift surfaces, conjoined by `sugar mint --project .`:
+#
+#   rust-bind        sugar lifter      (#[sugar::sugar] boundaries)
+#   rust-contracts   test lifter       (#[test] asserts -> inv witnessed
+#                                       facts)
+#   rust-fn-contracts production fn lifter (every src/ fn -> body-bearing
+#                                       formals+pre+post; the contracts a
+#                                       call site can actually discharge
+#                                       against through z3)
+#   rust-implications implication lifter (intra-body calls -> bridges)
+#
+# rust-fn-contracts is the surface that makes self-application SUBSTANTIVE
+# rather than vacuous: the test lifter's `inv` facts cannot be discharged
+# against a general call site, but a function's derived pre/post can.
+# Ordered before rust-implications (a producer) so the implication lifter
+# binds call sites against the body-bearing contracts.
+
+[[plugins]]
+name = "rust-bind"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
+[[plugins]]
+name = "rust-realize"
+kind = "realize"
+surface = "rust"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:sugar"
+library = "sugar-cli"
+version = "0.4.0"
+
+# Solver portfolio for the CLI self-application. `sugar verify` builds
+# its dispatch registry from this; without it, every non-vacuous obligation
+# routes to a seat name with no registered solver and falls to undecidable.
+# first-wins: any seat absent from PATH degrades gracefully (Undecidable,
+# skipped by the post-collection sort); the first definitive verdict wins.
+# Mirrors the repo-root portfolio so the substrate proves itself with the
+# same solver fleet it ships.
+[solvers]
+mode = "first-wins"
+portfolio = ["z3", "cvc5", "vampire", "coq", "lean"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.cvc5]
+binary = "cvc5"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--lang=smt2", "--produce-models"]
+timeout_seconds = 30
+version = "1.x"
+
+[solvers.vampire]
+binary = "vampire"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
+timeout_seconds = 30
+version = "5.x"
+
+[solvers.coq]
+binary = "coqc"
+ir_compiler = "coq"
+timeout_seconds = 60
+version = "8.x"
+
+[solvers.lean]
+binary = "lake"
+ir_compiler = "lean"
+timeout_seconds = 60
+version = "4.x"

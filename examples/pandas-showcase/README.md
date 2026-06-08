@@ -2,9 +2,9 @@
 
 The next library up the ladder from numpy is **pandas**, and standing it up is
 not a research project: it is **not even a new package**. It is the **same one
-lifter** (`provekit_lift_py_tests.assertion_lsp`), which learns pandas's vocabulary
+lifter** (`sugar_lift_py_tests.assertion_lsp`), which learns pandas's vocabulary
 from each test file's imports plus a dropped-in data file,
-`.provekit/vocab-exceptions/pandas.testing.json` (the structurally-opaque remainder,
+`.sugar/vocab-exceptions/pandas.testing.json` (the structurally-opaque remainder,
 no code). This example differs from [`numpy-showcase`](../numpy-showcase) only by
 that exception file and pointing the witness venv at pandas.
 
@@ -14,7 +14,7 @@ that exception file and pointing the witness venv at pandas.
 
 ## The claim, two ways
 
-Drop provekit on a pandas project and prove its correctness with zero code
+Drop sugar on a pandas project and prove its correctness with zero code
 changes. The project contains real pandas tests plus one deliberately buggy
 (self-contradictory) one, so the showcase proves the **correct** pandas code and
 **catches** the contradiction, both ways:
@@ -55,7 +55,7 @@ This example demonstrates lift + **prove** (consistency + witness by recompute).
 The stricter signed-receipt **`verify`** also passes: it re-resolves each witness
 by recompute — the good witnesses re-run and reproduce their pinned CID, and the
 contradictory one is refused as a failed run, the same verdict `prove` gives.
-`run.sh` self-checks the `prove` verdict and exits non-zero if provekit does not
+`run.sh` self-checks the `prove` verdict and exits non-zero if sugar does not
 produce exactly it.
 
 ## Environment

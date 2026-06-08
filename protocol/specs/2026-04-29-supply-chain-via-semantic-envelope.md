@@ -1,4 +1,4 @@
-# ProvekIt: Solving Supply-Chain Attacks via the Semantic Envelope
+# Sugar: Solving Supply-Chain Attacks via the Semantic Envelope
 
 > Author: shared session 2026-04-29 (T + Claude). Companion to
 > `2026-04-29-the-semantic-envelope.md`. Given that the semantic
@@ -23,7 +23,7 @@ Existing systems cover layers 1–4 well. They make it harder to slip a
 compromised package into the supply chain. They **do not detect a
 compromised package that successfully gets in.**
 
-Layer 5 is where ProvekIt operates. The semantic envelope assumes the
+Layer 5 is where Sugar operates. The semantic envelope assumes the
 supply chain *will* be compromised at some point and asks: can you
 detect a compromised package even if it has all the right signatures,
 comes from the right author, and rebuilds reproducibly?
@@ -121,14 +121,14 @@ The attacker's only remaining moves are:
    reject leaves produced by a different check version.
 2. Compromise the *consumer's view* of which catalog CID to fetch.
    Defended by layers 1–4 (TUF, sigstore, npm provenance, etc.).
-   ProvekIt depends on those layers to know which catalog CID is
+   Sugar depends on those layers to know which catalog CID is
    authoritative for V2.
 
 This is the architectural payoff of the envelope being neutral and
-composable: ProvekIt doesn't try to defend layers 1–4. It depends on
+composable: Sugar doesn't try to defend layers 1–4. It depends on
 them as leaves. Every existing supply-chain defense becomes a leaf in
 the proofHash, contributing its own institutional weight, while
-ProvekIt adds the missing layer 5 leaf.
+Sugar adds the missing layer 5 leaf.
 
 ## Worked threat model: each attack class
 
@@ -140,7 +140,7 @@ V2 with a backdoor.
 **Existing layers.** Pass. Identity, provenance, signature all check —
 the attacker IS the maintainer for purposes of those layers.
 
-**ProvekIt.** V2's catalog diff is computed. Either:
+**Sugar.** V2's catalog diff is computed. Either:
 - The backdoor's behavior violates a propertyHash the maintainer
   retired in the same release, in which case the migrate workflow
   flags the retirement and consumers see the punch list.
@@ -160,7 +160,7 @@ backdoor in V47.
 **Existing layers.** All pass. Years of clean history, valid signatures,
 audited builds.
 
-**ProvekIt.** Same as case 1, but with a stronger property: the
+**Sugar.** Same as case 1, but with a stronger property: the
 maintainer's *previous* releases established a track record of
 propertyHash growth (each minor adds invariants, each major retires
 some). A V47 that suddenly retires multiple invariants without a
@@ -178,7 +178,7 @@ by-one / unchecked path. Tests pass.
 **Existing layers.** Pass. Reproducible builds confirm bytes; tests
 green.
 
-**ProvekIt.** This is the canonical case. If the consumer's bridge
+**Sugar.** This is the canonical case. If the consumer's bridge
 references a propertyHash that the saboteur's change violates (e.g.
 "forall x, parseInt(x) >= 0 implies sqrt(x) is real"), the verdict
 recomputed against V47 returns "fails." V47's catalog cannot
@@ -198,7 +198,7 @@ go) are themselves modified to inject behavior.
 SLSA L3 depends on the builder being trusted. If the builder is
 malicious, layer 3 is bypassed.
 
-**ProvekIt.** The check tools — tsc, biome, vitest, the lifter, the
+**Sugar.** The check tools — tsc, biome, vitest, the lifter, the
 Z3 solver — are themselves leaves in the proofHash. Each tool's
 binary is content-addressed; the consumer's proofHash pins specific
 tool CIDs. If the toolchain CID changes, the proofHash diverges,
@@ -210,7 +210,7 @@ tsc version, signed by this team," and any change to that pinning is a
 detectable proofHash divergence. Combined with reproducible builds of
 the toolchain itself, the surface for trusting-trust-style attacks
 shrinks to "did the toolchain author go rogue or have their key
-stolen?", which is layer 1 and out of ProvekIt's scope but visible as a
+stolen?", which is layer 1 and out of Sugar's scope but visible as a
 proofHash diff.
 
 ### 5. Typosquatting / dependency confusion
@@ -220,7 +220,7 @@ proofHash diff.
 **Existing layers.** Both packages are legitimately signed by their
 respective publishers. Layer 1 doesn't help.
 
-**ProvekIt.** The consumer's `package.json` carries catalog memento
+**Sugar.** The consumer's `package.json` carries catalog memento
 CIDs, not names. `"lodash": "bafy<canonical-lodash-catalog-cid>"`
 binds to a *specific* catalog. There is no name to confuse. The
 attacker can publish `lod4sh` with a similar name; they cannot publish
@@ -239,7 +239,7 @@ Direct deps look fine; the malicious code is three levels deep.
 **Existing layers.** Hard to detect; SBOM tooling can list the
 transitive set but not check it semantically.
 
-**ProvekIt.** PropertyHash composition is recursive. Your library A
+**Sugar.** PropertyHash composition is recursive. Your library A
 depends on B which depends on C. A's catalog memento references B's
 catalog CID; B's catalog memento references C's catalog CID. When C
 is compromised, C's catalog CID changes. B's resolution of "I depend
@@ -257,7 +257,7 @@ consumer thought they were pulling.
 signatures) helps. Reproducible builds + signature verification
 catches this.
 
-**ProvekIt.** Catalog CIDs are self-verifying. If the registry serves
+**Sugar.** Catalog CIDs are self-verifying. If the registry serves
 bytes that don't hash to the claimed CID, the consumer rejects them
 before any compilation happens. The defense overlaps with existing
 package signing but is stronger: the catalog CID is *the* identity,
@@ -270,7 +270,7 @@ malicious PR merged into a library.
 
 **Existing layers.** Social — depends on the project's review process.
 
-**ProvekIt.** Doesn't help with the merge itself, but the resulting
+**Sugar.** Doesn't help with the merge itself, but the resulting
 release's catalog diff is mechanical. If the merged change weakens or
 retires propertyHashes consumers depend on, the migrate workflow
 flags it regardless of who reviewed. The defense degrades the
@@ -295,13 +295,13 @@ chain solution. It does not prevent:
 - **Side-channel and runtime attacks.** A library with correct
   propertyHashes can still leak data through timing, cache patterns,
   or speculative execution. These are below the semantic layer
-  ProvekIt operates at.
+  Sugar operates at.
 - **Compromise of the consumer's local tools.** If the consumer's
-  `provekit verify` itself is compromised, it can lie about catalog
-  diffs. ProvekIt's own binary is, recursively, a candidate for
+  `sugar verify` itself is compromised, it can lie about catalog
+  diffs. Sugar's own binary is, recursively, a candidate for
   proofHashing — but the bootstrap problem is real and worth flagging.
 
-The claim is not "supply-chain attacks are impossible under ProvekIt."
+The claim is not "supply-chain attacks are impossible under Sugar."
 The claim is **"the missing layer-5 defense becomes mechanical, and the
 attacker's surface shrinks to behaviors that no published property
 constrains."** That's a load-bearing reduction even if it isn't a
@@ -309,7 +309,7 @@ complete solution.
 
 ## Composition with existing layers
 
-Critically, ProvekIt does not replace any of layers 1–4. It composes
+Critically, Sugar does not replace any of layers 1–4. It composes
 *above* them by attaching to their signatures as leaves:
 
 - npm provenance signature CID → leaf in your proofHash
@@ -320,7 +320,7 @@ Critically, ProvekIt does not replace any of layers 1–4. It composes
 - **Plus** the propertyHash CIDs (the new contribution)
 
 A consumer who today relies on (npm provenance + SLSA + reproducible
-builds) and adds ProvekIt gets:
+builds) and adds Sugar gets:
 
 1. Everything those layers already provide.
 2. Cross-domain composition: each defense's verdict is a leaf, all
@@ -349,7 +349,7 @@ load-bearing.
 
 Layer-5 defense scales differently: it activates per-library, immediately,
 the moment any one library decides to publish propertyHashes. Consumers
-who adopt ProvekIt can compose against any library that does, without
+who adopt Sugar can compose against any library that does, without
 waiting for universal adoption.
 
 This is the same property that made content-addressed dedup work in
@@ -395,7 +395,7 @@ Compare:
 - **Property-based tests**: cost scales with N claims × test cases. No
   diff awareness.
 
-ProvekIt's complexity comes from content addressing being the binding
+Sugar's complexity comes from content addressing being the binding
 primitive. The substrate is a hash index; the invariant store is a list
 of hash references; "is this still bound?" is a hash probe. The LLM is
 reserved for the place where reasoning is genuinely required, and that

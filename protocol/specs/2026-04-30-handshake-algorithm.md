@@ -1,4 +1,4 @@
-# ProvekIt: Handshake Algorithm
+# Sugar: Handshake Algorithm
 
 **Date:** 2026-04-30
 **Status:** Specification. Companion to memento-envelope-grammar (contract + implication roles).
@@ -222,7 +222,7 @@ to hash equality. Implication is a memento. Composition is a
 lattice over those mementos. A `.proof` file is a leaf in the
 lattice; the implication server is a global view of it.
 
-ProvekIt's promise — "your library's contracts compose with my
+Sugar's promise — "your library's contracts compose with my
 call sites at scale" — operationalizes through this algorithm. The
 contract memento is the unit of specification; the implication
 memento is the unit of cached reasoning; the handshake is how

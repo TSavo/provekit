@@ -26,21 +26,21 @@ and `project(term)` is byte-identical, after JSON parsing/JCS-equivalent object 
 - Add source: `menagerie/c11-language-signature/example/add.c`
 - Add generated term: `menagerie/c11-language-signature/example/add.term.json`
 - Add generated projected contract: `menagerie/c11-language-signature/example/add.projected-contract.json`
-- Implementation: `implementations/c/provekit-walk-c/src/term_project_main.c`
-- Test: `implementations/c/provekit-walk-c/tests/term_project.sh`
+- Implementation: `implementations/c/sugar-walk-c/src/term_project_main.c`
+- Test: `implementations/c/sugar-walk-c/tests/term_project.sh`
 
 ## Existing Lifters
 
 Build commands run:
 
 ```sh
-make -C implementations/c/provekit-lift-c-collectors-defensive
-make -C implementations/c/provekit-walk-c
+make -C implementations/c/sugar-lift-c-collectors-defensive
+make -C implementations/c/sugar-walk-c
 ```
 
 The `collectors-defensive` JSON-RPC lift of `foo.c` emits a `function-effects` declaration and a `function-contract` declaration. The `function-contract` declaration is the same object as `foo.contract.json`: `pre = true`, `post = result = ite(x == 0, -22, x)`, no effects, `i32 -> i32`.
 
-The `provekit-walk-c` JSON-RPC lift of standalone `foo.c` currently emits only `function-effects`; that matches `foo.walk-c-rpc.jsonl`. This is not a contradiction in the proof: `walk-c`'s WP-chain emitter is callsite-driven. With no caller/callee precondition chain in `foo.c`, it has no chain declaration to emit. The relevant WP machinery is still in `walk-c`: it collects body statements, walks backward from a callsite, applies declarations/conditionals/guards, records arrivals, and serializes the chain.
+The `sugar-walk-c` JSON-RPC lift of standalone `foo.c` currently emits only `function-effects`; that matches `foo.walk-c-rpc.jsonl`. This is not a contradiction in the proof: `walk-c`'s WP-chain emitter is callsite-driven. With no caller/callee precondition chain in `foo.c`, it has no chain declaration to emit. The relevant WP machinery is still in `walk-c`: it collects body statements, walks backward from a callsite, applies declarations/conditionals/guards, records arrivals, and serializes the chain.
 
 ## The AST Term
 
@@ -76,7 +76,7 @@ The emitted term memento uses the existing fixture schema: op nodes carry `name`
 
 ## Implementation
 
-The proof harness is additive and deliberately does not modify `collectors-defensive`, because another worktree is changing that lifter. The new tool is `provekit-c11-term-project`.
+The proof harness is additive and deliberately does not modify `collectors-defensive`, because another worktree is changing that lifter. The new tool is `sugar-c11-term-project`.
 
 Important implementation points:
 
@@ -167,13 +167,13 @@ One-sentence statement:
 
 Precise locations:
 
-- `provekit-walk-c/src/walk.c:140` collects `FunctionDecl` metadata and immediately computes `fn.pre` through `pk_c_walk_lift_function_pre`; no full body term is stored.
-- `provekit-walk-c/src/walk.c:178` finds the `CompoundStmt`; `walk.c:199` collects body statements as cursors, not as a term.
-- `provekit-walk-c/src/lift.c:146` lifts an expression cursor by re-parsing source text into a `pk_c_walk_term`; this is expression-level, not a statement-flow term.
-- `provekit-walk-c/src/lift.c:223` computes an if-exit precondition directly, and `lift.c:250` accumulates function preconditions directly.
-- `provekit-walk-c/src/walk.c:373` walks prior statements backward, applying declaration, conditional, and guard projections directly to `wp`.
-- `provekit-walk-c/src/conditional.c:362` substitutes branch assignments into `wp`, `conditional.c:376` and `conditional.c:382` build branch implications, and `conditional.c:388` conjoins them. That is `project(if(...))`, but the `if` term is never materialized.
-- `provekit-walk-c/src/contract.c:166` serializes the WP chain; `contract.c:224` writes `post` from the first arrival's WP and `contract.c:226` writes `pre` from the final arrival's WP.
+- `sugar-walk-c/src/walk.c:140` collects `FunctionDecl` metadata and immediately computes `fn.pre` through `pk_c_walk_lift_function_pre`; no full body term is stored.
+- `sugar-walk-c/src/walk.c:178` finds the `CompoundStmt`; `walk.c:199` collects body statements as cursors, not as a term.
+- `sugar-walk-c/src/lift.c:146` lifts an expression cursor by re-parsing source text into a `pk_c_walk_term`; this is expression-level, not a statement-flow term.
+- `sugar-walk-c/src/lift.c:223` computes an if-exit precondition directly, and `lift.c:250` accumulates function preconditions directly.
+- `sugar-walk-c/src/walk.c:373` walks prior statements backward, applying declaration, conditional, and guard projections directly to `wp`.
+- `sugar-walk-c/src/conditional.c:362` substitutes branch assignments into `wp`, `conditional.c:376` and `conditional.c:382` build branch implications, and `conditional.c:388` conjoins them. That is `project(if(...))`, but the `if` term is never materialized.
+- `sugar-walk-c/src/contract.c:166` serializes the WP chain; `contract.c:224` writes `post` from the first arrival's WP and `contract.c:226` writes `pre` from the final arrival's WP.
 - `collectors-defensive/src/patterns.c:1759` scans if/return structure, `patterns.c:1816` builds the branch-sensitive `ite`, `patterns.c:1907` scans the sequence, and `patterns.c:1980` sets `post` directly.
 - `collectors-defensive/src/walker.c:326` calls type/defensive extractors into a mutable contract accumulator, and `walker.c:341` emits the direct contract object.
 
@@ -213,13 +213,13 @@ This is the path-map reading intended for paper 17's §7: `parse` gives the C11 
 The right refactor for `collectors-defensive` is not to bolt on another parallel emitter. It is:
 
 1. Introduce a C11 `ITerm` module shared by the C lifters.
-   - New files: `implementations/c/provekit-lift-core/include/provekit/c11_term.h`, `implementations/c/provekit-lift-core/src/c11_term.c`.
+   - New files: `implementations/c/sugar-lift-core/include/sugar/c11_term.h`, `implementations/c/sugar-lift-core/src/c11_term.c`.
    - Include statement ops (`seq`, `if`, `return`, `skip`, assignment/control/effect ops) and expression ops (`eq`, `add`, `neg`, etc.).
-   - Keep `provekit-walk-c/src/walk_c.h:13` in mind: `pk_c_walk_term` exists, but it is expression/formula-shaped and not enough for statement flow.
+   - Keep `sugar-walk-c/src/walk_c.h:13` in mind: `pk_c_walk_term` exists, but it is expression/formula-shaped and not enough for statement flow.
 
 2. Move the libclang term builder out of the proof harness.
-   - Source template: `implementations/c/provekit-walk-c/src/term_project_main.c:421-653`.
-   - Production target: `implementations/c/provekit-lift-core/src/c11_term_clang.c`.
+   - Source template: `implementations/c/sugar-walk-c/src/term_project_main.c:421-653`.
+   - Production target: `implementations/c/sugar-lift-core/src/c11_term_clang.c`.
    - It must keep the fail-closed behavior from `term_project_main.c:386`.
 
 3. Replace direct branch-return post synthesis in `collectors-defensive`.
@@ -247,7 +247,7 @@ This worktree did the demonstration, not the collectors refactor, to avoid colli
 The focused test is:
 
 ```sh
-sh implementations/c/provekit-walk-c/tests/term_project.sh
+sh implementations/c/sugar-walk-c/tests/term_project.sh
 ```
 
 It checks:
@@ -257,4 +257,4 @@ It checks:
 - generated `add` term has `term_surface == "return(add(a, b))"`;
 - generated `project(add term)` has `post = result = +(a, b)`.
 
-The full `provekit-walk-c` `make test` now includes this test.
+The full `sugar-walk-c` `make test` now includes this test.

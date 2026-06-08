@@ -17,7 +17,7 @@ implementations/cpp/**/build
 
 # Project-local caches and ephemeral state
 .claude
-.provekit
+.sugar
 prompts.db-shm
 prompts.db-wal
 .neurallog

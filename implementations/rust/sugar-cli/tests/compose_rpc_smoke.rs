@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// compose_rpc_smoke.rs: federation-witness test for `provekit compose --rpc`.
+// compose_rpc_smoke.rs: federation-witness test for `sugar compose --rpc`.
 //
-// Spawns the compiled `provekit` binary with `compose --rpc`, drives the
+// Spawns the compiled `sugar` binary with `compose --rpc`, drives the
 // JSON-RPC subprocess transport per CCP §6.3 (initialize + compose +
 // shutdown), and asserts the composed CID matches the pinned hex value
 // that libsugar's own compose_smoke.rs pins for the same algebra.
@@ -25,7 +25,7 @@ use serde_json::{json, Value as JsonValue};
 
 const PINNED_CID: &str = "blake3-512:36212b7bf7b9ccf264950940a33d64e1cfe88b6f4d8a47c01949fc64d9359d1813d6147aa2e1afe82b01e6e7ebcbe0a413683284b5f47ffef5bf364213304665";
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
     let release = workspace.join("target").join("release").join("sugar");
@@ -81,10 +81,10 @@ fn impure_identity_atom(fn_name: &str, formal: &str) -> JsonValue {
 
 #[test]
 fn compose_rpc_returns_pinned_cid() {
-    let bin = provekit_bin();
+    let bin = sugar_bin();
     assert!(
         bin.exists(),
-        "provekit binary missing at {}; run `cargo build -p sugar-cli` first",
+        "sugar binary missing at {}; run `cargo build -p sugar-cli` first",
         bin.display()
     );
 
@@ -94,7 +94,7 @@ fn compose_rpc_returns_pinned_cid() {
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .expect("spawn provekit compose --rpc");
+        .expect("spawn sugar compose --rpc");
 
     let mut stdin = child.stdin.take().expect("stdin pipe");
     let stdout = child.stdout.take().expect("stdout pipe");
@@ -116,7 +116,7 @@ fn compose_rpc_returns_pinned_cid() {
     assert_eq!(init["id"], json!(1));
     assert_eq!(
         init["result"]["protocol_version"],
-        json!("provekit-compose/1"),
+        json!("sugar-compose/1"),
         "initialize must advertise the protocol version named in CCP §6.3"
     );
     assert_eq!(
@@ -188,16 +188,16 @@ fn compose_rpc_returns_pinned_cid() {
     let status = child.wait().expect("wait child");
     assert!(
         status.success(),
-        "provekit compose --rpc exited non-zero: {status:?}"
+        "sugar compose --rpc exited non-zero: {status:?}"
     );
 }
 
 #[test]
 fn compose_rpc_impure_input_returns_refusal_memento_with_stable_cid() {
-    let bin = provekit_bin();
+    let bin = sugar_bin();
     assert!(
         bin.exists(),
-        "provekit binary missing at {}; run `cargo build -p sugar-cli` first",
+        "sugar binary missing at {}; run `cargo build -p sugar-cli` first",
         bin.display()
     );
 
@@ -238,14 +238,14 @@ fn compose_rpc_impure_input_returns_refusal_memento_with_stable_cid() {
 }
 
 fn rpc_compose(atoms: JsonValue) -> JsonValue {
-    let bin = provekit_bin();
+    let bin = sugar_bin();
     let mut child = Command::new(&bin)
         .args(["compose", "--rpc"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .expect("spawn provekit compose --rpc");
+        .expect("spawn sugar compose --rpc");
 
     let mut stdin = child.stdin.take().expect("stdin pipe");
     let stdout = child.stdout.take().expect("stdout pipe");
@@ -267,7 +267,7 @@ fn rpc_compose(atoms: JsonValue) -> JsonValue {
     let status = child.wait().expect("wait child");
     assert!(
         status.success(),
-        "provekit compose --rpc exited non-zero: {status:?}"
+        "sugar compose --rpc exited non-zero: {status:?}"
     );
     response
 }

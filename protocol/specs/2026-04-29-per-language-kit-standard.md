@@ -1,4 +1,4 @@
-# ProvekIt: per-language kit standard
+# Sugar: per-language kit standard
 
 > Author: shared session 2026-04-29 (T + Claude). The interface every
 > host-language kit must implement to participate in the framework.
@@ -10,12 +10,12 @@ clothes are local. Every host language needs its own complete kit:
 IR library, AST canonicalizer, LLM prompt set, producer integrations,
 diagnostic translator, IDE integration. Without a fixed contract,
 kits cannot be authored independently, kits cannot interoperate via
-the swarm, and "point provekit prove at a Rust repo and it just
+the swarm, and "point sugar prove at a Rust repo and it just
 works" cannot be achieved.
 
 This is LSP's architecture inverted to verification. LSP defined a
 universal protocol; each language community owns its language server.
-ProvekIt defines a universal proof substrate; each language community
+Sugar defines a universal proof substrate; each language community
 owns its kit.
 
 This spec fixes:
@@ -241,7 +241,7 @@ interface DiagnosticTranslator {
 ```
 
 For TypeScript: red squiggle in tsserver protocol. For Rust:
-`error[E0PROVEKIT]: violation: <property>` in rustc's diagnostic
+`error[E0SUGAR]: violation: <property>` in rustc's diagnostic
 format. For Lisp: condition raised at the REPL. For COBOL: ABEND code
 in JCL output. For Perl: `Carp::Assert` failure in the dev's familiar
 format.
@@ -261,7 +261,7 @@ For most host languages this is a thin layer over the diagnostic
 translator. For some (Lisp's REPL, COBOL's IDE landscape) the
 "IDE" surface is more bespoke.
 
-**Acceptance:** the developer sees ProvekIt's verdicts in their
+**Acceptance:** the developer sees Sugar's verdicts in their
 editor at edit time, with hover details that name the producer that
 verified each claim and the witness it provided. Code actions surface
 LLM-proposed IR formulas; the developer accepts/rejects with one
@@ -279,7 +279,7 @@ manifest:
   schemaVersion: "1"
   
   components:
-    irLibrary: { artifact: provekit_ir-0.1.0.tar.gz, cid: hex32 }
+    irLibrary: { artifact: sugar_ir-0.1.0.tar.gz, cid: hex32 }
     astCanonicalizer: { artifact: canonicalizer-0.1.0.wasm, cid: hex32 }
     promptSet: { artifact: prompts-0.1.0.tar.gz, cid: hex32 }
     producers:
@@ -342,15 +342,15 @@ kit-registry:
 
 The framework does not ship a global kit catalog. Project
 and user configuration register kit aliases and plugin surfaces; manifests
-then describe the RPC command for each surface. A future `provekit kits
+then describe the RPC command for each surface. A future `sugar kits
 list` command must enumerate configured or discovered entries, not a
-compiled-in language list. `provekit kits install rust` would fetch and
+compiled-in language list. `sugar kits install rust` would fetch and
 verify the rust kit, then write project/user config and lock metadata.
-`provekit prove` does not parse source extensions to decide language
+`sugar prove` does not parse source extensions to decide language
 semantics; configured kits parse their own languages and speak RPC to the
 language-agnostic CLI.
 
-A repo can pin specific kit versions in `.provekit/kits.lock`:
+A repo can pin specific kit versions in `.sugar/kits.lock`:
 
 ```yaml
 typescript: { version: "0.5.2", cid: hex32 }
@@ -368,8 +368,8 @@ To prove the pattern works for a strongly-typed modern language:
 kit-name: rust
 components:
   irLibrary:
-    name: provekit_ir
-    crate-published-at: crates.io/provekit_ir
+    name: sugar_ir
+    crate-published-at: crates.io/sugar_ir
     exports:
       - property!{} proc-macro
       - forall!{} proc-macro
@@ -379,7 +379,7 @@ components:
   astCanonicalizer:
     parses-via: syn (the standard Rust syntax tree library)
     canonicalizes-via: walks the syn AST + the proc-macro-expanded
-      provekit_ir invocations; emits FOL AST in framework-canonical form
+      sugar_ir invocations; emits FOL AST in framework-canonical form
   
   promptSet:
     intent-from-diff: teaches LLM about Rust idioms — ownership,
@@ -400,7 +400,7 @@ components:
     - proptest / quickcheck: property-test mementos with witness inputs
   
   diagnosticTranslator:
-    surfaces-as: rustc-style diagnostic with error code E0PROVEKIT
+    surfaces-as: rustc-style diagnostic with error code E0SUGAR
       and `note: violation: <property>` lines
   
   ideIntegration:
@@ -431,7 +431,7 @@ language with a vastly different cultural and tooling ecosystem:
 kit-name: cobol
 components:
   irLibrary:
-    distributed-as: PROVEKIT.cpy COPYBOOK plus a small set of
+    distributed-as: SUGAR.cpy COPYBOOK plus a small set of
       conventional code patterns
     primitives:
       - 'PERFORM ASSERT-X' paragraph convention with named bug
@@ -494,7 +494,7 @@ The COBOL kit's distinctive features:
   analysis, regulatory pattern matchers, LLM proposal +
   cross-validation.
 - The IR substrate is COBOL's own conditional logic: `IF / EVALUATE /
-  PERFORM ASSERT-X` patterns are the IR. The PROVEKIT.cpy COPYBOOK
+  PERFORM ASSERT-X` patterns are the IR. The SUGAR.cpy COPYBOOK
   provides standardized macros and 88-level condition names so the
   framework can find them.
 - The diff source is often NOT git. Mainframe shops use Endevor,
@@ -521,11 +521,11 @@ C, …) trivially fits.
 The standard is correct when:
 
 1. A Rust kit can be authored against this spec, produces valid
-   mementos in the universal claim envelope, and `provekit prove`
+   mementos in the universal claim envelope, and `sugar prove`
    against a Rust repo "just works."
 2. A COBOL kit can be authored against this spec (substantially more
    work for the producer pool, but no architectural changes
-   required), produces valid mementos, and `provekit prove` against
+   required), produces valid mementos, and `sugar prove` against
    a COBOL repo "just works."
 3. Mementos from the Rust kit and the COBOL kit are
    cross-comparable at the wrapper level. A property expressible in
@@ -540,7 +540,7 @@ The standard is correct when:
    ensures reproducibility.
 
 When all five hold, the framework has achieved its acceptance bar:
-**point provekit prove at a Rust codebase or a COBOL codebase, and
+**point sugar prove at a Rust codebase or a COBOL codebase, and
 it just works.**
 
 ## What this enables

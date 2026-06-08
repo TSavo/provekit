@@ -13,13 +13,13 @@ Two sentences. The rest of this document operationalizes them.
 
 ## The proof IS the DAG
 
-A mathematical proof is a DAG of inferences from axioms. ProvekIt's
+A mathematical proof is a DAG of inferences from axioms. Sugar's
 memento DAG is the mechanical realization of that. Each `verdict: holds`
 memento is a proof step. The DAG composes them. The root is the
 composite claim.
 
 Mathematicians have called this structure "a proof" for 2500 years.
-ProvekIt does not invent a new abstraction. ProvekIt makes the existing
+Sugar does not invent a new abstraction. Sugar makes the existing
 one content-addressed and swarm-distributed.
 
 **Implication:** a "DAG of invariants" is just **the proof**. There is no
@@ -105,7 +105,7 @@ key. The build environment's attestation. The reproducible-build
 auditor. Every link in the chain has a human or organization at its
 root that you have to believe.
 
-ProvekIt's adversarial re-verification removes that root entirely. You
+Sugar's adversarial re-verification removes that root entirely. You
 trust nothing about the source. You trust nothing about the maintainer.
 You trust nothing about the build process. **You trust the math your
 own machine performs.**
@@ -131,7 +131,7 @@ to do" — which isn't an attack.
 
 ### Your proofkit is your trust anchor
 
-Your local ProvekIt installation is configured with:
+Your local Sugar installation is configured with:
 
 - **Producer pool.** Which SMT solvers, type checkers, LLMs, formal
   provers participate in your verification. A bank's proofkit might
@@ -218,7 +218,7 @@ signer's identity. It is mechanical.
 
 This is the deepest content-addressing primitive applied to
 correctness. Bitcoin removed the trusted bank. IPFS removed the trusted
-host. ProvekIt removes the trusted maintainer.
+host. Sugar removes the trusted maintainer.
 
 ## Three-coordinate artifact identity
 
@@ -252,7 +252,7 @@ extend their schema; the three-coordinate pin becomes the standard.
 ## Library upgrades are proof-hash diffs
 
 ```
-$ provekit upgrade lodash
+$ sugar upgrade lodash
 Proposing: lodash 4.17.21 → 4.18.0
   contentHash: a1b2... → c3d4...
   proofHash:   H₁     → H₂
@@ -291,7 +291,7 @@ one. Hope.
 Tomorrow: search the proof-hash registry by property:
 
 ```
-$ provekit search 'forAll<T[]>(arr => shuffled(arr).length === arr.length)'
+$ sugar search 'forAll<T[]>(arr => shuffled(arr).length === arr.length)'
 
 Found 47 packages whose proof DAGs contain a memento with this propertyHash:
   - lodash@4.17.21       (kit-trusted, 1.8M weekly downloads)
@@ -449,7 +449,7 @@ Build the catalog FIRST. The lifter is plumbing; the catalog is the
 genesis block.
 
 The catalog's proof hash becomes the kit's primary deliverable. When
-the TS-kit is published, its identity is `provekit-ts@1.0+contentHash+proofHash`.
+the TS-kit is published, its identity is `sugar-ts@1.0+contentHash+proofHash`.
 Every TS project transitively depends on that proof hash. Every project's
 audit walks through it.
 
@@ -543,7 +543,7 @@ addressed and signed. The audit IS the walk." Compliance becomes a
 mechanical proof traversal.
 
 **This is the trust substrate of computation itself.** Not a software-
-only system. ProvekIt is the content-addressing infrastructure that
+only system. Sugar is the content-addressing infrastructure that
 lets EVERY VERIFIABLE CLAIM about ANYTHING compose into one DAG,
 eventually grounded in physical observation.
 
@@ -575,7 +575,7 @@ substrate that all signing keys ultimately compose against.
 
 **The framework's role:**
 
-ProvekIt is not a verifier in the conventional sense. ProvekIt is the
+Sugar is not a verifier in the conventional sense. Sugar is the
 SUBSTRATE that lets verification compose into hash chains.
 
 The framework doesn't prove your code correct. The framework provides
@@ -600,7 +600,7 @@ agent just needs to produce code that composes into a valid hash chain.
 
 The framework provides the substrate over which AI scales without
 trust collapse. That's the load-bearing claim. That's what makes
-ProvekIt the inevitable trust substrate for the next era of computing.
+Sugar the inevitable trust substrate for the next era of computing.
 
 ## Citations become hashes
 
@@ -900,7 +900,7 @@ agreement — the chain CAN be rewritten. Bitcoin's immutability is a
 property OF the consensus mechanism; if the consensus mechanism is
 subverted, the chain mutates.
 
-A ProvekIt proof DAG you cite is structurally immutable. The citation
+A Sugar proof DAG you cite is structurally immutable. The citation
 is `(rootCid, offset)` — bytes hashing to a specific CID. The bytes
 don't have a consensus mechanism that can be subverted. They either
 ARE those bytes or they aren't. There is no fork mechanism that can
@@ -915,17 +915,17 @@ each is unforgeable; none requires consensus to remain valid.
 your own. Compose against your own root. Different consumers choose
 different roots. The "chain" doesn't fragment because there was no
 chain to begin with — just a graph of publishers and consumers.
-Bitcoin's hard forks split community and value; ProvekIt's "forks"
+Bitcoin's hard forks split community and value; Sugar's "forks"
 are just different verifiers publishing competing DAGs. No scarcity
 to fragment. No double-spend problem. No consensus to break.
 
 **The deeper structural reason:**
 
-Bitcoin solves "agreement on the canonical truth." ProvekIt solves
+Bitcoin solves "agreement on the canonical truth." Sugar solves
 "verifiability of any claim." Different problems require different
 mechanisms. Bitcoin needed consensus because money is fungible —
 preventing double-spend requires global agreement on which transaction
-came first. ProvekIt doesn't need consensus because proofs aren't
+came first. Sugar doesn't need consensus because proofs aren't
 fungible. A memento attesting some claim is unique to its bindings;
 nobody can "double-claim" the same `(propertyHash, bindingHash)` pair
 with conflicting verdicts and have both be globally valid. Conflicts
@@ -943,7 +943,7 @@ implementation rewrite, every implementation language, every decade.
 Bitcoin's immutability: "the chain stays canonical AS LONG AS consensus
 holds."
 
-ProvekIt's immutability: "the memento exists OR it doesn't, and if it
+Sugar's immutability: "the memento exists OR it doesn't, and if it
 exists, its hash is fixed forever."
 
 The proof DAG you cite is valid forever — not because anyone agrees
@@ -961,14 +961,14 @@ new package registry. No new SaaS. No new procurement battle. The
 mechanic is concretely:
 
 1. Library author adds `.invariant.<lang>` files to their package source
-2. Library author runs `provekit prove` on their own codebase as part
+2. Library author runs `sugar prove` on their own codebase as part
    of release CI; that generates the proof DAG for the library
 3. Library author includes the DAG root in `package.json`:
    ```json
    {
      "name": "lodash",
      "version": "4.18.0",
-     "provekit": {
+     "sugar": {
        "proofHash": "sha256:a1b2c3...",
        "kitVersion": "ts-kit@1.0",
        "publicKey": "..."
@@ -976,13 +976,13 @@ mechanic is concretely:
      "files": [
        "dist/",
        "src/",
-       ".provekit/"
+       ".sugar/"
      ]
    }
    ```
 4. Library author runs `pnpm publish` (no flags changed; same workflow)
 5. Consumer runs `pnpm install lodash`
-6. Consumer's proofkit reads `package.json`'s `provekit` field
+6. Consumer's proofkit reads `package.json`'s `sugar` field
 7. Consumer adversarially re-verifies the published proof DAG under
    their own producers
 8. Consumer's project's proof DAG composes against the verified root
@@ -1007,7 +1007,7 @@ is tiny; the value to consumers is enormous; the market sorts.
 **The marginal economics:**
 
 - Library author's cost to include proofs: write some `.invariant.ts`
-  files (one-time, scales with library size), run `provekit prove` in
+  files (one-time, scales with library size), run `sugar prove` in
   CI (one-time per release, fast for cached cases), publish. Effectively
   zero ongoing cost.
 - Consumer's cost to use proofs: `pnpm install` runs the proofkit's
@@ -1122,7 +1122,7 @@ primitive is universal. Discipline matters: lead with software;
 let downstream consequences accumulate as adoption locks in.
 
 Bitcoin's discipline — "electronic cash," not "blockchain for
-everything" — is what made the core thesis durable. ProvekIt's
+everything" — is what made the core thesis durable. Sugar's
 discipline is the same: software correctness, not "trust substrate
 for everything verifiable." The latter follows from the former.
 
@@ -1175,7 +1175,7 @@ property.
 - The IPFS SPEC is durable; go-ipfs/Helia/iroh are not. Implementations
   reimagined repeatedly; CIDs compose forever.
 
-ProvekIt's spec inherits this property by construction. Anyone can
+Sugar's spec inherits this property by construction. Anyone can
 reimplement the framework. The reimplementation produces identical
 mementos because the canonical form is specified. The mementos compose
 across every implementation that has ever existed or will ever exist.
@@ -1193,7 +1193,7 @@ universal claim envelope.
 - The 1311-line `2026-04-29-ts-ir-language.md` spec is durable. The
   lifter that implements it, when written, is decorative.
 - The 700+-line `2026-04-29-correctness-is-a-hash.md` spec is durable.
-  The CLI that implements `provekit prove` is decorative.
+  The CLI that implements `sugar prove` is decorative.
 - The catalog seeds are durable only when backed by native source/proofs
   or bridge mementos. They are the genesis-block mementos of the global
   proof DAG.
@@ -1210,7 +1210,7 @@ the architecture's durability claim CASHES OUT TO. Implementations are
 forks of the spec; mementos compose across forks; the spec is the
 constitutional document; the codebase is current administration.
 
-This is what makes ProvekIt structurally inevitable. Not because we
+This is what makes Sugar structurally inevitable. Not because we
 build a great codebase. Because the architectural primitive — content-
 addressed hash-and-trust applied to correctness — is what every future
 verification system necessarily converges to. We're writing the spec
@@ -1223,7 +1223,7 @@ operation: **if a memento with this propertyHash exists, skip the work
 and use the memento.**
 
 Hash-based work skipping is the foundational mechanic. The early
-ProvekIt workflow runner pioneered it in the smallest scope — skip a
+Sugar workflow runner pioneered it in the smallest scope — skip a
 Stage if its canonicalized inputs hash to a propertyHash that already
 has a memento. That worked. It was the seed.
 
@@ -1260,18 +1260,18 @@ ONCE per propertyHash globally, then becomes pure reference forever.
 | 2001 | Distribution (BitTorrent) | Re-fetching already-distributed shares |
 | 2008 | Money (Bitcoin) | Re-validation of already-confirmed transactions |
 | 2014+ | Content (IPFS) | Re-hosting already-hashed content |
-| 2026 | **Correctness (ProvekIt)** | **Re-verification of already-attested proofs** |
+| 2026 | **Correctness (Sugar)** | **Re-verification of already-attested proofs** |
 
 Same primitive. Different content. Each layer compounds the prior.
 Each is a content-addressing system that turns "redo work" into "reuse
 hash." Each removes a class of trusted authorities by replacing them
 with hash composition.
 
-ProvekIt is the natural continuation — the final domain where the
+Sugar is the natural continuation — the final domain where the
 primitive applies, the one where the substrate of trust itself becomes
 content-addressable, skippable, distributable, lazy-evaluable.
 
-## What ProvekIt is — and what it isn't
+## What Sugar is — and what it isn't
 
 The framework's whole service is: **it stops at the hash, and it
 produces hashes that other things stop at.**
@@ -1290,7 +1290,7 @@ That sentence is the framework's scope. The hash is the boundary.
 
 That's it. The framework's surface is small by design. A library. A
 CLI. An optional language server. No SaaS, no central registry, no
-"log in to ProvekIt."
+"log in to Sugar."
 
 **What the framework does NOT provide** (the consumer's responsibility):
 
@@ -1298,14 +1298,14 @@ CLI. An optional language server. No SaaS, no central registry, no
 - Installing remote code to verify the deeper layer
 - Re-running verification across implementation boundaries
 - Cross-jurisdiction trust resolution
-- The audit framework that consumes ProvekIt's substrate
+- The audit framework that consumes Sugar's substrate
 
 When a verifier walks a bridge memento and sees `targetContractCid:
 ce2b2897...`, the verifier is now staring at "a different codebase,
 in a different language, possibly in a different jurisdiction." The
 deeper layer's verification is the deeper layer's job — done by V8's
 maintainers, by ECMA-262's standards body, by Intel's formal
-verification team. ProvekIt doesn't go there. It stops at the
+verification team. Sugar doesn't go there. It stops at the
 bridge.
 
 **An auditor or compliance framework can go further.** That's a
@@ -1318,14 +1318,14 @@ different tool. To walk the bridge, the auditor:
    walked DAG with new local mementos
 4. Reports
 
-The auditor's tooling is built ON ProvekIt's substrate. ProvekIt
+The auditor's tooling is built ON Sugar's substrate. Sugar
 provides the primitive (hashes that compose); the auditor provides
 the framework of audit (walk depth, installation, deeper verification,
 reporting).
 
 **This is what makes the framework scale.**
 
-If ProvekIt had to walk every bridge to verify, it would have to
+If Sugar had to walk every bridge to verify, it would have to
 understand every host language's deeper implementation — V8, glibc,
 the Linux kernel, every chip vendor's verification artifacts.
 Impossible at scale. By stopping at the hash, the framework's
@@ -1337,12 +1337,12 @@ layers are somebody else's problem.
 
 The temptation to build "walking utilities" into the framework is
 real. It feels like the natural extension. But it isn't the
-framework's job. Resisting that extension is what keeps ProvekIt
+framework's job. Resisting that extension is what keeps Sugar
 focused on the primitive — and keeps the substrate small enough to
 adopt at scale.
 
-Specific things ProvekIt explicitly does NOT ship:
-- A `provekit walk <cid>` command that traverses inputCids deeply
+Specific things Sugar explicitly does NOT ship:
+- A `sugar walk <cid>` command that traverses inputCids deeply
 - A "deep verifier" that re-runs deeper-layer producers
 - A "supply-chain auditor" that installs and re-verifies dependencies
 - A "compliance reporter" that walks the DAG and produces audit reports
@@ -1362,16 +1362,16 @@ Two local queries:
 
 | Query | Returns | Who cares |
 |---|---|---|
-| `provekit leaves` | Mementos minted locally | Downstream consumers (composability) |
-| `provekit roots` | External CIDs we reference | Auditors (where to walk next) |
+| `sugar leaves` | Mementos minted locally | Downstream consumers (composability) |
+| `sugar roots` | External CIDs we reference | Auditors (where to walk next) |
 
 Both are LOCAL. Both produce hashes. **Neither walks.**
 
-The audit-direction query is `provekit roots`. An auditor doing
+The audit-direction query is `sugar roots`. An auditor doing
 deep verification takes the output and goes to those external
 codebases independently. The substrate gives the auditor the precise
 list of WHERE audit work needs to happen; the auditor does the
-walking. This is the substrate-vs-tooling boundary: ProvekIt mints
+walking. This is the substrate-vs-tooling boundary: Sugar mints
 and lists; auditors walk.
 
 This naming is load-bearing. "Walk" implies traversal across the
@@ -1380,8 +1380,8 @@ framework operates on its own LOCAL leaves and lists its OWN roots;
 everything else is referenced. Auditors traverse. Compliance
 frameworks traverse. The framework mints.
 
-Each of those is a valid downstream tool. They build on ProvekIt's
-substrate. They are NOT parts of ProvekIt.
+Each of those is a valid downstream tool. They build on Sugar's
+substrate. They are NOT parts of Sugar.
 
 **The framework's deliverable is hashes.** Hashes that stop. Hashes
 that compose. Hashes that bridge to other hashes. Everything else
@@ -1391,7 +1391,7 @@ verification — is built ON the substrate by other tools.
 ## All operations are YAML workflows
 
 **There are no hand-coded operations in the framework's command surface.**
-Every operation `provekit <command>` can perform is a YAML manifest in
+Every operation `sugar <command>` can perform is a YAML manifest in
 `src/workflows/`, executed by the workflow runner. This includes the
 CLI dispatcher itself.
 
@@ -1399,7 +1399,7 @@ The strict rule:
 
 - Every command is a workflow.
 - Every workflow is a YAML manifest in `src/workflows/<name>.workflow.yaml`.
-- The CLI dispatcher (`provekit <command> ...`) is itself a workflow:
+- The CLI dispatcher (`sugar <command> ...`) is itself a workflow:
   `src/workflows/_dispatch.workflow.yaml`. Its stages parse argv, look up
   the target workflow, and invoke it.
 - `src/cli.ts` is a thin runner: load `_dispatch.workflow.yaml`; run it
@@ -1448,7 +1448,7 @@ cli:
 ```
 
 The dispatcher reads `cli:` blocks, builds an arg parser per workflow,
-generates `provekit help` output from descriptions, and dispatches
+generates `sugar help` output from descriptions, and dispatches
 argv to the matching workflow. Workflows without a `cli:` block are
 not exposed as commands (internal-only utilities).
 
@@ -1465,7 +1465,7 @@ command surface.
 
 ## What this is for
 
-A reader who understands this document understands that ProvekIt is:
+A reader who understands this document understands that Sugar is:
 
 - A trust substrate where correctness is content-addressable
 - A market where the proof hash is the unit of trade

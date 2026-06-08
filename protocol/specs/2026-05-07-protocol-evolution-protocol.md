@@ -17,7 +17,7 @@
 PEP defines how protocol evolution becomes data.
 
 A protocol change is not only a migration note, release announcement, or
-maintainer promise. In ProvekIt, a protocol change can be represented as
+maintainer promise. In Sugar, a protocol change can be represented as
 a signed, content-addressed, grammar-constrained, invariant-constrained,
 witnessable artifact:
 
@@ -172,7 +172,7 @@ Draft PEP body-claim convention:
 {
   "kind": "ProtocolEvolutionBodyClaim",
   "schemaVersion": "1",
-  "protocolName": "provekit-protocol",
+  "protocolName": "sugar-protocol",
   "fromCatalogCid": "blake3-512:...",
   "toCatalogCid": "blake3-512:...",
   "fromVersionLabel": "v1.6.0-2026-05-05",
@@ -219,7 +219,7 @@ Draft PEP body-claim convention:
   "inputCids": ["blake3-512:..."],
   "producer": {
     "kind": "working-group|maintainer|automation|implementation",
-    "name": "provekit",
+    "name": "sugar",
     "version": "0.1.0"
   }
 }
@@ -231,7 +231,7 @@ Normative fields:
 |---|---|
 | `kind` | MUST be `"ProtocolEvolutionBodyClaim"`. |
 | `schemaVersion` | MUST be `"1"` for this draft. |
-| `protocolName` | Protocol identifier. For ProvekIt, `"provekit-protocol"`. |
+| `protocolName` | Protocol identifier. For Sugar, `"sugar-protocol"`. |
 | `fromCatalogCid` | CID of the predecessor protocol catalog. |
 | `toCatalogCid` | CID of the successor protocol catalog. |
 | `fromVersionLabel` | Human-facing predecessor version label, informational but policy-checkable. |
@@ -405,7 +405,7 @@ Draft adoption body convention:
 {
   "kind": "ProtocolAdoptionBodyClaim",
   "schemaVersion": "1",
-  "protocolName": "provekit-protocol",
+  "protocolName": "sugar-protocol",
   "catalogCid": "blake3-512:...",
   "implementationCid": "blake3-512:...",
   "implementationKind": "rust-cli|java-kit|typescript-kit|verifier|lifter|dropper",
@@ -711,7 +711,7 @@ If yes, a consumer can adopt `T` under `Pol`. If no, the consumer has not
 received an admissible upgrade path, even if `T` exists, is signed, and
 has a valid catalog CID.
 
-This gives ProvekIt protocol evolution the same substrate shape as every
+This gives Sugar protocol evolution the same substrate shape as every
 other obligation:
 
 ```text
@@ -899,5 +899,5 @@ declaring support. It does not make PEP part of core verification.
 
 Cite as:
 
-> ProvekIt Protocol Working Notes (2026). *Protocol Evolution Protocol
+> Sugar Protocol Working Notes (2026). *Protocol Evolution Protocol
 > (PEP)*. Draft extension protocol v0.1.0.

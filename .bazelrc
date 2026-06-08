@@ -1,4 +1,4 @@
-# ProvekIt Bazel configuration.
+# Sugar Bazel configuration.
 #
 # bzlmod (MODULE.bazel) is the source of truth for external deps;
 # the legacy WORKSPACE format is disabled. Keeps the dep graph honest

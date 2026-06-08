@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.provekit.demo</groupId>
+    <groupId>com.sugar.demo</groupId>
     <artifactId>recognize-demo-java</artifactId>
     <version>0.1.0</version>
     <packaging>jar</packaging>
@@ -30,8 +30,8 @@
             <version>2.17.2</version>
         </dependency>
         <dependency>
-            <groupId>com.provekit</groupId>
-            <artifactId>provekit-lift-java-source</artifactId>
+            <groupId>com.sugar</groupId>
+            <artifactId>sugar-lift-java-source</artifactId>
             <version>0.1.0</version>
             <scope>provided</scope>
         </dependency>

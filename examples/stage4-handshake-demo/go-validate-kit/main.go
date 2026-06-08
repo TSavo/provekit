@@ -31,9 +31,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/provekit/ir-symbolic/claim_envelope"
-	"github.com/provekit/ir-symbolic/ir"
-	"github.com/provekit/ir-symbolic/proof_envelope"
+	"github.com/sugar/ir-symbolic/claim_envelope"
+	"github.com/sugar/ir-symbolic/ir"
+	"github.com/sugar/ir-symbolic/proof_envelope"
 )
 
 func mustExit(err error, msg string) {

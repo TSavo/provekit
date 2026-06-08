@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-ir-symbolic ↔ provekit-ir-types conversions.
+// sugar-ir-symbolic ↔ sugar-ir-types conversions.
 //
 // The symbolic kit uses `Rc` for authoring convenience; the generated
-// compilers expect owned `Box`/`Vec` shapes from `provekit-ir-types`.
+// compilers expect owned `Box`/`Vec` shapes from `sugar-ir-types`.
 // These functions bridge the two representations.
 
 use std::rc::Rc;
@@ -37,7 +37,7 @@ impl From<ir::Sort> for Sort {
             // The symbolic-side `Sort` wrapper is primitive-only; it does
             // not yet model Function/Dependent. Deferred to #331 (Coq) /
             // #332 (SMT-LIB) along with the rest of the v1.5.0 grammar
-            // grow downstream of the canonical `provekit-ir-types::Sort`.
+            // grow downstream of the canonical `sugar-ir-types::Sort`.
             ir::Sort::Function { .. }
             | ir::Sort::Dependent { .. }
             | ir::Sort::Float { .. }

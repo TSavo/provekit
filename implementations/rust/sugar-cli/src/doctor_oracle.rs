@@ -92,7 +92,7 @@ impl OracleHostAdapter for RustAnalyzerOracleAdapter {
             missing.push("rust-analyzer".to_string());
         }
         if linkerd.path.is_none() {
-            missing.push("provekit-linkerd".to_string());
+            missing.push("sugar-linkerd".to_string());
         }
 
         if !missing.is_empty() {
@@ -157,7 +157,7 @@ struct LocatedBinary {
 }
 
 fn locate_rust_analyzer() -> LocatedBinary {
-    if let Some(path) = env_binary("PROVEKIT_RUST_ANALYZER") {
+    if let Some(path) = env_binary("SUGAR_RUST_ANALYZER") {
         return LocatedBinary {
             path: Some(path),
             discovery: "env".to_string(),
@@ -193,13 +193,13 @@ fn locate_rust_analyzer() -> LocatedBinary {
 }
 
 fn locate_linkerd() -> LocatedBinary {
-    if let Some(path) = env_binary("PROVEKIT_LINKERD_BIN") {
+    if let Some(path) = env_binary("SUGAR_LINKERD_BIN") {
         return LocatedBinary {
             path: Some(path),
             discovery: "env".to_string(),
         };
     }
-    match which_binary("provekit-linkerd") {
+    match which_binary("sugar-linkerd") {
         Some(path) => LocatedBinary {
             path: Some(path),
             discovery: "path".to_string(),
@@ -256,7 +256,7 @@ fn probe_linkerd_readiness(binary: &Path) -> OracleHostReadiness {
         match probe_linkerd_rust_analyzer_ready(binary) {
             Ok(detail) => OracleHostReadiness::Ready { detail },
             Err(error) => OracleHostReadiness::NotReady {
-                detail: format!("provekit-linkerd did not report rust-analyzer ready: {error}"),
+                detail: format!("sugar-linkerd did not report rust-analyzer ready: {error}"),
             },
         }
     }
@@ -264,7 +264,7 @@ fn probe_linkerd_readiness(binary: &Path) -> OracleHostReadiness {
     {
         let _ = binary;
         OracleHostReadiness::Degraded {
-            detail: "provekit-linkerd readiness probing uses Unix sockets on this platform"
+            detail: "sugar-linkerd readiness probing uses Unix sockets on this platform"
                 .to_string(),
         }
     }
@@ -281,7 +281,7 @@ fn probe_linkerd_rust_analyzer_ready(binary: &Path) -> Result<String, String> {
         .duration_since(UNIX_EPOCH)
         .map_err(|e| format!("system time: {e}"))?
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("provekit-doctor-oracle-{stamp}"));
+    let dir = std::env::temp_dir().join(format!("sugar-doctor-oracle-{stamp}"));
     std::fs::create_dir_all(&dir).map_err(|e| format!("create temp dir: {e}"))?;
     let socket = dir.join("linkerd.sock");
     let snapshot = dir.join("snapshot.bin");
@@ -355,7 +355,7 @@ fn probe_linkerd_rust_analyzer_ready(binary: &Path) -> Result<String, String> {
             .unwrap_or("no detail");
         if ready {
             Ok(format!(
-                "provekit-linkerd spawned and reported rust-analyzer ready ({phase}: {detail})"
+                "sugar-linkerd spawned and reported rust-analyzer ready ({phase}: {detail})"
             ))
         } else {
             Err(format!("phase={phase}; {detail}"))
@@ -381,7 +381,7 @@ fn probe_linkerd_rust_analyzer_ready(binary: &Path) -> Result<String, String> {
 }
 
 fn oracle_ready_timeout_ms() -> u64 {
-    std::env::var("PROVEKIT_ORACLE_READY_TIMEOUT_MS")
+    std::env::var("SUGAR_ORACLE_READY_TIMEOUT_MS")
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
         .filter(|v| *v > 0)

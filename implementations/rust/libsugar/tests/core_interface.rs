@@ -426,7 +426,7 @@ fn path_is_cidable_language_neutral_algebra() {
     };
     let mint_step = PathAlgebra {
         name: "mint".to_string(),
-        kit: "provekit-mint".to_string(),
+        kit: "sugar-mint".to_string(),
         inputs: vec![address(&Input::Spec(serde_json::json!({
             "outDir": "/repo/out"
         })))],
@@ -518,12 +518,12 @@ fn path_document_round_trips_with_cid_checked_materialized_inputs() {
     let lift_input = Input::Spec(json!({
         "surface": "rust-self-contracts",
         "workspace_root": ".",
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": {"layer": "all"}
     }));
     let mint_input = Input::Spec(json!({
-        "outDir": "target/provekit-path-doc",
+        "outDir": "target/sugar-path-doc",
         "options": {"quiet": true}
     }));
     let lift_input_cid = address(&lift_input);
@@ -539,7 +539,7 @@ fn path_document_round_trips_with_cid_checked_materialized_inputs() {
             },
             PathAlgebra {
                 name: "mint".to_string(),
-                kit: "provekit-mint".to_string(),
+                kit: "sugar-mint".to_string(),
                 inputs: vec![mint_input_cid.clone()],
                 depends_on: vec!["lift".to_string()],
                 verb: Verb::Transform,
@@ -566,7 +566,7 @@ fn path_document_round_trips_with_cid_checked_materialized_inputs() {
     }));
     assert!(inputs.iter().any(|(cid, input)| {
         cid == &mint_input_cid
-            && matches!(input, Input::Spec(value) if value["outDir"] == "target/provekit-path-doc")
+            && matches!(input, Input::Spec(value) if value["outDir"] == "target/sugar-path-doc")
     }));
 }
 
@@ -576,7 +576,7 @@ fn path_document_rejects_materialized_input_cid_mismatch() {
     let actual = Input::Spec(json!({"surface": "changed"}));
     let declared_cid = address(&declared);
     let document = PathDocument {
-        kind: "provekit-path/v1".to_string(),
+        kind: "sugar-path/v1".to_string(),
         path: Path {
             algebra: vec![PathAlgebra {
                 name: "lift".to_string(),
@@ -767,7 +767,7 @@ fn path_derives_order_from_dependencies() {
     };
     let mint_step = PathAlgebra {
         name: "mint".to_string(),
-        kit: "provekit-mint".to_string(),
+        kit: "sugar-mint".to_string(),
         inputs: vec![address(&Input::Spec(serde_json::json!({"outDir": "out"})))],
         depends_on: vec!["lift".to_string()],
         verb: Verb::Transform,
@@ -882,7 +882,7 @@ fn path_orders_cross_domain_link_after_shared_contract_proofs() {
     };
     let link = PathAlgebra {
         name: "link".to_string(),
-        kit: "provekit-link".to_string(),
+        kit: "sugar-link".to_string(),
         inputs: vec![address(&Input::Spec(serde_json::json!({
             "sharedContractCid": shared_contract.as_str()
         })))],
@@ -1001,7 +1001,7 @@ fn hash_map_catalog_contains_reports_membership_without_get_fetch() {
 #[test]
 fn lift_plugin_transport_is_a_core_kit_with_legacy_response_escape_hatch() {
     let temp =
-        std::env::temp_dir().join(format!("provekit-lift-plugin-kit-{}", std::process::id()));
+        std::env::temp_dir().join(format!("sugar-lift-plugin-kit-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp).expect("create temp dir");
     let script = temp.join("fake-lifter.sh");
@@ -1027,7 +1027,7 @@ done
     let input = Input::Spec(serde_json::json!({
         "surface": "test-surface",
         "workspace_root": temp,
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": {"layer": "all", "identifyOnly": false}
     }));
@@ -1066,7 +1066,7 @@ done
 #[test]
 fn lift_kit_transforms_source_through_lift_plugin_transport_and_carries_term_payload() {
     let temp =
-        std::env::temp_dir().join(format!("provekit-lift-kit-source-{}", std::process::id()));
+        std::env::temp_dir().join(format!("sugar-lift-kit-source-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp).expect("create temp dir");
     let script = temp.join("fake-lifter.sh");
@@ -1087,7 +1087,7 @@ done
     let request = serde_json::json!({
         "surface": "rust",
         "workspace_root": temp,
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": {"layer": "all", "identifyOnly": false}
     });

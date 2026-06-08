@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit doctor: validate a kit's config/manifest wiring up front.
+// sugar doctor: validate a kit's config/manifest wiring up front.
 
 use std::path::PathBuf;
 
@@ -17,7 +17,7 @@ use crate::{EXIT_OK, EXIT_USER_ERROR};
 #[derive(Parser, Debug, Clone)]
 pub struct DoctorArgs {
     /// Kit directory to validate. Defaults to the current directory.
-    /// Must contain a .provekit/config.toml file.
+    /// Must contain a .sugar/config.toml file.
     #[arg(long)]
     pub target: Option<PathBuf>,
 
@@ -79,9 +79,9 @@ fn resolve_target(target: Option<&PathBuf>) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("resolve target {}: {e}", path.display()))?;
 
-    if !canonical.join(".provekit/config.toml").is_file() {
+    if !canonical.join(".sugar/config.toml").is_file() {
         return Err(format!(
-            "target is not a provekit kit (missing .provekit/config.toml): {}",
+            "target is not a sugar kit (missing .sugar/config.toml): {}",
             canonical.display()
         ));
     }
@@ -92,7 +92,7 @@ fn resolve_target(target: Option<&PathBuf>) -> Result<PathBuf, String> {
 fn print_human(report: &DoctorReport) {
     println!(
         "{} {}",
-        "provekit doctor".bold(),
+        "sugar doctor".bold(),
         report.target.display().to_string().dimmed()
     );
     println!();
@@ -194,9 +194,9 @@ mod tests {
     fn json_output_keeps_legacy_shape() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
-        fs::create_dir_all(kit.join(".provekit/imports")).unwrap();
+        fs::create_dir_all(kit.join(".sugar/imports")).unwrap();
         fs::write(
-            kit.join(".provekit/config.toml"),
+            kit.join(".sugar/config.toml"),
             "# test kit\n[authoring]\nsurface = \"test-surface\"\n",
         )
         .unwrap();

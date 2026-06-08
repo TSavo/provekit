@@ -13,7 +13,7 @@
 ### Task 1: Red Tests For The New Home
 
 **Files:**
-- Modify: `implementations/rust/provekit-cli/tests/cli_surface.rs`
+- Modify: `implementations/rust/sugar-cli/tests/cli_surface.rs`
 
 - [ ] **Step 1: Write the failing location test**
 
@@ -33,15 +33,15 @@ fn bug_zoo_machinery_is_self_contained() {
     );
     assert!(
         !root
-            .join("implementations/rust/provekit-cli/src/cmd_zoo.rs")
+            .join("implementations/rust/sugar-cli/src/cmd_zoo.rs")
             .exists(),
-        "Bug Zoo should not be embedded as a provekit CLI command"
+        "Bug Zoo should not be embedded as a sugar CLI command"
     );
     assert!(
         !root
-            .join("implementations/rust/provekit-cli/tests/support/bug_zoo.rs")
+            .join("implementations/rust/sugar-cli/tests/support/bug_zoo.rs")
             .exists(),
-        "Bug Zoo harness code should live under menagerie/bug-zoo/, not provekit-cli tests"
+        "Bug Zoo harness code should live under menagerie/bug-zoo/, not sugar-cli tests"
     );
 }
 ```
@@ -51,7 +51,7 @@ fn bug_zoo_machinery_is_self_contained() {
 Run:
 
 ```sh
-cargo test --manifest-path implementations/rust/provekit-cli/Cargo.toml bug_zoo_machinery_is_self_contained
+cargo test --manifest-path implementations/rust/sugar-cli/Cargo.toml bug_zoo_machinery_is_self_contained
 ```
 
 Expected: FAIL because `menagerie/bug-zoo/Cargo.toml` does not exist yet.
@@ -65,7 +65,7 @@ Expected: FAIL because `menagerie/bug-zoo/Cargo.toml` does not exist yet.
 - Modify: `menagerie/bug-zoo/src/lib.rs`
 - Modify: `menagerie/bug-zoo/src/lib.invariant.rs`
 - Modify: `implementations/rust/Cargo.toml`
-- Modify: `implementations/rust/provekit-self-contracts/src/lib.rs`
+- Modify: `implementations/rust/sugar-self-contracts/src/lib.rs`
 
 - [ ] **Step 1: Move the directory**
 
@@ -82,7 +82,7 @@ In `menagerie/bug-zoo/Cargo.toml`, set:
 
 ```toml
 workspace = "../../implementations/rust"
-provekit-canonicalizer = { path = "../../implementations/rust/provekit-canonicalizer" }
+sugar-canonicalizer = { path = "../../implementations/rust/sugar-canonicalizer" }
 ```
 
 In `implementations/rust/Cargo.toml`, replace workspace member:
@@ -112,7 +112,7 @@ In `menagerie/bug-zoo/src/lib.invariant.rs`, update the header path comment to `
 
 - [ ] **Step 4: Update self-contract include paths**
 
-In `implementations/rust/provekit-self-contracts/src/lib.rs`, change:
+In `implementations/rust/sugar-self-contracts/src/lib.rs`, change:
 
 ```rust
 #[path = "../../../../menagerie/bug-zoo/src/lib.invariant.rs"]
@@ -130,7 +130,7 @@ path: "../../menagerie/bug-zoo/src/lib.invariant.rs",
 Run:
 
 ```sh
-cargo test --manifest-path implementations/rust/provekit-cli/Cargo.toml bug_zoo_machinery_is_self_contained
+cargo test --manifest-path implementations/rust/sugar-cli/Cargo.toml bug_zoo_machinery_is_self_contained
 ```
 
 Expected: PASS.
@@ -248,11 +248,11 @@ Expected: if LinkBundle path CIDs changed, the runner fails with a LinkBundle mi
 
 - [ ] **Step 2: Regenerate link bundles when mismatch is path-only**
 
-Run the underlying `provekit link` commands from the repository root:
+Run the underlying `sugar link` commands from the repository root:
 
 ```sh
-cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- link menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/exhibit/cgo-rust-callee/harness --go-lsp-bin "$(pwd)/menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/kit-rpc/run-go-lsp.sh"
-cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- link menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/fixed/cgo-rust-callee/harness --go-lsp-bin "$(pwd)/menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/kit-rpc/run-go-lsp.sh"
+cargo run --manifest-path implementations/rust/sugar-cli/Cargo.toml -- link menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/exhibit/cgo-rust-callee/harness --go-lsp-bin "$(pwd)/menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/kit-rpc/run-go-lsp.sh"
+cargo run --manifest-path implementations/rust/sugar-cli/Cargo.toml -- link menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/fixed/cgo-rust-callee/harness --go-lsp-bin "$(pwd)/menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/kit-rpc/run-go-lsp.sh"
 ```
 
 Expected: the two `link-bundle.json` files update with `menagerie/bug-zoo/...` source paths and new bundle CIDs.
@@ -278,7 +278,7 @@ Expected: formatting succeeds.
 Run:
 
 ```sh
-cargo test --manifest-path implementations/rust/provekit-cli/Cargo.toml bug_zoo_machinery_is_self_contained
+cargo test --manifest-path implementations/rust/sugar-cli/Cargo.toml bug_zoo_machinery_is_self_contained
 cargo test --manifest-path menagerie/bug-zoo/Cargo.toml runner_help_is_self_contained
 ```
 

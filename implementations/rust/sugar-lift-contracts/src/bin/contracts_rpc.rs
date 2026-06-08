@@ -6,13 +6,13 @@
 // THE SEVER (engine-sever first cut):
 //
 //   The rust substrate USED to call `sugar_lift_contracts::lift_file`
-//   STATICALLY (compile-time linked) at four sites (provekit-lift,
-//   provekit-build, provekit-cli, provekit-lsp-rust). That made the
+//   STATICALLY (compile-time linked) at four sites (sugar-lift,
+//   sugar-build, sugar-cli, sugar-lsp-rust). That made the
 //   substrate language-bound: a rust lifter was welded into the core.
 //
 //   This binary makes the rust-contracts lifter a real RPC kit, exactly
 //   like the python bind kit
-//   (`provekit_lift_python_source.bind_rpc`). The CLI's mint pipeline
+//   (`sugar_lift_python_source.bind_rpc`). The CLI's mint pipeline
 //   spawns it per its manifest, drives `initialize` / `lift` /
 //   `shutdown` over NDJSON stdin/stdout, and consumes the returned
 //   `ir-document`. The substrate carries ZERO compile-time dependency
@@ -24,7 +24,7 @@
 // `2026-04-30-lift-plugin-protocol.md`):
 //
 //   initialize                       -> capabilities (authoring_surfaces)
-//   provekit.plugin.kit_declaration  -> kit id / language / rpc methods
+//   sugar.plugin.kit_declaration  -> kit id / language / rpc methods
 //   lift                             -> { kind: "ir-document", ir, ... }
 //   shutdown                         -> null
 //
@@ -33,7 +33,7 @@
 // marshals the resulting `ContractDecl`s into the `kind: "contract"`
 // IR-JSON shape the CLI's `cmd_mint` ir-document path consumes (via
 // `sugar_ir_symbolic::serialize::marshal_declarations`, the SAME
-// serializer `provekit-lsp-rust` already used for the static path).
+// serializer `sugar-lsp-rust` already used for the static path).
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -45,11 +45,11 @@ use sugar_lift_contracts::lift_file;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SURFACE: &str = "rust-contracts";
-const KIT_DECLARATION_RPC_METHOD: &str = "provekit.plugin.kit_declaration";
+const KIT_DECLARATION_RPC_METHOD: &str = "sugar.plugin.kit_declaration";
 
 fn initialize_result() -> Value {
     json!({
-        "name": "provekit-lift-contracts-rpc",
+        "name": "sugar-lift-contracts-rpc",
         "version": VERSION,
         "protocol_version": "pep/1.7.0",
         "capabilities": {
@@ -180,7 +180,7 @@ fn lift(params: &Value) -> Value {
         };
 
         // WRAP, do not reimplement: this is the same call the static
-        // substrate used to make at provekit-lift/lib.rs and lift_pass.rs.
+        // substrate used to make at sugar-lift/lib.rs and lift_pass.rs.
         let out = lift_file(&file, rel);
 
         // Marshal to the locked IR-JSON `kind: "contract"` shape, then

@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
-LABEL org.opencontainers.image.title="ProvekIt prove portfolio"
-LABEL org.opencontainers.image.description="Backend solver image for the ProvekIt prove portfolio"
+LABEL org.opencontainers.image.title="Sugar prove portfolio"
+LABEL org.opencontainers.image.description="Backend solver image for the Sugar prove portfolio"
 LABEL org.opencontainers.image.authors="T Savo"
 
 ARG CVC5_VERSION=1.2.1
@@ -18,7 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV CARGO_HOME=/cache/cargo
 ENV RUSTUP_HOME=/cache/rustup
 ENV ELAN_HOME=/opt/elan
-ENV PROVEKIT_LEAN_PROJECT=/opt/lean-mathlib
+ENV SUGAR_LEAN_PROJECT=/opt/lean-mathlib
 ENV PATH=/opt/elan/bin:/cache/cargo/bin:/usr/local/bin:/usr/bin:/bin
 
 # Base packages include pinned solver packages from the Ubuntu 24.04 archive.
@@ -129,20 +129,20 @@ RUN curl https://elan.lean-lang.org/elan-init.sh -sSf \
       | sh -s -- -y --default-toolchain "${LEAN_TOOLCHAIN}" --no-modify-path \
  && lean --version \
  && lake --version \
- && install -d /opt/lean-mathlib/ProvekitMathlib \
+ && install -d /opt/lean-mathlib/SugarMathlib \
  && printf '%s\n' "${LEAN_TOOLCHAIN}" > /opt/lean-mathlib/lean-toolchain \
  && printf '%s\n' \
       'import Lake' \
       'open Lake DSL' \
       '' \
-      'package provekit_mathlib' \
+      'package sugar_mathlib' \
       '' \
       'require mathlib from git' \
       "  \"https://github.com/leanprover-community/mathlib4.git\" @ \"${MATHLIB_COMMIT}\"" \
       '' \
-      'lean_lib ProvekitMathlib' \
+      'lean_lib SugarMathlib' \
       > /opt/lean-mathlib/lakefile.lean \
- && printf '%s\n' 'import Mathlib' > /opt/lean-mathlib/ProvekitMathlib.lean \
+ && printf '%s\n' 'import Mathlib' > /opt/lean-mathlib/SugarMathlib.lean \
  && cd /opt/lean-mathlib \
  && lake update \
  && lake exe cache get \
@@ -151,8 +151,8 @@ RUN curl https://elan.lean-lang.org/elan-init.sh -sSf \
       'set -euo pipefail' \
       'cd /opt/lean-mathlib' \
       'exec lake env lean "$@"' \
-      > /usr/local/bin/provekit-lean-solve \
- && chmod +x /usr/local/bin/provekit-lean-solve
+      > /usr/local/bin/sugar-lean-solve \
+ && chmod +x /usr/local/bin/sugar-lean-solve
 
 COPY verify-portfolio.sh /opt/portfolio/verify-portfolio.sh
 RUN chmod +x /opt/portfolio/verify-portfolio.sh

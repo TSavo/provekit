@@ -59,11 +59,11 @@ The full canonical IR lives at `protocol/reference-contracts/ref-parseInt-v1.jso
 
 When implementations exist and bridge in, list them here:
 
-- [TypeScript] zod's `z.string().pipe(z.coerce.number().int())` chain: *bridge planned in `provekit-lift-zod` v0.4*
-- [Rust] `std::str::parse::<i32>()`: *bridge planned in `provekit-lift-contracts` for the contracts crate's `parseInt` model*
-- [Python] `int(...)` builtin: *bridge planned in `provekit-lift-py-stdlib`*
-- [Java] `Integer.parseInt(String)`: *bridge planned in `provekit-lift-java-jdk`*
-- [Go] `strconv.Atoi`: *bridge planned in `provekit-lift-go-stdlib`*
+- [TypeScript] zod's `z.string().pipe(z.coerce.number().int())` chain: *bridge planned in `sugar-lift-zod` v0.4*
+- [Rust] `std::str::parse::<i32>()`: *bridge planned in `sugar-lift-contracts` for the contracts crate's `parseInt` model*
+- [Python] `int(...)` builtin: *bridge planned in `sugar-lift-py-stdlib`*
+- [Java] `Integer.parseInt(String)`: *bridge planned in `sugar-lift-java-jdk`*
+- [Go] `strconv.Atoi`: *bridge planned in `sugar-lift-go-stdlib`*
 
 A consumer in any language whose pre-condition matches `ref-parseInt-v1` discharges at Tier 1 against any implementation bridging in.
 

@@ -44,7 +44,7 @@ Five properties Proof IR has, simultaneously:
 
 1. **Federated**: multiple independent signers can attest claims using it; trust is composable across signers without a central authority
 2. **Content-addressable**: every artifact is named by the BLAKE3-512 hash of its canonical bytes; identity is intrinsic, not registered
-3. **Multi-prover**: same formula can be dispatched to a portfolio (default today: Z3, CVC5, Vampire, Coq); the protocol supports `first-wins` (default) and `consensus` modes per `.provekit/config.toml`
+3. **Multi-prover**: same formula can be dispatched to a portfolio (default today: Z3, CVC5, Vampire, Coq); the protocol supports `first-wins` (default) and `consensus` modes per `.sugar/config.toml`
 4. **Language-agnostic**: the IR is independent of the source language; lifters from rust / python / php / etc. all produce the same canonical bytes for the same logical content
 5. **Signed-claim**: every contract is wrapped in a signed envelope with the signer's identity content-addressed
 

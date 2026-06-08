@@ -19,7 +19,7 @@ Exit 0 iff every spec hashes to the value the catalog declares. The protocol ver
 
 ### Protocol surface
 
-- **Protocol Evolution Protocol (PEP).** New extension protocol formalizes how protocol versions evolve. Each version is a signed content-addressed root; each migration is a witnessed edge with `ProtocolEvolutionBodyClaim` + `TruthDischargeWitness`. The `provekit protocol evolve` and `provekit protocol check-evolution` CLI verbs make migration first-class.
+- **Protocol Evolution Protocol (PEP).** New extension protocol formalizes how protocol versions evolve. Each version is a signed content-addressed root; each migration is a witnessed edge with `ProtocolEvolutionBodyClaim` + `TruthDischargeWitness`. The `sugar protocol evolve` and `sugar protocol check-evolution` CLI verbs make migration first-class.
 - **Content-Addressed CI Protocol.** Every CI gate becomes a typed claim root with explicit closure. Branch protection can require typed evidence, not just "checks passed."
 - **PEP dogfood evolution checker.** The protocol uses its own evolution protocol to evolve. The v1.6.2 to v1.6.3 bump itself is a witnessed PEP migration; the dogfood is testable.
 - **Conformance catalog-pinned across kits.** Per-kit conformance gates now resolve through the protocol catalog rather than per-language hand-pinning. One source of truth.

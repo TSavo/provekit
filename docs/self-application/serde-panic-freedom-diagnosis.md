@@ -12,14 +12,14 @@ result_unwrap pre). `producer_post` = the to_string BODY-EQ contract
 `=(_h0, to_string(value))` instead of the serde_json_to_string_value TOTALITY
 `is_ok(_h0)`. So the implication is `(_h0 = to_string(value)) -> is_ok(_h0)` -> z3
 unsat. With the totality post it's `is_ok(_h0) -> is_ok(_h0)` = valid -> panic-safe.
-Cause: `locate_producer_post` (provekit-verifier/src/handshake.rs:120) follows the
+Cause: `locate_producer_post` (sugar-verifier/src/handshake.rs:120) follows the
 single `bridges_by_symbol[inner_name]` bridge to ONE target contract and takes its
 `post`; the body-eq won the per-symbol slot. Suspect the free call
 `serde_json::to_string` lifts under ctor `method:to_string`, keying the totality
 bridge away from the lookup.
 
 STEP 1 (diagnose, ~20 min, READ-ONLY): on battleaxe, `bash /tmp/serde_e2e2.sh`
-re-mints stage3-serde fresh, then `provekit dump <proof> --json` + a script to print
+re-mints stage3-serde fresh, then `sugar dump <proof> --json` + a script to print
 EVERY entry of `bridges_by_symbol` (key) and its target contract's `post`. Confirm:
 is there a bridge whose target post is `is_ok(result)` (the totality) for the
 to_string producer, and under which key? (`to_string` vs `method:to_string` vs
@@ -28,19 +28,19 @@ to_string producer, and under which key? (`to_string` vs `method:to_string` vs
 STEP 2 (fix, soundness-adjacent, ONE of):
   (a) KIT-SIDE (preferred, safer, "semantics in the kit"): if `serde_json::to_string`
       free call is mis-lifted as `method:to_string`, fix the lifter
-      (provekit-walk/src/bin/walk_rpc.rs visit_expr_call vs visit_expr_method_call)
+      (sugar-walk/src/bin/walk_rpc.rs visit_expr_call vs visit_expr_method_call)
       so the free call keys where the totality bridge lives.
   (b) VERIFIER-SIDE: make `locate_producer_post` prefer, among the producer's
       bridges/contracts, the one whose post predicate unifies with the consumer
       pre's predicate family (is_ok) over a structural `=`.
 
 STEP 3 (verify, NOW POSSIBLE — file/line surfaces in rows):
-  `provekit prove examples/stage3-serde-totality-fixture --with <out> --json`
+  `sugar prove examples/stage3-serde-totality-fixture --with <out> --json`
   REQUIRE: row `file=src/lib.rs line=25` (f) -> status discharged/panicSafe;
            row `file=src/lib.rs line=38` (g, MyStruct) -> undecidable;
            global falsePass=0, silentlyDropped=0.
   ALSO run the panic-freedom-fixture (BREAK 2, syntactic guard) + the full
-  provekit-verifier test suite (`bcargo test -p provekit-verifier`). If g flips or
+  sugar-verifier test suite (`bcargo test -p sugar-verifier`). If g flips or
   falsePass>0 or any suite test regresses -> REVERT.
 
 DO NOT: rush this exhausted; specialize consumer_pre (empirically wrong, breaks the
@@ -54,13 +54,13 @@ Goal: f `serde_json::to_string(&Value).unwrap()` → PANIC-SAFE (K=1); g
 
 ## Fixed today (committed on `serde-finish`, e13763201) — all verified at their layer
 
-1. **Fixture manifest** `examples/stage3-serde-totality-fixture/.provekit/lift/rust-implications/manifest.toml`
-   was missing `method = "provekit.plugin.lift_implications"` and `phase = "consumer"`.
+1. **Fixture manifest** `examples/stage3-serde-totality-fixture/.sugar/lift/rust-implications/manifest.toml`
+   was missing `method = "sugar.plugin.lift_implications"` and `phase = "consumer"`.
    So `mint` ran `bind_lift`, the implication lifter (host of the RA oracle) NEVER ran.
    This was the actual 5-agent blocker. With it fixed, the oracle resolves both
    unwraps to `result_unwrap` and emits 3 bridges + 1 honest lift-gap (g's to_string).
 
-2. **`mint_bridge` dropped the lifter's `callsite`** (`provekit-claim-envelope`). Added
+2. **`mint_bridge` dropped the lifter's `callsite`** (`sugar-claim-envelope`). Added
    `BridgeCallsite` + carry it into the bridge header (NOT into `bridge_content_cid` —
    callsite is not bridge identity). Verifier now reads `panic_site=true`.
 
@@ -71,7 +71,7 @@ Goal: f `serde_json::to_string(&Value).unwrap()` → PANIC-SAFE (K=1); g
 ## Phase-0 scaffolding (no-silent-failure)
 
 - Plugin subprocess stderr now **inherits by default** (was `Stdio::null()` — the
-  thing that hid all of the above for five investigations). `PROVEKIT_PLUGIN_STDERR=null` to silence.
+  thing that hid all of the above for five investigations). `SUGAR_PLUGIN_STDERR=null` to silence.
 - Always-on `warn!` when a `method:`-seam bridge reaches the verifier without
   callsite provenance (mint-drop smoke detector), `enumerate_callsites.rs`.
 - All new diagnostics via `tracing`, not `eprintln`.
@@ -145,7 +145,7 @@ into the path the callsites actually reach.
 
 ## Phase-0 gap CLOSED: `doctor` now catches this footgun
 
-DONE (committed): `provekit doctor` now HARD-fails (exit 2) when a kit's consumer
+DONE (committed): `sugar doctor` now HARD-fails (exit 2) when a kit's consumer
 surface is mis-wired. walk_rpc's `initialize` capabilities self-declare
 `consumer_surfaces: { "rust-implications": { method, phase } }` (semantics in the
 kit, so doctor stays language-blind); doctor's Check 5 spawns each plugin, reads
@@ -158,14 +158,14 @@ agents a day, BEFORE a silent empty-set attestation.
 
 ## Phase-0 gap was: `doctor` did not catch this footgun
 
-`provekit doctor --target <kit>` exists and runs, but its checks are: TOML parse,
+`sugar doctor --target <kit>` exists and runs, but its checks are: TOML parse,
 plugin-command binary exists, imports count, oracle reachability. It does NOT catch
 the exact footgun that cost five agents: a `lift` manifest that omits `method` and
 `phase`, so a consumer surface (rust-implications) silently runs the default `lift`
 producer method and the implication lifter never fires.
 
 Catching the OMISSION case soundly AND language-blind needs `doctor` to spawn each
-plugin's `provekit.plugin.describe` RPC and cross-check the manifest's effective
+plugin's `sugar.plugin.describe` RPC and cross-check the manifest's effective
 `(method, phase)` against the capabilities the plugin advertises for that surface —
 e.g. "plugin advertises a consumer method for surface S but the manifest runs the
 default producer `lift`" -> WARN/FAIL. A name/heuristic check (e.g. "*-implications")
@@ -174,7 +174,7 @@ would violate language-blindness or over-warn on legitimate producers.
 CONFIRMED SHAPE: `describe` (walk_rpc `initialize_result`, ~line 2109) today returns
 only `capabilities.authoring_surfaces = ["rust","rust-bind","rust-walk-contracts"]`.
 It does NOT advertise the RPC methods the plugin dispatches (`lift`,
-`provekit.plugin.lift_implications`, `provekit.plugin.recognize`, ...) nor which
+`sugar.plugin.lift_implications`, `sugar.plugin.recognize`, ...) nor which
 surfaces are consumers. So the work is two-part: (1) extend `describe.capabilities`
 to add e.g. `rpc_methods: [...]` and `consumer_surfaces: ["rust-implications", ...]`
 (plugin self-reports; semantics stay in the kit); (2) `doctor` cross-checks each
@@ -276,7 +276,7 @@ manufacturing the precise false-pass this whole effort exists to prevent.
 
 ## #1717 implementation locator (Phase-1, do FIRST)
 
-Site: `implementations/rust/provekit-ir-compiler-smt-lib/src/lib.rs`. Its
+Site: `implementations/rust/sugar-ir-compiler-smt-lib/src/lib.rs`. Its
 `supported_sorts` are only `Int/Bool/Real/String`; a `forall` quantifying an
 OPAQUE (non-primitive) sort cannot be emitted soundly and currently collapses to
 literal `true` (the latent false-pass: negated obligation `(not true)` = unsat =
@@ -388,7 +388,7 @@ producer-contract-selection bug in locate_producer_post.
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
-warm-daemon mint of the fixture, prove). Debug: `RUST_LOG=warn,provekit_verifier::runner=debug,provekit_verifier::body_discharge=debug,provekit_verifier::enumerate_callsites=debug`.
+warm-daemon mint of the fixture, prove). Debug: `RUST_LOG=warn,sugar_verifier::runner=debug,sugar_verifier::body_discharge=debug,sugar_verifier::enumerate_callsites=debug`.
 
 ## DEEPER ROOT (2026-05-31, two agents): line collapse + shared contract, NOT the verifier layer
 

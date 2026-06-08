@@ -8,7 +8,7 @@ use sugar_ir_compiler::manifest;
 fn temp_dir(tag: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
     p.push(format!(
-        "provekit-ir-compiler-manifest-{tag}-{}",
+        "sugar-ir-compiler-manifest-{tag}-{}",
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&p);
@@ -20,7 +20,7 @@ fn temp_dir(tag: &str) -> PathBuf {
 fn discover_returns_empty_when_root_missing() {
     let mut p = std::env::temp_dir();
     p.push(format!(
-        "provekit-ir-compiler-missing-{}",
+        "sugar-ir-compiler-missing-{}",
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&p);
@@ -39,8 +39,8 @@ fn discover_parses_well_formed_manifest() {
 # header comment
 name = "smt-lib-reference"
 version = "0.1.0"
-protocol_version = "provekit-ir-compiler/1"
-binary = "/usr/local/bin/provekit-ir-smt-lib"
+protocol_version = "sugar-ir-compiler/1"
+binary = "/usr/local/bin/sugar-ir-smt-lib"
 dialects = ["smt-lib-v2.6"]
 "#,
     )
@@ -51,10 +51,10 @@ dialects = ["smt-lib-v2.6"]
     let m = &ms[0];
     assert_eq!(m.name, "smt-lib-reference");
     assert_eq!(m.version, "0.1.0");
-    assert_eq!(m.protocol_version, "provekit-ir-compiler/1");
+    assert_eq!(m.protocol_version, "sugar-ir-compiler/1");
     assert_eq!(
         m.binary,
-        PathBuf::from("/usr/local/bin/provekit-ir-smt-lib")
+        PathBuf::from("/usr/local/bin/sugar-ir-smt-lib")
     );
     assert_eq!(m.dialects, vec!["smt-lib-v2.6".to_string()]);
 
@@ -75,7 +75,7 @@ fn parse_handles_multi_dialect_array() {
     let body = r#"
 name = "multi"
 version = "0.2"
-protocol_version = "provekit-ir-compiler/1"
+protocol_version = "sugar-ir-compiler/1"
 binary = "multi-bin"
 dialects = ["smt-lib-v2.6", "smt-lib-v2.6-bv"]
 "#;
@@ -96,10 +96,10 @@ binary = "x"
 }
 
 #[test]
-fn default_root_includes_provekit_ir_compilers_segment() {
+fn default_root_includes_sugar_ir_compilers_segment() {
     if let Some(p) = manifest::default_root() {
         let s = p.to_string_lossy();
-        assert!(s.contains("provekit"));
+        assert!(s.contains("sugar"));
         assert!(s.contains("ir-compilers"));
     }
 }

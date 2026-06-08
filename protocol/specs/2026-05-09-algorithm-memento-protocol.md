@@ -10,7 +10,7 @@
 
 The substrate's first axiom is *Supra omnia, rectum* — above all, correctness.
 
-Today, the substrate's own production mechanism — the LIFTERS that emit contracts — violates that axiom. The same algorithm (e.g. "if/else two-armed WP narrowing") is implemented independently in `provekit-walk` (Rust), `provekit-walk-c` (C/libclang), `provekit-walk-py` (Python AST), `provekit-walk-java` (JavaParser), and `provekit-walk-zig` (Zig AST). Five copies of the same transformation, with no canonical reference, no mechanically-detectable drift, no content-addressed identity for the algorithm itself.
+Today, the substrate's own production mechanism — the LIFTERS that emit contracts — violates that axiom. The same algorithm (e.g. "if/else two-armed WP narrowing") is implemented independently in `sugar-walk` (Rust), `sugar-walk-c` (C/libclang), `sugar-walk-py` (Python AST), `sugar-walk-java` (JavaParser), and `sugar-walk-zig` (Zig AST). Five copies of the same transformation, with no canonical reference, no mechanically-detectable drift, no content-addressed identity for the algorithm itself.
 
 The substrate is the place where claims about behavior settle once and apply everywhere. **Until the substrate's own algorithms settle once and apply everywhere, the substrate fails its own first axiom.**
 
@@ -136,7 +136,7 @@ B.post = forall (i:LangAST) (ctx:Context).
              ∧ B(i, ctx) = A(a, ctx)
 ```
 
-This is the OBLIGATION the binding's verification must discharge. It is itself an IrFormula and feeds the prove portfolio via `provekit lower --to smt-lib | z3 -in` (or coq, or vampire, etc.).
+This is the OBLIGATION the binding's verification must discharge. It is itself an IrFormula and feeds the prove portfolio via `sugar lower --to smt-lib | z3 -in` (or coq, or vampire, etc.).
 
 ## §3 Minting an algorithm memento
 
@@ -170,7 +170,7 @@ To mint a binding-claim `B` for algorithm `A` in language `L`:
 
 The refinement obligation in `B.post` is an IrFormula. To discharge:
 
-1. Lower `B.post` to SMT-LIB (or Coq) via `provekit lower --to <target>`.
+1. Lower `B.post` to SMT-LIB (or Coq) via `sugar lower --to <target>`.
 2. Run the prove portfolio. For trivial bindings (where `project` is the identity and `B.post` desugars to `forall i. A(i) = A(i)`), the discharge is mechanical.
 3. For non-trivial bindings (where the language-AST has shapes the canonical pattern doesn't, or vice versa), the discharge is a genuine theorem to prove. The portfolio's verdict (UNSAT for valid binding, SAT with counterexample for refuted binding) becomes a `BindingDischargeReceipt` memento, signed and stored.
 
@@ -278,7 +278,7 @@ The algorithm CID is `BLAKE3-512(JCS(this))`.
   "input_cids": ["<algorithm_cid_from_§9.1>", "<projection_memento_cid_for_c-libclang>"],
   "pre": "matches CXCursor_IfStmt with both then-clause and else-clause",
   "post": "for any libclang input matching pre, this binding's output equals the algorithm's output on the projected ASTPattern",
-  "body_cid": "BLAKE3-512(implementations/c/provekit-walk-c/src/conditional.c source bytes)",
+  "body_cid": "BLAKE3-512(implementations/c/sugar-walk-c/src/conditional.c source bytes)",
   ...
 }
 ```
@@ -287,7 +287,7 @@ The walk-c source code IS evidence; the binding-claim memento is the formal asse
 
 ### §9.3 Sibling bindings
 
-When provekit-walk Rust, walk-py, walk-java, walk-zig each mint a binding-claim against the same algorithm CID, the substrate now has 5 bindings of one canonical algorithm. Their outputs federate trivially via the algorithm CID. Drift between them is mechanically detectable via the discharge protocol.
+When sugar-walk Rust, walk-py, walk-java, walk-zig each mint a binding-claim against the same algorithm CID, the substrate now has 5 bindings of one canonical algorithm. Their outputs federate trivially via the algorithm CID. Drift between them is mechanically detectable via the discharge protocol.
 
 ## §10 Relation to existing protocols
 

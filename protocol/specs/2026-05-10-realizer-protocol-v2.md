@@ -308,7 +308,7 @@ Normative fields:
   "postLiftCid": "blake3-512:...",
   "contractPreservationReceiptCid": "blake3-512:...",
   "realizer": {
-    "name": "provekit-ir-compiler-rust",
+    "name": "sugar-ir-compiler-rust",
     "version": "0.2.0",
     "kit": "rust"
   },
@@ -475,10 +475,10 @@ correctness. ORP v0.2 is the mode and wire protocol that invokes it.
 The existing prover-output crates:
 
 ```
-provekit-ir-compiler-coq
-provekit-ir-compiler-smt-lib
-provekit-ir-compiler-maude
-provekit-ir-compiler-lean
+sugar-ir-compiler-coq
+sugar-ir-compiler-smt-lib
+sugar-ir-compiler-maude
+sugar-ir-compiler-lean
 ```
 
 are compile-mode-adjacent, but they are not automatically `compile` mode
@@ -501,11 +501,11 @@ mode components, not as executable-code `compile` mode realizers.
 The new executable-code crates are `compile` mode realizers:
 
 ```
-provekit-ir-compiler-x86-64
-provekit-ir-compiler-wasm
-provekit-ir-compiler-jvm-bytecode
-provekit-ir-compiler-c
-provekit-ir-compiler-rust
+sugar-ir-compiler-x86-64
+sugar-ir-compiler-wasm
+sugar-ir-compiler-jvm-bytecode
+sugar-ir-compiler-c
+sugar-ir-compiler-rust
 ```
 
 Each implements `CompilePlan -> CompileResult | RefusalResult` and
@@ -629,7 +629,7 @@ Normative fields:
   },
   "compileResultCid": "blake3-512:...",
   "realizer": {
-    "name": "provekit-witness-realizer-java",
+    "name": "sugar-witness-realizer-java",
     "version": "0.2.0",
     "kit": "java"
   },
@@ -1096,4 +1096,4 @@ v0.1 conformance remains defined by ORP v0.1 Section 12.
 
 Cite as:
 
-> ProvekIt Protocol Working Notes (2026). *Realizer Protocol v0.2: Term and Witness Realizers*. Draft extension protocol v0.2.0.
+> Sugar Protocol Working Notes (2026). *Realizer Protocol v0.2: Term and Witness Realizers*. Draft extension protocol v0.2.0.

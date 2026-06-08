@@ -120,7 +120,7 @@ The substrate verifies envelope + header. Tooling reads metadata. Adding `contra
         "post":          { /* IrFormula */ }
     },
     "metadata": {
-        "sourceFile":   "implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs",
+        "sourceFile":   "implementations/rust/sugar-self-contracts/src/lift_plugin_protocol.rs",
         "sourceLine":   255
     }
 }
@@ -160,4 +160,4 @@ After this cut, the substrate's primitives are precisely:
 
 That is the entire substrate. Header conventions per memento kind add validation rules but no new primitives. Body conventions add zero substrate surface; they are purely a composition pattern. The four invariants operate on envelope + header. Everything else, including the verifiability of any future ecosystem extension, is composition over those three primitives plus the layered shape.
 
-The substrate stays small. The layering makes the smallness mechanical: every contributor to ProvekIt knows that adding to the body is free and adding to the header requires a substrate spec change. The cut decides where the boundary is, and the spec lets contributors stay on the right side of it without asking.
+The substrate stays small. The layering makes the smallness mechanical: every contributor to Sugar knows that adding to the body is free and adding to the header requires a substrate spec change. The cut decides where the boundary is, and the spec lets contributors stay on the right side of it without asking.

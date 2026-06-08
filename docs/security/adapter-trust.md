@@ -78,7 +78,7 @@ Every adapter is a piece of software. It has bugs. The bugs may be:
 - **Detected by cross-adapter parity tests** (better).
 - **Not detected** (worst case, silent wrongness).
 
-A user's TCB includes every adapter their dependencies' `.proof` files invoked. If a dependency's `.proof` was produced by `provekit-lift-zod` v0.3.1, and v0.3.1 has a bug in handling `z.string().email()`, the user's verifier discharges call sites against the buggy IR.
+A user's TCB includes every adapter their dependencies' `.proof` files invoked. If a dependency's `.proof` was produced by `sugar-lift-zod` v0.3.1, and v0.3.1 has a bug in handling `z.string().email()`, the user's verifier discharges call sites against the buggy IR.
 
 The protocol does not detect this. Adapter audit is out-of-band: the user must trust the adapter author to have tested adequately, and the adapter version to not have known bugs.
 

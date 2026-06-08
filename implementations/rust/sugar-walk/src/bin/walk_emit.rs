@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit-walk-emit`: take a Rust source file, lift + walk + shadow,
+// `sugar-walk-emit`: take a Rust source file, lift + walk + shadow,
 // emit a proof.ir bundle as JCS-canonical bytes on stdout. It also has
 // term and contract modes for single-function rust:rust exhibits.
 //
 // Usage:
-//   provekit-walk-emit <source.rs> <callee_name> <caller_name>
-//   provekit-walk-emit term <source.rs> <function_name> [output.term.json]
-//   provekit-walk-emit contract <source.rs> <function_name> [output.contract.json]
+//   sugar-walk-emit <source.rs> <callee_name> <caller_name>
+//   sugar-walk-emit term <source.rs> <function_name> [output.term.json]
+//   sugar-walk-emit contract <source.rs> <function_name> [output.contract.json]
 //
 // Example:
 //   echo '<<bare-demo source>>' > demo.rs
-//   provekit-walk-emit demo.rs f main > demo.proof.ir.json
+//   sugar-walk-emit demo.rs f main > demo.proof.ir.json
 //   blake3sum demo.proof.ir.json   # check matches the bundle's own CID
 
 use std::env;

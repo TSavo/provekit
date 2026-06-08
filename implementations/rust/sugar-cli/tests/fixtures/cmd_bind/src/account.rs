@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Fixture for provekit bind integration tests.
+// Fixture for sugar bind integration tests.
 //
 // Two functions covering the three main contract origins:
 //   - deposit: has #[requires] / #[ensures] attributes (annotation-lift path)

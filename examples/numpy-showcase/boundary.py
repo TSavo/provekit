@@ -1,4 +1,4 @@
-from provekit import boundary
+from sugar import boundary
 
 
 @boundary(library="numpy", call="rot90")

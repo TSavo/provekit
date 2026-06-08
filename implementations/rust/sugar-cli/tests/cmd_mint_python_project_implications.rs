@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -33,7 +33,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-py-implications-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-py-implications-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }
@@ -57,7 +57,7 @@ fn write_executable(path: &Path, body: &str) {
 fn python_wrapper(module: &str, function: &str, src_dir: PathBuf) -> PathBuf {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let script = std::env::temp_dir().join(format!(
-        "provekit-python-implication-{}-{}.sh",
+        "sugar-python-implication-{}-{}.sh",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
@@ -71,24 +71,24 @@ fn python_wrapper(module: &str, function: &str, src_dir: PathBuf) -> PathBuf {
 
 fn python_verify_wrapper() -> PathBuf {
     python_wrapper(
-        "provekit_lift_python_source.verify_rpc",
+        "sugar_lift_python_source.verify_rpc",
         "run_rpc",
         repo_root()
             .join("implementations")
             .join("python")
-            .join("provekit-lift-python-source")
+            .join("sugar-lift-python-source")
             .join("src"),
     )
 }
 
 fn python_implications_wrapper() -> PathBuf {
     python_wrapper(
-        "provekit_lift_py_tests.lsp",
+        "sugar_lift_py_tests.lsp",
         "main",
         repo_root()
             .join("implementations")
             .join("python")
-            .join("provekit-lift-py-tests")
+            .join("sugar-lift-py-tests")
             .join("src"),
     )
 }
@@ -107,11 +107,11 @@ def callee(x: int) -> int:
     )
     .expect("write app.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-contracts")).unwrap();
-    fs::create_dir_all(provekit.join("lift").join("python-implications")).unwrap();
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-contracts")).unwrap();
+    fs::create_dir_all(sugar.join("lift").join("python-implications")).unwrap();
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-contracts"
 surface = "python-contracts"
@@ -124,7 +124,7 @@ surface = "python-implications"
     .expect("write config.toml");
 
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-contracts")
             .join("manifest.toml"),
@@ -135,12 +135,12 @@ surface = "python-implications"
     )
     .expect("write python-contracts manifest");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-implications")
             .join("manifest.toml"),
         format!(
-            "name = \"python-implications\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\nmethod = \"provekit.plugin.lift_implications\"\nphase = \"consumer\"\n",
+            "name = \"python-implications\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\nmethod = \"sugar.plugin.lift_implications\"\nphase = \"consumer\"\n",
             consumer.display()
         ),
     )
@@ -160,7 +160,7 @@ fn python_implication_consumer_mints_bridge_from_manifest_rpc() {
     let project = stage_python_project(&producer, &consumer);
     let out_dir = unique_dir("out");
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("mint")
         .arg("--project")
         .arg(&project)
@@ -169,7 +169,7 @@ fn python_implication_consumer_mints_bridge_from_manifest_rpc() {
         .arg("--quiet")
         .arg("--json")
         .output()
-        .expect("spawn provekit mint");
+        .expect("spawn sugar mint");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(

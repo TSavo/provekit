@@ -1,0 +1,23 @@
+{
+  "id": "9003fc78fcdc8561",
+  "createdAt": "2026-04-29T06:27:03.277Z",
+  "originatingBug": "The original log line is written to destination before verification evaluation begins",
+  "smt": {
+    "kind": "order",
+    "declarations": [
+      "(declare-const write_complete_time Int) (declare-const eval_start_time Int) (assert (> write_complete_time eval_start_time))"
+    ],
+    "assertion": "(declare-const write_complete_time Int) (declare-const eval_start_time Int) (assert (> write_complete_time eval_start_time))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/sugar/src/transport.ts",
+    "function": null,
+    "startLine": 273,
+    "endLine": 273
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "d442f9a094a5cb49797ae25ade97aaccb2a148a5",
+  "retired": null
+}

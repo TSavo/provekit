@@ -8,13 +8,13 @@ const RUST_CONTRACTS_SURFACE: &str = "rust-contracts";
 
 #[test]
 fn lift_rpc_serves_rust_contracts_kit_declaration() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_provekit-lift"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sugar-lift"))
         .arg("--rpc")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .expect("spawn provekit-lift --rpc");
+        .expect("spawn sugar-lift --rpc");
     let mut stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
     let mut reader = BufReader::new(stdout);
@@ -57,7 +57,7 @@ fn lift_rpc_serves_rust_contracts_kit_declaration() {
     .expect("kit declaration schema");
     declaration.validate().expect("valid declaration");
 
-    assert_eq!(declaration.kit.id, "provekit-lift");
+    assert_eq!(declaration.kit.id, "sugar-lift");
     assert_eq!(declaration.kit.language, "rust");
     assert_method_declared(&declaration, "initialize");
     assert_method_declared(&declaration, "lift");
@@ -67,7 +67,7 @@ fn lift_rpc_serves_rust_contracts_kit_declaration() {
     assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
     assert!(
         declaration.effect_leaves.is_empty(),
-        "provekit-lift/contracts must not claim panic leaves owned by walk_rpc: {:?}",
+        "sugar-lift/contracts must not claim panic leaves owned by walk_rpc: {:?}",
         declaration.effect_leaves
     );
     assert_kit_declaration_mappings(
@@ -82,7 +82,7 @@ fn lift_rpc_serves_rust_contracts_kit_declaration() {
     );
     assert!(
         declaration.control_carriers.is_empty(),
-        "provekit-lift/contracts must not claim control carriers owned by walk_rpc: {:?}",
+        "sugar-lift/contracts must not claim control carriers owned by walk_rpc: {:?}",
         declaration.control_carriers
     );
 
@@ -98,8 +98,8 @@ fn lift_rpc_serves_rust_contracts_kit_declaration() {
         "shutdown failed: {shutdown_response}"
     );
     drop(stdin);
-    let status = child.wait().expect("wait for provekit-lift");
-    assert!(status.success(), "provekit-lift exited with {status}");
+    let status = child.wait().expect("wait for sugar-lift");
+    assert!(status.success(), "sugar-lift exited with {status}");
 }
 
 fn read_response(reader: &mut BufReader<std::process::ChildStdout>) -> Value {

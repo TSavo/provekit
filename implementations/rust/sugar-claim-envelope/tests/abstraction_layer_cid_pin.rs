@@ -4,7 +4,7 @@
 //
 // Source of truth:
 //   protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.1, §2.2, §2.4
-//   protocol/provekit-ir.cddl  (ConceptAbstractionMemento, RealizationDesugaringMemento)
+//   protocol/sugar-ir.cddl  (ConceptAbstractionMemento, RealizationDesugaringMemento)
 //
 // What this file pins:
 //

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // ra_daemon_client.rs: thin client for the resident rust-analyzer host inside
-// the `provekit-linkerd` daemon.
+// the `sugar-linkerd` daemon.
 //
 // The implication lifter (`walk_rpc`) used to COLD-SPAWN rust-analyzer inside
 // every mint, paying the ~260s workspace index each time. This client instead
@@ -17,7 +17,7 @@
 // caller leaves `callee_crate = None` and the call falls back to Tier 1/2a. It
 // waits only on linkerd's LSP-backed readiness signal and NEVER guesses an edge.
 //
-// std-only and synchronous, mirroring `provekit-lsp-rust/src/daemon_client.rs`:
+// std-only and synchronous, mirroring `sugar-lsp-rust/src/daemon_client.rs`:
 // the parent binary speaks line-framed NDJSON; no async runtime is needed.
 
 use std::collections::HashMap;
@@ -91,7 +91,7 @@ pub fn resolve_receiver_crates(
             warn!(
                 socket = %socket_path.display(),
                 error = %e,
-                "ra-daemon: could not connect/spawn provekit-linkerd; refusing all \
+                "ra-daemon: could not connect/spawn sugar-linkerd; refusing all \
                  method-call resolutions to the syntactic tiers"
             );
             return batch;
@@ -246,7 +246,7 @@ fn request_readiness(
 }
 
 fn ready_timeout_ms() -> u64 {
-    std::env::var("PROVEKIT_ORACLE_READY_TIMEOUT_MS")
+    std::env::var("SUGAR_ORACLE_READY_TIMEOUT_MS")
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
         .filter(|v| *v > 0)
@@ -280,10 +280,10 @@ fn project_cid_from_workspace(workspace_root: &Path) -> String {
 }
 
 /// Socket path for the RA-resolution daemon. Mirrors the linkerd default
-/// (`${XDG_RUNTIME_DIR}/provekit/linkerd-<cid>.sock`) so a single daemon binary
+/// (`${XDG_RUNTIME_DIR}/sugar/linkerd-<cid>.sock`) so a single daemon binary
 /// serves it. An override is available for tests.
 fn daemon_socket_path(project_cid: &str) -> PathBuf {
-    if let Ok(p) = std::env::var("PROVEKIT_LINKERD_SOCKET") {
+    if let Ok(p) = std::env::var("SUGAR_LINKERD_SOCKET") {
         if !p.is_empty() {
             return PathBuf::from(p);
         }
@@ -291,12 +291,12 @@ fn daemon_socket_path(project_cid: &str) -> PathBuf {
     let base = std::env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
     PathBuf::from(base)
-        .join("provekit")
+        .join("sugar")
         .join(format!("linkerd-{project_cid}.sock"))
 }
 
-/// Connect to the daemon, spawning `provekit-linkerd` detached if not running.
-/// Mirrors `provekit-lsp-rust/src/daemon_client.rs::connect_or_spawn`.
+/// Connect to the daemon, spawning `sugar-linkerd` detached if not running.
+/// Mirrors `sugar-lsp-rust/src/daemon_client.rs::connect_or_spawn`.
 fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Result<UnixStream> {
     if let Ok(stream) = UnixStream::connect(socket_path) {
         return Ok(stream);
@@ -316,15 +316,15 @@ fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Result<Un
         let _ = std::fs::create_dir_all(parent);
     }
 
-    // Inherit PROVEKIT_RESOLVE_ORACLE / PROVEKIT_RUST_ANALYZER so the daemon's
+    // Inherit SUGAR_RESOLVE_ORACLE / SUGAR_RUST_ANALYZER so the daemon's
     // RA host honours the same opt-in as the cold path did.
     let binary =
-        std::env::var("PROVEKIT_LINKERD_BIN").unwrap_or_else(|_| "provekit-linkerd".into());
-    debug!(binary = %binary, socket = %socket_path.display(), "ra-daemon: spawning provekit-linkerd");
-    // The daemon detaches its stdio. For diagnosis, PROVEKIT_LINKERD_LOG can
+        std::env::var("SUGAR_LINKERD_BIN").unwrap_or_else(|_| "sugar-linkerd".into());
+    debug!(binary = %binary, socket = %socket_path.display(), "ra-daemon: spawning sugar-linkerd");
+    // The daemon detaches its stdio. For diagnosis, SUGAR_LINKERD_LOG can
     // redirect the daemon's stderr to a file (otherwise it is discarded so the
     // detached daemon never writes onto the mint's JSON-RPC stdout).
-    let stderr_sink = match std::env::var("PROVEKIT_LINKERD_LOG") {
+    let stderr_sink = match std::env::var("SUGAR_LINKERD_LOG") {
         Ok(p) if !p.is_empty() => std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -367,7 +367,7 @@ fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Result<Un
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!(
-                    "provekit-linkerd did not bind {} within 5s",
+                    "sugar-linkerd did not bind {} within 5s",
                     socket_path.display()
                 ),
             ));

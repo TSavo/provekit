@@ -1,17 +1,17 @@
-// ProvekIt LSP Language Plugin: Go
+// Sugar LSP Language Plugin: Go
 //
-// A standalone binary that speaks provekit-lsp-plugin/1 over stdio.
-// Parses Go source files and extracts provekit annotations.
+// A standalone binary that speaks sugar-lsp-plugin/1 over stdio.
+// Parses Go source files and extracts sugar annotations.
 //
 // Usage: go run main.go --rpc
 //
-// To use this plugin, add to `.provekit/config.toml`:
+// To use this plugin, add to `.sugar/config.toml`:
 //   [[language]]
 //   name = "go"
 //   extensions = [".go"]
-//   plugin = "provekit-lsp-go"
+//   plugin = "sugar-lsp-go"
 //
-// Build: go build -o provekit-lsp-go main.go
+// Build: go build -o sugar-lsp-go main.go
 
 package main
 
@@ -73,13 +73,13 @@ func main() {
 		}
 	}
 	if !rpcMode {
-		fmt.Fprintln(os.Stderr, "Usage: provekit-lsp-go --rpc")
+		fmt.Fprintln(os.Stderr, "Usage: sugar-lsp-go --rpc")
 		os.Exit(1)
 	}
 
-	reImpl := regexp.MustCompile(`//provekit:implement\s+([\w-]+)`)
-	reContract := regexp.MustCompile(`//provekit:contract`)
-	reVerify := regexp.MustCompile(`//provekit:verify`)
+	reImpl := regexp.MustCompile(`//sugar:implement\s+([\w-]+)`)
+	reContract := regexp.MustCompile(`//sugar:contract`)
+	reVerify := regexp.MustCompile(`//sugar:verify`)
 	reFn := regexp.MustCompile(`^func\s+(?:\([^)]+\)\s+)?(\w+)`)
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -100,7 +100,7 @@ func main() {
 				Jsonrpc: "2.0",
 				ID:      req.ID,
 				Result: map[string]interface{}{
-					"name":         "provekit-lsp-go",
+					"name":         "sugar-lsp-go",
 					"version":      "0.1.0",
 					"capabilities": []string{},
 				},

@@ -1,11 +1,11 @@
-# Doubleledger fixture: the headline `provekit must` demo
+# Doubleledger fixture: the headline `sugar must` demo
 
 This is the marketing demo: an English phrase ("not lose money") on a
 small TypeScript double-entry ledger gets translated by the configured
-agent into a verified ProvekIt contract memento.
+agent into a verified Sugar contract memento.
 
 ```
-$ provekit must src/doubleledger.ts "not lose money" --agent stub --json
+$ sugar must src/doubleledger.ts "not lose money" --agent stub --json
 {
   "ok": true,
   "minted_cid": "blake3-512:...",
@@ -31,10 +31,10 @@ The headline UX works end-to-end without any user-authored IR:
 1. User points at a TypeScript file.
 2. User says English.
 3. Agent (stub here; real agents wire identically) translates.
-4. ProvekIt validates the IR-JSON shape, mints, signs.
+4. Sugar validates the IR-JSON shape, mints, signs.
 
 The acceptance test for this fixture lives at
-`implementations/rust/provekit-agent/tests/doubleledger.rs`.
+`implementations/rust/sugar-agent/tests/doubleledger.rs`.
 
 ## Real agents
 

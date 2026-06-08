@@ -447,7 +447,7 @@ fn panic_callsite_carries_containing_contract_bundle_not_global_symbol_bundle() 
             "evidence": {
                 "kind": "contract",
                 "body": {
-                    "contractName": "imported_libprovekit_fn",
+                    "contractName": "imported_libsugar_fn",
                     "post": {
                         "kind": "atomic",
                         "name": "=",

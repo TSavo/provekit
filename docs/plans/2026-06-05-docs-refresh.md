@@ -16,14 +16,14 @@ implementation:
 
 - The real catalog version is v1.6.6 (the binary, the signed asset, and
   `protocol.rs` all agree; the "no source" note in P0-1 was wrong).
-- `provekit lift` is a real command (`cmd_lift.rs`, 179 lines, dispatches the
+- `sugar lift` is a real command (`cmd_lift.rs`, 179 lines, dispatches the
   lift-plugin protocol and writes ProofIR term JSON), NOT the stub its `--help`
   string claims.
-- `provekit link` is a PHANTOM subcommand: it does not exist in `--help`, there
+- `sugar link` is a PHANTOM subcommand: it does not exist in `--help`, there
   is no `cmd_link.rs`, yet the entire prior `quickstart-end-user.md` (Steps 3, 4,
-  5) was built on `provekit link <project>`. The doc was pivoted to the real
+  5) was built on `sugar link <project>`. The doc was pivoted to the real
   mint/prove/verify flow.
-- `provekit fix` is another phantom, referenced in the old
+- `sugar fix` is another phantom, referenced in the old
   `publishing-a-proof.md` body (which was the superseded TypeScript `runFixLoop`
   surface, not about publishing a `.proof` at all). Fenced as historical.
 
@@ -37,11 +37,11 @@ All claims below were grounded against running code while rewriting the README:
 - `discharged: 2` confirmed live via `examples/numpy-showcase/run.sh` (one z3
   consistency obligation, one witness-recompute obligation).
 - The inheritance refusal confirmed via
-  `implementations/python/provekit-lift-py-numpy-testing/tests/test_inheritance_e2e.py`
+  `implementations/python/sugar-lift-py-numpy-testing/tests/test_inheritance_e2e.py`
   (2 passed in the numpy venv: `consumer-agrees-PROVEN`,
   `consumer-contradicts-REFUSED`) and the unit test
   `cross_proof_same_named_contracts_are_conjoined` in
-  `implementations/rust/provekit-verifier/src/consistency.rs` (green).
+  `implementations/rust/sugar-verifier/src/consistency.rs` (green).
 - `2909 sugar members in a 13M .proof` confirmed live via
   `examples/numpy-vendor/run.sh` on numpy 2.4.6 (version-dependent count).
 
@@ -51,13 +51,13 @@ All claims below were grounded against running code while rewriting the README:
 
 1. **`docs/reference/per-language-status.md`** says "protocol v1.6.3 (CID
    `blake3-512:dd0cc...`)". The built binary reports a different catalog CID
-   (`provekit verify-protocol` -> `blake3-512:809ed1eb...`, v1.6.6). The doc's
+   (`sugar verify-protocol` -> `blake3-512:809ed1eb...`, v1.6.6). The doc's
    value is the stale one. The real version is v1.6.6: the embedded asset is
    `catalog-signature-v1.6.6.json` (`protocolVersion: "v1.6.6"`, CID
    `809ed1eb...`), wired via `include_bytes!` at
-   `implementations/rust/provekit-cli/src/protocol.rs:50` against
+   `implementations/rust/sugar-cli/src/protocol.rs:50` against
    `EXPECTED_CATALOG_CID` at line 28. DONE: per-language-status.md now states
-   v1.6.6 / `809ed1eb...` and points at `provekit verify-protocol` as the live
+   v1.6.6 / `809ed1eb...` and points at `sugar verify-protocol` as the live
    authority so it cannot silently drift again. Backed by the passing test
    `embedded_catalog_recomputes_to_expected_cid`.
 
@@ -90,7 +90,7 @@ All claims below were grounded against running code while rewriting the README:
 
 6. **CLI surface drift in any doc that enumerates subcommands.** The old README
    listed `link`, plus `prove`/`verify`/`materialize` framings that did not
-   match `provekit --help`. `lift` is a stub ("TS only in v1.0; planned for
+   match `sugar --help`. `lift` is a stub ("TS only in v1.0; planned for
    v1.2.0"); `mint` is the verb that dispatches lift. Any reference doc that
    lists subcommands should be regenerated from `--help`, and `prove` should be
    described as the six-stage verifier.
@@ -98,7 +98,7 @@ All claims below were grounded against running code while rewriting the README:
 ### P2: EXECUTED
 
 7. **`docs/quickstart-end-user.md`** was rewritten. The prior doc was built end
-   to end on the phantom `provekit link` subcommand (a rust+go LSP/squiggle
+   to end on the phantom `sugar link` subcommand (a rust+go LSP/squiggle
    walkthrough). It now walks the real mint/prove/verify flow using the two numpy
    demos as the runnable artifacts, with real captured output (showcase
    `discharged: 2`; vendor `2909 sugar members` plus "oracle resolved via
@@ -111,8 +111,8 @@ All claims below were grounded against running code while rewriting the README:
    runs today)" section. It describes the surface as it ACTUALLY is: a batch
    plugin protocol (NDJSON JSON-RPC 2.0, spawned per invocation by the CLI), NOT
    a persistent editor LSP. Covers the handshake
-   (`initialize` + `provekit.plugin.kit_declaration`, `protocol_version`
-   `provekit-lsp-shared/1`), the per-kit-family method sets (naming not yet
+   (`initialize` + `sugar.plugin.kit_declaration`, `protocol_version`
+   `sugar-lsp-shared/1`), the per-kit-family method sets (naming not yet
    unified), the witness `resolve_witness` trust boundary (kit resolves bytes,
    CLI verifies by BLAKE3 + signature), and a clearly-labeled "Future direction:
    a real editor LSP (not yet built)" note pointing at the `analyzeDocument` seed
@@ -121,7 +121,7 @@ All claims below were grounded against running code while rewriting the README:
 
 9. **`docs/how-to/publishing-a-proof.md`** was rewritten. The prior body was the
    superseded TypeScript `runFixLoop`/`verifyAll` library surface (it referenced
-   the phantom `provekit fix`), not about publishing a `.proof` at all. A current
+   the phantom `sugar fix`), not about publishing a `.proof` at all. A current
    "Publishing a `.proof`" section now leads: mint the `.proof` (identity, not
    bodies), write the separately deployed `<cid>.witness` package
    (`write_witness_package`, asserts `blake3_512_of(body) == w.cid`), publish, and

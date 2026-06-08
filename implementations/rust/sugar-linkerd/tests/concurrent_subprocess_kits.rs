@@ -33,11 +33,11 @@ fn daemon_bin() -> PathBuf {
     let release = workspace
         .join("target")
         .join("release")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     let debug = workspace
         .join("target")
         .join("debug")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     if release.exists() {
         release
     } else {
@@ -47,7 +47,7 @@ fn daemon_bin() -> PathBuf {
 
 fn unique_sock_path(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-linkerd-conc-{}-{}.sock",
+        "sugar-linkerd-conc-{}-{}.sock",
         prefix,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -123,13 +123,13 @@ fn binary_on_path(name: &str) -> bool {
 // Fires N concurrent parseFile requests to the go kit and verifies all
 // complete in parallel (wall-clock time sublinear in N).
 //
-// This test is skipped if provekit-lsp-go is not on PATH.
+// This test is skipped if sugar-lsp-go is not on PATH.
 #[test]
 fn test_concurrent_subprocess_kit_lifters() {
-    if !binary_on_path("provekit-lsp-go") {
+    if !binary_on_path("sugar-lsp-go") {
         println!(
-            "SKIP test_concurrent_subprocess_kit_lifters: provekit-lsp-go not on PATH. \
-             Install via: cd implementations/go && go install ./cmd/provekit-lsp-go"
+            "SKIP test_concurrent_subprocess_kit_lifters: sugar-lsp-go not on PATH. \
+             Install via: cd implementations/go && go install ./cmd/sugar-lsp-go"
         );
         return;
     }
@@ -148,18 +148,18 @@ fn test_concurrent_subprocess_kit_lifters() {
     // overhead is not negligible and parallelism is detectable).
     let go_source = r#"package main
 
-//provekit:contract
+//sugar:contract
 func FibRecursive(n int) int {
     if n <= 1 { return n }
     return FibRecursive(n-1) + FibRecursive(n-2)
 }
 
-//provekit:contract post="result >= 0"
+//sugar:contract post="result >= 0"
 func Add(a, b int) int {
     return a + b
 }
 
-//provekit:contract post="result <= 0"
+//sugar:contract post="result <= 0"
 func Negate(x int) int {
     return -x
 }
@@ -275,11 +275,11 @@ func Negate(x int) int {
 }
 
 // Simpler variant: measure per-request latency to understand baseline.
-// This test is skipped if provekit-lsp-go is not on PATH.
+// This test is skipped if sugar-lsp-go is not on PATH.
 #[test]
 fn test_single_subprocess_kit_baseline() {
-    if !binary_on_path("provekit-lsp-go") {
-        println!("SKIP test_single_subprocess_kit_baseline: provekit-lsp-go not on PATH");
+    if !binary_on_path("sugar-lsp-go") {
+        println!("SKIP test_single_subprocess_kit_baseline: sugar-lsp-go not on PATH");
         return;
     }
 
@@ -295,7 +295,7 @@ fn test_single_subprocess_kit_baseline() {
 
     let go_source = r#"package main
 
-//provekit:contract
+//sugar:contract
 func Baseline(x int) int {
     return x + 1
 }

@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(
             path,
             temp.path()
-                .join(".provekit")
+                .join(".sugar")
                 .join("runs")
                 .join(m.cid())
                 .join(crate::PLUGIN_REGISTRY_MEMENTO_FILE)

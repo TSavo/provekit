@@ -9,7 +9,7 @@
 - `2026-05-05-closure-binding-memento.md` — sibling discharge memento for `Effect::ClosureCapture`
 - `2026-04-30-ir-formal-grammar.md` — IrFormula shape; `invariant` is an IrFormula
 - `2026-05-04-linker-daemon-protocol.md` — the linker daemon pools discharge mementos for the substrate
-- `protocol/provekit-ir.cddl` — CDDL grammar entry locking the canonical wire shape
+- `protocol/sugar-ir.cddl` — CDDL grammar entry locking the canonical wire shape
 - #394 — refuse-on-effects discipline this spec hooks into
 
 ---
@@ -141,7 +141,7 @@ The lifter does NOT auto-mint `PinInvariantMemento` entries. Pin invariants are 
 
 ### §5.1 Signing ceremony
 
-A `PinInvariantMemento` MUST be signed by a curator-level key (`ed25519:<base64>`). The signing key follows the same provenance path established in the substrate's signing pattern: `secret/provekit/provenance-ed25519`.
+A `PinInvariantMemento` MUST be signed by a curator-level key (`ed25519:<base64>`). The signing key follows the same provenance path established in the substrate's signing pattern: `secret/sugar/provenance-ed25519`.
 
 The signing ceremony is:
 
@@ -225,7 +225,7 @@ Reborrow analysis of `unsafe { pin.get_unchecked_mut() }`, `pin.as_mut().map_unc
 
 ### §7.2 Per-kit IR types
 
-This spec defines the Rust-side memento and discharge wiring. Cross-kit propagation of `PinInvariantMemento` to the 11 other language kits is a separate sweep issue. The CDDL entry in `protocol/provekit-ir.cddl` provides the normative wire shape for all kits.
+This spec defines the Rust-side memento and discharge wiring. Cross-kit propagation of `PinInvariantMemento` to the 11 other language kits is a separate sweep issue. The CDDL entry in `protocol/sugar-ir.cddl` provides the normative wire shape for all kits.
 
 ### §7.3 Semantic invariant checking
 
@@ -235,9 +235,9 @@ The `invariant` string is opaque to the substrate. A future verifier revision ma
 
 ## §8. Cross-references
 
-- `PinInvariantMementoView` is the pool's lightweight lookup type in `implementations/rust/provekit-walk/src/contract.rs`. It carries `function_cid`, `pinned_target`, and `invariant`.
+- `PinInvariantMementoView` is the pool's lightweight lookup type in `implementations/rust/sugar-walk/src/contract.rs`. It carries `function_cid`, `pinned_target`, and `invariant`.
 - The `OpacityMementoLookup` trait (`contract.rs`) is extended with `fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView>`.
 - The `Effect::PinnedReference` variant already exists in `contract.rs`. It is moved from "unconditional block" to "opacity dischargeable" in `check_opacity_effects` and added to the phase 2 whitelist in `compose_function_contracts_checked`.
 - The `OpacityError::PinInvariantNotDischarged { target }` variant is added.
-- `MementoPool` in `implementations/rust/provekit-verifier/src/types.rs` is extended with a `pin_invariant_index` and implements `lookup_pin_invariant`.
-- The CDDL grammar entry lives in `protocol/provekit-ir.cddl`.
+- `MementoPool` in `implementations/rust/sugar-verifier/src/types.rs` is extended with a `pin_invariant_index` and implements `lookup_pin_invariant`.
+- The CDDL grammar entry lives in `protocol/sugar-ir.cddl`.

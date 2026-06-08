@@ -22,7 +22,7 @@
 #   bash examples/stage4-handshake-demo/run.sh
 #
 # Optional env:
-#   PROVEKIT_Z3: path to the z3 binary (default: z3 on $PATH).
+#   SUGAR_Z3: path to the z3 binary (default: z3 on $PATH).
 #   STAGE4_KEEP: set to 1 to keep the per-run project_dirs.
 
 set -euo pipefail
@@ -32,24 +32,24 @@ DEMO_DIR="${REPO_ROOT}/examples/stage4-handshake-demo"
 RUST_DIR="${REPO_ROOT}/implementations/rust"
 GO_DIR="${DEMO_DIR}/go-validate-kit"
 
-WORK_DIR="${TMPDIR:-/tmp}/provekit-stage4-$(date +%s)"
+WORK_DIR="${TMPDIR:-/tmp}/sugar-stage4-$(date +%s)"
 mkdir -p "${WORK_DIR}"
 
 # A single project_dir reused across all four runs so the cache
 # directory persists. Each run gets a fresh subdirectory for proofs
-# but shares .provekit/cache/.
+# but shares .sugar/cache/.
 PROJECT_DIR="${WORK_DIR}/project"
 mkdir -p "${PROJECT_DIR}"
-mkdir -p "${PROJECT_DIR}/.provekit/cache"
+mkdir -p "${PROJECT_DIR}/.sugar/cache"
 
 # Per-run scratch dirs for Go publisher output.
 mkdir -p "${WORK_DIR}/go-A" "${WORK_DIR}/go-B" "${WORK_DIR}/go-C" "${WORK_DIR}/go-D"
 
 export PATH="${HOME}/.cargo/bin:${PATH}"
-export PROVEKIT_Z3="${PROVEKIT_Z3:-z3}"
+export SUGAR_Z3="${SUGAR_Z3:-z3}"
 
-if ! command -v "${PROVEKIT_Z3}" >/dev/null 2>&1; then
-    echo "ERROR: z3 not found at PROVEKIT_Z3=${PROVEKIT_Z3}" >&2
+if ! command -v "${SUGAR_Z3}" >/dev/null 2>&1; then
+    echo "ERROR: z3 not found at SUGAR_Z3=${SUGAR_Z3}" >&2
     exit 1
 fi
 if ! command -v cargo >/dev/null 2>&1; then
@@ -69,7 +69,7 @@ echo "  Stage 4 handshake demo"
 echo "=========================================================="
 echo "  work dir: ${WORK_DIR}"
 echo "  project dir: ${PROJECT_DIR}"
-echo "  z3: $(${PROVEKIT_Z3} --version 2>/dev/null | head -1)"
+echo "  z3: $(${SUGAR_Z3} --version 2>/dev/null | head -1)"
 echo
 
 echo "[build] cargo build --example stage4_driver --release"
@@ -113,7 +113,7 @@ echo "=========================================================="
 
 PROJECT_A="${WORK_DIR}/proj-A"
 mkdir -p "${PROJECT_A}"
-ln -sfn "${PROJECT_DIR}/.provekit" "${PROJECT_A}/.provekit"
+ln -sfn "${PROJECT_DIR}/.sugar" "${PROJECT_A}/.sugar"
 
 "${GO_BIN}" --shape gt0 --out "${WORK_DIR}/go-A" >/dev/null
 GO_PROOF_A="$(ls "${WORK_DIR}/go-A"/*.proof | head -1)"
@@ -127,7 +127,7 @@ echo "=========================================================="
 
 PROJECT_B="${WORK_DIR}/proj-B"
 mkdir -p "${PROJECT_B}"
-ln -sfn "${PROJECT_DIR}/.provekit" "${PROJECT_B}/.provekit"
+ln -sfn "${PROJECT_DIR}/.sugar" "${PROJECT_B}/.sugar"
 
 "${GO_BIN}" --shape gte1 --out "${WORK_DIR}/go-B" >/dev/null
 GO_PROOF_B="$(ls "${WORK_DIR}/go-B"/*.proof | head -1)"
@@ -141,9 +141,9 @@ echo "=========================================================="
 
 PROJECT_B2="${WORK_DIR}/proj-B-warm"
 mkdir -p "${PROJECT_B2}"
-ln -sfn "${PROJECT_DIR}/.provekit" "${PROJECT_B2}/.provekit"
+ln -sfn "${PROJECT_DIR}/.sugar" "${PROJECT_B2}/.sugar"
 
-# Re-run with same Go publisher; Tier 2 should hit because .provekit/cache/
+# Re-run with same Go publisher; Tier 2 should hit because .sugar/cache/
 # already contains the implication memento minted in the cold run.
 SUMMARY_B_WARM=$(run_driver "Run B (warm)" "${GO_PROOF_B}" "${PROJECT_B2}" "${WORK_DIR}/log-B-warm.txt")
 
@@ -155,7 +155,7 @@ echo "=========================================================="
 
 PROJECT_C="${WORK_DIR}/proj-C"
 mkdir -p "${PROJECT_C}"
-ln -sfn "${PROJECT_DIR}/.provekit" "${PROJECT_C}/.provekit"
+ln -sfn "${PROJECT_DIR}/.sugar" "${PROJECT_C}/.sugar"
 
 "${GO_BIN}" --shape gte0 --out "${WORK_DIR}/go-C" >/dev/null
 GO_PROOF_C="$(ls "${WORK_DIR}/go-C"/*.proof | head -1)"
@@ -169,7 +169,7 @@ echo "=========================================================="
 
 PROJECT_D="${WORK_DIR}/proj-D"
 mkdir -p "${PROJECT_D}"
-ln -sfn "${PROJECT_DIR}/.provekit" "${PROJECT_D}/.provekit"
+ln -sfn "${PROJECT_DIR}/.sugar" "${PROJECT_D}/.sugar"
 
 "${GO_BIN}" --shape gte1 --out "${WORK_DIR}/go-D" >/dev/null
 GO_PROOF_D="$(ls "${WORK_DIR}/go-D"/*.proof | head -1)"
@@ -188,8 +188,8 @@ echo "  Run B (warm, cached):   ${SUMMARY_B_WARM##STAGE4_SUMMARY }"
 echo "  Run C (violation):      ${SUMMARY_C##STAGE4_SUMMARY }"
 echo "  Run D (re-cached):      ${SUMMARY_D##STAGE4_SUMMARY }"
 echo
-echo "  cache contents (.provekit/cache):"
-ls -la "${PROJECT_DIR}/.provekit/cache/" 2>/dev/null | awk 'NR>1 {print "    " $0}'
+echo "  cache contents (.sugar/cache):"
+ls -la "${PROJECT_DIR}/.sugar/cache/" 2>/dev/null | awk 'NR>1 {print "    " $0}'
 echo
 echo "  artifacts kept under: ${WORK_DIR}"
 if [[ "${STAGE4_KEEP:-0}" != "1" ]]; then

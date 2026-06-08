@@ -48,7 +48,7 @@ For most contract pairs in most codebases, Z3 is the right TCB. For high-stakes 
 
 ## Multi-backend concurrence
 
-The protocol supports multiple Tier 3 backends. Users configure trusted backends in `provekit.config.yaml`:
+The protocol supports multiple Tier 3 backends. Users configure trusted backends in `sugar.config.yaml`:
 
 ```yaml
 trusted_provers:

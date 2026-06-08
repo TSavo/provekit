@@ -26,7 +26,7 @@ pub struct SolveResult {
 
 /// Legacy entry point: invoke a single Z3 SubprocessSolver. The
 /// multi-solver runner does NOT route through here; it builds a
-/// registry from `.provekit/config.toml` and calls `solvers::run_plan`.
+/// registry from `.sugar/config.toml` and calls `solvers::run_plan`.
 pub fn run(z3_path: &str, smt_script: &str) -> SolveResult {
     let solver = SubprocessSolver::new(
         "z3",

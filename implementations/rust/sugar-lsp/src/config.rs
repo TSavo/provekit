@@ -1,17 +1,17 @@
-// Configuration for the ProvekIt LSP server.
+// Configuration for the Sugar LSP server.
 //
-// Reads `.provekit/config.toml` at workspace root. Example:
+// Reads `.sugar/config.toml` at workspace root. Example:
 //
 //   [server]
-//   backend = "provekit"
+//   backend = "sugar"
 //   backend_args = ["verify", "--format", "json"]
 //   timeout_ms = 5000
-//   cache_dir = ".provekit/cache"
+//   cache_dir = ".sugar/cache"
 //
 //   [[language]]
 //   name = "go"
 //   extensions = [".go"]
-//   plugin = "provekit-lsp-go"
+//   plugin = "sugar-lsp-go"
 //   plugin_args = ["--rpc"]
 //
 // Language plugins are spawned as child processes and spoken to via JSON-RPC.
@@ -34,7 +34,7 @@ pub struct ServerConfig {
     #[serde(default)]
     pub backend_args: Vec<String>,
     // timeout_ms and cache_dir removed (unused)
-    /// Optional path to the provekit-linkerd Unix domain socket.
+    /// Optional path to the sugar-linkerd Unix domain socket.
     ///
     /// When set, `did_open` / `did_change` route through the daemon instead
     /// of the per-plugin subprocess mode.  The value may be overridden by
@@ -42,7 +42,7 @@ pub struct ServerConfig {
     ///
     /// Example config.toml:
     ///   [server]
-    ///   daemon_socket = "/run/user/1000/provekit/linkerd-<projectCid>.sock"
+    ///   daemon_socket = "/run/user/1000/sugar/linkerd-<projectCid>.sock"
     #[serde(default)]
     pub daemon_socket: Option<String>,
 }
@@ -131,7 +131,7 @@ mod tests {
             language: vec![LanguagePluginConfig {
                 name: "rust".to_string(),
                 extensions: vec![".rs".to_string()],
-                plugin: Some("provekit-lsp-rust".to_string()),
+                plugin: Some("sugar-lsp-rust".to_string()),
                 plugin_args: Vec::new(),
             }],
             ..LspConfig::default()

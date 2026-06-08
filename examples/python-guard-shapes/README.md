@@ -26,14 +26,14 @@ the run raise (or, for divide-by-zero, makes the finiteness assertion fail), so
 the witness is **refused**.
 
 Divide-by-zero is the sharp one: numpy and pandas do **not** raise on float
-division by zero, they return `inf`. provekit catches the silent `inf` the
+division by zero, they return `inf`. sugar catches the silent `inf` the
 interpreter let through, because the `_ok` case asserts `np.isfinite(...)` and
 the `_bad` case fails that assertion at run time.
 
 ## The discrimination discipline
 
-Each cell is a pair: a guarded `_ok` case provekit must **discharge**, and a
-`_bad` case that breaches the guard which provekit must **refuse**. The witness
+Each cell is a pair: a guarded `_ok` case sugar must **discharge**, and a
+`_bad` case that breaches the guard which sugar must **refuse**. The witness
 is per-file (it runs `pytest <file>`), so `_ok` and `_bad` live in separate
 files — 8 cells × 2 = 16. `run.sh` checks the verdict **per file** (every `_ok`
 discharged, every `_bad` refused), so a swapped or missing verdict fails the

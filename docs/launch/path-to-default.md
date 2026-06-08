@@ -26,7 +26,7 @@ This is the difference between a tool that requires a green-field project and a 
 
 ### No vendor lock
 
-Removing Sugar from a project is deletion of the `.provekit/` directory and the LSP plugin. The source code is untouched. The annotations stay because they were always going to stay (they are host-language artifacts). The bridges go away because they were never authored. Nothing in the host language ever depended on them. Exit cost is zero.
+Removing Sugar from a project is deletion of the `.sugar/` directory and the LSP plugin. The source code is untouched. The annotations stay because they were always going to stay (they are host-language artifacts). The bridges go away because they were never authored. Nothing in the host language ever depended on them. Exit cost is zero.
 
 The exit-cost argument is for the migration phase. The win condition is the default-on phase, where exit doesn't come up because the tool is part of the daily workflow and nobody removes a working compile-time check.
 
@@ -92,7 +92,7 @@ The work to ship: the linker pass benchmark on real-world projects. The first co
 
 ### 4. Scaffold integration
 
-Once the architecture is proven and LSP works, the wedge is per-language scaffold defaults: `cargo provekit init`, `go mod init` with provekit defaults, `dotnet new` templates that include the `.provekit/` layout, GitHub Actions templates that include `provekit prove` as a CI gate.
+Once the architecture is proven and LSP works, the wedge is per-language scaffold defaults: `cargo sugar init`, `go mod init` with sugar defaults, `dotnet new` templates that include the `.sugar/` layout, GitHub Actions templates that include `sugar prove` as a CI gate.
 
 Each scaffold integration is a small follow-up. Once one major language ships it as a default, the others follow because developers ask for parity. The natural first target is Rust: Sugar owns the contract substrate in Rust; rust-analyzer is the most extensible LSP backend; the cargo plugin story is well-trod.
 
@@ -108,17 +108,17 @@ The order is not interchangeable. The five properties have a forced sequence bec
 
 **Phase 2 (next two weeks): LSP push polish.** Per-kit LSP plugin closes its remaining gaps. Diagnostic surface formatter implemented. The IDE shows red squiggles for cross-language contract violations on the keystroke. Sir tests on a polyglot project of his own choosing.
 
-Step 3b of the LSP+linker path is complete (PR: `feat(lsp): daemon-client mode in provekit-lsp`): `provekit-lsp` now has a daemon-client mode alongside its existing per-plugin subprocess mode. When `--daemon-socket <path>` is passed, `did_open` / `did_change` route through `provekit-linkerd` instead of the per-plugin path. `publishDiagnostics` delivers the daemon's `LinterError` set to the editor. The rust IDE path from source change to red squiggle is now end-to-end wired for the `rust` kit. Multi-kit dispatch (file extension -> kit routing) is the next follow-up step.
+Step 3b of the LSP+linker path is complete (PR: `feat(lsp): daemon-client mode in sugar-lsp`): `sugar-lsp` now has a daemon-client mode alongside its existing per-plugin subprocess mode. When `--daemon-socket <path>` is passed, `did_open` / `did_change` route through `sugar-linkerd` instead of the per-plugin path. `publishDiagnostics` delivers the daemon's `LinterError` set to the editor. The rust IDE path from source change to red squiggle is now end-to-end wired for the `rust` kit. Multi-kit dispatch (file extension -> kit routing) is the next follow-up step.
 
 **Phase 3 (next two months): false-positive control.** Run on real codebases (the platform monorepo per task #132 is the natural candidate). Catalog every false positive. Each false positive is either an opacity-manifest entry, a lifter improvement, or a contract-language enrichment. The empirical false-positive rate goes down with each iteration. Goal: under 1% on a typical Java/Scala/Kotlin/Go/Python codebase.
 
-**Phase 4 (next six months): rust scaffold integration.** Ship `cargo provekit init`. Ship `cargo provekit prove` as a CI gate. Ship the rust LSP plugin as a rustup component. Document the workflow in The Rust Programming Language and rustlang.org/learn. Get into Rust language-team discussions about toolchain inclusion.
+**Phase 4 (next six months): rust scaffold integration.** Ship `cargo sugar init`. Ship `cargo sugar prove` as a CI gate. Ship the rust LSP plugin as a rustup component. Document the workflow in The Rust Programming Language and rustlang.org/learn. Get into Rust language-team discussions about toolchain inclusion.
 
 **Phase 5 (year-plus): toolchain inclusion.** Once Rust ships Sugar as a default, propose inclusion in the next-most-receptive ecosystem. Likely candidates in order: Go (gopls already exists; cgo is the cross-language hook); .NET (csharp-ls + DataAnnotations are mature); Python (pylsp + type-hints are mature). Each successive ecosystem is easier because the architectural pattern is proven.
 
 ## The known operational issue, recorded
 
-The rust call-edge agent's report on PR #121 surfaced cross-platform non-determinism in `provekit-lift`'s workspace scan: macOS and Linux produce different `contractSetCid` values for byte-identical source. Likely root cause is directory walk order (APFS vs ext4 `readdir` order) or path canonicalization (case-insensitive vs case-sensitive filesystems). The fix is at the lifter level: sort the file walk output, normalize paths to relative POSIX form per spec #120's Locus rules.
+The rust call-edge agent's report on PR #121 surfaced cross-platform non-determinism in `sugar-lift`'s workspace scan: macOS and Linux produce different `contractSetCid` values for byte-identical source. Likely root cause is directory walk order (APFS vs ext4 `readdir` order) or path canonicalization (case-insensitive vs case-sensitive filesystems). The fix is at the lifter level: sort the file walk output, normalize paths to relative POSIX form per spec #120's Locus rules.
 
 This is a v0 issue, not a v1 one. The architectural claim is intact within-machine. The cross-machine claim from §11 of the manifesto requires the fix; without it, two Sugar users on different platforms will compute different `linkBundleCid` values for the same project, and federated trust under spec #94 breaks across platform boundaries. Tracked as a follow-up; Docker is the operational containment if needed; the source-level fix is one PR.
 

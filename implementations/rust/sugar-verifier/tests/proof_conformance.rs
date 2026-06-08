@@ -23,7 +23,7 @@ fn make_unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = base.join(format!("provekit-proof-conformance-{stamp}-{suffix}"));
+    let p = base.join(format!("sugar-proof-conformance-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }

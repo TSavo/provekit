@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // End-to-end subprocess test. Spawns the standalone
-// `provekit-ir-smt-lib` binary, performs handshake and one compile via
+// `sugar-ir-smt-lib` binary, performs handshake and one compile via
 // the JSON-RPC protocol, asserts the result equals the in-process
 // trait output. This is acceptance criterion #2 + #3 in one shot.
 
@@ -14,7 +14,7 @@ use sugar_ir_compiler_smt_lib::{compile_to_parts, DIALECT};
 
 fn binary_path() -> Option<PathBuf> {
     // Cargo sets CARGO_BIN_EXE_<name> for binaries in this package.
-    let p = option_env!("CARGO_BIN_EXE_provekit-ir-smt-lib").map(PathBuf::from)?;
+    let p = option_env!("CARGO_BIN_EXE_sugar-ir-smt-lib").map(PathBuf::from)?;
     if p.exists() {
         Some(p)
     } else {
@@ -25,12 +25,12 @@ fn binary_path() -> Option<PathBuf> {
 #[test]
 fn subprocess_handshake_returns_smt_lib_dialect() {
     let Some(bin) = binary_path() else {
-        eprintln!("skip: provekit-ir-smt-lib binary not built yet");
+        eprintln!("skip: sugar-ir-smt-lib binary not built yet");
         return;
     };
     let c = JsonRpcCompiler::spawn(&bin).expect("spawn");
     let caps = c.capabilities();
-    assert_eq!(caps.protocol_version, "provekit-ir-compiler/1");
+    assert_eq!(caps.protocol_version, "sugar-ir-compiler/1");
     assert!(caps.dialects.iter().any(|d| d == DIALECT));
     assert!(caps.supported_sorts.iter().any(|s| s == "Int"));
     assert!(caps.supported_predicates.iter().any(|p| p == "forall"));
@@ -39,7 +39,7 @@ fn subprocess_handshake_returns_smt_lib_dialect() {
 #[test]
 fn subprocess_compile_matches_in_process_byte_for_byte() {
     let Some(bin) = binary_path() else {
-        eprintln!("skip: provekit-ir-smt-lib binary not built yet");
+        eprintln!("skip: sugar-ir-smt-lib binary not built yet");
         return;
     };
     let c = JsonRpcCompiler::spawn(&bin).expect("spawn");

@@ -68,7 +68,7 @@ impl Solver for SubprocessSolver {
         let mut child = match cmd.spawn() {
             Ok(c) => {
                 eprintln!(
-                    "[provekit-verifier] spawned solver {:?} (binary={:?}) pid={}",
+                    "[sugar-verifier] spawned solver {:?} (binary={:?}) pid={}",
                     self.name,
                     self.binary,
                     c.id()
@@ -77,7 +77,7 @@ impl Solver for SubprocessSolver {
             }
             Err(e) => {
                 eprintln!(
-                    "[provekit-verifier] failed to spawn solver {:?} (binary={:?}): {e}",
+                    "[sugar-verifier] failed to spawn solver {:?} (binary={:?}): {e}",
                     self.name, self.binary
                 );
                 return SolveResult {
@@ -153,7 +153,7 @@ impl Solver for SubprocessSolver {
         }
 
         eprintln!(
-            "[provekit-verifier] waiting for solver {:?} to exit (timeout={:?})",
+            "[sugar-verifier] waiting for solver {:?} to exit (timeout={:?})",
             self.name, self.timeout
         );
         let output = match child.wait_with_output() {

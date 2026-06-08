@@ -67,7 +67,7 @@ The compilation arrow is the producer-signed claim:
 ```text
 patternCid    @policy/borrowed-pages-as-scratch
 predicateCid  blake3-512:<sql + schema version>
-schemaVersion provekit-substrate/v1
+schemaVersion sugar-substrate/v1
 producer      <ed25519 fingerprint>
 compiledAt    <ISO-8601 timestamp>
 ```
@@ -359,7 +359,7 @@ Applied to the substrate from Linux 7.1.0-rc2 (pre V4bel patch):
 ```
 preApplication.predicateCid   blake3-512:ece7d50c22ca6678ce372d9a020726fe14d8c...
 preApplication.substrateCid   blake3-512:<lift of net/ subtree>
-preApplication.lifterCid      blake3-512:<provekit-lift-c-kernel-doc bytes>
+preApplication.lifterCid      blake3-512:<sugar-lift-c-kernel-doc bytes>
 preApplication.resultSet      [
   {"locus": {"path": "net/rxrpc/rxkad.c", "line": 429, "function": "rxkad_verify_packet_1"}},
   {"locus": {"path": "net/rxrpc/rxkad.c", "line": 494, "function": "rxkad_verify_packet_2"}}
@@ -447,7 +447,7 @@ Section 5's closure-shape table is `unchanged` (vacuous).
 A producer that wants a composition-bound predicate to fire reliably
 MUST ensure the substrate's lifter chain emits ComposedFunctionContract
 mementos eagerly. A consumer that wants the same MAY trigger lazy
-materialization by running `provekit prove` over the substrate before
+materialization by running `sugar prove` over the substrate before
 running the predicate.
 
 ### 9.7 Federation mismatch
@@ -547,10 +547,10 @@ comments have different CIDs).
 A v1 reference implementation lives in
 `menagerie/pattern-predicate-protocol/` (planned). It exposes:
 
-- `provekit pp compile <pattern.toml>`: produce a predicate memento.
-- `provekit pp run <predicate.sql> <substrate.db>`: produce a query application memento.
-- `provekit pp witness <pre-application> <post-application>`: produce a closure witness.
-- `provekit pp receipt <closure-witness> <patch.cid>`: produce an FRP receipt citing the witness.
+- `sugar pp compile <pattern.toml>`: produce a predicate memento.
+- `sugar pp run <predicate.sql> <substrate.db>`: produce a query application memento.
+- `sugar pp witness <pre-application> <post-application>`: produce a closure witness.
+- `sugar pp receipt <closure-witness> <patch.cid>`: produce an FRP receipt citing the witness.
 
 All four commands take and produce `.proof`-bundled mementos. Each is
 re-runnable from the predecessor bytes. None requires network access

@@ -104,17 +104,17 @@ Three parallel codex (gpt-5.5 xhigh) tasks in isolated worktrees. Each brief is 
 ### Java brief
 
 Files:
-- `implementations/java/provekit-realize-java-core/src/main/java/com/provekit/realize/SugarRealizer.java` — add per-operation template recursion at `renderBodyTemplateFor` or sibling
+- `implementations/java/sugar-realize-java-core/src/main/java/com/sugar/realize/SugarRealizer.java` — add per-operation template recursion at `renderBodyTemplateFor` or sibling
 - `menagerie/java-language-signature/specs/body-templates/java-canonical-bodies.json` — add entries from operator table above
 
 Tests:
 - Existing `BodyTemplateWiringTest.java` — extend with multi-op synthesis cases
-- `cargo test -p provekit-cli --test trinity_citation_comments_exhibit --features slow-tests` — slow-lane gate (after Rust+Python also done)
+- `cargo test -p sugar-cli --test trinity_citation_comments_exhibit --features slow-tests` — slow-lane gate (after Rust+Python also done)
 
 ### Rust brief
 
 Files:
-- `implementations/rust/provekit-realize-rust-core/src/lib.rs` — extend `lower_term_shape_body` to descend non-seq operation trees; integrate `operator_body_template_for` recursion
+- `implementations/rust/sugar-realize-rust-core/src/lib.rs` — extend `lower_term_shape_body` to descend non-seq operation trees; integrate `operator_body_template_for` recursion
 - `menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json` — add entries
 
 Tests:
@@ -123,7 +123,7 @@ Tests:
 ### Python brief
 
 Files:
-- `implementations/python/provekit-realize-python-core/src/provekit_realize_python_core/realizer.py` — add tree-walking and template recursion
+- `implementations/python/sugar-realize-python-core/src/sugar_realize_python_core/realizer.py` — add tree-walking and template recursion
 - `menagerie/python-language-signature/specs/body-templates/python-canonical-bodies.json` — add entries
 
 Tests:

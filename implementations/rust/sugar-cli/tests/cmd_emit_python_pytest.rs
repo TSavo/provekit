@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -37,7 +37,7 @@ fn install_emit_registration(project: &Path) {
     let python_src = repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-emit-python-pytest")
+        .join("sugar-emit-python-pytest")
         .join("src");
     let pythonpath = python_src
         .display()
@@ -46,10 +46,10 @@ fn install_emit_registration(project: &Path) {
         .replace('"', "\\\"");
     let python = python_bin().replace('\\', "\\\\").replace('"', "\\\"");
 
-    let provekit_dir = project.join(".provekit");
-    fs::create_dir_all(&provekit_dir).expect("mkdir .provekit");
+    let sugar_dir = project.join(".sugar");
+    fs::create_dir_all(&sugar_dir).expect("mkdir .sugar");
     fs::write(
-        provekit_dir.join("config.toml"),
+        sugar_dir.join("config.toml"),
         "[[plugins]]\n\
          name = \"python-pytest\"\n\
          surface = \"python-pytest\"\n\
@@ -58,7 +58,7 @@ fn install_emit_registration(project: &Path) {
     .expect("write project config");
 
     let manifest = project
-        .join(".provekit")
+        .join(".sugar")
         .join("emit")
         .join("python-pytest")
         .join("manifest.toml");
@@ -66,7 +66,7 @@ fn install_emit_registration(project: &Path) {
     fs::write(
         manifest,
         format!(
-            "name = \"python-pytest\"\ncommand = [\"env\", \"PYTHONPATH={pythonpath}\", \"{python}\", \"-m\", \"provekit_emit_python_pytest\", \"--rpc\"]\nworking_dir = \".\"\nprotocol_versions = [\"pep/1.7.0\"]\n"
+            "name = \"python-pytest\"\ncommand = [\"env\", \"PYTHONPATH={pythonpath}\", \"{python}\", \"-m\", \"sugar_emit_python_pytest\", \"--rpc\"]\nworking_dir = \".\"\nprotocol_versions = [\"pep/1.7.0\"]\n"
         ),
     )
     .expect("write emit manifest");
@@ -92,7 +92,7 @@ fn rewrite_python_emit_manifest(manifest: &Path) {
     let python_src = repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-emit-python-pytest")
+        .join("sugar-emit-python-pytest")
         .join("src");
     let pythonpath = python_src
         .display()
@@ -107,7 +107,7 @@ fn rewrite_python_emit_manifest(manifest: &Path) {
         .map(|line| {
             if line.trim_start().starts_with("command = ") {
                 format!(
-                    "command = [\"env\", \"PYTHONPATH={pythonpath}\", \"{python}\", \"-m\", \"provekit_emit_python_pytest\", \"--rpc\"]"
+                    "command = [\"env\", \"PYTHONPATH={pythonpath}\", \"{python}\", \"-m\", \"sugar_emit_python_pytest\", \"--rpc\"]"
                 )
             } else {
                 line.to_string()
@@ -158,7 +158,7 @@ fn emit_python_pytest_dispatches_real_emitter_and_pytest_checks_output() {
     let plan = project.join("plan.json");
     write_basic_emit_plan(&plan);
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("emit")
         .arg("--project")
         .arg(&project)
@@ -173,13 +173,13 @@ fn emit_python_pytest_dispatches_real_emitter_and_pytest_checks_output() {
         .arg("--compile-check")
         .arg("--json")
         .output()
-        .expect("spawn provekit emit python");
+        .expect("spawn sugar emit python");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit emit python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar emit python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let receipt: Value = serde_json::from_str(&stdout).expect("emit stdout is JSON");
     assert_eq!(receipt["ok"], true, "receipt: {receipt}");
@@ -213,12 +213,12 @@ fn emit_python_pytest_uses_checked_in_python_double_registration() {
         &repo_root()
             .join("examples")
             .join("python-double")
-            .join(".provekit"),
-        &project.join(".provekit"),
+            .join(".sugar"),
+        &project.join(".sugar"),
     );
     rewrite_python_emit_manifest(
         &project
-            .join(".provekit")
+            .join(".sugar")
             .join("emit")
             .join("python-pytest")
             .join("manifest.toml"),
@@ -227,7 +227,7 @@ fn emit_python_pytest_uses_checked_in_python_double_registration() {
     let plan = project.join("plan.json");
     write_basic_emit_plan(&plan);
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("emit")
         .arg("--project")
         .arg(&project)
@@ -242,7 +242,7 @@ fn emit_python_pytest_uses_checked_in_python_double_registration() {
         .arg("--compile-check")
         .arg("--json")
         .output()
-        .expect("spawn provekit emit python");
+        .expect("spawn sugar emit python");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

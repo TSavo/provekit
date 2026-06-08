@@ -265,7 +265,7 @@ fn runner_aggregates_per_solver_telemetry() {
     // handshake. With zero call sites the per_solver map is empty
     // but solver_invocations should also be 0 and not panic.
     use sugar_verifier::{Runner, RunnerConfig};
-    let tmp = std::env::temp_dir().join(format!("provekit-runner-empty-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("sugar-runner-empty-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     let cfg = RunnerConfig {
         project_root: tmp.clone(),

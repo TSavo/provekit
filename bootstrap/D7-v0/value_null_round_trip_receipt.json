@@ -1,14 +1,14 @@
 {
   "version": "1",
   "target": {
-    "crate": "provekit-canonicalizer",
+    "crate": "sugar-canonicalizer",
     "function": "impl Value::null",
-    "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs"
+    "source_path": "implementations/rust/sugar-canonicalizer/src/value.rs"
   },
   "lift": {
-    "tool": "provekit-walk",
-    "command": "cd implementations/rust && cargo run --bin provekit-walk-emit -- term provekit-canonicalizer/src/value.rs null /tmp/d7_v0_value_null.raw.json",
-    "fixture_path": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json",
+    "tool": "sugar-walk",
+    "command": "cd implementations/rust && cargo run --bin sugar-walk-emit -- term sugar-canonicalizer/src/value.rs null /tmp/d7_v0_value_null.raw.json",
+    "fixture_path": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json",
     "fixture_cid": "blake3-512:bcb10be48ad632abc71c406355b6d11b0191a959b523aa755ee00ad7496afa2270ce28821af4abcd5949427026fb16d8d8b38af702b1810dec3bdff810ec8f32",
     "outcome": "handles-partially-with-loss-record",
     "loss_record": {

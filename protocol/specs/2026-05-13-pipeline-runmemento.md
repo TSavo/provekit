@@ -4,9 +4,9 @@
 **Date:** 2026-05-13
 **Author:** T Savo
 **Related:**
-- TSavo/provekit#792 (`ProofRunMemento`, verifier profile)
-- TSavo/provekit#795 (pipeline receipts and memento replay)
-- TSavo/provekit#796 (admissibility spine)
+- TSavo/sugar#792 (`ProofRunMemento`, verifier profile)
+- TSavo/sugar#795 (pipeline receipts and memento replay)
+- TSavo/sugar#796 (admissibility spine)
 - `2026-04-30-proof-file-format.md`
 - `2026-05-12-plugin-protocol.md`
 - `2026-05-13-proof-run-memento.md`
@@ -20,7 +20,7 @@ This spec defines the generic substrate shape for that receipt pair:
 1. `PipelineMemento` pins a pipeline kind, version, ordered stage vocabulary, accepted input kinds, emitted output kinds, failure kinds, and provenance.
 2. `RunMemento` records one execution of one `PipelineMemento`: inputs, ordered stage receipt CIDs, outputs, predecessor runs, sealed plugin registry, verdict, and provenance.
 
-This spec defines the shape of a run. It does not define the stage vocabulary of any particular pipeline. Pipeline vocabularies live in `PipelineMemento` instances. `ProofRunMemento` from TSavo/provekit#792 is the verifier-pipeline profile of this generic shape: it specializes the same fields for `provekit prove`, and its `verifier_pipeline_cid` is a `PipelineMemento` CID under this spec.
+This spec defines the shape of a run. It does not define the stage vocabulary of any particular pipeline. Pipeline vocabularies live in `PipelineMemento` instances. `ProofRunMemento` from TSavo/sugar#792 is the verifier-pipeline profile of this generic shape: it specializes the same fields for `sugar prove`, and its `verifier_pipeline_cid` is a `PipelineMemento` CID under this spec.
 
 ## §1. Wire shapes
 
@@ -156,7 +156,7 @@ The default behavior is refusal. A validator MUST NOT silently drop an unknown s
 
 ## §7. ProofRunMemento becomes the verifier profile
 
-`ProofRunMemento` from TSavo/provekit#792 is the verifier-pipeline profile of this generic shape. Its fields map cleanly to `RunMemento`:
+`ProofRunMemento` from TSavo/sugar#792 is the verifier-pipeline profile of this generic shape. Its fields map cleanly to `RunMemento`:
 
 | `ProofRunMemento` field | Generic `RunMemento` field |
 |---|---|
@@ -185,14 +185,14 @@ All CIDs in this spec use the full BLAKE3-512 digest with the `blake3-512:` pref
 
 ## §9. Cross-references
 
-- TSavo/provekit#792 defines `ProofRunMemento` and verifier `StageReceipt`, the first profile of this generic shape.
-- TSavo/provekit#795 tracks replay receipt work that feeds this generic pipeline shape.
-- TSavo/provekit#796 is the admissibility-spine umbrella: bind, link, transport, compose, promotion, realization, and verifier pipelines all need replay receipts.
+- TSavo/sugar#792 defines `ProofRunMemento` and verifier `StageReceipt`, the first profile of this generic shape.
+- TSavo/sugar#795 tracks replay receipt work that feeds this generic pipeline shape.
+- TSavo/sugar#796 is the admissibility-spine umbrella: bind, link, transport, compose, promotion, realization, and verifier pipelines all need replay receipts.
 - `2026-04-30-proof-file-format.md` defines the `.proof` bundle trust root consumed by verifier runs.
 - `2026-05-12-plugin-protocol.md` defines `PluginRegistryMemento`, which a run cites through `plugin_registry_cid`.
 
 ## §10. Out of scope
 
-Stage-receipt body details are out of scope for this generic spec. `StageReceipt` in TSavo/provekit#792 is the verifier-profile receipt. Other pipelines define their own profile receipts, refusal bodies, diagnostics, and per-stage IO contracts while preserving the generic `PipelineMemento` and `RunMemento` replay graph shape.
+Stage-receipt body details are out of scope for this generic spec. `StageReceipt` in TSavo/sugar#792 is the verifier-profile receipt. Other pipelines define their own profile receipts, refusal bodies, diagnostics, and per-stage IO contracts while preserving the generic `PipelineMemento` and `RunMemento` replay graph shape.
 
 This spec also does not define pipeline scheduling, plugin discovery, UI report formatting, or storage indexes for reverse lookup.

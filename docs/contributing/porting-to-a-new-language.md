@@ -20,7 +20,7 @@ Total scope: multi-week project for one engineer comfortable in the language. Th
 
 Every kit implements the same surface. The kit standard at CID `blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88` is the authoritative spec. The shape:
 
-- **IR types**: data structures matching the CDDL grammar in `protocol/provekit-ir.cddl`. `Term`, `Formula`, `Sort`, `Declaration`, `BridgeDeclaration`.
+- **IR types**: data structures matching the CDDL grammar in `protocol/sugar-ir.cddl`. `Term`, `Formula`, `Sort`, `Declaration`, `BridgeDeclaration`.
 - **Canonicalizer**: function from `IrFormula` to canonical bytes. Implements JCS (RFC 8785) for the JSON canonical form, then BLAKE3-512 to derive the CID. Must be byte-identical to the Rust canonicalizer for every conformance fixture.
 - **Claim envelope codec**: signed memento envelope (Ed25519). Serialize / deserialize / verify.
 - **Proof envelope codec**: CBOR-encoded `.proof` catalog. Members map (CID → bytes), top-level signature.
@@ -96,8 +96,8 @@ See [writing-an-LSP-plugin.md](writing-an-LSP-plugin.md).
 
 Every language has a different idiom for "annotate this with a contract." Pick one:
 
-- **Decorator macros / attributes**: Python `@provekit.contract`, .NET `[Provekit(...)]`, Java JSR 380 annotations.
-- **Comment conventions**: Zig `//provekit:contract`, Go `//provekit:contract` (under evaluation), JML `//@ requires`.
+- **Decorator macros / attributes**: Python `@sugar.contract`, .NET `[Sugar(...)]`, Java JSR 380 annotations.
+- **Comment conventions**: Zig `//sugar:contract`, Go `//sugar:contract` (under evaluation), JML `//@ requires`.
 - **Property wrappers / macros**: Swift property wrappers + Swift 5.9 macros (under evaluation).
 - **Lift-only**: ship no decorator macros at all; every contract comes through a lift adapter. Good fit for languages whose ecosystem has strong existing annotation libraries.
 
@@ -109,7 +109,7 @@ Three options:
 
 1. **Native**: implement JCS + BLAKE3-512 in your language. Most kits do this. Pure-language implementations are easier to audit and have no FFI surface.
 2. **Bind to a vendored C BLAKE3**: link against `tools/blake3-vendored/`. Lower implementation cost but adds a build dependency.
-3. **Subprocess to the Rust kit**: shell out to `provekit hash`. Simplest, slowest. Acceptable for prototyping but not for shipping.
+3. **Subprocess to the Rust kit**: shell out to `sugar hash`. Simplest, slowest. Acceptable for prototyping but not for shipping.
 
 Recommended: native pure-language implementation. The Python kit's pure-Python canonicalizer is the reference pattern for "small, auditable, byte-identical."
 

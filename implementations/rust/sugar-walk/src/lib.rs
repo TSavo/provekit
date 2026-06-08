@@ -6,7 +6,7 @@
 // effect detection, aliasing, region and pin mementos, and the dropper
 // generative-completion path. It emits FunctionContractMemento values,
 // proof.ir walk bundles, and algebra terms over the minted rust:rust language
-// signature. The crate keeps the IR representation in provekit-ir-types and
+// signature. The crate keeps the IR representation in sugar-ir-types and
 // content-addresses emitted artifacts with the shared JCS plus BLAKE3 pipeline.
 //
 // Remaining growth is incremental signature and memento coverage for more

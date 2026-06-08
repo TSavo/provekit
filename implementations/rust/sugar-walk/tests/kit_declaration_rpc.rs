@@ -9,12 +9,12 @@ const RUST_FN_CONTRACTS_SURFACE: &str = "rust-fn-contracts";
 
 #[test]
 fn walk_rpc_serves_kit_declaration_over_stdio() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_provekit-walk-rpc"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sugar-walk-rpc"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .expect("spawn provekit-walk-rpc");
+        .expect("spawn sugar-walk-rpc");
     let mut stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
     let mut reader = BufReader::new(stdout);
@@ -57,7 +57,7 @@ fn walk_rpc_serves_kit_declaration_over_stdio() {
     .expect("kit declaration schema");
     declaration.validate().expect("valid declaration");
 
-    assert_eq!(declaration.kit.id, "provekit-walk-rpc");
+    assert_eq!(declaration.kit.id, "sugar-walk-rpc");
     assert_eq!(declaration.kit.language, "rust");
     assert!(
         declaration
@@ -127,8 +127,8 @@ fn walk_rpc_serves_kit_declaration_over_stdio() {
         "shutdown failed: {shutdown_response}"
     );
     drop(stdin);
-    let status = child.wait().expect("wait for provekit-walk-rpc");
-    assert!(status.success(), "provekit-walk-rpc exited with {status}");
+    let status = child.wait().expect("wait for sugar-walk-rpc");
+    assert!(status.success(), "sugar-walk-rpc exited with {status}");
 }
 
 fn read_response(reader: &mut impl BufRead) -> Value {

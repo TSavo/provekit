@@ -1,3 +1,0 @@
-name = "rust-tests"
-command = ["../../implementations/rust/target/debug/provekit-lift", "--rpc"]
-working_dir = "."

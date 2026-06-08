@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt: minimal leaf client that locates and drives the rust-contracts lift kit (`contracts_rpc`) over NDJSON, returning the raw ir-document. Used by sugar-lift / -build / -lsp-rust to reach the contract lifter via RPC instead of statically linking it."
+description = "Sugar: minimal leaf client that locates and drives the rust-contracts lift kit (`contracts_rpc`) over NDJSON, returning the raw ir-document. Used by sugar-lift / -build / -lsp-rust to reach the contract lifter via RPC instead of statically linking it."
 
 # TRUE LEAF: serde_json + std ONLY. This crate exists so the substrate's
 # in-process callers (sugar-lift, sugar-build, sugar-lsp-rust) all

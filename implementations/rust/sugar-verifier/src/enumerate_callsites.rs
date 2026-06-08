@@ -618,7 +618,7 @@ fn walk_formula(
 /// the verifier threads into the path condition. NAME-BLIND by construction:
 /// it copies the guard ctor's `name` and `args` verbatim into an `atomic` with
 /// NO recognition table and NO complement logic. The Rust kit (the lifter, see
-/// `provekit-walk` `wrap_branch_guard`) has ALREADY resolved which predicate
+/// `sugar-walk` `wrap_branch_guard`) has ALREADY resolved which predicate
 /// governs a branch -- the then-branch carries the positive predicate atom
 /// (`is_some(x)`), the else-branch carries the kit-computed complement
 /// (`is_none(x)`). This verifier carries whatever atom the kit emitted; it does
@@ -930,7 +930,7 @@ fn walk_term(
     // verifier knows no Rust predicate names. Instead the Rust kit emits the
     // resolved guard ON the dominated branch as a `cf_guarded(guard, value)`
     // wrapper (then-branch -> positive predicate, else-branch -> kit-computed
-    // complement; see `provekit-walk` `wrap_branch_guard`). This verifier:
+    // complement; see `sugar-walk` `wrap_branch_guard`). This verifier:
     //   * `cf_ite(cond, then, else)`: descends all three branches with the
     //     path condition UNCHANGED. arg0 (the condition) introduces no fact;
     //     any dominating fact rides on the `cf_guarded` wrapper the kit placed
@@ -1044,7 +1044,7 @@ mod guard_propagation_tests {
     //! PANIC-FREEDOM guard-context threading at the enumeration boundary, tested
     //! WITHOUT any Rust predicate name. The verifier is language-blind: it does
     //! not know `is_some`'s complement is `is_none`, nor that `option_unwrap`'s
-    //! pre is `is_some`. The Rust kit (`provekit-walk` `wrap_branch_guard`) has
+    //! pre is `is_some`. The Rust kit (`sugar-walk` `wrap_branch_guard`) has
     //! ALREADY resolved which predicate governs each branch and emitted it as a
     //! `cf_guarded(guard, value)` wrapper. The verifier's only job is to copy
     //! whatever OPAQUE atom rides that wrapper into `CallSite::guard_facts`.
@@ -1056,7 +1056,7 @@ mod guard_propagation_tests {
     //!   - cf_ite descent  -> the condition introduces NO fact; only the
     //!                        cf_guarded wrapper the kit placed carries one.
     //! The NAMED then->positive / else->complement discrimination is a Rust-kit
-    //! property and is pinned in `provekit-walk`'s lift tests, not here.
+    //! property and is pinned in `sugar-walk`'s lift tests, not here.
 
     use super::*;
     use libsugar::concept::panic_freedom;

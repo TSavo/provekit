@@ -12,7 +12,7 @@ pub fn plugin_registry_memento_path(
     registry: &PluginRegistryMemento,
 ) -> PathBuf {
     project_root
-        .join(".provekit")
+        .join(".sugar")
         .join("runs")
         .join(registry.cid())
         .join(PLUGIN_REGISTRY_MEMENTO_FILE)

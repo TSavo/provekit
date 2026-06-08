@@ -18,7 +18,7 @@ fn make_unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("provekit-run-memento-{stamp}-{suffix}"));
+    let path = std::env::temp_dir().join(format!("sugar-run-memento-{stamp}-{suffix}"));
     fs::create_dir_all(&path).expect("create temp dir");
     path
 }

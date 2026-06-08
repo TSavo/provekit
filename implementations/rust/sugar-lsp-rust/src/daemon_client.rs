@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// daemon_client.rs: thin client for the provekit-linkerd daemon.
+// daemon_client.rs: thin client for the sugar-linkerd daemon.
 //
 // Implements `connect_or_spawn` (connect to an existing daemon or spawn one)
 // and `send_parse_file` (forward a `parseFile` JSON-RPC and return diagnostics).
@@ -19,7 +19,7 @@ use serde_json::Value as Json;
 /// Connect to the daemon at `socket_path`, spawning it first if it isn't running.
 ///
 /// Spawn args follow the daemon's CLI:
-///   `provekit-linkerd --socket <path> --project-cid <cid>
+///   `sugar-linkerd --socket <path> --project-cid <cid>
 ///                     --idle-timeout-ms 300000 --snapshot <snap>`
 ///
 /// The snapshot path is derived as `<socket_path>.snap` for simplicity; the
@@ -46,7 +46,7 @@ pub fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Resul
 
     // Spawn the daemon. Detach stdio so it doesn't inherit the LSP plugin's
     // stdin/stdout (the plugin reads from its own stdin in the main loop).
-    let _child = Command::new("provekit-linkerd")
+    let _child = Command::new("sugar-linkerd")
         .args([
             "--socket",
             &socket_path.to_string_lossy(),
@@ -64,7 +64,7 @@ pub fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Resul
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("failed to spawn provekit-linkerd: {e}"),
+                format!("failed to spawn sugar-linkerd: {e}"),
             )
         })?;
     // We intentionally don't join the child: it's a long-running daemon.
@@ -80,7 +80,7 @@ pub fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Resul
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!(
-                    "provekit-linkerd did not bind socket at {} within 5 s",
+                    "sugar-linkerd did not bind socket at {} within 5 s",
                     socket_path.display()
                 ),
             ));

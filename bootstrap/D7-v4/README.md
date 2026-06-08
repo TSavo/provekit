@@ -7,11 +7,11 @@ Branch: bootstrap/D7-v4-widen-value-methods.
 
 D7-v3 reached BYTE_IDENTICAL for impl Value::null.
 D7-v4 widens the receipt discipline to three adjacent constructors.
-It does not extend provekit-walk.
-It does not extend provekit-realize-rust-core.
+It does not extend sugar-walk.
+It does not extend sugar-realize-rust-core.
 It does not mint concept hubs, touch substrate, or mint new ops.
 
-Targets in implementations/rust/provekit-canonicalizer/src/value.rs:
+Targets in implementations/rust/sugar-canonicalizer/src/value.rs:
 impl Value::boolean.
 impl Value::integer.
 impl Value::string.
@@ -21,9 +21,9 @@ The checked-in integer parameter is named n, and string is generic: string<S: In
 The original slices in the receipts are taken from the checked-in file.
 
 Trimmed fixture paths:
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_boolean.json.
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_integer.json.
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_string.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_boolean.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_integer.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_string.json.
 
 | method | verdict | dominant class | fixture CID |
 | --- | --- | --- | --- |
@@ -40,14 +40,14 @@ The bridge fixture keeps only existing return and call:new catalog ops.
 The widened nested constructor surface is preserved inside the ListOfExpr literal.
 That keeps the fixture bridge-compatible without adding ProofIR ops.
 
-After D7-v5, provekit_realize_rust_core::emit_from_resolved recognizes Value::Null and the direct one-parameter Value::Bool and Value::Integer literal-list shapes.
-The string fixture still falls through to panic!("provekit-bind canonical: literal") because its argument surface is method:into(s, []), not a direct first-parameter reference.
+After D7-v5, sugar_realize_rust_core::emit_from_resolved recognizes Value::Null and the direct one-parameter Value::Bool and Value::Integer literal-list shapes.
+The string fixture still falls through to panic!("sugar-bind canonical: literal") because its argument surface is method:into(s, []), not a direct first-parameter reference.
 
 bootstrap/D7-v4/boolean_source_round_trip_receipt.json.
 bootstrap/D7-v4/integer_source_round_trip_receipt.json.
 bootstrap/D7-v4/string_source_round_trip_receipt.json.
 
-The D7-v4 integration test is implementations/rust/libprovekit/tests/d7_v4_widen.rs.
+The D7-v4 integration test is implementations/rust/libsugar/tests/d7_v4_widen.rs.
 It recomputes the fixture CID, resolves the ProofIR term, realizes Rust, rustfmts both sides, compares bytes, classifies the diff, and checks the committed receipt.
 It accepts BYTE_IDENTICAL, CHARACTERIZED_DIFF, or BLOCKED.
 It does not assert byte identity for all three cases because string remains outside the D7-v5 direct-parameter shape.

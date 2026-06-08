@@ -4,10 +4,10 @@
 **Date:** 2026-05-13
 **Author:** T Savo
 **Related:**
-- TSavo/provekit#793
-- TSavo/provekit#794
-- TSavo/provekit#796
-- TSavo/provekit#798
+- TSavo/sugar#793
+- TSavo/sugar#794
+- TSavo/sugar#796
+- TSavo/sugar#798
 - `2026-05-10-realizer-protocol-v2.md`
 - `2026-05-12-concept-site-memento.md`
 - `2026-05-12-loss-function-memento.md`
@@ -171,7 +171,7 @@ If the referenced loss function is unavailable, unknown, nondeterministic, or re
 
 Witness, monitor, emitter, gate, and legacy dispatcher emission is represented by `observation_wrapper_cid`. When absent, the field value is `null`. When present, it names a wrapper artifact that observes, witnesses, emits, enforces, dispatches, or records boundary behavior around the realized object function.
 
-The wrapper's effects belong to the wrapper. They MUST NOT be inserted into, removed from, or otherwise used to mutate the wrapped object function's `FunctionContractMemento.effects`. This follows TSavo/provekit#793: observer effects belong to wrappers, not wrapped programs. A plan or emitter that needs observer behavior MUST attach a wrapper and cite it through `observation_wrapper_cid`.
+The wrapper's effects belong to the wrapper. They MUST NOT be inserted into, removed from, or otherwise used to mutate the wrapped object function's `FunctionContractMemento.effects`. This follows TSavo/sugar#793: observer effects belong to wrappers, not wrapped programs. A plan or emitter that needs observer behavior MUST attach a wrapper and cite it through `observation_wrapper_cid`.
 
 ## §8. Fail-closed rules
 
@@ -182,7 +182,7 @@ The realization machinery is fail-closed:
 - If any required effect transform slot cannot be filled, the candidate is inapplicable.
 - If no candidate remains after inapplicable candidates are dropped, the orchestrator MUST refuse.
 - If multiple equally-low-loss candidates remain and no deterministic tiebreaker is recorded, the orchestrator MUST refuse.
-- A plan MAY admit a tie only when an explicit `PolicyMemento` per TSavo/provekit#798 records the tie-break policy and the policy CID is included in the candidate-set or provenance material used to mint the plan.
+- A plan MAY admit a tie only when an explicit `PolicyMemento` per TSavo/sugar#798 records the tie-break policy and the policy CID is included in the candidate-set or provenance material used to mint the plan.
 - If the selected candidate is not a member of `candidate_set_cid`, the plan is invalid and MUST be refused.
 - If `sort_morphism_cids.length` differs from `required_sort_morphism_slots.length`, the plan is invalid and MUST be refused.
 
@@ -200,10 +200,10 @@ Producers MUST NOT hash pretty-printed JSON bytes, host-language map iteration o
 
 ## §10. Cross-references
 
-- TSavo/provekit#793: observer effects belong to wrappers, not wrapped programs. This spec applies that rule through `observation_wrapper_cid`.
-- TSavo/provekit#794 and `2026-05-13-sort-morphism-memento.md`: required sort-morphism slots are filled by `SortMorphismMemento` CIDs.
-- TSavo/provekit#796: this spec is part of the admissibility spine and preserves fail-closed selection.
-- TSavo/provekit#798: explicit policy mementos may record tie-break policies when equal-loss candidates are admitted.
+- TSavo/sugar#793: observer effects belong to wrappers, not wrapped programs. This spec applies that rule through `observation_wrapper_cid`.
+- TSavo/sugar#794 and `2026-05-13-sort-morphism-memento.md`: required sort-morphism slots are filled by `SortMorphismMemento` CIDs.
+- TSavo/sugar#796: this spec is part of the admissibility spine and preserves fail-closed selection.
+- TSavo/sugar#798: explicit policy mementos may record tie-break policies when equal-loss candidates are admitted.
 - `2026-05-12-sugar-dict-memento.md`: `sugar_cids` point at sugar dictionaries used during target-side clause rendering.
 - `2026-05-12-loss-function-memento.md`: `loss_function_cid` records the scorer used to select the winning candidate.
 - `2026-05-13-body-template-memento.md`: `body_template_cids` point at body templates available for emission.

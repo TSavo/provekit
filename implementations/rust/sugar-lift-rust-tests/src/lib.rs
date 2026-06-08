@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift-rust-tests
+// sugar-lift-rust-tests
 //
-// Rust parity for provekit-lift-py-tests' assertion-consistency path:
+// Rust parity for sugar-lift-py-tests' assertion-consistency path:
 // recognize scalar assertions inside #[test] functions and emit inv-only
 // ContractDecls. The verifier's existing consistency pass checks those closed
 // invariants with raw SAT: SAT => consistent/discharged; UNSAT => refused.

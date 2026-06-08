@@ -127,7 +127,7 @@ This is Thompson's "Trusting Trust" attack. Sugar does not solve it. The defense
 
 ## Does NOT catch: runtime patching after verification
 
-If an attacker patches the running process's code after `provekit prove` has discharged the call sites, the verifier doesn't see the patch. The verification was honest; the runtime patches are out of scope.
+If an attacker patches the running process's code after `sugar prove` has discharged the call sites, the verifier doesn't see the patch. The verification was honest; the runtime patches are out of scope.
 
 Attacker action: in-memory code injection, JIT manipulation, dynamic loader interception.
 Detection: NONE within the protocol; this requires runtime integrity monitoring (Linux IMA, Windows Code Integrity, hardware-based attestation).

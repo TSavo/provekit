@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Binary entry point for provekit-ir-compiler-coq
+// Binary entry point for sugar-ir-compiler-coq
 //
 // Reads IR JSON from stdin, emits Coq to stdout.
-// Usage: cat input.json | provekit-ir-coq
+// Usage: cat input.json | sugar-ir-coq
 
 use serde_json::Value as Json;
 use std::io::{self, Read};

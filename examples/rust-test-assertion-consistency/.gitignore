@@ -2,7 +2,7 @@
 # Content-addressed run outputs, not committed fixtures.
 *.proof
 .prove.json
-**/.provekit/runs/
-**/.provekit/witnesses/
+**/.sugar/runs/
+**/.sugar/witnesses/
 **/target/
 **/Cargo.lock

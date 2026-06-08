@@ -12,7 +12,7 @@ Locally verifiable proofchains for any transformation.
 A blockchain carries state transitions.
 A proofchain carries formal proofs.
 
-provekit.io · github.com/TSavo/provekit
+sugar.io · github.com/TSavo/sugar
 ```
 
 Visual cut: lead with `k(I) = t` typeset large; supra-omnia-rectum quote optional in serif italic below as accent; cypherpunk lineage suggested via small monospace footer.

@@ -9,8 +9,8 @@
 - `2026-05-13-effect-occurrence-memento.md` (occurrence_kind vs signature_cid layer split)
 - `2026-05-13-proof-run-memento.md` and stage-receipt schema (admission audit)
 - `2026-04-30-canonicalization-grammar.md` (JCS canonicalization, normative)
-- `TSavo/provekit#856` (substrate admissibility rule and honesty gradient)
-- `TSavo/provekit#848` (Bridge C: HTTP cells reshape against this profile)
+- `TSavo/sugar#856` (substrate admissibility rule and honesty gradient)
+- `TSavo/sugar#848` (Bridge C: HTTP cells reshape against this profile)
 - Paper 21 (`docs/papers/21-after-cross-language-every-cross-x-dissolves.md`)
 - Paper 22 placeholder (*After Vendoring*)
 
@@ -22,7 +22,7 @@
 
 The profile carries no semantic content of its own. It does not prove the mapping, carry the loss, declare effects, or describe emission. The semantic memento cited at `semantic_realization_cid` does all of that; the profile is a coordinate-indexed citation of it.
 
-The query the profile answers is the missing piece for `provekit migrate` and cross-library transport: the existing semantic memento families (`RealizationDesugaringMemento`, `PartialMorphismMemento`, `LossyMorphismMemento`) carry `target_lang` but not `target_library` or `target_surface`. The profile adds those coordinates and indexes the semantic chain underneath.
+The query the profile answers is the missing piece for `sugar migrate` and cross-library transport: the existing semantic memento families (`RealizationDesugaringMemento`, `PartialMorphismMemento`, `LossyMorphismMemento`) carry `target_lang` but not `target_library` or `target_surface`. The profile adds those coordinates and indexes the semantic chain underneath.
 
 ### §0.1 Disjointness
 
@@ -243,11 +243,11 @@ Cross-citation correctness: a federated registry admitting a profile MUST also h
 | `lossy-morphism` | transport-gap §1.4 `LossyMorphismMemento` | morphism's `source_contract_cid` | `algorithm`, `operation` |
 | `ext:*` | extension-defined | extension-defined | extension-defined |
 
-The morphism direction is **realize-direction**: concept on the source side, library surface on the target side. `provekit transport` uses a profile by reading the cited morphism and emitting the target surface for source-program sites bound to the concept.
+The morphism direction is **realize-direction**: concept on the source side, library surface on the target side. `sugar transport` uses a profile by reading the cited morphism and emitting the target surface for source-program sites bound to the concept.
 
 ## §9. Bridge C migration: four-mint chain per cell
 
-Bridge C (`TSavo/provekit#848`) authored six HTTP cells with an invented `concept_bindings[]` field inside opaque sugar-dict content. Those cells did not conform to any minted spec.
+Bridge C (`TSavo/sugar#848`) authored six HTTP cells with an invented `concept_bindings[]` field inside opaque sugar-dict content. Those cells did not conform to any minted spec.
 
 Per `#856` admissibility rule, those cells were never admissible to the substrate registry. The reshape (gated on this spec landing) produces **four mints per `(concept, target)` cell**:
 

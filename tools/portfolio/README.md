@@ -1,6 +1,6 @@
-# ProvekIt Portfolio Image
+# Sugar Portfolio Image
 
-This directory contains the consolidated prove portfolio image. It installs every backend used by the ProvekIt verifier portfolio: z3, cvc5, Vampire, Coq `coqc`, Maude, AProVE, CeTA, CSI, Lean 4, and mathlib.
+This directory contains the consolidated prove portfolio image. It installs every backend used by the Sugar verifier portfolio: z3, cvc5, Vampire, Coq `coqc`, Maude, AProVE, CeTA, CSI, Lean 4, and mathlib.
 
 The image follows the solver seats described in:
 
@@ -12,7 +12,7 @@ The image follows the solver seats described in:
 Build from the repository root:
 
 ```sh
-docker build -t provekit-portfolio:dev -f tools/portfolio/Dockerfile tools/portfolio/
+docker build -t sugar-portfolio:dev -f tools/portfolio/Dockerfile tools/portfolio/
 ```
 
 The build is intentionally heavy. Lean plus the mathlib cache is large, and Vampire is built from source.
@@ -22,7 +22,7 @@ The build is intentionally heavy. Lean plus the mathlib cache is large, and Vamp
 Run the in-image verification script:
 
 ```sh
-docker run --rm provekit-portfolio:dev /opt/portfolio/verify-portfolio.sh
+docker run --rm sugar-portfolio:dev /opt/portfolio/verify-portfolio.sh
 ```
 
 The script prints `PASS` or `FAIL` for each backend and exits nonzero if any backend check fails.
@@ -67,21 +67,21 @@ The image creates the mathlib Lake project at:
 /opt/lean-mathlib
 ```
 
-`PROVEKIT_LEAN_PROJECT` is set to that path. The helper `provekit-lean-solve` runs `lake env lean` from the project directory.
+`SUGAR_LEAN_PROJECT` is set to that path. The helper `sugar-lean-solve` runs `lake env lean` from the project directory.
 
 ## Combining With The Gold Image
 
 This image is solver-first. If a single full-pipeline image is needed, extend this image and add the lifter or ingest layers:
 
 ```Dockerfile
-FROM provekit-portfolio:dev
+FROM sugar-portfolio:dev
 # Add the lifter and ingest layers here.
 ```
 
 The inverse also works when the ingest image is the base:
 
 ```Dockerfile
-FROM provekit-gold:dev
+FROM sugar-gold:dev
 # Add the portfolio solver layers from tools/portfolio/Dockerfile.
 ```
 

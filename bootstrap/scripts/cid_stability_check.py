@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_DIR = REPO_ROOT / "implementations/rust/libprovekit/tests/fixtures/proofir"
+FIXTURE_DIR = REPO_ROOT / "implementations/rust/libsugar/tests/fixtures/proofir"
 
 
 def main() -> int:
@@ -25,7 +25,7 @@ def main() -> int:
             "--manifest-path",
             "implementations/rust/Cargo.toml",
             "-p",
-            "libprovekit",
+            "libsugar",
             "--test",
             "cid_stability",
             "--quiet",

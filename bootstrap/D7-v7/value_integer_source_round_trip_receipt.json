@@ -1,14 +1,14 @@
 {
   "version": "1",
   "target": {
-    "crate": "provekit-canonicalizer",
+    "crate": "sugar-canonicalizer",
     "function": "impl Value::integer",
-    "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs"
+    "source_path": "implementations/rust/sugar-canonicalizer/src/value.rs"
   },
   "lift": {
-    "tool": "provekit-walk",
-    "command": "cd implementations/rust && target/debug/provekit-walk-emit term provekit-canonicalizer/src/value.rs integer /private/tmp/d7-v7-walk/integer.raw.json",
-    "fixture_path": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_integer.json",
+    "tool": "sugar-walk",
+    "command": "cd implementations/rust && target/debug/sugar-walk-emit term sugar-canonicalizer/src/value.rs integer /private/tmp/d7-v7-walk/integer.raw.json",
+    "fixture_path": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_integer.json",
     "fixture_cid": "blake3-512:e69f9d9cf2ffac684c58502e416d722b4a94bf2269f7ac135010520e57a65660e7093b517bf17f01bfe1a574794881f3e7d28c091fb0a6b5507cddb2ec9e279a",
     "outcome": "handles-partially-with-loss-record",
     "term_surface": "return(call:new(Arc::new, [call:Integer(Value::Integer, [n])]))",
@@ -34,7 +34,7 @@
   "pipeline": {
     "step_1_fixture_cid": "blake3-512:e69f9d9cf2ffac684c58502e416d722b4a94bf2269f7ac135010520e57a65660e7093b517bf17f01bfe1a574794881f3e7d28c091fb0a6b5507cddb2ec9e279a",
     "step_2_resolve": "summary=return(call:new(literal(\"Arc::new\"), literal([\"call:Integer(Value::Integer, [n])\"]))) -> sort {\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}; jcs={\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:Integer(Value::Integer, [n])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
-    "step_3_4_realize_command": "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, \"integer\", [\"n\"], [\"i64\"], \"Arc < Value >\")",
+    "step_3_4_realize_command": "sugar_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, \"integer\", [\"n\"], [\"i64\"], \"Arc < Value >\")",
     "step_3_4_realize_input": {
       "resolved_term_json": "{\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:Integer(Value::Integer, [n])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
       "function": "integer",

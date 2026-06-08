@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-ir-symbolic: Rust kit. Mirrors the C++ kit at
-// implementations/cpp/provekit-ir-symbolic/include/provekit/ir.hpp.
+// sugar-ir-symbolic: Rust kit. Mirrors the C++ kit at
+// implementations/cpp/sugar-ir-symbolic/include/sugar/ir.hpp.
 //
 // Maximal-uniformity IR per protocol/specs/2026-04-30-ir-formal-grammar.md
 // (catalog v1.1.0). Every node has `kind`, then `name` (when applicable),

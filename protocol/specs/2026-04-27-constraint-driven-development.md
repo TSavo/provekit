@@ -1,6 +1,6 @@
 # Constraint-Driven Development
 
-> **ProvekIt.** The k is silent. The slogan is the product: *Prove It.*
+> **Sugar.** The k is silent. The slogan is the product: *Prove It.*
 
 **Date:** 2026-04-27
 **Status:** Positioning + methodology doc, paired with the standing-invariant-runtime spec
@@ -12,7 +12,7 @@ A methodology and a product positioning. The methodology, named honestly:
 **development whose trajectory is driven by the codebase's accumulating
 impossibilities — the things it cannot become.** Each fix mints a permanent
 constraint; the cumulative constraint set monotonically reduces the
-codebase's degrees of freedom; the value is in the reduction. ProvekIt's
+codebase's degrees of freedom; the value is in the reduction. Sugar's
 fix loop is the mechanism that converts each problem statement into a
 constraint, and the standing runtime is the substrate that enforces every
 accumulated constraint on every commit, mechanically, at git-commit speed.
@@ -117,7 +117,7 @@ git-commit speed across every call site that exists today AND every call
 site that ever gets added later, derived mechanically from the actual
 problems a team has actually encountered.**
 
-That gap is the entire ProvekIt product. The fix loop + shadow AST + Z3
+That gap is the entire Sugar product. The fix loop + shadow AST + Z3
 path enumeration + git-hook construction is the only construction that
 fills it, and it does so as a side effect of the action a developer was
 already going to take ("fix this bug" / "add this feature" / "make this
@@ -137,7 +137,7 @@ The intake stage generalizes over two equally-valid input shapes:
   extractor reads both, derives what the change was trying to accomplish,
   mints a constraint capturing that intent, and ships any regression test
   that would lock the intent in. If the existing test suite already
-  covers the intent, no test gets added; if it doesn't, ProvekIt writes
+  covers the intent, no test gets added; if it doesn't, Sugar writes
   the missing test as part of its output.
 
 Both directions reduce to the same canonical operation: **artifact-of-
@@ -148,7 +148,7 @@ v1 extension — the framework is coherent because both directions live
 under one intake.
 
 The retrospective direction unlocks two important properties:
-- **Existing codebases self-bootstrap.** Point ProvekIt at a five-year-old
+- **Existing codebases self-bootstrap.** Point Sugar at a five-year-old
   codebase and run the retrospective intake in batch over the existing
   commit log. Thousands of constraints get mined from history that nobody
   ever wrote down. The constraint corpus arrives populated.
@@ -190,7 +190,7 @@ direction. JSON-shaped:
   "outputBundle": {
     "patch": "<diff if change is needed>",
     "addedTests": ["<test code if missing>"],
-    "constraintArtifact": ".provekit/invariants/<sha>.json"
+    "constraintArtifact": ".sugar/invariants/<sha>.json"
   }
 }
 ```
@@ -242,7 +242,7 @@ type IntentReportConstraintCandidate = {
 type IntentReportOutputBundle = {
   patch: string | null;                  // null when "holds"
   addedTests: string[];
-  constraintArtifact: string | null;     // path to .provekit/invariants/<sha>.json, null when no candidate survived
+  constraintArtifact: string | null;     // path to .sugar/invariants/<sha>.json, null when no candidate survived
 };
 ```
 
@@ -376,17 +376,17 @@ fix loop processes each intent:
   ├── D1 assembles bundle: intent report + patch + constraint + regression
   │   test (including any that were missing from the intake) + audit
   └── D2 emits patch.diff + pr-body.md + writes constraint to
-      .provekit/invariants/<sha>.json + writes any added tests to the
+      .sugar/invariants/<sha>.json + writes any added tests to the
       appropriate test paths
   │
   ▼
 human reviews the change, accepts the patch, commits
   │
   ▼
-.provekit/invariants/<sha>.json is now source-controlled
+.sugar/invariants/<sha>.json is now source-controlled
   │
   ▼
-provekit verify pre-commit hook runs on every subsequent commit
+sugar verify pre-commit hook runs on every subsequent commit
   │
   ├── re-resolve every constraint's bindings against current AST
   ├── enumerate paths to each protected sink via shadow AST
@@ -415,7 +415,7 @@ The architecture is one pipeline (artifact-of-change → intent → constraint
 invariant; the inputs vary. Five conceptual input shapes feed the same
 universal gate, distinguished by *who* triggers them, *when*, and *how*
 the output gets routed. These are input shapes the pipeline accepts, not
-products ProvekIt ships. (See "Distribution: two channels" below for the
+products Sugar ships. (See "Distribution: two channels" below for the
 actual product surface.)
 
 1. **Interactive shape — "fix this bug" / "make this change."** A user
@@ -423,22 +423,22 @@ actual product surface.)
    pipeline runs prospectively, ships a patch + invariant + tests. The
    bug-fix variant reads from GitHub Issues; the change variant reads
    from any issue tracker. Same pipeline, different inboxes — and the
-   inboxes are third-party, not something ProvekIt ships adapters for.
+   inboxes are third-party, not something Sugar ships adapters for.
 
-2. **Historical shape — `provekit mine-history`.** Walks the existing
+2. **Historical shape — `sugar mine-history`.** Walks the existing
    git log, formats each commit as artifact-of-change, runs the pipeline
    retrospectively. Bootstraps the constraint corpus on adoption day for
    codebases with years of existing history.
 
 3. **Continuous shape — pre-receive / PR webhook.** Every commit (or
-   PR) gets handed to a ProvekIt agent asynchronously. The agent enhances
+   PR) gets handed to a Sugar agent asynchronously. The agent enhances
    the change with whatever the codebase needs to satisfy correctness:
    adds missing tests, mints constraints, opens a follow-up PR with the
    augmentations against the user's branch. Never commits to main
    directly. Always reviewable.
 
 4. **Report-only shape — verify-and-file.** Zero write authority. Runs
-   `provekit verify` on schedule (cron, GitHub Actions); when anything
+   `sugar verify` on schedule (cron, GitHub Actions); when anything
    decays or violates, files a GitHub Issue with the binding details and
    Z3 witness. The output of this shape becomes input to the interactive
    shape — the issue gets typed into the LLM, the fix loop runs.
@@ -447,7 +447,7 @@ actual product surface.)
 5. **MCP shape — `/prove <natural-language assertion>`.** Any LLM
    agent that speaks MCP (Claude Code, Cursor, agentic IDE plugins,
    Copilot if it gains MCP) gets prove-as-a-tool. The agent passes a
-   declarative property in natural language; ProvekIt derives an
+   declarative property in natural language; Sugar derives an
    invariant, runs the verify pipeline against the codebase, returns a
    structured verdict (holds | violated | undecidable + Z3 witness).
    Read-only by default; optionally promotes the property to a
@@ -457,65 +457,65 @@ The five span the cost-vs-friction grid: interactive is highest-friction
 highest-leverage; historical is one-time bootstrap; continuous is
 zero-friction always-on; report-only is zero-write safety mode; MCP is
 conversational pull. The product is the gate; these are the input shapes
-the gate handles. ProvekIt does not ship Linear webhooks, Slack bots,
+the gate handles. Sugar does not ship Linear webhooks, Slack bots,
 GitHub Issues integrations, email connectors, IDE plugins for every
 editor, or custom event-bus subscribers. Anyone can build those on top
-of the CLI; ProvekIt's job is to expose a clean enough gate that they
+of the CLI; Sugar's job is to expose a clean enough gate that they
 become trivial to wire.
 
 ## Distribution: two channels
 
 The five input shapes above describe what the gate can consume. The
-distribution story is shorter and operationally cleaner: ProvekIt ships
+distribution story is shorter and operationally cleaner: Sugar ships
 through exactly **two channels**.
 
 ### Channel 1 — CI Action
 
-`provekit verify` runs as one step in any developer's existing CI
+`sugar verify` runs as one step in any developer's existing CI
 pipeline. GitHub Actions, GitLab CI, Buildkite, Jenkins, plain shell —
-the developer adds one step; ProvekIt becomes a required check; branch
+the developer adds one step; Sugar becomes a required check; branch
 protection blocks merges that fail. **That's the install.** No bespoke
 integration, no separate dashboard, no event-bus subscriptions. The
-GitHub Action wraps `provekit verify` and exposes its verdict to the
+GitHub Action wraps `sugar verify` and exposes its verdict to the
 existing PR check surface every developer already understands.
 
 ### Channel 2 — Library entry points (IDEs, agent runtimes, platforms)
 
-`provekit` exposes a clean library surface — typed entry points for
+`sugar` exposes a clean library surface — typed entry points for
 intake, verify, fix, and the standing-runtime store — that any IDE,
 agent runtime, or platform can call. Claude Code and Cursor integrate
-ProvekIt to prove correctness during agent sessions. Holyship integrates
-ProvekIt as a gate in its gate library, intercepting the agent's `report`
+Sugar to prove correctness during agent sessions. Holyship integrates
+Sugar as a gate in its gate library, intercepting the agent's `report`
 boundary and running the full pipeline before the entity advances.
 (Holyship is described in detail in its own section below as a worked
 example of the agent-runtime integration shape.) Future IDEs and agent
-runtimes plug into the same library entry points; ProvekIt doesn't
+runtimes plug into the same library entry points; Sugar doesn't
 write per-IDE plugins, it provides the surface the integrators target.
 
 ### The npm package surface
 
-`npm i provekit` produces a single package that backs both channels.
+`npm i sugar` produces a single package that backs both channels.
 The package layout is small and frozen by these constraints:
 
 **Binary entry points (Channel 1):**
 
 ```
-bin/provekit               → CLI launcher (delegates to src/cli.ts via tsx)
+bin/sugar               → CLI launcher (delegates to src/cli.ts via tsx)
 ```
 
 The CLI exposes these subcommands, each one a thin wrapper around a
 library entry point:
 
 ```
-provekit verify [path]              → mechanical Part A; Z3 + path checker
-provekit fix-loop <bug-or-change>   → full Part B pipeline (interactive shape)
-provekit mine-history [opts]        → retrospective bulk intake (historical shape)
-provekit prove <assertion>          → MCP-shape evaluation for one-shot use
-provekit watch                      → standing runtime; persistent verify on file change
-provekit version                    → package version + corpus schema version
+sugar verify [path]              → mechanical Part A; Z3 + path checker
+sugar fix-loop <bug-or-change>   → full Part B pipeline (interactive shape)
+sugar mine-history [opts]        → retrospective bulk intake (historical shape)
+sugar prove <assertion>          → MCP-shape evaluation for one-shot use
+sugar watch                      → standing runtime; persistent verify on file change
+sugar version                    → package version + corpus schema version
 ```
 
-`provekit verify` is the only subcommand that runs in pre-commit / CI.
+`sugar verify` is the only subcommand that runs in pre-commit / CI.
 The others are gate-promotion-tier and run interactively or under
 agent-runtime control.
 
@@ -530,7 +530,7 @@ import {
   prove,            // (assertion, opts) → ProveResult
   store,            // standing-invariant-runtime store API
   contracts,        // type-only re-exports of IntentReport et al
-} from "provekit";
+} from "sugar";
 ```
 
 The `exports` map in `package.json` pins these as the only public surface:
@@ -540,9 +540,9 @@ The `exports` map in `package.json` pins these as the only public surface:
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "import": "./lib/provekit.mjs",
-      "require": "./lib/provekit.cjs",
-      "default": "./lib/provekit.cjs"
+      "import": "./lib/sugar.mjs",
+      "require": "./lib/sugar.cjs",
+      "default": "./lib/sugar.cjs"
     },
     "./contracts": "./lib/contracts.mjs",
     "./package.json": "./package.json"
@@ -560,24 +560,24 @@ bin/                        CLI launchers
 lib/                        compiled JS (CJS + ESM)
 src/                        TS sources (for sourcemaps + type lookup)
 drizzle/                    SQL migrations for the standing-runtime store
-.provekit/principles/       starter principle library (the seven cross-language)
+.sugar/principles/       starter principle library (the seven cross-language)
 tsconfig.json
 README.md
 LICENSE
 ```
 
-The standing runtime expects `.provekit/` in the consumer's repo (created
-on first `provekit init`); the package itself ships only the *starter*
+The standing runtime expects `.sugar/` in the consumer's repo (created
+on first `sugar init`); the package itself ships only the *starter*
 principles, never the consumer's invariant store.
 
 **GitHub Action wrapper (Channel 1's CI form):**
 
-A separate, tiny package `provekit/action` lives in its own repo and
-wraps `npx provekit verify` for GitHub Actions consumption. The Action
-is a wrapper, not a fork; it pins a specific `provekit` version and adds
+A separate, tiny package `sugar/action` lives in its own repo and
+wraps `npx sugar verify` for GitHub Actions consumption. The Action
+is a wrapper, not a fork; it pins a specific `sugar` version and adds
 nothing beyond reporting the verdict to the PR check surface.
 
-Versioning policy: `provekit` follows semver strictly. Breaking changes
+Versioning policy: `sugar` follows semver strictly. Breaking changes
 include adding a constraint to the impossibility set (which can fail
 codebases that previously passed). Schema bumps to the IntentReport or
 the persisted-invariant format are major-version events with documented
@@ -585,7 +585,7 @@ migrations.
 
 ### What's explicitly NOT the product
 
-These exist conceptually as input shapes but are not artifacts ProvekIt
+These exist conceptually as input shapes but are not artifacts Sugar
 ships, bills for, or supports as first-class integrations:
 
 - Linear webhooks
@@ -600,13 +600,13 @@ library. We don't write or maintain them.
 
 **The marketing line:**
 
-> *ProvekIt is the fourth horseman of the git commit — tsc, lint, test,
+> *Sugar is the fourth horseman of the git commit — tsc, lint, test,
 > prove. Every developer adds it to their CI. Every IDE integrates it
 > to prove correctness.*
 
 ## The two-part architecture: A is the product, B is a plugin
 
-ProvekIt decomposes into two parts with **low coupling** between them and
+Sugar decomposes into two parts with **low coupling** between them and
 **high cohesion** within each. They communicate through one artifact: the
 invariant store on disk. This decomposition is the load-bearing axis of
 the entire architecture.
@@ -614,7 +614,7 @@ the entire architecture.
 ### Part A — The gate (the part that ensures correctness)
 
 Mechanical, deterministic, fast, no LLM in the verification path.
-`provekit verify`, the path enumerator, the Z3 path checker, the cache
+`sugar verify`, the path enumerator, the Z3 path checker, the cache
 layer, the invariant store reader. Lives at every venue: file-edit hook,
 pre-commit, PR check, IDE diagnostic, Holyship gate boundary, MCP
 `/prove` (read mode). Always-on, cheap, sub-second-to-seconds.
@@ -634,7 +634,7 @@ MCP `/prove` (write mode), Holyship `report`-boundary gate. Minutes per
 invocation; token cost matters.
 
 **Part B is a plugin.** It's a *slot* in the architecture, not a single
-implementation we ship. ProvekIt provides a reference implementation of
+implementation we ship. Sugar provides a reference implementation of
 B that uses claude-agent-sdk + ts-morph + git worktrees, but that's one
 option among many. Integrators bring their own:
 
@@ -656,14 +656,14 @@ option among many. Integrators bring their own:
 - **Diff process.** How code changes get produced and applied. We
   produce unified diffs against a worktree. An IDE's B might produce
   in-editor edits via its own diff model.
-- **PR flow.** How the output gets routed back. We emit `provekit-fix.patch`
-  and `provekit-fix.md`. An integrator's B might open a PR via the IDE's
+- **PR flow.** How the output gets routed back. We emit `sugar-fix.patch`
+  and `sugar-fix.md`. An integrator's B might open a PR via the IDE's
   source-control API, comment on a Linear ticket, post to Slack, or
   drop a follow-up commit on a branch.
 
 What B must produce to be a valid implementation: an `IntentReport` JSON
 artifact (per the runtime spec's schema), and any minted invariants
-written to `.provekit/invariants/<sha>.json` in the project's invariant
+written to `.sugar/invariants/<sha>.json` in the project's invariant
 store. That's the contract. Anything that produces those artifacts —
 through whatever LLM, whatever toolpath, whatever sandbox — is a valid B.
 
@@ -699,7 +699,7 @@ The competitive shape that follows:
   BYO sandbox, BYO diff process — without leaving A.
 
 - **Token cost lives in B, not A.** A user with 1,000 invariants on
-  their codebase pays exactly zero per `provekit verify` run. The
+  their codebase pays exactly zero per `sugar verify` run. The
   customer who wants to mint MORE invariants pays per fix-loop run.
   That's the natural pricing surface: A is free because A is cheap to
   run; B is paid because B has real LLM cost. As LLMs get cheaper, B
@@ -709,7 +709,7 @@ The competitive shape that follows:
 **The marketing implication:** never lead with "we use the best AI to
 fix your bugs." Every competitor says that. Always lead with "we make
 your codebase mathematically refuse to regress." The first claim ages
-out by next quarter; the second ages forever. ProvekIt's pitch must
+out by next quarter; the second ages forever. Sugar's pitch must
 always be A. B is the means; A is the product.
 
 The LLMProvider abstraction we already have is the explicit shape of
@@ -798,28 +798,28 @@ The principle library is **partitioned by language**, not flat. Universal
 axioms apply everywhere. Language-specific axioms apply only inside
 their language's universe.
 
-- `.provekit/principles/universal/` — applies to any language. The
+- `.sugar/principles/universal/` — applies to any language. The
   starter seven (division-by-zero, modulo-by-zero, NaN equality,
   null/undefined dereference, unhandled async failure, array index
   out of bounds, use-after-close).
-- `.provekit/principles/c/` and `.provekit/principles/cpp/` — memory
+- `.sugar/principles/c/` and `.sugar/principles/cpp/` — memory
   safety axioms (use-after-free, double-free, buffer overflow, format-
   string mismatches, return-pointer-to-local, integer signed-overflow
   as UB, strict aliasing). Largest language-specific set because the
   language's compile-time safety story is weakest.
-- `.provekit/principles/java/` — catch-Throwable, synchronized-DCL
+- `.sugar/principles/java/` — catch-Throwable, synchronized-DCL
   needing volatile, ConcurrentModificationException via stale iterator,
   string-equality-by-`==`, etc. Smaller set; Java's runtime catches
   more.
-- `.provekit/principles/python/` — mutable default argument, late-
+- `.sugar/principles/python/` — mutable default argument, late-
   binding closures, `==` vs `is`, integer-division semantics. Small.
-- `.provekit/principles/rust/` — arithmetic overflow in release mode,
+- `.sugar/principles/rust/` — arithmetic overflow in release mode,
   async-cancellation safety, Drop-order surprises. Smallest set; the
   borrow checker enforces most of what would be axioms.
-- `.provekit/principles/go/` — nil-pointer deference (different shape
+- `.sugar/principles/go/` — nil-pointer deference (different shape
   from JS), goroutine leaks, panic in deferred function, time.After
   leaks in select loops.
-- `.provekit/principles/typescript/` — `==` vs `===` beyond NaN,
+- `.sugar/principles/typescript/` — `==` vs `===` beyond NaN,
   `this` binding in nested vs arrow function, hoisting with `var`,
   truthiness coercion edge cases.
 
@@ -843,7 +843,7 @@ observation corpus is unbounded everywhere, and Rust's clean substrate
 makes those observations *more* enforceable** than in any unsafe
 language.
 
-What ProvekIt's observation layer adds to a Rust codebase that the
+What Sugar's observation layer adds to a Rust codebase that the
 type system can't catch:
 
 - **Business-logic invariants.** "Every withdrawal debits account A
@@ -854,7 +854,7 @@ type system can't catch:
   doesn't perform.
 - **State-machine invariants.** "Order can only transition pending →
   paid → shipped." Rust supports this with type-state, but most code
-  doesn't use type-state because it's expensive to write. ProvekIt
+  doesn't use type-state because it's expensive to write. Sugar
   mints the invariant from a real bug; enforces it forever after with
   no rewrite.
 - **API-contract invariants.** "Every authenticated request carries a
@@ -862,7 +862,7 @@ type system can't catch:
   presence, not expiration or auth-context-required-here.
 - **External-system invariants.** "Every database write is followed by
   commit-or-rollback before the connection closes." Compiler can't see
-  the database; ProvekIt models resource lifecycle as state transitions.
+  the database; Sugar models resource lifecycle as state transitions.
 - **Concurrency observations beyond data races.** Rust prevents data
   races; doesn't prevent deadlock patterns. Universal-over-paths
   invariants catch lock-ordering violations and similar.
@@ -872,26 +872,26 @@ Why those observations are MORE enforceable in Rust than in C/C++:
 1. **Cleaner substrate** — regular syntax, explicit lifetimes, annotated
    mutability give the path enumerator free metadata.
 2. **Borrow check as precondition** — aliasing/lifetime properties are
-   already proven by the compiler; ProvekIt's reasoning gets to assume
+   already proven by the compiler; Sugar's reasoning gets to assume
    them.
 3. **Pattern-matching exhaustiveness** — match arms are statically
    exhaustive, making state-machine observations machine-checkable.
 4. **Const-evaluation** — `const fn` and const generics give the path
    enumerator concrete values to symbolic-execute over.
 5. **Pre-filtered bug population** — bugs that survive into a Rust
-   codebase are almost by definition domain-logic bugs; ProvekIt's
+   codebase are almost by definition domain-logic bugs; Sugar's
    value is highest exactly where the language stops doing your work.
 
 Strategic asymmetry across the market:
 
 - **C/C++:** Highest-pain, weak-existing-solution. Pitch is "Don't
-  rewrite in Rust. Install ProvekIt with the C++ axiom set; get
+  rewrite in Rust. Install Sugar with the C++ axiom set; get
   Rust-like memory-safety guarantees on your existing codebase."
 - **Rust:** Low-pain on primitives, high-pain on domain logic. Pitch
-  is "You already have memory safety. ProvekIt adds the layer above
+  is "You already have memory safety. Sugar adds the layer above
   the type system — business logic, state machines, cross-module
   invariants, API contracts. The compiler catches what fits in a
-  type; ProvekIt catches what doesn't."
+  type; Sugar catches what doesn't."
 
 Both markets are strong; different sales, equally legitimate. The
 universal axiom set is the same in both. The language-specific
@@ -899,17 +899,17 @@ principle partition is large for one, small for the other. The
 observation corpus is unbounded in both — and that's the value-
 accumulating surface.
 
-## Product constraints: ProvekIt's own impossibility set
+## Product constraints: Sugar's own impossibility set
 
 The architectural decisions in this doc form a constraint-driven spec
-*about the product itself*. ProvekIt's shape is the intersection of an
-accumulating set of impossibility statements — what ProvekIt *cannot
+*about the product itself*. Sugar's shape is the intersection of an
+accumulating set of impossibility statements — what Sugar *cannot
 become* — derived through the same methodology the product enforces on
 its users' code. Capturing them explicitly:
 
 1. **No LLM in the verification path.** The gate is mechanical or it
    isn't a gate.
-2. **No SaaS-only deployment as the canonical surface.** ProvekIt must
+2. **No SaaS-only deployment as the canonical surface.** Sugar must
    run locally; SaaS is one venue among many.
 3. **No bundled integrations** (Linear, Slack, IDE-specific plugins,
    webhooks). Composition through Unix shapes is the substitute. We
@@ -918,11 +918,11 @@ its users' code. Capturing them explicitly:
    the definition; failing candidates are not principles.
 5. **No silent constraint removal.** Decay is an alarm requiring
    human acknowledgment; never a quiet retraction.
-6. **No heuristic tier.** Biome / ESLint own that surface; ProvekIt
+6. **No heuristic tier.** Biome / ESLint own that surface; Sugar
    competes only at the universally-axiomatic level (principles) or
    the per-codebase-bound level (invariants).
 7. **Part B is a plugin, not a product.** The constraint-minting
-   pipeline is a slot integrators implement; ProvekIt ships a
+   pipeline is a slot integrators implement; Sugar ships a
    reference B but not THE B.
 8. **Part A is open source.** The gate is the moat through ubiquity,
    not exclusivity. Locking it down forfeits the distribution.
@@ -950,20 +950,20 @@ its users' code. Capturing them explicitly:
     changes are explicit retire-plus-remint operations, surfaced in
     the audit trail.
 
-These 15 constraints define ProvekIt by negative space. Anything that
-respects all 15 is ProvekIt; anything that violates any one isn't,
+These 15 constraints define Sugar by negative space. Anything that
+respects all 15 is Sugar; anything that violates any one isn't,
 no matter how feature-rich or well-marketed. The product is the
 intersection.
 
 This is also the product's promise to its users: every constraint here
 is permanent. Future versions tighten the set or add to it; they do not
-relax existing items. ProvekIt ages backwards too — older versions of
+relax existing items. Sugar ages backwards too — older versions of
 the product are *not* less constrained than newer ones. The same shape
-the methodology applies to user codebases applies to ProvekIt itself.
+the methodology applies to user codebases applies to Sugar itself.
 
 ### Encoding the 15 as enforceable invariants
 
-The 15 above are prose. For ProvekIt to age backwards on its own code,
+The 15 above are prose. For Sugar to age backwards on its own code,
 each must be encoded into the same on-disk shape the framework checks
 user codebases against. The encoding strategy partitions the 15 into
 three classes by what kind of evidence makes them checkable:
@@ -973,8 +973,8 @@ mechanically):**
 
 The constraint reduces to a property over the codebase's structure that
 a Z3 path-checker plus an SMT sketch can decide. Each one becomes a
-StoredInvariant under `.provekit/invariants/<hash>.json` with a binding
-that mine-history seeded from ProvekIt's own history.
+StoredInvariant under `.sugar/invariants/<hash>.json` with a binding
+that mine-history seeded from Sugar's own history.
 
 - **#1 No LLM in the verification path.** Encoded as: no module under
   `src/runtime/` imports anything from `src/llm/` or names containing
@@ -992,7 +992,7 @@ that mine-history seeded from ProvekIt's own history.
   every persisted invariant carries an `oracle1Witness` field with a
   Z3 model. Pure presence check, but mechanical.
 - **#13 No LLM-tier work in pre-commit blocking context.** Encoded as:
-  the call graph from `provekit verify`'s entry point reaches no
+  the call graph from `sugar verify`'s entry point reaches no
   symbol under `src/llm/`. Same shape as #1 with a different root.
 - **#15 No silent scope changes.** Encoded as: every invariant's
   scope field changes only via the retire-plus-remint sequence, which
@@ -1036,7 +1036,7 @@ strategic intent, not code shape. They get checked at policy review
 during major-version planning rather than at every commit.
 
 - **#2 No SaaS-only deployment as the canonical surface.** Verified
-  every quarter: does a freshly-cloned repo + `npm i` + `provekit verify`
+  every quarter: does a freshly-cloned repo + `npm i` + `sugar verify`
   work without any cloud dependency? Quarterly drill, audit-trailed.
 - **#3 No bundled integrations.** Verified at release: the package's
   dependency tree contains no Linear, Slack, or per-vendor SDK.
@@ -1048,9 +1048,9 @@ during major-version planning rather than at every commit.
   ISC/MIT/Apache-2.0; the publish pipeline rejects any other license
   string for Part A's entry points.
 
-**Bootstrapping from ProvekIt's own history:**
+**Bootstrapping from Sugar's own history:**
 
-`provekit mine-history --project /path/to/provekit --since <first-commit>`
+`sugar mine-history --project /path/to/sugar --since <first-commit>`
 produces a corpus that includes Class A and B as Z3-checkable / audit-
 checkable artifacts on disk. Class C lives in the spec; the spec is
 itself an artifact of change that mine-history will read in the
@@ -1068,9 +1068,9 @@ described later in the spec is real because the encoding is real.
 The five input shapes describe *who* triggers the pipeline. The
 operational layering describes *when* each component within the pipeline
 runs, what it's allowed to invoke, and — equally importantly — *who owns
-the gate at each tier*. "Where to install ProvekIt" is a gate-ownership
+the gate at each tier*. "Where to install Sugar" is a gate-ownership
 decision: different stakeholders pay different latency budgets, and
-ProvekIt's job is to expose a clean enough interface (CLI, library,
+Sugar's job is to expose a clean enough interface (CLI, library,
 GitHub Action) that each gate-owner can wire it in.
 
 Two strict rules govern the layering:
@@ -1094,7 +1094,7 @@ Under those rules, the operational layering breaks into four tiers:
 latency budget.
 
 Triggered by IDE on-edit, Claude Code hook on save, or `git commit`. The
-on-edit variant runs `provekit verify --changed-files <paths>` and
+on-edit variant runs `sugar verify --changed-files <paths>` and
 re-checks only invariants whose bindings touch the changed files; the
 rest cache-hit. The pre-commit variant runs the four horsemen — tsc /
 lint / test / prove — and blocks the commit on any violation. No LLM in
@@ -1112,11 +1112,11 @@ cache is failing and the architecture has a real bug.
 ### Tier 2 — Repo / PR check (async, full pipeline, blocks merge)
 
 **Gate owner: the repo.** Branch protection rules require a passing
-ProvekIt verdict before merge. The PR sits open while CI runs ProvekIt;
+Sugar verdict before merge. The PR sits open while CI runs Sugar;
 the merge button stays grey until verdict + augmentations land.
 
 Triggered by a PR open or push to a protected branch. The CI Action
-runs `provekit verify` and, optionally, the full pipeline — B0 captures
+runs `sugar verify` and, optionally, the full pipeline — B0 captures
 the diff + message as an intent, C1 mints a candidate constraint, the
 verifier checks the codebase, conditional C3 generates any patch needed,
 C5 emits any missing test. Output gets routed back as a follow-up commit
@@ -1130,12 +1130,12 @@ happens between when they commit and when they next look at their PR.
 ### Tier 3 — Agent-runtime / tool-call boundary (sync, full pipeline, minutes)
 
 **Gate owner: the agent runtime.** When the agent emits `report`, the
-flow engine intercepts and runs ProvekIt against whatever the agent
+flow engine intercepts and runs Sugar against whatever the agent
 produced. The agent stalls until the gate returns.
 
 This is exactly the gate Holyship is designed to host. Holyship's
 `claim` / `report` API and its gate-on-evidence architecture are the
-natural home for ProvekIt's full pipeline. The agent waits because the
+natural home for Sugar's full pipeline. The agent waits because the
 gate is doing the work the agent was supposed to do; the 20-minute
 pause when the pipeline runs end-to-end is correct behavior, not a bug.
 
@@ -1149,10 +1149,10 @@ monotonically as the codebase ships work.
 ### Tier 4 — IDE / session boundary (sync, varies, IDE policy)
 
 **Gate owner: the IDE.** Claude Code, Cursor, or similar intercepts the
-agent's session-end and runs ProvekIt before showing the diff to the
+agent's session-end and runs Sugar before showing the diff to the
 user. The IDE owns the gate; the user opted in via hook config.
 
-Triggered when the user explicitly invokes the pipeline (`provekit fix
+Triggered when the user explicitly invokes the pipeline (`sugar fix
 <issue>`, the MCP `/prove` tool inside an LLM conversation, an issue
 typed from GitHub Issues into the interactive shape) or when the IDE's
 session-end hook fires. The full pipeline runs; cost is paid because
@@ -1162,7 +1162,7 @@ to invoke it.
 ### Why the layering matters
 
 The two rules at the top — "static everywhere, LLM at promotion only" —
-are what make ProvekIt *cheap to run continuously and expensive only at
+are what make Sugar *cheap to run continuously and expensive only at
 moments that earn the cost*. The four tiers exist because four
 different stakeholders own four different gates and pay four different
 latency budgets:
@@ -1187,7 +1187,7 @@ ratchets up monotonically while developer velocity is preserved.
 
 ## The mine-history bootstrap: walking history into a corpus
 
-`provekit mine-history` is the operational form of the historical input
+`sugar mine-history` is the operational form of the historical input
 shape. Architecturally it is one shape:
 
 ```
@@ -1195,7 +1195,7 @@ for sha in git log <range>:
   diff = git show <sha>
   intent_report = retrospective_intake(diff, commit_message)
   for intent in intent_report.intents with constraint candidate:
-    persist(intent) under .provekit/invariants/<content-hash>.json
+    persist(intent) under .sugar/invariants/<content-hash>.json
 ```
 
 Every commit is fed through the same retrospective intake the continuous
@@ -1212,7 +1212,7 @@ invariants are no-op writes.
 
 Operational polish (walk order, --max-commits cap, --dry-run cost
 estimate, per-commit error tolerance, file-existence checks against
-HEAD) lives in `provekit mine-history --help` and the implementation at
+HEAD) lives in `sugar mine-history --help` and the implementation at
 `src/cli.mineHistory.ts`. The architectural claim is the loop and the
 shared retrospective gate.
 
@@ -1220,7 +1220,7 @@ shared retrospective gate.
 
 Holyship (the flow engine + worker pool for agentic software at
 `~/platform/platforms/holyship`) is the prominent example of channel 2
-in action: an agent runtime that integrates ProvekIt as a gate in its
+in action: an agent runtime that integrates Sugar as a gate in its
 gate library. Holyship is one integrator among many — Claude Code,
 Cursor, and any future agent platform integrates the same library
 entry points. Holyship is described in detail here because it's the
@@ -1231,8 +1231,8 @@ agent-velocity.
 Holyship defines pipelines as state machines, enforces transitions with
 deterministic gates, and gives agents only `claim` and `report`. The
 engine — not the agent — decides what comes next, based on gate evidence.
-ProvekIt sits at the agent's tool-call boundary: when an agent emits
-`report`, the flow engine intercepts, ProvekIt runs the full pipeline
+Sugar sits at the agent's tool-call boundary: when an agent emits
+`report`, the flow engine intercepts, Sugar runs the full pipeline
 against whatever the agent produced, and the agent stalls until the
 gate returns a verdict. The 20-minute pause when the pipeline runs
 end-to-end is correct behavior; the agent waits because the gate is
@@ -1267,10 +1267,10 @@ respects the most-recent-K invariant`, gets a verdict. Fail → fix; hold
 prove-as-a-tool with no per-agent configuration.
 
 Holyship is the worked example here because it's the cleanest
-match between ProvekIt's shape and an existing agent-runtime
-architecture. Other agent runtimes that integrate ProvekIt — Claude
+match between Sugar's shape and an existing agent-runtime
+architecture. Other agent runtimes that integrate Sugar — Claude
 Code, Cursor, future platforms — will land on similar shapes for
-similar reasons. The library entry points ProvekIt exposes are what
+similar reasons. The library entry points Sugar exposes are what
 makes that integration tractable for any of them.
 
 ## The user journey
@@ -1284,10 +1284,10 @@ Two adoption shapes, both invisible:
 **Shape A — explicit problem statement.** User encounters an edge case,
 types "fix this bug" to the LLM. Fix loop runs inside the conversation
 the user was already having. Bug gets fixed, first constraint gets minted,
-git hook gets installed, `.provekit/` substrate gets bootstrapped. Zero
+git hook gets installed, `.sugar/` substrate gets bootstrapped. Zero
 friction. Adoption is identical to the action the user was already taking.
 
-**Shape B — implicit commit-as-input.** User installs ProvekIt. From that
+**Shape B — implicit commit-as-input.** User installs Sugar. From that
 moment forward, every commit that lands gets retrospectively mined. The
 intent extractor reads the diff plus commit message, derives intent,
 mints a constraint where one is constraint-shaped, and ships a follow-up
@@ -1309,7 +1309,7 @@ constraints from every previous change in the codebase, mined from every
 commit that's ever landed. The corpus density grows with commit rate,
 not with deliberate user effort.
 
-For existing codebases adopting ProvekIt, the retrospective intake runs
+For existing codebases adopting Sugar, the retrospective intake runs
 in batch over the existing commit log. A five-year-old codebase with
 thousands of commits gets thousands of mined intents on day one, the
 constraint corpus arrives populated, and the standing runtime starts
@@ -1323,7 +1323,7 @@ user files problem statement
   ↓
 fix loop produces patch + constraint + regression test
   ↓
-constraint added to .provekit/invariants/
+constraint added to .sugar/invariants/
   ↓
 git hook now enforces this constraint on every commit
   ↓
@@ -1400,18 +1400,18 @@ already encountered.
 This is the structural answer to vibe-coding's central failure mode.
 Today's vibe-coded code fails because AI generates something that
 *looks* correct but violates an unstated invariant — a property the
-team relies on but never wrote down. With ProvekIt accumulating
+team relies on but never wrote down. With Sugar accumulating
 observations, **the unstated invariants become stated.** Every previous
 failure mode in this codebase becomes a permanent, machine-checked
 constraint the next generation must satisfy. The "unstated assumption"
 attack surface monotonically shrinks toward zero as the corpus grows.
 
-It's also the structural answer to "why ProvekIt vs an AI code-review
+It's also the structural answer to "why Sugar vs an AI code-review
 tool?" AI reviewers are one-shot opinions: an LLM looks at a PR and
 emits prose. The opinion doesn't compound. The next PR gets a fresh
-roll of the dice. ProvekIt's corpus IS the compounded layer — every
+roll of the dice. Sugar's corpus IS the compounded layer — every
 successful intake leaves a permanent wall in the corridor. After a
-year of ProvekIt, the codebase isn't easier to break than it was at
+year of Sugar, the codebase isn't easier to break than it was at
 adoption; it's *harder*, by exactly as many observations as the team
 has shipped. After five years, the AI is generating in a corridor so
 specific to the codebase's history that off-distribution mistakes are
@@ -1427,9 +1427,9 @@ produced an invariant, and you arrive at constraint-based coding.
 The implication is recursive: principles are commodity work and the
 solved-problem surface (universal axioms have been static-analyzable
 for thirty years, served by Coverity, sonar, the compiler, biome).
-ProvekIt's value is not "we ship 7 axioms" — that's the credibility
+Sugar's value is not "we ship 7 axioms" — that's the credibility
 on-ramp, an afternoon's work that falls out of getting the architecture
-right. ProvekIt's value is **every shipped bug becomes a permanent
+right. Sugar's value is **every shipped bug becomes a permanent
 codebase-specific universal-over-paths constraint that nothing else
 can produce, mechanically enforced at git-commit speed forever.** The
 universal axioms are ambient; the corridor is the product.
@@ -1523,7 +1523,7 @@ This collapses several earlier framings into one operational claim:
   through cross-codebase validation as a special case.
 - "Constraint is the shape of the product" — the user (and the AI
   acting on the user's behalf) is continuously producing change
-  signal; ProvekIt catches the formalizable subset and locks it in.
+  signal; Sugar catches the formalizable subset and locks it in.
 
 ### Why this is stronger than prompt-engineering claims
 
@@ -1535,7 +1535,7 @@ what fits in any frontier-model attention window simultaneously. The
 substrate accumulates signal alongside the corpus; the corpus
 accumulates the formalized residue.
 
-Operational consequence: ProvekIt is **the formalization layer for
+Operational consequence: Sugar is **the formalization layer for
 all change signal across the codebase's history.** The team's entire
 change history — every commit, every report, every attachment, every
 pipeline analysis, every prompt — becomes the formalized spec, with
@@ -1572,7 +1572,7 @@ The argument:
   constraint while generating each token. The strategy is wrong on the
   axis it's chosen.
 
-ProvekIt's architecture sidesteps the problem entirely. Two complexity
+Sugar's architecture sidesteps the problem entirely. Two complexity
 surfaces, asymmetric:
 
 - **AI generation:** O(context window). Bounded by attention. Bounded
@@ -1585,7 +1585,7 @@ surfaces, asymmetric:
 
 The asymmetry is the architectural win: **the user can mint constraints
 faster than the AI can absorb them in-context, and that's a feature,
-not a bug.** A year-five ProvekIt-substrate codebase with 500 standing
+not a bug.** A year-five Sugar-substrate codebase with 500 standing
 invariants does not require the AI to load 500 invariants into context.
 The AI generates whatever it generates within whatever context it has;
 the gate runs in single-digit seconds (cache hits cover 95% of
@@ -1593,7 +1593,7 @@ invariants; Z3 runs only on the 5% that touch changed code). The AI
 never sees the 500. **The corridor is mechanical; the AI is sandboxed
 inside it without knowing.**
 
-This is the structural answer to "why is ProvekIt's architecture right
+This is the structural answer to "why is Sugar's architecture right
 where context-engineering approaches are wrong?":
 
 > **You cannot solve correctness through context. You can only solve
@@ -1636,7 +1636,7 @@ substrate as machine-checkable contracts.
 ## The codebase teaches new contributors mechanically
 
 A new human or AI joining the project doesn't need to read documentation
-about "how this codebase works." They run `provekit verify --list` and
+about "how this codebase works." They run `sugar verify --list` and
 see every constraint the codebase pledges to satisfy. The constraints are
 executable specifications. New contributors learn the codebase by reading
 the constraints — by understanding what's forbidden — not by reading
@@ -1654,12 +1654,12 @@ Two surfaces, no heuristics:
 
 - **Constraints (per-codebase invariants)**: hash-bound to specific AST
   nodes via the substrate. The default output of every fix loop run.
-  Enforced by `provekit verify` git hook on every commit. Universal over
+  Enforced by `sugar verify` git hook on every commit. Universal over
   paths to the bound sink in *this* codebase.
 
-Heuristics are biome's product, not ProvekIt's. Empty-catch, falsy-
+Heuristics are biome's product, not Sugar's. Empty-catch, falsy-
 default, exhaustive-deps, unused-vars — that whole surface is owned by
-linters. ProvekIt competing there has zero value differential. The
+linters. Sugar competing there has zero value differential. The
 interesting space is exactly the two extremes: locally provable
 (per-codebase constraints, the bulk of output) and universally provable
 (principles, the rare graduation).
@@ -1702,7 +1702,7 @@ TDD cannot cover.
 
 ## The pitch, in one line
 
-> *ProvekIt is the fourth horseman of the git commit — tsc, lint, test,
+> *Sugar is the fourth horseman of the git commit — tsc, lint, test,
 > prove. Every developer adds it to their CI. Every IDE integrates it
 > to prove correctness.*
 
@@ -1736,7 +1736,7 @@ exists so that:
    is the source of truth for any future architecture decisions.
 4. The marketing line is grounded in the architecture and traceable to
    the substrate that enforces it.
-5. Future contributors can answer the question "why is provekit different
+5. Future contributors can answer the question "why is sugar different
    from biome / TypeScript / unit tests?" with a coherent technical
    answer, not a marketing slogan.
 6. The naming is honest: development is driven by what the codebase
@@ -1768,11 +1768,11 @@ These are v2+. v1 ships without them and remains the load-bearing claim.
 
 ## Bottom line
 
-ProvekIt's product is not "AI fixes your bugs faster." That's the
+Sugar's product is not "AI fixes your bugs faster." That's the
 productivity story everyone else is selling, and it's bounded by
 human-equivalent quality.
 
-ProvekIt's product is: **every problem your codebase encounters becomes a
+Sugar's product is: **every problem your codebase encounters becomes a
 permanent constraint on what every line of code anyone (human or AI) ever
 writes from then on, mechanically enforced at git-commit speed.** The
 codebase's degrees of freedom decrease monotonically. Software ages

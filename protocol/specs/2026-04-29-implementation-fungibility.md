@@ -1,4 +1,4 @@
-# ProvekIt: implementation fungibility
+# Sugar: implementation fungibility
 
 > Author: shared session 2026-04-29 (T + Claude). The framework's
 > identity is its spec, not its implementation. Multiple
@@ -8,12 +8,12 @@
 
 The framework's architectural primitive — content-addressed hash-and-
 trust with producer fungibility — applies recursively to the framework
-itself. The TypeScript reference implementation (ProvekIt) can be
+itself. The TypeScript reference implementation (Sugar) can be
 rewritten in Go (ProvegIt), in Rust (ProverIt), in Lean4, in any host
 language. Each rewrite is a separate implementation with its own
 brand, community, and maintenance trajectory. The **spec remains
 durable**; the **artifacts remain interchangeable**. Mementos produced
-by ProvegIt (Go) and ProverIt (Rust) and ProvekIt (TypeScript) compose
+by ProvegIt (Go) and ProverIt (Rust) and Sugar (TypeScript) compose
 at the wrapper level because they all conform to the same content-
 addressed spec.
 
@@ -28,7 +28,7 @@ The implementations:
 
 | Brand | Host language | Status | CID |
 |---|---|---|---|
-| ProvekIt | TypeScript | Reference | spec_cid (the canonical) |
+| Sugar | TypeScript | Reference | spec_cid (the canonical) |
 | ProvegIt | Go | Sketch | (whenever it ships) |
 | ProverIt | Rust | Sketch | (whenever it ships) |
 | (TBD) | Lean4 | Aspirational | — |
@@ -42,12 +42,12 @@ same producer registry, the same kernel combinators. Each emits
 mementos in the same wrapper schema with the same canonical CID
 construction.
 
-A user installing ProvekIt or ProvegIt or ProverIt experiences the
+A user installing Sugar or ProvegIt or ProverIt experiences the
 same framework. Their mementos are produced and consumed
-interchangeably. A codebase verified by ProvekIt's CI tier and then
+interchangeably. A codebase verified by Sugar's CI tier and then
 re-verified by ProvegIt's swarm-validator gets matching CIDs (modulo
 producedBy and producedAt). Cross-validation across implementations
-works — if ProvekIt and ProvegIt both verify the same property and
+works — if Sugar and ProvegIt both verify the same property and
 disagree on the verdict, the disagreement is itself a quality signal.
 
 ## What "the spec remains durable" means
@@ -98,7 +98,7 @@ This is the framework's principle applied to itself.
 | IR-formula layer | LLMs propose; cross-validation between LLMs interchangeable |
 | Workflow layer | Different orchestrations produce comparable workflow-run mementos |
 | Kit layer | Multiple Rust kits compose; multiple COBOL kits compose |
-| **Implementation layer** | **ProvekIt, ProvegIt, ProverIt all interchangeable** |
+| **Implementation layer** | **Sugar, ProvegIt, ProverIt all interchangeable** |
 | Spec layer | Specs are content-addressed; new spec CIDs publish freely; consumers choose |
 
 The principle holds at every level. The framework's identity is the
@@ -108,10 +108,10 @@ witness) is interchangeable infrastructure.
 ## Why this matters
 
 **No vendor lock-in at the framework level.** A customer adopting
-ProvekIt is not adopting "Anthropic's code" or "T's code" or any
+Sugar is not adopting "Anthropic's code" or "T's code" or any
 specific organization's codebase. They're adopting the **spec**. The
 spec is durable across organizations; implementations come and go.
-A customer who later wants to migrate from ProvekIt (TS) to ProvegIt
+A customer who later wants to migrate from Sugar (TS) to ProvegIt
 (Go) for performance, or to ProverIt (Rust) for embedded use, or to
 an in-house implementation for security reasons — does so without
 losing any mementos. Their proof DAG is durable across implementations.
@@ -134,18 +134,18 @@ addressed; each conforms (or doesn't) to the spec; mementos compose
 or don't based on conformance, not on provenance.
 
 **Trust is rooted in the spec, not the codebase.** Reading "the
-ProvekIt source code" tells you about one implementation. Reading
-"the ProvekIt specs" tells you about the framework. Auditors,
+Sugar source code" tells you about one implementation. Reading
+"the Sugar specs" tells you about the framework. Auditors,
 regulators, and security researchers verify *the spec*; they verify
 *implementations against the spec*; they don't have to trust any
 particular codebase to trust the framework.
 
-**The framework absorbs its own future.** When ProvekIt's TypeScript
+**The framework absorbs its own future.** When Sugar's TypeScript
 codebase eventually becomes legacy (the way every codebase
 eventually becomes legacy), the framework persists because the spec
 persists. ProvegIt or ProverIt or some-future-impl carries it
 forward. The same way Z3 retiring doesn't invalidate Z3-signed
-mementos, ProvekIt-the-codebase retiring doesn't invalidate the
+mementos, Sugar-the-codebase retiring doesn't invalidate the
 framework. The framework is the spec; the spec is content-addressed;
 the spec outlives every implementation.
 
@@ -156,12 +156,12 @@ Developer authoring Go code:
   $ go install github.com/provegit/provegit-cli@latest
   $ cd my-go-project
   $ provegit prove
-  # → mementos produced; stored in .provekit/proofs/
+  # → mementos produced; stored in .sugar/proofs/
   
 Developer working in mixed Rust+TS shop:
-  $ npm install -g @provekit/cli
+  $ npm install -g @sugar/cli
   $ cd ts-package
-  $ provekit prove        # produces TS mementos
+  $ sugar prove        # produces TS mementos
   $ cargo install proverit-cli
   $ cd ../rust-package
   $ proverit prove        # produces Rust mementos
@@ -169,7 +169,7 @@ Developer working in mixed Rust+TS shop:
 Both shops' mementos compose into the same proof DAG.
 Both shops' CI walks the DAG and validates with whichever CLI it
 trusts.
-A migration from ProvekIt to ProvegIt: same .provekit/proofs/
+A migration from Sugar to ProvegIt: same .sugar/proofs/
 directory; new CLI tool reads it; framework continues seamlessly.
 ```
 
@@ -180,15 +180,15 @@ implementation-specific. The proof DAG is implementation-agnostic.
 
 Each implementation gets its own brand and identity:
 
-- **ProvekIt** — TypeScript reference. Lowercase k, capital It.
+- **Sugar** — TypeScript reference. Lowercase k, capital It.
   "Prove It" + "Kit" embedded. Current canonical reference.
 - **ProvegIt** — Go reimplementation. The "g" is for Go.
 - **ProverIt** — Rust reimplementation. The "ver" is Rust-flavored;
   "Prover It" reads cleanly.
-- (TBD) — Lean4 implementation might be **ProvekIt-Lean** or
+- (TBD) — Lean4 implementation might be **Sugar-Lean** or
   **PfourIt** ("prove it" in Lean4's home base) or whatever its
   community picks.
-- (TBD) — Python might be **ProvekIt-Py** or **ProvenIt**.
+- (TBD) — Python might be **Sugar-Py** or **ProvenIt**.
 - (TBD) — Whatever a community names their port.
 
 Brand fragmentation is fine. Brand is just a label on a particular
@@ -196,7 +196,7 @@ implementation; the spec underneath is shared. Users learn each
 brand's CLI and tooling; the underlying mementos compose.
 
 The brands also distinguish *who maintains what*. ProvegIt's
-maintainer ships fixes; ProverIt's maintainer ships fixes; ProvekIt's
+maintainer ships fixes; ProverIt's maintainer ships fixes; Sugar's
 maintainer ships fixes. They coordinate via the spec's evolution;
 their codebases are independent.
 
@@ -205,12 +205,12 @@ their codebases are independent.
 The architecture supports — and the strategic position requires —
 multiple implementations to ship. Realistic phasing:
 
-1. **ProvekIt (TS) reference matures.** All specs implemented; the
+1. **Sugar (TS) reference matures.** All specs implemented; the
    first kit (TypeScript) is dogfood-tested; the framework is
    demonstrably operational.
 2. **First non-TS implementation ships.** Most likely ProvegIt (Go),
    because Go's standard library + tooling makes it the easiest port
-   of a TS-shaped codebase. Cross-validation between ProvekIt and
+   of a TS-shaped codebase. Cross-validation between Sugar and
    ProvegIt mementos demonstrates the interchangeability claim
    empirically.
 3. **ProverIt (Rust) ships.** For high-performance / embedded / low-
@@ -264,7 +264,7 @@ primitive at successive levels of abstraction:
 - 2001: file blocks at swarm scale (BitTorrent).
 - 2008: transactions content-addressed (Bitcoin).
 - 2014+: arbitrary content (IPFS).
-- 2026: **proofs about software** (ProvekIt).
+- 2026: **proofs about software** (Sugar).
 - 2026: **and the framework that produces those proofs is itself
   content-addressed at the spec level, with implementations
   fungible across host languages**.
@@ -277,5 +277,5 @@ everything else is interchangeable. Software ages backwards because
 specs are durable across every implementation that ever conforms to
 them.
 
-ProvekIt. ProvegIt. ProverIt. Same framework. Different brands.
+Sugar. ProvegIt. ProverIt. Same framework. Different brands.
 Identical artifacts. Durable spec. Interchangeable forever.

@@ -91,7 +91,7 @@ A full bridge under the new layering:
 }
 ```
 
-Where `targetWitnessCid` and `targetBinaryCid` are omitted (or null) because the witness and binary axes are not yet pinned. Compare with the Phase 2 bridges in `implementations/swift/Sources/Provekit/CrossKitBridges.swift`, which currently put `deferred:phase-3-proof-bundle` in the flat `targetProofCid` field. Under this spec those fields move to body and the deferred value is omitted rather than stringified.
+Where `targetWitnessCid` and `targetBinaryCid` are omitted (or null) because the witness and binary axes are not yet pinned. Compare with the Phase 2 bridges in `implementations/swift/Sources/Sugar/CrossKitBridges.swift`, which currently put `deferred:phase-3-proof-bundle` in the flat `targetProofCid` field. Under this spec those fields move to body and the deferred value is omitted rather than stringified.
 
 **R4. Three-axis pin belongs on the consumer's attestation.** A bridge expresses the contract-axis claim in its header. It MAY carry witness and binary axis references in its body. However, a bridge DOES NOT promise the three-axis composition. Only a consumer's own attestation over `(contractCid, witnessCid, binaryCid)` constitutes a three-axis pin (per manifesto §8).
 
@@ -101,7 +101,7 @@ This rule replaces the forward-pin invariant `BridgeDeclaration.ConsequentBundle
 
 **R5. Optional `targetContractSetCid` in body.** Bridges MAY carry `targetContractSetCid` in the body even when `target.kind == "contract"`. This is the contractSetCid of the target contract's containing set at mint time, useful for downstream DAG walks per spec `2026-05-03-contract-set-extension.md`. It is metadata; the substrate does not verify it.
 
-**R6. Single source of truth for cross-kit RPC bridges.** A bridge's `sourceContractCid` and `target.cid` (when `target.kind == "contract"`) MAY be byte-identical when the bridge attests that an implementation in another kit satisfies a contract owned by the source kit. This is the canonical shape for cross-kit RPC bridges where one kit defines the protocol and others implement it: ProvekIt's `lift-plugin-protocol` is owned by the rust kit (in `implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs`) and implemented by per-kit RPC servers in cpp, csharp, go, swift, ts, zig, etc. Each per-kit bridge anchors its target at the rust contractCid; the kit does not re-declare a parallel "counterpart" contract.
+**R6. Single source of truth for cross-kit RPC bridges.** A bridge's `sourceContractCid` and `target.cid` (when `target.kind == "contract"`) MAY be byte-identical when the bridge attests that an implementation in another kit satisfies a contract owned by the source kit. This is the canonical shape for cross-kit RPC bridges where one kit defines the protocol and others implement it: Sugar's `lift-plugin-protocol` is owned by the rust kit (in `implementations/rust/sugar-self-contracts/src/lift_plugin_protocol.rs`) and implemented by per-kit RPC servers in cpp, csharp, go, swift, ts, zig, etc. Each per-kit bridge anchors its target at the rust contractCid; the kit does not re-declare a parallel "counterpart" contract.
 
 Bridges with `sourceContractCid != target.cid` are bridging between distinct contracts (e.g. semver migrations, cross-protocol adapters, contract-version drift) and MUST justify why a separate target contract exists. The default for the cross-kit RPC case is `sourceContractCid == target.cid`.
 

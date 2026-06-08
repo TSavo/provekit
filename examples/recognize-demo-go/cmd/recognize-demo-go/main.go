@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/provekit/recognize-demo-go/pkg/ingest"
-	"github.com/provekit/recognize-demo-go/pkg/persist"
+	"github.com/sugar/recognize-demo-go/pkg/ingest"
+	"github.com/sugar/recognize-demo-go/pkg/persist"
 )
 
 func main() {

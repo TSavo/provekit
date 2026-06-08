@@ -31,7 +31,7 @@ fn nat_discharge_obligation() -> Json {
         "kind": "atomic",
         "name": "equational_theory",
         "theory": {
-            "name": "provekit-nat",
+            "name": "sugar-nat",
             "sorts": ["Nat"],
             "operators": [
                 {"name": "zero", "arity": [], "result": "Nat"},
@@ -89,11 +89,11 @@ fn nat_discharge_obligation() -> Json {
 #[test]
 fn maude_parser_accepts_equal_reduce_normal_forms() {
     let stdout = "\
-reduce in PROVEKIT-NAT : plus(s(zero), s(zero)) .
+reduce in SUGAR-NAT : plus(s(zero), s(zero)) .
 result Nat: s(s(zero))
-reduce in PROVEKIT-NAT : s(s(zero)) .
+reduce in SUGAR-NAT : s(s(zero)) .
 result Nat: s(s(zero))
-search in PROVEKIT-NAT : plus(s(zero), s(zero)) =>* s(s(zero)) .
+search in SUGAR-NAT : plus(s(zero), s(zero)) =>* s(s(zero)) .
 No solution.
 ";
     let parsed = parse_maude_output(stdout).unwrap();

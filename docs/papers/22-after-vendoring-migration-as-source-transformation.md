@@ -6,7 +6,7 @@
 
 For any two libraries in the same language that bind to the same concept hub op, the substrate produces a *computably correct transformation over the program graph* that rewrites the source from library A to library B. Not a wrapper, not an adapter, not a runtime shim. The migrated repository uses library B directly. The package manifest no longer lists library A. The diff is in the user's repository, reviewable per-file, and the diff is accompanied by a signed receipt that justifies every changed function.
 
-The migration command is `provekit migrate --library-from A --library-to B --write`. The work the command does is the same work the substrate has always done (lift, transport, realize) applied to a different axis. The novelty in this paper is what comes out the other end: a *receipt* whose shape is the central editorial claim.
+The migration command is `sugar migrate --library-from A --library-to B --write`. The work the command does is the same work the substrate has always done (lift, transport, realize) applied to a different axis. The novelty in this paper is what comes out the other end: a *receipt* whose shape is the central editorial claim.
 
 ## 2. What the product is not
 
@@ -64,7 +64,7 @@ Hand-migrating this in a 50k-line TypeScript codebase is the multi-week project 
 
 ## 4. The receipt is the deliverable
 
-Here is what comes out of `provekit migrate --library-from better-sqlite3 --library-to pg --write` on a real repository. The diff lands in the working tree the way any patch does. The receipt is a separate signed artifact, committed alongside the diff and verifiable by anyone who has the proofchain head. The receipt's first page is the aggregate. The body is the per-function trail.
+Here is what comes out of `sugar migrate --library-from better-sqlite3 --library-to pg --write` on a real repository. The diff lands in the working tree the way any patch does. The receipt is a separate signed artifact, committed alongside the diff and verifiable by anyone who has the proofchain head. The receipt's first page is the aggregate. The body is the per-function trail.
 
 ```
 132 callsites rewritten
@@ -161,9 +161,9 @@ The migration mechanism is honest about its own limits the way the substrate is 
 
 ## 9. Empirical receipt
 
-This paper's claim is empirical, not theoretical. The empirical receipt is the output of `provekit bind` on a real fixture with the sqlite/pg pair as the input. **The receipt is in main.**
+This paper's claim is empirical, not theoretical. The empirical receipt is the output of `sugar bind` on a real fixture with the sqlite/pg pair as the input. **The receipt is in main.**
 
-PRs #867 (Bridge E, `(language, library_tag)` dispatcher), #872 (Stage 1, SQL concept-shape catalog and per-library realize kits), and #873 (Stage 2, the async-rewrite engine and audit receipt envelope) shipped the machinery. Running `provekit bind --library-from typescript-better-sqlite3 --library-to typescript-pg --write` against the `examples/migrate-demo/users-better-sqlite3/` fixture produced the receipt at:
+PRs #867 (Bridge E, `(language, library_tag)` dispatcher), #872 (Stage 1, SQL concept-shape catalog and per-library realize kits), and #873 (Stage 2, the async-rewrite engine and audit receipt envelope) shipped the machinery. Running `sugar bind --library-from typescript-better-sqlite3 --library-to typescript-pg --write` against the `examples/migrate-demo/users-better-sqlite3/` fixture produced the receipt at:
 
 ```
 blake3-512:9faa22b51d6bb08e166a0ebd99bf95a21ab3ea61951c6f420840c68fb985d7f523a5bbfc72888d82d1269d4cc50303f8a243f978b76836ada8fe343f6ba88910

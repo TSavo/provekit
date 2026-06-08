@@ -14,7 +14,7 @@
 
 A substrate that produces signed correctness-receipts for user code while making un-attested claims about its own production mechanism is structurally inconsistent. The first axiom *Supra omnia, rectum* binds the substrate's outputs; it must also bind the substrate's tooling.
 
-Today, the lifter family is the largest violation of that axiom. The "if/else two-armed weakest-precondition narrowing" algorithm is implemented independently in `provekit-walk` (Rust), `provekit-walk-c` (C/libclang), `provekit-walk-py` (Python AST), `provekit-walk-java` (JavaParser), and `provekit-walk-zig` (Zig AST). Five copies. No canonical reference. No content-addressed identity for the algorithm itself. Drift is the default; agreement is unverified. The substrate produces canonical contracts via uncanonical machinery.
+Today, the lifter family is the largest violation of that axiom. The "if/else two-armed weakest-precondition narrowing" algorithm is implemented independently in `sugar-walk` (Rust), `sugar-walk-c` (C/libclang), `sugar-walk-py` (Python AST), `sugar-walk-java` (JavaParser), and `sugar-walk-zig` (Zig AST). Five copies. No canonical reference. No content-addressed identity for the algorithm itself. Drift is the default; agreement is unverified. The substrate produces canonical contracts via uncanonical machinery.
 
 This paper argues that the right shape is:
 

@@ -81,7 +81,7 @@ return the on-disk source iff it recomputes to that CID, else refuse loudly. A
 tampered or wrong-version package yields a CID mismatch, the resolution refuses,
 and you KNOW the on-disk source is not what was proven. This is the binary axis
 of the three-axis pin made operational, checked at every resolution.
-(`implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/source_oracle.py:5-19,72-83`.)
+(`implementations/python/sugar-lift-python-source/src/sugar_lift_python_source/source_oracle.py:5-19,72-83`.)
 
 A **WitnessMemento** is a pointer plus hash plus signature, zero content:
 `{ witness_cid, kind, signer, signature, runtime_cid? }`. A witness is arbitrary
@@ -95,8 +95,8 @@ bytes itself, and compares to the pinned `witness_cid`. A body that does not
 recompute is a broken oracle, caught because Rust does the math anyway. A body
 that recomputes but whose honest re-run differs is drift. Both refuse, loudly,
 and are distinguished.
-(`implementations/rust/provekit-cli/src/witness_verify.rs:1-18`;
-`implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/witness_oracle.py:1-25`.)
+(`implementations/rust/sugar-cli/src/witness_verify.rs:1-18`;
+`implementations/python/sugar-lift-py-tests/src/sugar_lift_py_tests/witness_oracle.py:1-25`.)
 
 The rule is the same for both: trust the recomputation, never the resolver.
 Exact-or-refuse, no silent loss. This is `supra omnia, rectum` made operational

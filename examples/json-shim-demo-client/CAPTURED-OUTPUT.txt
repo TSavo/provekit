@@ -1,4 +1,4 @@
-# json-shim-demo-client — captured provekit materialize output
+# json-shim-demo-client — captured sugar materialize output
 # Generated 2026-05-24T22:30:53Z on branch java-json-shim-demo
 #
 # PIECE 1 (.proof-load-via-RPC): the two java-canonical-bodies-{jackson,gson}.json
@@ -19,7 +19,7 @@
 [1m[32mmaterialize[39m[0m materialized 0 exact + 2 lossy + 0 refused across 1 file(s)
 [exit: 0]
 ---- emitted /tmp/mat-jackson/ConfigCodec.java (assembled by the java kit) ----
-package org.provekit.demo.jsonclient;
+package org.sugar.demo.jsonclient;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -60,7 +60,7 @@ public final class ConfigCodec {
 [1m[32mmaterialize[39m[0m materialized 0 exact + 2 lossy + 0 refused across 1 file(s)
 [exit: 0]
 ---- emitted /tmp/mat-gson/ConfigCodec.java (assembled by the java kit) ----
-package org.provekit.demo.jsonclient;
+package org.sugar.demo.jsonclient;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;

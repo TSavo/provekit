@@ -1,3 +1,0 @@
-name = "go-contracts"
-command = ["provekit-lift-go-verify", "--rpc"]
-working_dir = "."

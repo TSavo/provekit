@@ -1,7 +1,7 @@
 # Platform-Semantics Binding-Kit Compose API Ruling
 
 Date: 2026-05-18
-Status: Active. Implemented in libprovekit/src/core/platform_semantics.rs via PR #1201.
+Status: Active. Implemented in libsugar/src/core/platform_semantics.rs via PR #1201.
 
 ## Ruling
 
@@ -27,7 +27,7 @@ merge_declarations(lang, binding) = {
 
 ## Why this shape
 
-The M+N transport hub depends on it. Per the transport architecture (`project_provekit_transport_architecture` memory): M cross-N translations are infeasible at scale; the substrate needs a hub. With composed declarations:
+The M+N transport hub depends on it. Per the transport architecture (`project_sugar_transport_architecture` memory): M cross-N translations are infeasible at scale; the substrate needs a hub. With composed declarations:
 
 - Adding a new binding requires ONE binding-kit declaration, not M language-binding pairs.
 - Adding a new language requires ONE language-kit declaration, not N language-binding pairs.
@@ -54,4 +54,4 @@ Conflict resolution (binding wins) is also load-bearing. SQLite-typescript's `Ro
 - PR #1204: refuse-leg fix consuming the compose output
 - [[2026-05-18-op-coverage-verdict-trichotomy-ruling]] (the comparison primitive that operates on composed declarations)
 - [[2026-05-18-dimension-naming-conventions]] (the dimensions binding-kits declare)
-- `project_provekit_transport_architecture` (memory): M+N hub framing
+- `project_sugar_transport_architecture` (memory): M+N hub framing

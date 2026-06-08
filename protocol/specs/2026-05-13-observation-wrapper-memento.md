@@ -102,11 +102,11 @@ For this specification, `preservation_claim_cid` is opaque, but it is mandatory.
 
 ## §6 RealizationPlanMemento Interaction
 
-When a `RealizationPlanMemento` (TSavo/provekit#801) selects mode-specific observation emission, the plan's `observation_wrapper_cid` MUST be present and MUST resolve to an `ObservationWrapperMemento` under this spec.
+When a `RealizationPlanMemento` (TSavo/sugar#801) selects mode-specific observation emission, the plan's `observation_wrapper_cid` MUST be present and MUST resolve to an `ObservationWrapperMemento` under this spec.
 
 The edge is one-directional: the plan points at the wrapper. An `ObservationWrapperMemento` does NOT carry the back-reference inside its content-addressed body, because including the plan CID inside the wrapper body and the wrapper CID inside the plan body would require a cryptographic-hash fixed point and is not operationally constructible.
 
-If a verifier needs to walk from a wrapper back to the plan that selected it, the verifier MUST consult a `RunMemento` (TSavo/provekit#799), a `StageReceipt`, or other non-CID-body provenance that records which plan minted which wrapper. That provenance lives outside the wrapper's CID input and so does not feed the cycle.
+If a verifier needs to walk from a wrapper back to the plan that selected it, the verifier MUST consult a `RunMemento` (TSavo/sugar#799), a `StageReceipt`, or other non-CID-body provenance that records which plan minted which wrapper. That provenance lives outside the wrapper's CID input and so does not feed the cycle.
 
 ## §7 Fail-Closed Rules
 

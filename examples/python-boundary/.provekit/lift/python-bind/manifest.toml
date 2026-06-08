@@ -1,3 +1,0 @@
-name = "python-bind"
-command = ["provekit-lift-python-verify", "--rpc"]
-working_dir = "."

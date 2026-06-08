@@ -1,4 +1,4 @@
-# ProvekIt Canonicalization Grammar (v1)
+# Sugar Canonicalization Grammar (v1)
 
 **Date:** 2026-04-30
 **Status:** Specification of the deterministic byte sequence that produces `propertyHash` and related content-addressed memento hashes.
@@ -8,7 +8,7 @@
 
 ## 1. Why this spec exists
 
-ProvekIt's content addressing only works if every implementation agrees on the
+Sugar's content addressing only works if every implementation agrees on the
 exact bytes hashed for a given logical claim. Today the TypeScript reference
 implementation in `src/canonicalizer/` produces certain bytes; the Rust, Go,
 and C++ kits agree on the *input-side* IR-JSON encoding (see sibling spec) but

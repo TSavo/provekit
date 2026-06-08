@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // JCS-JSON encoder (RFC 8785 / "JSON Canonicalization Scheme"). v1.
-// Mirrors implementations/cpp/provekit/canonicalizer/jcs.cpp 1:1.
+// Mirrors implementations/cpp/sugar/canonicalizer/jcs.cpp 1:1.
 //
 // Rules (RFC 8785 + protocol/specs/2026-04-30-canonicalization-grammar.md
 // pass 7):

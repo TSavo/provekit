@@ -4,9 +4,9 @@
 
 **Goal:** Add a runnable Bridgeworks Menagerie exhibit for checked 8-bit addition, using real `.c` lifting where available and toy lifters for the non-software domains.
 
-**Architecture:** Follow the Bug Zoo pattern. `menagerie/bridgeworks` owns the exhibit runner, manifests, native artifacts, expected receipts, and mutation cases. The runner invokes the Rust CLI, and the Rust CLI invokes a project-local lift-plugin surface. ProofIR remains the existing FOL grammar from `protocol/provekit-ir.cddl` and `2026-04-30-ir-formal-grammar.md`; `.proof` remains the existing deterministic-CBOR format from `provekit-proof-envelope`. Bridgeworks code does not invent a private ProofIR dialect or private proof format.
+**Architecture:** Follow the Bug Zoo pattern. `menagerie/bridgeworks` owns the exhibit runner, manifests, native artifacts, expected receipts, and mutation cases. The runner invokes the Rust CLI, and the Rust CLI invokes a project-local lift-plugin surface. ProofIR remains the existing FOL grammar from `protocol/sugar-ir.cddl` and `2026-04-30-ir-formal-grammar.md`; `.proof` remains the existing deterministic-CBOR format from `sugar-proof-envelope`. Bridgeworks code does not invent a private ProofIR dialect or private proof format.
 
-**Tech Stack:** Rust/Cargo Menagerie runner, Rust `provekit` CLI, lift-plugin protocol over NDJSON, existing C lifter path for `.c`, toy Bridgeworks adapters for `.trace`, `.asm`, `.isa`, `.v`, `.blif`, `.sp`, `.md`, and `.csv`, existing `provekit-claim-envelope` and `provekit-proof-envelope` crates for contract/implication mementos and `.proof` bundles.
+**Tech Stack:** Rust/Cargo Menagerie runner, Rust `sugar` CLI, lift-plugin protocol over NDJSON, existing C lifter path for `.c`, toy Bridgeworks adapters for `.trace`, `.asm`, `.isa`, `.v`, `.blif`, `.sp`, `.md`, and `.csv`, existing `sugar-claim-envelope` and `sugar-proof-envelope` crates for contract/implication mementos and `.proof` bundles.
 
 ---
 
@@ -14,7 +14,7 @@
 
 - Bridgeworks works like Bug Zoo: manifest-driven, local runner, expected receipts, green positive case, red mutation cases.
 - The runner shells through the Rust CLI. It does not mint mementos or construct `.proof` bytes itself.
-- `.c` artifacts use the existing C lift surface. If the generic `.c` lifter needs a minimal marker path for this exhibit, extend `implementations/c/provekit-lift`, not Bridgeworks.
+- `.c` artifacts use the existing C lift surface. If the generic `.c` lifter needs a minimal marker path for this exhibit, extend `implementations/c/sugar-lift`, not Bridgeworks.
 - The remaining domains use toy lifters, but they still emit valid ProofIR FOL declarations through the lift-plugin protocol.
 - The final `.proof` contains the full implication chain as a DAG of CIDs: contracts plus implication mementos. The root `.proof` CID is the 64-byte inherited handle for the whole chain.
 
@@ -27,7 +27,7 @@ Create:
 - `menagerie/bridgeworks/src/lib.rs`
 - `menagerie/bridgeworks/tests/smoke.rs`
 - `menagerie/bridgeworks/checked-add-u8/specimen.yaml`
-- `menagerie/bridgeworks/checked-add-u8/.provekit/lift/bridgeworks-checked-add/manifest.toml`
+- `menagerie/bridgeworks/checked-add-u8/.sugar/lift/bridgeworks-checked-add/manifest.toml`
 - `menagerie/bridgeworks/checked-add-u8/kit-rpc/run-bridgeworks-lifter.sh`
 - `menagerie/bridgeworks/checked-add-u8/kit-rpc/bridgeworks-lifter.{rs or ts}`
 - `menagerie/bridgeworks/checked-add-u8/contracts/*.yaml`
@@ -48,8 +48,8 @@ Create:
 Modify:
 
 - `implementations/rust/Cargo.toml`
-- `implementations/rust/provekit-cli/src/cmd_mint.rs`
-- `implementations/rust/provekit-claim-envelope/src/lib.rs`
+- `implementations/rust/sugar-cli/src/cmd_mint.rs`
+- `implementations/rust/sugar-claim-envelope/src/lib.rs`
 - `menagerie/manifest.yaml`
 - `menagerie/README.md`
 - `menagerie/bridgeworks/README.md`
@@ -72,7 +72,7 @@ Replace `checked_add_u8.rs` with `checked_add_u8.c` in the spec and README. The 
 Add this rule to the spec:
 
 ```markdown
-The Bridgeworks runner invokes the Rust `provekit` CLI to run the lift-plugin
+The Bridgeworks runner invokes the Rust `sugar` CLI to run the lift-plugin
 surface and mint `.proof` output. Bridgeworks owns exhibit orchestration and
 fixtures; the CLI owns ProofIR validation, memento minting, implication mementos,
 and deterministic `.proof` bytes.
@@ -88,8 +88,8 @@ git commit -m "Align Bridgeworks design with CLI-owned proof pipeline"
 ### Task 2: Extend CLI Mint To Carry The Chain DAG
 
 **Files:**
-- Modify: `implementations/rust/provekit-claim-envelope/src/lib.rs`
-- Modify: `implementations/rust/provekit-cli/src/cmd_mint.rs`
+- Modify: `implementations/rust/sugar-claim-envelope/src/lib.rs`
+- Modify: `implementations/rust/sugar-cli/src/cmd_mint.rs`
 
 - [ ] **Step 1: Expose contract property hashes**
 
@@ -116,7 +116,7 @@ Then change `mint_contract` to call `contract_property_hash(args)` instead of du
 
 - [ ] **Step 2: Add a test for hash consistency**
 
-In `implementations/rust/provekit-claim-envelope/src/lib.rs` tests, mint a simple contract and assert the public helper equals the `header.propertyHash` present in the minted envelope bytes.
+In `implementations/rust/sugar-claim-envelope/src/lib.rs` tests, mint a simple contract and assert the public helper equals the `header.propertyHash` present in the minted envelope bytes.
 
 - [ ] **Step 3: Extend `ir-document` lift responses with optional implications**
 
@@ -143,7 +143,7 @@ Change `mint_from_ir_document` so it:
 1. mints all `kind:"contract"` declarations as today;
 2. records each contract by name with `contractCid`, `propertyHash`, and canonical memento bytes;
 3. reads optional `implications`;
-4. for each implication, calls `provekit_claim_envelope::mint_implication`;
+4. for each implication, calls `sugar_claim_envelope::mint_implication`;
 5. inserts the implication memento bytes into the same `members` map;
 6. builds one `.proof` envelope from contracts plus implications.
 
@@ -164,8 +164,8 @@ Expected:
 - [ ] **Step 6: Run focused tests**
 
 ```sh
-cargo test --manifest-path implementations/rust/provekit-cli/Cargo.toml mint_from_ir_document
-cargo test --manifest-path implementations/rust/provekit-claim-envelope/Cargo.toml contract_property_hash
+cargo test --manifest-path implementations/rust/sugar-cli/Cargo.toml mint_from_ir_document
+cargo test --manifest-path implementations/rust/sugar-claim-envelope/Cargo.toml contract_property_hash
 ```
 
 Expected: PASS.
@@ -173,7 +173,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```sh
-git add implementations/rust/provekit-cli/src/cmd_mint.rs implementations/rust/provekit-claim-envelope/src/lib.rs
+git add implementations/rust/sugar-cli/src/cmd_mint.rs implementations/rust/sugar-claim-envelope/src/lib.rs
 git commit -m "Mint implication DAGs from lift output"
 ```
 
@@ -188,7 +188,7 @@ git commit -m "Mint implication DAGs from lift output"
 
 - [ ] **Step 1: Create crate**
 
-Use the Bug Zoo crate as the template. Dependencies should be `clap`, `serde`, `serde_json`, `serde_yaml`, and `provekit-canonicalizer`.
+Use the Bug Zoo crate as the template. Dependencies should be `clap`, `serde`, `serde_json`, `serde_yaml`, and `sugar-canonicalizer`.
 
 - [ ] **Step 2: Implement runner behavior**
 
@@ -199,7 +199,7 @@ The runner should:
 3. invoke the Rust CLI:
 
 ```sh
-cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- \
+cargo run --manifest-path implementations/rust/sugar-cli/Cargo.toml -- \
   mint \
   --project menagerie/bridgeworks/checked-add-u8 \
   --surface bridgeworks-checked-add \
@@ -210,7 +210,7 @@ cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- \
 
 4. parse the JSON report;
 5. verify the `.proof` file exists;
-6. invoke `provekit dump <file>.proof --json`;
+6. invoke `sugar dump <file>.proof --json`;
 7. compare the observed proof CID, contractSetCid, and named implication edges to expected fixtures;
 8. run mutation cases and require refusal.
 
@@ -218,7 +218,7 @@ cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- \
 
 `tests/smoke.rs` should assert:
 
-- `provekit-bridgeworks --help` is self-contained and does not mention `provekit zoo`;
+- `sugar-bridgeworks --help` is self-contained and does not mention `sugar zoo`;
 - `cargo run --manifest-path menagerie/bridgeworks/Cargo.toml -- --all --json` reports one exhibit;
 - the positive exhibit emits a `.proof` CID beginning with `blake3-512:`;
 - mutation mode reports every red case as refused.
@@ -278,7 +278,7 @@ typedef struct {
     uint8_t value;
 } checked_add_u8_result;
 
-/* provekit:contract checked_add_u8.postcondition */
+/* sugar:contract checked_add_u8.postcondition */
 checked_add_u8_result checked_add_u8(uint8_t a, uint8_t b) {
     uint16_t wide = (uint16_t)a + (uint16_t)b;
     if (wide >= 256) {
@@ -310,7 +310,7 @@ git commit -m "Add Bridgeworks checked-add artifacts"
 ### Task 5: Add Composite Bridgeworks Lift Surface
 
 **Files:**
-- Create: `menagerie/bridgeworks/checked-add-u8/.provekit/lift/bridgeworks-checked-add/manifest.toml`
+- Create: `menagerie/bridgeworks/checked-add-u8/.sugar/lift/bridgeworks-checked-add/manifest.toml`
 - Create: `menagerie/bridgeworks/checked-add-u8/kit-rpc/run-bridgeworks-lifter.sh`
 - Create: `menagerie/bridgeworks/checked-add-u8/kit-rpc/bridgeworks-lifter.{rs or ts}`
 
@@ -319,7 +319,7 @@ git commit -m "Add Bridgeworks checked-add artifacts"
 ```toml
 name = "bridgeworks-checked-add"
 version = "0.1.0"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 command = ["./kit-rpc/run-bridgeworks-lifter.sh"]
 working_dir = "."
 
@@ -346,7 +346,7 @@ The `ir` array must validate against the existing ProofIR grammar. It must conta
 
 - [ ] **Step 3: Delegate `.c` to the C lifter path**
 
-For `checked_add_u8.c`, use the existing C lift surface. If the generic `implementations/c/provekit-lift` path cannot yet emit the contract marker, extend that existing C lifter minimally so this source lifts to `checked_add_u8.postcondition`. Do not implement a separate C parser inside Bridgeworks.
+For `checked_add_u8.c`, use the existing C lift surface. If the generic `implementations/c/sugar-lift` path cannot yet emit the contract marker, extend that existing C lifter minimally so this source lifts to `checked_add_u8.postcondition`. Do not implement a separate C parser inside Bridgeworks.
 
 - [ ] **Step 4: Implement toy domain adapters**
 
@@ -375,7 +375,7 @@ Expected: prints valid `ir-document` JSON and exits 0.
 - [ ] **Step 6: Commit**
 
 ```sh
-git add menagerie/bridgeworks/checked-add-u8/.provekit menagerie/bridgeworks/checked-add-u8/kit-rpc
+git add menagerie/bridgeworks/checked-add-u8/.sugar menagerie/bridgeworks/checked-add-u8/kit-rpc
 git commit -m "Add Bridgeworks lift-plugin surface"
 ```
 
@@ -399,7 +399,7 @@ Add one mutation per layer:
 
 - [ ] **Step 2: Make the lifter reject weakened native artifacts**
 
-Each adapter should return an RPC error or diagnostic that makes `provekit mint` fail closed for the mutation. The Bridgeworks runner records the missing or invalid edge named by `specimen.yaml`.
+Each adapter should return an RPC error or diagnostic that makes `sugar mint` fail closed for the mutation. The Bridgeworks runner records the missing or invalid edge named by `specimen.yaml`.
 
 - [ ] **Step 3: Commit**
 
@@ -421,7 +421,7 @@ git commit -m "Add Bridgeworks mutation refusals"
 Run:
 
 ```sh
-cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- \
+cargo run --manifest-path implementations/rust/sugar-cli/Cargo.toml -- \
   mint \
   --project menagerie/bridgeworks/checked-add-u8 \
   --surface bridgeworks-checked-add \
@@ -430,7 +430,7 @@ cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- \
   --json
 ```
 
-Then run `provekit dump` through the Rust CLI on the emitted proof file and save the JSON fixture.
+Then run `sugar dump` through the Rust CLI on the emitted proof file and save the JSON fixture.
 
 - [ ] **Step 2: Pin runner expectations**
 

@@ -28,11 +28,11 @@ fn daemon_bin() -> PathBuf {
     let release = workspace
         .join("target")
         .join("release")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     let debug = workspace
         .join("target")
         .join("debug")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     if release.exists() {
         release
     } else {
@@ -42,7 +42,7 @@ fn daemon_bin() -> PathBuf {
 
 fn unique_sock_path(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-linkerd-test-{}-{}.sock",
+        "sugar-linkerd-test-{}-{}.sock",
         prefix,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -53,7 +53,7 @@ fn unique_sock_path(prefix: &str) -> PathBuf {
 
 fn unique_snap_path(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-linkerd-test-snap-{}-{}.bin",
+        "sugar-linkerd-test-snap-{}-{}.bin",
         prefix,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-12
 **Branch:** diag/mint-kit-pre-existing (off origin/main)
-**Test file:** `implementations/rust/provekit-cli/tests/mint_kit_integration.rs`
+**Test file:** `implementations/rust/sugar-cli/tests/mint_kit_integration.rs`
 **Conformance gate:** these tests are NOT gated in main CI conformance, so main stays green while they silently fail locally.
 
 ---
@@ -48,7 +48,7 @@ right (EMPTY_SET_CID): blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d62
 
 **Fix options:**
 
-A. Build the binary: `cd implementations/rust && cargo build --release -p provekit-self-contracts` (or equivalent make target). The test then passes with the real non-empty CID. This is the correct fix for CI.
+A. Build the binary: `cd implementations/rust && cargo build --release -p sugar-self-contracts` (or equivalent make target). The test then passes with the real non-empty CID. This is the correct fix for CI.
 
 B. Add an empty-set skip guard for `rust` (and `cpp`) matching the zig pattern:
 ```rust
@@ -132,7 +132,7 @@ blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994
 ```
 (the canonical empty-set CID)
 
-**Manifest path:** `implementations/cpp/.provekit/lift/cpp-self-contracts/manifest.toml`
+**Manifest path:** `implementations/cpp/.sugar/lift/cpp-self-contracts/manifest.toml`
 **Binary declared in manifest:** `./target/mint_cpp_self_contracts`
 **Binary present:** No (`implementations/cpp/target/` does not exist)
 
@@ -140,7 +140,7 @@ blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994
 
 The comment `// Skip rather than fail -- binary may not be built in this environment` again expresses intent to skip, but the skip guard is insufficient.
 
-The `.provekit/self-contracts-attestations/cpp.json` file also does not exist in the worktree, confirming this surface has never been successfully minted in this environment.
+The `.sugar/self-contracts-attestations/cpp.json` file also does not exist in the worktree, confirming this surface has never been successfully minted in this environment.
 
 **Fix options:**
 

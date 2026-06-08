@@ -1,14 +1,14 @@
 # Tutorial: Python
 
-> **Status:** kit shipping in the current v1.6.3 tree. Lift adapter shipping: `pydantic`. Layer-2 structural lift shipping (walks pytest/unittest with bounded loops, helper inlining, `@pytest.mark.parametrize`). Decorator macro shipping: `@provekit.contract`. LSP plugin shipping. Verification via the Rust CLI.
+> **Status:** kit shipping in the current v1.6.3 tree. Lift adapter shipping: `pydantic`. Layer-2 structural lift shipping (walks pytest/unittest with bounded loops, helper inlining, `@pytest.mark.parametrize`). Decorator macro shipping: `@sugar.contract`. LSP plugin shipping. Verification via the Rust CLI.
 
 A walkthrough for Python developers. By the end you have a `.proof` catalog lifted from existing `pydantic.BaseModel` schemas (or pytest tests), verified via the Rust CLI, with red squigglies in your editor via the LSP plugin.
 
 ## 1. What you'll have at the end
 
 - A `.proof` file alongside your Python package.
-- Mementos derived from your existing `pydantic` `Field` constraints, pytest tests, or `@provekit.contract` decorators (no parallel spec).
-- A handshake report from `provekit prove`.
+- Mementos derived from your existing `pydantic` `Field` constraints, pytest tests, or `@sugar.contract` decorators (no parallel spec).
+- A handshake report from `sugar prove`.
 - LSP-driven squigglies in your editor on contract violations.
 
 ## 2. Prerequisites
@@ -21,11 +21,11 @@ A walkthrough for Python developers. By the end you have a `.proof` catalog lift
 
 ```bash
 # the canonical verifier (Rust CLI)
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 # the in-tree Python lift tests / adapter harness
-cd implementations/python/provekit-lift-py-tests
+cd implementations/python/sugar-lift-py-tests
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
@@ -48,17 +48,17 @@ class User(BaseModel):
 Run the lift adapter:
 
 ```bash
-provekit-lift-py
+sugar-lift-py
 ```
 
 The lifter walks `BaseModel` field annotations, canonicalizes constraints into IR (the same IR that Bean Validation `@Min`/`@Max`/`@Pattern` produces), and emits a `.proof`.
 
 **Layer-2 structural lift** also picks up your pytest test files: bounded loops, helper inlining, multi-assertion characterization, `@pytest.mark.parametrize` blocks become first-class IR.
 
-For functions without an existing annotation library, author directly with `@provekit.contract`:
+For functions without an existing annotation library, author directly with `@sugar.contract`:
 
 ```python
-from provekit import contract
+from sugar import contract
 
 @contract(pre="x >= 0", post="result >= x")
 def add_one_or_more(x: int) -> int:
@@ -68,7 +68,7 @@ def add_one_or_more(x: int) -> int:
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 Same handshake, same discharge breakdown shape as the [Rust tutorial step 4](rust.md#step-4-verify).

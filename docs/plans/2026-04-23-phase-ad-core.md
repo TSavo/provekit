@@ -10,7 +10,7 @@
 
 **Tech Stack:** TypeScript, vitest, ts-morph (already in deps), better-sqlite3 (new), drizzle-orm + drizzle-kit (new), Z3 CLI (already used via execSync).
 
-**Spec reference:** `docs/specs/2026-04-23-provekit-v2-design.md`
+**Spec reference:** `docs/specs/2026-04-23-sugar-v2-design.md`
 
 ---
 
@@ -3065,7 +3065,7 @@ git commit -m "e2e: division-by-zero fixture produces IEEE NaN gap end-to-end"
 
 ## Self-Review
 
-Spec coverage check (from `docs/specs/2026-04-23-provekit-v2-design.md`, Phase A-thin + D-core portions):
+Spec coverage check (from `docs/specs/2026-04-23-sugar-v2-design.md`, Phase A-thin + D-core portions):
 
 | Spec item | Task |
 |---|---|

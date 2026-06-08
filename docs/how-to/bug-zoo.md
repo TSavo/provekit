@@ -20,7 +20,7 @@ It starts with ordinary code that passes host checks. Its exhibits show the same
 
 - Sugar-native Java annotations and Spring Web `@RequestParam`;
 - TypeScript zod and class-validator;
-- C# DataAnnotations, `//provekit:` annotations, and LINQ.
+- C# DataAnnotations, `//sugar:` annotations, and LINQ.
 
 Those are not the same host program. They project to the same contract boundary after lifting: `neq(name, null)`.
 
@@ -32,7 +32,7 @@ maybe_null(name) => non_null(name)
 
 The lab witness for null is not a Sugar artifact; it is the bug shape. The
 exhibit/fixed receipt is live: each native surface is lifted with
-`provekit mint`, then the runner asks the verifier formula gate to reject the
+`sugar mint`, then the runner asks the verifier formula gate to reject the
 lab null witness against the lifted non-null requirement and to discharge the
 paired fixed non-null witness.
 
@@ -47,7 +47,7 @@ verdict.
 
 Each species can carry four states:
 
-- `lab/`: ordinary host-language code and checks. These should pass, because the bug is latent under the host's normal surface. No `.provekit` project is configured here.
+- `lab/`: ordinary host-language code and checks. These should pass, because the bug is latent under the host's normal surface. No `.sugar` project is configured here.
 - `exhibit/`: one or more source surfaces lift into ProofIR or link into a LinkBundle and expose the missing edge with a red CLI signal.
 - `fixed/`: paired source surfaces close the edge and re-run through the same ProofIR or LinkBundle path with a green CLI signal.
 - `wild/`: optional real upstream sightings pinned by advisory, commit, path,
@@ -89,12 +89,12 @@ cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all --json
 Trace a slow or hanging specimen:
 
 ```sh
-PROVEKIT_BUG_ZOO_TRACE=1 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all --json
+SUGAR_BUG_ZOO_TRACE=1 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all --json
 ```
 
-Trace output goes to stderr. It prints each host check, `provekit mint`,
+Trace output goes to stderr. It prints each host check, `sugar mint`,
 checked-in LinkBundle receipt read, and verifier formula-gate boundary with elapsed time.
-During mint, the runner also enables `PROVEKIT_CLI_TRACE=1`, so the Rust CLI
+During mint, the runner also enables `SUGAR_CLI_TRACE=1`, so the Rust CLI
 prints RPC milestones for `initialize`, `lift`, and `shutdown`.
 
 ## What The Checker Verifies

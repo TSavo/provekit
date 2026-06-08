@@ -431,7 +431,7 @@ fn source_kind_label_for(
 /// the walk provenance.
 ///
 /// Shape matches the substrate's `ContractDecl` parser (schemaVersion "2")
-/// that existing parsers (provekit-claim-envelope, Zig, Go) accept:
+/// that existing parsers (sugar-claim-envelope, Zig, Go) accept:
 ///   { schemaVersion, kind:"contract", name, outBinding, pre, post, evidence }
 pub fn edge_memento_value(arrival: &ShadowArrival) -> Arc<Value> {
     let name = format!(

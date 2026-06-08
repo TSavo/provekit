@@ -58,7 +58,7 @@ The protocol does not prescribe these. They are operational practices around the
 
 ## Runtime modifications after verification
 
-`provekit prove` runs at build time (or at deploy time). Once verification passes and the binary is loaded, the runtime is out of the protocol's scope:
+`sugar prove` runs at build time (or at deploy time). Once verification passes and the binary is loaded, the runtime is out of the protocol's scope:
 
 - In-memory code injection (process exploitation).
 - Just-in-time compilation that produces different machine code than the verifier saw.

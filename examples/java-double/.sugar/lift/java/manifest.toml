@@ -1,0 +1,4 @@
+name = "java"
+command = ["java", "-jar", "../../implementations/java/sugar-lift-java-core/target/sugar-lsp-java.jar", "--rpc"]
+working_dir = "."
+protocol_versions = ["pep/1.7.0"]

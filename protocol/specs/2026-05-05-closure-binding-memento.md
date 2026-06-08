@@ -260,9 +260,9 @@ cid = "blake3-512:" ++ hex(BLAKE3-512(JCS_bytes))
 
 ## §7. Cross-references
 
-- The `bodyFnCid` and `nCaptures` values are produced by `llbc_closures::extract_closure_captures()` in `implementations/rust/provekit-walk/src/llbc_closures.rs`. The `body_fn_cid` is the `content_cid` of the closure body's `fun_decl` once it is lifted through the normal pipeline.
-- The substrate check lives in `EffectSet::check_opacity` and `compose_function_contracts` in `implementations/rust/provekit-walk/src/contract.rs`.
-- The pool indexing lives in `MementoPool::insert` in `implementations/rust/provekit-verifier/src/types.rs`, keyed by `header.bodyFnCid`.
+- The `bodyFnCid` and `nCaptures` values are produced by `llbc_closures::extract_closure_captures()` in `implementations/rust/sugar-walk/src/llbc_closures.rs`. The `body_fn_cid` is the `content_cid` of the closure body's `fun_decl` once it is lifted through the normal pipeline.
+- The substrate check lives in `EffectSet::check_opacity` and `compose_function_contracts` in `implementations/rust/sugar-walk/src/contract.rs`.
+- The pool indexing lives in `MementoPool::insert` in `implementations/rust/sugar-verifier/src/types.rs`, keyed by `header.bodyFnCid`.
 - The `bodyFnCid` is the `FunctionContractMemento.cid` of the closure body — the contract CID, not the attestation CID. See `2026-05-03-contract-cid-vs-attestation-cid.md` for the distinction.
 - For the `LoopInvariantMemento` (discharges `Effect::OpaqueLoop`), see `2026-05-05-loop-invariant-memento.md`.
 - For the `TryBranchMemento` (discharges `Effect::EarlyReturn`), see `2026-05-05-try-branch-memento.md`.

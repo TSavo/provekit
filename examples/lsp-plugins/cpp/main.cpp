@@ -1,17 +1,17 @@
-// ProvekIt LSP Language Plugin: C++
+// Sugar LSP Language Plugin: C++
 //
-// A standalone binary that speaks provekit-lsp-plugin/1 over stdio.
-// Parses C++ source files and extracts provekit annotations.
+// A standalone binary that speaks sugar-lsp-plugin/1 over stdio.
+// Parses C++ source files and extracts sugar annotations.
 //
-// Usage: ./provekit-lsp-cpp --rpc
+// Usage: ./sugar-lsp-cpp --rpc
 //
-// To use this plugin, add to `.provekit/config.toml`:
+// To use this plugin, add to `.sugar/config.toml`:
 //   [[language]]
 //   name = "cpp"
 //   extensions = [".cpp", ".cc", ".h", ".hpp"]
-//   plugin = "provekit-lsp-cpp"
+//   plugin = "sugar-lsp-cpp"
 //
-// Build: g++ -std=c++17 -o provekit-lsp-cpp main.cpp
+// Build: g++ -std=c++17 -o sugar-lsp-cpp main.cpp
 
 #include <iostream>
 #include <string>
@@ -95,9 +95,9 @@ std::vector<Annotation> parse_cpp(const std::string& text) {
     std::vector<Annotation> annotations;
     auto lines = split_lines(text);
 
-    std::regex re_impl(R"(//\s*provekit:implement\s+([\w-]+))");
-    std::regex re_contract(R"(//\s*provekit:contract)");
-    std::regex re_verify(R"(//\s*provekit:verify)");
+    std::regex re_impl(R"(//\s*sugar:implement\s+([\w-]+))");
+    std::regex re_contract(R"(//\s*sugar:contract)");
+    std::regex re_verify(R"(//\s*sugar:verify)");
     std::regex re_fn(R"(\b(?:void|int|auto|bool|string|double|float|\w+)\s+(\w+)\s*\()");
 
     for (size_t i = 0; i < lines.size(); ++i) {
@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
     }
 
     if (!rpc_mode) {
-        std::cerr << "Usage: provekit-lsp-cpp --rpc" << std::endl;
+        std::cerr << "Usage: sugar-lsp-cpp --rpc" << std::endl;
         return 1;
     }
 
@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
         }
 
         if (method == "initialize") {
-            std::cout << "{\"jsonrpc\":\"2.0\",\"id\":" << id << ",\"result\":{\"name\":\"provekit-lsp-cpp\",\"version\":\"0.1.0\",\"capabilities\":[]}}" << std::endl;
+            std::cout << "{\"jsonrpc\":\"2.0\",\"id\":" << id << ",\"result\":{\"name\":\"sugar-lsp-cpp\",\"version\":\"0.1.0\",\"capabilities\":[]}}" << std::endl;
         } else if (method == "parse") {
             size_t text_pos = line.find("\"text\"");
             std::string text;

@@ -8,10 +8,10 @@
 // `verify`. It proves the SEAM works when something upstream wrote the
 // bridge. It does NOT prove anything upstream actually writes it.
 //
-// This test closes that gap. It drives the REAL `provekit mint` CLI binary
+// This test closes that gap. It drives the REAL `sugar mint` CLI binary
 // against a body-derived `function-contract` ir-document (the shape walk /
 // JavaSourceLifter emit) and asserts the TOOL -- not the test -- wrote the
-// bridge into the bundle. Then it drives the REAL `provekit verify` CLI on
+// bridge into the bundle. Then it drives the REAL `sugar verify` CLI on
 // that tool-minted bundle and asserts the double discharges both ways:
 //
 //   POSITIVE: `double(x) = x*2`, harvested `assert_eq!(double(3), 6)`.
@@ -39,7 +39,7 @@ use std::process::Command;
 
 use serde_json::{json, Value as Json};
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -56,7 +56,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-prod-bridge-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-prod-bridge-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir project");
     p
 }
@@ -162,7 +162,7 @@ fn zero_arg_ir_document(body_value: i64) -> Json {
 /// exits on `shutdown`. The ir-document is baked into the script body so
 /// the lifter is fully self-contained.
 fn write_mock_lifter_with_ir(project: &Path, surface: &str, ir_doc: Json) -> PathBuf {
-    let lift_dir = project.join(".provekit").join("lift").join(surface);
+    let lift_dir = project.join(".sugar").join("lift").join(surface);
     fs::create_dir_all(&lift_dir).expect("mkdir lift surface dir");
 
     // The lift `result` is the ir-document. Embed it as a single JSON line.
@@ -224,19 +224,19 @@ done
 }
 
 /// Build a project whose lift produces the body-derived double contract,
-/// run the REAL `provekit mint` CLI, and return (project_dir, proof_path).
+/// run the REAL `sugar mint` CLI, and return (project_dir, proof_path).
 /// `body_factor` is the body multiplier (2 = honest, 3 = broken).
 fn mint_project_from_ir(suffix: &str, ir_doc: Json) -> (PathBuf, PathBuf) {
     let surface = "mock";
     let project = unique_dir(suffix);
-    fs::create_dir_all(project.join(".provekit")).expect("mkdir .provekit");
+    fs::create_dir_all(project.join(".sugar")).expect("mkdir .sugar");
     // A real kit's config.toml declares its lift surface and may declare its
     // solver plan. This fixture keeps an explicit z3 plan so the production
     // bridge test exercises configured solver dispatch. The `-smt2 -in` flags
     // mirror `registry::build_default_z3`; keep in sync if that fallback
     // changes.
     fs::write(
-        project.join(".provekit").join("config.toml"),
+        project.join(".sugar").join("config.toml"),
         format!(
             "[authoring]\nsurface = \"{surface}\"\n\n\
              [solvers]\ndefault = \"z3\"\n\n\
@@ -247,7 +247,7 @@ fn mint_project_from_ir(suffix: &str, ir_doc: Json) -> (PathBuf, PathBuf) {
     .expect("write config.toml");
     write_mock_lifter_with_ir(&project, surface, ir_doc);
 
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("mint")
         .arg("--project")
         .arg(&project)
@@ -255,10 +255,10 @@ fn mint_project_from_ir(suffix: &str, ir_doc: Json) -> (PathBuf, PathBuf) {
         .arg(&project)
         .arg("--quiet")
         .output()
-        .expect("spawn provekit mint");
+        .expect("spawn sugar mint");
     assert!(
         out.status.success(),
-        "provekit mint must succeed\n  stdout: {}\n  stderr: {}",
+        "sugar mint must succeed\n  stdout: {}\n  stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -291,7 +291,7 @@ fn pool_of_project(project: &Path) -> sugar_verifier::types::MementoPool {
 }
 
 fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("verify")
         .arg("--project")
         .arg(project)
@@ -299,7 +299,7 @@ fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) 
         .arg(witness_dir)
         .arg("--json")
         .output()
-        .expect("spawn provekit verify");
+        .expect("spawn sugar verify");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let receipt = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"));

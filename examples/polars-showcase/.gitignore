@@ -2,8 +2,8 @@
 .prove.json
 .verify.json
 .verify_recompute.json
-**/.provekit/runs/
-**/.provekit/witnesses/
-**/.provekit/lift/*/manifest.toml
+**/.sugar/runs/
+**/.sugar/witnesses/
+**/.sugar/lift/*/manifest.toml
 **/target/
 Cargo.lock

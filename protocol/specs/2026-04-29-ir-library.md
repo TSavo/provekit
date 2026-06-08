@@ -1,4 +1,4 @@
-# ProvekIt: the IR library — `@provekit/ir`
+# Sugar: the IR library — `@sugar/ir`
 
 > Author: shared session 2026-04-29 (T + Claude). The TypeScript-side
 > reference IR library. Defines the canonical authoring surface that
@@ -9,7 +9,7 @@
 The kit standard requires every kit to ship an "IR library" — the
 host-language authoring surface for properties. This spec defines the
 TypeScript reference implementation. Other kits (Rust's
-`provekit_ir` crate, COBOL's PROVEKIT.cpy, Lisp's `:provekit-ir`
+`sugar_ir` crate, COBOL's SUGAR.cpy, Lisp's `:sugar-ir`
 ASDF system) implement the same logical surface in their host
 language's idiom.
 
@@ -27,7 +27,7 @@ This spec fixes:
   exposes in some idiomatic form).
 - The internal representation (the `IrFormula` data type that the
   AST canonicalizer consumes).
-- The package layout (`@provekit/ir`'s npm structure).
+- The package layout (`@sugar/ir`'s npm structure).
 - Forward compatibility rules (how new primitives are added).
 - The relationship to the AST canonicalizer (next spec).
 
@@ -44,7 +44,7 @@ producer; mementos emitted on every clean type-check pass.
 ```typescript
 import type {
   NonZero, NonEmpty, Sorted, Validated, Branded, Refined, NonNull,
-} from "@provekit/ir";
+} from "@sugar/ir";
 
 function divide(a: number, b: NonZero<number>): number {
   return a / b;
@@ -119,7 +119,7 @@ import {
   assert as Assert,
   scope, function_, module_, transition,
   Int, Bool, Ref,
-} from "@provekit/ir";
+} from "@sugar/ir";
 
 const denominatorNonZero = property({
   name: "denominator-nonzero",
@@ -317,7 +317,7 @@ Disagreement surfaces as a quality signal.
 ## Package layout
 
 ```
-@provekit/ir/
+@sugar/ir/
 ├── package.json
 ├── README.md
 ├── src/
@@ -340,7 +340,7 @@ Disagreement surfaces as a quality signal.
     └── ir-formula-roundtrip.test.ts
 ```
 
-Published to npm as `@provekit/ir`. Consumers `npm install @provekit/ir`
+Published to npm as `@sugar/ir`. Consumers `npm install @sugar/ir`
 and start authoring properties. No additional setup.
 
 ## Forward compatibility
@@ -391,7 +391,7 @@ producer-fungible cross-validation.
 The IR library is correct when:
 
 1. A TypeScript developer can author both type-dialect and
-   library-dialect properties using only the `@provekit/ir` exports.
+   library-dialect properties using only the `@sugar/ir` exports.
 2. The runtime IR formula data structure round-trips through
    serialization (JSON canonicalize → string → parse) without
    semantic loss.
@@ -402,8 +402,8 @@ The IR library is correct when:
    and brand is present.
 5. Adding a new primitive is a minor-version bump that doesn't break
    existing consumers.
-6. The same logical claim authored in Rust's `provekit_ir` and in
-   TypeScript's `@provekit/ir` produces canonicalized FOL forms with
+6. The same logical claim authored in Rust's `sugar_ir` and in
+   TypeScript's `@sugar/ir` produces canonicalized FOL forms with
    matching propertyHashes.
 
 When these six hold, the IR library is the operational authoring

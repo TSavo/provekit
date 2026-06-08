@@ -1,0 +1,8 @@
+# PEP 1.7.0 lift plugin manifest for the Java source-native sugar surface.
+# Points at the sugar-lift-java-source shaded JAR built from the
+# implementations/java/sugar-lift-java-source module. Required by
+# `sugar mint` which looks for `.sugar/lift/<surface>/manifest.toml`
+# relative to its --project root.
+name = "java-bind-lift"
+command = ["java", "-jar", "implementations/java/sugar-lift-java-source/target/sugar-lift-java-source.jar", "--rpc"]
+working_dir = "../.."

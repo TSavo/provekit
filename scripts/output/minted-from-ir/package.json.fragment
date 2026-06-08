@@ -1,15 +1,15 @@
 {
-  "name": "@provekit/proofs/ts-types",
+  "name": "@sugar/proofs/ts-types",
   "version": "1.0.0",
-  "description": "@provekit/proofs/ts-types proofs catalog",
+  "description": "@sugar/proofs/ts-types proofs catalog",
   "files": [
     "dist/",
     "lib/",
-    ".provekit/"
+    ".sugar/"
   ],
-  "provekit": {
+  "sugar": {
     "proofHash": "blake3-512:a7e3988e0a06f62d5f246e76509d7811be9ca37f3c129041ba41bc2ca9063e124bf2f857403a48a19e95e3fb8b62d09d605923821a43eccccfb251e260df5d6d",
-    "catalogPath": ".provekit/ts-kit-catalog.json",
+    "catalogPath": ".sugar/ts-kit-catalog.json",
     "kitVersion": "ts-kit@1.0",
     "publicKey": "MCowBQYDK2VwAyEAW4ti3DmNXb8ugOtV0gF52lieU+yqEjySL4sdMcM8FDU=",
     "sourceFile": "scripts/cross-language-demo/runtime-eval/native-source.ts",

@@ -19,8 +19,8 @@ A walkthrough for Ruby developers. By the end you have a `.proof` catalog lifted
 ## 3. Install
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 cd implementations/ruby && bundle install
 ```
@@ -62,18 +62,18 @@ end
 Run the lifter:
 
 ```bash
-bundle exec provekit-lift-ruby
+bundle exec sugar-lift-ruby
 ```
 
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 ## 6. Wire your IDE
 
-- **IDE:** install the LSP plugin (`bin/provekit-lsp-ruby`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
+- **IDE:** install the LSP plugin (`bin/sugar-lsp-ruby`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
 
 ## What's next
 

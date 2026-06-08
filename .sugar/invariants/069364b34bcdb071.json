@@ -1,0 +1,23 @@
+{
+  "id": "069364b34bcdb071",
+  "createdAt": "2026-04-29T06:27:03.276Z",
+  "originatingBug": "Z3 evaluation via runZ3Async completes or times out within 5 seconds",
+  "smt": {
+    "kind": "arithmetic",
+    "declarations": [
+      "(declare-const z3_duration_ms Int) (assert (> z3_duration_ms 5000))"
+    ],
+    "assertion": "(declare-const z3_duration_ms Int) (assert (> z3_duration_ms 5000))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/sugar/src/transport.ts",
+    "function": null,
+    "startLine": 183,
+    "endLine": 183
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "d442f9a094a5cb49797ae25ade97aaccb2a148a5",
+  "retired": null
+}

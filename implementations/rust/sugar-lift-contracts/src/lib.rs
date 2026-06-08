@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift-contracts
+// sugar-lift-contracts
 //
 // Walks the syn AST of a Rust source file looking for functions with
 // `#[contracts::requires(...)]` and `#[contracts::ensures(...)]`
@@ -1115,7 +1115,7 @@ fn emit_doc_evidences(
 
 // ---------------------------------------------------------------------------
 // Helpers: formula-to-IrFormula round-trip, CID mint, serde_json<->CValue
-// (Mirror of the same helpers in provekit-lift-rust-tests PR-C, so the
+// (Mirror of the same helpers in sugar-lift-rust-tests PR-C, so the
 // two lifters produce byte-identical CID-derivation logic.)
 // ---------------------------------------------------------------------------
 
@@ -1156,7 +1156,7 @@ fn serde_json_to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
 }
 
 /// Compute the JCS-canonical CID for an `EvidenceMemento`.
-/// Mirrors the `evidence_memento_cid` helper in `provekit-lift-rust-tests`.
+/// Mirrors the `evidence_memento_cid` helper in `sugar-lift-rust-tests`.
 ///
 /// JCS key order (alphabetical):
 ///   confidence_basis_points, extension_fields, kind, lifter_cid,

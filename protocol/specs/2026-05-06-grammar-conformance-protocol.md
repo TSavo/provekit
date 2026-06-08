@@ -58,7 +58,7 @@ If a grammar check fails, refuses, times out, or does not terminate, no positive
 
 **Subject body.** The canonical signed/content-addressed body bytes being checked.
 
-**Grammar artifact.** A formal grammar, schema, parser specification, CDDL, EBNF, PEG, JSON Schema, ProvekIt-native grammar, or other accepted syntax artifact identified by CID.
+**Grammar artifact.** A formal grammar, schema, parser specification, CDDL, EBNF, PEG, JSON Schema, Sugar-native grammar, or other accepted syntax artifact identified by CID.
 
 **Parser.** An accepted parser/interpreter/compiler for a grammar artifact, identified by CID.
 
@@ -103,7 +103,7 @@ Normative fields:
 | `subjectBodyCid` | CID of the body bytes being checked. |
 | `subjectKind` | Declared extension body kind, e.g. `"CheckerMemento"`, `"TruthDischargeWitness"`, `"RealizerPlan"`. |
 | `grammarCid` | CID of the formal grammar or schema artifact. |
-| `grammarKind` | Grammar encoding, e.g. `"cddl"`, `"ebnf"`, `"peg"`, `"json-schema"`, `"provekit-grammar-ir/0"`. |
+| `grammarKind` | Grammar encoding, e.g. `"cddl"`, `"ebnf"`, `"peg"`, `"json-schema"`, `"sugar-grammar-ir/0"`. |
 | `parserCid` | CID of the accepted parser/interpreter for `grammarCid`. |
 | `invariantSetCid` | CID of ProofIR invariants or `null` if the grammar alone is being witnessed. |
 | `invariantCheckerCid` | CID of checker/solver for `invariantSetCid` or `null` if not used. |
@@ -147,7 +147,7 @@ policyCid
 
 The grammar says which byte strings are syntactically admissible bodies for that extension. This makes an extension protocol a family of signed, content-addressed body languages rather than an informal prose convention.
 
-GCP does not require one grammar metalanguage. CDDL, EBNF, PEG, JSON Schema, generated parser source, WASM parsers, and ProvekIt-native grammar IR can all be grammar artifacts if policy accepts them and they are identified by CID.
+GCP does not require one grammar metalanguage. CDDL, EBNF, PEG, JSON Schema, generated parser source, WASM parsers, and Sugar-native grammar IR can all be grammar artifacts if policy accepts them and they are identified by CID.
 
 The common rule:
 
@@ -219,7 +219,7 @@ This is not circular proof. Core verification still relies only on the base kern
 - policy choice;
 - accepted parser/checker CIDs.
 
-Above that base kernel, ProvekIt can carry reflective evidence about its own extension protocols. The self-witness is a signed artifact, not a new core axiom.
+Above that base kernel, Sugar can carry reflective evidence about its own extension protocols. The self-witness is a signed artifact, not a new core axiom.
 
 ### Section 8.1 Formal self-hosting model
 
@@ -299,7 +299,7 @@ protocol spec E
           -> signed/CID-bearing letter
 ```
 
-This recursion is bounded by the base kernel `K`. ProvekIt can place a protocol spec inside a protocol spec, and witness conformance while conforming, because each layer reduces to signed bytes and explicit CID edges before any extension semantics are evaluated.
+This recursion is bounded by the base kernel `K`. Sugar can place a protocol spec inside a protocol spec, and witness conformance while conforming, because each layer reduces to signed bytes and explicit CID edges before any extension semantics are evaluated.
 
 The practical rule:
 
@@ -403,7 +403,7 @@ A refusal is not a positive conformance witness. It is a signed diagnostic/evide
 
 ## Section 14. Open questions
 
-1. Should ProvekIt define `provekit-grammar-ir/0` as a portable grammar IR?
+1. Should Sugar define `sugar-grammar-ir/0` as a portable grammar IR?
 2. Should GCP require `invariantSetCid`, or allow grammar-only conformance as first-class?
 3. Should `parserCid` identify parser source, compiled parser bytecode, or a parser conformance witness root?
 4. Should GCP define a standard projection from parsed body JSON/CBOR into ProofIR terms?
@@ -425,4 +425,4 @@ A GCP v0.1 implementation is conformant if it:
 
 Cite as:
 
-> ProvekIt Protocol Working Notes (2026). *Grammar Conformance Protocol (GCP)*. Draft extension protocol v0.1.0.
+> Sugar Protocol Working Notes (2026). *Grammar Conformance Protocol (GCP)*. Draft extension protocol v0.1.0.

@@ -34,7 +34,7 @@ Dafny's verifier (Boogie + Z3) checks the annotations.
 
 **Limitation**: Dafny's compilation is more limited; integration with mainstream language ecosystems (Rust, Python, etc.) is rough.
 
-**Sugar complement**: `provekit-lift-dafny` (not yet in the roadmap, but structurally simple) could lift Dafny's `requires`/`ensures` into canonical IR. The Dafny-verified function's contracts then become portable across languages via bridges to reference contracts.
+**Sugar complement**: `sugar-lift-dafny` (not yet in the roadmap, but structurally simple) could lift Dafny's `requires`/`ensures` into canonical IR. The Dafny-verified function's contracts then become portable across languages via bridges to reference contracts.
 
 ## TLA+
 

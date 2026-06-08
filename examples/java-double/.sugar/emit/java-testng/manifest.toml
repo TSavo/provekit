@@ -1,0 +1,4 @@
+name = "java-testng"
+command = ["java", "-jar", "../../implementations/java/sugar-emit-java-testng/target/sugar-emit-java-testng.jar", "--rpc"]
+working_dir = "."
+protocol_versions = ["pep/1.7.0"]

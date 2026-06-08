@@ -1,15 +1,15 @@
-// ProvekIt LSP Language Plugin: Rust
+// Sugar LSP Language Plugin: Rust
 //
-// A standalone binary that speaks `provekit-lsp-plugin/1` over stdio.
-// Parses Rust source files and extracts provekit annotations.
+// A standalone binary that speaks `sugar-lsp-plugin/1` over stdio.
+// Parses Rust source files and extracts sugar annotations.
 //
-// Usage: provekit-lsp-rust --rpc
+// Usage: sugar-lsp-rust --rpc
 //
-// To use this plugin, add to `.provekit/config.toml`:
+// To use this plugin, add to `.sugar/config.toml`:
 //   [[language]]
 //   name = "rust"
 //   extensions = [".rs"]
-//   plugin = "provekit-lsp-rust"
+//   plugin = "sugar-lsp-rust"
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -39,15 +39,15 @@ struct Position {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if !args.iter().any(|a| a == "--rpc") {
-        eprintln!("Usage: provekit-lsp-rust --rpc");
+        eprintln!("Usage: sugar-lsp-rust --rpc");
         std::process::exit(1);
     }
 
     let re_impl = Regex::new(
-        r#"#\[provekit::implement\s*\(\s*target\s*=\s*"([^"]+)"\s*\)\]"#
+        r#"#\[sugar::implement\s*\(\s*target\s*=\s*"([^"]+)"\s*\)\]"#
     ).unwrap();
-    let re_contract = Regex::new(r#"#\[provekit::contract"#).unwrap();
-    let re_verify = Regex::new(r#"#\[provekit::verify"#).unwrap();
+    let re_contract = Regex::new(r#"#\[sugar::contract"#).unwrap();
+    let re_verify = Regex::new(r#"#\[sugar::verify"#).unwrap();
     let re_fn = Regex::new(r#"\bfn\s+(\w+)"#).unwrap();
 
     let stdin = std::io::stdin();
@@ -76,7 +76,7 @@ fn main() {
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": {
-                        "name": "provekit-lsp-rust",
+                        "name": "sugar-lsp-rust",
                         "version": env!("CARGO_PKG_VERSION"),
                         "capabilities": []
                     }

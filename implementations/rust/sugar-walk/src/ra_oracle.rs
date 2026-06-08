@@ -16,7 +16,7 @@
 //! unavailable analyzer all yield `None` (refuse). The oracle never guesses a
 //! bridge; an unresolved call stays a lift-gap.
 //!
-//! Availability: the oracle is opt-in behind the `PROVEKIT_RESOLVE_ORACLE`
+//! Availability: the oracle is opt-in behind the `SUGAR_RESOLVE_ORACLE`
 //! environment variable (`= "rust-analyzer"`). When unset, or when the
 //! rust-analyzer binary cannot be located/spawned, `RaOracle::start` returns
 //! `None` and every resolution refuses, so the fast path and CI are unaffected
@@ -107,14 +107,14 @@ impl RaOracle {
     /// Start the oracle for `workspace_root`, or return `None` to refuse.
     ///
     /// Returns `None` (and the caller falls back to Tier-2a refusal) when:
-    ///   - `PROVEKIT_RESOLVE_ORACLE` is not exactly `"rust-analyzer"`; or
+    ///   - `SUGAR_RESOLVE_ORACLE` is not exactly `"rust-analyzer"`; or
     ///   - the rust-analyzer binary cannot be located or spawned.
     pub fn start(workspace_root: &Path) -> Option<RaOracle> {
-        let switch = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default();
+        let switch = std::env::var("SUGAR_RESOLVE_ORACLE").unwrap_or_default();
         if switch != "rust-analyzer" {
             debug!(
-                PROVEKIT_RESOLVE_ORACLE = %switch,
-                "oracle disabled: PROVEKIT_RESOLVE_ORACLE != \"rust-analyzer\""
+                SUGAR_RESOLVE_ORACLE = %switch,
+                "oracle disabled: SUGAR_RESOLVE_ORACLE != \"rust-analyzer\""
             );
             return None;
         }
@@ -124,7 +124,7 @@ impl RaOracle {
                 b
             }
             None => {
-                warn!("oracle unavailable: rust-analyzer binary not found (PATH, rustup, PROVEKIT_RUST_ANALYZER)");
+                warn!("oracle unavailable: rust-analyzer binary not found (PATH, rustup, SUGAR_RUST_ANALYZER)");
                 return None;
             }
         };
@@ -229,7 +229,7 @@ impl RaOracle {
                     // authoritative readiness signal (see wait_until_quiescent).
                     "experimental": { "serverStatusNotification": true }
                 },
-                "workspaceFolders": [ { "uri": root_uri, "name": "provekit-target" } ],
+                "workspaceFolders": [ { "uri": root_uri, "name": "sugar-target" } ],
             }),
         )?;
         // Drain until the initialize response arrives.
@@ -825,7 +825,7 @@ impl Drop for RaOracle {
 /// Locate the rust-analyzer binary: prefer the explicit override, then PATH,
 /// then `rustup which`. Returns `None` when none is runnable.
 fn locate_rust_analyzer() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("PROVEKIT_RUST_ANALYZER") {
+    if let Ok(p) = std::env::var("SUGAR_RUST_ANALYZER") {
         if !p.is_empty() {
             return Some(PathBuf::from(p));
         }
@@ -1264,7 +1264,7 @@ pub fn resolve_batch(
         // already logs the specific cause (debug "oracle disabled" / warn
         // "binary not found"); here we classify the batch-level consequence.
         let opted_in =
-            std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+            std::env::var("SUGAR_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
         if opted_in {
             warn!(
                 total_queries = total,
@@ -1275,7 +1275,7 @@ pub fn resolve_batch(
         } else {
             debug!(
                 total_queries = total,
-                "oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); \
+                "oracle: off (SUGAR_RESOLVE_ORACLE != rust-analyzer); \
                  {} method calls left to the syntactic tiers (Tier 1/2a)",
                 total
             );
@@ -1515,7 +1515,7 @@ mod tests {
 
     #[test]
     fn crate_from_uri_refuses_workspace_local() {
-        let u = "file:///Users/x/provekit/implementations/rust/sugar-cli/src/main.rs";
+        let u = "file:///Users/x/sugar/implementations/rust/sugar-cli/src/main.rs";
         assert_eq!(crate_from_uri(u), None);
     }
 
@@ -1557,7 +1557,7 @@ mod tests {
         // One known crate, one workspace-local: must refuse, not trust the known.
         let r = json!([
             { "uri": "file:///opt/rust/library/core/src/option.rs", "range": {} },
-            { "uri": "file:///ws/provekit/src/main.rs", "range": {} }
+            { "uri": "file:///ws/sugar/src/main.rs", "range": {} }
         ]);
         assert_eq!(crate_from_definition_result(&r), None);
     }

@@ -16,9 +16,9 @@ Assertion 4 is `post_bind_term.cid() == post_rebind_term.cid()`. The federation 
 
 ### 2.1 The slow-test lane is not hypothetical. It already exists, in production CI, exercising the exact pattern A5 endorsed.
 
-- `implementations/rust/provekit-cli/Cargo.toml:55-64`: `slow-tests` feature is declared with a comment citing A5 transport policy.
-- `implementations/rust/provekit-cli/tests/trinity_composition_census.rs:31`: `#![cfg(feature = "slow-tests")]` gates the entire file.
-- `.github/workflows/ci.yml:920-1015`: a dedicated CI job `Trinity composition census (slow lane)` provisions Python 3.12 + JDK 21 + Rust stable, `pip install -e`s the real `provekit-lift-python-source` and `provekit-realize-python-core` packages, `cargo build`s `provekit-walk` + `provekit-realize-rust-core` + `provekit-cli`, then runs `cargo test --features slow-tests` against real subprocesses end-to-end.
+- `implementations/rust/sugar-cli/Cargo.toml:55-64`: `slow-tests` feature is declared with a comment citing A5 transport policy.
+- `implementations/rust/sugar-cli/tests/trinity_composition_census.rs:31`: `#![cfg(feature = "slow-tests")]` gates the entire file.
+- `.github/workflows/ci.yml:920-1015`: a dedicated CI job `Trinity composition census (slow lane)` provisions Python 3.12 + JDK 21 + Rust stable, `pip install -e`s the real `sugar-lift-python-source` and `sugar-realize-python-core` packages, `cargo build`s `sugar-walk` + `sugar-realize-rust-core` + `sugar-cli`, then runs `cargo test --features slow-tests` against real subprocesses end-to-end.
 - `.github/workflows/ci.yml:1017-1025`: a sibling step `python emit compile run conformance (slow lane)` runs `python_emit_compile_run_conformance.rs` in the same job under the same feature gate.
 
 A5's policy doc at `docs/plans/2026-05-16-exhibit-transport-policy.md:19` literally names this pattern:
@@ -53,13 +53,13 @@ So the precedent is on-policy AND insufficient for Trinity, simultaneously. Both
 **Substrate-correctness alignment (Supra omnia, rectum).** Highest. Every PR is forced to honestly run the federation check. No "we'll get to it in CI" deferment.
 
 **Open questions / risks.**
-- Significant developer-workflow regression. Sir's coordination protocol (memory: `coordination_protocol_provekit.md`) has Codex executing substrate work in isolated worktrees on remote toolchains. Forcing Python + JDK into every default test run also forces every Codex agent's worktree to provision both, which the gauntlet typically does NOT today.
+- Significant developer-workflow regression. Sir's coordination protocol (memory: `coordination_protocol_sugar.md`) has Codex executing substrate work in isolated worktrees on remote toolchains. Forcing Python + JDK into every default test run also forces every Codex agent's worktree to provision both, which the gauntlet typically does NOT today.
 - Conflicts with the lane-separation pattern A5 explicitly endorses at policy line 19. The pattern is "lane separation allowed, refusing-to-run forbidden", not "no lane separation."
 - `needs-architect-clarification`: does Sir's Supra-omnia-rectum principle weigh purely on correctness OR on correctness AND practical reachability? A5's existing ruling treats lane separation as compatible with Supra omnia rectum because the slow lane is mandatory in CI, just not in `cargo test`. Re-opening that question for Trinity would re-open it for the entire `trinity_composition_census` + `python_emit_compile_run_conformance` lane.
 
 ### 3.2 Option 2: Real toolchain in the existing slow-test lane (sibling test in `trinity_composition_census` OR new lane job)
 
-**Mechanism.** Add the Trinity exhibit integration test to `implementations/rust/provekit-cli/tests/` under `#![cfg(feature = "slow-tests")]`. CI runs it via the existing `slow-tests` feature flag in a dedicated job. Real Python + Rust subprocesses, real binary builds, real pip installs.
+**Mechanism.** Add the Trinity exhibit integration test to `implementations/rust/sugar-cli/tests/` under `#![cfg(feature = "slow-tests")]`. CI runs it via the existing `slow-tests` feature flag in a dedicated job. Real Python + Rust subprocesses, real binary builds, real pip installs.
 
 Two sub-mechanisms, marked as a sub-decision for the architect inside Option 2:
 
@@ -108,12 +108,12 @@ Same reasoning as Option 3. Enumerated only to close the door on future re-propo
 ## 4. Cross-references
 
 - **A5 transport policy ruling** (#1062, doc at `docs/plans/2026-05-16-exhibit-transport-policy.md`). The load-bearing prior ruling. Lines 19, 25-29, 45-51 cited above.
-- **Lower-kit precedent** (`implementations/rust/provekit-cli/tests/lower_kit_path_integration.rs:38-58`). Bash-script fake realizer that IS on-policy because the test is a wiring test, not a structural-property test. Inadequate for Trinity assertion 4 specifically.
+- **Lower-kit precedent** (`implementations/rust/sugar-cli/tests/lower_kit_path_integration.rs:38-58`). Bash-script fake realizer that IS on-policy because the test is a wiring test, not a structural-property test. Inadequate for Trinity assertion 4 specifically.
 - **Trinity exhibit fixture set** (#1159, merged 2026-05-18). 19 files at `menagerie/trinity-exhibit-fixtures/` covering 6 concept-transport categories. Pure data; ready to drive a runnable exhibit.
 - **Trinity body-template completeness audit** (#1157, merged 2026-05-18, doc at `docs/audits/2026-05-18-trinity-body-template-completeness.md`). Headline: 7-concept gap in Java + Python body templates. Reconciliation: the `raise NotImplementedError("trinity lower")` text comes from a test-installed stub at `trinity_roundtrip_test.rs:106-110`, NOT from production code. Phase B1 (14 mechanical issues) closes the gap.
 - **Existing slow-test infrastructure**:
-  - `implementations/rust/provekit-cli/Cargo.toml:64` (`slow-tests = []`)
-  - `implementations/rust/provekit-cli/tests/trinity_composition_census.rs:31` (`#![cfg(feature = "slow-tests")]`)
+  - `implementations/rust/sugar-cli/Cargo.toml:64` (`slow-tests = []`)
+  - `implementations/rust/sugar-cli/tests/trinity_composition_census.rs:31` (`#![cfg(feature = "slow-tests")]`)
   - `.github/workflows/ci.yml:920-1015` (slow-lane CI job, real pip-install + real subprocesses)
 - **#1081 A13** (end-to-end composition test for type-erasure + realize-plugin type translation). Per the issue body, A13 explicitly cites "real subprocess transport (per A5 transport policy doc)" in scope item 4. A13's ruling inherits from #1068's ruling: if Trinity uses slow lane, A13 does too.
 

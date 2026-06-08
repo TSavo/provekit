@@ -2,32 +2,32 @@
 
 Phase-5-Py-v1 retires the v0 body-template gap and records the next blocker.
 
-This directory records the Python n=1 case for the libprovekit self-host arc.
-v1 adds a libprovekit-specific Python body-template catalog for the four D7
+This directory records the Python n=1 case for the libsugar self-host arc.
+v1 adds a libsugar-specific Python body-template catalog for the four D7
 Value constructor surfaces and runs the same realize, parse, lift, compare
 loop captured by v0.
 
 The self-trip under test is:
 
 1. read the D7 Rust lift fixture
-2. invoke provekit-realize-python-core with python-canonical-bodies-libprovekit.json
+2. invoke sugar-realize-python-core with python-canonical-bodies-libsugar.json
 3. parse the emitted Python with ast.parse
-4. invoke provekit-lift-python-source on that source
+4. invoke sugar-lift-python-source on that source
 5. compare the lifted Python body CID with the fixture ProofIR term CID
 
 Fixtures used:
 
-- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json
-- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_boolean.json
-- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_integer.json
-- implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_string.json
+- implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json
+- implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_boolean.json
+- implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_integer.json
+- implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_string.json
 
 Generated artifacts:
 
 - bootstrap/phase5py/driver_v1.py
-- bootstrap/phase5py/libprovekit_py_v1.py
+- bootstrap/phase5py/libsugar_py_v1.py
 - bootstrap/phase5py/v1_receipt.json
-- menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-libprovekit.json
+- menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-libsugar.json
 - bootstrap/phase5py/README.md
 
 Per-fixture verdicts:

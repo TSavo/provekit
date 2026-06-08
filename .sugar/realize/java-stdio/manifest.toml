@@ -1,0 +1,14 @@
+# PEP 1.7.0 realize plugin manifest for Java + java.io stdio body emission.
+# Sister manifest to .sugar/realize/rust-shim-stdio (rust kit's std::io
+# realization) under concept:family:stdio-stream. Re-uses the workspace's
+# sugar-realize-java-core binary; concept routing for the 3 stdio
+# concepts comes from the shim's signed .proof envelope.
+name = "java-realize-stdio"
+library_tag = "java-io"
+family = "concept:family:stdio-stream"
+library_version = "jdk-1.0+"
+# #1364 / #1355: explicit per-kit concept-coverage declaration. Mirrors
+# the rust-shim-stdio manifest's 3 concepts.
+provides_concepts = ["concept:stdio-read-line", "concept:stdio-write-line", "concept:stderr-write-line"]
+command = ["java", "-jar", "implementations/java/sugar-realize-java-core/target/sugar-realize-java.jar", "--rpc"]
+working_dir = "."

@@ -200,7 +200,7 @@ impl Solver for LeanSubprocessSolver {
         };
 
         let tmp_dir = std::env::temp_dir().join(format!(
-            "provekit-lean-{}-{}",
+            "sugar-lean-{}-{}",
             std::process::id(),
             started.elapsed().as_nanos()
         ));

@@ -9,7 +9,7 @@
 # supplies `is_ok(result)` as a callee-post guard fact, discharging the
 # `unwrap`'s `is_ok` precondition as PANIC-SAFE without any syntactic guard.
 #
-# NOT a workspace member: ProvekIt lifts the source by parsing, never by
+# NOT a workspace member: Sugar lifts the source by parsing, never by
 # compiling it as a workspace crate. The standalone [workspace] table lets
 # rust-analyzer index this crate independently, avoiding the monorepo stall.
 #
@@ -20,12 +20,12 @@
 [workspace]
 
 [package]
-name = "provekit-serde-value-totality-fixture"
+name = "sugar-serde-value-totality-fixture"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 publish = false
-description = "ProvekIt Phase 2 Tier D-lib fixture: serde_json::Value totality contract + callee-post discharge."
+description = "Sugar Phase 2 Tier D-lib fixture: serde_json::Value totality contract + callee-post discharge."
 
 [lib]
 path = "src/lib.rs"

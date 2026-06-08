@@ -76,7 +76,7 @@ Static analyzer with formal core:
 
 Sugar does not analyze Rust code, does not compile Rust, does not invoke a Rust-specific backend. It provides:
 
-- **Lift adapters** (`provekit-lift-proptest`, `provekit-lift-contracts`, planned `provekit-lift-kani`, `provekit-lift-prusti`) that walk existing Rust annotations and emit canonical IR.
+- **Lift adapters** (`sugar-lift-proptest`, `sugar-lift-contracts`, planned `sugar-lift-kani`, `sugar-lift-prusti`) that walk existing Rust annotations and emit canonical IR.
 - **Verification via Z3 by default**, with the option to substitute other backends.
 - **Content-addressed mementos** for each contract.
 - **Cross-language bridges** (Rust contract → reference contract ← TypeScript contract).
@@ -139,7 +139,7 @@ Kani verifies the assertion. The result is local to your codebase.
 
 With Sugar:
 
-1. `provekit-lift-kani` walks `#[kani::proof]` and lifts to canonical IR.
+1. `sugar-lift-kani` walks `#[kani::proof]` and lifts to canonical IR.
 2. The lift produces a contract memento: "for `parse::<i32>()` on strings of length ≤ 18, no panic occurs."
 3. You publish the contract memento + Kani's discharge as an implication memento.
 4. A consumer (in any language with a `parse` equivalent) can bridge to this contract and inherit the verification.
@@ -165,13 +165,13 @@ For multi-language deployments, Kani/Prusti/Creusot can't help directly with non
 
 Planned for v1.2 (per [`../../reference/per-language-status.md`](../../reference/per-language-status.md)):
 
-- `provekit-lift-kani`: walks `#[kani::proof]` functions, `kani::assume`, `kani::assert`. Emits canonical IR for Kani-verified properties.
-- `provekit-lift-prusti`: walks `#[prusti_contracts::requires]` / `#[prusti_contracts::ensures]`. Same shape.
+- `sugar-lift-kani`: walks `#[kani::proof]` functions, `kani::assume`, `kani::assert`. Emits canonical IR for Kani-verified properties.
+- `sugar-lift-prusti`: walks `#[prusti_contracts::requires]` / `#[prusti_contracts::ensures]`. Same shape.
 
 Under evaluation:
 
-- `provekit-lift-creusot`: rich logical fragments. Some annotations may need new IR primitives.
-- `provekit-lift-flux`: refinement types. Partial lift expected.
+- `sugar-lift-creusot`: rich logical fragments. Some annotations may need new IR primitives.
+- `sugar-lift-flux`: refinement types. Partial lift expected.
 
 When these adapters ship, the workflow becomes "verify with your Rust prover of choice, publish via Sugar." The Rust prover's verification is the substantive work; the protocol layer adds portability without changing the assurance.
 

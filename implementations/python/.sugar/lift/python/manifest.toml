@@ -1,0 +1,3 @@
+name = "python-lift"
+command = ["python3", "-m", "sugar_lift_py_tests.lsp", "--rpc"]
+working_dir = "sugar-lift-py-tests/src"

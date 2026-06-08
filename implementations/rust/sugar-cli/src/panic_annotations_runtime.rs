@@ -438,7 +438,7 @@ fn annotation_source(annotation: &RuntimeAnnotation) -> String {
 }
 
 fn runtime_annotation_manifest(target_path: &Path) -> RuntimeAnnotationManifest {
-    let path = target_path.join(".provekit").join("residue.toml");
+    let path = target_path.join(".sugar").join("residue.toml");
     if !path.is_file() {
         return RuntimeAnnotationManifest {
             present: false,
@@ -717,9 +717,9 @@ mod tests {
     }
 
     fn write_runtime_annotation_manifest(target: &Path, body: &str) {
-        let provekit = target.join(".provekit");
-        fs::create_dir_all(&provekit).expect("create .provekit");
-        fs::write(provekit.join("residue.toml"), body).expect("write residue manifest");
+        let sugar = target.join(".sugar");
+        fs::create_dir_all(&sugar).expect("create .sugar");
+        fs::write(sugar.join("residue.toml"), body).expect("write residue manifest");
     }
 
     #[test]

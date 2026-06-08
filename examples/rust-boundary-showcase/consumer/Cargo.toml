@@ -1,14 +1,14 @@
-# The consumer: a crate with a `#[provekit::boundary(library, call)]` stub whose
+# The consumer: a crate with a `#[sugar::boundary(library, call)]` stub whose
 # body is `unimplemented!()`. `materialize` fills it from the vendor's
 # REAL `reverse_chars` source (CID-verified against the frozen vendor .proof in
-# .provekit/imports/).
+# .sugar/imports/).
 [package]
 name = "rust-boundary-consumer"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-provekit = { package = "sugar-lifter", path = "../../../implementations/rust/sugar-lifter" }
+sugar = { package = "sugar-lifter", path = "../../../implementations/rust/sugar-lifter" }
 
 [lib]
 path = "src/lib.rs"

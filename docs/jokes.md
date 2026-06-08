@@ -21,7 +21,7 @@ And the file declares its **own** identity — the conjunction of all eleven:
 printf '%s' "$(printf '%s\n' <each member hex> | sort)" | b3sum --length 64
 ```
 
-Honest about what it is: a *reproducible* set identity by the stated recipe — **not** a `provekit mint` run, so it doesn't claim to byte-match the substrate's own `contractSetCid` canonicalization. Add a joke, change a joke, reorder nothing — the set-CID moves. Turtles, all the way down, and each turtle pinned.
+Honest about what it is: a *reproducible* set identity by the stated recipe — **not** a `sugar mint` run, so it doesn't claim to byte-match the substrate's own `contractSetCid` canonicalization. Add a joke, change a joke, reorder nothing — the set-CID moves. Turtles, all the way down, and each turtle pinned.
 
 > House rule: jokes here are **exact, loudly-bounded-lossy, or refused**. _Supra omnia, rectum_ — even the comedy. The file now passes its own gate.
 
@@ -74,7 +74,7 @@ On a CID with no single canonical computation under it:
 > "It's trust me bro wearing a lab coat."
 > `pin · blake3-512:8ae77d1d27d11ee34b77e54aa28ccfe068771f6b3cc9112d7badde2cfada3844731d36a168dfa7282db7b8958014575d0cbc56cbd47e8b3b5c0d10e7500eb1fe`
 
-The founding aesthetic objection of the entire substrate, in six words. Everything `provekit` does is an attempt to take the lab coat off the sentence and replace it with the receipt.
+The founding aesthetic objection of the entire substrate, in six words. Everything `sugar` does is an attempt to take the lab coat off the sentence and replace it with the receipt.
 
 ### The corollary (the positive-case form)
 

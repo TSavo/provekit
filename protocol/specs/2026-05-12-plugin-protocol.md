@@ -7,8 +7,8 @@
 - `2026-04-30-canonicalization-grammar.md` (JCS canonicalization, normative)
 - `2026-04-30-ir-formal-grammar.md` (IrFormula shape used by `sugar` plugins)
 - `2026-04-30-protocol-versioning.md` (version token grammar)
-- `2026-04-30-agent-plugin-protocol.md` (kind-specific predecessor; legacy protocol identifier `provekit-agent/1`, see §0.4)
-- `2026-04-30-lift-plugin-protocol.md` (kind-specific predecessor; legacy protocol identifier `provekit-lift/1`, see §0.4)
+- `2026-04-30-agent-plugin-protocol.md` (kind-specific predecessor; legacy protocol identifier `sugar-agent/1`, see §0.4)
+- `2026-04-30-lift-plugin-protocol.md` (kind-specific predecessor; legacy protocol identifier `sugar-lift/1`, see §0.4)
 - `2026-04-30-ir-extension-protocol.md` and `2026-05-06-extension-protocols.md` (extension surfaces this protocol unifies)
 - `2026-05-03-substrate-layers-envelope-header-body.md` (envelope/header/metadata layering reused)
 - `2026-05-03-contract-cid-vs-attestation-cid.md` (CID semantics for the declared-behavior vs delivery split, §6)
@@ -19,12 +19,12 @@
 
 ## §0. Purpose
 
-ProvekIt is a substrate, not a program. Every semantic decision the substrate makes (how a canonical clause is rendered into a target language, how loss is scored, which discharge backend handles which obligation, which lifter handles which file extension, which realizer fires for which clause shape) MUST be externalized as a content-addressed memento. The runtime binary is the engine; the plugins ARE the algebra (per `project_provekit_substrate_trinity` and the `algebra-is-the-portable-thing` thesis at `docs/papers/16-after-portability-the-universal-address-space.md`).
+Sugar is a substrate, not a program. Every semantic decision the substrate makes (how a canonical clause is rendered into a target language, how loss is scored, which discharge backend handles which obligation, which lifter handles which file extension, which realizer fires for which clause shape) MUST be externalized as a content-addressed memento. The runtime binary is the engine; the plugins ARE the algebra (per `project_sugar_substrate_trinity` and the `algebra-is-the-portable-thing` thesis at `docs/papers/16-after-portability-the-universal-address-space.md`).
 
 This spec defines the universal seam through which any such memento is loaded, addressed, version-negotiated, and registered. Three principles are non-negotiable:
 
 1. **No hard coding.** A built-in default is still a memento at a fixed declared CID. The runtime MUST be able to enumerate, replace, and discharge every built-in along the same surface a third-party plugin uses.
-2. **Trichotomy across plugin boundaries.** Plugin loading itself MUST emit `exact`, `loudly-bounded-lossy`, or `refuse` per `project_provekit_first_principle.md`. No silent fallback. A refusal to load a plugin is a precise extension request, not a hidden error.
+2. **Trichotomy across plugin boundaries.** Plugin loading itself MUST emit `exact`, `loudly-bounded-lossy`, or `refuse` per `project_sugar_first_principle.md`. No silent fallback. A refusal to load a plugin is a precise extension request, not a hidden error.
 3. **Federation by CID.** A plugin's identity is its declared-behavior CID. Delivery (JSON file, JSON-RPC server, statically-linked symbol) is a transport detail; CID stability is the federation guarantee (§6.2).
 
 ### §0.1 Relation to the substrate trinity
@@ -48,17 +48,17 @@ A plugin manipulates {terms, contracts, implications}. Sugar dicts render `contr
 
 ### §0.4 Relation to the existing kind-specific plugin specs
 
-`pep/1.7.0` is THE protocol going forward. Having three parallel protocol-version tokens (`provekit-agent/1`, `provekit-lift/1`, `pep/1.7.0`) permanently embeds an M*N protocol-space tax: every new kind must decide which surface to follow, every runtime must implement and maintain multiple dispatch paths, and every verifier must understand the union. Per Supra omnia, rectum, that is incorrect. The protocol that exists to eliminate M*N complexity MUST itself be the singular seam.
+`pep/1.7.0` is THE protocol going forward. Having three parallel protocol-version tokens (`sugar-agent/1`, `sugar-lift/1`, `pep/1.7.0`) permanently embeds an M*N protocol-space tax: every new kind must decide which surface to follow, every runtime must implement and maintain multiple dispatch paths, and every verifier must understand the union. Per Supra omnia, rectum, that is incorrect. The protocol that exists to eliminate M*N complexity MUST itself be the singular seam.
 
-**Legacy protocol identifiers.** `provekit-agent/1` and `provekit-lift/1` are now defined as legacy protocol identifiers. The kinds `agent` and `lift` are two of the first entries in `pep/1.7.0`'s open `kind` enum (§2.1). The kind-specific predecessor specs (`2026-04-30-agent-plugin-protocol.md`, `2026-04-30-lift-plugin-protocol.md`) remain readable as the authoritative definitions of the `content` payload shapes for those two kinds; they do NOT define a separate ongoing protocol surface.
+**Legacy protocol identifiers.** `sugar-agent/1` and `sugar-lift/1` are now defined as legacy protocol identifiers. The kinds `agent` and `lift` are two of the first entries in `pep/1.7.0`'s open `kind` enum (§2.1). The kind-specific predecessor specs (`2026-04-30-agent-plugin-protocol.md`, `2026-04-30-lift-plugin-protocol.md`) remain readable as the authoritative definitions of the `content` payload shapes for those two kinds; they do NOT define a separate ongoing protocol surface.
 
-**Migration semantics.** Any existing `provekit-agent/1` or `provekit-lift/1` memento MUST be re-mintable into a `pep/1.7.0` memento with byte-stable content payload. The `content` field of the plugin memento carries the same kind-specific bytes the predecessor memento carried; the only field that changes is `protocol_versions` (which MUST be `["pep/1.7.0"]` in the re-minted form). CID identity MUST be verified over the full `pep/1.7.0` header, not the legacy header; the two headers have different shapes and WILL produce different CIDs. This is correct: a `pep/1.7.0` `agent`-kind memento and the legacy `provekit-agent/1` memento it was re-minted from are different content-addressed objects.
+**Migration semantics.** Any existing `sugar-agent/1` or `sugar-lift/1` memento MUST be re-mintable into a `pep/1.7.0` memento with byte-stable content payload. The `content` field of the plugin memento carries the same kind-specific bytes the predecessor memento carried; the only field that changes is `protocol_versions` (which MUST be `["pep/1.7.0"]` in the re-minted form). CID identity MUST be verified over the full `pep/1.7.0` header, not the legacy header; the two headers have different shapes and WILL produce different CIDs. This is correct: a `pep/1.7.0` `agent`-kind memento and the legacy `sugar-agent/1` memento it was re-minted from are different content-addressed objects.
 
-**Deprecation timeline.** The migration window spans one provekit binary minor version:
+**Deprecation timeline.** The migration window spans one sugar binary minor version:
 
-- **Acceptance (read side).** The CURRENT minor version of the provekit binary (the version that ships with this spec) MUST accept both legacy protocol-version tokens (`provekit-agent/1`, `provekit-lift/1`) and `pep/1.7.0` as valid `protocol_versions` values. When a legacy token is accepted, the binary MUST emit a `PluginLoadFailureMemento` with `reason_kind = "deprecated-protocol-identifier"` and `critical = false`, recording the legacy token and the `pep/1.7.0` equivalent. The run proceeds; the failure is a loud deprecation notice, not a refusal.
-- **Emission (write side).** The CURRENT minor version of the provekit binary, and EVERY in-tree plugin implementation that emits a `protocol_version` field (manifest TOML, JSON-RPC `describe` response, embedded self-contract literal), MUST emit the single canonical token `pep/1.7.0`. Concretely: emit `"protocol_version": "pep/1.7.0"` for legacy single-token fields, and `"protocol_versions": ["pep/1.7.0"]` for the §1.1 plugin-memento array form. Emitting a legacy token from an in-tree implementation under this spec is a producer-side defect. This keeps the byte-stability invariant (§14) crisp: the single-element array is what consumers content-address against.
-- The NEXT minor version of the provekit binary MUST refuse to load any plugin whose `protocol_versions` array does not contain `pep/1.7.0`. Legacy tokens MUST NOT be accepted. Refusal MUST emit `reason_kind = "refused-legacy-protocol-identifier"`. Producers MUST re-mint mementos against `pep/1.7.0` before the next minor version ships.
+- **Acceptance (read side).** The CURRENT minor version of the sugar binary (the version that ships with this spec) MUST accept both legacy protocol-version tokens (`sugar-agent/1`, `sugar-lift/1`) and `pep/1.7.0` as valid `protocol_versions` values. When a legacy token is accepted, the binary MUST emit a `PluginLoadFailureMemento` with `reason_kind = "deprecated-protocol-identifier"` and `critical = false`, recording the legacy token and the `pep/1.7.0` equivalent. The run proceeds; the failure is a loud deprecation notice, not a refusal.
+- **Emission (write side).** The CURRENT minor version of the sugar binary, and EVERY in-tree plugin implementation that emits a `protocol_version` field (manifest TOML, JSON-RPC `describe` response, embedded self-contract literal), MUST emit the single canonical token `pep/1.7.0`. Concretely: emit `"protocol_version": "pep/1.7.0"` for legacy single-token fields, and `"protocol_versions": ["pep/1.7.0"]` for the §1.1 plugin-memento array form. Emitting a legacy token from an in-tree implementation under this spec is a producer-side defect. This keeps the byte-stability invariant (§14) crisp: the single-element array is what consumers content-address against.
+- The NEXT minor version of the sugar binary MUST refuse to load any plugin whose `protocol_versions` array does not contain `pep/1.7.0`. Legacy tokens MUST NOT be accepted. Refusal MUST emit `reason_kind = "refused-legacy-protocol-identifier"`. Producers MUST re-mint mementos against `pep/1.7.0` before the next minor version ships.
 
 Version-bump mechanics for the protocol catalog entry follow `2026-04-30-protocol-versioning.md`.
 
@@ -141,8 +141,8 @@ Open enum. The following labels are reserved by v1.0.0 of this protocol; their c
 
 | `kind`                | Consumer spec                                                                 | What it carries                                                                                  |
 |-----------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| `agent`               | `2026-04-30-agent-plugin-protocol.md` (LEGACY-RETAINED content-payload shape; legacy protocol identifier `provekit-agent/1`) | Agent proposals and verification invocations; first legacy kind absorbed into this protocol. |
-| `lift`                | `2026-04-30-lift-plugin-protocol.md` (LEGACY-RETAINED content-payload shape; legacy protocol identifier `provekit-lift/1`)   | Source-to-IR mint procedures via JSON-RPC over stdio. `lift` is the canonical kind name for source-to-IR plugins under `pep/1.7.0`. The name `lifter` is a DEPRECATED ALIAS retained ONLY for human-readable CLI ergonomics (per §3.1 alias `--lifter <source>` desugars to `--plugin lift:<source>`); the wire `kind` value MUST be `"lift"`. |
+| `agent`               | `2026-04-30-agent-plugin-protocol.md` (LEGACY-RETAINED content-payload shape; legacy protocol identifier `sugar-agent/1`) | Agent proposals and verification invocations; first legacy kind absorbed into this protocol. |
+| `lift`                | `2026-04-30-lift-plugin-protocol.md` (LEGACY-RETAINED content-payload shape; legacy protocol identifier `sugar-lift/1`)   | Source-to-IR mint procedures via JSON-RPC over stdio. `lift` is the canonical kind name for source-to-IR plugins under `pep/1.7.0`. The name `lifter` is a DEPRECATED ALIAS retained ONLY for human-readable CLI ergonomics (per §3.1 alias `--lifter <source>` desugars to `--plugin lift:<source>`); the wire `kind` value MUST be `"lift"`. |
 | `sugar`               | `2026-05-12-sugar-dict-memento.md`                                            | Canonical-clause-to-surface-syntax rendering rules; the first consumer of this protocol.         |
 | `loss-function`       | `2026-05-12-loss-function-memento.md`                                         | Scoring algorithms over `loss-record` candidates; the second consumer of this protocol.          |
 | `discharge-backend`   | DEFERRED to follow-up; precedent `2026-04-30-multi-solver-protocol.md`        | Z3 / cvc5 / Vampire / Maude / CeTA / others; one plugin per backend.                             |
@@ -211,7 +211,7 @@ The `stdio:<argv-list>` form spawns a subprocess (matching the LSP/MCP shape of 
 
 ### §4.2 Methods
 
-#### §4.2.1 `provekit.plugin.describe`
+#### §4.2.1 `sugar.plugin.describe`
 
 The first call after connect. Returns the plugin's declared content memento.
 
@@ -220,7 +220,7 @@ Request:
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "method": "provekit.plugin.describe",
+  "method": "sugar.plugin.describe",
   "params": {
     "runtime_protocol_versions": ["pep/1.7.0"]
   }
@@ -242,7 +242,7 @@ Response (success):
 
 The runtime MUST compute the CID over the returned `header` per §6.1 and compare to the asserted `header.cid`. Mismatch is a refuse.
 
-#### §4.2.2 `provekit.plugin.invoke`
+#### §4.2.2 `sugar.plugin.invoke`
 
 Kind-specific. The consumer spec for each kind defines the `params` and `result` shapes for `invoke`. The protocol-level guarantee is only the JSON-RPC 2.0 envelope.
 
@@ -251,12 +251,12 @@ Request:
 {
   "jsonrpc": "2.0",
   "id": 2,
-  "method": "provekit.plugin.invoke",
+  "method": "sugar.plugin.invoke",
   "params": { /* kind-specific */ }
 }
 ```
 
-#### §4.2.3 `provekit.plugin.resolve_dependency_proofs`
+#### §4.2.3 `sugar.plugin.resolve_dependency_proofs`
 
 Kit-owned package-manager proof resolution. The runtime calls this method before
 verification pool assembly. The substrate MUST NOT inspect cargo metadata,
@@ -269,7 +269,7 @@ Request:
 {
   "jsonrpc": "2.0",
   "id": 3,
-  "method": "provekit.plugin.resolve_dependency_proofs",
+  "method": "sugar.plugin.resolve_dependency_proofs",
   "params": {
     "project_root": "/absolute/project/root"
   }
@@ -302,11 +302,11 @@ resolution is not implemented. The runtime MUST load by bytes, recompute bundle
 and member CIDs, and union members. It MUST NOT extract formulas for rewriting,
 follow kit-supplied `.proof` paths, or reinterpret package-manager metadata.
 
-#### §4.2.4 `provekit.plugin.shutdown`
+#### §4.2.4 `sugar.plugin.shutdown`
 
 Graceful close. After this, an `stdio:` plugin SHOULD exit zero on stdin EOF; an HTTP plugin MAY ignore the call.
 
-#### §4.2.5 `provekit.plugin.recognize`
+#### §4.2.5 `sugar.plugin.recognize`
 
 Kit-owned source-level recognition: given user source files in the kit's
 target language, the kit identifies sites whose structural shape matches
@@ -328,7 +328,7 @@ Request:
 {
   "jsonrpc": "2.0",
   "id": 5,
-  "method": "provekit.plugin.recognize",
+  "method": "sugar.plugin.recognize",
   "params": {
     "project_root": "/absolute/project/root",
     "source_paths": ["src/lib.rs", "src/ingest.rs"]
@@ -358,7 +358,7 @@ Response (success):
           "end_col": 49
         },
         "concept_name": "concept:json-parse",
-        "library_tag": "provekit-shim-serde-json-rust",
+        "library_tag": "sugar-shim-serde-json-rust",
         "family": "concept:family:json",
         "template_cid": "blake3-512:<hex>",
         "contract_cid": "blake3-512:<hex>",
@@ -423,7 +423,7 @@ JSON-RPC errors per RFC 7065. The runtime treats any error response from `descri
 
 ### §5.1 Protocol versions the runtime accepts
 
-The runtime declares a SET of protocol-version tokens it accepts. v1.0.0 of this spec defines `pep/1.7.0` as the canonical token. During the deprecation migration window defined in §0.4, the current minor version of the runtime MUST also accept `provekit-agent/1` and `provekit-lift/1` as legacy tokens (with a loud deprecation notice per §0.4). The NEXT minor version of the runtime MUST drop the legacy tokens and accept only `pep/1.7.0`. Future minor versions of this protocol that are wire-compatible MAY add tokens to the set; future major versions mint a new spec at a new file path.
+The runtime declares a SET of protocol-version tokens it accepts. v1.0.0 of this spec defines `pep/1.7.0` as the canonical token. During the deprecation migration window defined in §0.4, the current minor version of the runtime MUST also accept `sugar-agent/1` and `sugar-lift/1` as legacy tokens (with a loud deprecation notice per §0.4). The NEXT minor version of the runtime MUST drop the legacy tokens and accept only `pep/1.7.0`. Future minor versions of this protocol that are wire-compatible MAY add tokens to the set; future major versions mint a new spec at a new file path.
 
 ### §5.2 Negotiation procedure
 
@@ -625,7 +625,7 @@ A federated discovery service (e.g., a content-addressed plugin index) is antici
   - `2026-05-12-sugar-dict-memento.md` (kind = `"sugar"`).
   - `2026-05-12-loss-function-memento.md` (kind = `"loss-function"`).
 - The `loss-record` shape consumed by `loss-function` plugins is defined in `2026-05-14-transport-gap-and-partial-morphism-protocol.md` §1.3 and elaborated in `2026-05-15-concept-hub-abstraction-layer.md` §2.4.
-- The substrate trinity precedent: `project_provekit_substrate_trinity` (memo); the algebra-as-portable-thing thesis: `docs/papers/16-after-portability-the-universal-address-space.md`.
+- The substrate trinity precedent: `project_sugar_substrate_trinity` (memo); the algebra-as-portable-thing thesis: `docs/papers/16-after-portability-the-universal-address-space.md`.
 
 ## §13. Out of scope for v1.0.0
 
@@ -654,7 +654,7 @@ This section is the explicit scope-creep gate for v1.7.0. If a substrate-wide au
 
 `pep/1.7.0` is the substrate's officially blessed protocol identifier for plugin-protocol mementos AS OF the date in the header of this spec. Blessing is itself a first-class memento per Supra omnia, rectum: a blessed protocol that is not itself a signed content-addressed declaration is just an opinion.
 
-The blessing memento is a `ProtocolBlessingMemento` (CDDL below) signed by the substrate maintainer key (the same Ed25519 provenance key used for `2026-05-06-provenance-memento.md` envelopes; see `reference_provekit_provenance_keys` in the substrate notes for key material location).
+The blessing memento is a `ProtocolBlessingMemento` (CDDL below) signed by the substrate maintainer key (the same Ed25519 provenance key used for `2026-05-06-provenance-memento.md` envelopes; see `reference_sugar_provenance_keys` in the substrate notes for key material location).
 
 ### §14.2 `ProtocolBlessingMemento` wire shape (CDDL)
 
@@ -676,7 +676,7 @@ protocol-blessing-memento = {
     schemaVersion:        "1",
     spec_cid:             cid,       ; CID of the spec file this blessing applies to
     supersedes:           [* tstr]   ; legacy protocol-version tokens this blessing retires
-                                      ; (e.g., ["provekit-agent/1", "provekit-lift/1"])
+                                      ; (e.g., ["sugar-agent/1", "sugar-lift/1"])
   },
   metadata: {
     ? note: tstr,                    ; free-form maintainer note, e.g., the cadence statement
@@ -722,7 +722,7 @@ The 1.7.0 cut is a substrate transformation that MUST preserve convergence on TH
 
 ### §15.1 Byte-stability invariant (axis 1: bytes)
 
-Across the substrate-wide rename from `provekit-{agent,lift}/1` to `pep/1.7.0` (the 1.7.0 cut), every byte of every plugin memento's `content` payload EXCEPT the protocol-identifier field is preserved exactly. Concretely, for any legacy memento M_legacy with header fields `{content, critical, kind, protocol_versions = ["provekit-agent/1"] | ["provekit-lift/1"], provenance_cid, schemaVersion, version}` and its re-mint M_pep with header fields `{content, critical, kind, protocol_versions = ["pep/1.7.0"], provenance_cid, schemaVersion, version}`:
+Across the substrate-wide rename from `sugar-{agent,lift}/1` to `pep/1.7.0` (the 1.7.0 cut), every byte of every plugin memento's `content` payload EXCEPT the protocol-identifier field is preserved exactly. Concretely, for any legacy memento M_legacy with header fields `{content, critical, kind, protocol_versions = ["sugar-agent/1"] | ["sugar-lift/1"], provenance_cid, schemaVersion, version}` and its re-mint M_pep with header fields `{content, critical, kind, protocol_versions = ["pep/1.7.0"], provenance_cid, schemaVersion, version}`:
 
 - `M_legacy.content` is byte-identical to `M_pep.content`.
 - `M_legacy.critical` is byte-identical to `M_pep.critical`.
@@ -745,7 +745,7 @@ For any pair `(M_legacy, M_pep)` claimed to be a rename pair:
 2. Recompute `M_pep.cid` from `M_pep`'s JCS-canonical bytes; confirm equality with the asserted `M_pep.cid`.
 3. Confirm that the JCS-canonical bytes of `M_legacy` differ from those of `M_pep` ONLY in the `protocol_versions` value position.
 4. Confirm `M_pep.protocol_versions == ["pep/1.7.0"]` exactly.
-5. Confirm `M_legacy.protocol_versions` is a single-element array containing one of `{"provekit-agent/1", "provekit-lift/1"}`.
+5. Confirm `M_legacy.protocol_versions` is a single-element array containing one of `{"sugar-agent/1", "sugar-lift/1"}`.
 
 A pair that fails any check is NOT a valid rename pair; both mementos remain valid content-addresses of their respective bytes, but the "byte-stability rename" claim is REFUTED.
 

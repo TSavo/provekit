@@ -51,7 +51,7 @@ The `signer` and `declaredAt` fields are inside the envelope but are NOT signed-
         "post":          { "kind": "atomic", "name": "...", "args": [ ] }
     },
     "metadata": {
-        "sourceFile":   "implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs",
+        "sourceFile":   "implementations/rust/sugar-self-contracts/src/lift_plugin_protocol.rs",
         "sourceLine":   255,
         "buildSourceCommit": "git:abc123..."
     }

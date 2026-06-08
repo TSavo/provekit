@@ -152,7 +152,7 @@ pub fn emit_formula(formula: &Formula) -> String {
         // `substitute` / `apply` appear only inside an unreduced `wp_rule`
         // term and are eliminated by `libsugar::wp` before any solver
         // or compiler backend sees the formula. Reaching this arm is a bug.
-        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        // TODO(wp-as-formula PR1+): teach sugar-ir-codegen to emit this arm.
         Formula::Substitute { .. } | Formula::Apply { .. } => {
             unreachable!(
                 "wp-rule schema node reached the Coq formula emitter; \
@@ -492,7 +492,7 @@ pub fn collect_free_vars_formula(
         // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
         // see the note in `emit_formula`. These must be reduced via
         // `libsugar::wp` before reaching the Coq backend.
-        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        // TODO(wp-as-formula PR1+): teach sugar-ir-codegen to emit this arm.
         Formula::Substitute { .. } | Formula::Apply { .. } => {
             unreachable!(
                 "wp-rule schema node reached the Coq free-var collector; \

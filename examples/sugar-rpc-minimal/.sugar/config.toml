@@ -1,0 +1,22 @@
+[authoring]
+surface = "rust-bind"
+
+[[plugins]]
+name = "rust-sugar"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:rpc-minimal"
+library = "sugar-rpc-minimal"
+version = "rust-1"

@@ -11,14 +11,14 @@ use crate::ingest::ValidEvent;
 use rusqlite::Connection;
 
 // =============================================================================
-// Boundary: concept:sql-connection-open  →  provekit-shim-rusqlite
+// Boundary: concept:sql-connection-open  →  sugar-shim-rusqlite
 // =============================================================================
 pub fn open_in_memory() -> rusqlite::Result<Connection> {
     Connection::open_in_memory()
 }
 
 // =============================================================================
-// Boundary: concept:sql-execute  →  provekit-shim-rusqlite
+// Boundary: concept:sql-execute  →  sugar-shim-rusqlite
 // =============================================================================
 pub fn sql_execute(
     conn: &Connection,
@@ -29,7 +29,7 @@ pub fn sql_execute(
 }
 
 // =============================================================================
-// Boundary: concept:sql-query-row  →  provekit-shim-rusqlite
+// Boundary: concept:sql-query-row  →  sugar-shim-rusqlite
 //
 // Matches the rusqlite shim's 4-param mapper form (Gap #5 user-side
 // adoption per issue #1575). The user passes a closure mapping

@@ -66,14 +66,14 @@ These shapes are already appropriate as substrate-level surfaces.
 
 | Surface | Current location | Why it is substrate |
 |---|---|---|
-| CID and canonical bytes | `libprovekit::core::types::Cid`, `provekit-canonicalizer` users | Content identity and canonicalization are language-independent. |
-| ProofIR terms and formulas | `libprovekit::core::types::Term`, `provekit-ir-symbolic`, `provekit-ir-types` | Terms, atoms, constraints, and sorts are normalized proof data. |
-| Contract core fields | `provekit-claim-envelope::MintContractArgs` `pre`, `post`, `inv`, `formals`, `formal_sorts`, `input_cids` | These are normalized contract content, not language syntax. |
-| Proof memento envelope | `provekit-claim-envelope/src/lib.rs` layered contract/bridge/implication/witness builders | The envelope is the content-addressed packaging layer. |
-| Bridge target pinning | `MintBridgeArgs`, `BridgeCallsite`, `provekit-verifier::resolve_target` | Target contract identity and bundle pinning are language-independent safety properties. |
-| `DoctorReport` and `DoctorCheck` | `provekit-cli/src/doctor.rs` | Check IDs, severities, evidence, and `releaseReady` are substrate health reporting. |
-| No-silent-failure floor | `provekit-cli/src/floor_runtime_check.rs` | `silentlyDropped`, `falsePass`, `droppedSites`, and `panicCensus` are release invariants over proof data. |
-| Release-gate receipt | `provekit-cli/src/cmd_release_gate.rs` | It composes public command surfaces and emits product evidence; it does not encode a language. |
+| CID and canonical bytes | `libsugar::core::types::Cid`, `sugar-canonicalizer` users | Content identity and canonicalization are language-independent. |
+| ProofIR terms and formulas | `libsugar::core::types::Term`, `sugar-ir-symbolic`, `sugar-ir-types` | Terms, atoms, constraints, and sorts are normalized proof data. |
+| Contract core fields | `sugar-claim-envelope::MintContractArgs` `pre`, `post`, `inv`, `formals`, `formal_sorts`, `input_cids` | These are normalized contract content, not language syntax. |
+| Proof memento envelope | `sugar-claim-envelope/src/lib.rs` layered contract/bridge/implication/witness builders | The envelope is the content-addressed packaging layer. |
+| Bridge target pinning | `MintBridgeArgs`, `BridgeCallsite`, `sugar-verifier::resolve_target` | Target contract identity and bundle pinning are language-independent safety properties. |
+| `DoctorReport` and `DoctorCheck` | `sugar-cli/src/doctor.rs` | Check IDs, severities, evidence, and `releaseReady` are substrate health reporting. |
+| No-silent-failure floor | `sugar-cli/src/floor_runtime_check.rs` | `silentlyDropped`, `falsePass`, `droppedSites`, and `panicCensus` are release invariants over proof data. |
+| Release-gate receipt | `sugar-cli/src/cmd_release_gate.rs` | It composes public command surfaces and emits product evidence; it does not encode a language. |
 | Dependency proof bytes over RPC | `kit_dispatch::resolve_dependency_proofs`, doctor dependency checks | Once proof bytes cross RPC, the CLI may hash and stage normalized proof data without knowing package paths. |
 
 ## Bucket 2: Correctly Kit-Specific
@@ -82,14 +82,14 @@ These must stay in kits or kit adapters.
 
 | Surface | Current location | Why it stays kit-specific |
 |---|---|---|
-| rust-analyzer and linkerd probing | `provekit-cli/src/doctor_oracle.rs`, `provekit-walk/src/ra_oracle.rs`, `provekit-walk/src/ra_daemon_client.rs` | Rust's oracle implementation is not the Python or Java oracle implementation. Doctor consumes adapter evidence only. |
-| Cargo/crate/package resolution | `provekit-walk/src/bin/walk_rpc.rs`, Rust project config, Rust shim manifests | Cargo metadata and crate names are Rust kit concerns. |
-| Rust AST/HIR/body lifting | `provekit-walk/src/lift.rs`, `walk_rpc.rs`, Rust lifters | Parsing and resolving Rust source is always the Rust kit's job. |
-| Rust stdlib shim catalog | `examples/provekit-shim-rust-std/src/lib.rs` | The functions and tests express Rust stdlib algebra. The emitted concepts can map into substrate, but the shim remains Rust. |
-| `library:rust-*` shim concept names | `examples/provekit-shim-rust-std/src/lib.rs` | These identify Rust library facts. They may map to substrate concepts, but the original catalog remains kit-owned. |
-| Rust library sugar annotations | `#[provekit::sugar(...)]` handling in `walk_rpc.rs` | Attribute parsing and library binding extraction are Rust kit semantics. |
-| Resolver binaries and command paths | `.provekit/*/manifest.toml`, `project_config`, `lift_plugin` | Registration is manifest/config-driven; concrete commands remain per kit. |
-| Residue meanings like lock poisoning | `.provekit/residue.toml`, `panic_annotations_runtime.rs` rows | The category schema is substrate, but the reason "Rust mutex poisoning" is language/runtime-specific. |
+| rust-analyzer and linkerd probing | `sugar-cli/src/doctor_oracle.rs`, `sugar-walk/src/ra_oracle.rs`, `sugar-walk/src/ra_daemon_client.rs` | Rust's oracle implementation is not the Python or Java oracle implementation. Doctor consumes adapter evidence only. |
+| Cargo/crate/package resolution | `sugar-walk/src/bin/walk_rpc.rs`, Rust project config, Rust shim manifests | Cargo metadata and crate names are Rust kit concerns. |
+| Rust AST/HIR/body lifting | `sugar-walk/src/lift.rs`, `walk_rpc.rs`, Rust lifters | Parsing and resolving Rust source is always the Rust kit's job. |
+| Rust stdlib shim catalog | `examples/sugar-shim-rust-std/src/lib.rs` | The functions and tests express Rust stdlib algebra. The emitted concepts can map into substrate, but the shim remains Rust. |
+| `library:rust-*` shim concept names | `examples/sugar-shim-rust-std/src/lib.rs` | These identify Rust library facts. They may map to substrate concepts, but the original catalog remains kit-owned. |
+| Rust library sugar annotations | `#[sugar::sugar(...)]` handling in `walk_rpc.rs` | Attribute parsing and library binding extraction are Rust kit semantics. |
+| Resolver binaries and command paths | `.sugar/*/manifest.toml`, `project_config`, `lift_plugin` | Registration is manifest/config-driven; concrete commands remain per kit. |
+| Residue meanings like lock poisoning | `.sugar/residue.toml`, `panic_annotations_runtime.rs` rows | The category schema is substrate, but the reason "Rust mutex poisoning" is language/runtime-specific. |
 
 ## Bucket 3: Promote
 
@@ -99,20 +99,20 @@ compatibility classification.
 
 | Current identifier | Location | Proposed substrate identifier | Rust adapter shape | Compatibility |
 |---|---|---|---|---|
-| `is_ok(result)` | `provekit-lift-contracts/src/lib.rs`, `examples/provekit-shim-rust-std/src/lib.rs`, `provekit-verifier/src/body_discharge.rs` tests and comments | `concept:panic-freedom.result.ok(result)` | Rust adapter maps `Result::is_ok`, `Result::unwrap`, and `Result::expect` pre/post facts to the concept. Verifier reads aliases so old `is_ok` remains valid. | Alias-read first. Optional dual-emit later. Default Rust emit must not change in v1. |
+| `is_ok(result)` | `sugar-lift-contracts/src/lib.rs`, `examples/sugar-shim-rust-std/src/lib.rs`, `sugar-verifier/src/body_discharge.rs` tests and comments | `concept:panic-freedom.result.ok(result)` | Rust adapter maps `Result::is_ok`, `Result::unwrap`, and `Result::expect` pre/post facts to the concept. Verifier reads aliases so old `is_ok` remains valid. | Alias-read first. Optional dual-emit later. Default Rust emit must not change in v1. |
 | `is_err(result)` | same as above, plus `Result::unwrap_err` shim | `concept:panic-freedom.result.err(result)` | Rust adapter maps `Result::is_err` and `Result::unwrap_err` pre/post facts. | Alias-read first. |
-| `is_some(result)` | `provekit-lift-contracts`, `provekit-walk`, rust-std shim, verifier tests | `concept:panic-freedom.option.some(result)` | Rust adapter maps `Option::is_some`, `Option::unwrap`, `Option::expect`, and Option-return totality facts. | Alias-read first. Python can map non-None guards here when semantically exact. |
-| `is_none(result)` | `provekit-lift-contracts`, rust-std shim | `concept:panic-freedom.option.none(result)` | Rust adapter maps `Option::is_none` and Option totality disjunctions. | Alias-read first. |
-| `cf_guarded(guard, value)` | `provekit-walk/src/lift.rs`, `provekit-verifier/src/enumerate_callsites.rs` | `concept:panic-freedom.guard(guard, value)` | Rust adapter continues wrapping dominated branches. Verifier accepts both carrier names and copies the guard atom opaquely. | Dual-read can land without changing Rust emit. Renaming default emit is migration-required. |
-| `cf_ite(cond, then, else)` | `provekit-walk/src/lift.rs`, `provekit-verifier/src/enumerate_callsites.rs` | `concept:panic-freedom.choice(cond, then, else)` | Rust adapter emits control-flow choice; verifier descends without treating the condition as a fact. | Dual-read can land first. Default emit migration changes proof bytes. |
-| `method:unwrap` | `provekit-walk/src/bin/walk_rpc.rs`, `provekit-verifier/src/enumerate_callsites.rs`, panic census tests | `concept:panic-freedom.leaf.unwrap` | Rust adapter maps `Option::unwrap` and `Result::unwrap` call leaves to the concept plus a type-family precondition concept. Existing bridge `sourceSymbol` remains accepted. | Alias-read first. Bridge source symbol default change is migration-required. |
+| `is_some(result)` | `sugar-lift-contracts`, `sugar-walk`, rust-std shim, verifier tests | `concept:panic-freedom.option.some(result)` | Rust adapter maps `Option::is_some`, `Option::unwrap`, `Option::expect`, and Option-return totality facts. | Alias-read first. Python can map non-None guards here when semantically exact. |
+| `is_none(result)` | `sugar-lift-contracts`, rust-std shim | `concept:panic-freedom.option.none(result)` | Rust adapter maps `Option::is_none` and Option totality disjunctions. | Alias-read first. |
+| `cf_guarded(guard, value)` | `sugar-walk/src/lift.rs`, `sugar-verifier/src/enumerate_callsites.rs` | `concept:panic-freedom.guard(guard, value)` | Rust adapter continues wrapping dominated branches. Verifier accepts both carrier names and copies the guard atom opaquely. | Dual-read can land without changing Rust emit. Renaming default emit is migration-required. |
+| `cf_ite(cond, then, else)` | `sugar-walk/src/lift.rs`, `sugar-verifier/src/enumerate_callsites.rs` | `concept:panic-freedom.choice(cond, then, else)` | Rust adapter emits control-flow choice; verifier descends without treating the condition as a fact. | Dual-read can land first. Default emit migration changes proof bytes. |
+| `method:unwrap` | `sugar-walk/src/bin/walk_rpc.rs`, `sugar-verifier/src/enumerate_callsites.rs`, panic census tests | `concept:panic-freedom.leaf.unwrap` | Rust adapter maps `Option::unwrap` and `Result::unwrap` call leaves to the concept plus a type-family precondition concept. Existing bridge `sourceSymbol` remains accepted. | Alias-read first. Bridge source symbol default change is migration-required. |
 | `method:expect` | same as above | `concept:panic-freedom.leaf.expect` | Rust adapter maps `Option::expect` and `Result::expect` to the concept plus type-family precondition concept. | Alias-read first. |
 | `method:unwrap_err` | rust-std shim and future callsite census | `concept:panic-freedom.leaf.unwrap-err` | Rust adapter maps `Result::unwrap_err` to result-err precondition. | Alias-read first. |
-| Kit-declared runtime failure leaves such as Python `raise`, Java `throw`, Go `panic`, TypeScript `throw`, nil dereference, and checked runtime-failure assertions | Non-Rust kit declarations and future effect-locus metadata | `concept:panic-freedom.leaf.runtime-failure-site` | Rust v1 leaves stay parallel for now; no Rust default emission changes. Non-Rust kits map local/subkind diagnostics to this concept while the verifier discharges only over normalized pre/post/guard facts. | Additive Path A. Subkind strings are kit-owned diagnostics, not libprovekit taxonomy or verifier semantics. |
-| `panicLoci` header field | `provekit-claim-envelope/src/lib.rs`, `provekit-lift/src/lib.rs`, `provekit-verifier/src/enumerate_callsites.rs` | `effectLoci` with `effectKind = concept:panic-freedom` | Rust adapter reads/writes current `panicLoci`; substrate readers can also accept `effectLoci`. Existing `panicLoci` remains the Rust v1 default. | Dual-read is safe. Default dual-write changes envelope bytes, so emit migration is required. |
+| Kit-declared runtime failure leaves such as Python `raise`, Java `throw`, Go `panic`, TypeScript `throw`, nil dereference, and checked runtime-failure assertions | Non-Rust kit declarations and future effect-locus metadata | `concept:panic-freedom.leaf.runtime-failure-site` | Rust v1 leaves stay parallel for now; no Rust default emission changes. Non-Rust kits map local/subkind diagnostics to this concept while the verifier discharges only over normalized pre/post/guard facts. | Additive Path A. Subkind strings are kit-owned diagnostics, not libsugar taxonomy or verifier semantics. |
+| `panicLoci` header field | `sugar-claim-envelope/src/lib.rs`, `sugar-lift/src/lib.rs`, `sugar-verifier/src/enumerate_callsites.rs` | `effectLoci` with `effectKind = concept:panic-freedom` | Rust adapter reads/writes current `panicLoci`; substrate readers can also accept `effectLoci`. Existing `panicLoci` remains the Rust v1 default. | Dual-read is safe. Default dual-write changes envelope bytes, so emit migration is required. |
 | `panicSite` bridge callsite field | `BridgeCallsite`, `walk_rpc.rs`, `enumerate_callsites.rs` | `effectSite = concept:panic-freedom` | Rust adapter maps current boolean to the effect-site concept. Verifier can keep bool path while accepting concept metadata. | Dual-read is safe. Default emit migration is required. |
 | `panic-site-annotation` diagnostic kind | `panic_annotations_runtime.rs`, Rust kit lift diagnostics | `effect-site-annotation` with `effectKind = concept:panic-freedom` | Rust adapter maps residue and tier annotations for Rust panic leaves. Python adapter can emit same shape for Python exception sites. | Additive reader first. Existing diagnostic kind remains accepted. |
-| `bodyDischargeEligible` and `bodyDischargeRefusalReason` | `provekit-claim-envelope/src/lib.rs`, `cmd_self_check.rs`, `walk_rpc.rs` | `dischargePolicy.bodyReduction = allowed/refused` with `reason` | Rust adapter maps current metadata to explicit discharge policy. Verifier and self-check can read both. | Dual-read is safe. Replacing metadata keys is migration-required. |
+| `bodyDischargeEligible` and `bodyDischargeRefusalReason` | `sugar-claim-envelope/src/lib.rs`, `cmd_self_check.rs`, `walk_rpc.rs` | `dischargePolicy.bodyReduction = allowed/refused` with `reason` | Rust adapter maps current metadata to explicit discharge policy. Verifier and self-check can read both. | Dual-read is safe. Replacing metadata keys is migration-required. |
 | `library` metadata value as crate/package string | `MintContractArgs.library`, `walk_rpc.rs`, verifier pool comments | `producerScope = {kind, language, package}` | Rust adapter maps Cargo crate names to producer scope. The old `library` metadata remains for Rust v1 resolution. | Additive only; replacing `library` would break existing bridge resolution. |
 | `AnnotationCheckMode`, `FloorCheckMode`, `DoctorMode` parallel enums | `panic_annotations_runtime.rs`, `floor_runtime_check.rs`, `doctor.rs` | shared `GateMode = structural | strict | releaseGate` | Internal Rust CLI adapter maps all three domains to shared mode semantics. | Internal refactor; no proof bytes affected. |
 | `oracle.host.*` Rust evidence keys with RA values | `doctor.rs`, `doctor_oracle.rs` | `kit.oracle.host.*` with adapter-declared `hostKind` | Rust adapter declares `hostKind = rust-analyzer`; Python adapter can declare `pyright`, `mypy`, or another host. Doctor validates generic evidence. | Additive report schema field; old evidence keys remain for v1 receipts. |
@@ -192,7 +192,7 @@ Doctor validates:
 
 Doctor vocabulary validation is language-aware. For Rust kit declarations,
 doctor validates both the local and concept sides against
-`libprovekit::concept::*` constants, because Rust owns the current canonical
+`libsugar::concept::*` constants, because Rust owns the current canonical
 local panic-freedom vocabulary. For non-Rust kit declarations, doctor validates
 the concept side against known substrate concepts and treats local strings as
 kit-owned, format-free syntax. Mapping surfaces are checked only against the
@@ -200,7 +200,7 @@ configured kit surface for manifest/declaration coherence; doctor does not own
 per-language surface registries.
 
 The rationale is that kits own language semantics. Per-language local
-vocabulary in `libprovekit` would require substrate edits for each new kit and
+vocabulary in `libsugar` would require substrate edits for each new kit and
 would violate the language-boundary invariant. Concept identifiers are the
 federated substrate identity; local names are language-specific renderings of
 that identity. Cross-kit local consistency is deferred to later doctor work.
@@ -214,7 +214,7 @@ Python parity at v2 means more than "Python can mint". The v2 claim should be:
 - Python effect sites such as `None` dereference, `KeyError`, `IndexError`,
   `AttributeError`, and failed `assert` participate in
   `concept:panic-freedom` or a sibling exception-freedom concept.
-- `provekit self-check`, `provekit doctor`, and `provekit release-gate` produce
+- `sugar self-check`, `sugar doctor`, and `sugar release-gate` produce
   the same shape of K, residue, raw unproven, and floor evidence for a Python
   target.
 - The CLI/verifier consume the Python kit through config/manifest/RPC and proof

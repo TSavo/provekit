@@ -11,7 +11,7 @@ Trinity-demo library kits (rusqlite, sqlite-jdbc, python-sqlite3, and any future
 
 Per the parent audit (`docs/audits/2026-05-18-kit-as-substrate-participant-vision.md`) section 7.1, library kit distribution evolves through three phases:
 
-- **Phase A (Bootstrap-resident):** kit declarations and body templates ship inside the substrate's own source tree (`implementations/rust/libprovekit/src/core/platform_semantics/<tag>.rs`, `menagerie/<lang>-language-signature/specs/body-templates/`). Today's state for better-sqlite3, pg, python-sqlite3, python-aiosqlite. No vendor commitment required.
+- **Phase A (Bootstrap-resident):** kit declarations and body templates ship inside the substrate's own source tree (`implementations/rust/libsugar/src/core/platform_semantics/<tag>.rs`, `menagerie/<lang>-language-signature/specs/body-templates/`). Today's state for better-sqlite3, pg, python-sqlite3, python-aiosqlite. No vendor commitment required.
 - **Phase B (Shim distribution):** shim packages sibling to library packages, distributed via each ecosystem's existing registry. Library author's commitment is zero; anyone can publish a shim.
 - **Phase C (Vendor adoption):** library author ships the `.proof` envelope inside the library's own package; shims become unnecessary for adopted libraries. Library author signs once; the official envelope supersedes the shim.
 
@@ -19,16 +19,16 @@ This ruling governs Phase B. Phase C transitions inherit the same admission-tier
 
 ## §1. Naming convention per ecosystem
 
-Shim packages follow each ecosystem's natural namespacing convention. The substrate's namespace is `provekit-shim` (kebab-case where ecosystems use flat namespaces; scoped where ecosystems support scoping; reverse-DNS where ecosystems use Java-style groupIds).
+Shim packages follow each ecosystem's natural namespacing convention. The substrate's namespace is `sugar-shim` (kebab-case where ecosystems use flat namespaces; scoped where ecosystems support scoping; reverse-DNS where ecosystems use Java-style groupIds).
 
 | Ecosystem | Shim package name pattern | Example |
 |---|---|---|
-| Cargo (Rust) | `provekit-shim-<library-tag>` | `provekit-shim-rusqlite` |
-| Pip (Python) | `provekit-shim-<library-tag>` | `provekit-shim-python-sqlite3` |
-| npm (JS/TS) | `@provekit-shim/<library-tag>` | `@provekit-shim/typescript-better-sqlite3` |
-| Maven (Java) | `org.provekit-shim:<library-tag>-proof` | `org.provekit-shim:java-sqlite-jdbc-proof` |
+| Cargo (Rust) | `sugar-shim-<library-tag>` | `sugar-shim-rusqlite` |
+| Pip (Python) | `sugar-shim-<library-tag>` | `sugar-shim-python-sqlite3` |
+| npm (JS/TS) | `@sugar-shim/<library-tag>` | `@sugar-shim/typescript-better-sqlite3` |
+| Maven (Java) | `org.sugar-shim:<library-tag>-proof` | `org.sugar-shim:java-sqlite-jdbc-proof` |
 
-The `<library-tag>` field is the SUBSTRATE's canonical library tag (the second component produced by `split_library_surface`), not the ecosystem-specific package name. Example: `provekit-shim-sqlite-jdbc` (substrate tag) even though the corresponding Maven library artifact is `org.xerial:sqlite-jdbc`.
+The `<library-tag>` field is the SUBSTRATE's canonical library tag (the second component produced by `split_library_surface`), not the ecosystem-specific package name. Example: `sugar-shim-sqlite-jdbc` (substrate tag) even though the corresponding Maven library artifact is `org.xerial:sqlite-jdbc`.
 
 The substrate discovers shim packages by scanning each ecosystem's installed dependencies for matches against these naming patterns. Per §3, the discovery uses each ecosystem's standard resolution mechanism.
 
@@ -42,10 +42,10 @@ This is the substrate-as-pure-protocol pattern. The substrate-CLI knows how to i
 
 | Ecosystem | Kit binary loads `.proof` via | Conventional location inside package |
 |---|---|---|
-| Cargo | `include_bytes!("...")` at compile time, OR runtime read from crate asset path | `assets/provekit.proof` (or per kit author's choice) |
-| Pip | `importlib.resources.files("provekit_shim_<tag>") / "provekit.proof"` | `provekit_shim_<tag>/provekit.proof` per `pyproject.toml` package-data |
-| npm | `fs.readFileSync(__dirname + '/provekit.proof')` | Package root or `dist/` per `package.json` files declaration |
-| Maven | `getClass().getResourceAsStream("/META-INF/provekit/provekit.proof")` | `META-INF/provekit/provekit.proof` (JVM classpath convention) |
+| Cargo | `include_bytes!("...")` at compile time, OR runtime read from crate asset path | `assets/sugar.proof` (or per kit author's choice) |
+| Pip | `importlib.resources.files("sugar_shim_<tag>") / "sugar.proof"` | `sugar_shim_<tag>/sugar.proof` per `pyproject.toml` package-data |
+| npm | `fs.readFileSync(__dirname + '/sugar.proof')` | Package root or `dist/` per `package.json` files declaration |
+| Maven | `getClass().getResourceAsStream("/META-INF/sugar/sugar.proof")` | `META-INF/sugar/sugar.proof` (JVM classpath convention) |
 
 These conventions are entirely internal to the kit. The substrate does not enforce them; the kit author publishes the kit binary, and the binary handles its own resource loading. Any future kit author may choose a different internal convention; the substrate is indifferent because it never touches the package directly.
 
@@ -64,21 +64,21 @@ The substrate-CLI verifies the signature against consumer policy (per §5), pars
 
 The substrate-CLI's existing kit-dispatch tiered resolution at `kit_dispatch.rs:521-583` handles shim discovery WITHOUT per-ecosystem substrate-side code:
 
-1. Project-local manifest (`.provekit/lift/<surface>/manifest.toml`).
-2. Env-var override (`PROVEKIT_BIND_LIFT_<LANG>_BIN`).
+1. Project-local manifest (`.sugar/lift/<surface>/manifest.toml`).
+2. Env-var override (`SUGAR_BIND_LIFT_<LANG>_BIN`).
 3. Built-in convention (workspace-relative compile-time path).
-4. **PATH probe (`provekit-bind-lift-<source_lang>` on PATH)** — this tier handles shim binaries uniformly.
+4. **PATH probe (`sugar-bind-lift-<source_lang>` on PATH)** — this tier handles shim binaries uniformly.
 
 Each ecosystem's package manager installs the shim's binary onto PATH as part of its standard package-install behavior:
 
-- Cargo: `cargo install provekit-shim-rusqlite` puts the shim binary in `~/.cargo/bin/` (on PATH for cargo users).
-- Pip: `pip install provekit-shim-python-sqlite3` installs the package's console_script entry point in the venv's `bin/`.
-- Maven: `mvn dependency:get` plus a launcher script (or `jar -m org.provekit-shim:java-sqlite-jdbc-proof` invocation) provides the binary.
-- npm: `npm install @provekit-shim/typescript-better-sqlite3` installs the bin entry in `node_modules/.bin/`.
+- Cargo: `cargo install sugar-shim-rusqlite` puts the shim binary in `~/.cargo/bin/` (on PATH for cargo users).
+- Pip: `pip install sugar-shim-python-sqlite3` installs the package's console_script entry point in the venv's `bin/`.
+- Maven: `mvn dependency:get` plus a launcher script (or `jar -m org.sugar-shim:java-sqlite-jdbc-proof` invocation) provides the binary.
+- npm: `npm install @sugar-shim/typescript-better-sqlite3` installs the bin entry in `node_modules/.bin/`.
 
 The substrate-CLI's existing tier 4 PATH probe finds the binary; invokes it with `--rpc`; talks JSON-RPC. No ecosystem-specific substrate code; no `dispatch_shim_resolve` primitive needed; the existing `dispatch_bind_lift` and `dispatch_realize` primitives consume shim-served kit-declarations transparently.
 
-**Binary naming convention:** the shim binary follows the substrate's existing per-surface PATH-probe convention. For a shim of library `<library>` providing the bind-lift surface for source language `<lang>`, the binary on PATH is named per the existing convention: `provekit-bind-lift-<lang>` (with the shim's PATH location ensuring it resolves to the shim's binary for the relevant library context). For realize surfaces: `provekit-realize-<lang>-<library-tag>` per existing convention.
+**Binary naming convention:** the shim binary follows the substrate's existing per-surface PATH-probe convention. For a shim of library `<library>` providing the bind-lift surface for source language `<lang>`, the binary on PATH is named per the existing convention: `sugar-bind-lift-<lang>` (with the shim's PATH location ensuring it resolves to the shim's binary for the relevant library context). For realize surfaces: `sugar-realize-<lang>-<library-tag>` per existing convention.
 
 Per-kit publishing responsibility: each shim package's publish step ensures the appropriate binary lands on PATH under the substrate-convention name. The kit may name its internal binary anything; what matters is what shows up on PATH after install.
 
@@ -137,9 +137,9 @@ The substrate does NOT enforce shim trust centrally. Per paper 23 §6, trust is 
 
 ### §5.2 Phase B shims are Third-party (Inferred)
 
-Trinity-demo shims published by the provekit-project (or trusted maintainers acting as third parties) ship as the Third-party (Inferred) tier. The shim's `.proof` envelope is signed by the publisher's key; the consumer's verifier policy decides whether to trust the publisher's key.
+Trinity-demo shims published by the sugar-project (or trusted maintainers acting as third parties) ship as the Third-party (Inferred) tier. The shim's `.proof` envelope is signed by the publisher's key; the consumer's verifier policy decides whether to trust the publisher's key.
 
-The provekit-project's signing key (per project memory `reference_provekit_provenance_keys`) is the initial bootstrap trust anchor. The Ed25519 key at vault `secret/provekit/provenance-ed25519` signs shims published by the project. Consumer verifier policies that trust the provekit-project key admit these shims at the Third-party (Inferred) tier.
+The sugar-project's signing key (per project memory `reference_sugar_provenance_keys`) is the initial bootstrap trust anchor. The Ed25519 key at vault `secret/sugar/provenance-ed25519` signs shims published by the project. Consumer verifier policies that trust the sugar-project key admit these shims at the Third-party (Inferred) tier.
 
 Additional trusted maintainers (community contributors who establish reputation) can publish shims under their own keys; consumer policies decide independently whether to trust those publishers.
 
@@ -194,10 +194,10 @@ Each sub-issue:
 
 Sub-issues to file (not yet filed; each references this ruling):
 
-- **D13a-Cargo:** ship `provekit-shim-rusqlite` crate (Rust binary, sigstore-rs verification adapter). Substrate-side: wire crates.io publisher + sigstore-rs verification.
-- **D13a-Pip:** ship `provekit-shim-python-sqlite3` package (Python binary via console_script, PEP 740 verification adapter). Substrate-side: wire sigstore verification per PEP 740.
-- **D13a-Maven:** ship `org.provekit-shim:java-sqlite-jdbc-proof` (Java jar with executable main class, GPG signature verification adapter). Substrate-side: wire GPG signature verification.
-- **D13a-Npm:** ship `@provekit-shim/typescript-better-sqlite3` and similar (Node binary via package.json bin, sigstore-via-npm verification adapter). Substrate-side: wire sigstore-via-npm verification.
+- **D13a-Cargo:** ship `sugar-shim-rusqlite` crate (Rust binary, sigstore-rs verification adapter). Substrate-side: wire crates.io publisher + sigstore-rs verification.
+- **D13a-Pip:** ship `sugar-shim-python-sqlite3` package (Python binary via console_script, PEP 740 verification adapter). Substrate-side: wire sigstore verification per PEP 740.
+- **D13a-Maven:** ship `org.sugar-shim:java-sqlite-jdbc-proof` (Java jar with executable main class, GPG signature verification adapter). Substrate-side: wire GPG signature verification.
+- **D13a-Npm:** ship `@sugar-shim/typescript-better-sqlite3` and similar (Node binary via package.json bin, sigstore-via-npm verification adapter). Substrate-side: wire sigstore-via-npm verification.
 
 The kit-side work (shipping the shim packages) is the bulk of each sub-issue. The substrate-side work (signature-verification adapter) is a small per-ecosystem addition to the existing verifier; no new discovery primitive, no new dispatcher tier, no new substrate machinery.
 
@@ -206,7 +206,7 @@ The kit-side work (shipping the shim packages) is the bulk of each sub-issue. Th
 - Does NOT enumerate per-ecosystem packaging mechanics in detail. Each kit's publication is the kit author's responsibility per the ecosystem's standard conventions.
 - Does NOT pre-allowlist any signer key. Consumer policy decides.
 - Does NOT impose substrate-side restrictions on shim publishers. Permissionless publication per paper 23 §8.
-- Does NOT block adoption: provekit-project ships the bootstrap shims; community publishers can ship additional shims; vendor adoption transitions Phase B → Phase C transparently.
+- Does NOT block adoption: sugar-project ships the bootstrap shims; community publishers can ship additional shims; vendor adoption transitions Phase B → Phase C transparently.
 - Does NOT introduce a "Sugar shim registry" central infrastructure. The catalog is the union of every published shim across every ecosystem; federation is the ecosystem's existing infrastructure.
 
 ## §8. Cross-references
@@ -215,13 +215,13 @@ The kit-side work (shipping the shim packages) is the bulk of each sub-issue. Th
 - Paper 14 §L6 (CVE blast-radius is SELECT over content-addressed facts): `docs/papers/14-after-trust-the-universal-correctness-bundle.md`.
 - Paper 22 (migration as source transformation; the workflow shims participate in): `docs/papers/22-after-vendoring-migration-as-source-transformation.md`.
 - Paper 23 §6 (proof envelope carries the binding; four admission tiers): `docs/papers/23-after-packages-the-proof-envelope-carries-the-binding.md`.
-- Project memory `project_provekit_pin_all_three`: k(I)=t requires all three pinned per run.
-- Project memory `reference_provekit_provenance_keys`: substrate's signing key infrastructure.
+- Project memory `project_sugar_pin_all_three`: k(I)=t requires all three pinned per run.
+- Project memory `reference_sugar_provenance_keys`: substrate's signing key infrastructure.
 - Rules of engagement: `docs/explanation/substrate-uniform-pattern.md`.
 - Parent audit row D13a: `docs/audits/2026-05-18-kit-as-substrate-participant-vision.md` section 6.
 - Phase A/B/C distribution evolution: parent audit section 7.1.
 - Refuse-leg ruling: `docs/plans/2026-05-18-refuse-leg-short-circuit-ruling.md`.
-- Existing kit-dispatch tiered resolution: `implementations/rust/provekit-cli/src/kit_dispatch.rs:521-583`.
+- Existing kit-dispatch tiered resolution: `implementations/rust/sugar-cli/src/kit_dispatch.rs:521-583`.
 
 ## §9. Discipline
 

@@ -8,7 +8,7 @@
 // The Go lifter emits the same cgo call-edge as the failure fixture, and the
 // link bundle stays clean because the caller post-condition establishes n > 0.
 //
-// Run: provekit link examples/polyglot-rust-go/fixture-ok/
+// Run: sugar link examples/polyglot-rust-go/fixture-ok/
 // Expected: link-bundle.json with 1 bridge, 0 linker-errors, exit code 0.
 
 #[requires(n > 0)]

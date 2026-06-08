@@ -4,7 +4,7 @@ Status: research note, 2026-05-09. Author: triage agent. Surface: `c-sparse`.
 
 ## What the lifter emits today
 
-`implementations/c/provekit-lift-c-sparse/src/sparse.c` ingests `pk_c_source_facts` and
+`implementations/c/sugar-lift-c-sparse/src/sparse.c` ingests `pk_c_source_facts` and
 walks `facts->sparse_annotations[]`. Each annotation has `(name, argument_text, locus)`.
 `emit_sparse_contracts()` translates five names into v1 atomic contracts of shape
 `{kind:"contract", name, outBinding:"out", post:{kind:"atomic", name, args:[{var}]}}`:

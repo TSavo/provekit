@@ -54,7 +54,7 @@ impl LiftPluginKit {
 
     /// Override the JSON-RPC method used for the lift request. The default
     /// method remains `lift`; multi-surface kits can expose a second route
-    /// such as `provekit.plugin.lift_implications` while keeping the same
+    /// such as `sugar.plugin.lift_implications` while keeping the same
     /// transport.
     pub fn with_method(mut self, method: impl Into<String>) -> Self {
         let method = method.into();
@@ -179,7 +179,7 @@ impl LiftPluginKit {
                 "client": {"name": "libsugar", "version": env!("CARGO_PKG_VERSION")},
                 "protocol_version": "pep/1.7.0",
                 "workspace_root": lift_params.get("workspace_root").cloned().unwrap_or_else(|| json!(".")),
-                "config_path": lift_params.get("config_path").cloned().unwrap_or_else(|| json!(".provekit/config.toml"))
+                "config_path": lift_params.get("config_path").cloned().unwrap_or_else(|| json!(".sugar/config.toml"))
             }
         });
         writeln!(stdin, "{init_req}").map_err(|error| {

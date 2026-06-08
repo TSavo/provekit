@@ -1,8 +1,8 @@
-// The vendor's REAL source — PLAIN rust, no provekit attribute of any kind.
+// The vendor's REAL source — PLAIN rust, no sugar attribute of any kind.
 // `reverse_chars` is an ordinary `pub fn`. In the `library-bindings` layer the
 // lift DERIVES the binding from the crate name + fn name (no
-// `#[provekit::sugar]` required): write a function, it's sugar. Lifting it with
-// PROVEKIT_LEAN_SOURCE=1 mints a LEAN binding (locus + source_cid/template_cid,
+// `#[sugar::sugar]` required): write a function, it's sugar. Lifting it with
+// SUGAR_LEAN_SOURCE=1 mints a LEAN binding (locus + source_cid/template_cid,
 // NO inline body). The body lives ONLY here on disk; the Source Oracle resolves
 // it on demand IFF this source recomputes to the pinned CIDs.
 //

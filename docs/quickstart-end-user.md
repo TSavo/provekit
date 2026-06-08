@@ -31,7 +31,7 @@ From the repo root:
 cargo install --path implementations/rust/sugar-cli
 ```
 
-This installs `provekit` to `~/.cargo/bin/`. If that directory is not on your
+This installs `sugar` to `~/.cargo/bin/`. If that directory is not on your
 PATH, add `export PATH="$HOME/.cargo/bin:$PATH"` to your shell config.
 
 If you are working inside the repo and have already run a debug build, the binary
@@ -39,8 +39,8 @@ is at `implementations/rust/target/debug/sugar`; the demo scripts use that
 path directly. Confirm whichever binary you intend to use:
 
 ```sh
-provekit --version
-# provekit 0.1.0
+sugar --version
+# sugar 0.1.0
 ```
 
 Confirm the install conforms to the protocol catalog it was built against:
@@ -106,7 +106,7 @@ Real output (numpy 2.4.6; the function count tracks the installed numpy version)
 == sugar-lift ALL numpy -> numpy.proof (lean: CIDs, not inline bodies) ==
   numpy.proof:  13M, 2909 sugar members
 == ship the witness PACKAGE (CID-named body, deployed separately) ==
-  witness: passed blake3-512:049e169f... -> .provekit/witnesses/<cid>.witness
+  witness: passed blake3-512:049e169f... -> .sugar/witnesses/<cid>.witness
 == VERIFY (consumer): rust recomputes; the kit oracle is untrusted ==
 Sugar verification receipt
 Witness dimension (rust recomputes; oracle untrusted)
@@ -132,7 +132,7 @@ their own tests, but the assembled system holds contradictory claims. This is
 demonstrated end to end and locked by a committed test.
 
 A numpy vendor mints a `.proof` carrying `np.add(2,3) == 5`. A consumer stages
-that `.proof` in `.provekit/imports/`, asserts something about the same call, and
+that `.proof` in `.sugar/imports/`, asserts something about the same call, and
 runs `prove`:
 
 - A consumer asserting `np.add(2,3) == 6` is REFUSED. It inherits numpy's `== 5`;
@@ -145,9 +145,9 @@ the python kit packages on `PYTHONPATH`; it skips cleanly when any are missing.
 Using the venv the numpy demos already built:
 
 ```sh
-PYTHONPATH="implementations/python/provekit-lift-py-tests/src:implementations/python/provekit-lift-python-source/src" \
+PYTHONPATH="implementations/python/sugar-lift-py-tests/src:implementations/python/sugar-lift-python-source/src" \
   python3 -m pytest \
-  implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py
+  implementations/python/sugar-lift-py-tests/tests/test_inheritance_e2e.py
 ```
 
 Both parametrizations pass: `consumer-agrees-PROVEN` and
@@ -162,21 +162,21 @@ cross-proof contract conjoin that makes inherited correctness work.
 sugar init
 ```
 
-`sugar init` scaffolds `provekit.toml`, a `.provekit/` directory, a sample
+`sugar init` scaffolds `sugar.toml`, a `.sugar/` directory, a sample
 invariant, and a GitHub Action. From there the flow is:
 
-1. Declare your lift plugins in `.provekit/config.toml` and a manifest under
-   `.provekit/lift/<surface>/manifest.toml` (the numpy demo scripts show concrete
+1. Declare your lift plugins in `.sugar/config.toml` and a manifest under
+   `.sugar/lift/<surface>/manifest.toml` (the numpy demo scripts show concrete
    manifests, including the witness `resolve_witness_command` /
    `resolve_witness_method` fields).
-2. `provekit mint --project .` dispatches the configured lift plugins and writes a
+2. `sugar mint --project .` dispatches the configured lift plugins and writes a
    signed `.proof`. (`lift` dispatches the lift-plugin protocol and prints raw
    ProofIR; `mint` is the composition step that envelopes lifted terms into the
    `.proof`.)
-3. `provekit prove .` loads the `.proof` artifacts, resolves dependency proofs,
+3. `sugar prove .` loads the `.proof` artifacts, resolves dependency proofs,
    conjoins same-callsite contracts, solves the obligations, recomputes
    witnesses, and reports discharge status.
-4. `provekit verify --project .` verifies a kit end to end and emits a signed
+4. `sugar verify --project .` verifies a kit end to end and emits a signed
    per-claim receipt.
 
 The exact manifest wiring depends on your kit. `sugar doctor` validates a
@@ -184,8 +184,8 @@ kit's config and manifest before a run.
 
 ## Editor integration
 
-For Python, the red squiggle is shipped. `provekit-editor-lsp-python` is a
-persistent editor language server (LSP wire protocol) that renders `provekit
+For Python, the red squiggle is shipped. `sugar-editor-lsp-python` is a
+persistent editor language server (LSP wire protocol) that renders `sugar
 prove` directly: open a file in an LSP-capable editor and a contradicted
 contract surfaces as an inline error diagnostic on the offending call. On open
 and save it re-evaluates your project as it is on disk (it lifts the current
@@ -196,14 +196,14 @@ the same verdict prove prints, and it clears the moment you fix it to `== 5`. Th
 server is a thin client: verification still lives in the rust CLI; the editor
 just renders it.
 
-The cross-language, daemon-routed editor server (the `provekit-lsp` /
-`provekit-linkerd` binaries) is still a roadmap item. The Python server above is
+The cross-language, daemon-routed editor server (the `sugar-lsp` /
+`sugar-linkerd` binaries) is still a roadmap item. The Python server above is
 the language-native path; see [docs/quickstart-extender.md](quickstart-extender.md)
 for how it is built and how to add one for another language.
 
 ## When something goes wrong
 
-`provekit: command not found`: `~/.cargo/bin` is not on your PATH (or you meant
+`sugar: command not found`: `~/.cargo/bin` is not on your PATH (or you meant
 to use the in-repo `implementations/rust/target/debug/sugar`).
 
 The numpy demos fail to provision: they need `python3` to build a venv and `z3`

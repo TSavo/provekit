@@ -1,0 +1,11 @@
+# PEP 1.7.0 `kind = "lift"` plugin manifest for the Java bind-IR surface.
+# Walks .java files via the javac compiler API and returns `ir-document` with
+# `bind-lift-entry` records per `2026-05-13-bind-ir-lift-result.md`. cmd_bind
+# dispatches Verb 1 (Lift) here when --lang=java (or auto-detected as java).
+#
+# The kit emits CONCEPTS via term_shape + concept_annotation, not java:* surface
+# ops. ProofIR is concept-language; this kit's job is to bridge Java syntax to
+# concept-shaped records the dispatcher's downstream verbs consume.
+name = "java-bind-lift"
+command = ["java", "-jar", "implementations/java/sugar-lift-java-source/target/sugar-lift-java-source.jar", "--bind-rpc"]
+working_dir = "."

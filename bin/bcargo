@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 usage: bcargo [bcargo options] [cargo args...]
 
-Sync the Rust-facing ProvekIt workspace to battleaxe, then run Cargo there.
+Sync the Rust-facing Sugar workspace to battleaxe, then run Cargo there.
 
 Options:
   --sync-bin NAME     After a successful cargo command, copy target/<profile>/NAME
@@ -14,7 +14,7 @@ Options:
 
 Environment:
   BCARGO_REMOTE_HOST   SSH host alias to use (default: battleaxe)
-  BCARGO_REMOTE_ROOT   Remote scratch root (default: /home/tsavo/remote/provekit-bcargo)
+  BCARGO_REMOTE_ROOT   Remote scratch root (default: /home/tsavo/remote/sugar-bcargo)
   BCARGO_PYTHON_ENV    Set to 0 to skip remote Python kit env provisioning
 EOF
 }
@@ -86,8 +86,8 @@ remote_host="${BCARGO_REMOTE_HOST:-battleaxe}"
 # remote scratch; the shared sccache cache still gives cross-checkout reuse.
 _bcargo_root_tag="$(printf '%s' "$repo_root" | shasum 2>/dev/null | cut -c1-12)"
 _bcargo_root_tag="${_bcargo_root_tag:-default}"
-remote_root="${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/provekit-bcargo-${_bcargo_root_tag}}"
-remote_repo="$remote_root/provekit"
+remote_root="${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/sugar-bcargo-${_bcargo_root_tag}}"
+remote_repo="$remote_root/sugar"
 remote_python_venv="$remote_root/python-kit-env"
 remote_python_bin="$remote_python_venv/bin"
 remote_python="$remote_python_bin/python"
@@ -146,15 +146,15 @@ exclude_args=(
   --exclude='node_modules/'
   --exclude='bazel-bin'
   --exclude='bazel-out'
-  --exclude='bazel-provekit'
+  --exclude='bazel-sugar'
   --exclude='bazel-testlogs'
-  --exclude='provekit-warnings/'
-  --exclude='provekit-worktrees/'
-  --exclude='.provekit/runs/'
-  --exclude='.provekit/witnesses/'
-  # NOTE: `.provekit/lift/` is intentionally NOT excluded. Those are the
+  --exclude='sugar-warnings/'
+  --exclude='sugar-worktrees/'
+  --exclude='.sugar/runs/'
+  --exclude='.sugar/witnesses/'
+  # NOTE: `.sugar/lift/` is intentionally NOT excluded. Those are the
   # hand-authored per-project lift manifests (tiny TOMLs naming the plugin
-  # commands) that `provekit mint` needs; excluding them made remote mint
+  # commands) that `sugar mint` needs; excluding them made remote mint
   # impossible. Only the generated `runs/` and `witnesses/` outputs are skipped.
 )
 
@@ -193,12 +193,12 @@ sync_file pnpm-lock.yaml
 sync_file rust-toolchain
 sync_file rust-toolchain.toml
 # Repo-root workspace config and hand-authored plugin manifests. Generated
-# `.provekit/` outputs (runs/, witnesses/, cache/, baselines/, etc.) stay out
+# `.sugar/` outputs (runs/, witnesses/, cache/, baselines/, etc.) stay out
 # of the remote copy, but lift/realize manifests are source inputs for CLI
 # dispatch and must travel with bcargo.
-sync_file .provekit/config.toml
-sync_dir .provekit/lift
-sync_dir .provekit/realize
+sync_file .sugar/config.toml
+sync_dir .sugar/lift
+sync_dir .sugar/realize
 
 sync_dir implementations/rust
 sync_dir implementations/python

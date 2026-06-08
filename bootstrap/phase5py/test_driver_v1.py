@@ -11,17 +11,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = ROOT / "bootstrap/phase5py/driver_v1.py"
 RECEIPT = ROOT / "bootstrap/phase5py/v1_receipt.json"
-MODULE = ROOT / "bootstrap/phase5py/libprovekit_py_v1.py"
+MODULE = ROOT / "bootstrap/phase5py/libsugar_py_v1.py"
 README = ROOT / "bootstrap/phase5py/README.md"
 BODY_TEMPLATE = (
     ROOT
     / "menagerie/python-language-signature/specs/body-templates/"
-    / "python-canonical-bodies-libprovekit.json"
+    / "python-canonical-bodies-libsugar.json"
 )
 
 
 class Phase5PyDriverV1Test(unittest.TestCase):
-    def test_driver_records_libprovekit_value_constructor_self_trip(self) -> None:
+    def test_driver_records_libsugar_value_constructor_self_trip(self) -> None:
         for path in (RECEIPT, MODULE, README):
             if path.exists():
                 path.unlink()
@@ -46,7 +46,7 @@ class Phase5PyDriverV1Test(unittest.TestCase):
 
         catalog = json.loads(BODY_TEMPLATE.read_text(encoding="utf-8"))
         content = catalog["header"]["content"]
-        self.assertEqual(content["template_name"], "python-canonical-bodies-libprovekit")
+        self.assertEqual(content["template_name"], "python-canonical-bodies-libsugar")
         self.assertEqual(content["target_language"], "python")
         self.assertEqual(
             [entry["concept_name"] for entry in content["entries"]],

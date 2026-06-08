@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit bind`: substrate-only algebra pass.
+// `sugar bind`: substrate-only algebra pass.
 //
 // Input is ProofIR term JSON, normally the `ir-document` emitted by
-// `provekit lift`. Output is the JCS-canonical named-term document for
+// `sugar lift`. Output is the JCS-canonical named-term document for
 // authoring and lower-plugin dispatch. The core BindKit still materializes the
 // canonical bind-result Term::Op payload for path execution.
 // Migration mode remains on the legacy rewrite path.
@@ -47,7 +47,7 @@ pub struct BindArgs {
     #[arg(long, value_delimiter = ',', default_value = "monitor", value_parser = parse_mode)]
     pub mode: Vec<RuntimeMode>,
 
-    /// Legacy target-language flag. Body lowering is retired; use `provekit emit`.
+    /// Legacy target-language flag. Body lowering is retired; use `sugar emit`.
     #[arg(long)]
     pub target_language: Option<String>,
 

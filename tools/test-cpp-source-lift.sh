@@ -82,15 +82,15 @@ CXX="${CXX:-$LLVM_BIN_DIR/clang++}"
 mkdir -p "$OUT_DIR"
 
 "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror \
-    -I"$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/include" \
-    -I"$WORKSPACE/implementations/cpp/provekit-ir-symbolic/include" \
+    -I"$WORKSPACE/implementations/cpp/sugar-lift-cpp-source/include" \
+    -I"$WORKSPACE/implementations/cpp/sugar-ir-symbolic/include" \
     -I"$WORKSPACE/implementations/cpp" \
     -I"$LLVM_INC" \
     -I"$BLAKE3_INC" \
-    "$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/src/cpp_source_lifter.cpp" \
-    "$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/tests/test_cpp_source_lifter.cpp" \
-    "$WORKSPACE/implementations/cpp/provekit/canonicalizer/jcs.cpp" \
-    "$WORKSPACE/implementations/cpp/provekit/canonicalizer/hash.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar-lift-cpp-source/src/cpp_source_lifter.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar-lift-cpp-source/tests/test_cpp_source_lifter.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar/canonicalizer/jcs.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar/canonicalizer/hash.cpp" \
     -L"$LLVM_LIB" -L"$BLAKE3_LIB" -Wl,-rpath,"$LLVM_LIB" -Wl,-rpath,"$BLAKE3_LIB" -lclang -lblake3 \
     -o "$OUT"
 

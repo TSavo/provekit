@@ -6,7 +6,7 @@ attestation.json (minus signature + _signing_instructions), writes the
 public key to pubkey.txt as `ed25519:<base64>`, fills in signer +
 declaredAt + signature in attestation.json, and prints the base64-encoded
 private key on stdout for the caller to stash somewhere durable
-(typically `vault kv put -mount=secret provekit/provenance-ed25519
+(typically `vault kv put -mount=secret sugar/provenance-ed25519
 private_key=-`).
 
 The private key is never written to disk by this script.

@@ -76,7 +76,7 @@ Touch-points:
   `true → true`. Red on current code, green after.
 - **E2E (Task #78), the boundary-side analog of `rust-missing-edge`:** a vendor
   sugar with a real contract, materialized into a user boundary whose surrounding
-  use violates it → `provekit verify`/`prove` **refuses** (the squiggly). Today it
+  use violates it → `sugar verify`/`prove` **refuses** (the squiggly). Today it
   false-greens. This is "software ages backwards," demonstrated.
 
 ## Invariants (do not violate)
@@ -84,4 +84,4 @@ Touch-points:
 - Carry the **CID**, never the formulas. Inlining forks identity = death.
 - The verifier stays language-blind; the bridge references a canonical contract
   CID. No platform intrinsic enters the substrate (see
-  `project_provekit_platform_in_sidecar`).
+  `project_sugar_platform_in_sidecar`).

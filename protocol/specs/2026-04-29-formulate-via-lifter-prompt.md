@@ -39,7 +39,7 @@ In order. One-line rationale per file:
    Appendix C — that's the prompt template the new formulate uses.
 
 2. **`protocol/specs/2026-04-29-correctness-is-a-hash.md`** — Sections
-   "What ProvekIt is" (scope discipline), "Adding propositions is
+   "What Sugar is" (scope discipline), "Adding propositions is
    free" (the proofHash composition), "More immutable than Bitcoin"
    (immutability properties).
 
@@ -236,7 +236,7 @@ See `src/ir/lift/lift.test.ts` for the pattern.
 ## Verify
 
 ```sh
-cd /Users/tsavo/provekit
+cd /Users/tsavo/sugar
 npx vitest run src/workflow/producers/formulate.test.ts
 npx vitest run src/workflows/bug-fix.test.ts
 npx vitest run src/integration/bug-fix-workflow.smoke.test.ts

@@ -19,7 +19,7 @@
 // follow them byte-for-byte. Any change to the algebra requires a CCP
 // version bump.
 //
-// This module was extracted from `provekit-walk/src/contract.rs` so the
+// This module was extracted from `sugar-walk/src/contract.rs` so the
 // algebra becomes a workspace-level primitive callable from any consumer.
 // Walk continues to host the AST-walking helpers that BUILD a
 // FunctionContractMemento from a syn::ItemFn; the algebra that COMPOSES
@@ -29,7 +29,7 @@
 // duplicated from walk's wp.rs and canonical.rs so this module is
 // self-contained and walk can keep its existing module layout untouched.
 // Both copies are pure formula manipulations over identical types from
-// provekit-ir-types; byte-equivalent output is guaranteed by construction.
+// sugar-ir-types; byte-equivalent output is guaranteed by construction.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -464,7 +464,7 @@ pub fn build_memento_value(c: &FunctionContractMemento) -> Arc<Value> {
 /// Construct the canonical Value tree for a function-contract memento.
 /// Public so walk's AST-side builders can compute their own CIDs without
 /// having to round-trip through a memento struct first.
-#[allow(clippy::too_many_arguments)] // reason: schema-shaped public API used by provekit-walk, which this pass must not edit.
+#[allow(clippy::too_many_arguments)] // reason: schema-shaped public API used by sugar-walk, which this pass must not edit.
 pub fn build_value(
     fn_name: &str,
     formals: &[String],
@@ -550,7 +550,7 @@ pub fn sort_to_value(s: &Sort) -> Arc<Value> {
 
 /// Trait for querying whether a discharge memento is present for a
 /// given opacity effect. Implemented by `MementoPool` in
-/// `provekit-verifier`; in-crate tests use a mock.
+/// `sugar-verifier`; in-crate tests use a mock.
 pub trait OpacityMementoLookup {
     fn has_loop_invariant(&self, loop_cid: &str) -> bool;
     fn has_try_branch(&self, try_cid: &str) -> bool;
@@ -1370,7 +1370,7 @@ fn find_result_equation(formula: &IrFormula, var_name: &str) -> Option<IrTerm> {
 // JCS / CID helpers (canonical encoding glue)
 //
 // Duplicated from walk's canonical.rs so this module is self-contained.
-// Both impls operate over identical types from provekit-ir-types and
+// Both impls operate over identical types from sugar-ir-types and
 // produce byte-equivalent output by construction. CCP §5 requires the
 // compose primitive be the single canonical home; the wp / canonical
 // modules in walk persist for the rest of walk's pipeline.
@@ -1385,7 +1385,7 @@ fn serde_to_canonical(j: JsonValue) -> Arc<Value> {
         JsonValue::Number(n) => match n.as_i64() {
             Some(i) => Value::integer(i),
             None => Value::object(vec![(
-                "__provekit_non_i64_number__".to_string(),
+                "__sugar_non_i64_number__".to_string(),
                 Value::string(n.to_string()),
             )]),
         },
@@ -1407,7 +1407,7 @@ fn serde_to_canonical(j: JsonValue) -> Arc<Value> {
 /// Canonicalize an `IrFormula` into a JCS-canonicalizer Value tree.
 pub fn formula_to_canonical(f: &IrFormula) -> Arc<Value> {
     let serde =
-        serde_json::to_value(f).expect("IrFormula serializes (provekit-ir-types is generated)");
+        serde_json::to_value(f).expect("IrFormula serializes (sugar-ir-types is generated)");
     serde_to_canonical(serde)
 }
 
@@ -1427,7 +1427,7 @@ pub fn jcs_bytes_of_value(v: &Value) -> Vec<u8> {
 //
 // Moved to `libsugar::wp` (spec 2026-05-13-wp-as-formula.md §2.2):
 // that module is now the single canonical home for the substitution
-// algebra, consumed here, by `provekit-walk`'s `wp.rs`, by the wp
+// algebra, consumed here, by `sugar-walk`'s `wp.rs`, by the wp
 // evaluator, and by the transport / desugaring discharge. The previous
 // in-module copy (duplicated from walk's `wp.rs`) is gone; `compose`
 // re-exports the canonical functions so callers that imported

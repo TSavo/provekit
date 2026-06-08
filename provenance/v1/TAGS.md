@@ -34,7 +34,7 @@ GitHub renders signed tags with a "verified" badge tied to the architect's GPG/S
 ## Suggested tag message template
 
 ```
-ProvekIt architectural provenance — <short claim>
+Sugar architectural provenance — <short claim>
 
 This commit introduces <one-sentence what>. It is part of the
 architectural assembly attested in provenance/v1/attestation.json,

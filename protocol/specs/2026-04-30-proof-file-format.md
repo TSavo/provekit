@@ -1,4 +1,4 @@
-# ProvekIt: `.proof` File Format
+# Sugar: `.proof` File Format
 
 > A `.proof` file is a content-addressed bundle of mementos that ships
 > with a software package. It contains a catalog memento at the root
@@ -6,7 +6,7 @@
 > self-contained artifact.
 
 > The format is a **protocol-level standard**, not a framework artifact.
-> Any conformant tool can produce or consume `.proof` files; ProvekIt's
+> Any conformant tool can produce or consume `.proof` files; Sugar's
 > `mint catalog` is one implementation. Same shape as `.html` (W3C),
 > `.json` (ECMA), `.toml` (TOML spec) — extension reflects the protocol,
 > not the producer.
@@ -79,7 +79,7 @@ grammar), embedded as opaque byte strings. A consumer that reads a
 `.proof` file has everything needed to verify the chain locally — no
 network fetches, no dependency resolution, no missing references.
 
-Inspection tooling (`provekit dump <file>.proof`) renders the CBOR
+Inspection tooling (`sugar dump <file>.proof`) renders the CBOR
 envelope as JSON for human review. The on-disk format is binary; the
 operator-facing format is JSON-via-tool.
 
@@ -98,7 +98,7 @@ to integrity.
 A package conventionally ships exactly one `.proof` file at its root
 (parallel to `package.json` in npm packages, `Cargo.toml` in Rust
 crates, `go.mod` in Go modules). Package manifests MAY carry a hint
-field — `provekit.proofHash` in `package.json`, `[package.metadata.provekit].proof-hash`
+field — `sugar.proofHash` in `package.json`, `[package.metadata.sugar].proof-hash`
 in `Cargo.toml` — but this is a **discovery convenience, not part of
 the trust chain**. If the hint disagrees with the filename actually
 on disk, the verifier trusts the file and SHOULD warn about a stale
@@ -106,7 +106,7 @@ hint. It MUST NOT reject solely on hint mismatch.
 
 ```
 my-package/
-├── package.json                  # OPTIONAL hint: "provekit": { "proofHash": "bafy_X..." }
+├── package.json                  # OPTIONAL hint: "sugar": { "proofHash": "bafy_X..." }
 ├── bafy_X....proof               # filename IS the CID; bytes hash to bafy_X...
 ├── src/
 └── ...
@@ -161,7 +161,7 @@ Fail-closed by default. Any rule violation produces a structured
 rejection with the failing rule's ID; verifiers MUST NOT accept
 partially-valid bundles.
 
-A manifest hint mismatch (e.g., `package.json.provekit.proofHash` not
+A manifest hint mismatch (e.g., `package.json.sugar.proofHash` not
 equal to the on-disk filename CID) is NOT a verification failure. The
 verifier SHOULD warn but MUST NOT reject; the file's identity is its
 hash, not a manifest's claim.
@@ -180,7 +180,7 @@ A package ships its `.proof` file alongside its source. For npm:
     "lib/",
     "*.proof"           // include .proof files in the published tarball
   ],
-  "provekit": {
+  "sugar": {
     "proofHash": "blake3-512:e04b..."
   }
 }
@@ -201,7 +201,7 @@ A consumer's verifier walks a `.proof` file as follows:
 
 ```
 1. Discover the .proof file:
-   a. If a manifest hint is present (e.g., package.json.provekit.proofHash),
+   a. If a manifest hint is present (e.g., package.json.sugar.proofHash),
       try <packageRoot>/<hint>.proof.
    b. Otherwise (or if hint file missing), enumerate <packageRoot>/*.proof
       and select the most recently signed.
@@ -329,7 +329,7 @@ content-addressed at every level — file bytes hash to the filename
 CID; member bytes hash to their listed CIDs; signatures bind to
 canonical bytes — so tampering anywhere is detectable everywhere.
 
-The format is the protocol. ProvekIt's `mint catalog` is one
+The format is the protocol. Sugar's `mint catalog` is one
 implementation; future tools in any language conform to this spec
 or they don't write `.proof` files. The wire format is independent
 of the framework.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// End-to-end body-discharge proof for `provekit verify` (PR-22, #1440).
+// End-to-end body-discharge proof for `sugar verify` (PR-22, #1440).
 //
 // THE LOAD-BEARING TEST. Unlike `cmd_verify_integration.rs` (whose claims
 // are body-INDEPENDENT tautologies `n >= n` / `n > n` that discharge in
@@ -39,13 +39,13 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-verify-body-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-verify-body-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }
 
 /// Compute the v1.1-flat member CID + canonical bytes, exactly as
-/// `provekit-verifier::load_all_proofs` re-derives it.
+/// `sugar-verifier::load_all_proofs` re-derives it.
 fn flat_member(mut env: Json) -> (String, Vec<u8>) {
     if let Json::Object(map) = &mut env {
         map.remove("cid");
@@ -151,8 +151,8 @@ fn publish_double_project_with_formals(
     inv: Json,
 ) -> PathBuf {
     let dir = unique_dir(suffix);
-    let proof_dir = dir.join(".provekit");
-    fs::create_dir_all(&proof_dir).expect("mkdir .provekit");
+    let proof_dir = dir.join(".sugar");
+    fs::create_dir_all(&proof_dir).expect("mkdir .sugar");
 
     let signer_seed: Ed25519Seed = [0x42u8; 32];
     let declared_at = "2026-05-23T00:00:00.000Z";
@@ -222,7 +222,7 @@ fn publish_double_project_with_formals(
     dir
 }
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -235,7 +235,7 @@ fn z3_available() -> bool {
 }
 
 fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("verify")
         .arg("--project")
         .arg(project)
@@ -243,7 +243,7 @@ fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) 
         .arg(witness_dir)
         .arg("--json")
         .output()
-        .expect("spawn provekit verify");
+        .expect("spawn sugar verify");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let receipt = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"));

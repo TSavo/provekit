@@ -17,7 +17,7 @@
 
 A content-addressed artifact cannot know its own CID. The artifact is the bytes that hash to the CID; including the CID inside the artifact changes the bytes, which changes the CID, which invalidates the inclusion. Self-reference is a fixed-point problem with no general solution.
 
-ProvekIt's source tree currently carries the pathology in several forms:
+Sugar's source tree currently carries the pathology in several forms:
 
 - `Makefile` constants of the form `RUST_CID := <literal>`, `GO_CID := <literal>`, `CPP_CID := <literal>`, `CATALOG_CID := <literal>`, baked into the build system so a code change requires hand-editing a claim about the new bytes the build produces.
 - `.proof` bundle scaffolds where the producer's expected output CID is hand-edited into surrounding code (test fixtures, scripts, READMEs, prompts) that share a git tree with the producer.
@@ -40,7 +40,7 @@ If any step fails, the verifier rejects. There is nothing to hand-edit; if the a
 
 ### §1.3 Generalization
 
-This pattern has shipped twice in ProvekIt under different names. `2026-05-02-binary-attestation-protocol.md` defines it for binaries (the binary's CID lives in a `.proof` bundle, never in the binary). The catalog signature files at `.provekit/catalog-signatures/v*.json` define it for protocol catalogs (the catalog's CID lives in a separately signed JSON file, never in the catalog).
+This pattern has shipped twice in Sugar under different names. `2026-05-02-binary-attestation-protocol.md` defines it for binaries (the binary's CID lives in a `.proof` bundle, never in the binary). The catalog signature files at `.sugar/catalog-signatures/v*.json` define it for protocol catalogs (the catalog's CID lives in a separately signed JSON file, never in the catalog).
 
 This spec is the generalization. Catalog signatures, binary attestations, and any future content-addressed artifact's attestation are three instances of one shape. This spec names the shape and codifies the rules every instance MUST follow.
 
@@ -97,7 +97,7 @@ The bytes signed by `signature` MUST be the JCS-canonical encoding (per `2026-04
 
 The `signature` field is NOT included in the signed bytes. JCS sorts keys lexicographically, eliminates insignificant whitespace, and produces a single canonical byte sequence per logical payload. Producers and verifiers MUST agree on those bytes; the only conformant rule is JCS.
 
-This is the same rule the catalog signature files at `.provekit/catalog-signatures/v*.json` already follow. It is codified here as the rule for ALL future envelopes.
+This is the same rule the catalog signature files at `.sugar/catalog-signatures/v*.json` already follow. It is codified here as the rule for ALL future envelopes.
 
 ### §3.2 INVARIANT BundleAttestation.Wellformed (NORMATIVE)
 
@@ -138,10 +138,10 @@ Specifically, a valid signature does NOT compensate for a CID mismatch (step 5 v
 Producers SHOULD provide a CLI verb to invoke this verification:
 
 ```
-provekit verify-bundle-attestation <artifact-path> <envelope-path>
+sugar verify-bundle-attestation <artifact-path> <envelope-path>
 ```
 
-The existing `provekit verify-protocol --signed` is the first instance of this verb (specialized to catalog letters and the legacy catalog-signature envelope shape). Future cuts SHOULD subsume that command into the generic verb.
+The existing `sugar verify-protocol --signed` is the first instance of this verb (specialized to catalog letters and the legacy catalog-signature envelope shape). Future cuts SHOULD subsume that command into the generic verb.
 
 ## §5. Production (NORMATIVE)
 
@@ -172,7 +172,7 @@ Given an artifact at path `P` whose CID a producer wishes to attest, and a produ
 Producers SHOULD provide a CLI verb to mint envelopes:
 
 ```
-provekit attest <artifact-path> --kind <artifactKind> --name <artifactName> [--out <envelope-path>]
+sugar attest <artifact-path> --kind <artifactKind> --name <artifactName> [--out <envelope-path>]
 ```
 
 Foundation-keygen's existing `sign-catalog-v1-3-1` and any `sign_self_contracts` entry point are specialized instances. Both SHOULD be subsumed by this generic verb in a future cut.
@@ -181,19 +181,19 @@ Foundation-keygen's existing `sign-catalog-v1-3-1` and any `sign_self_contracts`
 
 ### §6.1 Catalog signatures
 
-The catalog signature files at `.provekit/catalog-signatures/v*.json` are the historical first instance of this spec's shape. The fields in those files map onto bundle-attestation fields as follows:
+The catalog signature files at `.sugar/catalog-signatures/v*.json` are the historical first instance of this spec's shape. The fields in those files map onto bundle-attestation fields as follows:
 
 | Catalog signature field | Bundle attestation equivalent |
 |---|---|
 | `schemaVersion: "1"` | (no equivalent; legacy field, not carried forward) |
-| `protocolName: "provekit-protocol"` | implicit in `artifactKind: "catalog"` |
+| `protocolName: "sugar-protocol"` | implicit in `artifactKind: "catalog"` |
 | `protocolVersion: "v1.3.1"` | `artifactName: "v1.3.1"` |
 | `catalogCid` | `cid` |
 | `declaredAt` | `declaredAt` (unchanged) |
 | `signer` | `signer` (unchanged) |
 | `signature` | `signature` (unchanged) |
 
-Legacy catalog signatures have NO `kind` field. Verifiers identify them by file location (`.provekit/catalog-signatures/<version>.json`) and by the presence of `catalogCid` rather than `cid`. Future cuts SHOULD migrate to the bundle-attestation shape with `kind: "bundle-attestation"` and `artifactKind: "catalog"`.
+Legacy catalog signatures have NO `kind` field. Verifiers identify them by file location (`.sugar/catalog-signatures/<version>.json`) and by the presence of `catalogCid` rather than `cid`. Future cuts SHOULD migrate to the bundle-attestation shape with `kind: "bundle-attestation"` and `artifactKind: "catalog"`.
 
 ### §6.2 Binary attestations
 
@@ -257,7 +257,7 @@ The discriminating question (§7.1) is the test: changing a line in a consuming 
 These are surfaced for resolution in a future cut.
 
 - **Signer registry vs raw pubkey.** This spec encodes `signer` as a raw pubkey. A future spec MAY define a signer registry (a memento mapping human-readable names to pubkeys) so consumers can express trust at the name layer. For now, registry membership is consumer policy, not protocol surface.
-- **Attestation file paths.** This spec does not mandate an on-disk layout. A SHOULD-level recommendation: store envelopes at `.provekit/attestations/<artifactKind>/<artifactName>.json`. Catalog signatures already live at `.provekit/catalog-signatures/<version>.json`; future versions SHOULD migrate to the nested path with `<artifactKind> = "catalog"`. Out of scope for this cut.
+- **Attestation file paths.** This spec does not mandate an on-disk layout. A SHOULD-level recommendation: store envelopes at `.sugar/attestations/<artifactKind>/<artifactName>.json`. Catalog signatures already live at `.sugar/catalog-signatures/<version>.json`; future versions SHOULD migrate to the nested path with `<artifactKind> = "catalog"`. Out of scope for this cut.
 - **Multi-signer envelopes.** A single artifact may warrant attestation from multiple producers (foundation + vendor + auditor). This spec defines a single-signer envelope; multi-signer support is a possible v1.5.x extension via either an envelope array or a `cosigners` field. Deferred.
 - **Revocation.** A producer may wish to retract an envelope (key compromise, mistaken attestation). Per the analogous decision in `2026-05-02-binary-attestation-protocol.md` §12, revocation is a trust-layer concern, not a protocol-layer concern. Consumers wanting revocation define it at the trust layer. Open.
 - **Algorithm agility.** This spec inherits algorithm choices from the consuming catalog's `algorithms` entry. If a future catalog admits multiple hash algorithms or multiple signature algorithms, the envelope's self-identifying CID and signer prefixes already disambiguate. No spec change anticipated.
@@ -275,7 +275,7 @@ These are surfaced for resolution in a future cut.
 This spec is satisfied by:
 
 - A reference verifier that performs §4 steps 1 through 9 end-to-end on every envelope shape (`catalog`, `self-contracts`, `binary`, `proof-bundle`).
-- A reference producer (`provekit attest` or equivalent) that mints envelopes per §5.
+- A reference producer (`sugar attest` or equivalent) that mints envelopes per §5.
 - Integration tests covering:
   - The §4 happy path: an artifact at `cid`, an envelope claiming that `cid`, valid signature, trusted signer; verifier accepts.
   - The §4 step 5 negative path: an envelope's `cid` mutated post-signing; verifier rejects with `BundleCidMismatch` despite valid signature.

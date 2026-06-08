@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit doctor: validate a kit's config/manifest wiring up front.
+// sugar doctor: validate a kit's config/manifest wiring up front.
 //
 // Catches the manifest-path footgun (a declared plugin command pointing at a
 // binary that does not exist) BEFORE it silently produces an empty-set
@@ -14,7 +14,7 @@
 //      executable, resolved the same way mint does: relative to the plugin's
 //      working dir when the command contains a path separator; via PATH when
 //      the command is a bare name.
-//   3. (WARN) .provekit/imports/ file count -- zero is a warning when the kit
+//   3. (WARN) .sugar/imports/ file count -- zero is a warning when the kit
 //      declares plugins with a non-trivial surface list.
 //   4. (MODE-AWARE) When an oracle host is requested, check that it is
 //      requested, locatable, ready, engaged, and convergence-accounted.
@@ -508,7 +508,7 @@ where
     let mut checks: Vec<Check> = Vec::new();
 
     // --- Check 1: config.toml and all manifest TOML files parse as valid TOML.
-    let config_path = kit_dir.join(".provekit/config.toml");
+    let config_path = kit_dir.join(".sugar/config.toml");
     match std::fs::read_to_string(&config_path) {
         Err(e) => {
             checks.push(Check::fail_with_evidence(
@@ -673,8 +673,8 @@ where
         }
     }
 
-    // --- Check 3: .provekit/imports/ file count (advisory).
-    let imports_dir = kit_dir.join(".provekit/imports");
+    // --- Check 3: .sugar/imports/ file count (advisory).
+    let imports_dir = kit_dir.join(".sugar/imports");
     let imports_check = check_imports(&imports_dir, &config.plugins);
     checks.push(imports_check);
 
@@ -775,7 +775,7 @@ where
 }
 
 pub(crate) fn oracle_requested_from_env() -> bool {
-    std::env::var("PROVEKIT_RESOLVE_ORACLE")
+    std::env::var("SUGAR_RESOLVE_ORACLE")
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false)
 }
@@ -1932,7 +1932,7 @@ fn pool_stable_structural_check(kit_dir: &Path) -> Check {
         Ok(pool) if !pool.present => Check::pass_with_severity(
             "dependency-pool-stable",
             CheckSeverity::Advisory,
-            "no pool yet: .provekit/imports/ is absent",
+            "no pool yet: .sugar/imports/ is absent",
             proof_pool_evidence(&pool),
         ),
         Ok(pool) => Check::pass_with_severity(
@@ -2009,7 +2009,7 @@ where
     H: FnMut(usize, &Path),
 {
     let scratch = std::env::temp_dir().join(format!(
-        "provekit-doctor-dep-{}-{}",
+        "sugar-doctor-dep-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2132,7 +2132,7 @@ where
 }
 
 fn proof_pool_from_imports(kit_dir: &Path) -> Result<DependencyProofPool, String> {
-    proof_pool_from_dir(&kit_dir.join(".provekit/imports"))
+    proof_pool_from_dir(&kit_dir.join(".sugar/imports"))
 }
 
 fn proof_pool_from_dir(path: &Path) -> Result<DependencyProofPool, String> {
@@ -2323,7 +2323,7 @@ fn collect_manifest_entries(
     for plugin in plugins {
         let kind_dir = plugin_kind_dir(plugin);
         let manifest_path = kit_dir
-            .join(".provekit")
+            .join(".sugar")
             .join(&kind_dir)
             .join(&plugin.surface)
             .join("manifest.toml");
@@ -2331,7 +2331,7 @@ fn collect_manifest_entries(
         entries.push((plugin.surface.clone(), kind_dir, manifest_path));
     }
 
-    let lift_root = kit_dir.join(".provekit").join("lift");
+    let lift_root = kit_dir.join(".sugar").join("lift");
     let mut authoring_entries = Vec::new();
     if let Ok(read_dir) = fs::read_dir(&lift_root) {
         for entry in read_dir.flatten() {
@@ -2403,7 +2403,7 @@ fn capability_bool(capabilities: Option<&toml::Value>, key: &str) -> Option<bool
 ///
 /// NOTE: `is_lift_plugin()` and `is_emit_plugin()` both return `true` when
 /// `kind` is absent (legacy dual-use registration). Manifests for
-/// legacy/lift plugins live under `.provekit/lift/`. Only an EXPLICIT
+/// legacy/lift plugins live under `.sugar/lift/`. Only an EXPLICIT
 /// `kind = "emit"` should redirect to a different dir.
 fn plugin_kind_dir(plugin: &PluginEntry) -> String {
     match plugin.kind.as_deref() {
@@ -2500,7 +2500,7 @@ workspace target/ directory (resolved base: {}).",
     }
 }
 
-/// Check .provekit/imports/ for dependency .proof files.
+/// Check .sugar/imports/ for dependency .proof files.
 fn check_imports(imports_dir: &Path, plugins: &[PluginEntry]) -> Check {
     let name = "imports-present";
     if !imports_dir.exists() {
@@ -2517,7 +2517,7 @@ fn check_imports(imports_dir: &Path, plugins: &[PluginEntry]) -> Check {
         return Check::warn_with_evidence(
             name,
             format!(
-                ".provekit/imports/ does not exist. If this kit has dependencies, \
+                ".sugar/imports/ does not exist. If this kit has dependencies, \
 run their mints first and copy the resulting .proof files here \
 ({})",
                 imports_dir.display()
@@ -2546,7 +2546,7 @@ run their mints first and copy the resulting .proof files here \
         Check::warn_with_evidence(
             name,
             format!(
-                ".provekit/imports/ is empty (0 .proof files). \
+                ".sugar/imports/ is empty (0 .proof files). \
 If this kit depends on others, mint them and place their .proof outputs here."
             ),
             json!({
@@ -2558,7 +2558,7 @@ If this kit depends on others, mint them and place their .proof outputs here."
     } else {
         Check::pass_with_evidence(
             name,
-            format!(".provekit/imports/: {count} .proof file(s) present"),
+            format!(".sugar/imports/: {count} .proof file(s) present"),
             json!({
                 "path": imports_dir.display().to_string(),
                 "pluginCount": plugins.len(),
@@ -2577,9 +2577,9 @@ mod tests {
 
     /// Write a minimal kit config.toml with the given plugins section.
     fn write_kit(dir: &Path, plugins_toml: &str) {
-        fs::create_dir_all(dir.join(".provekit/imports")).unwrap();
+        fs::create_dir_all(dir.join(".sugar/imports")).unwrap();
         fs::write(
-            dir.join(".provekit/config.toml"),
+            dir.join(".sugar/config.toml"),
             format!("# test kit\n[authoring]\nsurface = \"test-surface\"\n{plugins_toml}"),
         )
         .unwrap();
@@ -2598,7 +2598,7 @@ mod tests {
         working_dir: &str,
         version: Option<&str>,
     ) {
-        let dir = kit_dir.join(".provekit").join(kind).join(surface);
+        let dir = kit_dir.join(".sugar").join(kind).join(surface);
         fs::create_dir_all(&dir).unwrap();
         let version_line = version
             .map(|version| format!("version = \"{version}\"\n"))
@@ -2623,7 +2623,7 @@ mod tests {
         authoring_surfaces: Option<&[&str]>,
         emits_signed_mementos: Option<bool>,
     ) {
-        let dir = kit_dir.join(".provekit").join(kind).join(surface);
+        let dir = kit_dir.join(".sugar").join(kind).join(surface);
         fs::create_dir_all(&dir).unwrap();
         let mut text = format!("name = \"test-{surface}\"\n");
         if let Some(version) = version {
@@ -2704,7 +2704,7 @@ mod tests {
                     {"name": "initialize", "required": true},
                     {"name": KIT_DECLARATION_RPC_METHOD, "required": true},
                     {"name": "shutdown", "required": false},
-                    {"name": "provekit.plugin.lift", "required": true}
+                    {"name": "sugar.plugin.lift", "required": true}
                 ]
             },
             "proofResolution": {"strategy": "rpc-proof-bytes"},
@@ -2818,7 +2818,7 @@ mod tests {
         fs::write(
             path,
             format!(
-                "#!/bin/sh\nwhile IFS= read -r line; do\ncase \"$line\" in\n  *initialize*) printf '%s\\n' '{}';;\n  *provekit.plugin.kit_declaration*) printf '%s\\n' '{}';;\n  *shutdown*) exit 0;;\n  *) printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":99,\"error\":{{\"code\":-32601,\"message\":\"unknown method\"}}}}';;\nesac\ndone\n",
+                "#!/bin/sh\nwhile IFS= read -r line; do\ncase \"$line\" in\n  *initialize*) printf '%s\\n' '{}';;\n  *sugar.plugin.kit_declaration*) printf '%s\\n' '{}';;\n  *shutdown*) exit 0;;\n  *) printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":99,\"error\":{{\"code\":-32601,\"message\":\"unknown method\"}}}}';;\nesac\ndone\n",
                 initialize_response, declaration_response
             ),
         )
@@ -2857,12 +2857,12 @@ mod tests {
                 observation: OracleHostObservation {
                     host: "rust-analyzer".to_string(),
                     locatability: OracleHostLocatability::Found {
-                        host_binary: "/bin/provekit-linkerd".to_string(),
+                        host_binary: "/bin/sugar-linkerd".to_string(),
                         rust_analyzer_binary: Some("/bin/rust-analyzer".to_string()),
                         discovery: "env".to_string(),
                     },
                     readiness: OracleHostReadiness::Ready {
-                        detail: "provekit-linkerd spawned and reported rust-analyzer ready"
+                        detail: "sugar-linkerd spawned and reported rust-analyzer ready"
                             .to_string(),
                     },
                     engagement: OracleHostEngagement::Engaged {
@@ -2880,7 +2880,7 @@ mod tests {
         fn ready_from_path() -> Self {
             let mut adapter = Self::ready();
             adapter.observation.locatability = OracleHostLocatability::Found {
-                host_binary: "/usr/local/bin/provekit-linkerd".to_string(),
+                host_binary: "/usr/local/bin/sugar-linkerd".to_string(),
                 rust_analyzer_binary: Some("/usr/local/bin/rust-analyzer".to_string()),
                 discovery: "path".to_string(),
             };
@@ -2892,8 +2892,8 @@ mod tests {
                 observation: OracleHostObservation {
                     host: "rust-analyzer".to_string(),
                     locatability: OracleHostLocatability::Missing {
-                        missing: vec!["provekit-linkerd".to_string()],
-                        detail: "missing oracle host prerequisite(s): provekit-linkerd".to_string(),
+                        missing: vec!["sugar-linkerd".to_string()],
+                        detail: "missing oracle host prerequisite(s): sugar-linkerd".to_string(),
                     },
                     readiness: OracleHostReadiness::NotReady {
                         detail: "oracle host is not locatable".to_string(),
@@ -3032,8 +3032,8 @@ mod tests {
     fn invalid_config_toml_fails() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
-        fs::create_dir_all(kit.join(".provekit")).unwrap();
-        fs::write(kit.join(".provekit/config.toml"), b"not valid toml = [[[").unwrap();
+        fs::create_dir_all(kit.join(".sugar")).unwrap();
+        fs::write(kit.join(".sugar/config.toml"), b"not valid toml = [[[").unwrap();
 
         let checks = run_checks(kit);
 
@@ -3050,7 +3050,7 @@ mod tests {
     fn run_report_defaults_to_structural_mode() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
-        fs::create_dir_all(kit.join(".provekit")).unwrap();
+        fs::create_dir_all(kit.join(".sugar")).unwrap();
 
         let report = run_report(kit);
 
@@ -3061,7 +3061,7 @@ mod tests {
     fn doctor_report_mode_reflects_requested_mode() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
-        fs::create_dir_all(kit.join(".provekit")).unwrap();
+        fs::create_dir_all(kit.join(".sugar")).unwrap();
 
         let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
@@ -3072,7 +3072,7 @@ mod tests {
     fn doctor_report_mode_reflects_release_gate() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
-        fs::create_dir_all(kit.join(".provekit")).unwrap();
+        fs::create_dir_all(kit.join(".sugar")).unwrap();
 
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::ReleaseGate));
 
@@ -3083,7 +3083,7 @@ mod tests {
     fn run_checks_with_context_preserves_default_engine_results() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
-        fs::create_dir_all(kit.join(".provekit")).unwrap();
+        fs::create_dir_all(kit.join(".sugar")).unwrap();
 
         let default_checks = run_checks(kit);
         let structural_checks =
@@ -3099,7 +3099,7 @@ mod tests {
     #[test]
     fn modes_preserve_config_check_output() {
         let td = TempDir::new().unwrap();
-        fs::create_dir_all(td.path().join(".provekit")).unwrap();
+        fs::create_dir_all(td.path().join(".sugar")).unwrap();
 
         assert_modes_match_for_check(td.path(), "kit.config.parse");
     }
@@ -3112,7 +3112,7 @@ mod tests {
             kit,
             "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"broken-surface\"\n",
         );
-        let manifest_dir = kit.join(".provekit/lift/broken-surface");
+        let manifest_dir = kit.join(".sugar/lift/broken-surface");
         fs::create_dir_all(&manifest_dir).unwrap();
         fs::write(
             manifest_dir.join("manifest.toml"),
@@ -3153,7 +3153,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         make_consumer_plugin(
             &plugin,
             "consumer-surface",
-            "provekit.plugin.lift_implications",
+            "sugar.plugin.lift_implications",
             "consumer",
         );
         write_kit(
@@ -3255,7 +3255,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
                 .get("manifestPath")
                 .and_then(Value::as_str)
                 .is_some_and(
-                    |path| path.ends_with(".provekit/lift/rust-fn-contracts/manifest.toml")
+                    |path| path.ends_with(".sugar/lift/rust-fn-contracts/manifest.toml")
                 ),
             "version check evidence should name the manifest path: {version_check:#?}"
         );
@@ -3568,7 +3568,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         let td = TempDir::new().unwrap();
         let kit = td.path();
         write_kit(kit, "");
-        let manifest_dir = kit.join(".provekit/lift/missing-command-source");
+        let manifest_dir = kit.join(".sugar/lift/missing-command-source");
         fs::create_dir_all(&manifest_dir).unwrap();
         fs::write(
             manifest_dir.join("manifest.toml"),
@@ -3598,7 +3598,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         let td = TempDir::new().unwrap();
         let kit = td.path();
         write_kit(kit, "");
-        fs::create_dir_all(kit.join(".provekit/lift/missing-authoring")).unwrap();
+        fs::create_dir_all(kit.join(".sugar/lift/missing-authoring")).unwrap();
 
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
@@ -3619,7 +3619,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
             json!({
                 "jsonrpc": "2.0",
                 "id": 2,
-                "error": {"code": -32601, "message": "method not found: provekit.plugin.kit_declaration"}
+                "error": {"code": -32601, "message": "method not found: sugar.plugin.kit_declaration"}
             })
             .to_string(),
         );
@@ -3647,7 +3647,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
             json!({
                 "jsonrpc": "2.0",
                 "id": 2,
-                "error": {"code": -32601, "message": "method not found: provekit.plugin.kit_declaration"}
+                "error": {"code": -32601, "message": "method not found: sugar.plugin.kit_declaration"}
             })
             .to_string(),
         );
@@ -4348,7 +4348,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
             {"name": "analyzeDocument", "required": false},
             {"name": "parse", "required": false},
             {"name": "lift", "required": true},
-            {"name": "provekit.plugin.lift_implications", "required": false},
+            {"name": "sugar.plugin.lift_implications", "required": false},
             {"name": "shutdown", "required": false}
         ]);
         declaration["proofResolution"] = json!({"strategy": "pip"});
@@ -5012,9 +5012,9 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
     fn structural_absent_imports_pool_reports_no_pool_yet() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
-        fs::create_dir_all(kit.join(".provekit")).unwrap();
+        fs::create_dir_all(kit.join(".sugar")).unwrap();
         fs::write(
-            kit.join(".provekit/config.toml"),
+            kit.join(".sugar/config.toml"),
             "[authoring]\nsurface = \"test\"\n",
         )
         .unwrap();
@@ -5284,7 +5284,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         let locatable = check_by_id_from_checks(&checks, "oracle.host.locatable");
         assert_eq!(
             locatable.evidence.get("hostBinary").and_then(Value::as_str),
-            Some("/bin/provekit-linkerd")
+            Some("/bin/sugar-linkerd")
         );
         assert_eq!(
             locatable.evidence.get("discovery").and_then(Value::as_str),
@@ -5303,7 +5303,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         assert_eq!(locatable.status, CheckStatus::Warn);
         assert_eq!(locatable.severity, CheckSeverity::Advisory);
         assert!(
-            locatable.detail.contains("provekit-linkerd"),
+            locatable.detail.contains("sugar-linkerd"),
             "missing-host detail should name the missing binary: {}",
             locatable.detail
         );
@@ -5498,7 +5498,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
             kit,
             "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"broken-surface\"\n",
         );
-        let manifest_dir = kit.join(".provekit/lift/broken-surface");
+        let manifest_dir = kit.join(".sugar/lift/broken-surface");
         fs::create_dir_all(&manifest_dir).unwrap();
         fs::write(
             manifest_dir.join("manifest.toml"),
@@ -5559,7 +5559,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         make_consumer_plugin(
             &plugin,
             "consumer-surface",
-            "provekit.plugin.lift_implications",
+            "sugar.plugin.lift_implications",
             "consumer",
         );
         write_kit(
@@ -5593,7 +5593,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
                 .evidence
                 .get("requiredMethod")
                 .and_then(Value::as_str),
-            Some("provekit.plugin.lift_implications")
+            Some("sugar.plugin.lift_implications")
         );
     }
 
@@ -5617,7 +5617,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         );
 
         let missing = TempDir::new().unwrap();
-        fs::create_dir_all(missing.path().join(".provekit")).unwrap();
+        fs::create_dir_all(missing.path().join(".sugar")).unwrap();
 
         let report = run_report(missing.path());
 
@@ -5659,7 +5659,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
             .and_then(Value::as_str)
             .expect("config path evidence");
         assert!(
-            config_path.ends_with(".provekit/config.toml"),
+            config_path.ends_with(".sugar/config.toml"),
             "config check should carry config path evidence: {config:#?}"
         );
 
@@ -5681,7 +5681,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
     #[test]
     fn missing_config_is_hard_report_check() {
         let td = TempDir::new().unwrap();
-        fs::create_dir_all(td.path().join(".provekit")).unwrap();
+        fs::create_dir_all(td.path().join(".sugar")).unwrap();
 
         let report = run_report(td.path());
 
@@ -5693,7 +5693,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         assert_eq!(config.status, CheckStatus::Fail);
         assert_eq!(config.severity, CheckSeverity::Hard);
         assert!(
-            config.detail.contains(".provekit/config.toml"),
+            config.detail.contains(".sugar/config.toml"),
             "missing-config detail should name the file: {}",
             config.detail
         );
@@ -5851,7 +5851,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
     fn write_import_proof(kit: &Path, bytes: &[u8]) -> String {
         let cid = sugar_canonicalizer::blake3_512_of(bytes);
-        let imports = kit.join(".provekit/imports");
+        let imports = kit.join(".sugar/imports");
         fs::create_dir_all(&imports).unwrap();
         fs::write(imports.join(format!("{cid}.proof")), bytes).unwrap();
         cid

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pre-materialize downstream consumer. Each stub function's signature
-// matches the corresponding sugar binding in `provekit-shim-rusqlite`'s
+// matches the corresponding sugar binding in `sugar-shim-rusqlite`'s
 // published .proof envelope exactly: same arity, same positional
 // parameter shape. The bodies are `unimplemented!()` placeholders that
-// `provekit materialize --library rust-rusqlite --source-dir src
+// `sugar materialize --library rust-rusqlite --source-dir src
 // --project .` rewrites through the shim's signed bindings.
 //
 // Per paper 24 §5, the carrier-comment seam IS the trade: each
@@ -26,14 +26,14 @@ pub fn open_in_memory() -> rusqlite::Result<rusqlite::Connection> {
     Connection::open_in_memory()
 }
 fn open_in_memory() -> Result<Connection> {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 pub fn execute(conn: &rusqlite::Connection, sql: String, params: P) -> rusqlite::Result<usize> {
     conn.execute(sql, params)
 }
 fn execute<P: Params>(_conn: &Connection, _sql: &str, _params: P) -> Result<usize> {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 pub fn query_row(conn: &rusqlite::Connection, sql: String, params: P, mapper: F) -> rusqlite::Result<T> {
@@ -45,14 +45,14 @@ fn query_row<T, P: Params, F: FnOnce(&Row<'_>) -> Result<T>>(
     _params: P,
     _mapper: F,
 ) -> Result<T> {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 pub fn prepare(conn: &rusqlite::Connection, sql: String) -> rusqlite::Result<rusqlite::Statement<'_>> {
     conn.prepare(sql)
 }
 fn prepare<'conn>(_conn: &'conn Connection, _sql: &str) -> Result<Statement<'conn>> {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 pub fn stmt_query_map(stmt: &mut rusqlite::Statement<'_>, params: P, mapper: F) -> rusqlite::Result<rusqlite::MappedRows<'_,F>> {
@@ -67,28 +67,28 @@ where
     P: Params,
     F: FnMut(&Row<'_>) -> Result<T>,
 {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 pub fn last_insert_rowid(conn: &rusqlite::Connection) -> i64 {
     conn.last_insert_rowid()
 }
 fn last_insert_rowid(_conn: &Connection) -> i64 {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 pub fn transaction(conn: &mut rusqlite::Connection) -> rusqlite::Result<rusqlite::Transaction<'_>> {
     conn.transaction()
 }
 fn transaction<'conn>(_conn: &'conn mut Connection) -> Result<Transaction<'conn>> {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 pub fn tx_commit(tx: rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
     tx.commit()
 }
 fn tx_commit(_tx: Transaction<'_>) -> Result<()> {
-    unimplemented!("provekit materialize fills this from the shim's .proof envelope")
+    unimplemented!("sugar materialize fills this from the shim's .proof envelope")
 }
 
 fn main() -> Result<()> {

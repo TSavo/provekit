@@ -43,7 +43,7 @@ use std::process::Command;
 
 use serde_json::{json, Value as Json};
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -60,7 +60,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-rust-div-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-rust-div-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir project");
     p
 }
@@ -115,7 +115,7 @@ fn ir_document(op: &str, arg: i64, rhs: i64) -> Json {
 }
 
 fn write_mock_lifter(project: &Path, surface: &str, op: &str, arg: i64, rhs: i64) {
-    let lift_dir = project.join(".provekit").join("lift").join(surface);
+    let lift_dir = project.join(".sugar").join("lift").join(surface);
     fs::create_dir_all(&lift_dir).expect("mkdir lift surface dir");
 
     let ir_doc = ir_document(op, arg, rhs);
@@ -174,9 +174,9 @@ done
 fn mint_halve_project(suffix: &str, op: &str, arg: i64, rhs: i64) -> PathBuf {
     let surface = "mock";
     let project = unique_dir(suffix);
-    fs::create_dir_all(project.join(".provekit")).expect("mkdir .provekit");
+    fs::create_dir_all(project.join(".sugar")).expect("mkdir .sugar");
     fs::write(
-        project.join(".provekit").join("config.toml"),
+        project.join(".sugar").join("config.toml"),
         format!(
             "[authoring]\nsurface = \"{surface}\"\n\n\
              [solvers]\ndefault = \"z3\"\n\n\
@@ -187,7 +187,7 @@ fn mint_halve_project(suffix: &str, op: &str, arg: i64, rhs: i64) -> PathBuf {
     .expect("write config.toml");
     write_mock_lifter(&project, surface, op, arg, rhs);
 
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("mint")
         .arg("--project")
         .arg(&project)
@@ -195,10 +195,10 @@ fn mint_halve_project(suffix: &str, op: &str, arg: i64, rhs: i64) -> PathBuf {
         .arg(&project)
         .arg("--quiet")
         .output()
-        .expect("spawn provekit mint");
+        .expect("spawn sugar mint");
     assert!(
         out.status.success(),
-        "provekit mint must succeed (op={op})\n  stdout: {}\n  stderr: {}",
+        "sugar mint must succeed (op={op})\n  stdout: {}\n  stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -206,7 +206,7 @@ fn mint_halve_project(suffix: &str, op: &str, arg: i64, rhs: i64) -> PathBuf {
 }
 
 fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("verify")
         .arg("--project")
         .arg(project)
@@ -214,7 +214,7 @@ fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) 
         .arg(witness_dir)
         .arg("--json")
         .output()
-        .expect("spawn provekit verify");
+        .expect("spawn sugar verify");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let receipt = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"));
@@ -269,7 +269,7 @@ fn rust_division_seam_transcript() {
     probe("concept:div", 6, 3, "concept-agree");
 }
 
-/// Drive the REAL `provekit-walk-rpc` `walk.contract` method against rust
+/// Drive the REAL `sugar-walk-rpc` `walk.contract` method against rust
 /// source and return the ctor `name` in the body-derived `post`. This is the
 /// production function-contract builder (`build_function_contract_with_file` ->
 /// `lift::lift_function_postcondition`); it is `syn`-based, no charon needed.
@@ -278,13 +278,13 @@ fn production_post_op_for_division() -> String {
     let bin = std::env::var("CARGO_BIN_EXE_sugar")
         .ok()
         .and_then(|p| {
-            // The walk-rpc binary sits next to the provekit binary in the
-            // cargo target dir (target/<profile>/provekit-walk-rpc).
+            // The walk-rpc binary sits next to the sugar binary in the
+            // cargo target dir (target/<profile>/sugar-walk-rpc).
             let dir = PathBuf::from(&p).parent()?.to_path_buf();
-            let cand = dir.join("provekit-walk-rpc");
+            let cand = dir.join("sugar-walk-rpc");
             cand.exists().then_some(cand)
         })
-        .expect("provekit-walk-rpc must be built alongside provekit (cargo builds workspace bins)");
+        .expect("sugar-walk-rpc must be built alongside sugar (cargo builds workspace bins)");
 
     let req = json!({
         "jsonrpc": "2.0", "id": 1, "method": "walk.contract",
@@ -295,7 +295,7 @@ fn production_post_op_for_division() -> String {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .expect("spawn provekit-walk-rpc");
+        .expect("spawn sugar-walk-rpc");
     child
         .stdin
         .take()
@@ -313,7 +313,7 @@ fn production_post_op_for_division() -> String {
 }
 
 /// GATING REGRESSION (soundness): the REAL production rust lifter
-/// (`provekit-walk-rpc walk.contract` -> `lift_function_postcondition`) emits
+/// (`sugar-walk-rpc walk.contract` -> `lift_function_postcondition`) emits
 /// for `x / 2` an op symbol that MUST NOT be the bare SMT-LIB builtin `div`.
 /// Bare `div` is the cardinal-sin shape: z3 floor-divides, so the FALSE rust
 /// contract `halve(-7)==-4` would discharge + sign a witness (see the

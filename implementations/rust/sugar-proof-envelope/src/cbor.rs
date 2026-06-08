@@ -7,7 +7,7 @@
 //   - we emit only the major types we need: unsigned int, byte string,
 //     text string, array, map.
 //
-// Mirrors implementations/cpp/provekit/proof-envelope/cbor.cpp 1:1.
+// Mirrors implementations/cpp/sugar/proof-envelope/cbor.cpp 1:1.
 
 #[derive(Debug, Clone, Copy)]
 pub enum CborMajor {

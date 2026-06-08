@@ -7,13 +7,13 @@ A handshake fails when the verifier cannot carry a claim from a producer postcon
 1. Confirm the protocol catalog CID expected by the tool:
 
    ```sh
-   provekit verify-protocol
+   sugar verify-protocol
    ```
 
 2. Inspect the `.proof` bundle or witness that should carry the edge:
 
    ```sh
-   provekit dump path/to/artifact.proof
+   sugar dump path/to/artifact.proof
    ```
 
 3. Compare the consumer precondition CID, producer postcondition CID, and any bridge target CID. A one-byte canonicalization drift is a different claim.

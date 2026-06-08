@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// daemon_client.rs: integration tests for provekit-lsp-rust daemon-client mode.
+// daemon_client.rs: integration tests for sugar-lsp-rust daemon-client mode.
 //
 // Test 1: spawn daemon, run lsp-rust with --daemon-socket, assert parse response
 //         has result.diagnostics (shape test, empty is fine for no-violation source).
@@ -29,11 +29,11 @@ fn daemon_bin() -> PathBuf {
     let release = workspace
         .join("target")
         .join("release")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     let debug = workspace
         .join("target")
         .join("debug")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     if release.exists() {
         release
     } else {
@@ -42,12 +42,12 @@ fn daemon_bin() -> PathBuf {
 }
 
 fn lsp_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit-lsp-rust"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar-lsp-rust"))
 }
 
 fn unique_sock(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-lsp-rust-test-{}-{}.sock",
+        "sugar-lsp-rust-test-{}-{}.sock",
         label,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -58,7 +58,7 @@ fn unique_sock(label: &str) -> PathBuf {
 
 fn unique_snap(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-lsp-rust-snap-{}-{}.bin",
+        "sugar-lsp-rust-snap-{}-{}.bin",
         label,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -71,7 +71,7 @@ fn spawn_daemon(sock: &PathBuf, snap: &PathBuf, idle_ms: u64) -> Child {
     let bin = daemon_bin();
     assert!(
         bin.exists(),
-        "provekit-linkerd binary not found at {}; run `cargo build -p sugar-linkerd` first",
+        "sugar-linkerd binary not found at {}; run `cargo build -p sugar-linkerd` first",
         bin.display()
     );
     Command::new(&bin)
@@ -86,7 +86,7 @@ fn spawn_daemon(sock: &PathBuf, snap: &PathBuf, idle_ms: u64) -> Child {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn provekit-linkerd")
+        .expect("spawn sugar-linkerd")
 }
 
 fn wait_for_socket(sock: &PathBuf, timeout: Duration) -> bool {
@@ -131,7 +131,7 @@ impl LspPlugin {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("spawn provekit-lsp-rust --daemon-socket");
+            .expect("spawn sugar-lsp-rust --daemon-socket");
         let stdin = child.stdin.take().expect("lsp stdin");
         let stdout = BufReader::new(child.stdout.take().expect("lsp stdout"));
         Self {
@@ -182,7 +182,7 @@ fn daemon_client_parse_returns_diagnostics_shape() {
         "method": "initialize",
         "params": {}
     }));
-    assert_eq!(init_resp["result"]["name"], "provekit-lsp-rust");
+    assert_eq!(init_resp["result"]["name"], "sugar-lsp-rust");
 
     // parse a simple Rust source (no contract violations expected)
     let source = r#"

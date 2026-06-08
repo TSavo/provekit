@@ -10,7 +10,7 @@
 
 **Tech Stack:** TypeScript, vitest, tree-sitter (existing), Drizzle + better-sqlite3 (from Phase A-thin), ts-morph (from Phase D-core). No new deps.
 
-**Spec/prior plan:** `docs/specs/2026-04-23-provekit-v2-design.md`, `docs/plans/2026-04-23-phase-ad-core.md` (Phase D-core, shipped).
+**Spec/prior plan:** `docs/specs/2026-04-23-sugar-v2-design.md`, `docs/plans/2026-04-23-phase-ad-core.md` (Phase D-core, shipped).
 
 ---
 
@@ -575,9 +575,9 @@ cp -r .neurallog/principles /tmp/gap-demo/.neurallog/
 cd /tmp/gap-demo
 # Build the CLI in the worktree first
 cd - && npm run build
-node /Users/tsavo/provekit/.worktrees/v2-phase-ad-core/dist/index.js analyze /tmp/gap-demo/src/divide.ts
+node /Users/tsavo/sugar/.worktrees/v2-phase-ad-core/dist/index.js analyze /tmp/gap-demo/src/divide.ts
 # Expect output showing violations + a note about gap_reports
-node /Users/tsavo/provekit/.worktrees/v2-phase-ad-core/dist/index.js explain /tmp/gap-demo/src/divide.ts:7 --gaps
+node /Users/tsavo/sugar/.worktrees/v2-phase-ad-core/dist/index.js explain /tmp/gap-demo/src/divide.ts:7 --gaps
 # Expect THESIS-style encoding-gap output
 ```
 

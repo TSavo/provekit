@@ -20,7 +20,7 @@
 // keep the schema dependency surface narrow.
 //
 // Per #368, this is the MIR-layer companion to the AST walk
-// (provekit-walk's surface-AST pipeline). Both layers emit
+// (sugar-walk's surface-AST pipeline). Both layers emit
 // FunctionContractMemento objects to the same substrate; a single
 // content_cid identifies the same logical contract across layers.
 

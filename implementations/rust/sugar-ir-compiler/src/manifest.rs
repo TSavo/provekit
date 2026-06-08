@@ -2,7 +2,7 @@
 //
 // Plugin manifest discovery.
 //
-// Walks ~/.config/provekit/ir-compilers/<name>/manifest.toml and
+// Walks ~/.config/sugar/ir-compilers/<name>/manifest.toml and
 // returns the parsed entries. Manifest format is intentionally tiny so
 // the loader can hand-parse it without pulling a TOML dep into the
 // workspace; the file is exactly four key-value lines plus a quoted
@@ -53,12 +53,12 @@ pub fn discover(root: impl AsRef<Path>) -> Vec<Manifest> {
     out
 }
 
-/// Default discovery root: `~/.config/provekit/ir-compilers/`.
+/// Default discovery root: `~/.config/sugar/ir-compilers/`.
 pub fn default_root() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|h| {
         let mut p = PathBuf::from(h);
         p.push(".config");
-        p.push("provekit");
+        p.push("sugar");
         p.push("ir-compilers");
         p
     })

@@ -96,7 +96,7 @@ fi
 # --- Python ---
 echo "[Python] pytest"
 if need_tool python3 python; then
-    if (cd implementations/python/provekit-lift-py-tests && run_quiet python3 -m pytest tests/); then
+    if (cd implementations/python/sugar-lift-py-tests && run_quiet python3 -m pytest tests/); then
         report "python" "PASS" "55 tests, byte-identical to Rust"
     else
         report "python" "FAIL" "pytest failed"
@@ -106,9 +106,9 @@ fi
 # --- C++ ---
 echo "[C++] compile + run parseInt.invariant.cpp"
 if need_tool c++ cpp; then
-    cpp_example="implementations/cpp/provekit-ir-symbolic/example/parseInt.invariant.cpp"
-    cpp_include="implementations/cpp/provekit-ir-symbolic/include"
-    cpp_bin="/tmp/provekit-cpp-conformance"
+    cpp_example="implementations/cpp/sugar-ir-symbolic/example/parseInt.invariant.cpp"
+    cpp_include="implementations/cpp/sugar-ir-symbolic/include"
+    cpp_bin="/tmp/sugar-cpp-conformance"
     if run_quiet c++ -std=c++17 -I "$cpp_include" "$cpp_example" -o "$cpp_bin" && "$cpp_bin" >/dev/null 2>&1; then
         report "cpp" "PASS" "matches deterministic JCS output"
     else
@@ -119,7 +119,7 @@ fi
 # --- C ---
 echo "[C] make test"
 if need_tool make c; then
-    if (cd implementations/c/provekit-ir && run_quiet make test); then
+    if (cd implementations/c/sugar-ir && run_quiet make test); then
         report "c" "PASS" "5 tests match Rust JCS + hashes"
     else
         report "c" "FAIL" "make test failed"
@@ -138,7 +138,7 @@ else
     zig=""
 fi
 if [ -n "$zig" ]; then
-    if (cd implementations/zig/provekit-ir && run_quiet "$zig" build test); then
+    if (cd implementations/zig/sugar-ir && run_quiet "$zig" build test); then
         report "zig" "PASS" "5 tests match Rust JCS + BLAKE3-512"
     else
         report "zig" "FAIL" "zig build test failed"

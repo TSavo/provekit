@@ -1,4 +1,4 @@
-# ProvekIt: chain validity and the fail-closed gate
+# Sugar: chain validity and the fail-closed gate
 
 > Author: shared session 2026-04-30 (T + Claude). The protocol-level
 > definition of what makes a `proofHash` chain VALID, and the gate that
@@ -165,7 +165,7 @@ distribution); chain validity is the gate that runs AFTER fetch.
 
 ### 2.2 The non-walker discipline
 
-Per `2026-04-29-correctness-is-a-hash.md`: ProvekIt does NOT ship a
+Per `2026-04-29-correctness-is-a-hash.md`: Sugar does NOT ship a
 deep walker. The chain G as defined in §1.1 is rooted at the
 catalog memento under verification and extends only to mementos the
 verifier can resolve LOCALLY. The chain's "leaves" from the
@@ -661,7 +661,7 @@ a REJECT, under P6. The default is REJECT.
 
 An **external root** is a CID referenced by a memento in the chain
 that resolves to bytes the verifier is not prepared to interpret as a
-ProvekIt memento. Examples:
+Sugar memento. Examples:
 
 - An Apple notarization signature CID (the bytes are an Apple `.p7`).
 - A kernel.org tarball signature CID (the bytes are a detached PGP
@@ -679,7 +679,7 @@ decides what to do.
 ### 7.2 The external-root memento
 
 An external root MUST be carried by a `kind: external-root` wrapper
-memento that is itself a ProvekIt memento. The `external-root`
+memento that is itself a Sugar memento. The `external-root`
 memento body:
 
 ```yaml
@@ -982,7 +982,7 @@ schema: <CID of the chain-validity-report schema>
 body:
   rootProofHash: CID            # the catalog memento that was verified
   validityReportVersion: 1
-  verifierIdentity: string      # e.g. "provekit-verifier@0.4.2"
+  verifierIdentity: string      # e.g. "sugar-verifier@0.4.2"
   policyCid: CID                # the verifier's policy memento CID
   verifiedAt: iso8601
   status: enum                  # "valid" | "invalid"
@@ -1431,7 +1431,7 @@ clause overrides it. A gate that fails open is worse than no gate;
 the protocol's posture is that the verifier's job is to find
 reasons to reject, not reasons to accept.
 
-When this spec and the others land together, ProvekIt has its
+When this spec and the others land together, Sugar has its
 load-bearing protocol surface: a content-addressed graph of
 semantic claims, a canonical form for those claims, a signature
 scheme, and a fail-closed gate that defines what "verified" means.

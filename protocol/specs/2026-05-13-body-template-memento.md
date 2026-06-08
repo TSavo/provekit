@@ -7,11 +7,11 @@
 - `2026-05-12-plugin-protocol.md` (the protocol this spec consumes)
 - `2026-05-12-sugar-dict-memento.md` (sibling: contract-clause sugar; this spec is method-body sugar)
 - `2026-05-12-loss-function-memento.md` (loss function consulted at selection time)
-- `implementations/rust/provekit-cli/src/cmd_transport.rs` (the consumer; closes `bind-stub-body-emitted` for templated concepts)
+- `implementations/rust/sugar-cli/src/cmd_transport.rs` (the consumer; closes `bind-stub-body-emitted` for templated concepts)
 
 ## §1. Purpose
 
-`provekit bind --rewrite=canonical --target-language=<L>` emits a function in language `L` for every binding. When no real lifted term graph is available, today's substrate falls through to a language-idiomatic stub (`throw new UnsupportedOperationException(...)` for Java, `raise NotImplementedError(...)` for Python, etc.). The stub is honest under Supra omnia rectum but is the dominant entry in the trinity round-trip's loss-record set (`bind-stub-body-emitted`).
+`sugar bind --rewrite=canonical --target-language=<L>` emits a function in language `L` for every binding. When no real lifted term graph is available, today's substrate falls through to a language-idiomatic stub (`throw new UnsupportedOperationException(...)` for Java, `raise NotImplementedError(...)` for Python, etc.). The stub is honest under Supra omnia rectum but is the dominant entry in the trinity round-trip's loss-record set (`bind-stub-body-emitted`).
 
 A `body-template` plugin is a content-addressed dictionary mapping `(target_language, concept_name)` to a function-body template renderable from the function's signature alone. Multiple body-template plugins MAY load simultaneously; per-binding selection is loss-minimizing across loaded body-templates.
 

@@ -65,7 +65,7 @@ pub fn default_socket_path(project_cid: &str) -> PathBuf {
     let base = std::env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
     PathBuf::from(base)
-        .join("provekit")
+        .join("sugar")
         .join(format!("linkerd-{project_cid}.sock"))
 }
 
@@ -73,7 +73,7 @@ pub fn default_socket_path(project_cid: &str) -> PathBuf {
 pub fn default_snapshot_path(project_cid: &str) -> PathBuf {
     let base = std::env::var("XDG_CACHE_HOME").unwrap_or_else(|_| dirs_next_cache_home());
     PathBuf::from(base)
-        .join("provekit")
+        .join("sugar")
         .join("linkerd")
         .join(project_cid)
         .join("snapshot.bin")

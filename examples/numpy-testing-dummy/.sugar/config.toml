@@ -1,0 +1,17 @@
+# Minimal project for the one assertion lifter (sugar_lift_py_tests.assertion_lsp),
+# which learns numpy's vocabulary from each test file's imports plus
+# .sugar/vocab-exceptions/numpy.testing.json. Lifts assert_equal/assert_array_equal/
+# ... into ProofIR consistency facts; approximate assertions are loudly refused.
+[[plugins]]
+name = "python-numpy-testing-lift"
+kind = "lift"
+surface = "python-numpy-testing"
+
+[solvers]
+default = "z3"
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

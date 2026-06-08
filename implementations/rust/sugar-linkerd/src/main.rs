@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-linkerd: long-running JSON-RPC daemon for the ProvekIt
+// sugar-linkerd: long-running JSON-RPC daemon for the Sugar
 // linker, implementing spec `protocol/specs/2026-05-04-linker-daemon-protocol.md`.
 //
 // Usage:
-//   provekit-linkerd --project-cid <cid>
+//   sugar-linkerd --project-cid <cid>
 //                    [--socket <path>]
 //                    [--snapshot <path>]
 //                    [--idle-timeout-ms <ms>]
 //                    [--cache-cap <n>]
 //
 // Spec reference:
-//   R1:  socket at ${XDG_RUNTIME_DIR}/provekit/linkerd-<projectCid>.sock
+//   R1:  socket at ${XDG_RUNTIME_DIR}/sugar/linkerd-<projectCid>.sock
 //   R2:  0600 permissions; reject non-owner UIDs.
 //   R3:  NDJSON encoding, one JSON-RPC 2.0 message per line.
 //   R4:  idle timeout 5 min; warm-start from snapshot.
@@ -94,14 +94,14 @@ fn main() -> anyhow::Result<()> {
         project_cid = %project_cid,
         socket = %config.socket_path.display(),
         idle_timeout_ms = %idle_timeout_ms,
-        "provekit-linkerd starting"
+        "sugar-linkerd starting"
     );
 
     // Windows gap: Unix sockets are not supported on Windows.
     // Named pipe support (\\.\pipe\...) will be added in a follow-up.
     #[cfg(not(unix))]
     {
-        eprintln!("error: provekit-linkerd requires a Unix platform (Unix domain sockets).");
+        eprintln!("error: sugar-linkerd requires a Unix platform (Unix domain sockets).");
         eprintln!("Windows named pipe support is planned; see spec R1.");
         std::process::exit(1);
     }
@@ -122,7 +122,7 @@ fn init_tracing() {
         // (it lives in sugar_walk::ra_oracle) so an operator watching
         // the daemon sees the one-time workspace index, not silence.
         .add_directive("sugar_walk::ra_oracle=info".parse().unwrap());
-    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+    if let Ok(path) = std::env::var("SUGAR_LOG_FILE") {
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -137,7 +137,7 @@ fn init_tracing() {
             }
             Err(error) => {
                 eprintln!(
-                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                    "warning: could not open SUGAR_LOG_FILE {path}: {error}; logging to stderr"
                 );
                 tracing_subscriber::fmt()
                     .with_writer(std::io::stderr)

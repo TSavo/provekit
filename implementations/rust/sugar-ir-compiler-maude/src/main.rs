@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Binary entry point for provekit-ir-maude.
+// Binary entry point for sugar-ir-maude.
 
 use std::io::{self, Read};
 

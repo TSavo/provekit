@@ -1,13 +1,13 @@
 # Tutorial: Zig
 
-> **Status:** kit shipping in the current v1.6.3 tree. Lift adapter: comment-based annotations (`//provekit:contract`, `//provekit:implement`, `//provekit:verify`). LSP plugin shipping. Verification via the Rust CLI.
+> **Status:** kit shipping in the current v1.6.3 tree. Lift adapter: comment-based annotations (`//sugar:contract`, `//sugar:implement`, `//sugar:verify`). LSP plugin shipping. Verification via the Rust CLI.
 
 A walkthrough for Zig developers. Zig has no native attribute syntax, so the lift adapter walks comment-block conventions.
 
 ## 1. What you'll have at the end
 
 - A `.proof` file alongside your Zig package.
-- Mementos derived from `//provekit:contract` and friends.
+- Mementos derived from `//sugar:contract` and friends.
 - LSP-driven squigglies in your editor.
 
 ## 2. Prerequisites
@@ -19,8 +19,8 @@ A walkthrough for Zig developers. Zig has no native attribute syntax, so the lif
 ## 3. Install
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 cd implementations/zig && zig build
 ```
@@ -28,7 +28,7 @@ cd implementations/zig && zig build
 ## 4. Annotate
 
 ```zig
-//provekit:contract pre="x >= 0" post="result >= x"
+//sugar:contract pre="x >= 0" post="result >= x"
 fn add_one_or_more(x: i32) i32 {
     return x + 1;
 }
@@ -37,7 +37,7 @@ fn add_one_or_more(x: i32) i32 {
 Run the lifter:
 
 ```bash
-provekit-lift-zig
+sugar-lift-zig
 ```
 
 The Zig kit emits JCS canonical IR using `std.crypto.blake3` natively, producing identical hashes to the Rust kit.
@@ -45,12 +45,12 @@ The Zig kit emits JCS canonical IR using `std.crypto.blake3` natively, producing
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 ## 6. Wire your IDE
 
-- **IDE:** install the LSP plugin (`provekit-lift-zig --rpc` implements the NDJSON LSP plugin protocol). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
+- **IDE:** install the LSP plugin (`sugar-lift-zig --rpc` implements the NDJSON LSP plugin protocol). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
 
 ## What's next
 

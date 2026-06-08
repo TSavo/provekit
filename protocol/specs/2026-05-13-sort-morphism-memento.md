@@ -13,7 +13,7 @@
 
 ## §0. Purpose
 
-ProvekIt's concept hub federates semantics across languages. A `concept:option` or `concept:list` realization says how an operation or abstraction in one language corresponds to the hub, and existing realization equations record the loss dimensions that make that correspondence exact, lossy, or refused.
+Sugar's concept hub federates semantics across languages. A `concept:option` or `concept:list` realization says how an operation or abstraction in one language corresponds to the hub, and existing realization equations record the loss dimensions that make that correspondence exact, lossy, or refused.
 
 Types and sorts need the same substrate layer. Rust `i64`, Java `long`, C `int` on a selected ABI, and Python `int` are not just spelling variants. They have value sets, precision behavior, runtime representations, and guard requirements that can agree in one direction while disagreeing in another. Recording that information only inside catalog realization-equation `loss_record` entries makes type transport implicit and hard to compose.
 
@@ -27,7 +27,7 @@ Types and sorts need the same substrate layer. Rust `i64`, Java `long`, C `int` 
 2. Look up the sort morphism for the concrete type substitution: e.g., `i64 → long` (one `SortMorphismMemento`).
 3. The composed realization for `concept:option<i64> → java:Optional<long>` is `(parametric_realization_cid, [sort_morphism_cid])`, NOT a separately minted equation.
 
-The substrate avoids catalog explosion by composing these on demand rather than pre-minting one equation per `(concept × sort-tuple)`. The parametric concept realization machinery is specified separately in `ParametricRealizationMemento` and `RealizationPlanMemento` (TSavo/provekit#801, deferred). This spec covers the sort-side only; composition lives in the realization spec.
+The substrate avoids catalog explosion by composing these on demand rather than pre-minting one equation per `(concept × sort-tuple)`. The parametric concept realization machinery is specified separately in `ParametricRealizationMemento` and `RealizationPlanMemento` (TSavo/sugar#801, deferred). This spec covers the sort-side only; composition lives in the realization spec.
 
 In particular, this spec MUST be readable in isolation: a `SortMorphismMemento` is a self-contained statement about two sorts, with no embedded reference to concepts. Concept-level orchestrators read `SortMorphismMemento` instances to populate the slots of a parametric realization plan; the morphism does not know it will be used that way.
 

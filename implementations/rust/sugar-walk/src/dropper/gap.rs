@@ -43,7 +43,7 @@ pub fn detect_gaps(walks: &[CallsiteWalk], descriptor: &dyn PredicateDescriptor)
         }
         let Some(var_name) = descriptor.var_arg(entry.as_formula()) else {
             eprintln!(
-                "provekit-walk/dropper: predicate `{}` in {}->{} entry WP has \
+                "sugar-walk/dropper: predicate `{}` in {}->{} entry WP has \
                  non-Var argument; skipping gap (no concrete identifier to guard)",
                 descriptor.name(),
                 walk.caller_name,

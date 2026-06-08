@@ -1,8 +1,8 @@
-# ProvekIt: workflows as first-class primitive
+# Sugar: workflows as first-class primitive
 
 ## Thesis
 
-ProvekIt has TWO primitives that today are confused as one:
+Sugar has TWO primitives that today are confused as one:
 
 1. **The Certificate Authority (CA).** Memento store + producer registry
    + capability dispatch + swarm gateway. The mechanism that ISSUES
@@ -133,9 +133,9 @@ without modification.
   pulled from the swarm by CID. They register against the workflow
   runner the same way producers register against the producer registry.
 - **The CLI gets verb-shaped over workflows.**
-  `provekit prove --workflow bug-fix` (default), or
-  `provekit prove --workflow compliance-audit --policy ./gdpr.yaml`,
-  or `provekit prove --workflow <swarm-CID> [args]`.
+  `sugar prove --workflow bug-fix` (default), or
+  `sugar prove --workflow compliance-audit --policy ./gdpr.yaml`,
+  or `sugar prove --workflow <swarm-CID> [args]`.
 - **Workflows are themselves swarm artifacts.** Someone publishes "FDA
   medical-software-validation workflow"; teams pull it by CID and run
   it on their code, get FDA-compliance certificates as output.
@@ -199,7 +199,7 @@ This is a refactor, not a fresh build:
 2. **Extract the existing fix-loop sequence into
    `src/workflows/bug-fix.ts`.** Same code, same behavior. The
    orchestrator becomes thin.
-3. **Wire `provekit prove` to dispatch via the workflow runner.**
+3. **Wire `sugar prove` to dispatch via the workflow runner.**
    `--workflow <name>` defaults to `bug-fix` for backward compat.
 4. **Add a second workflow as proof-of-concept.** Probably
    `property-assertion` (the simplest non-bug-fix shape).
@@ -219,7 +219,7 @@ SINGLE-engineer no-sharing world; the workflows-as-first-class-
 primitive cut is what makes that CA primitive serve more than one
 use case.
 
-A reader who understands this document understands that ProvekIt is:
+A reader who understands this document understands that Sugar is:
 - **A certificate authority** for software correctness
 - **+ a workflow runtime** that composes certificate requests
 - **+ a swarm** that distributes both certificates and workflows
@@ -228,7 +228,7 @@ Three independently-evolvable layers. None depends on the others'
 internals. New use cases compose at the workflow layer; new producers
 compose at the CA layer; new audiences compose at the swarm layer.
 
-That's the full architectural shape. Any earlier framing — "ProvekIt
-is a verification tool," "ProvekIt is a fix-loop," "ProvekIt is AI-
+That's the full architectural shape. Any earlier framing — "Sugar
+is a verification tool," "Sugar is a fix-loop," "Sugar is AI-
 assisted code review" — is at most one workflow on top of the
 underlying CA primitive, mistaken for the framework itself.

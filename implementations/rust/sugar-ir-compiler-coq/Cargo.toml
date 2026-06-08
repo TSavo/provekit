@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt: Coq IR compiler. Emits Coq code from IR contracts."
+description = "Sugar: Coq IR compiler. Emits Coq code from IR contracts."
 
 [dependencies]
 sugar-ir-compiler = { path = "../sugar-ir-compiler" }
@@ -15,7 +15,7 @@ serde_json.workspace = true
 sugar-ir-compiler = { path = "../sugar-ir-compiler" }
 
 [[bin]]
-name = "provekit-ir-coq"
+name = "sugar-ir-coq"
 path = "src/main.rs"
 
 [lib]

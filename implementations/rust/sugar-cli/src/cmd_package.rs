@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit package`: package-shaped supply-chain receipt helpers.
+// `sugar package`: package-shaped supply-chain receipt helpers.
 
 use std::path::PathBuf;
 
@@ -25,7 +25,7 @@ pub enum PackageCmd {
 
 #[derive(Parser, Debug, Clone)]
 pub struct PackageInspectArgs {
-    /// Package project root containing .provekit/config.toml.
+    /// Package project root containing .sugar/config.toml.
     pub project: PathBuf,
     #[command(flatten)]
     pub out: OutputFlags,
@@ -56,7 +56,7 @@ fn run_inspect(args: PackageInspectArgs) -> u8 {
         Some(surface) => surface,
         None => {
             eprintln!(
-                "{}: no package inspection lifter configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml.",
+                "{}: no package inspection lifter configured. Set [authoring] surface or [authoring.lift] surface in .sugar/config.toml.",
                 "error".red().bold()
             );
             return EXIT_USER_ERROR;

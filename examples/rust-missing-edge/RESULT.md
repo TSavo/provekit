@@ -25,11 +25,11 @@ The bug:
 ```
 $ cargo test                 # address_of_nonneg_round_trips ... ok   (bug hides)
 
-$ provekit mint --project examples/rust-missing-edge --out .../proofs --no-attest
+$ sugar mint --project examples/rust-missing-edge --out .../proofs --no-attest
 mint ok                      # the rust lifter emits serialize/content_address/address_of contracts
 
-$ provekit prove examples/rust-missing-edge
-ProvekIt verifier report
+$ sugar prove examples/rust-missing-edge
+Sugar verifier report
   total callsites : 3
   discharged      : 2
   violations      : 1

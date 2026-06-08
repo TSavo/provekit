@@ -81,9 +81,9 @@ while IFS= read -r line; do
     *initialize*)
       printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"name":"stub-kit","protocol_version":"pep/1.7.0","capabilities":{{}}}}}}'
       ;;
-    *provekit.plugin.kit_declaration*)
+    *sugar.plugin.kit_declaration*)
       printf '%s' "$line" > "$marker"
-      printf '%s\n' '{{"jsonrpc":"2.0","id":2,"result":{{"kit":{{"id":"stub-kit","language":"rust","version":"0.1.0"}},"rpc":{{"methods":[{{"name":"provekit.plugin.kit_declaration","required":true}}]}},"proofResolution":{{"strategy":"rpc-proof-bytes","rpcMethod":"provekit.plugin.resolve_dependency_proofs"}},"effectKinds":["concept:panic-freedom"],"effectLeaves":[{{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.unwrap"}}],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}}}'
+      printf '%s\n' '{{"jsonrpc":"2.0","id":2,"result":{{"kit":{{"id":"stub-kit","language":"rust","version":"0.1.0"}},"rpc":{{"methods":[{{"name":"sugar.plugin.kit_declaration","required":true}}]}},"proofResolution":{{"strategy":"rpc-proof-bytes","rpcMethod":"sugar.plugin.resolve_dependency_proofs"}},"effectKinds":["concept:panic-freedom"],"effectLeaves":[{{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.unwrap"}}],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}}}'
       ;;
     *shutdown*)
       printf '%s\n' '{{"jsonrpc":"2.0","id":3,"result":null}}'
@@ -125,8 +125,8 @@ while IFS= read -r line; do
     *initialize*)
       printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"stub-kit","protocol_version":"pep/1.7.0","capabilities":{}}}'
       ;;
-    *provekit.plugin.kit_declaration*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"stub-kit","language":"rust","version":"0.1.0"},"rpc":{"methods":[{"name":"provekit.plugin.kit_declaration","required":true}]},"proofResolution":{"strategy":"rpc-proof-bytes"},"effectKinds":["concept:panic-freedom"],"effectLeaves":[{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.unwrap"},{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.expect"}],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
+    *sugar.plugin.kit_declaration*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"stub-kit","language":"rust","version":"0.1.0"},"rpc":{"methods":[{"name":"sugar.plugin.kit_declaration","required":true}]},"proofResolution":{"strategy":"rpc-proof-bytes"},"effectKinds":["concept:panic-freedom"],"effectLeaves":[{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.unwrap"},{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.expect"}],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
       ;;
   esac
 done
@@ -157,8 +157,8 @@ while IFS= read -r line; do
     *initialize*)
       printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"stub-kit","protocol_version":"pep/1.7.0","capabilities":{}}}'
       ;;
-    *provekit.plugin.kit_declaration*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"method not found: provekit.plugin.kit_declaration"}}'
+    *sugar.plugin.kit_declaration*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"method not found: sugar.plugin.kit_declaration"}}'
       ;;
   esac
 done
@@ -189,8 +189,8 @@ while IFS= read -r line; do
     *initialize*)
       printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"python-hypothesis","protocol_version":"pep/1.7.0","capabilities":{}}}'
       ;;
-    *provekit.plugin.kit_declaration*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"python-hypothesis","language":"python","version":"0.1.0"},"rpc":{"methods":[{"name":"initialize","required":true},{"name":"provekit.plugin.kit_declaration","required":true},{"name":"provekit.plugin.invoke","required":true},{"name":"provekit.plugin.check","required":false},{"name":"provekit.plugin.shutdown","required":false}]},"proofResolution":{"strategy":"pip"},"effectKinds":[],"effectLeaves":[],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
+    *sugar.plugin.kit_declaration*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"python-hypothesis","language":"python","version":"0.1.0"},"rpc":{"methods":[{"name":"initialize","required":true},{"name":"sugar.plugin.kit_declaration","required":true},{"name":"sugar.plugin.invoke","required":true},{"name":"sugar.plugin.check","required":false},{"name":"sugar.plugin.shutdown","required":false}]},"proofResolution":{"strategy":"pip"},"effectKinds":[],"effectLeaves":[],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
       ;;
     *shutdown*)
       printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
@@ -224,10 +224,10 @@ fn loader_accepts_empty_effect_kinds_for_python_lift_kit() {
 while IFS= read -r line; do
   case "$line" in
     *initialize*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"provekit-lsp-python","version":"0.1.0","protocol_version":"provekit-lsp-shared/1","kit_id":"python","capabilities":{}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"sugar-lsp-python","version":"0.1.0","protocol_version":"sugar-lsp-shared/1","kit_id":"python","capabilities":{}}}'
       ;;
-    *provekit.plugin.kit_declaration*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"python","language":"python","version":"0.1.0"},"rpc":{"methods":[{"name":"initialize","required":true},{"name":"provekit.plugin.kit_declaration","required":true},{"name":"analyzeDocument","required":false},{"name":"parse","required":false},{"name":"lift","required":true},{"name":"provekit.plugin.lift_implications","required":false},{"name":"shutdown","required":false}]},"proofResolution":{"strategy":"pip"},"effectKinds":[],"effectLeaves":[],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
+    *sugar.plugin.kit_declaration*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"python","language":"python","version":"0.1.0"},"rpc":{"methods":[{"name":"initialize","required":true},{"name":"sugar.plugin.kit_declaration","required":true},{"name":"analyzeDocument","required":false},{"name":"parse","required":false},{"name":"lift","required":true},{"name":"sugar.plugin.lift_implications","required":false},{"name":"shutdown","required":false}]},"proofResolution":{"strategy":"pip"},"effectKinds":[],"effectLeaves":[],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
       ;;
     *shutdown*)
       printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
@@ -253,7 +253,7 @@ done
         .rpc
         .methods
         .iter()
-        .any(|method| method.name == "provekit.plugin.lift_implications"));
+        .any(|method| method.name == "sugar.plugin.lift_implications"));
 }
 
 #[test]
@@ -268,8 +268,8 @@ while IFS= read -r line; do
     *initialize*)
       printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"stub-kit","protocol_version":"pep/1.7.0","capabilities":{}}}'
       ;;
-    *provekit.plugin.kit_declaration*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":99,"result":{"kit":{"id":"stub-kit","language":"rust","version":"0.1.0"},"rpc":{"methods":[{"name":"provekit.plugin.kit_declaration","required":true}]},"proofResolution":{"strategy":"rpc-proof-bytes"},"effectKinds":["concept:panic-freedom"],"effectLeaves":[],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
+    *sugar.plugin.kit_declaration*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":99,"result":{"kit":{"id":"stub-kit","language":"rust","version":"0.1.0"},"rpc":{"methods":[{"name":"sugar.plugin.kit_declaration","required":true}]},"proofResolution":{"strategy":"rpc-proof-bytes"},"effectKinds":["concept:panic-freedom"],"effectLeaves":[],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
       ;;
   esac
 done

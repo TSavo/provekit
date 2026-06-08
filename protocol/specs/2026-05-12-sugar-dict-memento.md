@@ -11,13 +11,13 @@
 - `2026-05-12-loss-function-memento.md` (the loss function consulted at selection time, §4.4)
 - `2026-05-13-compound-contract-memento.md` (the compound this spec renders from)
 - `2026-05-14-transport-gap-and-partial-morphism-protocol.md` §1.3 (`loss-record` shape returned by `loss_record_contribution`)
-- `implementations/rust/provekit-cli/src/cmd_transport.rs` (the deferred-list note "cosmetic re-sugaring after the core-form realizer" that this spec closes)
+- `implementations/rust/sugar-cli/src/cmd_transport.rs` (the deferred-list note "cosmetic re-sugaring after the core-form realizer" that this spec closes)
 
 ## §1. Purpose
 
 Canonical contract clauses produced by the core-form realizer are abstract `IrFormula` trees. To be readable by a target-language tool (a Spring app, a JML-annotated Java method, a JUnit 5 test, or a comment-as-documentation line), they MUST be rendered into surface syntax. The rendering is NOT a single fixed function: it is plural by construction. Different surfaces compete for the same canonical clause under best-only policy; under inclusive policy, multiple selected surfaces intentionally compose. Every selected surface carries its own loss record, scored against the loaded loss function (`2026-05-12-loss-function-memento.md`).
 
-A `sugar` plugin is a content-addressed dictionary of rendering entries. Multiple sugar plugins MAY be loaded simultaneously; per-clause selection is loss-minimizing or inclusive depending on the active emission policy (§4). The mechanism replaces the "cosmetic re-sugaring after the core-form realizer" item parked in `implementations/rust/provekit-cli/src/cmd_transport.rs` line 296 (`deferred` field of `TransportReport`).
+A `sugar` plugin is a content-addressed dictionary of rendering entries. Multiple sugar plugins MAY be loaded simultaneously; per-clause selection is loss-minimizing or inclusive depending on the active emission policy (§4). The mechanism replaces the "cosmetic re-sugaring after the core-form realizer" item parked in `implementations/rust/sugar-cli/src/cmd_transport.rs` line 296 (`deferred` field of `TransportReport`).
 
 ### §1.1 What a sugar dict is NOT
 
@@ -331,7 +331,7 @@ The CID of this header is `"blake3-512:" ++ hex(BLAKE3-512(JCS(<header bytes wit
 - The plugin memento envelope, CID rules, load procedure, and registry semantics are NORMATIVE per `2026-05-12-plugin-protocol.md`.
 - The loss-function plugin consulted in §4.2 is the LOADED loss function per `2026-05-12-loss-function-memento.md`; the default loss function is defined in §6 of that spec.
 - The inverse direction (surface-to-core desugaring) is `2026-05-11-desugaring-and-the-core-compression.md`; a sugar dict and a desugaring set MAY share a name but are different mementos with different CIDs (different `kind` values: `sugar` vs `equation` with `role: "desugaring"`).
-- This spec closes the "cosmetic re-sugaring after the core-form realizer" item parked in `implementations/rust/provekit-cli/src/cmd_transport.rs` line 296.
+- This spec closes the "cosmetic re-sugaring after the core-form realizer" item parked in `implementations/rust/sugar-cli/src/cmd_transport.rs` line 296.
 
 ## §9. Out of scope for v1.0.0
 

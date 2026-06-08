@@ -8,8 +8,8 @@
 // Java, and Go.
 //
 // This drives the REAL verify-facing Python lift surface
-// `provekit-lift-python-verify` (module
-// `provekit_lift_python_source.verify_rpc`). That surface lifts the real
+// `sugar-lift-python-verify` (module
+// `sugar_lift_python_source.verify_rpc`). That surface lifts the real
 // Python sources in `examples/python-double`:
 //
 //   - `double.py`       -> function-contract `post = result == (* x 2)`
@@ -20,9 +20,9 @@
 //   - `test_double.py`  -> contract `inv = =(double(3), 6)` (Python Layer-0
 //                          leaf-assertion harvester).
 //
-// `provekit mint` AUTO-WRITES the `double -> targetContractCid` bridge (#1443);
+// `sugar mint` AUTO-WRITES the `double -> targetContractCid` bridge (#1443);
 // the bridge is TOOL-written, asserted by inspecting `pool.bridges_by_symbol`.
-// `provekit verify` then discharges both ways:
+// `sugar verify` then discharges both ways:
 //
 //   POSITIVE: `double(3) == 6` reduces through the body `(* 3 2) == 6` -> z3
 //     discharges -> pass, signed witness, exit 0.
@@ -41,7 +41,7 @@ use serde_json::Value as Json;
 #[path = "support/contradiction.rs"]
 mod contradiction;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -63,7 +63,7 @@ fn python_source_lift_src() -> PathBuf {
     repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-lift-python-source")
+        .join("sugar-lift-python-source")
         .join("src")
 }
 
@@ -71,7 +71,7 @@ fn python_test_lift_src() -> PathBuf {
     repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-lift-py-tests")
+        .join("sugar-lift-py-tests")
         .join("src")
 }
 
@@ -107,7 +107,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-py-prod-bridge-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-py-prod-bridge-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir project");
     p
 }
@@ -127,7 +127,7 @@ fn build_python_lift_verify() -> PathBuf {
     let pythonpath = python_lift_pythonpath();
     let quoted_pythonpath = shell_single_quote(&pythonpath);
     let script = std::env::temp_dir().join(format!(
-        "provekit-lift-python-verify-{}-{}.sh",
+        "sugar-lift-python-verify-{}-{}.sh",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
@@ -135,7 +135,7 @@ fn build_python_lift_verify() -> PathBuf {
         "#!/bin/sh\nPYTHON=${{PYTHON:-python3}}\n\
          PYTHONPATH={quoted_pythonpath}${{PYTHONPATH:+:$PYTHONPATH}}\n\
          export PYTHONPATH\n\
-         exec \"$PYTHON\" -c \"from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n"
+         exec \"$PYTHON\" -c \"from sugar_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n"
     );
     // sync_all + drop the writer fd BEFORE chmod/spawn so `exec` never sees an
     // open writer (the second half of the ETXTBSY guard; see cli_surface.rs).
@@ -173,22 +173,22 @@ fn stage_python_project(suffix: &str, lift_script: &Path, body_factor: i64) -> P
     )
     .expect("copy test_double.py");
 
-    // .provekit/config.toml: copied verbatim.
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python")).expect("mkdir .provekit/lift/python");
+    // .sugar/config.toml: copied verbatim.
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python")).expect("mkdir .sugar/lift/python");
     fs::copy(
-        example.join(".provekit").join("config.toml"),
-        provekit.join("config.toml"),
+        example.join(".sugar").join("config.toml"),
+        sugar.join("config.toml"),
     )
     .expect("copy config.toml");
 
-    // .provekit/lift/python/manifest.toml: point command[0] at the wrapper.
+    // .sugar/lift/python/manifest.toml: point command[0] at the wrapper.
     let manifest = format!(
         "name = \"python\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
         lift_script.display()
     );
     fs::write(
-        provekit.join("lift").join("python").join("manifest.toml"),
+        sugar.join("lift").join("python").join("manifest.toml"),
         manifest,
     )
     .expect("write manifest.toml");
@@ -236,7 +236,7 @@ fn rewrite_manifest_command(manifest: &Path, command: &Path) {
 }
 
 fn run_mint(project: &Path) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("mint")
         .arg("--project")
         .arg(project)
@@ -244,17 +244,17 @@ fn run_mint(project: &Path) {
         .arg(project)
         .arg("--quiet")
         .output()
-        .expect("spawn provekit mint");
+        .expect("spawn sugar mint");
     assert!(
         out.status.success(),
-        "provekit mint must succeed\n  stdout: {}\n  stderr: {}",
+        "sugar mint must succeed\n  stdout: {}\n  stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
 }
 
 fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("verify")
         .arg("--project")
         .arg(project)
@@ -262,7 +262,7 @@ fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) 
         .arg(witness_dir)
         .arg("--json")
         .output()
-        .expect("spawn provekit verify");
+        .expect("spawn sugar verify");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let receipt = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"));
@@ -288,10 +288,10 @@ fn python_production_path_uses_checked_in_python_double_registration() {
         project.join("test_double.py"),
     )
     .expect("copy test_double.py");
-    copy_dir_recursive(&example.join(".provekit"), &project.join(".provekit"));
+    copy_dir_recursive(&example.join(".sugar"), &project.join(".sugar"));
     rewrite_manifest_command(
         &project
-            .join(".provekit")
+            .join(".sugar")
             .join("lift")
             .join("python")
             .join("manifest.toml"),
@@ -315,7 +315,7 @@ fn python_production_path_uses_checked_in_python_double_registration() {
 /// THE bridge-writer assertion (language-neutral, runs without z3): the TOOL
 /// wrote a `bridge` member for `double` whose `targetContractCid` resolves to a
 /// `contract` member carrying the body-derived `formals` + `post`. No
-/// hand-bridging anywhere; the bridge came from `provekit mint`.
+/// hand-bridging anywhere; the bridge came from `sugar mint`.
 #[test]
 fn python_mint_auto_writes_body_discharge_bridge() {
     if !python_available() {
@@ -487,7 +487,7 @@ fn python_production_path_refuses_planted_contradictory_implication() {
     let project = stage_python_project("contradiction", &lift_script, 2);
     run_mint(&project);
 
-    let (green, green_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    let (green, green_code) = contradiction::run_prove_json_with_code(&sugar_bin(), &project);
     assert_eq!(
         green_code, 0,
         "base Python project must prove before planting contradiction; report: {green}"
@@ -495,12 +495,12 @@ fn python_production_path_refuses_planted_contradictory_implication() {
     contradiction::assert_green_proves_one_bridge(&green, green_code);
 
     contradiction::plant_contradictory_implication_proof(
-        &project.join(".provekit"),
+        &project.join(".sugar"),
         "python",
         "python-tests",
         "python_parity",
     );
-    let (red, red_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    let (red, red_code) = contradiction::run_prove_json_with_code(&sugar_bin(), &project);
     contradiction::assert_prove_refuses_contradiction(
         &red,
         red_code,

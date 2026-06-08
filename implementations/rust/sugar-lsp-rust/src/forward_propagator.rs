@@ -9,7 +9,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-const PROTOCOL_CATALOG_CID: &str = "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Post {
@@ -169,10 +168,8 @@ pub struct BaselineEntry {
     pub post_cid: String,
     pub signer: String,
     pub signer_role: String,
-    pub baseline_catalog_cid: String,
     pub baseline_contract_set_cid: String,
     pub baseline_index_cid: String,
-    pub protocol_catalog_cid: String,
 }
 
 impl BaselineEntry {
@@ -201,12 +198,10 @@ impl BaselineEntry {
             post_cid,
             signer: "ed25519:foundation-v0".into(),
             signer_role: "foundation-baseline".into(),
-            baseline_catalog_cid: cid_for_bytes(format!("baseline-catalog:{seed}").as_bytes()),
             baseline_contract_set_cid: cid_for_bytes(
                 format!("baseline-contract-set:{seed}").as_bytes(),
             ),
             baseline_index_cid: cid_for_bytes(format!("baseline-index:{seed}").as_bytes()),
-            protocol_catalog_cid: PROTOCOL_CATALOG_CID.into(),
         }
     }
 }
@@ -224,10 +219,8 @@ pub struct DiagnosticData {
     pub missing_conjuncts: Vec<String>,
     pub signer: String,
     pub signer_role: String,
-    pub baseline_catalog_cid: String,
     pub baseline_contract_set_cid: String,
     pub baseline_index_cid: String,
-    pub protocol_catalog_cid: String,
 }
 
 impl DiagnosticData {
@@ -244,10 +237,8 @@ impl DiagnosticData {
             "missing_conjuncts": self.missing_conjuncts,
             "signer": self.signer,
             "signer_role": self.signer_role,
-            "baseline_catalog_cid": self.baseline_catalog_cid,
             "baseline_contract_set_cid": self.baseline_contract_set_cid,
             "baseline_index_cid": self.baseline_index_cid,
-            "protocol_catalog_cid": self.protocol_catalog_cid,
         })
     }
 }
@@ -391,12 +382,12 @@ impl ForwardPropagator {
         Some(LspDiagnostic {
             range,
             severity: 1,
-            source: "provekit".into(),
-            code: "provekit.lsp.implication_failed".into(),
+            source: "sugar".into(),
+            code: "sugar.lsp.implication_failed".into(),
             message: "callee precondition not established at this callsite".into(),
             data: DiagnosticData {
                 schema_version: 1,
-                kind: "provekit.lsp.implication_failed".into(),
+                kind: "sugar.lsp.implication_failed".into(),
                 callee: entry.callee_id.clone(),
                 callee_contract_cid: entry.contract_cid.clone(),
                 callee_attestation_cid: entry.attestation_cid.clone(),
@@ -406,10 +397,8 @@ impl ForwardPropagator {
                 missing_conjuncts,
                 signer: entry.signer.clone(),
                 signer_role: entry.signer_role.clone(),
-                baseline_catalog_cid: entry.baseline_catalog_cid.clone(),
                 baseline_contract_set_cid: entry.baseline_contract_set_cid.clone(),
                 baseline_index_cid: entry.baseline_index_cid.clone(),
-                protocol_catalog_cid: entry.protocol_catalog_cid.clone(),
             },
         })
     }

@@ -3,7 +3,7 @@
 **Status:** v1.1.0 amendment to `2026-05-14-witness-consensus-promotion.md`. Extends the promotion payload from a scalar cardinality threshold to a multi-dimensional consensus vector. Backwards-compatible with v1.0.0 mementos.
 
 **Date:** 2026-05-14
-**Related:** `2026-05-14-witness-consensus-promotion.md` (v1.0.0 baseline), `2026-05-13-compound-contract-memento.md`, `project_provekit_honesty_gradient.md` (#856).
+**Related:** `2026-05-14-witness-consensus-promotion.md` (v1.0.0 baseline), `2026-05-13-compound-contract-memento.md`, `project_sugar_honesty_gradient.md` (#856).
 
 ## Motivation
 
@@ -125,7 +125,7 @@ Verifier policies are content-addressed mementos. A policy names per-axis thresh
 
 A `PromotionDecisionMemento.header.policy_cid` points at the `ConsensusPolicyMemento` that admitted the promotion. The audit trail is intact: the policy is signed, the policy's thresholds are content-addressed, the promotion cites both.
 
-`ConsensusPolicyRegistry` (libprovekit, per #856 admissibility rule) parses these policies, validates `predicate` syntax against a small named grammar (`n>=N` / `unique_X>=N` / `X<=N` / boolean compositions), indexes by `policy_cid`, refuses malformed.
+`ConsensusPolicyRegistry` (libsugar, per #856 admissibility rule) parses these policies, validates `predicate` syntax against a small named grammar (`n>=N` / `unique_X>=N` / `X<=N` / boolean compositions), indexes by `policy_cid`, refuses malformed.
 
 ### Policy composition
 

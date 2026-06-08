@@ -1,16 +1,16 @@
 # D7-v1 Value::null source round-trip receipt
 
 Scope: one production function only.
-Target crate: provekit-canonicalizer.
+Target crate: sugar-canonicalizer.
 Target function: impl Value::null.
-Source path: implementations/rust/provekit-canonicalizer/src/value.rs.
+Source path: implementations/rust/sugar-canonicalizer/src/value.rs.
 
 D7-v0 proved that this fixture round-trips byte-identically at the ProofIR layer.
 D7-v1 measures the next layer only.
 The measured equation is:
 rustfmt(realize_rust(local_cid_fixture_check(fixture))) == rustfmt(original_source)
 
-The fixture is implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json.
+The fixture is implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json.
 The fixture CID is blake3-512:f78e468e6f80e305c8abb4f1b5ccbe54cdea54bf3d5104a63970be8500f7f0a5e7a467fa2cf3bcd2894502ff045c4aede5dbc83f3b76d5818a0aeb2fcacaca3e.
 The bridge resolves the term as return(call:new(literal("new"), literal(["Null"]))).
 The resolved root sort is Stmt.
@@ -34,11 +34,11 @@ concept_name: return, recovered from the resolved root op CID.
 mode: null.
 
 The library call was:
-provekit_realize_rust_core::emit_stub_with_mode("null", &[], &[], "Arc < Value >", "return", None)
+sugar_realize_rust_core::emit_stub_with_mode("null", &[], &[], "Arc < Value >", "return", None)
 
 The regenerated source before rustfmt was:
 pub fn null() -> Arc < Value > {
-    panic!("provekit-bind canonical: return")
+    panic!("sugar-bind canonical: return")
 }
 
 The original source slice was extracted from value.rs as just the method definition.

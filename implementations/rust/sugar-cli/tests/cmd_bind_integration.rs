@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 
 use libsugar::core::{named_term_document_from_bind_payload, Term};
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -15,7 +15,7 @@ fn term_document() -> &'static [u8] {
     br#"{
   "kind": "ir-document",
   "sourceLanguage": "rust",
-  "workspaceRoot": "/tmp/provekit-bind-test",
+  "workspaceRoot": "/tmp/sugar-bind-test",
   "ir": [{
     "kind": "bind-lift-entry",
     "file": "src/lib.rs",
@@ -42,7 +42,7 @@ fn witnessless_add_term_document() -> &'static [u8] {
     br#"{
   "kind": "ir-document",
   "sourceLanguage": "rust",
-  "workspaceRoot": "/tmp/provekit-bind-test",
+  "workspaceRoot": "/tmp/sugar-bind-test",
   "ir": [{
     "kind": "bind-lift-entry",
     "file": "src/lib.rs",
@@ -64,7 +64,7 @@ fn cluster_cardinality_term_document() -> &'static [u8] {
     br#"{
   "kind": "ir-document",
   "sourceLanguage": "rust",
-  "workspaceRoot": "/tmp/provekit-bind-test",
+  "workspaceRoot": "/tmp/sugar-bind-test",
   "ir": [{
     "kind": "bind-lift-entry",
     "file": "src/lib.rs",
@@ -119,7 +119,7 @@ fn assert_success(label: &str, output: &std::process::Output) {
 
 #[test]
 fn bind_from_stdin_emits_named_term_document_without_promotion() {
-    let mut child = Command::new(provekit_bin())
+    let mut child = Command::new(sugar_bin())
         .arg("bind")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -165,7 +165,7 @@ fn bind_from_stdin_emits_named_term_document_without_promotion() {
 
 #[test]
 fn bind_from_stdin_emits_candidate_cluster_manifest() {
-    let mut child = Command::new(provekit_bin())
+    let mut child = Command::new(sugar_bin())
         .arg("bind")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -212,7 +212,7 @@ fn bind_file_and_pipe_forms_are_byte_equivalent() {
     let named = temp.path().join("named.json");
     fs::write(&term, term_document()).expect("write term");
 
-    let file = Command::new(provekit_bin())
+    let file = Command::new(sugar_bin())
         .arg("bind")
         .arg(&term)
         .arg("-o")
@@ -222,7 +222,7 @@ fn bind_file_and_pipe_forms_are_byte_equivalent() {
     assert_success("bind file", &file);
     let file_bytes = fs::read(&named).expect("read named file");
 
-    let mut child = Command::new(provekit_bin())
+    let mut child = Command::new(sugar_bin())
         .arg("bind")
         .arg("-")
         .stdin(Stdio::piped())
@@ -244,7 +244,7 @@ fn bind_file_and_pipe_forms_are_byte_equivalent() {
 
 #[test]
 fn bind_cli_emits_wp_rule_refusal_gap() {
-    let mut child = Command::new(provekit_bin())
+    let mut child = Command::new(sugar_bin())
         .arg("bind")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

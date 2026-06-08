@@ -1,17 +1,17 @@
-# ProvekIt: architectural notes for a rewrite from scratch
+# Sugar: architectural notes for a rewrite from scratch
 
 **Scope.** Hypothetical: same TypeScript + Drizzle + Claude Code stack,
 but starting from an empty repository with everything we know now.
 What would the architecture look like that we'd build today vs. the
 one that accreted incrementally?
 
-**Context.** ProvekIt's architectural lineage is hash-as-trust-anchor
+**Context.** Sugar's architectural lineage is hash-as-trust-anchor
 applied across 30 years: Xdrive (1995, content-addressable dedup) →
 Digital Confetti (1998, swarmed delivery + per-byte crediting) →
 BitTorrent (.torrent shape via direct suggestion to Cohen) → eDonkey
 fork for MST3K DAP (Kevlar's authored fork, still running 20+ years
 later) → Apache JCS contribution (iFilm era, distributed cache regions)
-→ Feathercoin (genesis fingerprint) → ProvekIt. ProvekIt is the third
+→ Feathercoin (genesis fingerprint) → Sugar. Sugar is the third
 major application of the same primitive that produced BitTorrent and
 Bitcoin — applied to software correctness instead of file distribution
 or transaction integrity. This document is what the codebase would
@@ -56,10 +56,10 @@ priority order (1 is the highest-leverage):
 
 ### 1. Swarm-distributable corpus
 
-**Today.** The corpus is flat JSON files in `.provekit/invariants/`,
+**Today.** The corpus is flat JSON files in `.sugar/invariants/`,
 local to each project. Sharing principles across projects = copy-paste.
 A team importing a "starter pack" of invariants from another
-ProvekIt-using codebase has no architectural path other than file copy.
+Sugar-using codebase has no architectural path other than file copy.
 
 **From scratch.** The corpus is a content-addressable Merkle DAG.
 Each invariant is a DAG node with a content hash. The corpus has a
@@ -69,10 +69,10 @@ claims. Two codebases can compare correctness by exchanging root hashes.
 
 **Why this is the highest-leverage move.** The architectural lineage
 (BitTorrent, Bitcoin) is fundamentally about *network artifacts that
-compound across users*. ProvekIt today ships content-addressable
+compound across users*. Sugar today ships content-addressable
 observations but distributes them as local files. Without
-swarm-distribution, ProvekIt is "BitTorrent-shape locally"; with it,
-ProvekIt is "BitTorrent for correctness" full stop. The corpus
+swarm-distribution, Sugar is "BitTorrent-shape locally"; with it,
+Sugar is "BitTorrent for correctness" full stop. The corpus
 becomes a network asset, not a local one, and the framework's value
 compounds across teams the same way BitTorrent's value compounded
 across users.
@@ -122,9 +122,9 @@ self-contained.
 
 ### 3. Content-addressable substrate
 
-**Today.** `.provekit/provekit.db` rebuilds from source via
+**Today.** `.sugar/sugar.db` rebuilds from source via
 `analyze` (mechanical, 611 files / 770k AST nodes / ~5 minutes for
-ProvekIt). Incremental indexing is limited; the substrate is a
+Sugar). Incremental indexing is limited; the substrate is a
 project-level database, not per-file.
 
 **From scratch.** Every AST node has an ID derived from its content
@@ -159,12 +159,12 @@ boundaries between them aren't clean.
 are parameterizations:
 
 ```
-provekit prove                        — interactive intent → full pipeline
-provekit prove --retrospective <ref>  — replaces mine-history
-provekit prove --no-patch             — replaces verify
-provekit prove --substrate-only       — replaces analyze
-provekit prove --principle-mode       — replaces lint
-provekit prove --inspect              — replaces invariants list
+sugar prove                        — interactive intent → full pipeline
+sugar prove --retrospective <ref>  — replaces mine-history
+sugar prove --no-patch             — replaces verify
+sugar prove --substrate-only       — replaces analyze
+sugar prove --principle-mode       — replaces lint
+sugar prove --inspect              — replaces invariants list
 ```
 
 Same orchestrator, different parameterizations. The CLI surface
@@ -178,7 +178,7 @@ designed first.
 ### 5. All telemetry content-addressable
 
 **Today.** bp's invocation IDs and revision IDs are content-addressable.
-But: fix-loop log files (`.provekit/fix-loop-*.log`) are timestamp-named.
+But: fix-loop log files (`.sugar/fix-loop-*.log`) are timestamp-named.
 Audit trails inside FixLoopResult are in-memory arrays. Substrate
 build artifacts are file-based. The audit trail across a run is
 fragmented across 4+ surfaces.
@@ -239,9 +239,9 @@ right; they're just buried under accretion.
 
 The exception is **#1 (swarm-distributable corpus)**, which is a
 genuine missing piece — the closing of the architectural lineage.
-ProvekIt today applies the hash-trust primitive locally; the move to
+Sugar today applies the hash-trust primitive locally; the move to
 swarm distribution is what makes it the third major application of
-the BitTorrent → Bitcoin → ProvekIt arc, not just the third local
+the BitTorrent → Bitcoin → Sugar arc, not just the third local
 implementation.
 
 ---
@@ -251,7 +251,7 @@ implementation.
 If forced to pick the single highest-leverage architectural change
 from this list to retrofit into the existing codebase: **#1, the
 swarm-distributable corpus.** Everything else is internal cleanup
-that doesn't change what ProvekIt *is*. #1 changes what ProvekIt is.
+that doesn't change what Sugar *is*. #1 changes what Sugar is.
 
 ---
 

@@ -91,7 +91,7 @@ A complete pipeline:
 in-toto step "fetch": fetched source from git@... at hash X.
 in-toto step "build": ran cargo build in env Y, produced artifact Z.
 in-toto step "test": ran cargo test, all pass.
-in-toto step "verify": ran provekit prove, discharge fraction 0.91.
+in-toto step "verify": ran sugar prove, discharge fraction 0.91.
 in-toto step "sign": signed with key K.
 in-toto step "publish": published to crates.io.
 ```

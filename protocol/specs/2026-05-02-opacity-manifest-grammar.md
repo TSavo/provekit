@@ -67,7 +67,7 @@ FreeformReason ::= String   // arbitrary; documents the reason for tooling
 |-------|------|----------|---------|
 | `protocolVersion` | string | yes | MUST be the literal `"ir-compiler-protocol/2"`. Tags the manifest with the contract that produced it. A v1.5.0 manifest will use a different tag. |
 | `compiler` | string | yes | The compiler's dialect identifier from the IR-compiler dialect registry, e.g. `"smt-lib-v2.6"`, `"gallina"`, `"lean-tactic-mode"`. Identifies which compiler emitted the manifest, not which solver consumes it. |
-| `compilerVersion` | string | yes | The compiler implementation's version, surfaced in mementos and reports for provenance. SHOULD match the `version` field returned by `provekit.ir.handshake`. |
+| `compilerVersion` | string | yes | The compiler implementation's version, surfaced in mementos and reports for provenance. SHOULD match the `version` field returned by `sugar.ir.handshake`. |
 | `opacities` | array | yes | Possibly-empty list of `Opacity` records. Empty `opacities: []` is the byte-shape for "this compiler translated every position soundly." |
 
 `Opacity.positionCid` is the BLAKE3-512 of the JCS-canonical bytes of the opaque IR subterm; see §3. `Opacity.reasonCode` is one of the closed-enum strings in §4 or an `other:<freeform>` extension code.
@@ -252,7 +252,7 @@ The manifest is a soundness mechanism for *position-level* opacity. It does not 
 
 This spec is satisfied by:
 
-- A reference Rust implementation in `implementations/rust/provekit-opacity-manifest/` (v1.4.0).
+- A reference Rust implementation in `implementations/rust/sugar-opacity-manifest/` (v1.4.0).
 - The byte-fixture suite at `tests/opacity-manifest-fixtures/`.
 - A conformance test that the SMT-LIB v2.6 compiler emits the manifest expected by §8.1 byte-for-byte on the §8 input.
 - Cross-language conformance (when a second-language port lands): both languages produce identical manifest bytes for every fixture.

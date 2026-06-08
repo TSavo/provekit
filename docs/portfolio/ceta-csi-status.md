@@ -35,8 +35,8 @@ UIBK reorganised under `www.uibk.ac.at/en/informatikcl/`. The CMS path exists bu
 |---|---|
 | Wayback Machine / archive.org | Zero snapshots of either tarball URL |
 | Software Heritage | Origin URL not found in archive |
-| GitHub search: `ceta-2.46-linux-x86_64` | Only result: this repo (`TSavo/provekit`) |
-| GitHub search: `csi-1.2.7-linux` | Only result: this repo (`TSavo/provekit`) |
+| GitHub search: `ceta-2.46-linux-x86_64` | Only result: this repo (`TSavo/sugar`) |
+| GitHub search: `csi-1.2.7-linux` | Only result: this repo (`TSavo/sugar`) |
 | GitHub: `ceta-trs/ceta`, `hezzel/csi`, `IsaFoR-CeTA/ceta` | All 404 |
 | NixOS packages | No `ceta` or `csi` package in nixpkgs |
 | SourceForge | 404 |
@@ -99,6 +99,6 @@ Constraints that make this unsuitable for the Dockerfile today:
 - Output binary is SML via `isabelle process`; the generated `ceta` binary is not standalone without the Isabelle ML runtime.
 - Total image size increase: ~6 GB.
 
-If the gate becomes critical path, revisit with a separate pre-built `provekit-ceta-builder` image that caches the generated binary as a layer artifact.
+If the gate becomes critical path, revisit with a separate pre-built `sugar-ceta-builder` image that caches the generated binary as a layer artifact.
 
 Sign-off: T Savo

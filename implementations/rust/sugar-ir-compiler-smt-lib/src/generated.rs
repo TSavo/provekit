@@ -5,7 +5,7 @@
 // HAND-MAINTAINED for a long time (see git log -- every SMT-encoding fix is a
 // manual edit; there is NO active generator that writes this file). The CDDL
 // generator `tools/generate-from-cddl.py` emits the IR *type* definitions
-// (`provekit-ir-types`) and a JSON Document emitter -- NOT this SMT-LIB
+// (`sugar-ir-types`) and a JSON Document emitter -- NOT this SMT-LIB
 // compiler. The label is vestigial.
 //
 // CLOBBER-PROOFING: to be safe against a hypothetical future regeneration, the
@@ -286,7 +286,7 @@ pub fn emit_formula(formula: &Formula) -> String {
         // `substitute` / `apply` appear only inside an unreduced `wp_rule`
         // term and are eliminated by `libsugar::wp` before any solver
         // or compiler backend sees the formula. Reaching this arm is a bug.
-        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        // TODO(wp-as-formula PR1+): teach sugar-ir-codegen to emit this arm.
         Formula::Substitute { .. } | Formula::Apply { .. } => {
             unreachable!(
                 "wp-rule schema node reached the SMT-LIB formula emitter; \
@@ -493,7 +493,7 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
         }
         // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
         // see the note in `emit_formula`.
-        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        // TODO(wp-as-formula PR1+): teach sugar-ir-codegen to emit this arm.
         Formula::Substitute { .. } | Formula::Apply { .. } => {
             unreachable!(
                 "wp-rule schema node reached the SMT-LIB opacity emitter; \
@@ -606,7 +606,7 @@ pub fn collect_free_vars_formula(
         }
         // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
         // see the note in `emit_formula`.
-        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        // TODO(wp-as-formula PR1+): teach sugar-ir-codegen to emit this arm.
         Formula::Substitute { .. } | Formula::Apply { .. } => {
             unreachable!(
                 "wp-rule schema node reached the SMT-LIB free-var collector; \
@@ -758,7 +758,7 @@ fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, Ctor
         }
         // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
         // see the note in `emit_formula`.
-        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        // TODO(wp-as-formula PR1+): teach sugar-ir-codegen to emit this arm.
         Formula::Substitute { .. } | Formula::Apply { .. } => {
             unreachable!(
                 "wp-rule schema node reached the SMT-LIB ctor-decl collector; \
@@ -778,7 +778,7 @@ fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, Ctor
 /// `is_builtin_atomic_predicate` (which covers boolean-position builtins).
 ///
 /// The set is `+ - *`: the exact arithmetic operators the verifier's solver
-/// dispatcher (`provekit-verifier/src/solvers/dispatch.rs`) classifies as
+/// dispatcher (`sugar-verifier/src/solvers/dispatch.rs`) classifies as
 /// linear-arithmetic. A Java/Go/... lifter lowers `x * 2` to `ctor("*", ...)`,
 /// so without this guard the honesty-layer ctor-declaration pass emitted
 /// `(declare-fun * (Int Int) Int)`, shadowing the theory and turning a proven
@@ -1133,7 +1133,7 @@ fn has_outlives_predicate(formula: &Formula) -> bool {
         Formula::Choice { body, .. } => has_outlives_predicate(body),
         // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
         // see the note in `emit_formula`.
-        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        // TODO(wp-as-formula PR1+): teach sugar-ir-codegen to emit this arm.
         Formula::Substitute { target, .. } => has_outlives_predicate(target),
         Formula::Apply { args, .. } => args.iter().any(has_outlives_predicate),
         Formula::DivergenceBetween { source, target } => {

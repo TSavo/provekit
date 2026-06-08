@@ -61,33 +61,33 @@ This is why the IR-as-typed-TS-subset matters. LLM #2 is dumb; if the IR were a 
 
 ## 3. File Anchoring
 
-**All invariant declarations MUST live in `.invariant.ts` files.** The lifter REJECTS `provekit.property` calls discovered in any other file. This is mechanical enforcement of constraint-by-design.
+**All invariant declarations MUST live in `.invariant.ts` files.** The lifter REJECTS `sugar.property` calls discovered in any other file. This is mechanical enforcement of constraint-by-design.
 
 **Why mechanical, not convention:**
 
-The whole framework value hinges on production code remaining bit-identical to whatever it was before ProvekIt arrived. A 40-year-old COBOL banking system, a Rust kernel module, a Java microservice — none of them can be modified to gain verification. Modifying the artifact under verification IS the invalidation. The audit trail breaks; the compliance posture voids; the whole thesis collapses.
+The whole framework value hinges on production code remaining bit-identical to whatever it was before Sugar arrived. A 40-year-old COBOL banking system, a Rust kernel module, a Java microservice — none of them can be modified to gain verification. Modifying the artifact under verification IS the invalidation. The audit trail breaks; the compliance posture voids; the whole thesis collapses.
 
-A "convention" that invariants SHOULD live in dedicated files but MAY live inline is not enforcement. The first time an LLM (or a hurried developer) drops `provekit.property(...)` into `invoice.ts`, the codebase has crossed the line from constraint-by-design to contract-by-design. The lifter cannot allow this transition. It must reject it at compile time.
+A "convention" that invariants SHOULD live in dedicated files but MAY live inline is not enforcement. The first time an LLM (or a hurried developer) drops `sugar.property(...)` into `invoice.ts`, the codebase has crossed the line from constraint-by-design to contract-by-design. The lifter cannot allow this transition. It must reject it at compile time.
 
 **The rule:**
 
 ```
 For each .ts file F:
   If F's name matches *.invariant.ts:
-    Lift `provekit.property` calls in F.
+    Lift `sugar.property` calls in F.
   Else:
-    If F contains `provekit.property` calls:
+    If F contains `sugar.property` calls:
       Emit diagnostic at the call site:
-        "provekit.property may only appear in .invariant.ts files.
+        "sugar.property may only appear in .invariant.ts files.
          Move this declaration to <co-located>.invariant.ts."
       Halt the lift.
 ```
 
 **File-pairing convention:**
 
-Invariants for `src/billing/invoice.ts` live in `src/billing/invoice.invariant.ts`. The convention is co-location at the directory level — same directory, sibling file, `.invariant.ts` suffix. The lifter doesn't enforce co-location; an `invariants/` subdirectory is fine. The only enforcement is "no `provekit.property` calls outside `*.invariant.ts` files."
+Invariants for `src/billing/invoice.ts` live in `src/billing/invoice.invariant.ts`. The convention is co-location at the directory level — same directory, sibling file, `.invariant.ts` suffix. The lifter doesn't enforce co-location; an `invariants/` subdirectory is fine. The only enforcement is "no `sugar.property` calls outside `*.invariant.ts` files."
 
-**Production code never imports provekit.** The dependency direction is one-way: invariant files import production-code symbols. Production-code files do NOT import invariant-file symbols. Removing every `.invariant.ts` file leaves a project that's bit-identical to what it was before ProvekIt adoption. This is the architectural property the framework's value depends on.
+**Production code never imports sugar.** The dependency direction is one-way: invariant files import production-code symbols. Production-code files do NOT import invariant-file symbols. Removing every `.invariant.ts` file leaves a project that's bit-identical to what it was before Sugar adoption. This is the architectural property the framework's value depends on.
 
 **Worked example (good):**
 
@@ -104,7 +104,7 @@ export function calculateTotal(items: LineItem[]): number {
 // src/billing/invoice.invariant.ts — pure metadata, references the function
 import { calculateTotal } from './invoice';
 import type { LineItem } from './types';
-import { property, forAll } from 'provekit/ir';
+import { property, forAll } from 'sugar/ir';
 
 property("totalIsNonNegative",
   forAll<LineItem[]>(items => calculateTotal(items) >= 0)
@@ -115,7 +115,7 @@ property("totalIsNonNegative",
 
 ```ts
 // src/billing/invoice.ts — DON'T DO THIS
-import { property } from 'provekit/ir';
+import { property } from 'sugar/ir';
 
 export function calculateTotal(items: LineItem[]): number {
   return items.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -124,7 +124,7 @@ export function calculateTotal(items: LineItem[]): number {
 property("totalIsNonNegative",
   forAll<LineItem[]>(items => calculateTotal(items) >= 0)
 );
-// LIFTER ERROR: provekit.property may only appear in .invariant.ts files.
+// LIFTER ERROR: sugar.property may only appear in .invariant.ts files.
 //               Move this declaration to invoice.invariant.ts.
 ```
 
@@ -135,8 +135,8 @@ property("totalIsNonNegative",
 **Native array-method form:**
 
 ```ts
-import type { Int } from 'provekit/sorts';
-import { property } from 'provekit/ir';
+import type { Int } from 'sugar/sorts';
+import { property } from 'sugar/ir';
 
 property("allPositive",
   (xs: Int[]) => xs.every(x => x > 0)
@@ -152,7 +152,7 @@ The lifter recognizes `.every` on a sort-typed array as universal quantification
 **Builder form:**
 
 ```ts
-import { property, forAll, exists, Int } from 'provekit/ir';
+import { property, forAll, exists, Int } from 'sugar/ir';
 
 property("allPositive",
   forAll<Int>(x => x > 0)
@@ -188,7 +188,7 @@ Quantifier nesting is unrestricted at v1. The canonicalizer flattens consecutive
 **Primitive sorts** (kit-provided as branded types):
 
 ```ts
-// In provekit/sorts (kit-supplied for the TS kit)
+// In sugar/sorts (kit-supplied for the TS kit)
 export type Int = number & { readonly __sort: 'Int' };
 export type Real = number & { readonly __sort: 'Real' };
 export type Bool = boolean & { readonly __sort: 'Bool' };
@@ -207,7 +207,7 @@ export type Cents = number & { readonly __sort: 'Cents' };
 ```ts
 // In src/billing/invoice.invariant.ts
 import type { Cents } from './types';
-import { property, forAll } from 'provekit/ir';
+import { property, forAll } from 'sugar/ir';
 
 property("nonNegativeCents",
   forAll<Cents>(c => c >= 0)
@@ -218,7 +218,7 @@ The lifter discovers `Cents`'s `__sort` brand via `tsc`'s symbol resolution and 
 
 **Why brand types as sort markers:**
 
-The alternative is a runtime sort registry (`const Cents = sort("Cents")`). That requires the production code to import provekit, violating the constraint-by-design rule. Brand types are zero-runtime — they exist only in the type system — and `tsc` resolves them at lift time. The lifter never needs the production code to know about provekit.
+The alternative is a runtime sort registry (`const Cents = sort("Cents")`). That requires the production code to import sugar, violating the constraint-by-design rule. Brand types are zero-runtime — they exist only in the type system — and `tsc` resolves them at lift time. The lifter never needs the production code to know about sugar.
 
 **Lambda body type-checks against the sort:**
 
@@ -263,14 +263,14 @@ If a construct breaks any of these, it's out for v1.
 
 **Quantifiers:**
 - `xs.every(x => P(x))`, `xs.some(x => P(x))` on sort-typed receivers
-- `forAll<T>(x => P(x))`, `exists<T>(x => P(x))` from `provekit/ir`
+- `forAll<T>(x => P(x))`, `exists<T>(x => P(x))` from `sugar/ir`
 
 **References:**
 - Lambda parameters
 - Member access on lambda parameters: `x.field`, `x.field.nested`
 - Optional member access: `x?.field`
 - Imports of production-code symbols (functions, types, constants)
-- Imports of provekit IR builders (`property`, `forAll`, `exists`, `implies`, `iff`, etc.)
+- Imports of sugar IR builders (`property`, `forAll`, `exists`, `implies`, `iff`, etc.)
 
 **Function calls:**
 - Calls into the kit's pure-function registry (e.g., `Math.abs(x)`, `parseInt(s)`)
@@ -373,7 +373,7 @@ Allowed if the called function is registry-listed and the kit supplies a symboli
 
 ## 7. Property Anchoring API
 
-**The exported API from `provekit/ir`:**
+**The exported API from `sugar/ir`:**
 
 ```ts
 // Core property declaration
@@ -394,11 +394,11 @@ export function implies(antecedent: boolean, consequent: boolean): boolean;
 export function iff(left: boolean, right: boolean): boolean;
 ```
 
-**All of these are no-ops at runtime.** Their bodies throw a sentinel error "provekit IR builder called at runtime — should be lifted, not executed" if invoked outside the lifter. The bundler tree-shakes them out of production builds; they exist only as type-level + AST-level metadata.
+**All of these are no-ops at runtime.** Their bodies throw a sentinel error "sugar IR builder called at runtime — should be lifted, not executed" if invoked outside the lifter. The bundler tree-shakes them out of production builds; they exist only as type-level + AST-level metadata.
 
 **`property` vs `assert`:**
 
-- `property("name", ...)` — named, queryable via `provekit list-properties`, addressable for memento storage. Use this for invariants you want explicit.
+- `property("name", ...)` — named, queryable via `sugar list-properties`, addressable for memento storage. Use this for invariants you want explicit.
 - `assert(...)` — anonymous, generated name from `<file>:<line>:<col>`. Use sparingly; the named form is generally preferred because the name is what shows up in counterexamples and audit trails.
 
 **Composition:**
@@ -410,7 +410,7 @@ Properties can compose by referencing each other through their named identifiers
 property("aIsNonNeg", forAll<Int>(x => x >= 0));
 
 // in b.invariant.ts
-import { ref } from 'provekit/ir';
+import { ref } from 'sugar/ir';
 property("bDependsOnA", ref("aIsNonNeg") && forAll<Int>(x => x + 1 > 0));
 ```
 
@@ -462,7 +462,7 @@ function liftProject(project: TsProject): IrFormulaSet {
   for (const file of project.files()) {
     if (!file.path.endsWith('.invariant.ts')) {
       // Reject cross-anchoring violations (see §3)
-      assertNoProvekitProperty(file);
+      assertNoSugarProperty(file);
       continue;
     }
     for (const propertyCall of findPropertyCalls(file)) {
@@ -548,7 +548,7 @@ The lowerer emits invariants in the **builder form** (`forAll`, `exists`, `impli
 
 **Use cases:**
 
-- `provekit show <property-name>` displays the IR formula as TS source
+- `sugar show <property-name>` displays the IR formula as TS source
 - Cross-version migration: spec v1 → v2 may add new IR node types; the lowerer regenerates v1 mementos as v2 source so they can be re-lifted under the new spec
 - Debugging: counterexample reports show the lowered IR alongside the violated path
 
@@ -562,8 +562,8 @@ The lowerer is **not** for production authoring. Humans author in `.invariant.ts
 
 | Layer | Location | Author |
 |---|---|---|
-| Kit built-ins | `node_modules/provekit-ts/builtins/*.invariant.ts` | Framework, ships with the kit |
-| Third-party libraries | `<project>/.provekit/contracts/*.invariant.ts` | LLM-generated on-demand or hand-written |
+| Kit built-ins | `node_modules/sugar-ts/builtins/*.invariant.ts` | Framework, ships with the kit |
+| Third-party libraries | `<project>/.sugar/contracts/*.invariant.ts` | LLM-generated on-demand or hand-written |
 | User invariants | `<project>/src/**/*.invariant.ts` | User-authored or generated from intent |
 | Auto-generated from intent | `<project>/src/**/*.invariant.ts` (same as user) | LLM #2 at commit time |
 
@@ -580,9 +580,9 @@ The kit's built-in catalog is just constraint-by-design applied to the host lang
 The TS kit ships this file:
 
 ```ts
-// node_modules/provekit-ts/builtins/parseInt.invariant.ts
-import { property, forAll, exists, implies } from 'provekit/ir';
-import type { Int, StringSort } from 'provekit/sorts';
+// node_modules/sugar-ts/builtins/parseInt.invariant.ts
+import { property, forAll, exists, implies } from 'sugar/ir';
+import type { Int, StringSort } from 'sugar/sorts';
 
 // parseInt's possible return range: any Int including 0, plus NaN sentinel
 property("parseIntReturnsIntOrNaN",
@@ -626,9 +626,9 @@ The user imports `lodash`. Their code calls `_.shuffle(arr)`. The kit doesn't kn
 For v1, **strict** is the default. The LLM iteration loop produces a contract:
 
 ```ts
-// .provekit/contracts/lodash-shuffle.invariant.ts
+// .sugar/contracts/lodash-shuffle.invariant.ts
 import { shuffle } from 'lodash';
-import { property, forAll } from 'provekit/ir';
+import { property, forAll } from 'sugar/ir';
 
 property("shufflePreservesLength",
   forAll<unknown[]>(arr => shuffle(arr).length === arr.length)
@@ -708,7 +708,7 @@ The TS kit ships with a baseline registry covering:
 - All `Array.prototype` pure methods (`every`, `some`, `find`, `findIndex`, `includes`, `indexOf`, `length`, `at`, `slice`, `concat`, `flat`, `flatMap`, `map`, `filter`, `reduce`)
 - Bare globals: `parseInt`, `parseFloat`, `isNaN`, `isFinite`
 
-Kit-extension: project-specific registries can be loaded via `.provekit/registry.ts`. Same shape; merged at lift time.
+Kit-extension: project-specific registries can be loaded via `.sugar/registry.ts`. Same shape; merged at lift time.
 
 ## 12. Curry-Howard Alignment
 
@@ -758,8 +758,8 @@ The lifter is the SECOND gate: it enforces the IR subset. Together, type-checkin
 
 **The git commit IS the verification boundary.** Pre-commit hook runs:
 
-1. `provekit generate --staged --intent <commit-message>`
-2. `provekit prove`
+1. `sugar generate --staged --intent <commit-message>`
+2. `sugar prove`
 
 Both must pass for the commit to land.
 
@@ -771,22 +771,22 @@ Both must pass for the commit to land.
 - **The first gate the work has to pass through.** Build time is too late (the LLM has moved on). CI is too late (the broken state already exists in someone's branch). Git commit is the FIRST gate.
 - **Universal.** Every developer (human or LLM) commits. There is no developer workflow that skips commit.
 
-**`provekit init` installs the pre-commit hook:**
+**`sugar init` installs the pre-commit hook:**
 
 ```sh
-$ provekit init
+$ sugar init
 Installing pre-commit hook at .git/hooks/pre-commit...
-Done. Future commits will run `provekit generate` and `provekit prove`.
+Done. Future commits will run `sugar generate` and `sugar prove`.
 ```
 
 The hook script is one line:
 ```sh
 #!/bin/sh
-provekit generate --staged --intent "$(cat .git/COMMIT_EDITMSG 2>/dev/null || echo)" \
-  && provekit prove
+sugar generate --staged --intent "$(cat .git/COMMIT_EDITMSG 2>/dev/null || echo)" \
+  && sugar prove
 ```
 
-**`provekit generate`:**
+**`sugar generate`:**
 
 Synthesizes new invariants from a unit of work. Two flavors:
 
@@ -794,7 +794,7 @@ Synthesizes new invariants from a unit of work. Two flavors:
 
 - `--legacy <path>` (for retrospective adoption): reads the existing code at `<path>`, no diff. Optionally reads a human-supplied description. Invokes LLM #2 to generate invariants ABOUT the existing code. Writes to `<path-dir>.invariant.ts`. Stores mementos. The existing code is NEVER modified.
 
-**`provekit prove`:**
+**`sugar prove`:**
 
 Verifies the codebase against all existing invariants. Read-only operation:
 
@@ -815,7 +815,7 @@ Verifies the codebase against all existing invariants. Read-only operation:
 
 **Bypass:**
 
-`git commit --no-verify` bypasses the hook. This is a deliberate, audited action. The commit lands without verification; the next `provekit prove` run (e.g., in CI) will catch any violations. The audit trail records that the commit was unverified.
+`git commit --no-verify` bypasses the hook. This is a deliberate, audited action. The commit lands without verification; the next `sugar prove` run (e.g., in CI) will catch any violations. The audit trail records that the commit was unverified.
 
 ## 14. Shadow AST Walking
 
@@ -850,7 +850,7 @@ export function divide(n: number, d: number): number {
 ```ts
 // src/math.invariant.ts (written in commit #42, never modified after)
 import { divide } from './math';
-import { property, forAll, implies } from 'provekit/ir';
+import { property, forAll, implies } from 'sugar/ir';
 
 property("divideRequiresNonZeroDenominator",
   forAll<Int>(n =>
@@ -928,7 +928,7 @@ The codebase has 1 invariant for `divide`'s entire history. The codebase's actua
 
 1. **Make the change.** Modify the production code. The LLM (or human) does this.
 2. **Write the test(s).** Pin the new behavior or prevent regression. The LLM (or human) does this.
-3. **Generate the invariants.** The framework does this at commit time, via `provekit generate`.
+3. **Generate the invariants.** The framework does this at commit time, via `sugar generate`.
 
 **Tests are the highest-value intent source:**
 
@@ -976,7 +976,7 @@ test('Feb 29, 2000 is a leap year (divisible by 400)', () => {
 
 User runs `git commit -m "fix off-by-one in leap year validator"`.
 
-Pre-commit hook fires `provekit generate --staged --intent "fix off-by-one in leap year validator"`.
+Pre-commit hook fires `sugar generate --staged --intent "fix off-by-one in leap year validator"`.
 
 LLM #2 receives:
 - Diff: the change to `isLeapYear`
@@ -988,7 +988,7 @@ LLM #2 synthesizes:
 ```ts
 // src/dates/validator.invariant.ts (generated)
 import { isLeapYear } from './validator';
-import { property, forAll, iff } from 'provekit/ir';
+import { property, forAll, iff } from 'sugar/ir';
 
 property("leapYearGregorianRule",
   forAll<Int>(year =>
@@ -1002,7 +1002,7 @@ property("leapYearGregorianRule",
 
 This invariant generalizes the test cases. It says: for any year, `isLeapYear` returns true if and only if the Gregorian leap-year rule is satisfied. The three test cases are point-instances of this universal claim.
 
-`provekit prove` verifies the diff against this invariant. Pass. Commit lands.
+`sugar prove` verifies the diff against this invariant. Pass. Commit lands.
 
 **A future commit attempts to "optimize" `isLeapYear`:**
 
@@ -1023,8 +1023,8 @@ Commit rejected. The "optimization" can't land. The original semantics are prese
 
 **The flow:**
 
-1. Existing code lives at `src/legacy/` (or anywhere). It has been in production for N years. It is bit-identical to whatever it was before ProvekIt arrived.
-2. `provekit generate --legacy src/legacy/ --intent "what does this code do (human description)"`
+1. Existing code lives at `src/legacy/` (or anywhere). It has been in production for N years. It is bit-identical to whatever it was before Sugar arrived.
+2. `sugar generate --legacy src/legacy/ --intent "what does this code do (human description)"`
 3. LLM #2 reads the existing code's AST and the human's description.
 4. LLM #2 generates invariants ABOUT the existing code: "the function returns a non-negative integer," "the function is deterministic in its inputs," "the function preserves the sort order of its array argument," etc.
 5. Generated invariants are written to `src/legacy/<file>.invariant.ts`.
@@ -1036,7 +1036,7 @@ Commit rejected. The "optimization" can't land. The original semantics are prese
 
 A 40-year-old COBOL banking system has been running in production for decades. The audit trail spans every line. Modifying the COBOL — even adding a comment — changes the artifact's hash, breaks audit chains, triggers re-certification. In regulated industries this can void compliance posture entirely.
 
-ProvekIt's retrospective flow works on this artifact untouched. Invariants are written in `*.invariant.cobol` files (per-language-kit-standard-compliant). The existing COBOL stays bit-identical. Accumulated invariants tighten the envelope around the legacy artifact without ever modifying it.
+Sugar's retrospective flow works on this artifact untouched. Invariants are written in `*.invariant.cobol` files (per-language-kit-standard-compliant). The existing COBOL stays bit-identical. Accumulated invariants tighten the envelope around the legacy artifact without ever modifying it.
 
 Same architecture for Rust, Java, Python, anywhere. The kit's lifter handles the host language; the constraint files are external; the existing artifact is preserved.
 
@@ -1071,18 +1071,18 @@ The following are out of scope for v1:
 - **Subtype reasoning.** Implicit `Int → Real` via subsort declaration in the IR library.
 - **Approximate equality.** `approxEq(a, b, epsilon)` builder for floating-point invariants.
 - **Cross-file composition by directory convention.** Auto-apply `dir/.invariant.ts` to all production code in `dir/`.
-- **External invariant libraries.** Importable invariant packages (e.g., `provekit-invariants-finance`).
+- **External invariant libraries.** Importable invariant packages (e.g., `sugar-invariants-finance`).
 - **IDE integration.** LSP-level "show me invariants for this function" hovers, "verify this change" code lens, "generate invariants" code action.
 - **Counterexample-driven test generation.** Prove fails → automatically generate a regression test from the counterexample.
 
 ## 19. Verification of This Spec Itself
 
-**This spec is itself a candidate for self-application.** When ProvekIt is dogfooded against its own implementation:
+**This spec is itself a candidate for self-application.** When Sugar is dogfooded against its own implementation:
 
 - The lifter implementation in `src/ir/lift/` becomes a unit of work.
 - The lifter's tests in `src/ir/lift/*.test.ts` become the existential intent.
-- ProvekIt's own `provekit generate` produces invariants about the lifter (e.g., "the lifter's output IR validates against the canonicalizer's IrFormula type," "the lifter rejects all OUT-list constructs").
-- ProvekIt's own `provekit prove` verifies the lifter against those invariants.
+- Sugar's own `sugar generate` produces invariants about the lifter (e.g., "the lifter's output IR validates against the canonicalizer's IrFormula type," "the lifter rejects all OUT-list constructs").
+- Sugar's own `sugar prove` verifies the lifter against those invariants.
 
 The framework verifies itself. The verification of the verifier is the strongest form of dogfooding the architecture supports.
 
@@ -1100,8 +1100,8 @@ export function hypotenuse(a: number, b: number): number {
 ```ts
 // src/geometry/triangle.invariant.ts
 import { hypotenuse } from './triangle';
-import { property, forAll, implies } from 'provekit/ir';
-import type { Real } from 'provekit/sorts';
+import { property, forAll, implies } from 'sugar/ir';
+import type { Real } from 'sugar/sorts';
 
 property("hypotenusePythagorean",
   forAll<Real>(a =>
@@ -1143,8 +1143,8 @@ export function sortAsc(xs: number[]): number[] {
 ```ts
 // src/util/sortable.invariant.ts
 import { sortAsc } from './sortable';
-import { property, forAll, implies } from 'provekit/ir';
-import type { Real } from 'provekit/sorts';
+import { property, forAll, implies } from 'sugar/ir';
+import type { Real } from 'sugar/sorts';
 
 property("sortAscMonotonic",
   forAll<Real[]>(xs =>
@@ -1175,8 +1175,8 @@ export function isValidEmail(s: string): boolean {
 ```ts
 // src/auth/email.invariant.ts
 import { isValidEmail } from './email';
-import { property, forAll, implies } from 'provekit/ir';
-import type { StringSort } from 'provekit/sorts';
+import { property, forAll, implies } from 'sugar/ir';
+import type { StringSort } from 'sugar/sorts';
 
 property("validEmailContainsAt",
   forAll<StringSort>(s =>
@@ -1228,7 +1228,7 @@ args ::= ε | atomic | atomic, args
 The framework invokes LLM #2 with this template at commit time. Variables in `{{}}` are substituted at runtime.
 
 ```
-You are writing invariants for a TypeScript codebase using the ProvekIt framework.
+You are writing invariants for a TypeScript codebase using the Sugar framework.
 
 Below is a code diff. Below that is the test code added or modified in the same
 diff. Below that is a description of the developer's intent for this change.
@@ -1278,7 +1278,7 @@ Forbidden (compile-time error):
 {{file_paths_for_invariant_files}}
 
 Output the .invariant.ts source. Use the API:
-  import { property, forAll, exists, implies, iff } from 'provekit/ir';
+  import { property, forAll, exists, implies, iff } from 'sugar/ir';
   property("name", formula);
 ```
 

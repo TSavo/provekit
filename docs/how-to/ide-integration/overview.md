@@ -4,18 +4,18 @@ Sugar LSP plugins shipping today:
 
 | Kit | Plugin | Status |
 |---|---|---|
-| Rust | `provekit-lsp-rust` | shipping in the current v1.6.2 tree |
-| Python | `provekit-lsp-py` | shipping in the current v1.6.2 tree |
-| Zig | `provekit-lift-zig --rpc` | shipping in the current v1.6.2 tree |
-| Ruby | `provekit-lsp-ruby` | shipping in the current v1.6.2 tree |
-| C# | `Provekit.Lsp.Plugin` | shipping in the current v1.6.2 tree |
+| Rust | `sugar-lsp-rust` | shipping in the current v1.6.2 tree |
+| Python | `sugar-lsp-py` | shipping in the current v1.6.2 tree |
+| Zig | `sugar-lift-zig --rpc` | shipping in the current v1.6.2 tree |
+| Ruby | `sugar-lsp-ruby` | shipping in the current v1.6.2 tree |
+| C# | `Sugar.Lsp.Plugin` | shipping in the current v1.6.2 tree |
 | TypeScript | | planned |
 | Go | | planned |
 | C++ | | planned |
 | Java / JVM | | planned |
 | Swift | | planned |
 
-If your kit is not in the shipping list, the in-editor squigglies are not yet available. The CLI loop (`cargo provekit-lift && provekit prove`) still works.
+If your kit is not in the shipping list, the in-editor squigglies are not yet available. The CLI loop (`cargo sugar-lift && sugar prove`) still works.
 
 ## What an LSP plugin does
 
@@ -51,12 +51,12 @@ After installation:
 1. Open a file with annotations the kit recognizes (e.g., a Rust file with `proptest!` blocks, a Python file with `pydantic.BaseModel`, etc.).
 2. Wait briefly for the LSP to parse.
 3. The editor's diagnostic display should show Sugar as a diagnostic source.
-4. If a contract is unmet (e.g., `@Min(0)` is violated by a constant `-1`), the editor should display a red squiggle with a message including `provekit`.
+4. If a contract is unmet (e.g., `@Min(0)` is violated by a constant `-1`), the editor should display a red squiggle with a message including `sugar`.
 
 If no squigglies appear:
 
 - The LSP plugin's binary may not be on the PATH that the editor is using.
-- The kit's protocol catalog CID may not match the install (run `provekit verify-protocol` to check).
+- The kit's protocol catalog CID may not match the install (run `sugar verify-protocol` to check).
 - The LSP plugin's process may have crashed; check the editor's LSP log.
 - The annotation library you're using may not have a shipping lift adapter.
 
@@ -71,8 +71,8 @@ Sugar diagnostics use:
   - `warning`: contract requires Tier 3 (Z3 fallback) and didn't discharge in the LSP timeout.
   - `information`: lifted contract; no violation.
   - `hint`: suggestion (e.g., "consider adding `@NotNull` to align with caller's contract").
-- **Source:** always `"provekit"`. Filter by source for "show only Sugar issues."
-- **Code:** stable error code, e.g., `PROVEKIT_E001`. See [`../../reference/error-codes.md`](../../reference/error-codes.md).
+- **Source:** always `"sugar"`. Filter by source for "show only Sugar issues."
+- **Code:** stable error code, e.g., `SUGAR_E001`. See [`../../reference/error-codes.md`](../../reference/error-codes.md).
 - **Message:** human-readable. Includes the contract that was violated and (where possible) the source-library annotation that gave rise to the contract.
 
 Quick fixes (LSP `codeAction`) are forwards-looking; not all kits ship them yet. When they do, common patterns:
@@ -92,7 +92,7 @@ If your LSP is consistently slower than this, one of:
 - The LSP plugin process is bottlenecked on Tier 3 fallback (Z3 invocations).
 - There's a bug; file an issue.
 
-Performance tuning options live in `provekit.config.yaml`:
+Performance tuning options live in `sugar.config.yaml`:
 
 ```yaml
 lsp:

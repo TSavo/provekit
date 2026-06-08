@@ -9,7 +9,7 @@ Pinned versions:
 - Lean toolchain: `leanprover/lean4:v4.29.1`
 - mathlib release: `v4.29.1`
 - mathlib release commit: `5e932f9`
-- Project path used by `.provekit/config.toml`: `tools/portfolio/lean-mathlib`
+- Project path used by `.sugar/config.toml`: `tools/portfolio/lean-mathlib`
 
 ## 1. Install elan
 
@@ -46,15 +46,15 @@ cat > lakefile.lean <<'EOF'
 import Lake
 open Lake DSL
 
-package provekit_mathlib
+package sugar_mathlib
 
 require mathlib from git
   "https://github.com/leanprover-community/mathlib4.git" @ "5e932f9"
 
-lean_lib ProvekitMathlib
+lean_lib SugarMathlib
 EOF
-mkdir -p ProvekitMathlib
-printf '%s\n' 'import Mathlib' > ProvekitMathlib.lean
+mkdir -p SugarMathlib
+printf '%s\n' 'import Mathlib' > SugarMathlib.lean
 ```
 
 The verifier runs generated proof files with:
@@ -84,16 +84,16 @@ lake env lean --version
 lake env lean - <<'EOF'
 import Mathlib
 
-theorem provekit_cache_smoke : True := by
+theorem sugar_cache_smoke : True := by
   trivial
 
-#print axioms provekit_cache_smoke
+#print axioms sugar_cache_smoke
 EOF
 ```
 
 Expected result: both version commands report Lean `4.29.1`, and the smoke theorem checks without `sorryAx`.
 
-## 5. Configure ProvekIt
+## 5. Configure Sugar
 
 The default workspace config already contains:
 

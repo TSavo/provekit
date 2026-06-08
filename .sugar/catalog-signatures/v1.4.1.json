@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1",
+  "protocolName": "sugar-protocol",
+  "protocolVersion": "v1.4.1",
+  "catalogCid": "blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641",
+  "declaredAt": "2026-05-03T18:00:00Z",
+  "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "signature": "ed25519:jyiloz5cEFT1Ct0H7ELov+KuWUQRs9fo/aeHRRBLFApvPQ0iaVc/mw8xscL5zVphuda0+oQ0/AD7hIGzVfeMBA=="
+}

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt IR generated types from CDDL grammar."
+description = "Sugar IR generated types from CDDL grammar."
 
 [dependencies]
 sugar-canonicalizer = { path = "../sugar-canonicalizer" }

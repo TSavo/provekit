@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Bundled SMT-LIB v2.6 IR compiler. Extracted from the inline
-// provekit-verifier::smt_emitter so the same code serves both the
+// sugar-verifier::smt_emitter so the same code serves both the
 // in-process fast path (verifier deps directly on this crate) and the
-// standalone subprocess binary `provekit-ir-smt-lib`.
+// standalone subprocess binary `sugar-ir-smt-lib`.
 //
 // Spec: protocol/specs/2026-04-30-ir-compiler-protocol.md.
 

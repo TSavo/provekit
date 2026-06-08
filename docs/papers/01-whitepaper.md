@@ -94,19 +94,19 @@ CVE blast-radius becomes a `SELECT` over content-addressed facts plus reachabili
 
 Sugar has three primary audiences and three CLI paths.
 
-Developers with existing test cultures get the surface plugin layer and `provekit lift`. A `proptest` strategy becomes a forall contract memento. A Zod schema becomes a precondition memento. A `kani` harness becomes an invariant memento. Unit tests, property tests, schemas, harnesses, annotations, and language-specific contract surfaces lift into the same predicate envelope. There is no migration. The developer keeps their test culture; the lift adapters in the Rust workspace translate existing evidence into catalog material.
+Developers with existing test cultures get the surface plugin layer and `sugar lift`. A `proptest` strategy becomes a forall contract memento. A Zod schema becomes a precondition memento. A `kani` harness becomes an invariant memento. Unit tests, property tests, schemas, harnesses, annotations, and language-specific contract surfaces lift into the same predicate envelope. There is no migration. The developer keeps their test culture; the lift adapters in the Rust workspace translate existing evidence into catalog material.
 
-Library authors and infrastructure publishers get the catalog release flow. The current CLI command is `provekit mint`: it drives the configured lift plugin, emits the proof envelope, and writes the `.proof` artifact. In a release pipeline, that step produces a signed `.proof` file beside the library, image, firmware blob, model, or package. Downstream consumers pull the bundle alongside the artifact. The library's API claims are now machine-checkable. The consumer's call sites can be checked against those claims. The verification path is content identity plus policy, not coordination with the publisher.
+Library authors and infrastructure publishers get the catalog release flow. The current CLI command is `sugar mint`: it drives the configured lift plugin, emits the proof envelope, and writes the `.proof` artifact. In a release pipeline, that step produces a signed `.proof` file beside the library, image, firmware blob, model, or package. Downstream consumers pull the bundle alongside the artifact. The library's API claims are now machine-checkable. The consumer's call sites can be checked against those claims. The verification path is content identity plus policy, not coordination with the publisher.
 
-Users who would rather state intent in English get the agent layer and `provekit must`:
+Users who would rather state intent in English get the agent layer and `sugar must`:
 
 ```sh
-provekit must app.ts "users can't have negative balance"
+sugar must app.ts "users can't have negative balance"
 ```
 
 The agent reads the file, proposes a contract in the configured authoring surface, validates it against the canonical IR grammar, mints the memento, signs it, and writes the `.proof` material. The backend slot is pluggable by manifest: Claude Code, Codex, OpenCode, OpenAI, a local model, or a domain-specific model can sit behind the same CLI shape. The verifier does not trust the model. It trusts only the memento bytes, signatures, compiler outputs, and local policy.
 
-These paths are intentionally ordinary. `provekit lift` over an existing test corpus. `provekit mint` in release automation. `provekit verify` or `provekit prove` in CI and admission control. The substrate can be general without forcing every user to encounter the whole substrate on day one.
+These paths are intentionally ordinary. `sugar lift` over an existing test corpus. `sugar mint` in release automation. `sugar verify` or `sugar prove` in CI and admission control. The substrate can be general without forcing every user to encounter the whole substrate on day one.
 
 ## 7. The Prove Portfolio
 
@@ -147,20 +147,20 @@ New readers should especially read three rungs.
 The README index does the full table of contents. The practical install path today is build-from-source:
 
 ```sh
-cargo install --path implementations/rust/provekit-cli
-provekit init
-provekit lift
-provekit mint
-provekit verify
+cargo install --path implementations/rust/sugar-cli
+sugar init
+sugar lift
+sugar mint
+sugar verify
 ```
 
 The intended public package shape is the same CLI surface. The repo path is current because this is a live worktree, not a marketing artifact detached from the implementation.
 
 ## 10. The Trojan Horse
 
-Sugar ships as a normal developer tool: a CI step, a `.proof` file beside an artifact, a `provekit lift` over an existing test corpus, a Docker label, an admission check, a release receipt. That is the adoption path because it matches how software already moves.
+Sugar ships as a normal developer tool: a CI step, a `.proof` file beside an artifact, a `sugar lift` over an existing test corpus, a Docker label, an admission check, a release receipt. That is the adoption path because it matches how software already moves.
 
-The structure underneath is the cypherpunk endgame: verification without authority, local check, trust replaced by math. Adoption does not require anyone to believe the endgame. It requires `provekit lift` to be cheap and `provekit verify` to be a `memcmp`. The catalog grows by use. Every lifted test, schema, harness, package edge, native wrapper, release artifact, and bedrock source claim adds another signed fact to the lattice. The next verifier does not pay again for the whole world. It checks the bytes it needs under the policy it chose.
+The structure underneath is the cypherpunk endgame: verification without authority, local check, trust replaced by math. Adoption does not require anyone to believe the endgame. It requires `sugar lift` to be cheap and `sugar verify` to be a `memcmp`. The catalog grows by use. Every lifted test, schema, harness, package edge, native wrapper, release artifact, and bedrock source claim adds another signed fact to the lattice. The next verifier does not pay again for the whole world. It checks the bytes it needs under the policy it chose.
 
 This is why the deliverable must stay central. The substrate can become large, multilingual, multi-domain, and multi-institutional. The `.proof` file remains the artifact you ship and the artifact someone else can check. It is the common envelope for claims that used to live in incompatible systems: test reports, solver logs, audit packets, certification evidence, registry metadata, lab output, legal attestations, and release signatures.
 

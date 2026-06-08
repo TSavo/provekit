@@ -59,14 +59,14 @@ all of numpy inside it.
 - **Source Oracle.** Given a locus plus a CID, return the on-disk source iff it
   recomputes to that CID, else refuse loudly. `recognize` and `materialize`
   both feed source through this one oracle.
-  (`implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/source_oracle.py`.)
+  (`implementations/python/sugar-lift-python-source/src/sugar_lift_python_source/source_oracle.py`.)
 - **Witness Oracle.** A witness is arbitrary signed content: a test run, a CI
   log, a poem. The kit oracle (python/java) is UNTRUSTED. Over RPC it only
   RESOLVES the witness body. The Rust CLI BLAKE3's the body itself and compares
   to the pinned CID. A wrong body for a CID (broken oracle) is distinguished
   from an honest re-run that differs (drift).
   (`implementations/rust/sugar-cli/src/witness_verify.rs`,
-  `implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/witness_oracle.py`.)
+  `implementations/python/sugar-lift-py-tests/src/sugar_lift_py_tests/witness_oracle.py`.)
 - A contract is already a CID. So the `.proof` is pure correctness identity:
   source, witness, and contract are all resolved-and-recomputed, never trusted.
 
@@ -87,7 +87,7 @@ recomputes everything:
 
 ```
 numpy.proof:  13M, 2909 sugar members
-witness: passed blake3-512:049e169f... -> .provekit/witnesses/<cid>.witness
+witness: passed blake3-512:049e169f... -> .sugar/witnesses/<cid>.witness
 oracle resolved via package; rust recomputed the CID and it matched
 pass
 ```
@@ -102,7 +102,7 @@ contradictory behavioral claims. This is no longer aspirational. There is a
 working demo of catching exactly that.
 
 A numpy vendor mints a `.proof` carrying the callsite-keyed contract
-`np.add(2,3) == 5`. A consumer stages that `.proof` in `.provekit/imports/`,
+`np.add(2,3) == 5`. A consumer stages that `.proof` in `.sugar/imports/`,
 asserts something about the same call, and runs `prove`:
 
 - A consumer asserting `np.add(2,3) == 6` is **REFUSED**. It inherits numpy's
@@ -115,10 +115,10 @@ same-named contracts across proofs before the SAT check. The consumer inherits
 the vendor's correctness and is caught contradicting it.
 
 Verified end to end:
-`implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py`
+`implementations/python/sugar-lift-py-tests/tests/test_inheritance_e2e.py`
 (parametrized: `consumer-agrees-PROVEN`, `consumer-contradicts-REFUSED`) and the
 unit test `cross_proof_same_named_contracts_are_conjoined` in
-`implementations/rust/provekit-verifier/src/consistency.rs`.
+`implementations/rust/sugar-verifier/src/consistency.rs`.
 
 ## The shape: kits own language, the CLI owns proof
 
@@ -165,7 +165,7 @@ remain checkable by content identity.
 
 ```text
 native evidence -> kit lift -> ProofIR / protocol claim
-               -> signed memento -> .proof DAG -> provekit prove / verify
+               -> signed memento -> .proof DAG -> sugar prove / verify
 ```
 
 Previously minted, unchanged commitments can often be checked cheaply by CID
@@ -178,10 +178,10 @@ expensive proof work by making prior commitments content-addressed and reusable.
 
 > _Naming: the project is **Sugar**. The Rust crates (`sugar-*`) and the CLI
 > binary (`sugar`) have been renamed. The proofchain identity layer — kit ids,
-> wire tokens, and `.proof` producer strings — still carries the `provekit`
+> wire tokens, and `.proof` producer strings — still carries the `sugar`
 > name, frozen on purpose: it is content-addressed, so re-minting it under the
 > `sugar` name is a separate, deliberate swing. The dependency graph is sugar;
-> the CID identity is still provekit. Names are sugar, CID is identity._
+> the CID identity is still sugar. Names are sugar, CID is identity._
 
 The canonical CLI is the Rust `sugar` binary. Run `sugar --help` for the
 authoritative list; the current subcommands include:
@@ -214,7 +214,7 @@ authoritative list; the current subcommands include:
   evolution artifacts, and confirm the local install conforms to its embedded
   protocol-catalog CID.
 - `sugar doctor`: validate a kit's config and manifest wiring before a run.
-- `sugar init`: scaffold a project (`provekit.toml`, `.provekit/`, sample
+- `sugar init`: scaffold a project (`sugar.toml`, `.sugar/`, sample
   invariant, GitHub Action).
 
 - `sugar lift`: dispatch the configured lift surface and write its ProofIR
@@ -253,13 +253,13 @@ The numpy demos provision their own venv on first run.
 |---|---|---|
 | Vendor a whole library | ~2900 numpy functions sugar-lifted into one `.proof`, no shim, witness package, consumer `verify` recomputes | [examples/numpy-vendor/](examples/numpy-vendor/) |
 | Discharge two ways | one operation, `numpy.add`, proven consistent (z3) AND witnessed (recompute); `discharged: 2` | [examples/numpy-showcase/](examples/numpy-showcase/) |
-| Inheritance capstone | a consumer inherits numpy's contract and is refused when it contradicts it | [test_inheritance_e2e.py](implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py) |
+| Inheritance capstone | a consumer inherits numpy's contract and is refused when it contradicts it | [test_inheritance_e2e.py](implementations/python/sugar-lift-py-tests/tests/test_inheritance_e2e.py) |
 
 ## Current status
 
 - **Canonical implementation:** the Rust CLI in
   `implementations/rust/sugar-cli`.
-- **Protocol catalog:** embedded in the CLI and verified by `provekit
+- **Protocol catalog:** embedded in the CLI and verified by `sugar
   verify-protocol`. The reference matrix
   ([docs/reference/per-language-status.md](docs/reference/per-language-status.md))
   tracks the catalog version it was last updated for.

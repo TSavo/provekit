@@ -4,14 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt bundled SMT-LIB v2.6 IR compiler. Lib + standalone subprocess binary."
+description = "Sugar bundled SMT-LIB v2.6 IR compiler. Lib + standalone subprocess binary."
 
 [lib]
 path = "src/lib.rs"
 
 [[bin]]
-name = "provekit-ir-smt-lib"
-path = "src/bin/provekit_ir_smt_lib.rs"
+name = "sugar-ir-smt-lib"
+path = "src/bin/sugar_ir_smt_lib.rs"
 
 [dependencies]
 sugar-ir-compiler = { path = "../sugar-ir-compiler" }

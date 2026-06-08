@@ -81,8 +81,8 @@ fn callsite_violates_pre_diagnostic_emitted() {
 
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
     let diagnostic = &diagnostics[0];
-    assert_eq!(diagnostic.code, "provekit.lsp.implication_failed");
-    assert_eq!(diagnostic.source, "provekit");
+    assert_eq!(diagnostic.code, "sugar.lsp.implication_failed");
+    assert_eq!(diagnostic.source, "sugar");
     assert_eq!(diagnostic.severity, 1);
     assert_eq!(diagnostic.range, LspRange::single_line(4, 12, 18));
     assert_eq!(diagnostic.data.callee, "std::option::Option::unwrap");
@@ -94,9 +94,9 @@ fn callsite_violates_pre_diagnostic_emitted() {
         .starts_with("blake3-512:"));
 
     let as_json = diagnostic.to_lsp_json();
-    assert_eq!(as_json["code"], "provekit.lsp.implication_failed");
-    assert_eq!(as_json["source"], "provekit");
-    assert_eq!(as_json["data"]["kind"], "provekit.lsp.implication_failed");
+    assert_eq!(as_json["code"], "sugar.lsp.implication_failed");
+    assert_eq!(as_json["source"], "sugar");
+    assert_eq!(as_json["data"]["kind"], "sugar.lsp.implication_failed");
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn branch_merge_partial_satisfaction_diagnostic_on_join_path() {
     let diagnostics = propagator.emit_diagnostics(&body);
 
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
-    assert_eq!(diagnostics[0].code, "provekit.lsp.implication_failed");
+    assert_eq!(diagnostics[0].code, "sugar.lsp.implication_failed");
     assert_eq!(
         diagnostics[0].data.missing_conjuncts,
         vec!["receiver is Some"]
@@ -158,8 +158,8 @@ fn failed_precondition_does_not_propagate_callee_postcondition() {
     assert_eq!(
         actual,
         BTreeSet::from([
-            ("checkPositive", "provekit.lsp.implication_failed"),
-            ("consumeReturn", "provekit.lsp.implication_failed"),
+            ("checkPositive", "sugar.lsp.implication_failed"),
+            ("consumeReturn", "sugar.lsp.implication_failed"),
         ])
     );
 }
@@ -189,7 +189,7 @@ async fn async_violates() {
     assert_eq!(diagnostics.len(), 3, "{diagnostics:#?}");
     assert!(diagnostics
         .iter()
-        .all(|diagnostic| diagnostic.code == "provekit.lsp.implication_failed"));
+        .all(|diagnostic| diagnostic.code == "sugar.lsp.implication_failed"));
     assert!(diagnostics
         .iter()
         .all(|diagnostic| diagnostic.data.callee == "checkPositive"));
@@ -210,7 +210,7 @@ pub unsafe extern "C" fn extern_violates() {
         .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
 
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
-    assert_eq!(diagnostics[0].code, "provekit.lsp.implication_failed");
+    assert_eq!(diagnostics[0].code, "sugar.lsp.implication_failed");
     assert_eq!(diagnostics[0].data.callee, "checkPositive");
 }
 
@@ -241,7 +241,7 @@ fn violates<'a>(value: &'a str) {
         .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
 
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
-    assert_eq!(diagnostics[0].code, "provekit.lsp.implication_failed");
+    assert_eq!(diagnostics[0].code, "sugar.lsp.implication_failed");
     assert_eq!(diagnostics[0].data.callee, "checkPositive");
 }
 

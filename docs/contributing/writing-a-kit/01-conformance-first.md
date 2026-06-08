@@ -37,11 +37,11 @@ Roughly, in pseudo-code:
 
 ```
 implementations/<your-language>/
-├── provekit-ir/                # IR types matching the CDDL
-├── provekit-canonicalizer/     # JCS + BLAKE3-512
-├── provekit-claim-envelope/    # Ed25519 signing
-├── provekit-proof-envelope/    # CBOR catalog
-├── provekit-self-contracts/    # canonical self-contracts package
+├── sugar-ir/                # IR types matching the CDDL
+├── sugar-canonicalizer/     # JCS + BLAKE3-512
+├── sugar-claim-envelope/    # Ed25519 signing
+├── sugar-proof-envelope/    # CBOR catalog
+├── sugar-self-contracts/    # canonical self-contracts package
 ├── conformance-runner/         # entry point the harness invokes
 └── README.md
 ```

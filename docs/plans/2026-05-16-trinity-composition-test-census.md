@@ -59,7 +59,7 @@ The expected outcome: this census surfaces all remaining integration gaps in par
 ### Seam 3 (lower → relift)
 
 - Producer: LowerKit output Python source. The source is a real `.py` file the realize plugin emitted.
-- Consumer: Python source LiftKit (`implementations/python/provekit-lift-python-source`). Expects `Input::Source { dialect, bytes }`.
+- Consumer: Python source LiftKit (`implementations/python/sugar-lift-python-source`). Expects `Input::Source { dialect, bytes }`.
 - Composition assertion: the Python source LowerKit emits is parseable by the Python LiftKit. The relift produces a Term that:
   - has the same operations (concept ops) as the original Rust-lifted Term, modulo language-specific renaming;
   - recovers concept-citation comments correctly (per #1022's carrier work) for operations that had no native Python body;
@@ -121,7 +121,7 @@ Scope: ~15-30 LOC + 1 test. Smaller than A7. Does NOT block #1068; can ship in p
 The census becomes the single comprehensive composition-test issue. Title: `Composition test census for the 7-step Trinity algebra: every producer-consumer seam exercised end-to-end against real toolchains`.
 
 The PR ships:
-- A new test file (e.g., `provekit-cli/tests/trinity_composition_census.rs`) in the slow-test lane per A5's policy.
+- A new test file (e.g., `sugar-cli/tests/trinity_composition_census.rs`) in the slow-test lane per A5's policy.
 - One test per seam (seams 1, 3, 4, 6, 7 are the ones not yet covered; seams 2 and 5 are covered by A7's tests). Each test exercises the producer-consumer composition against real subprocess transports (no fixture stubs per A5).
 - Discrimination tests per seam (positive case + at least one negative case where composition should refuse cleanly).
 - Reuses the test fixtures from #1039's per-kit conformance work where possible. Composition tests are the federation-level analogue to #1039's per-kit conformance tests.

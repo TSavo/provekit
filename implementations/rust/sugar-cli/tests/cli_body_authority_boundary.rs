@@ -48,7 +48,7 @@ fn cli_runtime_source_does_not_reintroduce_body_template_json_authority() {
     }
     assert!(
         violations.is_empty(),
-        "provekit-cli must not make body-template JSON/cache files runtime authority. \
+        "sugar-cli must not make body-template JSON/cache files runtime authority. \
          Kits own body/proof resolution and the CLI speaks RPC only:\n{}",
         violations.join("\n")
     );

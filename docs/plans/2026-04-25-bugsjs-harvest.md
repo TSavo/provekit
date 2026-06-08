@@ -123,7 +123,7 @@ Crucially: this isn't a harvest-specific optimization. It IS the library short-c
 
 ### Phase 3: Staging + dedup
 
-`src/fix/harvest/stagingArea.ts`: writes harvested principles to `.provekit/harvest/staging/<bug_class_id>/<source-id>.dsl` instead of directly into the library.
+`src/fix/harvest/stagingArea.ts`: writes harvested principles to `.sugar/harvest/staging/<bug_class_id>/<source-id>.dsl` instead of directly into the library.
 
 Dedup pass: group staged principles by `bug_class_id`. For each group:
 - If structurally identical (modulo identifiers): merge into one principle, annotate with all source provenances.
@@ -134,7 +134,7 @@ Dedup pass: group staged principles by `bug_class_id`. For each group:
 For each staged principle, run oracle #15 against the BugsJS source corpus (the buggy + fixed snapshots, used as a flat directory of real production code). A principle that passes:
 - Catches the bug it was harvested from (positive validation)
 - Doesn't false-positive across the rest of the corpus (negative validation)
-gets promoted from `staging/` to `.provekit/principles/`.
+gets promoted from `staging/` to `.sugar/principles/`.
 
 A principle that flickers stays in `staging/` with a quarantine flag.
 
@@ -155,7 +155,7 @@ Don't run the full 452 first.
 The harvest pipeline is "done" when:
 - 30-bug subset produces a manually-acceptable principle library (subjective; you'd ship it)
 - Full 452 run produces ≥100 unique post-dedup principles, ≥50% pass oracle #15 validation
-- Bootstrap can be re-run on demand with a single command (`provekit harvest --bootstrap`)
+- Bootstrap can be re-run on demand with a single command (`sugar harvest --bootstrap`)
 - Continuous harvest from customer fix loops uses the same staging area and dedup logic
 - The principle library, including provenance, is human-readable and auditable per principle
 

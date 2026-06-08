@@ -71,11 +71,11 @@ fn run_mode(name: &str, toml_body: &str) {
 }
 
 fn main() {
-    println!("provekit multi-solver demo");
+    println!("sugar multi-solver demo");
     println!("--------------------------");
     println!("Each mode below uses stub solvers so CI passes without z3 / cvc5 /");
     println!("bitwuzla installed. Swap `binary = \"stub:...\"` for a real binary");
-    println!("path in `.provekit/config.toml` to drive real solvers.");
+    println!("path in `.sugar/config.toml` to drive real solvers.");
 
     run_mode(
         "single (default)",

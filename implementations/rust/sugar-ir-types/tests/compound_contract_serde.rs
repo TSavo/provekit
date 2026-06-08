@@ -22,7 +22,7 @@
 //     because §2.1 is normative for v0).
 //
 // Byte-exact CID pinning and the composed_pre/post recompute INVARIANT
-// require the JCS encoder, which lives in `provekit-claim-envelope`.
+// require the JCS encoder, which lives in `sugar-claim-envelope`.
 // Those tests belong there; this crate carries serde shape only.
 //
 // Tests are deliberately VERBOSE: every fixture is hand-written JSON

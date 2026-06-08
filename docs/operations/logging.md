@@ -17,11 +17,11 @@ Every one of these would have been instantly visible if we had logged the full d
 
 ## Concrete rules
 
-1. **The persistent log file (`.provekit/fix-loop-<ts>.log`) captures full content.** No truncation. No "preview." No "first N chars." Full input, full output, full reasoning, full tool inputs.
+1. **The persistent log file (`.sugar/fix-loop-<ts>.log`) captures full content.** No truncation. No "preview." No "first N chars." Full input, full output, full reasoning, full tool inputs.
 
 2. **Stdout output may be summarized for live readability.** This is a UX choice, not a data-fidelity choice. The log file is still complete.
 
-3. **Disk pressure is solved by rotation.** Cap the count of `.provekit/fix-loop-*.log` files (e.g., keep last 100). Do not truncate individual log entries to control size.
+3. **Disk pressure is solved by rotation.** Cap the count of `.sugar/fix-loop-*.log` files (e.g., keep last 100). Do not truncate individual log entries to control size.
 
 4. **Sensitive data is solved by structured field-level redaction.** If we need to redact API keys, redact the named field (`apiKey: "[REDACTED]"`). Do not lop the surrounding content.
 

@@ -16,7 +16,7 @@
 // prove the SMT-LIB compile is semantically faithful (a real-solver
 // integration test on top of a hermetic CI runner is the follow-up).
 //
-// A real-solver smoke test (#[ignore]'d unless `PROVEKIT_REAL_SOLVER`
+// A real-solver smoke test (#[ignore]'d unless `SUGAR_REAL_SOLVER`
 // env var is set) runs against the configured z3 binary and exercises
 // the full pipeline.
 
@@ -107,7 +107,7 @@ fn inputs(caller_post: Option<Json>, callee_pre: Option<Json>) -> LinkerInputs {
 
 /// Build a registry containing one stub solver returning a fixed
 /// verdict, plus a Single plan referencing it. Mirrors the
-/// `.provekit/config.toml` shape `[solvers] default = "fake"`.
+/// `.sugar/config.toml` shape `[solvers] default = "fake"`.
 fn stub_registry_and_plan(verdict: ObligationVerdict) -> (Registry, SolverPlan) {
     let mut r: HashMap<String, SolverHandle> = HashMap::new();
     r.insert(
@@ -349,7 +349,7 @@ binary = "stub:unsat"
 
 // -------------------------------------------------------------------
 // Real-solver integration smoke. Ignored by default; run via
-//   PROVEKIT_REAL_SOLVER=1 cargo test -p sugar-linker -- --ignored
+//   SUGAR_REAL_SOLVER=1 cargo test -p sugar-linker -- --ignored
 // when z3 is on PATH.
 // -------------------------------------------------------------------
 

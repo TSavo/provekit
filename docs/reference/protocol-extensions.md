@@ -9,14 +9,14 @@ This page maps the post-v1.6 protocol/tooling surface. It separates cataloged pr
 | Catalog version | `v1.6.6-2026-05-26` |
 | Catalog CID | `blake3-512:809ed1ebd538f206beb9df6de712f502fbcd310ee52d76c34afecec6455259d49cd7d288eb761d5aac9ebbd3643ae4dfe09bc9c7f2aea23e57720df6085c6640` |
 | Catalog file | [../../protocol/specs/2026-04-30-protocol-catalog.json](../../protocol/specs/2026-04-30-protocol-catalog.json) |
-| Signed attestation | [../../.provekit/catalog-signatures/v1.6.6.json](../../.provekit/catalog-signatures/v1.6.6.json) |
+| Signed attestation | [../../.sugar/catalog-signatures/v1.6.6.json](../../.sugar/catalog-signatures/v1.6.6.json) |
 
 ## Cataloged Extensions
 
 | Key | Spec | CID | Meaning |
 |---|---|---|---|
 | `protocol-evolution-protocol` | [PEP](../../protocol/specs/2026-05-07-protocol-evolution-protocol.md) | `blake3-512:d8827f89df20e5be38c4d5de851fe4e55420dcd6cacfd9b98f458c53e64e6ba07349e29f8da2fbab6cb7195b297c3704a70f489c020e3f55c96ef702c4a09949` | Protocol catalog transitions become signed, content-addressed body-claims. |
-| `lift-plugin-protocol` | [Lift Plugin Protocol](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) | `blake3-512:f2b856a8010b0f95cdd9961e0c367b003b1de7be39b6668db7f96cfe884a99f153609a846be39ad4a4f40a3bb778fecf2b0e24908b94411f32be165473045055` | `provekit lift` and `provekit package inspect` use the same configured lifter RPC; identify-only package inspection emits content-addressed package, CI, contract, and `.proof` rails. |
+| `lift-plugin-protocol` | [Lift Plugin Protocol](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) | `blake3-512:f2b856a8010b0f95cdd9961e0c367b003b1de7be39b6668db7f96cfe884a99f153609a846be39ad4a4f40a3bb778fecf2b0e24908b94411f32be165473045055` | `sugar lift` and `sugar package inspect` use the same configured lifter RPC; identify-only package inspection emits content-addressed package, CI, contract, and `.proof` rails. |
 
 ## Draft Companion Specs
 
@@ -36,8 +36,8 @@ These are protocol working notes in `protocol/specs/`. They are content-addresse
 
 | Command | Purpose | Primary docs |
 |---|---|---|
-| `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.4/README.md](../../protocol/evolution/v1.6.4/README.md) |
-| `provekit package inspect` | Dispatch to the configured lifter with `options.layer = "identify-only"` and require a `package-inspection-document`. | [../../protocol/specs/2026-04-30-lift-plugin-protocol.md](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) |
+| `sugar protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.4/README.md](../../protocol/evolution/v1.6.4/README.md) |
+| `sugar package inspect` | Dispatch to the configured lifter with `options.layer = "identify-only"` and require a `package-inspection-document`. | [../../protocol/specs/2026-04-30-lift-plugin-protocol.md](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) |
 | `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- [--all]` | Run self-contained Bug Zoo specimens through host checks, exhibits, link exhibits, fixed pairs, equivalence checks, and scoped composition checks. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |
 
 ## Trust Boundary

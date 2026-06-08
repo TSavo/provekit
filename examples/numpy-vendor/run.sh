@@ -18,7 +18,7 @@
 #               lifted; the thousands that ARE python all lift.
 #   WITNESS   — the pytest-witness kit RUNS a numpy test and content-addresses
 #               the run into a signed WitnessMemento. The run body is written to
-#               a CID-named witness PACKAGE (`.provekit/witnesses/<cid>.witness`),
+#               a CID-named witness PACKAGE (`.sugar/witnesses/<cid>.witness`),
 #               deployed separately (audit material, not ship material).
 #   VERIFY    — the consumer side. ALL verification lives in the rust CLI. The
 #               kit oracle (python) is UNTRUSTED: over RPC it only RESOLVES the
@@ -32,23 +32,23 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 BIN="$REPO/implementations/rust/target/debug/sugar"
-PP="$REPO/implementations/python/provekit-lift-python-source/src:$REPO/implementations/python/provekit-lift-py-tests/src"
+PP="$REPO/implementations/python/sugar-lift-python-source/src:$REPO/implementations/python/sugar-lift-py-tests/src"
 VENV="${NUMPY_WITNESS_VENV:-/tmp/numpy-witness-venv}"
 
 if [ ! -x "$VENV/bin/python" ]; then
   python3 -m venv "$VENV"
   "$VENV/bin/pip" install -q numpy pytest pynacl blake3 \
-    -e "$REPO/implementations/python/provekit-lift-py-tests" \
-    -e "$REPO/implementations/python/provekit-lift-python-source" \
-    -e "$REPO/implementations/python/provekit-lift-py-pytest-witness"
+    -e "$REPO/implementations/python/sugar-lift-py-tests" \
+    -e "$REPO/implementations/python/sugar-lift-python-source" \
+    -e "$REPO/implementations/python/sugar-lift-py-pytest-witness"
 fi
 NUMPY_DIR="$("$VENV/bin/python" -c 'import numpy,os;print(os.path.dirname(numpy.__file__))')"
 
 echo "== stage the vendor lift config in numpy's own tree =="
 # The bind lifter only READS source (AST); it does not import numpy. working_dir
 # is a NEUTRAL path so the kit's own imports are not shadowed by numpy/typing.
-mkdir -p "$NUMPY_DIR/.provekit/lift/python-bind"
-cat > "$NUMPY_DIR/.provekit/config.toml" <<EOF
+mkdir -p "$NUMPY_DIR/.sugar/lift/python-bind"
+cat > "$NUMPY_DIR/.sugar/config.toml" <<EOF
 [[plugins]]
 name = "python-bind-lift"
 kind = "lift"
@@ -59,11 +59,11 @@ default = "z3"
 binary = "z3"
 flags = ["-smt2", "-in"]
 EOF
-cat > "$NUMPY_DIR/.provekit/lift/python-bind/manifest.toml" <<EOF
+cat > "$NUMPY_DIR/.sugar/lift/python-bind/manifest.toml" <<EOF
 name = "python-bind-lift"
 version = "0.1.0"
 kind = "lift"
-command = ["/usr/bin/env", "PROVEKIT_LEAN_SOURCE=1", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "provekit_lift_python_source.bind_rpc"]
+command = ["/usr/bin/env", "SUGAR_LEAN_SOURCE=1", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "sugar_lift_python_source.bind_rpc"]
 working_dir = "$REPO"
 [capabilities]
 authoring_surfaces = ["python-bind"]
@@ -78,7 +78,7 @@ echo "  numpy.proof: $(du -h "$PROOF" | cut -f1), $("$BIN" dump "$PROOF" 2>/dev/
 
 echo "== a numpy consumer + its test (code file separate from the test) =="
 cd "$HERE"
-rm -rf .provekit/witnesses
+rm -rf .sugar/witnesses
 rm -f ./blake3-512*.proof   # clean stale witness .proofs (verify loads all in the dir)
 # numpy_consumer.py is the CODE under test; the witness binds to ITS code CID.
 cat > numpy_consumer.py <<'PY'
@@ -105,8 +105,8 @@ def test_total():
 PY
 
 echo "== mint the witness .proof (the signed pointer the consumer verifies) =="
-mkdir -p .provekit/lift/python-pytest-witness
-cat > .provekit/config.toml <<EOF
+mkdir -p .sugar/lift/python-pytest-witness
+cat > .sugar/config.toml <<EOF
 [[plugins]]
 name = "pytest-witness-lift"
 kind = "lift"
@@ -117,13 +117,13 @@ default = "z3"
 binary = "z3"
 flags = ["-smt2", "-in"]
 EOF
-cat > .provekit/lift/python-pytest-witness/manifest.toml <<EOF
+cat > .sugar/lift/python-pytest-witness/manifest.toml <<EOF
 name = "pytest-witness-lift"
 version = "0.1.0"
 kind = "lift"
-command = ["/usr/bin/env", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "provekit_pytest_witness.lift_lsp"]
-resolve_witness_command = ["/usr/bin/env", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "provekit_pytest_witness.lift_lsp"]
-resolve_witness_method = "provekit.plugin.resolve_witness"
+command = ["/usr/bin/env", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "sugar_pytest_witness.lift_lsp"]
+resolve_witness_command = ["/usr/bin/env", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "sugar_pytest_witness.lift_lsp"]
+resolve_witness_method = "sugar.plugin.resolve_witness"
 working_dir = "$HERE"
 [capabilities]
 authoring_surfaces = ["python-pytest-witness"]
@@ -135,9 +135,9 @@ echo "== ship the witness PACKAGE (CID-named body, deployed separately) =="
 # package body content-addresses to the pinned CID. This is the audit material;
 # the .proof carries only the signed pointer.
 PYTHONPATH="$PP" "$VENV/bin/python" - <<PY
-from provekit_pytest_witness import run_and_witness, write_witness_package
+from sugar_pytest_witness import run_and_witness, write_witness_package
 w = run_and_witness(".", "test_numpy_consumer.py", ["numpy_consumer.py"])
-p = write_witness_package([w], ".provekit/witnesses")
+p = write_witness_package([w], ".sugar/witnesses")
 print("  witness:", w.outcome, w.cid[:34], "->", p[0])
 PY
 

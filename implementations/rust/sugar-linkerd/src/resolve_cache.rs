@@ -5,7 +5,7 @@
 // Specs #1705 (content-addressed callee-resolution cache) and #1706 (per-file
 // resolution cache with dependency-set granularity), serving #1707.
 //
-// THE INSIGHT (ProvekIt-native, "if you can't content-address it, it doesn't
+// THE INSIGHT (Sugar-native, "if you can't content-address it, it doesn't
 // belong"): resolving a method-call position to a crate is DETERMINISTIC given
 // the resolver's full INPUT, so it is content-addressable. A warm rust-analyzer
 // alone still pays the workspace index on every COLD daemon start; a
@@ -24,7 +24,7 @@
 // connection switches sqlite -> postgres, both registry crates), THIS file's
 // bytes and Cargo.lock are unchanged, yet the correct resolution changed. Keying
 // on this file alone would then serve a STALE hit and emit a wrong bridge: the
-// exact cross-library confusion ProvekIt exists to prevent. So a per-file key is
+// exact cross-library confusion Sugar exists to prevent. So a per-file key is
 // UNSOUND on its own.
 //
 // The fallback remains the #1705 WHOLE in-workspace source tree context
@@ -387,7 +387,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        std::env::temp_dir().join(format!("provekit-{label}-{nanos}-{}", std::process::id()))
+        std::env::temp_dir().join(format!("sugar-{label}-{nanos}-{}", std::process::id()))
     }
 
     fn write_minimal_workspace(root: &Path) {

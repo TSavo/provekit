@@ -20,7 +20,7 @@
 // this", and it routes through the SAME proven-safe wp-refusal path Go's
 // `go:div` does (NOT a fall-through that risks a vacuous pass).
 //
-// This test drives the REAL Python lifter + REAL `provekit mint`/`verify` and
+// This test drives the REAL Python lifter + REAL `sugar mint`/`verify` and
 // asserts: NO discharge, NO signed witness, exit 3. Both the Python-false
 // (`-4`) and Python-true (`-3`) assertions become Undecidable -- that is
 // correct; the cardinal point is that NEITHER false-discharges.
@@ -33,7 +33,7 @@ use std::process::Command;
 
 use serde_json::Value as Json;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -52,7 +52,7 @@ fn python_source_lift_src() -> PathBuf {
     repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-lift-python-source")
+        .join("sugar-lift-python-source")
         .join("src")
 }
 
@@ -60,7 +60,7 @@ fn python_test_lift_src() -> PathBuf {
     repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-lift-py-tests")
+        .join("sugar-lift-py-tests")
         .join("src")
 }
 
@@ -96,7 +96,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-py-divunsound-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-py-divunsound-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }
@@ -110,7 +110,7 @@ fn build_python_lift_verify() -> PathBuf {
     let pythonpath = python_lift_pythonpath();
     let quoted_pythonpath = shell_single_quote(&pythonpath);
     let script = std::env::temp_dir().join(format!(
-        "provekit-lift-python-verify-div-{}-{}.sh",
+        "sugar-lift-python-verify-div-{}-{}.sh",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
@@ -118,7 +118,7 @@ fn build_python_lift_verify() -> PathBuf {
         "#!/bin/sh\nPYTHON=${{PYTHON:-python3}}\n\
          PYTHONPATH={quoted_pythonpath}${{PYTHONPATH:+:$PYTHONPATH}}\n\
          export PYTHONPATH\n\
-         exec \"$PYTHON\" -c \"from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n"
+         exec \"$PYTHON\" -c \"from sugar_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n"
     );
     // sync_all + drop writer fd before chmod/spawn so exec never sees an open writer.
     {
@@ -157,11 +157,11 @@ fn stage_halve_project(suffix: &str, lift_script: &Path, expected: i64) -> PathB
     )
     .expect("write test_halve.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python")).expect("mkdir lift/python");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python")).expect("mkdir lift/python");
     fs::copy(
-        example.join(".provekit").join("config.toml"),
-        provekit.join("config.toml"),
+        example.join(".sugar").join("config.toml"),
+        sugar.join("config.toml"),
     )
     .expect("copy config.toml");
     let manifest = format!(
@@ -169,7 +169,7 @@ fn stage_halve_project(suffix: &str, lift_script: &Path, expected: i64) -> PathB
         lift_script.display()
     );
     fs::write(
-        provekit.join("lift").join("python").join("manifest.toml"),
+        sugar.join("lift").join("python").join("manifest.toml"),
         manifest,
     )
     .expect("write manifest");
@@ -177,7 +177,7 @@ fn stage_halve_project(suffix: &str, lift_script: &Path, expected: i64) -> PathB
 }
 
 fn run_mint(project: &Path) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .args(["mint", "--project"])
         .arg(project)
         .arg("--out")
@@ -193,7 +193,7 @@ fn run_mint(project: &Path) {
 }
 
 fn run_verify(project: &Path, witness_dir: &Path) -> (Json, i32) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .args(["verify", "--project"])
         .arg(project)
         .arg("--emit-witnesses")

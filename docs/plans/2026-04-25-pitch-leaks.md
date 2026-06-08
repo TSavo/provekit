@@ -43,7 +43,7 @@ a. **Fix the bipartite-graph limitation.** Redesign data_flow edges so chains fo
 b. **Add `string_composition` capability via the substrate-extension path.** This is the dogfood test for hard-bug substrate proposals:
    - Write a fixture: `function exec(input) { return execSync(\`ls ${input}\`); }`
    - Write a bug report describing the shell-injection
-   - Run `provekit fix` with real LLM, autoApply
+   - Run `sugar fix` with real LLM, autoApply
    - Watch C6 propose `string_composition` capability + `data_flow_reaches` relation
    - All five substrate oracles fire on the proposal; if they pass, the bundle applies; the principle library now catches shell-injection forever
    
@@ -86,7 +86,7 @@ c. **Repeat for at least 2 more hard cases** (loop-accumulator-overflow, variabl
 
 **Solution: deliberate fuzzing of the loop, with finding-rate as the readiness metric.**
 
-1. **Bug report fuzzer.** Generate 100 synthetic bug reports across known classes (division, null deref, off-by-one, race condition described in prose, etc.) plus an examples corpus of 10-20 small TS projects each containing planted bugs. Run `provekit fix` against each, autoApply mode, with a stub LLM that mimics realistic Claude output (or use real Claude if budget permits; opus at 100 runs costs real money but produces meaningful data).
+1. **Bug report fuzzer.** Generate 100 synthetic bug reports across known classes (division, null deref, off-by-one, race condition described in prose, etc.) plus an examples corpus of 10-20 small TS projects each containing planted bugs. Run `sugar fix` against each, autoApply mode, with a stub LLM that mimics realistic Claude output (or use real Claude if budget permits; opus at 100 runs costs real money but produces meaningful data).
 
 2. **Track per-stage failure rates.** For each run record: which stage failed, why, was the failure an integration gap or a real "the principle doesn't apply" rejection. Build a dashboard: failure-rate-by-stage over the corpus.
 

@@ -1,4 +1,4 @@
-"""ProvekIt: protocol-first polyglot monorepo.
+"""Sugar: protocol-first polyglot monorepo.
 
 The protocol (CDDL/ABNF/Datalog grammars + conformance test vectors)
 is the durable artifact under protocol/. Reference implementations
@@ -11,7 +11,7 @@ of protocol grammars + their CIDs).
 """
 
 module(
-    name = "provekit",
+    name = "sugar",
     version = "0.4.0",
 )
 

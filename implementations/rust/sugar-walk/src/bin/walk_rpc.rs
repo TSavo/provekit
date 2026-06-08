@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit-walk-rpc`: minimal JSON-RPC 2.0 server over stdio. Each line
+// `sugar-walk-rpc`: minimal JSON-RPC 2.0 server over stdio. Each line
 // of stdin is one JSON-RPC request; each response is one line of JSON
 // on stdout. Methods:
 //
@@ -15,7 +15,7 @@
 // JSON-RPC error objects.
 //
 // This makes the substrate's wire-format gap closed end-to-end: any
-// program that speaks line-delimited JSON-RPC can drive provekit-walk
+// program that speaks line-delimited JSON-RPC can drive sugar-walk
 // and pull back proof.ir bytes ready for the substrate's lift / mint /
 // linker pipeline.
 
@@ -49,11 +49,11 @@ use tracing::{debug, info, trace, warn};
 
 // Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
 // The RA LSP client now lives in the `sugar_walk::ra_oracle` library module so
-// BOTH this per-mint binary AND the resident `provekit-linkerd` daemon import the
+// BOTH this per-mint binary AND the resident `sugar-linkerd` daemon import the
 // same framing/quiescence/resolve logic with no copy-paste. This binary no longer
 // COLD-SPAWNS rust-analyzer per mint; it asks the warm resident daemon via
 // `resolveReceiverCrate` (see `resolve_method_calls_via_oracle`). The oracle is
-// opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
+// opt-in (SUGAR_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
 // callee_crate = None) when the daemon is unreachable or cannot reach readiness,
 // so the fast path and CI are unaffected. The RA LSP client itself lives in
 // `sugar_walk::ra_oracle` and is imported by the daemon, not this binary.
@@ -113,7 +113,7 @@ fn main() -> io::Result<()> {
     init_tracing();
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
-    info!("provekit-walk-rpc listening on stdio (JSON-RPC 2.0, line-delimited)");
+    info!("sugar-walk-rpc listening on stdio (JSON-RPC 2.0, line-delimited)");
     for line in stdin.lock().lines() {
         let line = line?;
         if line.trim().is_empty() {
@@ -134,7 +134,7 @@ fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::builder()
         .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
         .from_env_lossy();
-    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+    if let Ok(path) = std::env::var("SUGAR_LOG_FILE") {
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -149,7 +149,7 @@ fn init_tracing() {
             }
             Err(error) => {
                 eprintln!(
-                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                    "warning: could not open SUGAR_LOG_FILE {path}: {error}; logging to stderr"
                 );
                 tracing_subscriber::fmt()
                     .with_writer(std::io::stderr)
@@ -191,16 +191,16 @@ fn handle_line(line: &str) -> Value {
         // Recognizer foundation (#81, #82) per protocol §4.2.5. The lift
         // binary handles this too because it already owns the syn AST
         // machinery that recognize needs — same kit, same language.
-        "provekit.plugin.recognize" => recognize(&params),
+        "sugar.plugin.recognize" => recognize(&params),
         // Materialize (#1359, rust mirror of the python bind_rpc materializer).
-        // Finds `#[provekit::boundary(library, call)]` stubs in the consumer
+        // Finds `#[sugar::boundary(library, call)]` stubs in the consumer
         // source, asks the SOURCE ORACLE to resolve each bound vendor function's
         // REAL body from on-disk source (CID-verified against the
         // SourceMemento the vendor sugar-lift minted), and rewrites the stub
         // body in place. On a CID-misalign (source drift) the oracle REFUSES and
         // the site is reported `outcome:"refused"` with NO write. Same kit, same
         // syn AST machinery, same source-oracle family as lift/recognize.
-        "provekit.plugin.materialize" => materialize(&params),
+        "sugar.plugin.materialize" => materialize(&params),
         // Implication lifter (#97). For every call expression in every
         // function body in the supplied source files, emit a kind:bridge
         // memento that links the call site (sourceSymbol = callee ident)
@@ -209,7 +209,7 @@ fn handle_line(line: &str) -> Value {
         // This is the structural callsite obligation pass: the verb that
         // says "this call expression exists, an obligation forms here,
         // here is the contract it pins to."
-        "provekit.plugin.lift_implications" => lift_implications(&params),
+        "sugar.plugin.lift_implications" => lift_implications(&params),
         // Walk-internal RPC (substrate-private; not part of any plugin protocol).
         "walk.lift_pre" => lift_pre(&params),
         "walk.lift_post" => lift_post(&params),
@@ -496,7 +496,7 @@ fn binding_template_from_sugar_entry(
 fn resolve_recognizer_proof_paths(project_root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut proof_paths = BTreeSet::new();
     collect_recognizer_proof_files(
-        &project_root.join(".provekit").join("imports"),
+        &project_root.join(".sugar").join("imports"),
         &mut proof_paths,
     );
     for path in resolve_cargo_dependency_proof_paths(project_root)? {
@@ -604,12 +604,12 @@ fn collect_recognizer_proof_files(root: &Path, proof_paths: &mut BTreeSet<PathBu
 //
 // The substrate has three lift surfaces:
 //
-//   1. The sugar lifter (rust-bind, above) walks #[provekit::sugar] /
-//      #[provekit::boundary] annotations and emits bind-IR entries plus
+//   1. The sugar lifter (rust-bind, above) walks #[sugar::sugar] /
+//      #[sugar::boundary] annotations and emits bind-IR entries plus
 //      identity-ctor sibling contracts at the sugar definitions. That
 //      surface NAMES the vendor contract.
 //
-//   2. The test lifter (provekit-lift-rust-tests) walks #[test] / panic /
+//   2. The test lifter (sugar-lift-rust-tests) walks #[test] / panic /
 //      early-return shapes and emits one contract per asserted callsite,
 //      named "<callee>@<file>:<line>:<col>". That surface DERIVES contracts
 //      from observed asserts and pins them to the production-code call site
@@ -713,7 +713,7 @@ struct InfallibleSerializeRule {
 impl InfallibleSerializeManifest {
     fn load(workspace_root: &Path) -> Result<Self, String> {
         let path = workspace_root
-            .join(".provekit")
+            .join(".sugar")
             .join("contracts")
             .join("infallible_serialize.toml");
         if !path.is_file() {
@@ -870,7 +870,7 @@ struct PanicSiteAnnotationDiagnostic {
 
 impl ResidueManifest {
     fn load(workspace_root: &Path) -> Result<Self, String> {
-        let path = workspace_root.join(".provekit").join("residue.toml");
+        let path = workspace_root.join(".sugar").join("residue.toml");
         if !path.is_file() {
             return Ok(Self::default());
         }
@@ -991,7 +991,7 @@ impl PanicSiteAnnotationDiagnostic {
 impl FunctionPostconditionsManifest {
     fn load(workspace_root: &Path) -> Result<Self, String> {
         let path = workspace_root
-            .join(".provekit")
+            .join(".sugar")
             .join("contracts")
             .join("function_postconditions.toml");
         if !path.is_file() {
@@ -3312,7 +3312,7 @@ fn expr_matches_format_repeat(
 }
 
 /// Crate roots in source use `_`-free hyphenless identifiers; a Cargo package
-/// `provekit-cli` is referenced in code as `sugar_cli`. Normalize to the
+/// `sugar-cli` is referenced in code as `sugar_cli`. Normalize to the
 /// underscore form so call-site roots and the Cargo-derived current crate name
 /// compare equal.
 fn normalize_crate_root(root: &str) -> String {
@@ -3354,7 +3354,7 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// `target_library_tag`, and the materialize verb matches a boundary stub by
 /// `(target_library_tag, source_function_name) == (library, call)` with a RAW
 /// `==` (no normalization on either side). The consumer's
-/// `#[provekit::boundary(library = "rust-boundary-vendor", ...)]` carries the
+/// `#[sugar::boundary(library = "rust-boundary-vendor", ...)]` carries the
 /// crate name verbatim (hyphens intact), so the tag we derive must too, or the
 /// match silently misses. (The DERIVED symbol the verb synthesizes is
 /// `format!("{library}.{call}")` — `rust-boundary-vendor.reverse_chars` — built
@@ -3383,7 +3383,7 @@ fn crate_name_raw_for(dir: &Path) -> Option<String> {
     None
 }
 
-/// JSON-RPC handler for `provekit.plugin.lift_implications`.
+/// JSON-RPC handler for `sugar.plugin.lift_implications`.
 ///
 /// Request params:
 ///   {
@@ -3425,7 +3425,7 @@ fn crate_name_raw_for(dir: &Path) -> Option<String> {
 /// The returned leaf is the shim partial's CONTRACT NAME, which is exactly the
 /// key the binding index uses (`(library, leaf)`), so the matcher can select the
 /// partial's contract as the bridge target. This table is a documented coupling
-/// to the rust-std shim's partial function names (examples/provekit-shim-rust-std);
+/// to the rust-std shim's partial function names (examples/sugar-shim-rust-std);
 /// it is deliberately SMALL and explicit (the panic set), not a generic rule.
 /// `unwrap_or`/`get` etc. are TOTAL (no panic), so they are intentionally absent
 /// and fall through to the bare-leaf key (their existing total-wrapper bridges
@@ -3860,7 +3860,7 @@ fn resolve_method_calls_via_oracle(
     // Opt-in stays identical to the cold path: a mint with the oracle off must
     // never spawn or contact the daemon's RA host. When off we leave every
     // unresolved method call to the syntactic tiers (Tier 1/2a) and return.
-    let raw_oracle_env = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default();
+    let raw_oracle_env = std::env::var("SUGAR_RESOLVE_ORACLE").unwrap_or_default();
     let oracle_on = raw_oracle_env == "rust-analyzer";
     let total_method_calls = callsites.iter().filter(|(cs, _)| cs.is_method).count();
     info!(
@@ -3868,8 +3868,8 @@ fn resolve_method_calls_via_oracle(
         oracle_on,
         total_callsites = callsites.len(),
         total_method_calls,
-        linkerd_bin = %std::env::var("PROVEKIT_LINKERD_BIN").unwrap_or_else(|_| "<unset>".into()),
-        linkerd_socket = %std::env::var("PROVEKIT_LINKERD_SOCKET").unwrap_or_else(|_| "<unset>".into()),
+        linkerd_bin = %std::env::var("SUGAR_LINKERD_BIN").unwrap_or_else(|_| "<unset>".into()),
+        linkerd_socket = %std::env::var("SUGAR_LINKERD_SOCKET").unwrap_or_else(|_| "<unset>".into()),
         "ORACLE: resolve_method_calls_via_oracle ENTER"
     );
     let mut observation = OracleObservation {
@@ -3877,7 +3877,7 @@ fn resolve_method_calls_via_oracle(
         ..OracleObservation::default()
     };
     if !oracle_on {
-        info!(oracle_env = %raw_oracle_env, "ORACLE: OFF (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a -- NO daemon, NO disambiguation");
+        info!(oracle_env = %raw_oracle_env, "ORACLE: OFF (SUGAR_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a -- NO daemon, NO disambiguation");
         return observation;
     }
 
@@ -3921,7 +3921,7 @@ fn resolve_method_calls_via_oracle(
     }
     info!(
         count = total_queries,
-        "ORACLE: asking resident daemon (provekit-linkerd) to resolve {total_queries} method calls -- spawning/indexing daemon now"
+        "ORACLE: asking resident daemon (sugar-linkerd) to resolve {total_queries} method calls -- spawning/indexing daemon now"
     );
     // The resident warm rust-analyzer indexes the workspace ONCE inside the
     // daemon and is reused across mints, fronted by a content-addressed cache.
@@ -4240,7 +4240,7 @@ fn source_memento_from_body_source(
 }
 
 /// Collect VendorBindings from the FROZEN vendor `.proof`s resolved for the
-/// project (the same proof sources `recognize` uses: `.provekit/imports/` +
+/// project (the same proof sources `recognize` uses: `.sugar/imports/` +
 /// cargo-dependency proofs). The pin is frozen at mint time; the oracle later
 /// resolves it against LIVE vendor disk, so drift (frozen pin != live recompute)
 /// is detectable. This is the by-reference contract: re-lifting live source
@@ -4307,7 +4307,7 @@ fn vendor_bindings_from_proofs(project_root: &Path) -> Result<Vec<VendorBinding>
     Ok(bindings)
 }
 
-/// Extract `(library, call)` from a `#[provekit::boundary(library, call)]`
+/// Extract `(library, call)` from a `#[sugar::boundary(library, call)]`
 /// stub. `call` falls back to `api` (older annotations spelled the bound symbol
 /// there) and then to the stub's own fn name. Mirrors python `_boundary_decorator`.
 fn boundary_library_call(item_fn: &syn::ItemFn) -> Option<(String, String)> {
@@ -4325,9 +4325,9 @@ fn boundary_library_call(item_fn: &syn::ItemFn) -> Option<(String, String)> {
     Some((target.library, call))
 }
 
-/// `provekit.plugin.materialize`. Mirrors python `materialize_impl`. Params:
-///   - `project_root`: consumer project containing the `#[provekit::boundary]`
-///     stubs AND the resolved vendor `.proof`s (`.provekit/imports/` + cargo
+/// `sugar.plugin.materialize`. Mirrors python `materialize_impl`. Params:
+///   - `project_root`: consumer project containing the `#[sugar::boundary]`
+///     stubs AND the resolved vendor `.proof`s (`.sugar/imports/` + cargo
 ///     deps), exactly the proof sources `recognize` reads.
 ///   - `source_paths`: consumer files to scan for stubs (relative to project_root).
 ///   - `vendor_root` (optional): root the FROZEN memento's `file` path is
@@ -4336,7 +4336,7 @@ fn boundary_library_call(item_fn: &syn::ItemFn) -> Option<(String, String)> {
 ///     source — drift between the two is what gets REFUSED.
 ///   - `write` (optional bool): write the rewritten file in place.
 ///
-/// For each `#[provekit::boundary(library, call)]` stub: match a frozen vendor
+/// For each `#[sugar::boundary(library, call)]` stub: match a frozen vendor
 /// binding by `(library_tag, source_function_name) == (library, call)`, ask the
 /// SOURCE ORACLE to resolve its body from live disk (CID-verified against the
 /// frozen pin), and rewrite the stub body. On a missing binding or an oracle
@@ -5314,7 +5314,7 @@ fn all_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
 
 fn initialize_result() -> Value {
     json!({
-        "name": "provekit-walk-rpc",
+        "name": "sugar-walk-rpc",
         "version": env!("CARGO_PKG_VERSION"),
             "protocol_version": "pep/1.7.0",
             "capabilities": {
@@ -5330,7 +5330,7 @@ fn initialize_result() -> Value {
             // silent empty-set attestation.
             "consumer_surfaces": {
                 "rust-implications": {
-                    "method": "provekit.plugin.lift_implications",
+                    "method": "sugar.plugin.lift_implications",
                     "phase": "consumer"
                 }
             }
@@ -5341,7 +5341,7 @@ fn initialize_result() -> Value {
 fn kit_declaration_result() -> Value {
     json!({
         "kit": {
-            "id": "provekit-walk-rpc",
+            "id": "sugar-walk-rpc",
             "language": "rust",
             "version": env!("CARGO_PKG_VERSION")
         },
@@ -5350,9 +5350,9 @@ fn kit_declaration_result() -> Value {
                 {"name": "initialize", "required": true},
                 {"name": "lift", "required": true},
                 {"name": "shutdown", "required": true},
-                {"name": "provekit.plugin.recognize", "required": false},
-                {"name": "provekit.plugin.materialize", "required": false},
-                {"name": "provekit.plugin.lift_implications", "required": false},
+                {"name": "sugar.plugin.recognize", "required": false},
+                {"name": "sugar.plugin.materialize", "required": false},
+                {"name": "sugar.plugin.lift_implications", "required": false},
                 {"name": KIT_DECLARATION_RPC_METHOD, "required": false}
             ]
         },
@@ -5433,12 +5433,12 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
     // Derive-from-source: in the `library-bindings` layer, EVERY module-level
-    // `pub fn` that carries NO `#[provekit::sugar]` attribute is ALSO sugar —
+    // `pub fn` that carries NO `#[sugar::sugar]` attribute is ALSO sugar —
     // the tag is gone, the binding is DERIVED from the crate name + fn name
     // (`<crate>::f` -> tag=`<crate>`, symbol=`<crate>.f`). This is the rust
     // mirror of python's universal lift (`_library_binding_entry_for_function`,
     // `binding_origin: "derived"`): write a function, it's sugar — zero code
-    // changes, no `#[provekit::sugar]` required. Gated to `library-bindings`
+    // changes, no `#[sugar::sugar]` required. Gated to `library-bindings`
     // exactly like python (`layer == "library-bindings"`) so the general
     // contract path (`all`) is untouched and not flooded. The explicit-tag
     // path below stays unconditional (it already works).
@@ -5448,7 +5448,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         .and_then(Value::as_str)
         == Some("library-bindings");
     // The crate the derived tag names: the RAW `[package].name` (hyphens
-    // intact) so it matches a consumer's `#[provekit::boundary(library = ...)]`
+    // intact) so it matches a consumer's `#[sugar::boundary(library = ...)]`
     // verbatim under the materialize verb's raw `==`.
     let derived_crate_tag = if derive_library_bindings {
         crate_name_raw_for(&root)
@@ -5707,7 +5707,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             entries.push(entry);
 
             // #1580: emit a SIBLING `contract` decl per
-            // `#[provekit::sugar(...)]` annotation. cmd_mint mints
+            // `#[sugar::sugar(...)]` annotation. cmd_mint mints
             // this as a regular (non-body-bearing) contract memento.
             // The post is normally the trivial identity ctor —
             // `function_name(<vars>)` — which makes the verifier's
@@ -5755,7 +5755,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         // Derive-from-source lane (mirrors python's universal lift). Anything is
         // liftable sugar: when the `library-bindings` layer is active and the
         // crate has a readable `[package].name`, every MODULE-LEVEL `fn` (ANY
-        // visibility) with NO `#[provekit::sugar]` and NO `#[provekit::boundary]`
+        // visibility) with NO `#[sugar::sugar]` and NO `#[sugar::boundary]`
         // attribute ALSO emits a `library-sugar-binding-entry` —
         // `binding_origin: "derived"`, `target_library_tag = <crate>`,
         // `symbol = <crate>.<fn>`, carrying the SAME SourceMemento
@@ -5765,7 +5765,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         // does a tagged one. We reuse the tagged path's entry builder; only the
         // symbol/tag/origin provenance differs (path-derived vs attribute-
         // derived). Visibility is NOT a gate. Only structural skips remain: a
-        // still-tagged fn (emitted above), a `#[provekit::boundary]` consumer
+        // still-tagged fn (emitted above), a `#[sugar::boundary]` consumer
         // stub, and test fns. Impl methods + nested-module fns are the next
         // increment of "anything" (a structural walk, not an access rule). No
         // no name-keyed identity is emitted, so `recognize` (which requires a
@@ -5783,12 +5783,12 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 // real source the oracle resolves and CID-verifies just the
                 // same. The only skips below are structural, not access-level.
                 // The tag is OPTIONAL, not removed: a fn that still carries
-                // `#[provekit::sugar]` is emitted by the tagged path above —
+                // `#[sugar::sugar]` is emitted by the tagged path above —
                 // skip it here so we never double-emit.
                 if extract_sugar_attr(item_fn).is_some() {
                     continue;
                 }
-                // `#[provekit::boundary]` stubs are CONSUMERS of a binding, not
+                // `#[sugar::boundary]` stubs are CONSUMERS of a binding, not
                 // producers — never lift them as sugar.
                 if extract_boundary_attr(item_fn).is_some() {
                     continue;
@@ -5904,7 +5904,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             }));
         }
 
-        // Boundary lane: #[provekit::boundary] annotations. Each marks
+        // Boundary lane: #[sugar::boundary] annotations. Each marks
         // a function as the EDGE where a concept binds to a per-language
         // library. Emitted as `realization-memento` (Boundary variant)
         // entries so cmd_mint can mint them into the envelope; the
@@ -6558,7 +6558,7 @@ struct FunctionContractLiftTarget {
     fn_name: String,
     source_name: String,
     item_fn: syn::ItemFn,
-    /// True when the function carries `#[provekit::sugar(totality = "result_ok", ...)]`.
+    /// True when the function carries `#[sugar::sugar(totality = "result_ok", ...)]`.
     /// When set, the minted post is the AXIOM `is_ok(result)` (NOT body-derived).
     /// Sound only for wrapper functions whose return type is always Ok by type invariants
     /// (e.g. serde_json::to_string(&Value) is total). Gate: explicit opt-in only.
@@ -6843,7 +6843,7 @@ struct SugarAttrParsed {
     totality: Option<String>,
 }
 
-/// True iff the function carries `#[provekit::sugar(totality = "result_ok", ...)]`.
+/// True iff the function carries `#[sugar::sugar(totality = "result_ok", ...)]`.
 ///
 /// This is the ONLY gate for the totality post override: the attribute must be
 /// present AND the return type must be Result. Never infer from the type alone;
@@ -6886,7 +6886,7 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
     for attr in &item_fn.attrs {
         let path = attr.path();
         let segments: Vec<_> = path.segments.iter().collect();
-        if segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == "sugar" {
+        if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "sugar" {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
                 let concept = args.string("concept").unwrap_or_default();
@@ -6908,7 +6908,7 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
     None
 }
 
-/// One `#[provekit::boundary]` target discovered by walking the source.
+/// One `#[sugar::boundary]` target discovered by walking the source.
 /// Each boundary annotation marks a function as the EDGE where a
 /// concept binds to a per-language library. The lifter promotes it to
 /// a `realization-memento` (Boundary variant); the materializer reads
@@ -6962,7 +6962,7 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
     for attr in &item_fn.attrs {
         let path = attr.path();
         let segments: Vec<_> = path.segments.iter().collect();
-        if segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == "boundary"
+        if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "boundary"
         {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
@@ -6991,7 +6991,7 @@ fn extract_refuse_attr(item_mod: &syn::ItemMod) -> Option<RefuseTarget> {
     for attr in &item_mod.attrs {
         let path = attr.path();
         let segments: Vec<_> = path.segments.iter().collect();
-        if segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == "refuse" {
+        if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "refuse" {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
                 let surface = args.string("surface").unwrap_or_default();
@@ -7597,7 +7597,7 @@ fn sugar_generic_params(item_fn: &syn::ItemFn) -> String {
 }
 
 /// #1391 follow-on: extract the `///` doc-comment lines that appear
-/// AFTER the `#[provekit::sugar(...)]` attribute on a fn (syn surfaces
+/// AFTER the `#[sugar::sugar(...)]` attribute on a fn (syn surfaces
 /// these as `#[doc = "..."]` attributes interleaved with sugar). Doc
 /// comments BEFORE the sugar attribute belong to the rust source-level
 /// concept declaration block (a different surface that measure_fn skips)
@@ -7611,10 +7611,10 @@ fn sugar_doc_lines(item_fn: &syn::ItemFn) -> Vec<String> {
     let mut seen_sugar = false;
     for attr in &item_fn.attrs {
         let path = attr.path();
-        // Detect the `#[provekit::sugar(...)]` attribute by its two-segment
+        // Detect the `#[sugar::sugar(...)]` attribute by its two-segment
         // path.
         let segs: Vec<_> = path.segments.iter().collect();
-        if segs.len() == 2 && segs[0].ident == "provekit" && segs[1].ident == "sugar" {
+        if segs.len() == 2 && segs[0].ident == "sugar" && segs[1].ident == "sugar" {
             seen_sugar = true;
             continue;
         }
@@ -7998,7 +7998,7 @@ fn comment_surfaces_in_source(src: &str) -> Vec<String> {
             b'/' if bytes.get(i + 1) == Some(&b'/') => {
                 let end = line_comment_end(bytes, i);
                 if let Some(surface) = src.get(i..end).map(str::trim_end) {
-                    if !is_provekit_comment_carrier(surface) {
+                    if !is_sugar_comment_carrier(surface) {
                         surfaces.push(surface.to_string());
                     }
                 }
@@ -8007,7 +8007,7 @@ fn comment_surfaces_in_source(src: &str) -> Vec<String> {
             b'/' if bytes.get(i + 1) == Some(&b'*') => {
                 let end = block_comment_end(bytes, i);
                 if let Some(surface) = src.get(i..end).map(str::trim) {
-                    if !is_provekit_comment_carrier(surface) {
+                    if !is_sugar_comment_carrier(surface) {
                         surfaces.push(surface.to_string());
                     }
                 }
@@ -8019,7 +8019,7 @@ fn comment_surfaces_in_source(src: &str) -> Vec<String> {
     surfaces
 }
 
-fn is_provekit_comment_carrier(surface: &str) -> bool {
+fn is_sugar_comment_carrier(surface: &str) -> bool {
     let mut payload = surface.trim();
     if let Some(rest) = payload.strip_prefix("//") {
         payload = rest.trim();
@@ -8027,12 +8027,12 @@ fn is_provekit_comment_carrier(surface: &str) -> bool {
         payload = payload[2..payload.len() - 2].trim();
     }
     [
-        "provekit:concept:",
-        "provekit:concept-payload-cid:",
-        "provekit-concept:",
-        "provekit-concept-payload-cid:",
-        "provekit-contract:",
-        "provekit-contract-payload-cid:",
+        "sugar:concept:",
+        "sugar:concept-payload-cid:",
+        "sugar-concept:",
+        "sugar-concept-payload-cid:",
+        "sugar-contract:",
+        "sugar-contract-payload-cid:",
     ]
     .iter()
     .any(|prefix| payload.starts_with(prefix))
@@ -8835,12 +8835,12 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         }
         // `(a, b, c)` — rust tuple literal. No first-class tuple concept
         // in the catalog; encode as concept:call with synthetic path leaf
-        // `__provekit_tuple_new`. The lower side detects this name and
+        // `__sugar_tuple_new`. The lower side detects this name and
         // emits target-appropriate tuple constructor (e.g. Object[] in java).
         syn::Expr::Tuple(e) => {
             let callee = CValue::object([
                 ("kind", CValue::string("path")),
-                ("text", CValue::string("__provekit_tuple_new")),
+                ("text", CValue::string("__sugar_tuple_new")),
             ]);
             let mut args = vec![callee];
             for elem in &e.elems {
@@ -9532,7 +9532,7 @@ mod tests {
     #[test]
     fn source_oracle_resolves_matching_source_to_body() {
         let dir = unique_tmp("match");
-        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
         // Clean disk == the pin: the oracle returns the body.
         let resolved = resolve_source_memento(&dir, &memento).expect("clean resolve");
@@ -9545,10 +9545,10 @@ mod tests {
     #[test]
     fn source_oracle_refuses_on_body_drift() {
         let dir = unique_tmp("drift");
-        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
         // Tamper the body AFTER minting the pin: same behavior, different bytes.
-        let tampered = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    let v: Vec<char> = s.chars().rev().collect();\n    v.into_iter().collect()\n}\n";
+        let tampered = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    let v: Vec<char> = s.chars().rev().collect();\n    v.into_iter().collect()\n}\n";
         fs::write(dir.join("src/lib.rs"), tampered).unwrap();
         let err = resolve_source_memento(&dir, &memento).expect_err("drift must refuse");
         assert!(
@@ -9568,11 +9568,11 @@ mod tests {
         // on the source_cid axis, demonstrating the producer's canonicalization
         // is exactly what the oracle recomputes.
         let dir = unique_tmp("rename");
-        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
 
         // Re-mint a memento from the param-renamed body to read its pins.
-        let renamed = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(input: &str) -> String {\n    input.chars().rev().collect()\n}\n";
+        let renamed = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(input: &str) -> String {\n    input.chars().rev().collect()\n}\n";
         let dir2 = unique_tmp("rename2");
         let renamed_memento = mint_memento_for(&dir2, "rev", renamed);
         // template_cid is STABLE across the param rename (alpha-equivalence).
@@ -9601,7 +9601,7 @@ mod tests {
     #[test]
     fn source_oracle_refuses_when_function_absent() {
         let dir = unique_tmp("absent");
-        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
         // Replace with a file that has no `rev`.
         fs::write(dir.join("src/lib.rs"), "pub fn other() -> u32 { 0 }\n").unwrap();
@@ -9612,7 +9612,7 @@ mod tests {
 
     #[test]
     fn sugar_body_source_is_one_shape_without_inline_body_or_template() {
-        let src = "#[provekit::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let parsed = syn::parse_file(src).unwrap();
         let item_fn = parsed
             .items
@@ -9649,7 +9649,7 @@ mod tests {
 
     #[test]
     fn boundary_body_edit_reindents_to_stub_level() {
-        let src = "mod m {\n    #[provekit::boundary(concept=\"c\", library=\"l\", call=\"f\")]\n    pub fn rev(s: &str) -> String {\n        unimplemented!()\n    }\n}\n";
+        let src = "mod m {\n    #[sugar::boundary(concept=\"c\", library=\"l\", call=\"f\")]\n    pub fn rev(s: &str) -> String {\n        unimplemented!()\n    }\n}\n";
         let parsed = syn::parse_file(src).unwrap();
         let mut stubs: Vec<(&syn::ItemFn, String, String)> = Vec::new();
         collect_boundary_stubs(&parsed.items, &mut stubs);
@@ -9991,7 +9991,7 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
             serde_json::from_value(kit_declaration_result()).expect("kit declaration shape");
 
         declaration.validate().expect("valid kit declaration");
-        assert_eq!(declaration.kit.id, "provekit-walk-rpc");
+        assert_eq!(declaration.kit.id, "sugar-walk-rpc");
         assert_eq!(declaration.kit.language, "rust");
         assert_eq!(
             declaration.effect_kinds,
@@ -10064,7 +10064,7 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
 async fn fetch_status(url: String) -> i64 {
     0
 }
@@ -10125,12 +10125,12 @@ async fn fetch_status(url: String) -> i64 {
 
     #[test]
     fn untagged_pub_fn_derives_library_sugar_binding_entry_in_library_bindings_layer() {
-        // The relapse-killer: a PLAIN `pub fn` with NO `#[provekit::sugar]`
+        // The relapse-killer: a PLAIN `pub fn` with NO `#[sugar::sugar]`
         // attribute must ALSO emit a `library-sugar-binding-entry` when the
         // `library-bindings` layer is active — the tag is gone; the binding is
         // DERIVED from the crate name + fn name. Mirror of python's universal
         // lift. The `target_library_tag` is the RAW crate name (hyphens intact)
-        // so it matches a consumer's `#[provekit::boundary(library = ...)]`.
+        // so it matches a consumer's `#[sugar::boundary(library = ...)]`.
         let root = temp_workspace("derive_positive");
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
@@ -10221,7 +10221,7 @@ async fn fetch_status(url: String) -> i64 {
     #[test]
     fn sugar_body_source_uses_rust_block_span_for_source_cid_without_storing_body() {
         let src = r####"
-#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
 async fn render(url: String) -> String {
     let normal = "}";
     let raw = r###"raw } braces { stay"###;
@@ -10263,7 +10263,7 @@ async fn render(url: String) -> String {
     #[test]
     fn sugar_body_source_uses_byte_offsets_for_unicode_source_cid_without_storing_body() {
         let src = r#"
-#[provekit::sugar(concept = "concept:unicode", library = "unicode-lib")]
+#[sugar::sugar(concept = "concept:unicode", library = "unicode-lib")]
 pub fn snowman() -> &'static str { "☃ } still body" }
 "#;
         let entry = single_sugar_entry_for_source("sugar_body_unicode_byte_offsets", src);
@@ -10279,7 +10279,7 @@ pub fn snowman() -> &'static str { "☃ } still body" }
     #[test]
     fn sugar_body_source_canonicalizes_trimmed_body_for_source_cid_without_storing_body() {
         let src_a = r#"
-#[provekit::sugar(concept = "concept:canonical-body", library = "test-lib")]
+#[sugar::sugar(concept = "concept:canonical-body", library = "test-lib")]
 pub fn canonical_body() -> i64 {
 
     41 + 1
@@ -10287,7 +10287,7 @@ pub fn canonical_body() -> i64 {
 }
 "#;
         let src_b = r#"
-#[provekit::sugar(concept = "concept:canonical-body", library = "test-lib")]
+#[sugar::sugar(concept = "concept:canonical-body", library = "test-lib")]
 pub fn canonical_body() -> i64 {    41 + 1    }
 "#;
 
@@ -10315,7 +10315,7 @@ pub fn canonical_body() -> i64 {    41 + 1    }
     #[test]
     fn sugar_body_source_emits_template_cid_without_storing_template() {
         let src = r##"
-#[provekit::sugar(concept = "concept:json-parse", library = "serde_json")]
+#[sugar::sugar(concept = "concept:json-parse", library = "serde_json")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10356,7 +10356,7 @@ pub fn json_parse(s: &str) -> i64 {
     #[test]
     fn sugar_body_template_canonicalizes_multiple_params_positionally() {
         let src = r##"
-#[provekit::sugar(concept = "concept:sql-execute", library = "rusqlite")]
+#[sugar::sugar(concept = "concept:sql-execute", library = "rusqlite")]
 pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
     conn.execute(sql, args)
 }
@@ -10399,13 +10399,13 @@ pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
         // Canonical templates with $1/$2 must be byte-identical for two
         // sugar functions that differ only in their parameter names.
         let src_a = r##"
-#[provekit::sugar(concept = "concept:noop", library = "ka")]
+#[sugar::sugar(concept = "concept:noop", library = "ka")]
 pub fn op(x: &i64, y: &i64) -> i64 {
     x.add(y)
 }
 "##;
         let src_b = r##"
-#[provekit::sugar(concept = "concept:noop", library = "kb")]
+#[sugar::sugar(concept = "concept:noop", library = "kb")]
 pub fn op(alpha: &i64, beta: &i64) -> i64 {
     alpha.add(beta)
 }
@@ -10427,7 +10427,7 @@ pub fn op(alpha: &i64, beta: &i64) -> i64 {
     }
 
     // ---------------------------------------------------------------------
-    // Recognizer foundation Phase C (#81, #82, #86): the provekit.plugin.recognize
+    // Recognizer foundation Phase C (#81, #82, #86): the sugar.plugin.recognize
     // RPC handler. Walks user source, matches function bodies' identifier-
     // canonical templates against supplied binding_templates by template_cid,
     // emits tier-`exact` tags for matches. Tier-1 = exact-cid match.
@@ -10437,7 +10437,7 @@ pub fn op(alpha: &i64, beta: &i64) -> i64 {
     fn recognize_emits_exact_tag_for_alpha_equivalent_user_function() {
         // The shim's sugar (what would land in the .proof envelope):
         let sugar_src = r##"
-#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10478,7 +10478,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
             tag["op_cid"],
             local_op_cid("concept:json-parse").expect("json op cid")
         );
-        assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
+        assert_eq!(tag["library_tag"], "sugar-shim-serde-json-rust");
         assert_eq!(tag["match_tier"], "exact");
         assert_eq!(tag["file"], user_rel);
         // param_bindings reflects the USER's spelling (input), not the sugar's (s).
@@ -10493,7 +10493,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_loads_binding_templates_from_imported_proofs() {
         let sugar_src = r##"
-#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10513,7 +10513,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         fs::write(root.join(user_rel), user_src).expect("write user source");
 
         let proof_cid = write_sugar_binding_proof(
-            &root.join(".provekit").join("imports"),
+            &root.join(".sugar").join("imports"),
             sugar_entry,
             contract_cid,
             "@test/rust-recognize-imported-shim",
@@ -10536,7 +10536,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
             tag["op_cid"],
             local_op_cid("concept:json-parse").expect("json op cid")
         );
-        assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
+        assert_eq!(tag["library_tag"], "sugar-shim-serde-json-rust");
         assert_eq!(tag["contract_cid"], contract_cid);
         assert_eq!(tag["target_proof_cid"], proof_cid);
 
@@ -10546,7 +10546,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_matches_template_cid_only_imported_proof() {
         let sugar_src = r##"
-#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10573,7 +10573,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         fs::write(root.join(user_rel), user_src).expect("write user source");
 
         let proof_cid = write_sugar_binding_proof(
-            &root.join(".provekit").join("imports"),
+            &root.join(".sugar").join("imports"),
             sugar_entry,
             contract_cid,
             "@test/rust-recognize-template-cid-only-shim",
@@ -10596,7 +10596,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
             tag["op_cid"],
             local_op_cid("concept:json-parse").expect("json op cid")
         );
-        assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
+        assert_eq!(tag["library_tag"], "sugar-shim-serde-json-rust");
         assert_eq!(tag["contract_cid"], contract_cid);
         assert_eq!(tag["target_proof_cid"], proof_cid);
 
@@ -10606,7 +10606,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_loads_binding_templates_from_cargo_dependency_proofs() {
         let sugar_src = r##"
-#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10684,7 +10684,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_returns_empty_tags_for_non_matching_source() {
         let sugar_src = r##"
-#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10730,13 +10730,13 @@ pub fn json_parse(s: &str) -> i64 {
         // Two binding templates (json + sql shapes). User source contains
         // one match for each. Recognize emits two tags.
         let json_sugar = r##"
-#[provekit::sugar(concept = "concept:json-parse", library = "json-lib")]
+#[sugar::sugar(concept = "concept:json-parse", library = "json-lib")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
 "##;
         let sql_sugar = r##"
-#[provekit::sugar(concept = "concept:sql-execute", library = "sql-lib")]
+#[sugar::sugar(concept = "concept:sql-execute", library = "sql-lib")]
 pub fn sql_execute(conn: &i64, sql: &str, args: &i64) -> i64 {
     conn.execute(sql, args)
 }
@@ -10795,7 +10795,7 @@ pub fn sql_execute(c: &i64, q: &str, p: &i64) -> i64 {
         // template's $N markers back to the user's actual variables at
         // tag emission time. The lifter exposes them as a separate field.
         let src = r##"
-#[provekit::sugar(concept = "concept:sql-query-row", library = "rusqlite")]
+#[sugar::sugar(concept = "concept:sql-query-row", library = "rusqlite")]
 pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
     conn.query_row(sql, params, mapper)
 }
@@ -10821,7 +10821,7 @@ pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(
+#[sugar::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
     version = "0.39.0",
@@ -10862,7 +10862,7 @@ pub fn query(conn: &i64, sql: &str) -> i64 {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
 async fn fetch_status(url: String) -> i64 {
     0
 }
@@ -10895,7 +10895,7 @@ async fn fetch_status(url: String) -> i64 {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::boundary(
+#[sugar::boundary(
     concept = "concept:sql-query",
     library = "rusqlite",
     version = "0.39.0",
@@ -10972,12 +10972,12 @@ fn plain_fn(x: i64) -> i64 {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
 fn fetch_one(url: String) -> i64 {
     0
 }
 
-#[provekit::sugar(concept = "concept:sql-query", library = "rusqlite")]
+#[sugar::sugar(concept = "concept:sql-query", library = "rusqlite")]
 fn query_db(sql: String) -> String {
     String::new()
 }
@@ -11020,7 +11020,7 @@ fn query_db(sql: String) -> String {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src_missing_lib = r#"
-#[provekit::sugar(concept = "concept:http-request")]
+#[sugar::sugar(concept = "concept:http-request")]
 fn missing_lib(url: String) -> i64 { 0 }
 "#;
         fs::write(src_dir.join("lib.rs"), src_missing_lib).expect("write source");
@@ -11041,7 +11041,7 @@ fn missing_lib(url: String) -> i64 { 0 }
         );
 
         let src_missing_concept = r#"
-#[provekit::sugar(library = "reqwest")]
+#[sugar::sugar(library = "reqwest")]
 fn missing_concept(url: String) -> i64 { 0 }
 "#;
         fs::write(src_dir.join("lib.rs"), src_missing_concept).expect("write source");
@@ -11299,9 +11299,9 @@ pub fn commented(value: i64) -> i64 {
             src_dir.join("lib.rs"),
             r#"
 pub fn commented(value: i64) -> i64 {
-    // provekit:concept:skip
-    // provekit-concept: {}
-    // provekit-concept-payload-cid: blake3-512:dead
+    // sugar:concept:skip
+    // sugar-concept: {}
+    // sugar-concept-payload-cid: blake3-512:dead
     // ordinary line comment
     value
 }
@@ -12048,14 +12048,14 @@ pub fn bitwise_not() -> i64 {
     }
 
     fn write_infallible_serialize_manifest(root: &Path, body: &str) {
-        let contracts_dir = root.join(".provekit").join("contracts");
+        let contracts_dir = root.join(".sugar").join("contracts");
         fs::create_dir_all(&contracts_dir).expect("create contracts dir");
         fs::write(contracts_dir.join("infallible_serialize.toml"), body)
             .expect("write infallible serialize manifest");
     }
 
     fn write_function_postconditions_manifest(root: &Path, body: &str) {
-        let contracts_dir = root.join(".provekit").join("contracts");
+        let contracts_dir = root.join(".sugar").join("contracts");
         fs::create_dir_all(&contracts_dir).expect("create contracts dir");
         fs::write(contracts_dir.join("function_postconditions.toml"), body)
             .expect("write function postconditions manifest");
@@ -12124,9 +12124,9 @@ reason = "scope discipline probe"
     }
 
     fn write_residue_manifest(root: &Path, body: &str) {
-        let provekit_dir = root.join(".provekit");
-        fs::create_dir_all(&provekit_dir).expect("create .provekit dir");
-        fs::write(provekit_dir.join("residue.toml"), body).expect("write residue manifest");
+        let sugar_dir = root.join(".sugar");
+        fs::create_dir_all(&sugar_dir).expect("create .sugar dir");
+        fs::write(sugar_dir.join("residue.toml"), body).expect("write residue manifest");
     }
 
     fn write_sugar_binding_proof(
@@ -12221,7 +12221,7 @@ reason = "scope discipline probe"
 
     fn rust_lifter_parse_refusal_workspace(label: &str) -> PathBuf {
         let unique = format!(
-            "provekit-walk-parse-refusal-{}-{}",
+            "sugar-walk-parse-refusal-{}-{}",
             label,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -12242,7 +12242,7 @@ reason = "scope discipline probe"
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(
+#[sugar::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
     loss = ["sync-vs-async", "row-cardinality"],
@@ -12275,7 +12275,7 @@ fn query(conn: String, sql: String) -> i64 { 0 }
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(concept = "concept:sql-query", library = "rusqlite")]
+#[sugar::sugar(concept = "concept:sql-query", library = "rusqlite")]
 fn query(conn: String, sql: String) -> i64 { 0 }
 "#;
         fs::write(src_dir.join("lib.rs"), src).expect("write source");
@@ -12304,7 +12304,7 @@ fn query(conn: String, sql: String) -> i64 { 0 }
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(
+#[sugar::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
     observed_dimension = "autocommit-mode",
@@ -12334,7 +12334,7 @@ fn is_autocommit(conn: String) -> bool { false }
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::refuse(
+#[sugar::refuse(
     surface = "rusqlite::Connection::backup",
     concept = "concept:sql-physical-backup",
     reason = "SQLite-binary-specific physical backup; N=1 cluster.",
@@ -12376,7 +12376,7 @@ pub mod refused_backup {}
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src_missing_reason = r#"
-#[provekit::refuse(
+#[sugar::refuse(
     surface = "rusqlite::Connection::backup",
     concept = "concept:sql-physical-backup",
     would_close_with_cluster = "Cross-driver analog",
@@ -12437,17 +12437,17 @@ pub mod plain_module {}
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[provekit::sugar(concept = "concept:sql-execute", library = "rusqlite", loss = [])]
+#[sugar::sugar(concept = "concept:sql-execute", library = "rusqlite", loss = [])]
 fn execute(conn: String, sql: String) -> i64 { 0 }
 
-#[provekit::sugar(
+#[sugar::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
     loss = ["sync-vs-async", "row-cardinality"],
 )]
 fn query_row(conn: String, sql: String) -> String { String::new() }
 
-#[provekit::refuse(
+#[sugar::refuse(
     surface = "rusqlite::Connection::backup",
     concept = "concept:sql-physical-backup",
     reason = "SQLite-specific; cluster N=1.",
@@ -12788,7 +12788,7 @@ mod tests {
             root.join("Cargo.toml"),
             r#"
 [package]
-name = "provekit-cli"
+name = "sugar-cli"
 version = "0.1.0"
 edition = "2021"
 "#,
@@ -12815,7 +12815,7 @@ pub fn identity(value: i64) -> i64 {
             .iter()
             .find(|entry| entry["name"] == "identity")
             .expect("identity function contract");
-        assert_eq!(entry["library"], "provekit_cli");
+        assert_eq!(entry["library"], "sugar_cli");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -15716,7 +15716,7 @@ pub fn dispatch() {
     let req: Value = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.invoke",
+        "method": "sugar.plugin.invoke",
     });
     serde_json::to_string(&req).expect("serialize request");
 }
@@ -16444,7 +16444,7 @@ pub fn caller(input: &str) -> i64 {
     }
 
     #[test]
-    fn rpc_dispatches_provekit_plugin_lift_implications_method() {
+    fn rpc_dispatches_sugar_plugin_lift_implications_method() {
         let src = r##"
 pub fn caller(input: &str) -> i64 {
     parse_input(input)
@@ -16458,7 +16458,7 @@ pub fn caller(input: &str) -> i64 {
         let response = handle_line(&json!({
             "jsonrpc": "2.0",
             "id": 2,
-            "method": "provekit.plugin.lift_implications",
+            "method": "sugar.plugin.lift_implications",
             "params": {
                 "workspace_root": root.to_string_lossy(),
                 "source_paths": ["."],
@@ -16471,7 +16471,7 @@ pub fn caller(input: &str) -> i64 {
 
         assert!(
             response.get("error").is_none(),
-            "RPC method table must expose provekit.plugin.lift_implications: {response}"
+            "RPC method table must expose sugar.plugin.lift_implications: {response}"
         );
         let ir = response["result"]["ir"].as_array().expect("ir array");
         assert!(

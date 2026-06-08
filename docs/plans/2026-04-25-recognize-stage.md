@@ -153,7 +153,7 @@ The second is more robust but doubles the cost. Default to confidence; fall back
 
 Sometimes the customer wants a specific fix that differs from the library's canonical template (e.g., they prefer `assert(b !== 0)` over `if (b === 0) throw`). The mechanical path would silently apply the wrong style.
 
-**Mitigation**: the recognized path produces a *suggested* fix. The customer's preference (encoded in their `.provekit/preferences.json` or similar) overrides the canonical template per principle.
+**Mitigation**: the recognized path produces a *suggested* fix. The customer's preference (encoded in their `.sugar/preferences.json` or similar) overrides the canonical template per principle.
 
 ## Acceptance
 

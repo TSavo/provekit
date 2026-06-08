@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -37,7 +37,7 @@ fn install_emit_registration(project: &Path) {
     let python_src = repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-emit-python-unittest")
+        .join("sugar-emit-python-unittest")
         .join("src");
     let pythonpath = python_src
         .display()
@@ -46,10 +46,10 @@ fn install_emit_registration(project: &Path) {
         .replace('"', "\\\"");
     let python = python_bin().replace('\\', "\\\\").replace('"', "\\\"");
 
-    let provekit_dir = project.join(".provekit");
-    fs::create_dir_all(&provekit_dir).expect("mkdir .provekit");
+    let sugar_dir = project.join(".sugar");
+    fs::create_dir_all(&sugar_dir).expect("mkdir .sugar");
     fs::write(
-        provekit_dir.join("config.toml"),
+        sugar_dir.join("config.toml"),
         "[[plugins]]\n\
          name = \"python-unittest\"\n\
          surface = \"python-unittest\"\n\
@@ -58,7 +58,7 @@ fn install_emit_registration(project: &Path) {
     .expect("write project config");
 
     let manifest = project
-        .join(".provekit")
+        .join(".sugar")
         .join("emit")
         .join("python-unittest")
         .join("manifest.toml");
@@ -66,7 +66,7 @@ fn install_emit_registration(project: &Path) {
     fs::write(
         manifest,
         format!(
-            "name = \"python-unittest\"\ncommand = [\"env\", \"PYTHONPATH={pythonpath}\", \"{python}\", \"-m\", \"provekit_emit_python_unittest\", \"--rpc\"]\nworking_dir = \".\"\nprotocol_versions = [\"pep/1.7.0\"]\n"
+            "name = \"python-unittest\"\ncommand = [\"env\", \"PYTHONPATH={pythonpath}\", \"{python}\", \"-m\", \"sugar_emit_python_unittest\", \"--rpc\"]\nworking_dir = \".\"\nprotocol_versions = [\"pep/1.7.0\"]\n"
         ),
     )
     .expect("write emit manifest");
@@ -107,7 +107,7 @@ fn emit_python_unittest_dispatches_real_emitter_and_unittest_checks_output() {
     )
     .expect("write plan");
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("emit")
         .arg("--project")
         .arg(&project)
@@ -122,13 +122,13 @@ fn emit_python_unittest_dispatches_real_emitter_and_unittest_checks_output() {
         .arg("--compile-check")
         .arg("--json")
         .output()
-        .expect("spawn provekit emit python");
+        .expect("spawn sugar emit python");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit emit python unittest failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar emit python unittest failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     let receipt: Value = serde_json::from_str(&stdout).expect("emit stdout is JSON");

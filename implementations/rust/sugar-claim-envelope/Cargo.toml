@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt: claim/memento envelope minters (contract, bridge, implication)."
+description = "Sugar: claim/memento envelope minters (contract, bridge, implication)."
 
 [dependencies]
 sugar-canonicalizer = { path = "../sugar-canonicalizer" }

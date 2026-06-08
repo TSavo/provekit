@@ -13,4 +13,4 @@ mod native_tests {
 }
 
 #[cfg(test)]
-include!("provekit_emitted.rs");
+include!("sugar_emitted.rs");

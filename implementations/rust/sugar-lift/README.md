@@ -1,21 +1,21 @@
-# provekit-lift
+# sugar-lift
 
-The canonical adoption path for ProvekIt.
+The canonical adoption path for Sugar.
 
 ## What this is
 
-`provekit-lift` walks an existing Rust workspace, finds annotations from
+`sugar-lift` walks an existing Rust workspace, finds annotations from
 established testing/specification libraries (`proptest`, `contracts`,
 and more to come), translates each one to canonical IR, mints a signed
 content-addressed contract memento, and bundles the result into a single
 `.proof` catalog file.
 
 You do not rewrite anything. Your existing tests stay where they are.
-`provekit-lift` reads what you already have and promotes it.
+`sugar-lift` reads what you already have and promotes it.
 
 ## Strategic positioning
 
-ProvekIt does **not** compete with existing annotation libraries. It
+Sugar does **not** compete with existing annotation libraries. It
 sits **beneath** them.
 
 ```
@@ -27,7 +27,7 @@ sits **beneath** them.
 │  │                               │                           │
 │  │  walks AST              walks AST                         │
 │  │                               │                           │
-│  └────────── provekit-lift ──────┘                           │
+│  └────────── sugar-lift ──────┘                           │
 │                   │                                          │
 │                   ▼                                          │
 │         <cid>.proof  (signed, content-addressed)             │
@@ -42,23 +42,23 @@ existing annotation library is handled the same way as everything else:
 write the contract in a native annotation library (or as native source
 the lift adapters already understand), then lift it. A contract only
 enters the substrate by being lifted from native source, never by a
-`provekit`-specific attribute.
+`sugar`-specific attribute.
 
 ## Usage
 
 ```bash
 # As a Cargo subcommand (preferred):
-cargo provekit-lift --workspace . --target-dir target/release
+cargo sugar-lift --workspace . --target-dir target/release
 
 # As a direct binary:
-provekit-lift --workspace . --target-dir target/release
+sugar-lift --workspace . --target-dir target/release
 ```
 
 Both forms walk the directory tree, run every registered adapter on
 every `.rs` file, mint each lifted contract, and write a single
 `<cid>.proof` to the output directory. The CID is printed on stdout.
 
-The output `.proof` loads cleanly through `provekit verify`.
+The output `.proof` loads cleanly through `sugar verify`.
 
 ## What gets lifted
 
@@ -202,14 +202,14 @@ the lattice should never silently accept contradiction.
 ## Architecture
 
 ```
-provekit-lift              library + two binaries
+sugar-lift              library + two binaries
 ├── adapters
-│   ├── proptest           provekit-lift-proptest crate
-│   └── contracts          provekit-lift-contracts crate
+│   ├── proptest           sugar-lift-proptest crate
+│   └── contracts          sugar-lift-contracts crate
 └── core                   walk, parse, dispatch, mint, bundle
 ```
 
 Each adapter is its own crate with its own `lift_file(syn::File,
 &str) -> AdapterOutput`. Adding a new adapter is: write a crate, add
-it to `provekit-lift/Cargo.toml`, call its `lift_file` from
+it to `sugar-lift/Cargo.toml`, call its `lift_file` from
 `lib.rs::lift_path`.

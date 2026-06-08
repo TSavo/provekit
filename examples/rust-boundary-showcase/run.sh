@@ -3,15 +3,15 @@
 # but for RUST source (not a python vendor):
 #
 #   derive-lift — the vendor crate's PLAIN `pub fn reverse_chars` (NO
-#                 `#[provekit::sugar]` tag) is lifted with PROVEKIT_LEAN_SOURCE=1
+#                 `#[sugar::sugar]` tag) is lifted with SUGAR_LEAN_SOURCE=1
 #                 into a LEAN .proof (locus + source_cid/template_cid, NO inline
-#                 body) staged into the consumer's .provekit/imports/. In the
+#                 body) staged into the consumer's .sugar/imports/. In the
 #                 library-bindings layer the binding is DERIVED from the crate
 #                 name + fn name — write a function, it's sugar; the tag is gone.
 #                 The body lives only on vendor disk; the SourceMemento points
 #                 at it.
 #   mint        — the lean binding is sealed into a content-addressed .proof.
-#   materialize — the consumer's `#[provekit::boundary(library, call)]` stub gets
+#   materialize — the consumer's `#[sugar::boundary(library, call)]` stub gets
 #                 its body filled with reverse_chars's REAL source, resolved by
 #                 the Source Oracle from the live vendor crate and CID-verified
 #                 against the frozen pin.
@@ -20,30 +20,30 @@
 #
 # Everything is kit-side; the .proof is the transport; rust stays proof-blind.
 # NOTE: no `set -e` — the drift leg intentionally REFUSES (non-zero verb exit);
-# this script captures both verdicts and PASSES iff provekit produces exactly
+# this script captures both verdicts and PASSES iff sugar produces exactly
 # them (fill succeeds + body matches; drift refused). Mirrors numpy-showcase.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 BIN="$REPO/implementations/rust/target/debug/sugar"
-WALK="$REPO/implementations/rust/target/debug/provekit-walk-rpc"
+WALK="$REPO/implementations/rust/target/debug/sugar-walk-rpc"
 
 VENDOR="$HERE/vendor"
 CONSUMER="$HERE/consumer"
 
 if [ ! -x "$BIN" ] || [ ! -x "$WALK" ]; then
-  echo "building provekit + walk-rpc ..."
-  ( cd "$REPO/implementations/rust" && cargo build -p sugar-cli --bin provekit -p sugar-walk --bin provekit-walk-rpc ) || {
+  echo "building sugar + walk-rpc ..."
+  ( cd "$REPO/implementations/rust" && cargo build -p sugar-cli --bin sugar -p sugar-walk --bin sugar-walk-rpc ) || {
     echo "FAIL: cargo build failed"; exit 1; }
 fi
 
 # --- restore both source files to their pristine (pre-tamper) state ----------
 cat > "$VENDOR/src/lib.rs" <<'RS'
-// The vendor's REAL source — PLAIN rust, no provekit attribute of any kind.
+// The vendor's REAL source — PLAIN rust, no sugar attribute of any kind.
 // `reverse_chars` is an ordinary `pub fn`. In the `library-bindings` layer the
 // lift DERIVES the binding from the crate name + fn name (no
-// `#[provekit::sugar]` required): write a function, it's sugar. Lifting it with
-// PROVEKIT_LEAN_SOURCE=1 mints a LEAN binding (locus + source_cid/template_cid,
+// `#[sugar::sugar]` required): write a function, it's sugar. Lifting it with
+// SUGAR_LEAN_SOURCE=1 mints a LEAN binding (locus + source_cid/template_cid,
 // NO inline body). The body lives ONLY here on disk; the Source Oracle resolves
 // it on demand IFF this source recomputes to the pinned CIDs.
 //
@@ -57,10 +57,10 @@ pub fn reverse_chars(s: &str) -> String {
 RS
 
 cat > "$CONSUMER/src/lib.rs" <<'RS'
-// The consumer. `rev` is a `#[provekit::boundary]` stub: its body is a
+// The consumer. `rev` is a `#[sugar::boundary]` stub: its body is a
 // placeholder until `materialize` fills it from the vendor's REAL
 // `reverse_chars` source (CID-verified against the frozen vendor .proof).
-#[provekit::boundary(concept = "concept:reverse-string", library = "rust-boundary-vendor", call = "reverse_chars")]
+#[sugar::boundary(concept = "concept:reverse-string", library = "rust-boundary-vendor", call = "reverse_chars")]
 pub fn rev(s: &str) -> String {
     unimplemented!("materialize-fillable boundary")
 }
@@ -71,19 +71,19 @@ RS
 EXPECTED_BODY="s.chars().rev().collect()"
 
 # --- lift manifests (interpolate the built walk-rpc path + lean env) ----------
-mkdir -p "$VENDOR/.provekit/lift/rust-bind" "$CONSUMER/.provekit/lift/rust-bind" "$CONSUMER/.provekit/imports"
-# Vendor: lean lift (PROVEKIT_LEAN_SOURCE=1 in command) -> lean .proof at mint.
-cat > "$VENDOR/.provekit/lift/rust-bind/manifest.toml" <<EOF
+mkdir -p "$VENDOR/.sugar/lift/rust-bind" "$CONSUMER/.sugar/lift/rust-bind" "$CONSUMER/.sugar/imports"
+# Vendor: lean lift (SUGAR_LEAN_SOURCE=1 in command) -> lean .proof at mint.
+cat > "$VENDOR/.sugar/lift/rust-bind/manifest.toml" <<EOF
 name = "rust-bind-lift"
 kind = "lift"
-command = ["/usr/bin/env", "PROVEKIT_LEAN_SOURCE=1", "$WALK", "--rpc"]
+command = ["/usr/bin/env", "SUGAR_LEAN_SOURCE=1", "$WALK", "--rpc"]
 working_dir = "."
 [capabilities]
 authoring_surfaces = ["rust-bind"]
 EOF
-# Consumer: serves provekit.plugin.materialize (no lean env needed; lean only
+# Consumer: serves sugar.plugin.materialize (no lean env needed; lean only
 # affects the mint path, not the materialize resolution).
-cat > "$CONSUMER/.provekit/config.toml" <<EOF
+cat > "$CONSUMER/.sugar/config.toml" <<EOF
 [authoring]
 surface = "rust-bind"
 [[plugins]]
@@ -91,7 +91,7 @@ name = "rust-sugar"
 surface = "rust-bind"
 layer = "library-bindings"
 EOF
-cat > "$CONSUMER/.provekit/lift/rust-bind/manifest.toml" <<EOF
+cat > "$CONSUMER/.sugar/lift/rust-bind/manifest.toml" <<EOF
 name = "rust-bind-lift"
 kind = "lift"
 command = ["$WALK", "--rpc"]
@@ -101,11 +101,11 @@ authoring_surfaces = ["rust-bind"]
 EOF
 
 # --- clean prior artifacts ---------------------------------------------------
-rm -f "$CONSUMER/.provekit/imports/"*.proof 2>/dev/null || true
+rm -f "$CONSUMER/.sugar/imports/"*.proof 2>/dev/null || true
 
-echo "== derive-lift vendor -> consumer/.provekit/imports/ (lean: CIDs, not inline body) =="
-"$BIN" mint --project "$VENDOR" --out "$CONSUMER/.provekit/imports" --library-bindings --quiet
-VENDOR_PROOF="$(ls "$CONSUMER/.provekit/imports/"*.proof 2>/dev/null | head -1)"
+echo "== derive-lift vendor -> consumer/.sugar/imports/ (lean: CIDs, not inline body) =="
+"$BIN" mint --project "$VENDOR" --out "$CONSUMER/.sugar/imports" --library-bindings --quiet
+VENDOR_PROOF="$(ls "$CONSUMER/.sugar/imports/"*.proof 2>/dev/null | head -1)"
 if [ -z "$VENDOR_PROOF" ]; then echo "FAIL: no vendor .proof minted"; exit 1; fi
 echo "  vendor derived .proof: $(basename "$VENDOR_PROOF")"
 
@@ -141,7 +141,7 @@ echo ""
 echo "== DRIFT: tamper the vendor source AFTER the mint; the oracle must REFUSE =="
 # Restore the consumer stub so there is a boundary to fill again.
 cat > "$CONSUMER/src/lib.rs" <<'RS'
-#[provekit::boundary(concept = "concept:reverse-string", library = "rust-boundary-vendor", call = "reverse_chars")]
+#[sugar::boundary(concept = "concept:reverse-string", library = "rust-boundary-vendor", call = "reverse_chars")]
 pub fn rev(s: &str) -> String {
     unimplemented!("materialize-fillable boundary")
 }
@@ -183,5 +183,5 @@ echo ""
 if [ "$fail" -eq 0 ]; then
   echo "PASS: rust by-reference boundary chain — clean fill matched the vendor body; drift refused."
 else
-  echo "FAIL: provekit did not produce the expected verdict."; exit 1
+  echo "FAIL: sugar did not produce the expected verdict."; exit 1
 fi

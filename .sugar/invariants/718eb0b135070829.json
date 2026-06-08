@@ -1,0 +1,23 @@
+{
+  "id": "718eb0b135070829",
+  "createdAt": "2026-04-29T06:27:03.275Z",
+  "originatingBug": "collectViolationIssues only includes verification results where z3Result equals 'sat'",
+  "smt": {
+    "kind": "set_uniqueness",
+    "declarations": [
+      "(declare-const result String) (declare-const included Bool) (assert (and included (not (= result \"sat\"))))"
+    ],
+    "assertion": "(declare-const result String) (declare-const included Bool) (assert (and included (not (= result \"sat\"))))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/sugar/src/issues.ts",
+    "function": null,
+    "startLine": 79,
+    "endLine": 79
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "d442f9a094a5cb49797ae25ade97aaccb2a148a5",
+  "retired": null
+}

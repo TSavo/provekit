@@ -89,19 +89,19 @@ Function: <name>  (derived from `git blame` or grep at the hunk's nearest functi
 ```bash
 git worktree add ~/bugsjs-staging/<P>-bug-<N> Bug-N-original
 cd ~/bugsjs-staging/<P>-bug-<N>
-provekit init                 # creates .provekit/
-provekit analyze              # builds SAST DB
+sugar init                 # creates .sugar/
+sugar analyze              # builds SAST DB
 ```
 
-**Why a worktree:** so I don't pollute the main clone's checkout state, and so each bug has an isolated `.provekit/` to inspect after.
+**Why a worktree:** so I don't pollute the main clone's checkout state, and so each bug has an isolated `.sugar/` to inspect after.
 
 **What I check:**
-- Did `provekit analyze` complete without errors? Some legacy code may have parser failures; log them but proceed.
+- Did `sugar analyze` complete without errors? Some legacy code may have parser failures; log them but proceed.
 - How many nodes did it index? Should be reasonable for the project size.
 - Does my expected locus from Step 3 actually exist in the SAST? Quick check:
 
 ```bash
-sqlite3 .provekit/provekit.db "SELECT id, kind FROM nodes WHERE source_start LIKE '%<approx-byte-offset>%' LIMIT 5"
+sqlite3 .sugar/sugar.db "SELECT id, kind FROM nodes WHERE source_start LIKE '%<approx-byte-offset>%' LIMIT 5"
 ```
 
 **Mechanical:** all of step 4 except the sanity check.
@@ -113,7 +113,7 @@ This is where I find out: does the existing principle library cover this bug alr
 
 ```bash
 # Pseudocode for what I'll actually do once #98 lands (this will become a real command)
-provekit recognize <bug-report-file>
+sugar recognize <bug-report-file>
 ```
 
 **Possible outcomes:**
@@ -132,7 +132,7 @@ provekit recognize <bug-report-file>
 
 ```bash
 # Pseudocode, once #98 + harvest infrastructure lands
-provekit harvest --imported \
+sugar harvest --imported \
   --bug-report bug-N-report.md \
   --diff bug-N.patch \
   --test bug-N-test.ts \
@@ -140,7 +140,7 @@ provekit harvest --imported \
   --staging-only
 ```
 
-`--staging-only` means: don't add to the live library, write to `.provekit/harvest/staging/<bugClassId>/<source-id>/` for me to inspect.
+`--staging-only` means: don't add to the live library, write to `.sugar/harvest/staging/<bugClassId>/<source-id>/` for me to inspect.
 
 **What runs:**
 - Intake (LLM, haiku): parses my synthesized bug report into a BugSignal.
@@ -170,7 +170,7 @@ provekit harvest --imported \
 
 **For each staged principle**, I decide manually:
 
-- **Promote**: principle is high quality. Move to `.provekit/principles/<bugClassId>.dsl`.
+- **Promote**: principle is high quality. Move to `.sugar/principles/<bugClassId>.dsl`.
 - **Quarantine**: principle has a defect (too narrow, too broad, ambiguous). Leave in staging with a notes file recording what's wrong. Revisit during calibration review.
 - **Discard**: principle is fundamentally broken (false-positives across the corpus, or doesn't catch the bug it was harvested from). Delete.
 

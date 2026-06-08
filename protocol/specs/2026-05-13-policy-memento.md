@@ -193,7 +193,7 @@ Example:
 
 ```json
 {
-  "admission_rule": "provekit.threshold:v1",
+  "admission_rule": "sugar.threshold:v1",
   "count_field_path": ["trial_summary", "passed"],
   "decision_payload_schema": {
     "required": ["trial_summary"]
@@ -204,7 +204,7 @@ Example:
   "policy_kind": "threshold",
   "policy_version": "2026-05-13",
   "provenance_cid": "b3.example.provenance",
-  "refusal_rule": "provekit.threshold_refusal:v1",
+  "refusal_rule": "sugar.threshold_refusal:v1",
   "score_field_path": [],
   "threshold_comparator": "gte",
   "threshold_value": 100
@@ -221,7 +221,7 @@ Example:
 
 ```json
 {
-  "admission_rule": "provekit.property:v1",
+  "admission_rule": "sugar.property:v1",
   "decision_payload_schema": {
     "required": ["property_result"]
   },
@@ -233,9 +233,9 @@ Example:
   "policy_version": "2026-05-13",
   "property_cid": "b3.example.property",
   "provenance_cid": "b3.example.provenance",
-  "refusal_rule": "provekit.property_refusal:v1",
+  "refusal_rule": "sugar.property_refusal:v1",
   "result_field_path": ["property_result"],
-  "success_criteria": "provekit.property_success:v1"
+  "success_criteria": "sugar.property_success:v1"
 }
 ```
 
@@ -248,7 +248,7 @@ Example:
 
 ```json
 {
-  "admission_rule": "provekit.signature:v1",
+  "admission_rule": "sugar.signature:v1",
   "allowed_signature_suites": ["ed25519-jcs-blake3-512"],
   "decision_payload_schema": {
     "required": ["signatures"]
@@ -260,7 +260,7 @@ Example:
   "policy_version": "2026-05-13",
   "provenance_cid": "b3.example.provenance",
   "quorum_size": 2,
-  "refusal_rule": "provekit.signature_refusal:v1",
+  "refusal_rule": "sugar.signature_refusal:v1",
   "required_signers_cids": [
     "b3.example.signer.alice",
     "b3.example.signer.bob",
@@ -286,7 +286,7 @@ Example:
   "acceptance_record_schema": {
     "required": ["accepted_at", "reviewer_cid"]
   },
-  "admission_rule": "provekit.human_acceptance:v1",
+  "admission_rule": "sugar.human_acceptance:v1",
   "decision_payload_schema": {
     "required": ["acceptances"]
   },
@@ -297,7 +297,7 @@ Example:
   "policy_kind": "human_acceptance",
   "policy_version": "2026-05-13",
   "provenance_cid": "b3.example.provenance",
-  "refusal_rule": "provekit.human_acceptance_refusal:v1",
+  "refusal_rule": "sugar.human_acceptance_refusal:v1",
   "required_acceptances": 2,
   "reviewer_roster_cid": "b3.example.reviewers"
 }
@@ -312,7 +312,7 @@ Example:
 
 ```json
 {
-  "admission_rule": "provekit.proof_gate:v1",
+  "admission_rule": "sugar.proof_gate:v1",
   "checker_cid": "b3.example.checker",
   "decision_payload_schema": {
     "required": ["proof_artifact"]
@@ -327,7 +327,7 @@ Example:
   },
   "proof_system": "lean4",
   "provenance_cid": "b3.example.provenance",
-  "refusal_rule": "provekit.proof_gate_refusal:v1",
+  "refusal_rule": "sugar.proof_gate_refusal:v1",
   "theorem_ref": "Example.Theorem",
   "trusted_base_cid": "b3.example.trusted-base"
 }

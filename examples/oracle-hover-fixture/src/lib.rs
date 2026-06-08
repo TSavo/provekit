@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Hover type-resolution fixture. The single production function does the exact
-// shape the provekit-cli panic census is dominated by:
+// shape the sugar-cli panic census is dominated by:
 //
 //     serde_json::to_string(value).unwrap()
 //
@@ -13,7 +13,7 @@
 // asks rust-analyzer for the receiver's OWN type at the `unwrap` ident position,
 // which renders `core::result::Result<...>` directly.
 //
-// The probe (`provekit-walk`'s `hover_probe` bin) drives `resolve_typed_classified`
+// The probe (`sugar-walk`'s `hover_probe` bin) drives `resolve_typed_classified`
 // at the `unwrap` ident below and asserts `stem_source == "hover"` (the
 // discrimination: that hover FIRED, not merely that the final stem happens to be
 // "result"), printing the raw hover markdown so the live rust-analyzer output is

@@ -14,9 +14,9 @@ pub mod witness_registry;
 pub mod wp;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ProvekitError {
+pub enum SugarError {
     #[error("{0}")]
     Message(String),
 }
 
-pub type Result<T> = std::result::Result<T, ProvekitError>;
+pub type Result<T> = std::result::Result<T, SugarError>;

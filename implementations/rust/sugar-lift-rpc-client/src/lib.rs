@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift-rpc-client
+// sugar-lift-rpc-client
 //
 // THE SEVER (shared transport): the rust `#[requires]`/`#[ensures]`
-// contract lifter (`provekit-lift-contracts`) is a real RPC kit
+// contract lifter (`sugar-lift-contracts`) is a real RPC kit
 // (`contracts_rpc` bin). The substrate's IN-PROCESS callers
-// (`provekit-lift`, `provekit-build`, `provekit-lsp-rust`) USED to
+// (`sugar-lift`, `sugar-build`, `sugar-lsp-rust`) USED to
 // statically link `sugar_lift_contracts::lift_file`. They now reach
 // the lifter THROUGH this crate, which:
 //
@@ -17,7 +17,7 @@
 //   3. Returns the RAW `ir-document` JSON `Value`.
 //
 // It is a TRUE LEAF: serde_json + std only. It does NOT depend on
-// `provekit-ir-symbolic`, so callers that want typed `ContractDecl`s parse
+// `sugar-ir-symbolic`, so callers that want typed `ContractDecl`s parse
 // the returned `ir` array themselves (via `parse_document`), and callers
 // that only need the JSON (lsp-rust) forward it directly. It does NOT
 // depend on `libsugar`, so the leaf build/lsp crates stay free of the
@@ -33,15 +33,15 @@ use serde_json::{json, Value};
 /// it wins over the `current_exe`-relative search. Mirrors the
 /// absolute-path injection the witness manifests already use (run.sh
 /// substitutes the built binary's path).
-pub const CONTRACTS_RPC_ENV: &str = "PROVEKIT_CONTRACTS_RPC";
+pub const CONTRACTS_RPC_ENV: &str = "SUGAR_CONTRACTS_RPC";
 
 /// Override for the `cargo run` fallback's `--target-dir`. When unset, a
 /// fixed subdir of the system temp dir is used (see [`cargo_run_kit`]).
-pub const CONTRACTS_RPC_TARGET_DIR_ENV: &str = "PROVEKIT_CONTRACTS_RPC_TARGET_DIR";
+pub const CONTRACTS_RPC_TARGET_DIR_ENV: &str = "SUGAR_CONTRACTS_RPC_TARGET_DIR";
 
 /// Fixed temp subdir for the `cargo run` fallback's separate target dir.
 /// Stable across calls so the kit is built once, not per `lift_pass` file.
-const CONTRACTS_RPC_FALLBACK_TARGET_SUBDIR: &str = "provekit-contracts-rpc-fallback-target";
+const CONTRACTS_RPC_FALLBACK_TARGET_SUBDIR: &str = "sugar-contracts-rpc-fallback-target";
 
 /// The `contracts_rpc` binary name (cargo target name).
 const CONTRACTS_RPC_BIN: &str = "contracts_rpc";
@@ -56,11 +56,11 @@ const CONTRACTS_RPC_BIN: &str = "contracts_rpc";
 /// resolved path, `cargo run` always has a way to produce and run the kit.
 #[derive(Debug, Clone)]
 pub enum ResolvedKit {
-    /// A prebuilt runnable binary (production: the showcase's `provekit`
+    /// A prebuilt runnable binary (production: the showcase's `sugar`
     /// binary has `contracts_rpc` as a sibling). Fast path, no rebuild.
     Bin(PathBuf),
     /// `cargo run --quiet --manifest-path <root>/Cargo.toml -p
-    /// provekit-lift-contracts --bin contracts_rpc --`. Same code as the
+    /// sugar-lift-contracts --bin contracts_rpc --`. Same code as the
     /// built bin, so output (and therefore CIDs) is byte-identical.
     CargoRun { argv: Vec<String> },
 }
@@ -100,7 +100,7 @@ impl std::error::Error for RpcClientError {}
 /// Resolve a runnable path to the `contracts_rpc` binary, if one exists.
 ///
 /// Resolution order:
-///   1. `PROVEKIT_CONTRACTS_RPC` env var (explicit absolute path override).
+///   1. `SUGAR_CONTRACTS_RPC` env var (explicit absolute path override).
 ///   2. A sibling of the current executable (`<exe_dir>/contracts_rpc`).
 ///   3. The parent of the current exe dir when that dir is `deps/` — under
 ///      `cargo test`, integration/unit test binaries run from
@@ -150,7 +150,7 @@ pub fn resolve_bin() -> Result<Option<PathBuf>, RpcClientError> {
 }
 
 /// Locate the rust workspace root: the directory holding the `Cargo.toml`
-/// that declares `provekit-lift-contracts`. Used to build the `cargo run`
+/// that declares `sugar-lift-contracts`. Used to build the `cargo run`
 /// fallback's `--manifest-path`.
 ///
 /// Strategy:
@@ -177,7 +177,7 @@ fn workspace_root() -> Option<PathBuf> {
         }
     }
     if let Some(dir) = std::env::var_os("CARGO_MANIFEST_DIR") {
-        // CARGO_MANIFEST_DIR points at provekit-lift-rpc-client; its parent
+        // CARGO_MANIFEST_DIR points at sugar-lift-rpc-client; its parent
         // is the workspace root (all member crates are siblings under it).
         let dir = PathBuf::from(dir);
         if let Some(root) = dir.parent() {
@@ -201,7 +201,7 @@ fn workspace_root() -> Option<PathBuf> {
 /// FIXED, STABLE dir OUTSIDE the workspace target. Fixed (not per-call temp)
 /// because `lift_pass` invokes this PER FILE: a stable dir means the first
 /// call builds and the rest are up-to-date checks. Overridable via
-/// `PROVEKIT_CONTRACTS_RPC_TARGET_DIR`.
+/// `SUGAR_CONTRACTS_RPC_TARGET_DIR`.
 fn cargo_run_kit() -> Result<ResolvedKit, RpcClientError> {
     let root = workspace_root().ok_or_else(|| {
         RpcClientError::BinNotFound(format!(

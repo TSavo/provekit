@@ -1,6 +1,6 @@
-// ProvekIt Language Server Protocol implementation.
+// Sugar Language Server Protocol implementation.
 //
-// A language-agnostic LSP coordinator. Reads `.provekit/config.toml` to discover
+// A language-agnostic LSP coordinator. Reads `.sugar/config.toml` to discover
 // language plugins, routes each source file to the configured RPC plugin, and
 // delegates verification to a configurable JSON-RPC backend.
 //
@@ -9,28 +9,28 @@
 // ### Per-plugin subprocess mode (default)
 //
 // Each language is handled by a per-kit plugin binary that speaks the
-// `provekit-lsp-plugin/1` NDJSON protocol (initialize/parse/shutdown).
+// `sugar-lsp-plugin/1` NDJSON protocol (initialize/parse/shutdown).
 // The plugin returns `{annotations: [...]}` for each file.  Diagnostics
-// come from the local `JsonRpcBackend` (e.g., `provekit verify`).
+// come from the local `JsonRpcBackend` (e.g., `sugar verify`).
 //
-// Usage: provekit-lsp [--config <path>]
+// Usage: sugar-lsp [--config <path>]
 //
-// To add a new language, create a binary that speaks `provekit-lsp-plugin/1`:
+// To add a new language, create a binary that speaks `sugar-lsp-plugin/1`:
 //   1. Receives `initialize` -> responds with name/version
 //   2. Receives `parse` with {uri, text} -> responds with {annotations: [...]}
 //   3. Receives `shutdown` -> exits
 //
-// Then add to `.provekit/config.toml`:
+// Then add to `.sugar/config.toml`:
 //   [[language]]
 //   name = "mylang"
 //   extensions = [".mylang"]
-//   plugin = "provekit-lsp-mylang"
+//   plugin = "sugar-lsp-mylang"
 //
 // ### Daemon-client mode (opt-in)
 //
 // When a daemon socket path is supplied (via `--daemon-socket <path>` CLI flag
 // or `server.daemon_socket` in config.toml), `did_open` / `did_change` events
-// are forwarded to `provekit-linkerd` as `parseFile` JSON-RPC calls instead of
+// are forwarded to `sugar-linkerd` as `parseFile` JSON-RPC calls instead of
 // the per-plugin subprocess path.  The daemon owns the cross-kit cache; the LSP
 // server is a thin adapter that converts `LinterError` diagnostics returned by
 // the daemon to LSP `Diagnostic` objects and publishes them via
@@ -40,9 +40,9 @@
 // daemon mode is active, the configured language name for the file is sent as
 // the daemon `kitId`; the LSP coordinator does not infer language semantics.
 //
-// Usage: provekit-lsp --daemon-socket /run/user/1000/provekit/linkerd-<cid>.sock
+// Usage: sugar-lsp --daemon-socket /run/user/1000/sugar/linkerd-<cid>.sock
 //
-// The daemon is the `provekit-linkerd` binary (LSP+linker step 2).  All five
+// The daemon is the `sugar-linkerd` binary (LSP+linker step 2).  All five
 // JSON-RPC methods (parseFile, getDiagnostics, projectStatus, flushCache,
 // shutdown) are defined in `protocol/specs/2026-05-04-linker-daemon-protocol.md`.
 
@@ -84,7 +84,7 @@ enum LanguageHandle {
 
 /// A single diagnostic entry from the daemon's `parseFile` response.
 ///
-/// Wire shape emitted by `provekit-linkerd` methods.rs:
+/// Wire shape emitted by `sugar-linkerd` methods.rs:
 /// ```json
 /// {
 ///   "kind":              "linker-error",
@@ -142,7 +142,7 @@ fn daemon_diag_to_lsp(d: &DaemonDiagnostic) -> Diagnostic {
         code: Some(NumberOrString::String(
             diagnostic_code(&d.error_kind).to_string(),
         )),
-        source: Some("provekit".to_string()),
+        source: Some("sugar".to_string()),
         message,
         ..Default::default()
     }
@@ -204,10 +204,10 @@ fn json_u32(value: &serde_json::Value, key: &str) -> Option<u32> {
 
 fn diagnostic_code(error_kind: &str) -> &'static str {
     match error_kind {
-        "implication-unprovable" | "unprovable-obligation" => "provekit.lsp.implication_failed",
-        "unresolved-symbol" => "provekit.lsp.unresolved_symbol",
-        "implication-undecidable" => "provekit.lsp.unprovable_obligation",
-        _ => "provekit.lsp.unprovable_obligation",
+        "implication-unprovable" | "unprovable-obligation" => "sugar.lsp.implication_failed",
+        "unresolved-symbol" => "sugar.lsp.unresolved_symbol",
+        "implication-undecidable" => "sugar.lsp.unprovable_obligation",
+        _ => "sugar.lsp.unprovable_obligation",
     }
 }
 
@@ -234,7 +234,7 @@ fn connect_or_spawn_daemon(
         p
     };
 
-    let _child = ProcessCommand::new("provekit-linkerd")
+    let _child = ProcessCommand::new("sugar-linkerd")
         .args([
             "--socket",
             &socket_path.to_string_lossy(),
@@ -252,7 +252,7 @@ fn connect_or_spawn_daemon(
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("failed to spawn provekit-linkerd: {e}"),
+                format!("failed to spawn sugar-linkerd: {e}"),
             )
         })?;
 
@@ -266,7 +266,7 @@ fn connect_or_spawn_daemon(
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!(
-                    "provekit-linkerd did not bind socket at {} within 5 s",
+                    "sugar-linkerd did not bind socket at {} within 5 s",
                     socket_path.display()
                 ),
             ));
@@ -334,7 +334,7 @@ fn send_parse_file_to_daemon(
 }
 
 #[derive(Debug)]
-struct ProvekitLanguageServer {
+struct SugarLanguageServer {
     client: Client,
     /// The JSON-RPC verification backend.  `Some` in per-plugin mode; `None`
     /// in daemon-client mode (the daemon handles analysis; the backend is not
@@ -343,7 +343,7 @@ struct ProvekitLanguageServer {
     config: LspConfig,
     documents: Arc<Mutex<HashMap<Url, SourceAnnotations>>>,
     plugins: Arc<Mutex<HashMap<String, LanguageHandle>>>,
-    /// Path to the provekit-linkerd Unix domain socket, if daemon-client mode
+    /// Path to the sugar-linkerd Unix domain socket, if daemon-client mode
     /// is active.  `None` means per-plugin subprocess mode (the default).
     daemon_socket: Option<PathBuf>,
     /// Lazy-connected daemon stream, protected by a mutex so multiple async
@@ -353,7 +353,7 @@ struct ProvekitLanguageServer {
 }
 
 #[tower_lsp::async_trait]
-impl LanguageServer for ProvekitLanguageServer {
+impl LanguageServer for SugarLanguageServer {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         // Determine project root from workspace folders or root_uri
         let root = params
@@ -379,7 +379,7 @@ impl LanguageServer for ProvekitLanguageServer {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
                     DiagnosticOptions {
-                        identifier: Some("provekit".to_string()),
+                        identifier: Some("sugar".to_string()),
                         inter_file_dependencies: true,
                         workspace_diagnostics: false,
                         work_done_progress_options: WorkDoneProgressOptions::default(),
@@ -397,7 +397,7 @@ impl LanguageServer for ProvekitLanguageServer {
 
     async fn initialized(&self, _: InitializedParams) {
         self.client
-            .log_message(MessageType::INFO, "ProvekIt LSP server initialized")
+            .log_message(MessageType::INFO, "Sugar LSP server initialized")
             .await;
     }
 
@@ -488,7 +488,7 @@ impl LanguageServer for ProvekitLanguageServer {
                     range: ann.range,
                     command: Some(Command {
                         title: format!("🔍 Verify: {}", cid),
-                        command: "provekit.verify".to_string(),
+                        command: "sugar.verify".to_string(),
                         arguments: Some(vec![
                             serde_json::json!(ann.function_name),
                             serde_json::json!(cid),
@@ -523,7 +523,7 @@ impl LanguageServer for ProvekitLanguageServer {
                         edit: None,
                         command: Some(Command {
                             title: "Re-verify".to_string(),
-                            command: "provekit.reverify".to_string(),
+                            command: "sugar.reverify".to_string(),
                             arguments: Some(vec![
                                 serde_json::json!(ann.function_name),
                                 serde_json::json!(cid),
@@ -540,7 +540,7 @@ impl LanguageServer for ProvekitLanguageServer {
     }
 }
 
-impl ProvekitLanguageServer {
+impl SugarLanguageServer {
     async fn init_plugins(&self, project_root: &std::path::Path) {
         let mut plugins = self.plugins.lock().await;
         for lang in &self.config.language {
@@ -576,7 +576,7 @@ impl ProvekitLanguageServer {
     }
 
     async fn update_document(&self, uri: Url, text: String, _lang_id: String) {
-        // --- Daemon-client mode: route through provekit-linkerd ---
+        // --- Daemon-client mode: route through sugar-linkerd ---
         if let Some(sock_path) = &self.daemon_socket {
             match kit_id_for_uri(&self.config, &uri) {
                 Some(kit_id) => {
@@ -700,7 +700,7 @@ impl ProvekitLanguageServer {
         }
     }
 
-    /// Forward an open/change event to the provekit-linkerd daemon via
+    /// Forward an open/change event to the sugar-linkerd daemon via
     /// `parseFile` JSON-RPC, convert the returned diagnostics, and publish
     /// them.  Lazily connects to the daemon socket on first call.
     ///
@@ -722,7 +722,7 @@ impl ProvekitLanguageServer {
 
             // Lazy connect / spawn.
             if guard.is_none() {
-                match connect_or_spawn_daemon(&sock_path, "provekit-lsp") {
+                match connect_or_spawn_daemon(&sock_path, "sugar-lsp") {
                     Ok(stream) => {
                         *guard = Some(stream);
                     }
@@ -763,7 +763,7 @@ impl ProvekitLanguageServer {
                     *guard = None;
                 }
                 client
-                    .log_message(MessageType::WARNING, format!("provekit daemon: {}", e))
+                    .log_message(MessageType::WARNING, format!("sugar daemon: {}", e))
                     .await;
                 // Publish empty diagnostics to clear any stale markers.
                 client.publish_diagnostics(uri, vec![], None).await;
@@ -772,7 +772,7 @@ impl ProvekitLanguageServer {
                 client
                     .log_message(
                         MessageType::ERROR,
-                        format!("provekit daemon task panicked: {}", join_err),
+                        format!("sugar daemon task panicked: {}", join_err),
                     )
                     .await;
             }
@@ -795,19 +795,19 @@ fn format_hover(ann: &Annotation) -> String {
     match &ann.kind {
         AnnotationKind::Implement { target_cid } => {
             format!(
-                "## ProvekIt Contract\n\n**Function:** `{}`\n**Kind:** implement\n**Target CID:** `{}`\n\nThis function is bound to the contract at the given CID. The framework will verify that the function body satisfies the contract's postcondition.",
+                "## Sugar Contract\n\n**Function:** `{}`\n**Kind:** implement\n**Target CID:** `{}`\n\nThis function is bound to the contract at the given CID. The framework will verify that the function body satisfies the contract's postcondition.",
                 ann.function_name, target_cid
             )
         }
         AnnotationKind::Contract => {
             format!(
-                "## ProvekIt Contract\n\n**Function:** `{}`\n**Kind:** contract\n\nThis function declares its own contract via `#[provekit::contract]`.",
+                "## Sugar Contract\n\n**Function:** `{}`\n**Kind:** contract\n\nThis function declares its own contract via `#[sugar::contract]`.",
                 ann.function_name
             )
         }
         AnnotationKind::Verify => {
             format!(
-                "## ProvekIt Verify\n\n**Function:** `{}`\n**Kind:** verify\n\nThis function is marked for verification against its contract.",
+                "## Sugar Verify\n\n**Function:** `{}`\n**Kind:** verify\n\nThis function is marked for verification against its contract.",
                 ann.function_name
             )
         }
@@ -864,7 +864,7 @@ mod tests {
         assert_eq!(
             lsp.code,
             Some(NumberOrString::String(
-                "provekit.lsp.implication_failed".to_string()
+                "sugar.lsp.implication_failed".to_string()
             ))
         );
     }
@@ -882,10 +882,10 @@ mod tests {
         assert_eq!(
             lsp.code,
             Some(NumberOrString::String(
-                "provekit.lsp.implication_failed".to_string()
+                "sugar.lsp.implication_failed".to_string()
             ))
         );
-        assert_eq!(lsp.source, Some("provekit".to_string()));
+        assert_eq!(lsp.source, Some("sugar".to_string()));
         assert!(
             lsp.message.contains("cannot verify"),
             "message should contain 'cannot verify', got: {}",
@@ -912,10 +912,10 @@ mod tests {
         assert_eq!(
             lsp.code,
             Some(NumberOrString::String(
-                "provekit.lsp.unresolved_symbol".to_string()
+                "sugar.lsp.unresolved_symbol".to_string()
             ))
         );
-        assert_eq!(lsp.source, Some("provekit".to_string()));
+        assert_eq!(lsp.source, Some("sugar".to_string()));
         assert!(
             lsp.message.contains("cannot resolve"),
             "message should contain 'cannot resolve', got: {}",
@@ -937,10 +937,10 @@ mod tests {
         assert_eq!(
             lsp.code,
             Some(NumberOrString::String(
-                "provekit.lsp.unprovable_obligation".to_string()
+                "sugar.lsp.unprovable_obligation".to_string()
             ))
         );
-        assert_eq!(lsp.source, Some("provekit".to_string()));
+        assert_eq!(lsp.source, Some("sugar".to_string()));
         assert_eq!(lsp.message, "some reason");
     }
 
@@ -992,8 +992,8 @@ fn build_diagnostics(result: &backend::VerifyResult, range: Range) -> Vec<Diagno
         "verified" => vec![Diagnostic {
             range,
             severity: Some(DiagnosticSeverity::HINT),
-            code: Some(NumberOrString::String("provekit.verified".to_string())),
-            source: Some("provekit".to_string()),
+            code: Some(NumberOrString::String("sugar.verified".to_string())),
+            source: Some("sugar".to_string()),
             message: format!(
                 "✅ Bridge verified: {} domain transfers",
                 result.transfers.len()
@@ -1006,8 +1006,8 @@ fn build_diagnostics(result: &backend::VerifyResult, range: Range) -> Vec<Diagno
         "violation" => vec![Diagnostic {
             range,
             severity: Some(DiagnosticSeverity::ERROR),
-            code: Some(NumberOrString::String("provekit.violation".to_string())),
-            source: Some("provekit".to_string()),
+            code: Some(NumberOrString::String("sugar.violation".to_string())),
+            source: Some("sugar".to_string()),
             message: format!(
                 "❌ Contract violation: {}",
                 result.error.as_deref().unwrap_or("unknown")
@@ -1020,8 +1020,8 @@ fn build_diagnostics(result: &backend::VerifyResult, range: Range) -> Vec<Diagno
         _ => vec![Diagnostic {
             range,
             severity: Some(DiagnosticSeverity::WARNING),
-            code: Some(NumberOrString::String("provekit.unknown".to_string())),
-            source: Some("provekit".to_string()),
+            code: Some(NumberOrString::String("sugar.unknown".to_string())),
+            source: Some("sugar".to_string()),
             message: format!("⚠️ Unknown verification status: {}", result.status),
             related_information: None,
             code_description: None,
@@ -1033,7 +1033,7 @@ fn build_diagnostics(result: &backend::VerifyResult, range: Range) -> Vec<Diagno
 
 #[tokio::main]
 async fn main() {
-    let mut config_path = ".provekit/config.toml".to_string();
+    let mut config_path = ".sugar/config.toml".to_string();
     // CLI flag `--daemon-socket <path>` overrides config.server.daemon_socket.
     let mut daemon_socket_cli: Option<String> = None;
 
@@ -1069,7 +1069,7 @@ async fn main() {
     // handles all analysis so no backend binary is needed.
     let backend: Option<Arc<Mutex<JsonRpcBackend>>> = if daemon_socket.is_some() {
         eprintln!(
-            "provekit-lsp: daemon-client mode active (socket: {})",
+            "sugar-lsp: daemon-client mode active (socket: {})",
             daemon_socket.as_ref().unwrap().display()
         );
         None
@@ -1085,7 +1085,7 @@ async fn main() {
 
     // Start LSP
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
-    let (service, socket) = LspService::new(|client| ProvekitLanguageServer {
+    let (service, socket) = LspService::new(|client| SugarLanguageServer {
         client,
         backend,
         config,

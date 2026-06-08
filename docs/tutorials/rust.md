@@ -1,6 +1,6 @@
 # Tutorial: Rust
 
-A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to the protocol catalog at CID `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d` (v1.6.3), and you have run `provekit prove` against the catalog.
+A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to the protocol catalog at CID `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d` (v1.6.3), and you have run `sugar prove` against the catalog.
 
 > **Other languages:** see [tutorials/](./) for TypeScript, Python, Java, C#, Ruby, Zig, and the [polyglot stack walkthrough](polyglot-stack.md). The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 
@@ -13,15 +13,15 @@ For the current end-user quickstart (get a red squiggle in 10 minutes):
 From the repository root:
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
+cargo install --path implementations/rust/sugar-cli
 ```
 
-The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.6.3; alternative implementations in other languages conform to the same catalog CID.
+The installed binary is `sugar`. It is the canonical Rust implementation for protocol v1.6.3; alternative implementations in other languages conform to the same catalog CID.
 
 ## Step 2: confirm protocol conformance
 
 ```bash
-provekit verify-protocol
+sugar verify-protocol
 ```
 
 This reads the local CLI's declared catalog CID, recomputes every spec CID listed in the catalog from the spec bytes shipped with the install, and confirms the catalog hashes to the expected value:
@@ -36,15 +36,15 @@ A mismatch means either the install is corrupted or the binary was built against
 
 ```bash
 cd path/to/your-rust-crate
-cargo provekit-lift
+cargo sugar-lift
 ```
 
-`cargo provekit-lift` walks the workspace, runs every registered lift adapter (today: `provekit-lift-proptest` and `provekit-lift-contracts`), canonicalizes the discovered annotations into IR, hashes each IR formula to a CID, wraps the formula in a contract memento envelope, signs the envelope with the local signing key, and writes the catalog to `target/.proof`.
+`cargo sugar-lift` walks the workspace, runs every registered lift adapter (today: `sugar-lift-proptest` and `sugar-lift-contracts`), canonicalizes the discovered annotations into IR, hashes each IR formula to a CID, wraps the formula in a contract memento envelope, signs the envelope with the local signing key, and writes the catalog to `target/.proof`.
 
 The output looks something like:
 
 ```
-provekit-lift: workspace root /path/to/your-rust-crate
+sugar-lift: workspace root /path/to/your-rust-crate
   scanning crate my_crate ...
     proptest adapter: 4 properties lifted
     contracts adapter: 12 pre/post pairs lifted
@@ -58,13 +58,13 @@ The `.proof` is portable. Ship it alongside the crate's bytes; consumers find it
 ## Step 4: verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
-`provekit prove` walks `<projectRoot>` plus the dependency tree's `.proof` files, indexes the memento pool, runs the three-tier handshake at every call site, and reports the discharge breakdown:
+`sugar prove` walks `<projectRoot>` plus the dependency tree's `.proof` files, indexes the memento pool, runs the three-tier handshake at every call site, and reports the discharge breakdown:
 
 ```
-provekit prove: project /path/to/your-rust-crate
+sugar prove: project /path/to/your-rust-crate
 
 memento pool:
   contracts:     16
@@ -84,7 +84,7 @@ hash-discharge fraction: 0.66
 
 The hash-discharge fraction is the headline metric: the share of call sites discharged at Tier 1 alone. A high fraction means contracts compose well across the workspace. A low fraction means real work to do; the work is the residue, not the average case.
 
-When Tier 3 fires, the verifier mints a fresh implication memento for each `(post, pre)` pair Z3 discharges. The mementos are written per the publish policy in `provekit.config.yaml`:
+When Tier 3 fires, the verifier mints a fresh implication memento for each `(post, pre)` pair Z3 discharges. The mementos are written per the publish policy in `sugar.config.yaml`:
 
 ```yaml
 publish:
@@ -92,27 +92,27 @@ publish:
     target: project    # one of: local, project, registry
 ```
 
-`local` keeps mementos in `~/.provekit/cache/`. `project` writes them into the project's `.proof`. `registry` pushes to a configured implication server (a passive indexer; mementos remain signed by the original prover). Defaults to `local`.
+`local` keeps mementos in `~/.sugar/cache/`. `project` writes them into the project's `.proof`. `registry` pushes to a configured implication server (a passive indexer; mementos remain signed by the original prover). Defaults to `local`.
 
 ## Step 5: inspect
 
 ```bash
-provekit dump target/.proof
+sugar dump target/.proof
 ```
 
-`provekit dump` pretty-prints a `.proof` envelope: members, bodies, signatures, and recomputed CIDs. Use it to confirm what the lift adapter actually produced and what is shipping in the catalog.
+`sugar dump` pretty-prints a `.proof` envelope: members, bodies, signatures, and recomputed CIDs. Use it to confirm what the lift adapter actually produced and what is shipping in the catalog.
 
 ```bash
-provekit hash <some-file>
+sugar hash <some-file>
 ```
 
-`provekit hash` computes the BLAKE3-512 self-identifying CID of any file. Use it to verify your local install's spec bytes against the published CIDs in `protocol/specs/2026-04-30-protocol-catalog.json`.
+`sugar hash` computes the BLAKE3-512 self-identifying CID of any file. Use it to verify your local install's spec bytes against the published CIDs in `protocol/specs/2026-04-30-protocol-catalog.json`.
 
 ```bash
-provekit search --consequent some-formula.json
+sugar search --consequent some-formula.json
 ```
 
-`provekit search` searches the catalog by content. "Find every contract whose post-condition canonicalizes to this CID" or "find every implication memento with this consequent" is grep over the memento pool.
+`sugar search` searches the catalog by content. "Find every contract whose post-condition canonicalizes to this CID" or "find every implication memento with this consequent" is grep over the memento pool.
 
 ## What's next
 
@@ -124,10 +124,10 @@ provekit search --consequent some-formula.json
 
 ## Troubleshooting
 
-**`provekit verify-protocol` exits with code 1.** The local install's spec bytes do not hash to the expected catalog CID. Either the install is corrupted (re-run `cargo install --path implementations/rust/provekit-cli`) or the binary was built against a different protocol version (check `provekit version`).
+**`sugar verify-protocol` exits with code 1.** The local install's spec bytes do not hash to the expected catalog CID. Either the install is corrupted (re-run `cargo install --path implementations/rust/sugar-cli`) or the binary was built against a different protocol version (check `sugar version`).
 
-**`cargo provekit-lift` reports zero mementos.** No lift adapter recognized any annotations in the workspace. Today's shipping adapters cover `proptest!` blocks and `#[contracts::requires]` / `#[contracts::ensures]` macros; if your crate uses a different annotation library, the adapter is on the v1.2 roadmap (see [per-adapter-coverage.md](../reference/per-adapter-coverage.md)).
+**`cargo sugar-lift` reports zero mementos.** No lift adapter recognized any annotations in the workspace. Today's shipping adapters cover `proptest!` blocks and `#[contracts::requires]` / `#[contracts::ensures]` macros; if your crate uses a different annotation library, the adapter is on the v1.2 roadmap (see [per-adapter-coverage.md](../reference/per-adapter-coverage.md)).
 
-**`provekit prove` reports a large `flagged per call site` count.** Tier 3 fell back to per-call-site Z3 because no `(post, pre)`-level discharge was possible. This is expected for the first run on a new codebase; subsequent runs benefit from the cached implication mementos minted on the first run, and the residue shrinks.
+**`sugar prove` reports a large `flagged per call site` count.** Tier 3 fell back to per-call-site Z3 because no `(post, pre)`-level discharge was possible. This is expected for the first run on a new codebase; subsequent runs benefit from the cached implication mementos minted on the first run, and the residue shrinks.
 
 **Z3 not found.** Install Z3 (`brew install z3`, `apt install z3`, etc.). Tier 1 and Tier 2 of the handshake do not require Z3, but Tier 3 does, and the first run on any non-trivial codebase will hit Tier 3 at least once.
