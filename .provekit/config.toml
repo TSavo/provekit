@@ -3,7 +3,7 @@
 # Default solver portfolio for the ProvekIt workspace.
 #
 # Loaded by provekit-verifier via `SolversConfig::load(project_root)`
-# (see `implementations/rust/provekit-verifier/src/solvers/config.rs`).
+# (see `implementations/rust/sugar-verifier/src/solvers/config.rs`).
 # The runner picks this up automatically; passing
 # `RunnerConfig.solvers_config` from a host process overrides this file.
 #

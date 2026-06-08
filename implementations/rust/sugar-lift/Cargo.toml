@@ -1,0 +1,58 @@
+[package]
+name = "sugar-lift"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt lift toolchain: walk a Rust workspace, run all registered adapters, mint signed contract mementos, bundle into a single .proof catalog."
+
+[lib]
+name = "sugar_lift"
+path = "src/lib.rs"
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
+
+# `cargo sugar-lift` invokes the binary named `cargo-sugar-lift`,
+# which Cargo resolves on PATH. We also publish a plain `sugar-lift`
+# entrypoint for direct invocation. Both binaries dispatch into the
+# same `run_cli` library function.
+[[bin]]
+name = "cargo-provekit-lift"
+path = "src/bin/cargo-provekit-lift.rs"
+
+[[bin]]
+name = "provekit-lift"
+path = "src/bin/provekit-lift.rs"
+
+[dependencies]
+# Workspace-internal libs.
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+sugar-proof-envelope = { path = "../sugar-proof-envelope" }
+sugar-claim-envelope = { path = "../sugar-claim-envelope" }
+sugar-ir-symbolic = { path = "../sugar-ir-symbolic" }
+libsugar = { path = "../libsugar" }
+
+# THE SEVER: the rust-contracts lifter is no longer statically linked.
+# `lift_path` dispatches it over RPC (the `contracts_rpc` kit) through this
+# shared leaf client, then deserializes the ir-document via
+# `sugar-ir-symbolic::parse::parse_document`. `sugar-lift-contracts`
+# is now a DEV-dependency only (tests still exercise `lift_file` directly).
+sugar-lift-rpc-client = { path = "../sugar-lift-rpc-client" }
+
+# External.
+syn = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+walkdir = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+sugar-verifier = { path = "../sugar-verifier" }
+# Tests exercise the lifter's `lift_file` directly (call_edges.rs,
+# end_to_end.rs) — that is the sanctioned way to keep lifter-behavior
+# coverage without spawning RPC inside a unit test. Production code paths
+# reach the lifter only over RPC (see the dependency note above).
+sugar-lift-contracts = { path = "../sugar-lift-contracts" }

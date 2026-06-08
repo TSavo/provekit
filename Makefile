@@ -97,7 +97,7 @@ build-rust:
 
 .PHONY: build-rust-cli
 build-rust-cli:
-	$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+	$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p sugar-cli
 
 .PHONY: build-cpp
 build-cpp:
@@ -333,7 +333,7 @@ self-lift-canonicalizer: build-rust
 	@mkdir -p $(SELF_LIFT_DIR)
 	@rm -f $(SELF_LIFT_DIR)/blake3-512:*.proof
 	@out=$$($(PROVEKIT_LIFT) \
-		--workspace implementations/rust/provekit-canonicalizer \
+		--workspace implementations/rust/sugar-canonicalizer \
 		--target-dir $(SELF_LIFT_DIR) --quiet); \
 	  echo "  cid: $$out"; \
 	  test -f $(SELF_LIFT_DIR)/$$out.proof || \

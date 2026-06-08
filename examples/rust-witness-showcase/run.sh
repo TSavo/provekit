@@ -30,10 +30,10 @@ PROVEKIT="$BIN_DIR/provekit"
 
 echo "== build the CLI + the cargo-test-witness kit binaries =="
 cargo build --manifest-path "$RUST/Cargo.toml" \
-  -p provekit-cli \
-  -p provekit-lift-rust-cargo-test-witness \
+  -p sugar-cli \
+  -p sugar-lift-rust-cargo-test-witness \
   --bins >/dev/null 2>&1 || cargo build --manifest-path "$RUST/Cargo.toml" \
-  -p provekit-cli -p provekit-lift-rust-cargo-test-witness
+  -p sugar-cli -p sugar-lift-rust-cargo-test-witness
 
 [ -x "$PROVEKIT" ] || { echo "FAIL: provekit binary not built at $PROVEKIT"; exit 1; }
 [ -x "$BIN_DIR/witness_rpc" ] || { echo "FAIL: witness_rpc not built"; exit 1; }

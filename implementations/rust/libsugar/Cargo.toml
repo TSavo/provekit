@@ -1,0 +1,23 @@
+[package]
+name = "libsugar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt Rust reference library for protocol workflows."
+
+[lib]
+# `lib` keeps the in-workspace Rust consumers (sugar-cli, walk,
+# verifier, future Rust lifters) compiling unchanged. `cdylib` and
+# `staticlib` add the C-linkable artifacts the C lifter family
+# (sugar-lift-c-kernel-doc, sugar-lift-c-sparse, etc.) needs
+# per CCP §6.2.
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+sugar-proof-envelope = { path = "../sugar-proof-envelope" }
+sugar-ir-types = { path = "../sugar-ir-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

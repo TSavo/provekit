@@ -15,7 +15,7 @@
 # the Rust ed25519-dalek peer: both implement RFC 8032 Ed25519.
 #
 # Reference:
-#   implementations/rust/provekit-proof-envelope/src/sign.rs
+#   implementations/rust/sugar-proof-envelope/src/sign.rs
 #   implementations/csharp/Provekit.ProofEnvelope/Sign.cs
 
 from __future__ import annotations

@@ -4,7 +4,7 @@
 # sign/verify with known-good test vectors.
 #
 # Cross-kit byte-equivalence pins are derived from the Rust kit:
-#   cargo run --release -p provekit-proof-envelope \
+#   cargo run --release -p sugar-proof-envelope \
 #     --example proof_envelope_bytes
 #
 # The Rust kit is the reference; the Python kit must produce byte-identical
@@ -189,7 +189,7 @@ class TestRoundTrip:
 # ---------------------------------------------------------------------------
 
 # Pinned from:
-#   cargo run --release -p provekit-proof-envelope --example proof_envelope_bytes
+#   cargo run --release -p sugar-proof-envelope --example proof_envelope_bytes
 # Input: name=@test/cat, version=1.0.0, seed=[0x42;32],
 #        members={blake3-512:aa: '{"hello":"world"}',
 #                 blake3-512:bb: '{"goodbye":"world"}'},

@@ -33,7 +33,7 @@ CONSUMER="$HERE/consumer"
 
 if [ ! -x "$BIN" ] || [ ! -x "$WALK" ]; then
   echo "building provekit + walk-rpc ..."
-  ( cd "$REPO/implementations/rust" && cargo build -p provekit-cli --bin provekit -p provekit-walk --bin provekit-walk-rpc ) || {
+  ( cd "$REPO/implementations/rust" && cargo build -p sugar-cli --bin provekit -p sugar-walk --bin provekit-walk-rpc ) || {
     echo "FAIL: cargo build failed"; exit 1; }
 fi
 

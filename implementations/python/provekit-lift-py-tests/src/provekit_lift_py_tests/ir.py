@@ -260,7 +260,7 @@ def exists(name: str, sort: Sort, body: Formula) -> Formula:
 
 # EvidenceTerm --------------------------------------------------------------
 #
-# Mirrors implementations/rust/provekit-ir-symbolic/src/lib.rs (EvidenceTerm
+# Mirrors implementations/rust/sugar-ir-symbolic/src/lib.rs (EvidenceTerm
 # / EvidenceCertificate) and the spec at
 # protocol/specs/2026-04-30-ir-formal-grammar.md (EvidenceTerm grammar).
 #

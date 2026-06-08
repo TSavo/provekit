@@ -167,10 +167,10 @@ dependencies = [
 name = "build-script-demo"
 version = "0.1.0"
 dependencies = [
- "provekit-build",
- "provekit-ir-symbolic",
- "provekit-macros",
- "provekit-macros-rt",
+ "sugar-build",
+ "sugar-ir-symbolic",
+ "sugar-macros",
+ "sugar-macros-rt",
 ]
 
 [[package]]
@@ -845,19 +845,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
-name = "libprovekit"
+name = "libsugar"
 version = "0.1.0"
 dependencies = [
- "provekit-canonicalizer",
- "provekit-ir-types",
- "provekit-proof-envelope",
  "serde",
  "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-types",
+ "sugar-proof-envelope",
  "thiserror",
 ]
 
 [[package]]
-name = "libprovekit-rpc"
+name = "libsugar-rpc"
 version = "0.1.0"
 dependencies = [
  "blake3",
@@ -1057,375 +1057,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "provekit-build"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "glob",
- "proc-macro2",
- "provekit-ir-symbolic",
- "provekit-lift-rpc-client",
- "quote",
- "serde",
- "serde_json",
- "syn",
- "tempfile",
- "thiserror",
- "toml 0.8.23",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-canonicalizer"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "hex",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "provekit-claim-envelope"
-version = "0.1.0"
-dependencies = [
- "hex",
- "provekit-canonicalizer",
- "provekit-proof-envelope",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "provekit-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "chrono",
- "clap",
- "libprovekit",
- "owo-colors",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-compiler",
- "provekit-ir-compiler-coq",
- "provekit-ir-compiler-smt-lib",
- "provekit-ir-symbolic",
- "provekit-ir-types",
- "provekit-lift",
- "provekit-linker",
- "provekit-plugin-loader",
- "provekit-proof-envelope",
- "provekit-verifier",
- "serde",
- "serde_json",
- "serde_yaml",
- "serial_test",
- "syn",
- "tempfile",
- "thiserror",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-ir-compiler"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "provekit-ir-compiler-coq"
-version = "0.1.0"
-dependencies = [
- "provekit-ir-compiler",
- "provekit-ir-types",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-ir-compiler-lean"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "provekit-ir-compiler",
- "provekit-ir-types",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-ir-compiler-maude"
-version = "0.1.0"
-dependencies = [
- "provekit-ir-compiler",
- "provekit-ir-types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-ir-compiler-smt-lib"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "provekit-ir-compiler",
- "provekit-ir-types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-ir-symbolic"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-types",
- "provekit-proof-envelope",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "provekit-ir-types"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-lift"
-version = "0.1.0"
-dependencies = [
- "base64",
- "libprovekit",
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-symbolic",
- "provekit-lift-contracts",
- "provekit-lift-rpc-client",
- "provekit-proof-envelope",
- "provekit-verifier",
- "quote",
- "serde_json",
- "syn",
- "thiserror",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-lift-contracts"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-ir-symbolic",
- "provekit-ir-types",
- "quote",
- "serde_json",
- "syn",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-lift-rpc-client"
-version = "0.1.0"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
-name = "provekit-lift-rust-cargo-test-witness"
-version = "0.1.0"
-dependencies = [
- "base64",
- "provekit-canonicalizer",
- "provekit-ir-symbolic",
- "provekit-ir-types",
- "provekit-proof-envelope",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-lift-rust-tests"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "quote",
- "serde_json",
- "syn",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-linker"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "provekit-ir-compiler-smt-lib",
- "provekit-verifier",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-linkerd"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "libc",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-symbolic",
- "provekit-lift",
- "provekit-linker",
- "provekit-walk",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-lsp"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "toml 0.8.23",
- "tower-lsp",
-]
-
-[[package]]
-name = "provekit-lsp-protocol-catalog"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "serde_json",
-]
-
-[[package]]
-name = "provekit-lsp-rust"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "provekit-lift-rpc-client",
- "serde_json",
- "syn",
-]
-
-[[package]]
-name = "provekit-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "provekit-ir-symbolic",
- "provekit-macros-rt",
- "quote",
- "syn",
- "trybuild",
-]
-
-[[package]]
-name = "provekit-macros-rt"
-version = "0.1.0"
-dependencies = [
- "inventory",
- "provekit-ir-symbolic",
-]
-
-[[package]]
-name = "provekit-plugin-loader"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "provekit-proof-envelope",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "provekit-proof-envelope"
-version = "0.1.0"
-dependencies = [
- "base64",
- "ed25519-dalek",
- "hex",
- "provekit-canonicalizer",
- "thiserror",
-]
-
-[[package]]
-name = "provekit-sugar"
-version = "0.1.0"
-
-[[package]]
-name = "provekit-verifier"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "libprovekit",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-compiler",
- "provekit-ir-compiler-coq",
- "provekit-ir-compiler-lean",
- "provekit-ir-compiler-maude",
- "provekit-ir-compiler-smt-lib",
- "provekit-ir-symbolic",
- "provekit-ir-types",
- "provekit-proof-envelope",
- "rayon",
- "serde",
- "serde_json",
- "thiserror",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
-name = "provekit-walk"
-version = "0.1.0"
-dependencies = [
- "base64",
- "libprovekit",
- "prettyplease",
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-types",
- "provekit-lift-contracts",
- "provekit-proof-envelope",
- "quote",
- "serde_json",
- "syn",
- "thiserror",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1774,6 +1405,375 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "sugar-build"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "glob",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "sugar-ir-symbolic",
+ "sugar-lift-rpc-client",
+ "syn",
+ "tempfile",
+ "thiserror",
+ "toml 0.8.23",
+ "walkdir",
+]
+
+[[package]]
+name = "sugar-canonicalizer"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "hex",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "sugar-claim-envelope"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-proof-envelope",
+ "thiserror",
+]
+
+[[package]]
+name = "sugar-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "clap",
+ "libsugar",
+ "owo-colors",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "serial_test",
+ "sugar-canonicalizer",
+ "sugar-claim-envelope",
+ "sugar-ir-compiler",
+ "sugar-ir-compiler-coq",
+ "sugar-ir-compiler-smt-lib",
+ "sugar-ir-symbolic",
+ "sugar-ir-types",
+ "sugar-lift",
+ "sugar-linker",
+ "sugar-plugin-loader",
+ "sugar-proof-envelope",
+ "sugar-verifier",
+ "syn",
+ "tempfile",
+ "thiserror",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+]
+
+[[package]]
+name = "sugar-ir-compiler"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "sugar-ir-compiler-coq"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sugar-ir-compiler",
+ "sugar-ir-types",
+]
+
+[[package]]
+name = "sugar-ir-compiler-lean"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-compiler",
+ "sugar-ir-types",
+]
+
+[[package]]
+name = "sugar-ir-compiler-maude"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sugar-ir-compiler",
+ "sugar-ir-types",
+]
+
+[[package]]
+name = "sugar-ir-compiler-smt-lib"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-compiler",
+ "sugar-ir-types",
+]
+
+[[package]]
+name = "sugar-ir-symbolic"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-claim-envelope",
+ "sugar-ir-types",
+ "sugar-proof-envelope",
+ "thiserror",
+]
+
+[[package]]
+name = "sugar-ir-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sugar-canonicalizer",
+]
+
+[[package]]
+name = "sugar-lift"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "libsugar",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-claim-envelope",
+ "sugar-ir-symbolic",
+ "sugar-lift-contracts",
+ "sugar-lift-rpc-client",
+ "sugar-proof-envelope",
+ "sugar-verifier",
+ "syn",
+ "thiserror",
+ "walkdir",
+]
+
+[[package]]
+name = "sugar-lift-contracts"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-symbolic",
+ "sugar-ir-types",
+ "syn",
+ "walkdir",
+]
+
+[[package]]
+name = "sugar-lift-rpc-client"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "sugar-lift-rust-cargo-test-witness"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-symbolic",
+ "sugar-ir-types",
+ "sugar-proof-envelope",
+]
+
+[[package]]
+name = "sugar-lift-rust-tests"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "sugar-ir-symbolic",
+ "syn",
+ "walkdir",
+]
+
+[[package]]
+name = "sugar-lifter"
+version = "0.1.0"
+
+[[package]]
+name = "sugar-linker"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-compiler-smt-lib",
+ "sugar-verifier",
+]
+
+[[package]]
+name = "sugar-linkerd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-claim-envelope",
+ "sugar-ir-symbolic",
+ "sugar-lift",
+ "sugar-linker",
+ "sugar-walk",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+]
+
+[[package]]
+name = "sugar-lsp"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml 0.8.23",
+ "tower-lsp",
+]
+
+[[package]]
+name = "sugar-lsp-protocol-catalog"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sugar-canonicalizer",
+]
+
+[[package]]
+name = "sugar-lsp-rust"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde_json",
+ "sugar-lift-rpc-client",
+ "syn",
+]
+
+[[package]]
+name = "sugar-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "sugar-ir-symbolic",
+ "sugar-macros-rt",
+ "syn",
+ "trybuild",
+]
+
+[[package]]
+name = "sugar-macros-rt"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "sugar-ir-symbolic",
+]
+
+[[package]]
+name = "sugar-plugin-loader"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-proof-envelope",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "sugar-proof-envelope"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "ed25519-dalek",
+ "hex",
+ "sugar-canonicalizer",
+ "thiserror",
+]
+
+[[package]]
+name = "sugar-verifier"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "libsugar",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-claim-envelope",
+ "sugar-ir-compiler",
+ "sugar-ir-compiler-coq",
+ "sugar-ir-compiler-lean",
+ "sugar-ir-compiler-maude",
+ "sugar-ir-compiler-smt-lib",
+ "sugar-ir-symbolic",
+ "sugar-ir-types",
+ "sugar-proof-envelope",
+ "thiserror",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+]
+
+[[package]]
+name = "sugar-walk"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "libsugar",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-claim-envelope",
+ "sugar-ir-types",
+ "sugar-lift-contracts",
+ "sugar-proof-envelope",
+ "syn",
+ "thiserror",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "syn"

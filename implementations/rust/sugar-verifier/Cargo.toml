@@ -1,0 +1,47 @@
+[package]
+name = "sugar-verifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: six-stage verifier pipeline (load, enumerate, resolve, instantiate, smt-emit, solve, report)."
+
+[dependencies]
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+sugar-ir-types = { path = "../sugar-ir-types" }
+sugar-proof-envelope = { path = "../sugar-proof-envelope" }
+libsugar = { path = "../libsugar" }
+sugar-ir-compiler-smt-lib = { path = "../sugar-ir-compiler-smt-lib" }
+sugar-ir-compiler = { path = "../sugar-ir-compiler" }
+sugar-ir-compiler-coq = { path = "../sugar-ir-compiler-coq" }
+sugar-ir-compiler-maude = { path = "../sugar-ir-compiler-maude" }
+sugar-ir-compiler-lean = { path = "../sugar-ir-compiler-lean" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+walkdir = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+toml = "0.8"
+chrono = { version = "0.4", features = ["clock"] }
+tracing = "0.1"
+
+[dev-dependencies]
+sugar-claim-envelope = { path = "../sugar-claim-envelope" }
+sugar-ir-symbolic = { path = "../sugar-ir-symbolic" }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+
+[[example]]
+name = "rust_round_trip"
+path = "../examples/rust_round_trip.rs"
+
+[[example]]
+name = "cross_lang_consume"
+path = "../examples/cross_lang_consume.rs"
+
+[[example]]
+name = "stage4_driver"
+path = "../../../examples/stage4-handshake-demo/stage4_driver.rs"
+
+[[example]]
+name = "multi_solver_demo"
+path = "../../../examples/multi-solver-demo/multi_solver_driver.rs"

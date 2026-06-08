@@ -2,7 +2,7 @@
 //
 // ProvekIt build-script integration demo.
 //
-// This crate's `build.rs` invokes `provekit_build::run_verification()`,
+// This crate's `build.rs` invokes `sugar_build::run_verification()`,
 // which source-walks `src/` for `#[provekit::contract(...)]` and
 // `#[provekit::verify]` annotations and runs a Tier-3 Z3 check on
 // each verify body's call sites. The expected output of
@@ -10,8 +10,8 @@
 // report ---` block on stderr plus zero or more
 // `cargo:warning=provekit: ...` lines.
 
-use provekit_ir_symbolic::{forall, gte, num, out, Int};
-use provekit_macros::{contract, verify};
+use sugar_ir_symbolic::{forall, gte, num, out, Int};
+use sugar_macros::{contract, verify};
 
 // `abs_value` returns a non-negative i64 for any input. The
 // post-condition is `out >= 0`. `use_abs` calls it; nothing in the
@@ -39,7 +39,7 @@ pub fn always_positive() -> i64 {
 // The `if x == 0` branch is dead per the contract: `x >= 1` and
 // `x == 0` cannot hold simultaneously. The verifier picks this up
 // from the surrounding equality check on the call site's binding
-// (see `provekit_build::source_walk::CallSite::surrounding_eq_check`)
+// (see `sugar_build::source_walk::CallSite::surrounding_eq_check`)
 // and Z3 returns `unsat` on the conjunction.
 //
 // In `strict = true` mode this would fail the build. The demo runs

@@ -1,0 +1,2021 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// provekit-claim-envelope
+//
+// `mint_contract` / `mint_bridge` / `mint_implication` build a signed
+// memento in the v1.2 LAYERED shape introduced by
+// `protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md`:
+//
+//   { "envelope": {...}, "header": {...}, "metadata": {...} }
+//
+//   * envelope = { signer, declaredAt, signature }
+//       The signature is computed over JCS({"header": header, "metadata": metadata}).
+//       The envelope's CID (= attestation CID) is BLAKE3-512(JCS(envelope))
+//       AFTER the signature has been embedded.
+//
+//   * header   = substrate-load-bearing data the verifier reads:
+//                schemaVersion, kind, cid, plus kind-specific REQUIRED
+//                fields (per the kind's normative spec) and the derived
+//                hashes (bindingHash, propertyHash, verdict, inputCids)
+//                used by the resolve/index pipeline.
+//
+//   * metadata = everything else (authoring attribution, lifecycle
+//                strings like producedBy/producedAt, derived per-formula
+//                hashes that are pure tooling convenience). Opaque to
+//                the substrate verifier; signed transitively via the
+//                envelope.
+//
+// Per spec §4: v1.1 flat-shape mementos remain valid as historical
+// artifacts. New emissions adopt the layered shape and carry
+// `schemaVersion: "2"` in the header. The verifier branches on
+// `schemaVersion` at load time.
+
+use std::sync::Arc;
+
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClaimEnvelopeError {
+    #[error("mint_contract: at least one of pre/post/inv must be present")]
+    EmptyContract,
+    #[error("mint_contract: outBinding must not be empty")]
+    EmptyOutBinding,
+    #[error("claim-envelope: {0}")]
+    Other(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct MintedEnvelope {
+    /// JCS-canonical bytes of the full layered memento
+    /// (`{envelope, header, metadata}`).
+    pub canonical_bytes: Vec<u8>,
+    /// The attestation CID: BLAKE3-512(JCS(envelope)) after the
+    /// signature has been embedded. This identifies the SIGNED
+    /// attestation and is what goes into the bundle members map.
+    pub cid: String,
+    /// The content CID: BLAKE3-512(JCS({name, outBinding, pre?, post?, inv?})).
+    /// Signer-independent. Two distinct signers attesting to the same
+    /// logical contract produce the same `contract_cid`. Only populated
+    /// for contract mementos; empty string for bridges and implications.
+    /// Per `protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md` §1.
+    pub contract_cid: String,
+}
+
+/// The layered-shape schema version stamped into every memento header
+/// emitted by this kit. Older flat mementos carry `"1"`; verifiers
+/// branch on this string at load time.
+pub const LAYERED_SCHEMA_VERSION: &str = "2";
+
+/// JSON-RPC method used by kits to serve their substrate declaration.
+///
+/// The declaration is semantic content, not startup negotiation, so it is
+/// fetched on demand instead of being embedded in `initialize.capabilities`.
+pub const KIT_DECLARATION_RPC_METHOD: &str = "provekit.plugin.kit_declaration";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclaration {
+    pub kit: KitIdentity,
+    pub rpc: KitDeclarationRpc,
+    #[serde(rename = "proofResolution")]
+    pub proof_resolution: KitProofResolution,
+    #[serde(rename = "effectKinds")]
+    pub effect_kinds: Vec<String>,
+    #[serde(rename = "effectLeaves")]
+    pub effect_leaves: Vec<KitDeclarationMapping>,
+    #[serde(rename = "guardPredicates")]
+    pub guard_predicates: Vec<KitDeclarationMapping>,
+    #[serde(rename = "controlCarriers")]
+    pub control_carriers: Vec<KitDeclarationMapping>,
+    #[serde(
+        rename = "oracleHost",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub oracle_host: Option<KitOracleHost>,
+    #[serde(rename = "residueCategories")]
+    pub residue_categories: Vec<KitResidueCategory>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitIdentity {
+    pub id: String,
+    pub language: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclarationRpc {
+    pub methods: Vec<KitDeclarationRpcMethod>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclarationRpcMethod {
+    pub name: String,
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitProofResolution {
+    pub strategy: String,
+    #[serde(rename = "rpcMethod", default, skip_serializing_if = "Option::is_none")]
+    pub rpc_method: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclarationMapping {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<String>,
+    pub local: String,
+    pub concept: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitOracleHost {
+    #[serde(rename = "hostKind")]
+    pub host_kind: String,
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitResidueCategory {
+    pub name: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum KitDeclarationError {
+    #[error("kit declaration: {field} must not be empty")]
+    EmptyField { field: &'static str },
+    #[error(
+        "kit declaration: {category} has conflicting mapping for surface={surface:?} local={local}: {first} vs {second}"
+    )]
+    ConflictingMapping {
+        category: &'static str,
+        surface: Option<String>,
+        local: String,
+        first: String,
+        second: String,
+    },
+}
+
+impl KitDeclaration {
+    pub fn validate(&self) -> Result<(), KitDeclarationError> {
+        require_nonempty("kit.id", &self.kit.id)?;
+        require_nonempty("kit.language", &self.kit.language)?;
+        require_nonempty("kit.version", &self.kit.version)?;
+        if self.rpc.methods.is_empty() {
+            return Err(KitDeclarationError::EmptyField {
+                field: "rpc.methods",
+            });
+        }
+        for method in &self.rpc.methods {
+            require_nonempty("rpc.methods[].name", &method.name)?;
+        }
+        require_nonempty("proofResolution.strategy", &self.proof_resolution.strategy)?;
+        if let Some(method) = &self.proof_resolution.rpc_method {
+            require_nonempty("proofResolution.rpcMethod", method)?;
+        }
+        for effect_kind in &self.effect_kinds {
+            require_nonempty("effectKinds[]", effect_kind)?;
+        }
+        validate_mappings("effectLeaves", &self.effect_leaves)?;
+        validate_mappings("guardPredicates", &self.guard_predicates)?;
+        validate_mappings("controlCarriers", &self.control_carriers)?;
+        if let Some(oracle_host) = &self.oracle_host {
+            require_nonempty("oracleHost.hostKind", &oracle_host.host_kind)?;
+        }
+        for category in &self.residue_categories {
+            require_nonempty("residueCategories[].name", &category.name)?;
+            require_nonempty("residueCategories[].status", &category.status)?;
+        }
+        Ok(())
+    }
+}
+
+fn require_nonempty(field: &'static str, value: &str) -> Result<(), KitDeclarationError> {
+    if value.trim().is_empty() {
+        Err(KitDeclarationError::EmptyField { field })
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_mappings(
+    category: &'static str,
+    mappings: &[KitDeclarationMapping],
+) -> Result<(), KitDeclarationError> {
+    let mut seen = std::collections::BTreeMap::<(Option<String>, String), String>::new();
+    for mapping in mappings {
+        if let Some(surface) = &mapping.surface {
+            require_nonempty("mapping.surface", surface)?;
+        }
+        require_nonempty("mapping.local", &mapping.local)?;
+        require_nonempty("mapping.concept", &mapping.concept)?;
+        let key = (mapping.surface.clone(), mapping.local.clone());
+        if let Some(existing) = seen.get(&key) {
+            if existing != &mapping.concept {
+                return Err(KitDeclarationError::ConflictingMapping {
+                    category,
+                    surface: key.0,
+                    local: key.1,
+                    first: existing.clone(),
+                    second: mapping.concept.clone(),
+                });
+            }
+        } else {
+            seen.insert(key, mapping.concept.clone());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod kit_declaration_schema_tests {
+    use super::{
+        KitDeclaration, KitDeclarationMapping, KitDeclarationRpc, KitDeclarationRpcMethod,
+        KitIdentity, KitProofResolution,
+    };
+
+    fn valid_declaration() -> KitDeclaration {
+        KitDeclaration {
+            kit: KitIdentity {
+                id: "provekit-walk-rpc".to_string(),
+                language: "rust".to_string(),
+                version: "0.1.0".to_string(),
+            },
+            rpc: KitDeclarationRpc {
+                methods: vec![KitDeclarationRpcMethod {
+                    name: "provekit.plugin.kit_declaration".to_string(),
+                    required: true,
+                }],
+            },
+            proof_resolution: KitProofResolution {
+                strategy: "rpc-proof-bytes".to_string(),
+                rpc_method: Some("provekit.plugin.resolve_dependency_proofs".to_string()),
+            },
+            effect_kinds: vec!["concept:panic-freedom".to_string()],
+            effect_leaves: vec![KitDeclarationMapping {
+                surface: Some("rust-fn-contracts".to_string()),
+                local: "method:unwrap".to_string(),
+                concept: "concept:panic-freedom.leaf.unwrap".to_string(),
+            }],
+            guard_predicates: vec![],
+            control_carriers: vec![],
+            oracle_host: None,
+            residue_categories: vec![],
+        }
+    }
+
+    #[test]
+    fn kit_declaration_roundtrips_with_optional_defaults() {
+        let declaration = valid_declaration();
+
+        declaration.validate().expect("valid declaration");
+        let encoded = serde_json::to_string(&declaration).expect("encode declaration");
+        let decoded: KitDeclaration = serde_json::from_str(&encoded).expect("decode declaration");
+
+        assert_eq!(decoded, declaration);
+        assert!(decoded.oracle_host.is_none());
+    }
+
+    #[test]
+    fn kit_declaration_rejects_missing_required_fields() {
+        let missing_effect_kinds = serde_json::json!({
+            "kit": {"id": "provekit-walk-rpc", "language": "rust", "version": "0.1.0"},
+            "rpc": {"methods": [{"name": "provekit.plugin.kit_declaration", "required": true}]},
+            "proofResolution": {"strategy": "rpc-proof-bytes"}
+        });
+
+        let err = serde_json::from_value::<KitDeclaration>(missing_effect_kinds)
+            .expect_err("effectKinds is required");
+
+        assert!(
+            err.to_string().contains("effectKinds"),
+            "error should name missing field: {err}"
+        );
+    }
+
+    #[test]
+    fn kit_declaration_allows_empty_effect_kinds_for_non_effect_kits() {
+        let mut declaration = valid_declaration();
+        declaration.effect_kinds.clear();
+        declaration.effect_leaves.clear();
+        declaration.guard_predicates.clear();
+        declaration.control_carriers.clear();
+
+        declaration
+            .validate()
+            .expect("emit-only kits may declare no effect vocabulary");
+    }
+
+    #[test]
+    fn kit_declaration_allows_exact_duplicate_mapping_but_rejects_conflict() {
+        let mut declaration = valid_declaration();
+        let duplicate = declaration.effect_leaves[0].clone();
+        declaration.effect_leaves.push(duplicate);
+        declaration
+            .validate()
+            .expect("exact duplicate declaration is harmless");
+
+        declaration.effect_leaves.push(KitDeclarationMapping {
+            surface: Some("rust-fn-contracts".to_string()),
+            local: "method:unwrap".to_string(),
+            concept: "concept:panic-freedom.leaf.expect".to_string(),
+        });
+
+        let err = declaration
+            .validate()
+            .expect_err("conflicting scoped mapping must fail");
+        assert!(
+            err.to_string().contains("effectLeaves"),
+            "error should identify the mapping category: {err}"
+        );
+        assert!(
+            err.to_string().contains("method:unwrap"),
+            "error should identify the local key: {err}"
+        );
+    }
+}
+
+// ---------- DERIVED hash helpers --------------------------------------------
+
+fn hash_value(v: &Arc<Value>) -> String {
+    let bytes = encode_jcs(v);
+    blake3_512_of(bytes.as_bytes())
+}
+
+fn hash_string(s: &str) -> String {
+    blake3_512_of(s.as_bytes())
+}
+
+// ---------- Envelope assembly -----------------------------------------------
+
+/// Build the JCS-canonical bytes of `{"header": header, "metadata": metadata}`.
+/// This is the message the envelope's Ed25519 signature covers (spec §2 R2).
+fn signing_bytes(header: &Arc<Value>, metadata: &Arc<Value>) -> Vec<u8> {
+    let msg = Value::object([("header", header.clone()), ("metadata", metadata.clone())]);
+    encode_jcs(&msg).into_bytes()
+}
+
+/// Assemble a layered memento, sign it, and compute the attestation CID
+/// (= BLAKE3-512(JCS(envelope-with-signature))). Returns the JCS-canonical
+/// bytes of the full `{envelope, header, metadata}` object alongside the CID.
+/// `content_cid` is the signer-independent contract CID (empty for bridges/implications).
+fn assemble_layered(
+    header: Arc<Value>,
+    metadata: Arc<Value>,
+    declared_at: &str,
+    signer_seed: &Ed25519Seed,
+    content_cid: String,
+) -> MintedEnvelope {
+    let signer = ed25519_pubkey_string(signer_seed);
+    let signing_msg = signing_bytes(&header, &metadata);
+    let signature = ed25519_sign_string(signer_seed, &signing_msg);
+
+    // Build the envelope object with the embedded signature; its JCS
+    // hash is the attestation CID.
+    let envelope = Value::object([
+        ("signer", Value::string(signer.clone())),
+        ("declaredAt", Value::string(declared_at.to_string())),
+        ("signature", Value::string(signature.clone())),
+    ]);
+    let envelope_jcs = encode_jcs(&envelope);
+    let attestation_cid = blake3_512_of(envelope_jcs.as_bytes());
+
+    let memento = Value::object([
+        ("envelope", envelope),
+        ("header", header),
+        ("metadata", metadata),
+    ]);
+    let memento_jcs = encode_jcs(&memento);
+
+    MintedEnvelope {
+        canonical_bytes: memento_jcs.into_bytes(),
+        cid: attestation_cid,
+        contract_cid: content_cid,
+    }
+}
+
+/// Helper: build a header object from a vector of (key, value) pairs.
+/// Always prepends `schemaVersion`, `kind`, `cid` in that order; the
+/// kind-specific REQUIRED header fields follow.
+fn build_header(
+    kind: &str,
+    header_cid: &str,
+    kind_specific: Vec<(String, Arc<Value>)>,
+) -> Arc<Value> {
+    let mut entries: Vec<(String, Arc<Value>)> = Vec::with_capacity(3 + kind_specific.len());
+    entries.push((
+        "schemaVersion".into(),
+        Value::string(LAYERED_SCHEMA_VERSION),
+    ));
+    entries.push(("kind".into(), Value::string(kind.to_string())));
+    entries.push(("cid".into(), Value::string(header_cid.to_string())));
+    entries.extend(kind_specific);
+    Arc::new(Value::Object(entries))
+}
+
+// =============================================================================
+// Authoring (typed union mirrored from the C++ kit)
+// =============================================================================
+
+#[derive(Debug, Clone)]
+pub enum Authoring {
+    KitAuthor {
+        author: String,
+        note: Option<String>,
+    },
+    Lift {
+        lifter: String,
+        evidence: String,
+        source_cid: Option<String>,
+    },
+    Llm {
+        llm: String,
+        llm_version: String,
+        prompt_cid: String,
+        confidence: f64,
+        rationale: Option<String>,
+    },
+}
+
+fn authoring_to_value(a: &Authoring) -> Arc<Value> {
+    match a {
+        Authoring::KitAuthor { author, note } => {
+            let mut entries: Vec<(String, Arc<Value>)> = vec![
+                ("producerKind".into(), Value::string("kit-author")),
+                ("author".into(), Value::string(author.clone())),
+            ];
+            if let Some(n) = note {
+                if !n.is_empty() {
+                    entries.push(("note".into(), Value::string(n.clone())));
+                }
+            }
+            Arc::new(Value::Object(entries))
+        }
+        Authoring::Lift {
+            lifter,
+            evidence,
+            source_cid,
+        } => {
+            let mut entries: Vec<(String, Arc<Value>)> = vec![
+                ("producerKind".into(), Value::string("lift")),
+                ("lifter".into(), Value::string(lifter.clone())),
+                ("evidence".into(), Value::string(evidence.clone())),
+            ];
+            if let Some(c) = source_cid {
+                if !c.is_empty() {
+                    entries.push(("sourceCid".into(), Value::string(c.clone())));
+                }
+            }
+            Arc::new(Value::Object(entries))
+        }
+        Authoring::Llm {
+            llm,
+            llm_version,
+            prompt_cid,
+            confidence,
+            rationale,
+        } => {
+            let mut entries: Vec<(String, Arc<Value>)> = vec![
+                ("producerKind".into(), Value::string("llm")),
+                ("llm".into(), Value::string(llm.clone())),
+                ("llmVersion".into(), Value::string(llm_version.clone())),
+                ("promptCid".into(), Value::string(prompt_cid.clone())),
+                (
+                    "confidence".into(),
+                    Value::integer((confidence * 1000.0) as i64),
+                ),
+            ];
+            if let Some(r) = rationale {
+                if !r.is_empty() {
+                    entries.push(("rationale".into(), Value::string(r.clone())));
+                }
+            }
+            Arc::new(Value::Object(entries))
+        }
+    }
+}
+
+// =============================================================================
+// mint_contract
+// =============================================================================
+
+pub struct MintContractArgs {
+    pub contract_name: String,
+    pub pre: Option<Arc<Value>>,
+    pub post: Option<Arc<Value>>,
+    pub inv: Option<Arc<Value>>,
+    /// Execution-witness EvidenceTerm (the `custom` discharge slot). PROVENANCE,
+    /// not contract identity: carried in the header body so the verifier's
+    /// witness-discharge arm can read it, but OMITTED WHEN `None` so existing
+    /// contracts keep byte-identical headers/CIDs. Does not contribute to the
+    /// contract CID (what is proven) -- only HOW it is discharged.
+    pub evidence_term: Option<Arc<Value>>,
+    pub out_binding: String,
+    pub produced_by: String,
+    pub produced_at: String,
+    pub input_cids: Vec<String>,
+    pub authoring: Authoring,
+    pub signer_seed: Ed25519Seed,
+    /// Formal parameter names of the function this contract describes, in
+    /// declaration order. Body-derived op-contracts (the verification-spine
+    /// target the `body_discharge::CatalogResolver` consumes, #1440/#1436)
+    /// REQUIRE this: the resolver substitutes a harvested call's argument
+    /// into the matching formal of the body-derived `post`, so without
+    /// `formals` it returns `None` and the callee stays uninterpreted
+    /// (Undecidable). Empty for non-function contracts (LIA tautologies,
+    /// cross-language refinement targets); the field is then omitted from
+    /// the header so those mementos keep their current bytes/CIDs.
+    pub formals: Vec<String>,
+    /// Emit `formals: []` (and `formalSorts: []`) when the vector is
+    /// empty. Presence is load-bearing for zero-arg body-derived
+    /// op-contracts: absent `formals` means "not body-derived", while
+    /// present empty `formals` means "body-bearing function with no
+    /// parameters".
+    pub emit_empty_formals: bool,
+    /// Sorts of the formals, parallel to `formals`. Carried alongside
+    /// `formals` so the resolver can name the value slots; omitted from the
+    /// header when empty.
+    pub formal_sorts: Vec<Arc<Value>>,
+    /// The crate / library this contract belongs to (the project's
+    /// `platform_profile.library`). Carried as a metadata axis so a consumer
+    /// that vendors this proof can tell THIS crate's `foo` from a same-named
+    /// `foo` in another crate (the Tier-1 cross-crate disambiguation). A
+    /// metadata field, not part of the contract CID: it does not change what
+    /// is proven, only how a call site resolves to it. `None` omits the key.
+    pub library: Option<String>,
+    /// Contract-directive metadata, not contract content: this does NOT
+    /// contribute to `contract_cid`. Whether this contract may be discharged
+    /// by reducing against a function body. Totality axioms such as
+    /// `is_ok(result)` are intentionally ineligible: they are trusted kit
+    /// facts, not body-derived equations. Kits are responsible for setting
+    /// this honestly; the verifier preserves and trusts the directive after a
+    /// packaged proof is reloaded. Omitted when `true` to preserve legacy
+    /// bytes and legacy reload behavior.
+    pub body_discharge_eligible: bool,
+    /// Loud reason paired with `body_discharge_eligible = false`, stored as
+    /// metadata so dependency-proof consumers can preserve the same honesty
+    /// boundary after reloading a packaged proof.
+    pub body_discharge_refusal_reason: Option<String>,
+    /// PANIC-LOCUS PRESERVATION (#1745): per-occurrence source loci for the
+    /// panic-leaf calls in this function's body, each `{argTerm, file, line,
+    /// col, callee}`. A panic-leaf call (`x.unwrap()`) lifts to the abstract
+    /// ctor `method:unwrap` with no source span, so two functions both calling
+    /// `.unwrap()` produce indistinguishable `method:unwrap` obligations whose
+    /// distinct lines the verifier's per-symbol bridge index would otherwise
+    /// collapse. Carried in the contract HEADER but OUTSIDE the contract content
+    /// CID (emitted after `contract_cid` is computed, exactly like `inputCids`/
+    /// `verdict`): the locus is developer-facing provenance, not part of what is
+    /// proven, so it must not move the contract identity. Empty omits the key.
+    pub panic_loci: Vec<Arc<Value>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyDischargePolicy {
+    pub body_discharge_eligible: bool,
+    pub body_discharge_refusal_reason: Option<String>,
+    pub warnings: Vec<BodyDischargePolicyWarning>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BodyDischargePolicyWarning {
+    Disagreement {
+        legacy_eligible: bool,
+        legacy_reason: Option<String>,
+        policy_eligible: bool,
+        policy_reason: Option<String>,
+    },
+    Malformed {
+        reason: String,
+    },
+}
+
+pub fn body_discharge_policy_from_object(entry: &JsonValue) -> BodyDischargePolicy {
+    body_discharge_policy_from_object_with_default(entry, true)
+}
+
+pub fn body_discharge_policy_from_object_with_default(
+    entry: &JsonValue,
+    default_eligible: bool,
+) -> BodyDischargePolicy {
+    body_discharge_policy_from_fields_with_default(
+        entry
+            .get("bodyDischargeEligible")
+            .or_else(|| entry.get("body_discharge_eligible")),
+        entry
+            .get("bodyDischargeRefusalReason")
+            .or_else(|| entry.get("body_discharge_refusal_reason")),
+        entry.get("dischargePolicy"),
+        default_eligible,
+    )
+}
+
+pub fn body_discharge_policy_from_fields(
+    legacy_eligible: Option<&JsonValue>,
+    legacy_reason: Option<&JsonValue>,
+    discharge_policy: Option<&JsonValue>,
+) -> BodyDischargePolicy {
+    body_discharge_policy_from_fields_with_default(
+        legacy_eligible,
+        legacy_reason,
+        discharge_policy,
+        true,
+    )
+}
+
+pub fn body_discharge_policy_from_fields_with_default(
+    legacy_eligible: Option<&JsonValue>,
+    legacy_reason: Option<&JsonValue>,
+    discharge_policy: Option<&JsonValue>,
+    default_eligible: bool,
+) -> BodyDischargePolicy {
+    let legacy_eligible = legacy_eligible.and_then(JsonValue::as_bool);
+    let legacy_reason = legacy_reason
+        .and_then(JsonValue::as_str)
+        .map(str::to_string);
+    let legacy_present = legacy_eligible.is_some() || legacy_reason.is_some();
+    let legacy_policy = (
+        legacy_eligible.unwrap_or(default_eligible),
+        legacy_reason.clone(),
+    );
+
+    let (policy, mut warnings) = parse_body_reduction(discharge_policy);
+    match policy {
+        Some((policy_eligible, policy_reason)) if legacy_present => {
+            if legacy_policy != (policy_eligible, policy_reason.clone()) {
+                warnings.push(BodyDischargePolicyWarning::Disagreement {
+                    legacy_eligible: legacy_policy.0,
+                    legacy_reason: legacy_policy.1.clone(),
+                    policy_eligible,
+                    policy_reason,
+                });
+            }
+            BodyDischargePolicy {
+                body_discharge_eligible: legacy_policy.0,
+                body_discharge_refusal_reason: legacy_policy.1,
+                warnings,
+            }
+        }
+        Some((policy_eligible, policy_reason)) => BodyDischargePolicy {
+            body_discharge_eligible: policy_eligible,
+            body_discharge_refusal_reason: policy_reason,
+            warnings,
+        },
+        None => BodyDischargePolicy {
+            body_discharge_eligible: legacy_policy.0,
+            body_discharge_refusal_reason: legacy_policy.1,
+            warnings,
+        },
+    }
+}
+
+fn parse_body_reduction(
+    discharge_policy: Option<&JsonValue>,
+) -> (
+    Option<(bool, Option<String>)>,
+    Vec<BodyDischargePolicyWarning>,
+) {
+    let Some(discharge_policy) = discharge_policy else {
+        return (None, Vec::new());
+    };
+    let Some(policy_object) = discharge_policy.as_object() else {
+        return (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: "dischargePolicy must be an object".to_string(),
+            }],
+        );
+    };
+    let Some(body_reduction) = policy_object.get("bodyReduction") else {
+        return (None, Vec::new());
+    };
+    let Some(body_reduction_object) = body_reduction.as_object() else {
+        return (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: "dischargePolicy.bodyReduction must be an object".to_string(),
+            }],
+        );
+    };
+    let Some(status) = body_reduction_object
+        .get("status")
+        .and_then(JsonValue::as_str)
+    else {
+        return (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: "dischargePolicy.bodyReduction.status must be a string".to_string(),
+            }],
+        );
+    };
+
+    match status {
+        "allowed" => (Some((true, None)), Vec::new()),
+        "refused" => {
+            let reason = match body_reduction_object.get("reason") {
+                Some(reason) => match reason.as_str() {
+                    Some(reason) => Some(reason.to_string()),
+                    None => {
+                        return (
+                            None,
+                            vec![BodyDischargePolicyWarning::Malformed {
+                                reason: "dischargePolicy.bodyReduction.reason must be a string"
+                                    .to_string(),
+                            }],
+                        )
+                    }
+                },
+                None => None,
+            };
+            (Some((false, reason)), Vec::new())
+        }
+        other => (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: format!(
+                    "dischargePolicy.bodyReduction.status must be allowed or refused, got {other}"
+                ),
+            }],
+        ),
+    }
+}
+
+// =============================================================================
+// mint_authority
+// =============================================================================
+
+pub struct MintAuthorityArgs {
+    pub principal: String,
+    pub key: String,
+    pub scope_kind: String,
+    pub scope: String,
+    pub parent_authority_cid: Option<String>,
+    pub produced_by: String,
+    pub produced_at: String,
+    pub signer_seed: Ed25519Seed,
+}
+
+fn authority_content_cid(args: &MintAuthorityArgs) -> String {
+    let mut kvs: Vec<(String, Arc<Value>)> = vec![
+        ("principal".into(), Value::string(args.principal.clone())),
+        ("key".into(), Value::string(args.key.clone())),
+        ("scopeKind".into(), Value::string(args.scope_kind.clone())),
+        ("scope".into(), Value::string(args.scope.clone())),
+    ];
+    if let Some(parent) = &args.parent_authority_cid {
+        kvs.push(("parentAuthorityCid".into(), Value::string(parent.clone())));
+    }
+    hash_value(&Arc::new(Value::Object(kvs)))
+}
+
+pub fn mint_authority(args: &MintAuthorityArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.principal.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_authority: principal must not be empty".into(),
+        ));
+    }
+    if !args.key.starts_with("ed25519:") {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_authority: key must be an inline ed25519 public key".into(),
+        ));
+    }
+    if args.scope_kind.is_empty() || args.scope.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_authority: scopeKind and scope must not be empty".into(),
+        ));
+    }
+
+    let header_cid = authority_content_cid(args);
+    let mut input_cids = Vec::new();
+    if let Some(parent) = &args.parent_authority_cid {
+        input_cids.push(parent.clone());
+    }
+    input_cids.sort();
+    let input_arr: Vec<Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
+    let mut kind_specific: Vec<(String, Arc<Value>)> = vec![
+        ("principal".into(), Value::string(args.principal.clone())),
+        ("key".into(), Value::string(args.key.clone())),
+        ("scopeKind".into(), Value::string(args.scope_kind.clone())),
+        ("scope".into(), Value::string(args.scope.clone())),
+    ];
+    if let Some(parent) = &args.parent_authority_cid {
+        kind_specific.push(("parentAuthorityCid".into(), Value::string(parent.clone())));
+    }
+    kind_specific.push(("verdict".into(), Value::string("holds")));
+    kind_specific.push(("inputCids".into(), Value::array(input_arr)));
+
+    let header = build_header("authority", &header_cid, kind_specific);
+    let metadata = Arc::new(Value::Object(vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+        (
+            "authorityClaim".into(),
+            Value::string(format!(
+                "{} controls {} for {}:{}",
+                args.principal, args.key, args.scope_kind, args.scope
+            )),
+        ),
+    ]));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    ))
+}
+
+/// Compute the **content** CID of a contract (signer-independent).
+///
+/// Per `protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md` §1,
+/// this is the BLAKE3-512 of the JCS encoding of the contract's
+/// substrate-load-bearing fields: `name`, `outBinding`, and any of
+/// `pre`/`post`/`inv` that are present. Two distinct signers attesting
+/// to the same logical contract produce the same `contractCid`.
+///
+/// This value goes in `header.cid` of the minted layered memento and is
+/// also available directly without minting via this public function.
+///
+/// Per spec naming convention (`contract_cid(decl)` for Rust).
+pub fn contract_cid(args: &MintContractArgs) -> String {
+    let mut kvs: Vec<(String, Arc<Value>)> = vec![
+        ("name".into(), Value::string(args.contract_name.clone())),
+        ("outBinding".into(), Value::string(args.out_binding.clone())),
+    ];
+    if let Some(pre) = &args.pre {
+        kvs.push(("pre".into(), pre.clone()));
+    }
+    if let Some(post) = &args.post {
+        kvs.push(("post".into(), post.clone()));
+    }
+    if let Some(inv) = &args.inv {
+        kvs.push(("inv".into(), inv.clone()));
+    }
+    // Body-derived op-contracts carry their formals as part of contract
+    // identity: two functions with the same `post` but different formal
+    // names are different contracts (the resolver substitutes by formal
+    // name). Omitted when empty unless `emit_empty_formals` marks the
+    // zero-arg body-derived case, so non-function contracts keep their
+    // existing content CIDs unchanged.
+    if !args.formals.is_empty() || args.emit_empty_formals {
+        let formals_arr: Vec<Arc<Value>> = args
+            .formals
+            .iter()
+            .map(|f| Value::string(f.clone()))
+            .collect();
+        kvs.push(("formals".into(), Value::array(formals_arr)));
+    }
+    if !args.formal_sorts.is_empty() || args.emit_empty_formals {
+        kvs.push((
+            "formalSorts".into(),
+            Value::array(args.formal_sorts.clone()),
+        ));
+    }
+    let v = Arc::new(Value::Object(kvs));
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
+
+// Keep the private alias for internal use within this module.
+fn contract_content_cid(args: &MintContractArgs) -> String {
+    contract_cid(args)
+}
+
+/// Compute the DERIVED `propertyHash` for a contract header.
+///
+/// This is the hash of the contract properties the verifier indexes:
+/// present `pre`/`post`/`inv` slots plus the output binding. It is
+/// intentionally separate from `contract_cid`, which also includes the
+/// contract name and identifies the signer-independent contract content.
+pub fn contract_property_hash(args: &MintContractArgs) -> String {
+    let mut ph_kvs: Vec<(String, Arc<Value>)> = Vec::new();
+    if let Some(pre) = &args.pre {
+        ph_kvs.push(("pre".into(), pre.clone()));
+    }
+    if let Some(post) = &args.post {
+        ph_kvs.push(("post".into(), post.clone()));
+    }
+    if let Some(inv) = &args.inv {
+        ph_kvs.push(("inv".into(), inv.clone()));
+    }
+    ph_kvs.push(("outBinding".into(), Value::string(args.out_binding.clone())));
+    hash_value(&Arc::new(Value::Object(ph_kvs)))
+}
+
+/// Compute the **contract set CID** from a slice of already-computed
+/// `contractCid` strings (each `blake3-512:<128 hex>` produced by
+/// `contract_cid()`).
+///
+/// Per `protocol/specs/2026-05-03-contract-set-extension.md` §1:
+///   contractSetCid := "blake3-512:" || hex(BLAKE3-512(JCS(<sorted contractCids>)))
+///
+/// The sort is lexicographic on the raw `blake3-512:hex` strings, making
+/// the result order-independent. Two kits enumerating the same contracts
+/// in different order produce byte-identical `contractSetCid` values.
+pub fn compute_contract_set_cid(mut contract_cids: Vec<String>) -> String {
+    contract_cids.sort();
+    let arr: Vec<Arc<Value>> = contract_cids.into_iter().map(Value::string).collect();
+    let v = Value::array(arr);
+    let jcs = encode_jcs(&v);
+    blake3_512_of(jcs.as_bytes())
+}
+
+pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.pre.is_none() && args.post.is_none() && args.inv.is_none() {
+        return Err(ClaimEnvelopeError::EmptyContract);
+    }
+    if args.out_binding.is_empty() {
+        return Err(ClaimEnvelopeError::EmptyOutBinding);
+    }
+
+    // DERIVED:
+    //   propertyHash = hash(JCS({pre?, post?, inv?, outBinding}))
+    //   bindingHash  = hash(JCS({producerId, contractName, propertyHash}))
+    //
+    // These ride in the header because the verifier uses them to index
+    // and resolve callsites; they are substrate-load-bearing despite
+    // being derivable (see spec §1 "kind-specific REQUIRED header
+    // fields").
+    let property_hash = contract_property_hash(args);
+
+    let bh_obj = Value::object([
+        ("producerId", Value::string(args.produced_by.clone())),
+        ("contractName", Value::string(args.contract_name.clone())),
+        ("propertyHash", Value::string(property_hash.clone())),
+    ]);
+    let binding_hash = hash_value(&bh_obj);
+
+    // Header: schemaVersion + kind + cid + kind-specific REQUIRED fields.
+    let header_cid = contract_content_cid(args);
+    let mut kind_specific: Vec<(String, Arc<Value>)> = vec![
+        ("name".into(), Value::string(args.contract_name.clone())),
+        ("outBinding".into(), Value::string(args.out_binding.clone())),
+    ];
+    if let Some(pre) = &args.pre {
+        kind_specific.push(("pre".into(), pre.clone()));
+    }
+    if let Some(post) = &args.post {
+        kind_specific.push(("post".into(), post.clone()));
+    }
+    if let Some(inv) = &args.inv {
+        kind_specific.push(("inv".into(), inv.clone()));
+    }
+    // Body-derived op-contract slots: `formals` (+ `formalSorts`) ride in
+    // the header so `body_discharge::CatalogResolver` (which reads the
+    // header via `memento_body` for v1.2-layered mementos) can project them
+    // into `OpContractInfo` value slots. Omitted when empty unless
+    // `emit_empty_formals` marks a zero-arg body-derived op-contract, so
+    // non-function contracts are byte-identical to their pre-#1436 form.
+    if !args.formals.is_empty() || args.emit_empty_formals {
+        let formals_arr: Vec<Arc<Value>> = args
+            .formals
+            .iter()
+            .map(|f| Value::string(f.clone()))
+            .collect();
+        kind_specific.push(("formals".into(), Value::array(formals_arr)));
+    }
+    if !args.formal_sorts.is_empty() || args.emit_empty_formals {
+        kind_specific.push((
+            "formalSorts".into(),
+            Value::array(args.formal_sorts.clone()),
+        ));
+    }
+    kind_specific.push(("verdict".into(), Value::string("holds")));
+    kind_specific.push(("bindingHash".into(), Value::string(binding_hash)));
+    kind_specific.push(("propertyHash".into(), Value::string(property_hash)));
+    let mut sorted_inputs: Vec<String> = args.input_cids.clone();
+    sorted_inputs.sort();
+    let inputs_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    kind_specific.push(("inputCids".into(), Value::array(inputs_arr)));
+
+    // PANIC-LOCUS PRESERVATION (#1745): per-occurrence panic-leaf source loci.
+    // Emitted in the header so the verifier's `enumerate_callsites` (which reads
+    // the contract body via `memento_body`, i.e. the header for v1.2-layered
+    // mementos) can attribute each `method:unwrap` obligation to ITS OWN source
+    // line. Pushed AFTER `header_cid`/`property_hash` are computed: it is
+    // provenance, NOT contract identity (`contract_cid`/`contract_property_hash`
+    // never read it), so it must not perturb the contract CID. Omitted when
+    // empty so contracts with no panic leaf keep their existing header bytes.
+    if !args.panic_loci.is_empty() {
+        kind_specific.push(("panicLoci".into(), Value::array(args.panic_loci.clone())));
+    }
+    // Execution-witness evidence: PROVENANCE (how-discharged), carried in the
+    // body for the verifier's witness arm, omitted when None so non-witness
+    // contracts stay byte-identical. Does not perturb the contract CID.
+    if let Some(ev) = &args.evidence_term {
+        kind_specific.push(("evidence".into(), ev.clone()));
+    }
+
+    let header = build_header("contract", &header_cid, kind_specific);
+
+    // Metadata: producer attribution + per-formula derived hashes
+    // (purely tooling convenience; not used by the substrate verifier).
+    let mut metadata_kvs: Vec<(String, Arc<Value>)> = vec![
+        ("authoring".into(), authoring_to_value(&args.authoring)),
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+    ];
+    if let Some(pre) = &args.pre {
+        metadata_kvs.push(("preHash".into(), Value::string(hash_value(pre))));
+    }
+    if let Some(post) = &args.post {
+        metadata_kvs.push(("postHash".into(), Value::string(hash_value(post))));
+    }
+    if let Some(inv) = &args.inv {
+        metadata_kvs.push(("invHash".into(), Value::string(hash_value(inv))));
+    }
+    if let Some(library) = &args.library {
+        if !library.is_empty() {
+            metadata_kvs.push(("library".into(), Value::string(library.clone())));
+        }
+    }
+    if !args.body_discharge_eligible {
+        metadata_kvs.push(("bodyDischargeEligible".into(), Value::boolean(false)));
+    }
+    if let Some(reason) = &args.body_discharge_refusal_reason {
+        if !reason.is_empty() {
+            metadata_kvs.push((
+                "bodyDischargeRefusalReason".into(),
+                Value::string(reason.clone()),
+            ));
+        }
+    }
+    let metadata = Arc::new(Value::Object(metadata_kvs));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        header_cid,
+    ))
+}
+
+// =============================================================================
+// mint_bridge
+// =============================================================================
+
+pub struct MintBridgeArgs {
+    pub produced_by: String,
+    pub produced_at: String,
+    pub source_symbol: String,
+    pub source_layer: String,
+    pub target_contract_cid: String,
+    pub target_layer: String,
+    pub ir_arg_sorts: Vec<String>,
+    pub ir_return_sort: String,
+    pub notes: String,
+    pub signer_seed: Ed25519Seed,
+    /// Forward pin (BridgeDeclaration.ConsequentBundlePinned, NORMATIVE):
+    /// the CID of the `.proof` bundle that is allowed to discharge this
+    /// bridge's target contract. `Some(bundle)` pins a CROSS-bundle target
+    /// (a dependency proof); the verifier refuses any contract member not
+    /// drawn from that bundle. `None` means SELF-pinned: the target must be
+    /// a co-member of this bridge's own bundle. There is no unpinned path;
+    /// `None` is enforced as same-bundle membership, not skipped.
+    pub target_proof_cid: Option<String>,
+    /// Call-site provenance for this bridge, carried verbatim from the lifter's
+    /// bridge declaration. Load-bearing: `panic_site` is how the verifier
+    /// (`enumerate_callsites` -> `cmd_verify`) routes a panic-leaf bridge into
+    /// the panic-safe discharge path. Dropping it (the pre-fix behavior) made
+    /// every minted panic site read back `panic_site=false` and stay
+    /// undecidable. `None` keeps a callsite-less bridge byte-identical to its
+    /// pre-field CID (callsite is NOT part of bridge content identity).
+    pub callsite: Option<BridgeCallsite>,
+}
+
+/// Call-site provenance carried into a bridge memento. Mirrors the lifter's
+/// `callsite` object so the verifier reads back `panicSite`/`file`/`start_line`.
+#[derive(Clone, Debug, Default)]
+pub struct BridgeCallsite {
+    pub panic_site: bool,
+    pub file: Option<String>,
+    pub line: Option<i64>,
+}
+
+/// Compute the content CID of a bridge declaration (signer-independent).
+fn bridge_content_cid(args: &MintBridgeArgs) -> String {
+    let arg_sorts: Vec<Arc<Value>> = args
+        .ir_arg_sorts
+        .iter()
+        .map(|s| Value::string(s.clone()))
+        .collect();
+    let mut fields: Vec<(&str, Arc<Value>)> = vec![
+        ("sourceSymbol", Value::string(args.source_symbol.clone())),
+        ("sourceLayer", Value::string(args.source_layer.clone())),
+        (
+            "targetContractCid",
+            Value::string(args.target_contract_cid.clone()),
+        ),
+        ("targetLayer", Value::string(args.target_layer.clone())),
+        ("irArgSorts", Value::array(arg_sorts)),
+        ("irReturnSort", Value::string(args.ir_return_sort.clone())),
+    ];
+    // The pin is part of bridge identity: a bridge that pins bundle A and one
+    // that pins bundle B (same target contract) are DIFFERENT bridges. Only
+    // emit the key when Some, so a self-pinned (None) bridge's CID is the
+    // pin-free identity. encode_jcs sorts keys, so insertion order is moot.
+    if let Some(ref bundle) = args.target_proof_cid {
+        fields.push(("targetProofCid", Value::string(bundle.clone())));
+    }
+    let v = Value::object(fields);
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
+
+pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
+    let arg_sorts: Vec<Arc<Value>> = args
+        .ir_arg_sorts
+        .iter()
+        .map(|s| Value::string(s.clone()))
+        .collect();
+
+    // DERIVED per spec:
+    //   bindingHash  = hash(canonical({sourceLayer, sourceSymbol}))
+    //   propertyHash = hash("bridge:" || sourceSymbol)
+    let bh_obj = Value::object([
+        ("sourceLayer", Value::string(args.source_layer.clone())),
+        ("sourceSymbol", Value::string(args.source_symbol.clone())),
+    ]);
+    let binding_hash = hash_value(&bh_obj);
+    let property_hash = hash_string(&format!("bridge:{}", args.source_symbol));
+
+    let header_cid = bridge_content_cid(args);
+    let mut kind_specific: Vec<(String, Arc<Value>)> = vec![
+        (
+            "sourceSymbol".into(),
+            Value::string(args.source_symbol.clone()),
+        ),
+        (
+            "sourceLayer".into(),
+            Value::string(args.source_layer.clone()),
+        ),
+        (
+            "targetContractCid".into(),
+            Value::string(args.target_contract_cid.clone()),
+        ),
+        (
+            "targetLayer".into(),
+            Value::string(args.target_layer.clone()),
+        ),
+        ("irArgSorts".into(), Value::array(arg_sorts)),
+        (
+            "irReturnSort".into(),
+            Value::string(args.ir_return_sort.clone()),
+        ),
+        ("verdict".into(), Value::string("holds")),
+        ("bindingHash".into(), Value::string(binding_hash)),
+        ("propertyHash".into(), Value::string(property_hash)),
+        (
+            "inputCids".into(),
+            Value::array(vec![Value::string(args.target_contract_cid.clone())]),
+        ),
+    ];
+    // Forward pin into the body so the verifier (enumerate_callsites ->
+    // resolve_target) can enforce ConsequentBundlePinned. Omitted when None
+    // (self-pinned: the verifier enforces same-bundle co-membership instead).
+    if let Some(ref bundle) = args.target_proof_cid {
+        kind_specific.push(("targetProofCid".into(), Value::string(bundle.clone())));
+    }
+    // Carry the lifter's call-site object so the verifier can read `panicSite`
+    // (the panic-discharge routing flag) plus file/line for the scoreboard.
+    // NOT folded into `bridge_content_cid`: a bridge's identity is its
+    // (sourceSymbol -> targetContract) relationship, invariant across the
+    // distinct call sites that share a symbol.
+    if let Some(ref cs) = args.callsite {
+        let mut cs_fields: Vec<(&str, Arc<Value>)> =
+            vec![("panicSite", Value::boolean(cs.panic_site))];
+        if let Some(ref f) = cs.file {
+            cs_fields.push(("file", Value::string(f.clone())));
+        }
+        if let Some(line) = cs.line {
+            cs_fields.push(("start_line", Value::integer(line)));
+        }
+        kind_specific.push(("callsite".into(), Value::object(cs_fields)));
+    }
+
+    let header = build_header("bridge", &header_cid, kind_specific);
+
+    let mut metadata_kvs: Vec<(String, Arc<Value>)> = vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+    ];
+    if !args.notes.is_empty() {
+        metadata_kvs.push(("notes".into(), Value::string(args.notes.clone())));
+    }
+    let metadata = Arc::new(Value::Object(metadata_kvs));
+
+    assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    )
+}
+
+// =============================================================================
+// mint_implication
+// =============================================================================
+
+pub struct MintImplicationArgs {
+    pub produced_by: String,
+    pub produced_at: String,
+    pub antecedent_hash: String,
+    pub consequent_hash: String,
+    pub antecedent_cid: String,
+    pub consequent_cid: String,
+    pub additional_input_cids: Vec<String>,
+    pub antecedent_slot: String,
+    pub consequent_slot: String,
+    pub prover: String,
+    pub prover_run_ms: i64,
+    pub smt_lib_input: String,
+    pub proof_witness: String,
+    pub signer_seed: Ed25519Seed,
+}
+
+fn implication_content_cid(args: &MintImplicationArgs) -> String {
+    let v = Value::object([
+        (
+            "antecedentHash",
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash",
+            Value::string(args.consequent_hash.clone()),
+        ),
+        ("antecedentCid", Value::string(args.antecedent_cid.clone())),
+        ("consequentCid", Value::string(args.consequent_cid.clone())),
+        (
+            "antecedentSlot",
+            Value::string(args.antecedent_slot.clone()),
+        ),
+        (
+            "consequentSlot",
+            Value::string(args.consequent_slot.clone()),
+        ),
+    ]);
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
+
+pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
+    // DERIVED per spec:
+    //   bindingHash  = hash(canonical({antecedentHash, consequentHash}))
+    //   propertyHash = hash("implication:" || antecedentHash || ":" || consequentHash)
+    let bh_obj = Value::object([
+        (
+            "antecedentHash",
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash",
+            Value::string(args.consequent_hash.clone()),
+        ),
+    ]);
+    let binding_hash = hash_value(&bh_obj);
+    let property_hash = hash_string(&format!(
+        "implication:{}:{}",
+        args.antecedent_hash, args.consequent_hash
+    ));
+
+    let header_cid = implication_content_cid(args);
+    let mut input_cids = vec![args.antecedent_cid.clone(), args.consequent_cid.clone()];
+    input_cids.extend(args.additional_input_cids.iter().cloned());
+    input_cids.sort();
+    let input_arr: Vec<Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
+
+    let kind_specific: Vec<(String, Arc<Value>)> = vec![
+        (
+            "antecedentHash".into(),
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash".into(),
+            Value::string(args.consequent_hash.clone()),
+        ),
+        (
+            "antecedentCid".into(),
+            Value::string(args.antecedent_cid.clone()),
+        ),
+        (
+            "consequentCid".into(),
+            Value::string(args.consequent_cid.clone()),
+        ),
+        (
+            "antecedentSlot".into(),
+            Value::string(args.antecedent_slot.clone()),
+        ),
+        (
+            "consequentSlot".into(),
+            Value::string(args.consequent_slot.clone()),
+        ),
+        ("verdict".into(), Value::string("holds")),
+        ("bindingHash".into(), Value::string(binding_hash)),
+        ("propertyHash".into(), Value::string(property_hash)),
+        ("inputCids".into(), Value::array(input_arr)),
+    ];
+
+    let header = build_header("implication", &header_cid, kind_specific);
+
+    let mut metadata_kvs: Vec<(String, Arc<Value>)> = vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+        ("prover".into(), Value::string(args.prover.clone())),
+        ("proverRunMs".into(), Value::integer(args.prover_run_ms)),
+    ];
+    if !args.smt_lib_input.is_empty() {
+        metadata_kvs.push((
+            "smtLibInput".into(),
+            Value::string(args.smt_lib_input.clone()),
+        ));
+    }
+    if !args.proof_witness.is_empty() {
+        metadata_kvs.push((
+            "proofWitness".into(),
+            Value::string(args.proof_witness.clone()),
+        ));
+    }
+    let metadata = Arc::new(Value::Object(metadata_kvs));
+
+    assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    )
+}
+
+// =============================================================================
+// mint_witness
+// =============================================================================
+
+pub struct MintWitnessArgs {
+    pub claim_kind: String,
+    pub claim_body_cid: String,
+    pub verifier_cid: String,
+    pub policy_cid: String,
+    pub evidence_root_cid: String,
+    pub input_cids: Vec<String>,
+    pub produced_by: String,
+    pub produced_at: String,
+    pub claim_body: Arc<Value>,
+    pub evidence: Arc<Value>,
+    pub signer_seed: Ed25519Seed,
+}
+
+fn witness_content_cid(args: &MintWitnessArgs) -> String {
+    let mut input_cids = args.input_cids.clone();
+    input_cids.sort();
+    let input_arr: Vec<Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
+    let v = Value::object([
+        ("claimKind", Value::string(args.claim_kind.clone())),
+        ("claimBodyCid", Value::string(args.claim_body_cid.clone())),
+        ("verifierCid", Value::string(args.verifier_cid.clone())),
+        ("policyCid", Value::string(args.policy_cid.clone())),
+        (
+            "evidenceRootCid",
+            Value::string(args.evidence_root_cid.clone()),
+        ),
+        ("inputCids", Value::array(input_arr)),
+    ]);
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
+
+pub fn mint_witness(args: &MintWitnessArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.claim_kind.is_empty()
+        || args.claim_body_cid.is_empty()
+        || args.verifier_cid.is_empty()
+        || args.policy_cid.is_empty()
+        || args.evidence_root_cid.is_empty()
+    {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_witness: claim kind, body CID, verifier CID, policy CID, and evidence root CID must not be empty".into(),
+        ));
+    }
+
+    let header_cid = witness_content_cid(args);
+    let mut sorted_inputs = args.input_cids.clone();
+    sorted_inputs.sort();
+    let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    let header = build_header(
+        "witness",
+        &header_cid,
+        vec![
+            ("claimKind".into(), Value::string(args.claim_kind.clone())),
+            (
+                "claimBodyCid".into(),
+                Value::string(args.claim_body_cid.clone()),
+            ),
+            ("verdict".into(), Value::string("holds")),
+            (
+                "verifierCid".into(),
+                Value::string(args.verifier_cid.clone()),
+            ),
+            ("policyCid".into(), Value::string(args.policy_cid.clone())),
+            (
+                "evidenceRootCid".into(),
+                Value::string(args.evidence_root_cid.clone()),
+            ),
+            ("inputCids".into(), Value::array(input_arr)),
+        ],
+    );
+
+    let metadata = Arc::new(Value::Object(vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+        ("claimBody".into(), args.claim_body.clone()),
+        ("evidence".into(), args.evidence.clone()),
+    ]));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    ))
+}
+
+// =============================================================================
+// mint_effect_site_annotation
+// =============================================================================
+
+pub struct MintEffectSiteAnnotationArgs {
+    pub effect_kind: String,
+    pub file: String,
+    pub line: usize,
+    pub callee: String,
+    pub status: String,
+    pub category: String,
+    pub tier_to_close: String,
+    pub reason: String,
+    pub input_cids: Vec<String>,
+    pub produced_by: String,
+    pub produced_at: String,
+    pub signer_seed: Ed25519Seed,
+}
+
+fn effect_site_annotation_content_cid(args: &MintEffectSiteAnnotationArgs, line: i64) -> String {
+    let mut sorted_inputs = args.input_cids.clone();
+    sorted_inputs.sort();
+    let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    let content = Value::object([
+        ("effectKind", Value::string(args.effect_kind.clone())),
+        ("file", Value::string(args.file.clone())),
+        ("line", Value::integer(line)),
+        ("callee", Value::string(args.callee.clone())),
+        ("status", Value::string(args.status.clone())),
+        ("category", Value::string(args.category.clone())),
+        ("tierToClose", Value::string(args.tier_to_close.clone())),
+        ("reason", Value::string(args.reason.clone())),
+        ("inputCids", Value::array(input_arr)),
+    ]);
+    blake3_512_of(encode_jcs(&content).as_bytes())
+}
+
+pub fn mint_effect_site_annotation(
+    args: &MintEffectSiteAnnotationArgs,
+) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.effect_kind.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: effectKind must not be empty".into(),
+        ));
+    }
+    if args.file.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: file must not be empty".into(),
+        ));
+    }
+    if args.callee.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: callee must not be empty".into(),
+        ));
+    }
+    if !matches!(args.status.as_str(), "residue" | "unproven") {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: status must be residue or unproven".into(),
+        ));
+    }
+    if args.category.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: category must not be empty".into(),
+        ));
+    }
+    if args.tier_to_close.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: tierToClose must not be empty".into(),
+        ));
+    }
+    if args.reason.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: reason must not be empty".into(),
+        ));
+    }
+    if args.produced_by.is_empty() || args.produced_at.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: producedBy and producedAt must not be empty".into(),
+        ));
+    }
+    let line = i64::try_from(args.line).map_err(|_| {
+        ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: line does not fit signed 64-bit integer".into(),
+        )
+    })?;
+
+    let header_cid = effect_site_annotation_content_cid(args, line);
+    let mut sorted_inputs = args.input_cids.clone();
+    sorted_inputs.sort();
+    let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    let header = build_header(
+        "effect-site-annotation",
+        &header_cid,
+        vec![
+            ("effectKind".into(), Value::string(args.effect_kind.clone())),
+            ("file".into(), Value::string(args.file.clone())),
+            ("line".into(), Value::integer(line)),
+            ("callee".into(), Value::string(args.callee.clone())),
+            ("status".into(), Value::string(args.status.clone())),
+            ("category".into(), Value::string(args.category.clone())),
+            (
+                "tierToClose".into(),
+                Value::string(args.tier_to_close.clone()),
+            ),
+            ("reason".into(), Value::string(args.reason.clone())),
+            ("inputCids".into(), Value::array(input_arr)),
+        ],
+    );
+    let metadata = Arc::new(Value::Object(vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+    ]));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_seed() -> Ed25519Seed {
+        [0x42; 32]
+    }
+
+    fn valid_effect_site_annotation_args() -> MintEffectSiteAnnotationArgs {
+        MintEffectSiteAnnotationArgs {
+            effect_kind: "concept:panic-freedom".into(),
+            file: "src/lib.rs".into(),
+            line: 42,
+            callee: "method:unwrap".into(),
+            status: "residue".into(),
+            category: "lock_poisoning_residue".into(),
+            tier_to_close: "irreducible".into(),
+            reason: "lock poisoning is runtime residue".into(),
+            input_cids: vec!["blake3-512:input".into()],
+            produced_by: "test".into(),
+            produced_at: "2026-06-01T00:00:00Z".into(),
+            signer_seed: dummy_seed(),
+        }
+    }
+
+    #[test]
+    fn body_discharge_policy_accepts_new_allowed() {
+        let entry = serde_json::json!({
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "allowed"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(policy.body_discharge_eligible);
+        assert_eq!(policy.body_discharge_refusal_reason, None);
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_accepts_new_refused_with_reason() {
+        let entry = serde_json::json!({
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "refused",
+                    "reason": "totality-axiom"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("totality-axiom")
+        );
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_keeps_snake_case_legacy_fields() {
+        let entry = serde_json::json!({
+            "body_discharge_eligible": false,
+            "body_discharge_refusal_reason": "legacy-snake"
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("legacy-snake")
+        );
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_accepts_matching_legacy_and_policy_fields() {
+        let entry = serde_json::json!({
+            "bodyDischargeEligible": false,
+            "bodyDischargeRefusalReason": "totality-axiom",
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "refused",
+                    "reason": "totality-axiom"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("totality-axiom")
+        );
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_legacy_wins_on_disagreement() {
+        let entry = serde_json::json!({
+            "bodyDischargeEligible": false,
+            "bodyDischargeRefusalReason": "legacy-refusal",
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "allowed"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("legacy-refusal")
+        );
+        assert!(matches!(
+            policy.warnings.as_slice(),
+            [BodyDischargePolicyWarning::Disagreement { .. }]
+        ));
+    }
+
+    #[test]
+    fn body_discharge_policy_malformed_warns_and_falls_back_to_legacy() {
+        let entry = serde_json::json!({
+            "bodyDischargeEligible": true,
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "maybe"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(policy.body_discharge_eligible);
+        assert_eq!(policy.body_discharge_refusal_reason, None);
+        assert!(matches!(
+            policy.warnings.as_slice(),
+            [BodyDischargePolicyWarning::Malformed { .. }]
+        ));
+    }
+
+    #[test]
+    fn body_discharge_policy_ignores_foreign_policy_keys() {
+        let entry = serde_json::json!({
+            "dischargePolicy": {
+                "headerReduction": {
+                    "status": "refused",
+                    "reason": "not-this-policy"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object_with_default(&entry, false);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(policy.body_discharge_refusal_reason, None);
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn empty_contract_rejected() {
+        let args = MintContractArgs {
+            evidence_term: None,
+            formals: Vec::new(),
+            emit_empty_formals: false,
+            formal_sorts: Vec::new(),
+            library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
+            panic_loci: Vec::new(),
+            contract_name: "x".into(),
+            pre: None,
+            post: None,
+            inv: None,
+            out_binding: "out".into(),
+            produced_by: "test".into(),
+            produced_at: "2026-04-30T00:00:00.000Z".into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: "test".into(),
+                note: None,
+            },
+            signer_seed: dummy_seed(),
+        };
+        let r = mint_contract(&args);
+        assert!(matches!(r, Err(ClaimEnvelopeError::EmptyContract)));
+    }
+
+    #[test]
+    fn cid_is_blake3_512_prefixed() {
+        let pre = Value::object([
+            ("kind", Value::string("atomic")),
+            ("name", Value::string(">")),
+            (
+                "args",
+                Value::array(vec![
+                    Value::object([("kind", Value::string("var")), ("name", Value::string("n"))]),
+                    Value::object([
+                        ("kind", Value::string("const")),
+                        ("value", Value::integer(0)),
+                        (
+                            "sort",
+                            Value::object([
+                                ("kind", Value::string("primitive")),
+                                ("name", Value::string("Int")),
+                            ]),
+                        ),
+                    ]),
+                ]),
+            ),
+        ]);
+        let args = MintContractArgs {
+            evidence_term: None,
+            formals: Vec::new(),
+            emit_empty_formals: false,
+            formal_sorts: Vec::new(),
+            library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
+            panic_loci: Vec::new(),
+            contract_name: "parseInt".into(),
+            pre: Some(pre),
+            post: None,
+            inv: None,
+            out_binding: "out".into(),
+            produced_by: "rust-kit@1.0".into(),
+            produced_at: "2026-04-30T00:00:00.000Z".into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: "rust-kit@1.0".into(),
+                note: None,
+            },
+            signer_seed: dummy_seed(),
+        };
+        let m = mint_contract(&args).expect("mint");
+        assert!(m.cid.starts_with("blake3-512:"));
+        assert_eq!(m.cid.len(), "blake3-512:".len() + 128);
+    }
+
+    #[test]
+    fn contract_property_hash_matches_minted_header() {
+        let post = Value::object([
+            ("kind", Value::string("atomic")),
+            ("name", Value::string("ok")),
+            ("args", Value::array(vec![Value::string("out")])),
+        ]);
+        let args = MintContractArgs {
+            evidence_term: None,
+            formals: Vec::new(),
+            emit_empty_formals: false,
+            formal_sorts: Vec::new(),
+            library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
+            panic_loci: Vec::new(),
+            contract_name: "checked_add_u8.postcondition".into(),
+            pre: None,
+            post: Some(post),
+            inv: None,
+            out_binding: "out".into(),
+            produced_by: "test".into(),
+            produced_at: "2026-04-30T00:00:00.000Z".into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: "test".into(),
+                note: None,
+            },
+            signer_seed: dummy_seed(),
+        };
+
+        let expected = contract_property_hash(&args);
+        let m = mint_contract(&args).expect("mint");
+        let env: serde_json::Value =
+            serde_json::from_slice(&m.canonical_bytes).expect("parse memento");
+        let actual = env
+            .pointer("/header/propertyHash")
+            .and_then(|v| v.as_str())
+            .expect("header.propertyHash");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn mint_authority_emits_key_scope_and_parent_link() {
+        let authority_key = ed25519_pubkey_string(&[0x22; 32]);
+        let args = MintAuthorityArgs {
+            principal: "bridgeworks.software".into(),
+            key: authority_key.clone(),
+            scope_kind: "contract".into(),
+            scope: "checked_add_u8.postcondition".into(),
+            parent_authority_cid: Some("blake3-512:parent".into()),
+            produced_by: "test".into(),
+            produced_at: "2026-05-08T00:00:00.000Z".into(),
+            signer_seed: dummy_seed(),
+        };
+
+        let minted = mint_authority(&args).expect("mint authority");
+        let env: serde_json::Value =
+            serde_json::from_slice(&minted.canonical_bytes).expect("parse authority");
+
+        assert_eq!(
+            env.pointer("/header/kind").and_then(|v| v.as_str()),
+            Some("authority")
+        );
+        assert_eq!(
+            env.pointer("/header/principal").and_then(|v| v.as_str()),
+            Some("bridgeworks.software")
+        );
+        assert_eq!(
+            env.pointer("/header/key").and_then(|v| v.as_str()),
+            Some(authority_key.as_str())
+        );
+        assert_eq!(
+            env.pointer("/header/scopeKind").and_then(|v| v.as_str()),
+            Some("contract")
+        );
+        assert_eq!(
+            env.pointer("/header/scope").and_then(|v| v.as_str()),
+            Some("checked_add_u8.postcondition")
+        );
+        assert_eq!(
+            env.pointer("/header/inputCids/0").and_then(|v| v.as_str()),
+            Some("blake3-512:parent")
+        );
+        assert!(minted.cid.starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn effect_site_annotation_mints_layered_panic_annotation_header() {
+        let args = valid_effect_site_annotation_args();
+
+        let minted = mint_effect_site_annotation(&args).expect("mint annotation");
+        let env: serde_json::Value =
+            serde_json::from_slice(&minted.canonical_bytes).expect("parse annotation");
+
+        assert_eq!(
+            env.pointer("/header/kind").and_then(|v| v.as_str()),
+            Some("effect-site-annotation")
+        );
+        assert_eq!(
+            env.pointer("/header/effectKind").and_then(|v| v.as_str()),
+            Some("concept:panic-freedom")
+        );
+        assert_eq!(
+            env.pointer("/header/file").and_then(|v| v.as_str()),
+            Some("src/lib.rs")
+        );
+        assert_eq!(
+            env.pointer("/header/line").and_then(|v| v.as_u64()),
+            Some(42)
+        );
+        assert_eq!(
+            env.pointer("/header/callee").and_then(|v| v.as_str()),
+            Some("method:unwrap")
+        );
+        assert_eq!(
+            env.pointer("/header/status").and_then(|v| v.as_str()),
+            Some("residue")
+        );
+        assert_eq!(
+            env.pointer("/header/category").and_then(|v| v.as_str()),
+            Some("lock_poisoning_residue")
+        );
+        assert_eq!(
+            env.pointer("/header/tierToClose").and_then(|v| v.as_str()),
+            Some("irreducible")
+        );
+        assert_eq!(
+            env.pointer("/header/reason").and_then(|v| v.as_str()),
+            Some("lock poisoning is runtime residue")
+        );
+        assert_eq!(
+            env.pointer("/header/inputCids/0").and_then(|v| v.as_str()),
+            Some("blake3-512:input")
+        );
+        assert!(minted.cid.starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn effect_site_annotation_input_cids_are_order_invariant() {
+        let mut first = valid_effect_site_annotation_args();
+        first.input_cids = vec!["blake3-512:a".into(), "blake3-512:b".into()];
+        let mut second = valid_effect_site_annotation_args();
+        second.input_cids = vec!["blake3-512:b".into(), "blake3-512:a".into()];
+
+        let first = mint_effect_site_annotation(&first).expect("mint first");
+        let second = mint_effect_site_annotation(&second).expect("mint second");
+        let first_env: serde_json::Value =
+            serde_json::from_slice(&first.canonical_bytes).expect("parse first");
+        let second_env: serde_json::Value =
+            serde_json::from_slice(&second.canonical_bytes).expect("parse second");
+
+        assert_eq!(first.cid, second.cid);
+        assert_eq!(
+            first_env.pointer("/header/cid"),
+            second_env.pointer("/header/cid")
+        );
+    }
+
+    #[test]
+    fn effect_site_annotation_rejects_line_values_that_do_not_fit_i64() {
+        let mut args = valid_effect_site_annotation_args();
+        args.line = usize::MAX;
+
+        let err = mint_effect_site_annotation(&args).expect_err("line overflow must fail");
+
+        assert!(
+            err.to_string().contains("line"),
+            "line conversion error should identify the field: {err}"
+        );
+    }
+
+    #[test]
+    fn effect_site_annotation_rejects_missing_required_fields_and_invalid_status() {
+        let mut args = MintEffectSiteAnnotationArgs {
+            effect_kind: "concept:panic-freedom".into(),
+            file: "src/lib.rs".into(),
+            line: 42,
+            callee: "method:unwrap".into(),
+            status: "maybe".into(),
+            category: "lock_poisoning_residue".into(),
+            tier_to_close: "irreducible".into(),
+            reason: "lock poisoning is runtime residue".into(),
+            input_cids: Vec::new(),
+            produced_by: "test".into(),
+            produced_at: "2026-06-01T00:00:00Z".into(),
+            signer_seed: dummy_seed(),
+        };
+
+        let err = mint_effect_site_annotation(&args).expect_err("invalid status must fail");
+        assert!(
+            err.to_string().contains("status"),
+            "error should name invalid status: {err}"
+        );
+
+        args.status = "unproven".into();
+        args.effect_kind.clear();
+        let err = mint_effect_site_annotation(&args).expect_err("missing effectKind must fail");
+        assert!(
+            err.to_string().contains("effectKind"),
+            "error should name missing effectKind: {err}"
+        );
+    }
+}

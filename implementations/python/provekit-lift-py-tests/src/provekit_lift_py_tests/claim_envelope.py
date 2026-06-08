@@ -27,7 +27,7 @@
 #                envelope.
 #
 # Reference (authoritative):
-#   implementations/rust/provekit-claim-envelope/src/lib.rs
+#   implementations/rust/sugar-claim-envelope/src/lib.rs
 #
 # Cross-kit byte-equivalence:
 #   The Python output is byte-identical to the Rust kit for the same

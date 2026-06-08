@@ -1,0 +1,21 @@
+[package]
+name = "sugar-ir-compiler-maude"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt bundled Maude IR compiler for equational theory obligations."
+
+[lib]
+name = "sugar_ir_compiler_maude"
+path = "src/lib.rs"
+
+[[bin]]
+name = "provekit-ir-maude"
+path = "src/main.rs"
+
+[dependencies]
+sugar-ir-compiler = { path = "../sugar-ir-compiler" }
+sugar-ir-types = { path = "../sugar-ir-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -19,7 +19,7 @@
 # memento envelope grammar) encoded as a CBOR byte string.
 #
 # Reference (authoritative):
-#   implementations/rust/provekit-proof-envelope/src/proof.rs
+#   implementations/rust/sugar-proof-envelope/src/proof.rs
 #   protocol/specs/2026-04-30-proof-file-format.md
 #
 # Cross-kit byte-equivalence:
@@ -44,7 +44,7 @@ class ProofEnvelopeInput:
     """Logical input shape for a .proof catalog memento.
 
     Mirrors ``ProofEnvelopeInput`` in
-    implementations/rust/provekit-proof-envelope/src/proof.rs. Field
+    implementations/rust/sugar-proof-envelope/src/proof.rs. Field
     ``binary_cid`` corresponds to the Rust ``binaryCid`` (back-pin from
     the .proof bundle to the binary it attests).
 

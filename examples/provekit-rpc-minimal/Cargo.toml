@@ -5,7 +5,7 @@ edition = "2021"
 description = "Minimal RPC server using only constructs the substrate's lift→lower vocabulary supports today. Lowers cleanly to java."
 
 [dependencies]
-provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }
+provekit = { package = "sugar-lifter", path = "../../implementations/rust/sugar-lifter" }
 
 [lib]
 path = "src/lib.rs"

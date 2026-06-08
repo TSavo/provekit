@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// End-to-end subprocess test. Spawns the standalone
+// `provekit-ir-smt-lib` binary, performs handshake and one compile via
+// the JSON-RPC protocol, asserts the result equals the in-process
+// trait output. This is acceptance criterion #2 + #3 in one shot.
+
+use std::path::PathBuf;
+
+use serde_json::json;
+
+use sugar_ir_compiler::{subprocess::JsonRpcCompiler, IrCompiler};
+use sugar_ir_compiler_smt_lib::{compile_to_parts, DIALECT};
+
+fn binary_path() -> Option<PathBuf> {
+    // Cargo sets CARGO_BIN_EXE_<name> for binaries in this package.
+    let p = option_env!("CARGO_BIN_EXE_provekit-ir-smt-lib").map(PathBuf::from)?;
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+#[test]
+fn subprocess_handshake_returns_smt_lib_dialect() {
+    let Some(bin) = binary_path() else {
+        eprintln!("skip: provekit-ir-smt-lib binary not built yet");
+        return;
+    };
+    let c = JsonRpcCompiler::spawn(&bin).expect("spawn");
+    let caps = c.capabilities();
+    assert_eq!(caps.protocol_version, "provekit-ir-compiler/1");
+    assert!(caps.dialects.iter().any(|d| d == DIALECT));
+    assert!(caps.supported_sorts.iter().any(|s| s == "Int"));
+    assert!(caps.supported_predicates.iter().any(|p| p == "forall"));
+}
+
+#[test]
+fn subprocess_compile_matches_in_process_byte_for_byte() {
+    let Some(bin) = binary_path() else {
+        eprintln!("skip: provekit-ir-smt-lib binary not built yet");
+        return;
+    };
+    let c = JsonRpcCompiler::spawn(&bin).expect("spawn");
+    let ir = json!({
+        "kind": "forall", "name": "n",
+        "sort": {"kind": "primitive", "name": "Int"},
+        "body": {
+            "kind": "atomic", "name": ">", "args": [
+                {"kind": "var", "name": "n"},
+                {"kind": "const", "value": 0,
+                 "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        }
+    });
+    let via_subprocess = c.compile(&ir, DIALECT).expect("compile");
+    let via_in_process = compile_to_parts(&ir).expect("compile_to_parts");
+    assert_eq!(via_subprocess, via_in_process);
+}

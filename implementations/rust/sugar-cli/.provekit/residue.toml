@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Target-scoped panic-site residue annotations for sugar-cli self-check.
+# These enrich the panicCensus without changing proof discharge.
+
+[[residue]]
+file = "src/cmd_materialize.rs"
+line = 579
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "self.fragments mutex drain in take_fragments can panic only if another thread panicked while holding the materialize fragment collection lock."
+
+[[residue]]
+file = "src/cmd_materialize.rs"
+line = 699
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "self.fragments mutex push in transform_site can panic only if another thread panicked while collecting materialize fragments."
+
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 106
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "registry cache lock clear in test reset can panic only if another thread panicked while holding the registry cache lock."
+
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 114
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "diagnostics lock drain can panic only if another thread panicked while holding the kit dispatch diagnostics lock."
+
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 123
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "registry cache lock read can panic only if another thread panicked while reading the registry cache."
+
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 133
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "registry cache lock insert can panic only if another thread panicked while building or inserting the registry cache entry."
+
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 582
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "diagnostics lock push in record_dependency_proof_diagnostic can panic only if another thread panicked while recording dependency proof diagnostics."
+
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 748
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "diagnostics lock push in record_fallback_diagnostic can panic only if another thread panicked while recording fallback diagnostics."

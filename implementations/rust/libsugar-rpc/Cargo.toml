@@ -1,0 +1,15 @@
+[package]
+name = "libsugar-rpc"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "JSON-RPC 2.0 NDJSON server library for ProvekIt's lift-plugin protocol. External-crate-only, vendorable. Adapter binaries call run_server() with their adapter-specific AdapterLifter; the library handles the protocol mechanics, content-addressed naming, and dedup."
+
+# CLEANROOM: this crate has ZERO `provekit-*` dependencies. The whole
+# ProvekIt-library substrate family adopts this shape -- external
+# crates only, so the library can be vendored into any consumer tree
+# without dragging the monorepo with it. See `src/lib.rs` for the
+# inline BLAKE3-512 + JCS (RFC 8785) implementations.
+[dependencies]
+blake3 = "1"
+serde_json = { version = "1", features = ["preserve_order"] }

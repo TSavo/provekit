@@ -1,0 +1,29 @@
+[package]
+name = "sugar-lift-contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt lift adapter: walk #[contracts::requires]/#[contracts::ensures] attributes and lift to ContractDecls."
+
+[dependencies]
+sugar-ir-symbolic = { path = "../sugar-ir-symbolic" }
+sugar-ir-types = { path = "../sugar-ir-types" }
+sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+syn = { workspace = true }
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+quote = { workspace = true }
+serde_json = { workspace = true }
+# Used by the `contracts_rpc` bin to walk a workspace for `.rs` files when
+# a `lift` request supplies no explicit `source_paths` (mirrors
+# `sugar_lift::enumerate_rs_files` so a no-paths lift is byte-identical
+# to the pre-sever static walk).
+walkdir = { workspace = true }
+
+# THE SEVER: the rust `#[requires]`/`#[ensures]` contract lifter as a real
+# RPC kit. The substrate (sugar-lift / -cli / -build / -lsp-rust) spawns
+# this per its manifest and drives it over NDJSON, instead of statically
+# linking `lift_file`. Mirrors `sugar-walk`'s `walk_rpc` bin scaffolding.
+[[bin]]
+name = "contracts_rpc"
+path = "src/bin/contracts_rpc.rs"

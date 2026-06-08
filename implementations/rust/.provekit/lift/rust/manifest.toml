@@ -1,3 +1,3 @@
 name = "rust-lift"
-command = ["./target/release/provekit-lift", "--rpc"]
+command = ["./target/release/sugar-lift", "--rpc"]
 working_dir = "."

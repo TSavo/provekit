@@ -2,7 +2,7 @@
 #
 # Minimal Python port of provekit-canonicalizer.
 #
-# Mirrors implementations/rust/provekit-canonicalizer/src/{value,jcs,hash}.rs
+# Mirrors implementations/rust/sugar-canonicalizer/src/{value,jcs,hash}.rs
 # 1:1. Cross-language conformance is the load-bearing claim: the JCS bytes
 # this module emits MUST be byte-identical to the Rust and TS canonicalizers
 # for the same Value tree. The protocol IS the bytes.

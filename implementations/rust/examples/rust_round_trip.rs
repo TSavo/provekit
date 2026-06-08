@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use provekit_verifier::{resolve_target, Runner, RunnerConfig};
+use sugar_verifier::{resolve_target, Runner, RunnerConfig};
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
