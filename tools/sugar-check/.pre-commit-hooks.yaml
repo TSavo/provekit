@@ -1,0 +1,10 @@
+- id: sugar-check
+  name: sugar-check (behavioral semver)
+  description: >-
+    Diff the working tree's behavior against the last commit and report the
+    required version bump. Pins on the pytest-contract set, so it is quiet on
+    refactors and loud only on a real behavior change.
+  entry: sugar-check check --rev HEAD
+  language: python
+  pass_filenames: false
+  always_run: true
