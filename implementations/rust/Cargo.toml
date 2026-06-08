@@ -21,6 +21,7 @@ members = [
     "sugar-lift-contracts",
     "sugar-lift-rpc-client",
     "sugar-lift-rust-cargo-test-witness",
+    "sugar-lift-java-tests",
     "sugar-lift-rust-tests",
     "sugar-linker",
     "sugar-lsp",
