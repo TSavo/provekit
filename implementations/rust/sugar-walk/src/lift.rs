@@ -384,7 +384,7 @@ pub fn lift_function_postcondition_with_return_facts_and_pure_free_guards(
             // canonicalizer inlines the pure let at CID/discharge time, so the
             // two surface shapes share one behavior identity. (z3 also lowers
             // `(let ...)` natively, so the stored faithful form discharges.)
-            let term = wrap_leading_lets(stmts, term, &mut ctx);
+            let term = wrap_leading_lets(&stmts[..stmts.len() - 1], term, &mut ctx);
             let result_var = IrTerm::Var {
                 name: "result".to_string(),
             };
@@ -396,9 +396,12 @@ pub fn lift_function_postcondition_with_return_facts_and_pure_free_guards(
     }
 
     // 3. Explicit `return expr;` tails. If the body has an explicit
-    //    `return <expr>;` statement, derive `result = <lifted expr>`.
-    for stmt in stmts {
-        if let Some(formula) = lift_return_stmt_postcondition(stmt, &mut ctx) {
+    //    `return <expr>;` statement, derive `result = <lifted expr>`. The
+    //    leading `let`s that dominate the return (the statements before it) are
+    //    re-attached too, so `let n = x; return n*2;` does not leak `n` any more
+    //    than the trailing-expression form does.
+    for (i, stmt) in stmts.iter().enumerate() {
+        if let Some(formula) = lift_return_stmt_postcondition(&stmts[..i], stmt, &mut ctx) {
             accum.push(formula);
         }
     }
@@ -417,15 +420,43 @@ pub fn lift_function_postcondition_with_return_facts_and_pure_free_guards(
 /// faithful form still discharges reflexively against the body's own.
 ///
 /// Only immutable bindings whose initializer lifts to a pure term are captured,
-/// in source order (a later binding may reference an earlier one). Bindings the
-/// result never references (transitively) are dropped, so a function whose tail
-/// does not touch a leading local is byte-unchanged.
-fn wrap_leading_lets(stmts: &[Stmt], body: IrTerm, ctx: &mut LiftCtx) -> IrTerm {
-    // The tail expression is the last statement; the prefix holds its lets.
-    let Some((_, prefix)) = stmts.split_last() else {
-        return body;
-    };
-    // Collect (name, value-term) for leading immutable, liftable lets in order.
+/// in source order. Bindings the result never references (transitively) are
+/// dropped, so a function whose tail does not touch a leading local is
+/// byte-unchanged.
+///
+/// SOUNDNESS bounds (correctness over coverage):
+///   * SHADOWING IS REFUSED. If any name is bound more than once across the
+///     prefix `let`s, we bail and leave the term untouched. A later rebinding
+///     (`let mut n = ..`, an unliftable `let n = io()`, or even a pure
+///     `let n = n+1`) means the tail's `n` no longer denotes the first
+///     binding; wrapping anyway would assert a FALSE behavior identity. Bailing
+///     keeps the leaked free var (the pre-fix behavior) -- honest, never wrong.
+///   * NESTED, not parallel. We emit one single-binding `Let` per captured
+///     binding, nested in source order: `let a in (let b in body)`. SMT-LIB
+///     `let` is PARALLEL (binding RHSs see the OUTER scope), so a single
+///     multi-binding `(let ((a x)(b (+ a 1))) ..)` would leave `b`'s `a` free.
+///     Nesting gives the sequential semantics the canonicalizer and
+///     `free_vars_term` already assume.
+fn wrap_leading_lets(prefix: &[Stmt], body: IrTerm, ctx: &mut LiftCtx) -> IrTerm {
+    // `prefix` is the run of statements before the result-producing position (a
+    // trailing tail expression, or an explicit `return`); the lets it holds
+    // dominate that result.
+    // Refuse on ANY shadowing: collect every name bound by a prefix `let`
+    // (regardless of mutability/liftability) and bail if one repeats.
+    let mut seen: HashSet<String> = HashSet::new();
+    for stmt in prefix {
+        if let Stmt::Local(local) = stmt {
+            let mut names = HashSet::new();
+            collect_pat_names(&local.pat, &mut names);
+            for name in names {
+                if !seen.insert(name) {
+                    return body; // a name is rebound later -> not a pure let chain
+                }
+            }
+        }
+    }
+    // Names are now distinct. Collect (name, value-term) for immutable, liftable
+    // lets in source order; a later binding may reference an earlier one.
     let mut bindings: Vec<LetBinding> = Vec::new();
     for stmt in prefix {
         let Stmt::Local(local) = stmt else { continue };
@@ -450,25 +481,31 @@ fn wrap_leading_lets(stmts: &[Stmt], body: IrTerm, ctx: &mut LiftCtx) -> IrTerm 
         return body;
     }
     // Keep only bindings the result references (transitive, backward fixpoint),
-    // so an unrelated leading `let` does not change the emitted term.
+    // so an unrelated leading `let` does not change the emitted term. Remove the
+    // bound name as the walk crosses its binding (it is bound from here down),
+    // then add its initializer's free vars.
     let mut needed: HashSet<String> = free_vars_term(&body);
     let mut kept_rev: Vec<LetBinding> = Vec::new();
     for b in bindings.into_iter().rev() {
-        if needed.contains(&b.name) {
-            for v in free_vars_term(&b.bound_term) {
-                needed.insert(v);
-            }
+        if needed.remove(&b.name) {
+            needed.extend(free_vars_term(&b.bound_term));
             kept_rev.push(b);
         }
     }
     if kept_rev.is_empty() {
         return body;
     }
-    kept_rev.reverse();
-    IrTerm::Let {
-        bindings: kept_rev,
-        body: Box::new(body),
+    // Emit NESTED single-binding lets. `kept_rev` is innermost-first (we walked
+    // the prefix in reverse), so wrapping in this order yields source-order
+    // nesting: `let a in (let b in body)`.
+    let mut wrapped = body;
+    for b in kept_rev {
+        wrapped = IrTerm::Let {
+            bindings: vec![b],
+            body: Box::new(wrapped),
+        };
     }
+    wrapped
 }
 
 fn lift_tail_expr_to_result_term(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
@@ -2338,8 +2375,15 @@ fn bind_pat_idents_lift(pat: &Pat, ctx: &mut LiftCtx) {
 }
 
 /// If a statement is an explicit `return <expr>;`, derive
-/// `result = <lifted expr>`. Returns None for other statement kinds.
-fn lift_return_stmt_postcondition(stmt: &Stmt, ctx: &mut LiftCtx) -> Option<IrFormula> {
+/// `result = <lifted expr>`. Returns None for other statement kinds. `prefix`
+/// is the run of statements before this one, whose leading `let`s are
+/// re-attached to the result term (so `let n = x; return n*2;` does not leak the
+/// local `n`, exactly as the trailing-expression form does not).
+fn lift_return_stmt_postcondition(
+    prefix: &[Stmt],
+    stmt: &Stmt,
+    ctx: &mut LiftCtx,
+) -> Option<IrFormula> {
     let expr = match stmt {
         Stmt::Expr(e, Some(_)) => e, // Expr with trailing semicolon
         _ => return None,
@@ -2347,6 +2391,7 @@ fn lift_return_stmt_postcondition(stmt: &Stmt, ctx: &mut LiftCtx) -> Option<IrFo
     if let Expr::Return(ret) = expr {
         if let Some(inner) = &ret.expr {
             if let Some(term) = lift_expr_to_term_inner(inner, ctx) {
+                let term = wrap_leading_lets(prefix, term, ctx);
                 let result_var = IrTerm::Var {
                     name: "result".to_string(),
                 };
@@ -4951,6 +4996,107 @@ mod tests {
         assert!(
             !matches!(rhs, IrTerm::Let { .. }),
             "an unreferenced leading let must not wrap the result term, got {rhs:?}"
+        );
+    }
+
+    /// Explicit `return` gets the same leading-let reattachment as the trailing
+    /// expression form: `let n = x; return n*2;` must NOT leak `n`.
+    #[test]
+    fn explicit_return_reformat_shares_behavior_identity() {
+        use sugar_ir_types::canonicalize_property;
+        let inline =
+            lift_function_postcondition(&parse_fn(r#"fn double(x: i64) -> i64 { x * 2 }"#))
+                .into_formula();
+        let ret = lift_function_postcondition(&parse_fn(
+            r#"fn double(x: i64) -> i64 { let n = x; return n * 2; }"#,
+        ))
+        .into_formula();
+        let rhs = libsugar::wp::find_result_equation(&ret, "result")
+            .expect("return has a result equation");
+        assert!(
+            matches!(rhs, IrTerm::Let { .. }),
+            "explicit return must reattach the leading let, got {rhs:?}"
+        );
+        assert_eq!(
+            canonicalize_property(&inline, &["x".to_string()], "result"),
+            canonicalize_property(&ret, &["x".to_string()], "result"),
+            "`let n=x; return n*2` must share x*2's behavior identity"
+        );
+    }
+
+    /// Chained leading lets emit NESTED single-binding lets (not one
+    /// multi-binding let): SMT-LIB `let` is parallel, so `(let ((a x)(b (+ a 1)))
+    /// ..)` would leave `b`'s `a` free. Nesting keeps sequential semantics, and
+    /// the chained locals inline away to a behavior over the parameter alone.
+    #[test]
+    fn chained_leading_lets_emit_nested_single_binding_lets() {
+        let post = lift_function_postcondition(&parse_fn(
+            r#"fn f(x: i64) -> i64 { let a = x; let b = a + 1; b * 2 }"#,
+        ))
+        .into_formula();
+        let rhs = libsugar::wp::find_result_equation(&post, "result")
+            .expect("has a result equation");
+        let IrTerm::Let { bindings, body } = &rhs else {
+            panic!("expected an outer let, got {rhs:?}");
+        };
+        assert_eq!(
+            bindings.len(),
+            1,
+            "must be single-binding nested lets, not a parallel multi-binding let"
+        );
+        assert_eq!(bindings[0].name, "a");
+        assert!(
+            matches!(&*body.clone(), IrTerm::Let { .. }),
+            "inner term must be another single-binding let, got {body:?}"
+        );
+        // After canonicalization the chained locals are gone: behavior is over x.
+        let canon = sugar_ir_types::canonicalize_formula(&post);
+        let fv = free_vars_formula(&canon);
+        assert!(
+            !fv.contains("a") && !fv.contains("b"),
+            "chained locals must inline away, free vars were {fv:?}"
+        );
+    }
+
+    /// A later MUTABLE binding that shadows an earlier immutable one must NOT be
+    /// wrapped: `let n=x; let mut n=x+1; n*2` returns (x+1)*2, and binding the
+    /// tail's `n` to the first `let n=x` would assert a FALSE identity with x*2.
+    #[test]
+    fn mutable_shadow_is_refused_no_false_identity() {
+        use sugar_ir_types::canonicalize_property;
+        let inline =
+            lift_function_postcondition(&parse_fn(r#"fn f(x: i64) -> i64 { x * 2 }"#))
+                .into_formula();
+        let shadow = lift_function_postcondition(&parse_fn(
+            r#"fn f(x: i64) -> i64 { let n = x; let mut n = x + 1; n * 2 }"#,
+        ))
+        .into_formula();
+        let rhs = libsugar::wp::find_result_equation(&shadow, "result")
+            .expect("has a result equation");
+        assert!(
+            !matches!(rhs, IrTerm::Let { .. }),
+            "a mutable shadow must bail (no wrap), got {rhs:?}"
+        );
+        assert_ne!(
+            canonicalize_property(&inline, &["x".to_string()], "result"),
+            canonicalize_property(&shadow, &["x".to_string()], "result"),
+            "the (x+1)*2 mutable-shadow body must NOT share x*2's identity"
+        );
+    }
+
+    /// A rebound (shadowed) name bails entirely: `let x=0; let x=input; x*2`
+    /// has a dead first binding; we refuse to wrap rather than keep it.
+    #[test]
+    fn liftable_shadow_is_refused() {
+        let post = lift_function_postcondition(&parse_fn(
+            r#"fn f(input: i64) -> i64 { let x = 0; let x = input; x * 2 }"#,
+        ))
+        .into_formula();
+        let rhs = libsugar::wp::find_result_equation(&post, "result")
+            .expect("has a result equation");
+        assert!(
+            !matches!(rhs, IrTerm::Let { .. }),
+            "a rebound/shadowed name must bail, got {rhs:?}"
         );
     }
 }
