@@ -264,12 +264,12 @@ test-python: build-python
 	(cd implementations/python/provekit-lift-python-source && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../sugar-lift-py-tests -e . pytest blake3 && \
+		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest blake3 && \
 		pytest) || failed="$$failed provekit-lift-python-source"; \
 	(cd implementations/python/provekit-lift-py-pytest-witness && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../sugar-lift-py-tests -e . pytest pynacl blake3 cbor2 && \
+		python -m pip install --quiet -e ../provekit-lift-py-tests -e . pytest pynacl blake3 cbor2 && \
 		pytest) || failed="$$failed provekit-lift-py-pytest-witness"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 

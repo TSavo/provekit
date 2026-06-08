@@ -226,7 +226,7 @@ fn cargo_run_kit() -> Result<ResolvedKit, RpcClientError> {
             "--target-dir".into(),
             target_dir.display().to_string(),
             "-p".into(),
-            "provekit-lift-contracts".into(),
+            "sugar-lift-contracts".into(),
             "--bin".into(),
             CONTRACTS_RPC_BIN.into(),
             "--".into(),
