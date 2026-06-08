@@ -4831,43 +4831,45 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
     {
         use libsugar::concept::panic_freedom;
 
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        write_declaration_plugins(
-            kit,
-            &[
-                (
-                    "python-source-plugin",
+        // Hermetic: exercise the consistency CHECK directly over constructed
+        // declarations. The previous form spawned a kit-declaration RPC plugin
+        // per surface via run_report_with_context; under parallel test load a
+        // transient subprocess-spawn failure dropped a declaration, so the
+        // cross-kit conflict intermittently went undetected (flaky in CI). The
+        // check is a pure BTreeMap fold, so feed it the declarations directly.
+        let loaded = vec![
+            LoadedKitDeclaration {
+                kind_dir: "lift".to_string(),
+                surface: "python-source".to_string(),
+                declaration: serde_json::from_value(declaration_with_mapping(
                     "python-source",
-                    declaration_with_mapping(
-                        "python-source",
-                        "python",
-                        "python-source",
-                        PANIC_FREEDOM_EFFECT_KIND,
-                        "guardPredicates",
-                        "same-local",
-                        panic_freedom::IS_NONE_CONCEPT,
-                    ),
-                ),
-                (
-                    "python-leaf-plugin",
+                    "python",
+                    "python-source",
+                    PANIC_FREEDOM_EFFECT_KIND,
+                    "guardPredicates",
+                    "same-local",
+                    panic_freedom::IS_NONE_CONCEPT,
+                ))
+                .expect("parse python-source declaration"),
+            },
+            LoadedKitDeclaration {
+                kind_dir: "lift".to_string(),
+                surface: "python-leaf".to_string(),
+                declaration: serde_json::from_value(declaration_with_mapping(
                     "python-leaf",
-                    declaration_with_mapping(
-                        "python-leaf",
-                        "python",
-                        "python-leaf",
-                        PANIC_FREEDOM_EFFECT_KIND,
-                        "effectLeaves",
-                        "same-local",
-                        panic_freedom::METHOD_UNWRAP_CONCEPT,
-                    ),
-                ),
-            ],
-        );
+                    "python",
+                    "python-leaf",
+                    PANIC_FREEDOM_EFFECT_KIND,
+                    "effectLeaves",
+                    "same-local",
+                    panic_freedom::METHOD_UNWRAP_CONCEPT,
+                ))
+                .expect("parse python-leaf declaration"),
+            },
+        ];
 
-        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
-
-        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        let consistency =
+            kit_declaration_cross_kit_consistency_check(DoctorMode::Strict, &loaded);
         assert_eq!(consistency.status, CheckStatus::Fail);
         assert!(
             consistency.detail.contains("same-local"),
