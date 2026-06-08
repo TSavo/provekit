@@ -1062,7 +1062,7 @@ pub struct JavaImplicationLiftOutput {
 struct JavaContractMethod {
     name: String,
     params: Vec<JavaParamContract>,
-    return_min: Option<i64>,
+    return_constraints: Vec<JavaConstraint>,
     return_expr: Option<String>,
     is_test: bool,
 }
@@ -1070,7 +1070,15 @@ struct JavaContractMethod {
 #[derive(Debug, Clone)]
 struct JavaParamContract {
     name: String,
-    min: Option<i64>,
+    constraints: Vec<JavaConstraint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum JavaConstraint {
+    Min(i64),
+    Max(i64),
+    Size { min: Option<i64>, max: Option<i64> },
+    NotNull,
 }
 
 #[derive(Debug, Clone)]
@@ -1144,25 +1152,22 @@ pub fn lift_java_jsr380_contracts_from_source(
         let pre = method
             .params
             .iter()
-            .find_map(|param| param.min.map(|min| min_formula_json(&param.name, min)));
-        let post = method
-            .return_min
-            .map(|min| min_formula_json("result", min))
-            .or_else(|| {
-                let expr = method.return_expr.as_deref()?;
-                if !expr_contains_call(expr) {
-                    return None;
-                }
-                let term = java_expr_term_json(expr).ok()?;
-                Some(serde_json::json!({
-                    "kind": "atomic",
-                    "name": "=",
-                    "args": [
-                        {"kind": "var", "name": "result"},
-                        term
-                    ]
-                }))
-            });
+            .find_map(|param| constraints_formula_json(&param.name, &param.constraints));
+        let post = constraints_formula_json("result", &method.return_constraints).or_else(|| {
+            let expr = method.return_expr.as_deref()?;
+            if !expr_contains_call(expr) {
+                return None;
+            }
+            let term = java_expr_term_json(expr).ok()?;
+            Some(serde_json::json!({
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                    {"kind": "var", "name": "result"},
+                    term
+                ]
+            }))
+        });
 
         if pre.is_none() && post.is_none() {
             continue;
@@ -1311,6 +1316,7 @@ fn parse_java_contract_methods(src: &str) -> Vec<JavaContractMethod> {
         };
         let head_start = prefix.rfind(['}', ';']).map(|idx| idx + 1).unwrap_or(0);
         let head = &src[head_start..open];
+        let return_head = &src[head_start..open_paren];
         let params_src = &src[open_paren + 1..close_paren];
         let params = split_args(params_src)
             .iter()
@@ -1321,7 +1327,7 @@ fn parse_java_contract_methods(src: &str) -> Vec<JavaContractMethod> {
         methods.push(JavaContractMethod {
             name,
             params,
-            return_min: find_min_annotation(head),
+            return_constraints: find_jsr380_constraints(return_head),
             return_expr: find_return_expr(body),
             is_test: head.contains("@Test"),
         });
@@ -1331,23 +1337,180 @@ fn parse_java_contract_methods(src: &str) -> Vec<JavaContractMethod> {
 }
 
 fn parse_java_param_contract(raw: &str, idx: usize) -> Option<JavaParamContract> {
-    let min = find_min_annotation(raw);
-    let parsed = parse_param(raw, idx)?;
+    let constraints = find_jsr380_constraints(raw);
+    let stripped = strip_java_annotations(raw);
+    let parsed = parse_param(&stripped, idx)?;
     Some(JavaParamContract {
         name: parsed.name,
-        min,
+        constraints,
     })
 }
 
-fn find_min_annotation(src: &str) -> Option<i64> {
-    for needle in ["@Min(", "@javax.validation.constraints.Min("] {
-        if let Some(found) = src.find(needle) {
-            let start = found + needle.len();
-            let end = src[start..].find(')').map(|idx| start + idx)?;
-            return src[start..end].trim().parse::<i64>().ok();
+fn find_jsr380_constraints(src: &str) -> Vec<JavaConstraint> {
+    let mut constraints = Vec::new();
+    if let Some(min) = find_i64_annotation(src, &["@Min", "@javax.validation.constraints.Min"]) {
+        constraints.push(JavaConstraint::Min(min));
+    }
+    if let Some(max) = find_i64_annotation(src, &["@Max", "@javax.validation.constraints.Max"]) {
+        constraints.push(JavaConstraint::Max(max));
+    }
+    if let Some((min, max)) =
+        find_size_annotation(src, &["@Size", "@javax.validation.constraints.Size"])
+    {
+        constraints.push(JavaConstraint::Size { min, max });
+    }
+    if has_marker_annotation(
+        src,
+        &[
+            "@NotNull",
+            "@javax.validation.constraints.NotNull",
+            "@jakarta.validation.constraints.NotNull",
+        ],
+    ) {
+        constraints.push(JavaConstraint::NotNull);
+    }
+    constraints
+}
+
+fn find_i64_annotation(src: &str, names: &[&str]) -> Option<i64> {
+    let args = find_annotation_args(src, names)?;
+    parse_annotation_i64_value(args)
+}
+
+fn find_size_annotation(src: &str, names: &[&str]) -> Option<(Option<i64>, Option<i64>)> {
+    let args = find_annotation_args(src, names)?;
+    let min = parse_named_i64_arg(args, "min");
+    let max = parse_named_i64_arg(args, "max");
+    if min.is_none() && max.is_none() {
+        None
+    } else {
+        Some((min, max))
+    }
+}
+
+fn find_annotation_args<'a>(src: &'a str, names: &[&str]) -> Option<&'a str> {
+    for name in names {
+        let mut search = 0usize;
+        while let Some(found_rel) = src[search..].find(name) {
+            let found = search + found_rel;
+            let after_name = found + name.len();
+            if !annotation_name_boundary(src, found, after_name) {
+                search = after_name;
+                continue;
+            }
+            let rest = &src[after_name..];
+            let Some(paren_rel) = rest.find('(') else {
+                search = after_name;
+                continue;
+            };
+            if !rest[..paren_rel].trim().is_empty() {
+                search = after_name;
+                continue;
+            }
+            let open = after_name + paren_rel;
+            let close = matching_brace_like(&src[open..], '(', ')').map(|idx| open + idx)?;
+            return Some(&src[open + 1..close]);
         }
     }
     None
+}
+
+fn has_marker_annotation(src: &str, names: &[&str]) -> bool {
+    names.iter().any(|name| {
+        let mut search = 0usize;
+        while let Some(found_rel) = src[search..].find(name) {
+            let found = search + found_rel;
+            let after_name = found + name.len();
+            if annotation_name_boundary(src, found, after_name) {
+                return true;
+            }
+            search = after_name;
+        }
+        false
+    })
+}
+
+fn annotation_name_boundary(src: &str, start: usize, end: usize) -> bool {
+    let before_ok = src[..start]
+        .chars()
+        .next_back()
+        .is_none_or(|ch| !(is_ident_char(ch) || ch == '.'));
+    let after_ok = src[end..]
+        .chars()
+        .next()
+        .is_none_or(|ch| !(is_ident_char(ch) || ch == '.'));
+    before_ok && after_ok
+}
+
+fn parse_annotation_i64_value(args: &str) -> Option<i64> {
+    let trimmed = args.trim();
+    if !trimmed.contains('=') {
+        return parse_i64_literal(trimmed);
+    }
+    parse_named_i64_arg(trimmed, "value")
+}
+
+fn parse_named_i64_arg(args: &str, name: &str) -> Option<i64> {
+    split_args(args).into_iter().find_map(|part| {
+        let (key, value) = part.split_once('=')?;
+        if key.trim() == name {
+            parse_i64_literal(value.trim())
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_i64_literal(raw: &str) -> Option<i64> {
+    raw.trim()
+        .trim_end_matches(['L', 'l'])
+        .replace('_', "")
+        .parse::<i64>()
+        .ok()
+}
+
+fn strip_java_annotations(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut iter = raw.char_indices().peekable();
+    while let Some((idx, ch)) = iter.next() {
+        if ch != '@' {
+            out.push(ch);
+            continue;
+        }
+        while let Some((_, next)) = iter.peek().copied() {
+            if is_ident_char(next) || next == '.' {
+                iter.next();
+            } else {
+                break;
+            }
+        }
+        while let Some((_, next)) = iter.peek().copied() {
+            if next.is_whitespace() {
+                iter.next();
+            } else {
+                break;
+            }
+        }
+        if let Some((_, '(')) = iter.peek().copied() {
+            let mut depth = 0usize;
+            while let Some((_, next)) = iter.next() {
+                match next {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if idx > 0 && !out.ends_with(' ') {
+            out.push(' ');
+        }
+    }
+    out
 }
 
 fn find_return_expr(body: &str) -> Option<String> {
@@ -1358,6 +1521,33 @@ fn find_return_expr(body: &str) -> Option<String> {
     })
 }
 
+fn constraints_formula_json(
+    var: &str,
+    constraints: &[JavaConstraint],
+) -> Option<serde_json::Value> {
+    let mut operands = Vec::new();
+    for constraint in constraints {
+        match constraint {
+            JavaConstraint::Min(min) => operands.push(min_formula_json(var, *min)),
+            JavaConstraint::Max(max) => operands.push(max_formula_json(var, *max)),
+            JavaConstraint::Size { min, max } => {
+                if let Some(min) = min {
+                    operands.push(size_min_formula_json(var, *min));
+                }
+                if let Some(max) = max {
+                    operands.push(size_max_formula_json(var, *max));
+                }
+            }
+            JavaConstraint::NotNull => operands.push(not_null_formula_json(var)),
+        }
+    }
+    match operands.len() {
+        0 => None,
+        1 => operands.pop(),
+        _ => Some(serde_json::json!({"kind": "and", "operands": operands})),
+    }
+}
+
 fn min_formula_json(var: &str, min: i64) -> serde_json::Value {
     serde_json::json!({
         "kind": "atomic",
@@ -1366,6 +1556,55 @@ fn min_formula_json(var: &str, min: i64) -> serde_json::Value {
             {"kind": "var", "name": var},
             {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": min}
         ]
+    })
+}
+
+fn max_formula_json(var: &str, max: i64) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "atomic",
+        "name": "≤",
+        "args": [
+            {"kind": "var", "name": var},
+            {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": max}
+        ]
+    })
+}
+
+fn size_min_formula_json(var: &str, min: i64) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "atomic",
+        "name": "≥",
+        "args": [
+            length_term_json(var),
+            {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": min}
+        ]
+    })
+}
+
+fn size_max_formula_json(var: &str, max: i64) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "atomic",
+        "name": "≤",
+        "args": [
+            length_term_json(var),
+            {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": max}
+        ]
+    })
+}
+
+fn length_term_json(var: &str) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "ctor",
+        "name": "length",
+        "args": [{"kind": "var", "name": var}]
+    })
+}
+
+fn not_null_formula_json(var: &str) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "atomic",
+        "name": "not-null",
+        "args": [{"kind": "var", "name": var}]
     })
 }
 

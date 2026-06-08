@@ -1,0 +1,13 @@
+name = "java-implications-lift"
+version = "0.1.0"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+command = ["@BIN_DIR@/java_implications_rpc"]
+working_dir = "."
+phase = "consumer"
+
+[capabilities]
+authoring_surfaces = ["java-implications"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
+
