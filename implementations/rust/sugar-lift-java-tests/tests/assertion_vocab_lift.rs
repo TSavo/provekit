@@ -20,6 +20,11 @@ public final class LearnedAssertions {
             throw new AssertionError("not equal");
         }
     }
+    public static void assertSameText(String expected, String actual) {
+        if (!java.util.Objects.equals(expected, actual)) {
+            throw new AssertionError("not equal");
+        }
+    }
     public static void assertEquals(int expected, int actual) {
         record(expected, actual);
     }
@@ -170,6 +175,23 @@ fn assert_eq_atom(formula: &Formula, expected_rhs: i64) {
                     ..
                 } => assert_eq!(*value, expected_rhs),
                 other => panic!("expected int rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+fn assert_string_eq_atom(formula: &Formula, expected_rhs: &str) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::String(value),
+                    ..
+                } => assert_eq!(value, expected_rhs),
+                other => panic!("expected string rhs, got {other:?}"),
             }
         }
         other => panic!("expected equality atom, got {other:?}"),
@@ -565,6 +587,257 @@ class ScalarTest {
             .iter()
             .any(|w| w.reason.contains("approximate assertion")
                 && w.reason.contains("refused to avoid false-pass")),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn exact_string_assertions_lift_from_real_java_tests() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import org.junit.jupiter.api.Test;
+
+class TextTest {
+    static String encode(String input) { return input; }
+
+    @Test
+    void textRoundTrip() {
+        assertSameText("codec", encode("codec"));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/TextTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    assert_string_eq_atom(&operands[0], "codec");
+}
+
+#[test]
+fn computed_expected_call_equality_is_scoped_out_not_lifted() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameValue;
+import org.junit.jupiter.api.Test;
+
+class ComputedExpectedTest {
+    static int expected() { return 6; }
+    static int actual() { return 6; }
+
+    @Test
+    void computedExpected() {
+        assertSameValue(expected(), actual());
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/ComputedExpectedTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("computed call-vs-call equality")),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn call_first_literal_second_equality_stays_lifted() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameValue;
+import org.junit.jupiter.api.Test;
+
+class CallFirstTest {
+    @Test
+    void callFirst() {
+        assertSameValue(ScalarBox.scalarSum(), 6);
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/CallFirstTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+}
+
+#[test]
+fn repeated_state_sensitive_receiver_call_conflict_is_scoped_out() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import org.junit.jupiter.api.Test;
+
+class StatefulTextTest {
+    @Test
+    void statefulReceiver() {
+        assertSameText("A", codec.next());
+        codec.advance();
+        assertSameText("B", codec.next());
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/StatefulTextTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("state-sensitive repeated receiver call")),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn repeated_static_class_call_conflict_stays_lifted_as_contradiction() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameValue;
+import org.junit.jupiter.api.Test;
+
+class StaticCallTest {
+    @Test
+    void staticCallContradiction() {
+        assertSameValue(6, ScalarBox.scalarSum());
+        assertSameValue(7, ScalarBox.scalarSum());
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/StaticCallTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 2);
+}
+
+#[test]
+fn reassigned_actual_variable_conflict_is_scoped_out() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import org.junit.jupiter.api.Test;
+
+class ReassignedActualTest {
+    @Test
+    void reassignedActual() {
+        String actual = "A";
+        assertSameText("A", actual);
+        actual = "B";
+        assertSameText("B", actual);
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/ReassignedActualTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("reassigned actual variable")),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn mutated_argument_call_conflict_is_scoped_out() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import java.util.Map;
+import java.util.TreeMap;
+import org.junit.jupiter.api.Test;
+
+class MutatedArgumentTest {
+    static String encode(Map<String, String> args, String input) { return input; }
+
+    @Test
+    void mutatedArgument() {
+        Map<String, String> args = new TreeMap<>();
+        args.put("mode", "A");
+        assertSameText("A", encode(args, "x"));
+        args.put("mode", "B");
+        assertSameText("B", encode(args, "x"));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/MutatedArgumentTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("mutated call argument")),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn byte_buffer_position_limit_conflict_is_scoped_out() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import java.nio.ByteBuffer;
+import org.junit.jupiter.api.Test;
+
+class ByteBufferStateTest {
+    static String encode(ByteBuffer bb) { return ""; }
+
+    @Test
+    void byteBufferState() {
+        ByteBuffer bb = ByteBuffer.allocate(36);
+        bb.limit(3);
+        assertSameText("000000", encode(bb));
+        bb.position(1);
+        bb.limit(3);
+        assertSameText("0000", encode(bb));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/ByteBufferStateTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("mutated call argument")),
         "warnings: {:?}",
         out.warnings
     );

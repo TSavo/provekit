@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use sugar_ir_symbolic::{and_, eq, make_var, num, ContractDecl, Formula, Term};
+use sugar_ir_symbolic::{and_, eq, make_var, num, str_const, ContractDecl, Formula, Term};
 use sugar_ir_symbolic::{
     atomic_, serialize::marshal_declarations, EvidenceCertificate, EvidenceTerm,
 };
@@ -336,6 +336,14 @@ pub fn lift_source_with_vocab(
             });
             continue;
         }
+        if let Some(reason) = unsupported_consistency_shape(&atoms, &method.body) {
+            out.warnings.push(LiftWarning {
+                source_path: source_path.to_string(),
+                item_name: test_name,
+                reason,
+            });
+            continue;
+        }
 
         out.decls.push(ContractDecl {
             name: test_name,
@@ -350,6 +358,256 @@ pub fn lift_source_with_vocab(
         out.lifted += 1;
     }
     out
+}
+
+fn unsupported_consistency_shape(atoms: &[Rc<Formula>], body: &str) -> Option<String> {
+    for atom in atoms {
+        let Some((actual, expected)) = equality_terms(atom) else {
+            continue;
+        };
+        if term_contains_call(expected) && term_contains_call(actual) {
+            return Some(
+                "java test assertions: computed call-vs-call equality is outside exact consistency scope"
+                    .to_string(),
+            );
+        }
+        let _ = actual;
+    }
+
+    let mut seen: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for atom in atoms {
+        let Some((actual, expected)) = equality_terms(atom) else {
+            continue;
+        };
+        if !term_contains_state_sensitive_call(actual) {
+            continue;
+        }
+        let actual_key = term_key(actual);
+        let expected_key = term_key(expected);
+        if let Some(prev) = seen.insert(actual_key, expected_key.clone()) {
+            if prev != expected_key {
+                return Some(
+                    "java test assertions: state-sensitive repeated receiver call has conflicting expected values; released to layer 0".to_string(),
+                );
+            }
+        }
+    }
+
+    let assignment_counts = assignment_counts(body);
+    let mut reassigned_actuals: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    for atom in atoms {
+        let Some((actual, expected)) = equality_terms(atom) else {
+            continue;
+        };
+        let Term::Var { name } = actual else {
+            continue;
+        };
+        if assignment_counts.get(name).copied().unwrap_or(0) < 2 {
+            continue;
+        }
+        let expected_key = term_key(expected);
+        if let Some(prev) = reassigned_actuals.insert(name.clone(), expected_key.clone()) {
+            if prev != expected_key {
+                return Some(
+                    "java test assertions: reassigned actual variable has conflicting expected values; released to layer 0".to_string(),
+                );
+            }
+        }
+    }
+
+    let mutated_vars = mutated_receiver_vars(body);
+    if !mutated_vars.is_empty() {
+        let mut expected_for_mutated_call: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        let mut mutated_call_count = 0usize;
+        for atom in atoms {
+            let Some((actual, expected)) = equality_terms(atom) else {
+                continue;
+            };
+            if !term_contains_call(actual) || !term_uses_any_var(actual, &mutated_vars) {
+                continue;
+            }
+            mutated_call_count += 1;
+            expected_for_mutated_call.insert(term_key(expected));
+        }
+        if mutated_call_count > 1 && expected_for_mutated_call.len() > 1 {
+            return Some(
+                "java test assertions: mutated call argument has conflicting expected values; released to layer 0".to_string(),
+            );
+        }
+    }
+    None
+}
+
+fn equality_terms(formula: &Formula) -> Option<(&Term, &Term)> {
+    match formula {
+        Formula::Atomic { name, args } if name == "=" && args.len() == 2 => {
+            Some((args[0].as_ref(), args[1].as_ref()))
+        }
+        _ => None,
+    }
+}
+
+fn term_contains_call(term: &Term) -> bool {
+    match term {
+        Term::Ctor { name, args } => {
+            name.starts_with("call:") || args.iter().any(|arg| term_contains_call(arg))
+        }
+        Term::Lambda { body, .. } => term_contains_call(body),
+        Term::Let { bindings, body } => {
+            bindings
+                .iter()
+                .any(|binding| term_contains_call(&binding.bound_term))
+                || term_contains_call(body)
+        }
+        Term::Var { .. } | Term::Const { .. } => false,
+    }
+}
+
+fn term_contains_state_sensitive_call(term: &Term) -> bool {
+    match term {
+        Term::Ctor { name, args } => {
+            call_ctor_is_state_sensitive(name)
+                || args
+                    .iter()
+                    .any(|arg| term_contains_state_sensitive_call(arg))
+        }
+        Term::Lambda { body, .. } => term_contains_state_sensitive_call(body),
+        Term::Let { bindings, body } => {
+            bindings
+                .iter()
+                .any(|binding| term_contains_state_sensitive_call(&binding.bound_term))
+                || term_contains_state_sensitive_call(body)
+        }
+        Term::Var { .. } | Term::Const { .. } => false,
+    }
+}
+
+fn call_ctor_is_state_sensitive(name: &str) -> bool {
+    let Some(call) = name.strip_prefix("call:") else {
+        return false;
+    };
+    if call.starts_with("new") {
+        return true;
+    }
+    let Some((receiver, _method)) = call.rsplit_once('.') else {
+        return false;
+    };
+    let owner = receiver.rsplit('.').next().unwrap_or(receiver);
+    owner
+        .chars()
+        .next()
+        .is_some_and(|ch| !ch.is_ascii_uppercase())
+}
+
+fn term_uses_any_var(term: &Term, vars: &std::collections::BTreeSet<String>) -> bool {
+    match term {
+        Term::Var { name } => vars.contains(name),
+        Term::Ctor { args, .. } => args.iter().any(|arg| term_uses_any_var(arg, vars)),
+        Term::Lambda { body, .. } => term_uses_any_var(body, vars),
+        Term::Let { bindings, body } => {
+            bindings
+                .iter()
+                .any(|binding| term_uses_any_var(&binding.bound_term, vars))
+                || term_uses_any_var(body, vars)
+        }
+        Term::Const { .. } => false,
+    }
+}
+
+fn assignment_counts(body: &str) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for stmt in split_statements(body) {
+        let Some(name) = assignment_lhs_var(&stmt) else {
+            continue;
+        };
+        *counts.entry(name).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn assignment_lhs_var(stmt: &str) -> Option<String> {
+    let idx = single_assignment_index(stmt)?;
+    let lhs = stmt[..idx].trim();
+    if lhs.is_empty() {
+        return None;
+    }
+    let lhs = lhs.split('[').next().unwrap_or(lhs);
+    lexical_tokens(lhs).into_iter().last()
+}
+
+fn single_assignment_index(stmt: &str) -> Option<usize> {
+    let bytes = stmt.as_bytes();
+    for (idx, byte) in bytes.iter().enumerate() {
+        if *byte != b'=' {
+            continue;
+        }
+        let prev = idx.checked_sub(1).and_then(|i| bytes.get(i)).copied();
+        let next = bytes.get(idx + 1).copied();
+        if matches!(prev, Some(b'=' | b'!' | b'<' | b'>')) || matches!(next, Some(b'=')) {
+            continue;
+        }
+        return Some(idx);
+    }
+    None
+}
+
+fn mutated_receiver_vars(body: &str) -> std::collections::BTreeSet<String> {
+    let mut vars = std::collections::BTreeSet::new();
+    for stmt in split_statements(body) {
+        for marker in [
+            ".put(",
+            ".add(",
+            ".set(",
+            ".clear(",
+            ".remove(",
+            ".limit(",
+            ".position(",
+            ".flip(",
+            ".rewind(",
+            ".reset(",
+            ".mark(",
+            ".compact(",
+        ] {
+            let Some(idx) = stmt.find(marker) else {
+                continue;
+            };
+            let receiver = stmt[..idx].trim();
+            if let Some(name) = lexical_tokens(receiver).into_iter().last() {
+                vars.insert(name);
+            }
+        }
+    }
+    vars
+}
+
+fn term_key(term: &Term) -> String {
+    match term {
+        Term::Var { name } => format!("var:{name}"),
+        Term::Const { value, sort } => format!("const:{}:{value:?}", sort.name),
+        Term::Ctor { name, args } => format!(
+            "ctor:{name}({})",
+            args.iter()
+                .map(|arg| term_key(arg))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => format!("lambda:{param_name}:{}:{}", param_sort.name, term_key(body)),
+        Term::Let { bindings, body } => format!(
+            "let:{}:{}",
+            bindings
+                .iter()
+                .map(|binding| format!("{}={}", binding.name, term_key(&binding.bound_term)))
+                .collect::<Vec<_>>()
+                .join(","),
+            term_key(body)
+        ),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -938,6 +1196,9 @@ fn split_top_level_eq(expr: &str) -> Option<(&str, &str)> {
 
 fn translate_term(expr: &str) -> Result<Rc<Term>, String> {
     let expr = trim_wrapping_parens(expr.trim());
+    if expr.starts_with('"') {
+        return parse_java_string_literal(expr).map(str_const);
+    }
     if let Ok(value) = expr.parse::<i64>() {
         return Ok(num(value));
     }
@@ -969,6 +1230,43 @@ fn translate_term(expr: &str) -> Result<Rc<Term>, String> {
         return Ok(make_var(compact(expr)));
     }
     Err(format!("unsupported term `{}`", compact(expr)))
+}
+
+fn parse_java_string_literal(expr: &str) -> Result<String, String> {
+    let s = expr.trim();
+    if !(s.starts_with('"') && s.ends_with('"') && s.len() >= 2) {
+        return Err(format!("unsupported term `{}`", compact(expr)));
+    }
+    let mut out = String::new();
+    let mut chars = s[1..s.len() - 1].chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        let Some(escaped) = chars.next() else {
+            return Err(format!(
+                "unterminated Java string escape `{}`",
+                compact(expr)
+            ));
+        };
+        match escaped {
+            '"' => out.push('"'),
+            '\\' => out.push('\\'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            'b' => out.push('\u{0008}'),
+            'f' => out.push('\u{000c}'),
+            other => {
+                return Err(format!(
+                    "unsupported Java string escape `\\{other}` in `{}`",
+                    compact(expr)
+                ));
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn split_top_level_arithmetic(expr: &str) -> Option<(&str, &'static str, &str)> {
