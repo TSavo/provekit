@@ -3,21 +3,51 @@
 
 > **Sugar in, `.proof` out.**
 
-Sugar is a proof supply chain for software that already exists. It is
-Git/IPFS/Sigstore for *correctness*: signed, content-addressed `.proof`
-artifacts that anyone can re-verify by recomputation, without trusting the
-original test runner and without re-running the original proof.
+Nobody depends on your code. They depend on what your code *does*. Sugar takes
+the ordinary surface you already write, the *sugar* (tests, assertions,
+contracts, schemas, validators, framework annotations, boundary and library
+bindings), and turns it into a signed, content-addressed `.proof` of the
+**behavior**: a portable claim other packages, tools, and languages can
+re-verify by recomputation, without trusting your test runner and without
+re-running your proof. It never asks anyone to rewrite code in a proof language.
+"Just sugar," the surface everyone waves off as not-the-real-thing, is exactly
+where correctness turns out to live.
 
-It does not ask anyone to rewrite code in a proof language. Feed it the ordinary
-surface you already write — the *sugar*: tests, assertions, contracts, schemas,
-validators, framework annotations, boundary and library bindings — and it turns
-that evidence into portable claims, packaged as signed, content-addressed
-`.proof` artifacts that other packages, tools, and languages can verify by
-recomputation. "Just sugar," the surface everyone waves off as not-the-real-thing,
-is exactly where correctness turns out to live. CIDs are BLAKE3-512; signatures
-are Ed25519.
+Sugar in, `.proof` out. CIDs are BLAKE3-512; signatures are Ed25519.
 
-## The claim Sugar makes checkable
+## Why it matters: the version lied, the behavior moved, Sugar saw it
+
+SemVer versions the *shadow*. It bumps when the bytes change and holds still when
+they don't, so it is jumpy about a rename and **stone blind to a backdoor**: a
+bugfix and a malicious patch are both "a patch." Nobody can read a version number
+and learn the one thing they actually need. Did the behavior move.
+
+Sugar versions the *object*. Lift any source and each behavior becomes a
+content-addressed contract; `sugar diff` compares two proof sets by behavior, not
+by text:
+
+- A rename, a reformat, a behavior-preserving refactor reads as `none`. No false
+  alarm, so you never train yourself to ignore the tool.
+- A behavior that appears or vanishes under a frozen version reads as `new` or
+  `lost`. That is the malicious patch the version number hid.
+
+You cannot bolt a credential harvester onto a package for free. New behavior means
+new effects (reads, writes, sockets), and effects cannot hide inside a fingerprint
+that records them: the CID moves, or the fingerprint is lying. This is the shape of
+the npm and PyPI supply-chain compromises that publish poisoned versions under
+continuous-looking version numbers. `sugar diff --frozen` fails on any behavior
+delta under a pinned dependency; `--require <bump>` turns the version from a
+promise a human types into a measurement derived from the proof delta, so a
+release that calls itself `minor` while a behavior was lost is refused at publish
+time.
+
+Honest scope: this works **today** as `cargo sugar` (Rust) and `sugar-check`
+(Python pre-commit hook). The npm/JS wedge is in progress; what is missing is the
+lifter, not the thesis. The full argument, including which surface (the asserted
+*promise* vs. the lifted *behavior*) is and is not blind to additive malice, is in
+[docs/explanation/behavioral-versioning.md](docs/explanation/behavioral-versioning.md).
+
+## How a `.proof` works: the claim, formally
 
 Correctness is `k(I) = t`: a program `k` applied to an input/precondition `I`
 produces an output/postcondition `t`. A `.proof` is a kept promise made
@@ -195,6 +225,11 @@ authoritative list; the current subcommands include:
 - `sugar verify`: verify a kit end to end. Lift its contract claims,
   discharge each via the solver-dispatch table, recompute witnesses with the kit
   oracle untrusted, and emit a signed per-claim receipt. This is the gate verb.
+- `sugar diff <a> <b>`: compare two minted proof sets by behavior, not text.
+  Classifies each behavior-CID as `held` / `renamed` / `new` / `lost` and reports
+  the implied bump. `--require <bump>` enforces honest semver at publish time;
+  `--frozen` fails on any behavior delta under a pinned dependency. The Rust and
+  Python wedges (`cargo sugar`, `sugar-check`) drive this verb.
 - `sugar dump`: pretty-print a `.proof` envelope (members, bodies,
   signatures).
 - `sugar hash`: compute the BLAKE3-512 CID of a file or stdin.
@@ -282,6 +317,7 @@ The numpy demos provision their own venv on first run.
 | Goal | Read |
 |---|---|
 | Run the headline demo | [examples/numpy-vendor/](examples/numpy-vendor/) |
+| Why behavioral versioning beats SemVer | [docs/explanation/behavioral-versioning.md](docs/explanation/behavioral-versioning.md) |
 | Install and run the CLI | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) |
 | Learn the vocabulary | [SHARED-LANGUAGE.md](SHARED-LANGUAGE.md) |
 | Understand the product surface | [docs/explanation/product.md](docs/explanation/product.md) |
