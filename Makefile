@@ -312,6 +312,8 @@ test-showcases:
 	  ssh -o BatchMode=yes "$$remote_host" "bash -lc $$(printf '%q' "$$remote_cmd")"; \
 	  exit $$?; \
 	fi; \
+	$(CARGO) build --manifest-path implementations/rust/Cargo.toml \
+	  -p sugar-cli --bin sugar >/dev/null || exit $$?; \
 	failed=""; \
 	for s in $(SHOWCASE_RUNS); do \
 	  echo ""; \
