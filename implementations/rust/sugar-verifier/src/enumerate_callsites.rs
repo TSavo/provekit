@@ -10,7 +10,7 @@ use libsugar::concept::panic_freedom;
 use serde_json::Value as Json;
 use tracing::{debug, info, warn};
 
-use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
+use crate::types::{memento_body, memento_kind, AttributeSafetyObligation, CallSite, MementoPool};
 
 const PANIC_EFFECT_KIND: &str = "concept:panic-freedom";
 
@@ -263,6 +263,76 @@ fn callsite_from_panic_locus(
         line,
         callee: Some(callee.to_string()),
         panic_site: true,
+        attribute_safety: attribute_safety_from_locus(locus),
+    })
+}
+
+fn attribute_safety_from_locus(locus: &Json) -> Option<AttributeSafetyObligation> {
+    let safety = locus.get("attributeSafety")?.as_object()?;
+    Some(AttributeSafetyObligation {
+        receiver_class: safety
+            .get("receiverClass")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        receiver_qualname: safety
+            .get("receiverQualname")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        receiver_name: safety
+            .get("receiverName")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        attribute: safety
+            .get("attribute")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn attribute_safety_callsite_from_locus(
+    locus: &Json,
+    property_name: &str,
+    property_cid: &str,
+    callsite_bundle_cid: Option<&str>,
+    path_cond: &[Json],
+) -> Option<CallSite> {
+    let safety = attribute_safety_from_locus(locus)?;
+    let file = locus
+        .get("file")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let line = locus
+        .get("line")
+        .or_else(|| locus.get("start_line"))
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    Some(CallSite {
+        bridge_ir_name: panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT.to_string(),
+        bridge_target_cid: String::new(),
+        bridge_source_layer: String::new(),
+        bridge_target_layer: String::new(),
+        bridge_target_proof_cid: None,
+        bridge_self_bundle_cid: None,
+        property_name: property_name.to_string(),
+        property_cid: property_cid.to_string(),
+        callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
+        arg_term: locus.get("argTerm").cloned(),
+        producer_file: file.clone(),
+        producer_line: None,
+        producer_symbol: None,
+        containing_atomic: None,
+        guard_facts: path_cond.to_vec(),
+        file,
+        line,
+        callee: Some(panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT.to_string()),
+        panic_site: true,
+        attribute_safety: Some(safety),
     })
 }
 
@@ -695,6 +765,14 @@ fn callsite_scoped_bridge_for_locus<'a>(
     ))
 }
 
+fn attribute_safety_locus_for<'a>(term: &Json, panic_loci: &'a [Json]) -> Option<&'a Json> {
+    panic_loci.iter().find(|locus| {
+        locus.get("subkind").and_then(|v| v.as_str()) == Some("attribute-access")
+            && locus.get("attributeSafety").is_some()
+            && locus.get("argTerm") == Some(term)
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn walk_term(
     t: &Json,
@@ -730,6 +808,19 @@ fn walk_term(
         .get("args")
         .and_then(|v| v.as_array())
         .and_then(|arr| arr.first().cloned());
+    if let Some(locus) = attribute_safety_locus_for(t, panic_loci) {
+        if let Some(cs) = attribute_safety_callsite_from_locus(
+            locus,
+            property_name,
+            property_cid,
+            callsite_bundle_cid,
+            path_cond,
+        ) {
+            if !has_same_panic_callsite(out, &cs) {
+                out.push(cs);
+            }
+        }
+    }
     let scoped_panic_locus = panic_locus_for(&bridge_name, arg_term.as_ref(), panic_loci);
     // Panic-leaf method bridges are overloadable (`method:unwrap` can target
     // Option or Result). If the kit supplied an occurrence locus, choose the
@@ -897,6 +988,7 @@ fn walk_term(
             line: callsite_line,
             callee: callsite_callee,
             panic_site,
+            attribute_safety: occ_locus.and_then(attribute_safety_from_locus),
         };
         debug!(
             name = %bridge_name,

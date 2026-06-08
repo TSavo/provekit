@@ -2018,6 +2018,17 @@ fn mint_ir_document(
             }
             None => Vec::new(),
         };
+        let class_shapes_value = decl.get("classShapes").or_else(|| decl.get("class_shapes"));
+        let class_shapes: Vec<Arc<CValue>> = match class_shapes_value {
+            Some(Value::Array(arr)) => arr.iter().map(json_to_cvalue).collect(),
+            Some(value) => {
+                return Err(format!(
+                    "contract `{name}`: classShapes must be an array, got {}",
+                    json_type_name(value)
+                ));
+            }
+            None => Vec::new(),
+        };
         let body_policy = body_discharge_policy_from_fields(
             decl.get("bodyDischargeEligible")
                 .or_else(|| decl.get("body_discharge_eligible")),
@@ -2123,6 +2134,7 @@ fn mint_ir_document(
             body_discharge_eligible,
             body_discharge_refusal_reason: body_discharge_refusal_reason.clone(),
             panic_loci,
+            class_shapes,
         };
 
         let ccid = contract_cid(&args);
@@ -3211,10 +3223,7 @@ mod tests {
         let params =
             crate::lift_plugin::build_lift_params(&root, "go", LiftPluginOptions::default());
         assert_eq!(params["surface"].as_str(), Some("go"));
-        assert_eq!(
-            params["config_path"].as_str(),
-            Some(".sugar/config.toml")
-        );
+        assert_eq!(params["config_path"].as_str(), Some(".sugar/config.toml"));
         assert!(
             params["workspace_root"].as_str().is_some(),
             "workspace_root should be present for lifters that resolve source through the project root"
@@ -4075,6 +4084,7 @@ mod tests {
             body_discharge_eligible: true,
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
+            class_shapes: Vec::new(),
         })
         .expect("mint contract");
         let mut env: Value =

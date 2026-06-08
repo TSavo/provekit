@@ -188,6 +188,7 @@ fn run() -> Result<(), String> {
             body_discharge_eligible: true,
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
+            class_shapes: Vec::new(),
         })
         .map_err(|e| format!("mint parse-kit {}: {e}", d.name))?;
         parse_kit_contract_cid = m.cid.clone();
@@ -294,6 +295,7 @@ fn run() -> Result<(), String> {
             body_discharge_eligible: true,
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
+            class_shapes: Vec::new(),
         })
         .map_err(|e| format!("mint consumer {}: {e}", d.name))?;
         consumer_contract_cid = m.cid.clone();

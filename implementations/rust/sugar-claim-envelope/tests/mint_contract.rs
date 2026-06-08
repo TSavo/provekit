@@ -114,6 +114,7 @@ fn args_with(
         body_discharge_eligible: true,
         body_discharge_refusal_reason: None,
         panic_loci: Vec::new(),
+        class_shapes: Vec::new(),
         contract_name: "demo".into(),
         pre,
         post,

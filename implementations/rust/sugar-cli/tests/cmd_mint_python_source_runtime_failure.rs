@@ -31,6 +31,14 @@ fn python_source_lift_src() -> PathBuf {
         .join("src")
 }
 
+fn python_tests_lift_src() -> PathBuf {
+    repo_root()
+        .join("implementations")
+        .join("python")
+        .join("sugar-lift-py-tests")
+        .join("src")
+}
+
 fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
@@ -70,10 +78,15 @@ fn write_executable(path: &Path, body: &str) {
 }
 
 fn build_python_lift_source() -> PathBuf {
-    let pythonpath = python_source_lift_src()
+    let python_source = python_source_lift_src()
         .into_os_string()
         .into_string()
         .expect("Python lift source root must be UTF-8");
+    let python_tests = python_tests_lift_src()
+        .into_os_string()
+        .into_string()
+        .expect("Python tests lift source root must be UTF-8");
+    let pythonpath = format!("{python_source}:{python_tests}");
     let quoted_pythonpath = shell_single_quote(&pythonpath);
     let script_dir = unique_dir("lift-script");
     let script = script_dir.join("sugar-lift-python-source.sh");
@@ -85,6 +98,23 @@ fn build_python_lift_source() -> PathBuf {
     );
     write_executable(&script, &body);
     script
+}
+
+fn output_retrying_etxtbsy(cmd: &mut Command) -> std::process::Output {
+    const MAX_ATTEMPTS: u32 = 5;
+    for attempt in 0..MAX_ATTEMPTS {
+        let out = cmd.output().expect("spawn sugar mint");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let is_etxtbsy = !out.status.success()
+            && (stderr.contains("Text file busy") || stderr.contains("os error 26"));
+        if !is_etxtbsy {
+            return out;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(
+            20 * u64::from(attempt + 1),
+        ));
+    }
+    cmd.output().expect("spawn sugar mint (final attempt)")
 }
 
 fn stage_python_source_project(lift_script: &Path) -> PathBuf {
@@ -140,6 +170,48 @@ fn stage_python_access_project(lift_script: &Path) -> PathBuf {
         "def use(obj, xs, key):\n    attr = obj.name\n    item = xs[key]\n    return attr\n",
     )
     .expect("write access.py");
+
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
+    fs::write(
+        sugar.join("config.toml"),
+        r#"[[plugins]]
+name = "python-source"
+kind = "lift"
+surface = "python-source"
+"#,
+    )
+    .expect("write config.toml");
+    fs::write(
+        sugar
+            .join("lift")
+            .join("python-source")
+            .join("manifest.toml"),
+        format!(
+            r#"name = "python-source"
+version = "0.1.0-draft"
+protocol_version = "sugar-lift/1"
+kind = "lift"
+command = ["{}", "--rpc"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-source"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
+"#,
+            lift_script.display()
+        ),
+    )
+    .expect("write manifest.toml");
+
+    project
+}
+
+fn stage_python_classshape_project(lift_script: &Path, source: &str) -> PathBuf {
+    let project = unique_dir("classshape-project");
+    fs::write(project.join("classshape.py"), source).expect("write classshape.py");
 
     let sugar = project.join(".sugar");
     fs::create_dir_all(sugar.join("lift").join("python-source"))
@@ -594,15 +666,14 @@ emits_signed_mementos = false
 }
 
 fn run_mint(project: &Path) {
-    let out = Command::new(sugar_bin())
-        .arg("mint")
+    let mut cmd = Command::new(sugar_bin());
+    cmd.arg("mint")
         .arg("--project")
         .arg(project)
         .arg("--out")
         .arg(project)
-        .arg("--quiet")
-        .output()
-        .expect("spawn sugar mint");
+        .arg("--quiet");
+    let out = output_retrying_etxtbsy(&mut cmd);
     assert!(
         out.status.success(),
         "sugar mint must succeed\nstdout:\n{}\nstderr:\n{}",
@@ -787,6 +858,95 @@ fn python_source_access_mint_preserves_runtime_failure_loci_and_enumerates_calls
             .iter()
             .all(|cs| cs.bridge_target_cid.is_empty()),
         "no bridges exist yet, so surfaced access callsites must remain undecidable"
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn python_classshape_attribute_safety_discharges_only_guaranteed_attribute() {
+    if !python_available() {
+        eprintln!("python3 not on PATH: skipping python classshape discharge test");
+        return;
+    }
+    let lift_script = build_python_lift_source();
+    let project = stage_python_classshape_project(
+        &lift_script,
+        "class Box:\n    value = 1\n\n    def read(self):\n        return self.value\n",
+    );
+    run_mint(&project);
+
+    let pool = sugar_verifier::load_all_proofs::run(&project);
+    assert!(
+        pool.class_shapes_by_class.contains_key("classshape.Box"),
+        "minted proof must preserve the classShapes catalog for verifier discharge"
+    );
+    let report = sugar_verifier::Runner::new(sugar_verifier::RunnerConfig {
+        project_root: project.clone(),
+        z3_path: "z3".to_string(),
+        ..Default::default()
+    })
+    .run();
+    assert_eq!(
+        report.total_callsites, 1,
+        "expected one attribute-safety obligation: {report:#?}"
+    );
+    assert_eq!(
+        report.discharged, 1,
+        "guaranteed attr should discharge: {report:#?}"
+    );
+    assert_eq!(
+        report.violations, 0,
+        "guaranteed attr must not leave residue: {report:#?}"
+    );
+    let row = &report.rows[0];
+    assert!(row.callsite.attribute_safety.is_some());
+    assert_eq!(row.discharge_method.as_deref(), Some("panic-safe"));
+    assert!(
+        row.reason.contains("classShapes guaranteed-present"),
+        "discharge reason must name the classShapes guarantee: {}",
+        row.reason
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn python_classshape_open_attribute_stays_unproven_falsepass_guard() {
+    if !python_available() {
+        eprintln!("python3 not on PATH: skipping python classshape falsePass guard test");
+        return;
+    }
+    let lift_script = build_python_lift_source();
+    let project = stage_python_classshape_project(
+        &lift_script,
+        "class Box:\n    value = 1\n\n    def read(self):\n        return self.late\n",
+    );
+    run_mint(&project);
+
+    let report = sugar_verifier::Runner::new(sugar_verifier::RunnerConfig {
+        project_root: project.clone(),
+        z3_path: "z3".to_string(),
+        ..Default::default()
+    })
+    .run();
+    assert_eq!(
+        report.total_callsites, 1,
+        "expected one attribute-safety obligation: {report:#?}"
+    );
+    assert_eq!(
+        report.discharged, 0,
+        "non-guaranteed attr must not discharge: {report:#?}"
+    );
+    assert_eq!(
+        report.violations, 1,
+        "non-guaranteed attr must be loudly unproven: {report:#?}"
+    );
+    assert_eq!(report.rows[0].status, "undecidable");
+    assert!(
+        report.rows[0].reason.contains("not a guaranteed-present"),
+        "falsePass guard should fail for the classShapes reason, got {}",
+        report.rows[0].reason
     );
 
     let _ = fs::remove_dir_all(&project);

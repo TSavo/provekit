@@ -8,12 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-from sugar_lift_py_tests.canonicalizer import blake3_512_of, encode_jcs
-from sugar_lift_py_tests.decorators import _parse_expr_string
-from sugar_lift_py_tests.ir import formula_to_value
-
 from .ast_template import function_body_template, function_param_names
-from .canonical import cid_of_json, template_cid_of_json
+from .canonical import blake3_512_of, cid_of_json, template_cid_of_json
 
 Json = Any
 CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")
@@ -1329,6 +1325,10 @@ def _decorator_contract_witnesses(
                 continue
             text = keyword.value.value
             try:
+                from sugar_lift_py_tests.canonicalizer import encode_jcs
+                from sugar_lift_py_tests.decorators import _parse_expr_string
+                from sugar_lift_py_tests.ir import formula_to_value
+
                 names = [*param_names, "out"] if role == "post" else param_names
                 formula = _parse_expr_string(text, names)
                 predicate = json.loads(encode_jcs(formula_to_value(formula)))
