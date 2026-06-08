@@ -34,7 +34,7 @@ BLAKE3 is vendored as portable C source under `tools/blake3-vendored/` (BLAKE3 1
 
 ## Per-implementation build
 
-Each implementation can be built independently. This is for contributors working on a specific kit; end users should follow the per-language tutorial in [docs/tutorials/](../tutorials/) instead.
+Each implementation can be built independently. This is for contributors working on a specific kit; end users should follow the [quickstart](../quickstart-end-user.md) instead.
 
 ```sh
 # Rust workspace + Rust tools (canonical CLI)

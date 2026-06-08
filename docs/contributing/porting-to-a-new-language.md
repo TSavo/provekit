@@ -128,7 +128,7 @@ BLAKE3-512 with all SIMD paths disabled produces deterministic bytes. Make sure 
 
 ## When you're done
 
-The conformance harness is green. `make conformance` includes your kit, mints your self-contracts catalog, and the CID matches the pinned value. At minimum one lift adapter is shipping. The kit is documented in [docs/reference/per-language-status.md](../reference/per-language-status.md) and a tutorial exists at `docs/tutorials/<language>.md`.
+The conformance harness is green. `make conformance` includes your kit, mints your self-contracts catalog, and the CID matches the pinned value. At minimum one lift adapter is shipping. The kit is documented in [docs/reference/per-language-status.md](../reference/per-language-status.md).
 
 You don't need our blessing. The harness is the gate. Open the PR.
 

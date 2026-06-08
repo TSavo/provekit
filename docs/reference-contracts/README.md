@@ -155,4 +155,4 @@ Contributing a new reference contract or refining an existing one is the highest
 - [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md): the mechanism reference contracts enable.
 - [`../explanation/cold-start.md`](../explanation/cold-start.md): why reference contracts accelerate adoption.
 - [`../contributing/proposing-a-spec-change.md`](../contributing/proposing-a-spec-change.md): when adding a reference requires a spec change.
-- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md): the worked cross-language demo.
+- [`../../examples/`](../../examples/): the worked cross-language demo.

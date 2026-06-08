@@ -96,7 +96,7 @@ There is no central authority that decides what a protocol version means. The by
 - [product.md](product.md) for what Sugar replaces and complements.
 - [architecture.md](architecture.md) for the four-layer model and handshake.
 - [thesis.md](thesis.md) for the deeper architectural claim.
-- [docs/tutorials/rust.md](../tutorials/rust.md) for the five-minute walkthrough.
+- [the quickstart](../quickstart-end-user.md) for the five-minute walkthrough.
 - [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) for the per-source-library adoption guide.
 - [docs/reference/per-language-status.md](../reference/per-language-status.md) for the kit and adapter matrix.
 - [protocol/specs/](../../protocol/specs/) for the canonical specs, addressed by CID.

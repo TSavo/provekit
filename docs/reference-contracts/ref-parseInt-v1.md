@@ -93,4 +93,4 @@ More precise references (locale-aware, whitespace-aware, prefix-aware) can be ad
 
 - [`README.md`](README.md): what reference contracts are.
 - [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md): the mechanism this reference enables.
-- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md): the worked demo using this reference.
+- [`../../examples/`](../../examples/): the worked demo using this reference.

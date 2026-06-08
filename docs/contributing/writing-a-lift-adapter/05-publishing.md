@@ -95,9 +95,9 @@ A shipping adapter has at minimum:
 1. **README** at the package root: install, usage example, link to the Sugar monorepo.
 2. **COVERAGE** manifest as above.
 3. **An entry in [`docs/reference/per-adapter-coverage.md`](../../reference/per-adapter-coverage.md)** in the monorepo: one paragraph summary, link to the adapter's package, coverage tier (A/B/C), known gaps.
-4. **A tutorial mention** in the relevant per-language tutorial (`docs/tutorials/<language>.md`): "if your codebase uses [library], try [adapter]".
+4. **A coverage note** in [`docs/reference/per-language-status.md`](../../reference/per-language-status.md): record the adapter and the library it covers under the relevant language.
 
-The tutorial mention is the user-facing surface; the COVERAGE manifest is the contract; the per-adapter-coverage entry is the index.
+The coverage note is the user-facing surface; the COVERAGE manifest is the contract; the per-adapter-coverage entry is the index.
 
 ## Maintenance
 

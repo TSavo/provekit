@@ -68,7 +68,7 @@ The reference contracts library ([`reference-contracts/`](../reference-contracts
 
 When the JavaScript `parseInt` adapter and the Rust `parse` adapter both bridge to `ref-parseInt-v1`, every codebase that uses either function and depends on the other gets cross-language Tier-1 discharge from day one, because the lattice was pre-populated by the curated reference contracts.
 
-This is why the polyglot demo is the load-bearing piece (see [`docs/tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md)). It's not just a tutorial. It's an existence proof that the cold-start can be broken with curated bridge anchors.
+This is why the polyglot demo is the load-bearing piece (see [the runnable examples](../../examples/)). It's not just a tutorial. It's an existence proof that the cold-start can be broken with curated bridge anchors.
 
 ### Works: kit-self-contracts as initial seed
 
@@ -152,6 +152,6 @@ The decision to adopt early is a bet on the protocol reaching the asymptote; a b
 
 - [thesis.md](thesis.md): the central claim.
 - [boundaries.md](boundaries.md): what Sugar is not.
-- [../tutorials/polyglot-stack.md](../tutorials/polyglot-stack.md): the cross-domain bootstrap accelerant.
+- [../../examples/](../../examples/): the cross-domain bootstrap accelerant.
 - [../reference-contracts/README.md](../reference-contracts/README.md) (when written): curated bridge anchors.
 - [../security/threat-model.md](../security/threat-model.md) (when written): what trust looks like in a partially-populated lattice.

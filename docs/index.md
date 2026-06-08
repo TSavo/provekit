@@ -49,22 +49,19 @@ spec CID background.
 
 ## Use Sugar in code
 
-| If you write... | Start here | Current shape |
-|---|---|---|
-| Rust | [tutorials/rust.md](tutorials/rust.md) | canonical CLI and Rust libraries |
-| TypeScript | [tutorials/typescript.md](tutorials/typescript.md) | kit and lift adapters; verify via Rust CLI |
-| Python | [tutorials/python.md](tutorials/python.md) | kit and pydantic lift; verify via Rust CLI |
-| Java / JVM | [tutorials/java.md](tutorials/java.md) | kit, lift adapters, and Java realizer work |
-| C# | [tutorials/csharp.md](tutorials/csharp.md) | kit and lift adapters |
-| Ruby | [tutorials/ruby.md](tutorials/ruby.md) | kit and lift adapters |
-| Zig | [tutorials/zig.md](tutorials/zig.md) | kit and comment-based lift |
-| Go | [tutorials/go.md](tutorials/go.md) | kit and validator lift |
-| C++ | [tutorials/cpp.md](tutorials/cpp.md) | kit and C++ contracts lift |
-| Swift | [tutorials/swift.md](tutorials/swift.md) | kit conformance |
-| C | [tutorials/c.md](tutorials/c.md) | kit conformance |
-| A polyglot stack | [tutorials/polyglot-stack.md](tutorials/polyglot-stack.md) | cross-domain boundary equivalence |
+Sugar installs today as a single binary built from source (`cargo install
+--path implementations/rust/sugar-cli`); there is no published package installer
+for any language yet. Start from the runnable demos and the quickstart, and read
+the live coverage matrix for where your language actually stands.
 
-See [reference/per-language-status.md](reference/per-language-status.md) for the live matrix.
+- [quickstart-end-user.md](quickstart-end-user.md): install the CLI, then mint,
+  prove, and verify a `.proof` against the demos that pass today.
+- [../examples/](../examples/): the runnable showcases (numpy, java, tokio, and
+  more) that run end to end.
+- [reference/per-language-status.md](reference/per-language-status.md): the live
+  per-language coverage matrix. Coverage is empirical and uneven; this is the
+  honest picture, not a per-language tutorial that promises an installer that
+  does not exist.
 
 ## Workflows
 

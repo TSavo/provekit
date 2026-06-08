@@ -234,6 +234,6 @@ The combined effect is exactly what "compose across the dependency graph" means:
 
 - [content-addressing-not-registry.md](content-addressing-not-registry.md): the primitive cross-domain transfer is built on.
 - [monotonic-provability.md](monotonic-provability.md): why bridges remain valid forever.
-- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md): the worked demo.
+- [`../../examples/`](../../examples/): the worked demo.
 - [`../reference-contracts/README.md`](../reference-contracts/README.md) (when written): the curated bridge anchors.
 - [thesis.md](thesis.md): the full claim.
