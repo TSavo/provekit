@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use libsugar::concept::panic_freedom;
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
-use sugar_ir_types::{IrFormula, IrTerm};
+use sugar_ir_types::{IrFormula, IrTerm, LetBinding};
 use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 use syn::{
@@ -38,7 +38,7 @@ use syn::{
 };
 use tracing::debug;
 
-use crate::wp::{free_vars_formula, Wp};
+use crate::wp::{free_vars_formula, free_vars_term, Wp};
 
 // ---- LiftCtx: scope-tracked name resolution ----
 //
@@ -375,6 +375,16 @@ pub fn lift_function_postcondition_with_return_facts_and_pure_free_guards(
     //    `result = <lifted expression>` and add to the postcondition.
     if let Some(Stmt::Expr(e, None)) = stmts.last() {
         if let Some(term) = lift_tail_expr_to_result_term(e, &mut ctx) {
+            // A reformat that introduces a local (`let n = x; n*2`) leaves the
+            // tail term referencing the local name (`n*2`), which would leak a
+            // free variable `n` and move the behavior identity away from the
+            // inline form (`x*2`). Re-attach the leading immutable `let`
+            // bindings as a faithful `IrTerm::Let` over the result term: the
+            // kit emits the data (the let with surface names), and the CLI
+            // canonicalizer inlines the pure let at CID/discharge time, so the
+            // two surface shapes share one behavior identity. (z3 also lowers
+            // `(let ...)` natively, so the stored faithful form discharges.)
+            let term = wrap_leading_lets(stmts, term, &mut ctx);
             let result_var = IrTerm::Var {
                 name: "result".to_string(),
             };
@@ -394,6 +404,71 @@ pub fn lift_function_postcondition_with_return_facts_and_pure_free_guards(
     }
 
     Wp(simplify_conjunction(accum))
+}
+
+/// Re-attach the function's leading immutable `let` bindings to the derived
+/// result `body` term as a faithful [`IrTerm::Let`], so a reformat that
+/// introduces a local emits the same behavior identity as the inline form.
+///
+/// ARCHITECTURE: the kit emits DATA, the CLI computes over it. We do NOT
+/// pre-resolve or inline here -- we emit the `let` with the source's surface
+/// names and let the CLI canonicalizer (`canonicalize_formula`) inline the pure
+/// let at CID/discharge time. z3 lowers `(let ...)` natively, so the stored
+/// faithful form still discharges reflexively against the body's own.
+///
+/// Only immutable bindings whose initializer lifts to a pure term are captured,
+/// in source order (a later binding may reference an earlier one). Bindings the
+/// result never references (transitively) are dropped, so a function whose tail
+/// does not touch a leading local is byte-unchanged.
+fn wrap_leading_lets(stmts: &[Stmt], body: IrTerm, ctx: &mut LiftCtx) -> IrTerm {
+    // The tail expression is the last statement; the prefix holds its lets.
+    let Some((_, prefix)) = stmts.split_last() else {
+        return body;
+    };
+    // Collect (name, value-term) for leading immutable, liftable lets in order.
+    let mut bindings: Vec<LetBinding> = Vec::new();
+    for stmt in prefix {
+        let Stmt::Local(local) = stmt else { continue };
+        let Some((name, mutable)) = local_binding_ident(local) else {
+            continue;
+        };
+        if mutable {
+            continue;
+        }
+        let Some(init) = local.init.as_ref() else {
+            continue;
+        };
+        let Some(value) = lift_expr_to_term_inner(&init.expr, ctx) else {
+            continue;
+        };
+        bindings.push(LetBinding {
+            name,
+            bound_term: value,
+        });
+    }
+    if bindings.is_empty() {
+        return body;
+    }
+    // Keep only bindings the result references (transitive, backward fixpoint),
+    // so an unrelated leading `let` does not change the emitted term.
+    let mut needed: HashSet<String> = free_vars_term(&body);
+    let mut kept_rev: Vec<LetBinding> = Vec::new();
+    for b in bindings.into_iter().rev() {
+        if needed.contains(&b.name) {
+            for v in free_vars_term(&b.bound_term) {
+                needed.insert(v);
+            }
+            kept_rev.push(b);
+        }
+    }
+    if kept_rev.is_empty() {
+        return body;
+    }
+    kept_rev.reverse();
+    IrTerm::Let {
+        bindings: kept_rev,
+        body: Box::new(body),
+    }
 }
 
 fn lift_tail_expr_to_result_term(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
@@ -4812,6 +4887,70 @@ mod tests {
         assert!(
             !json.contains("cf_guarded"),
             "unknown field kind must remain unknown through clone propagation: {json}"
+        );
+    }
+
+    /// THE reformat-canonicality bug. `fn double(x){ let n = x; n*2 }` used to
+    /// leak the local name `n` into the post (`result = n*2`, free `n`), moving
+    /// the behavior identity away from the inline form `x*2`. The fix: emit the
+    /// leading `let` as a faithful `IrTerm::Let` (the kit emits data), which the
+    /// CLI canonicalizer inlines so both surface shapes share one identity.
+    #[test]
+    fn leading_let_reformat_shares_behavior_identity() {
+        use sugar_ir_types::canonicalize_property;
+
+        let inline = lift_function_postcondition(&parse_fn(
+            r#"fn double(x: i64) -> i64 { x * 2 }"#,
+        ))
+        .into_formula();
+        let reformat = lift_function_postcondition(&parse_fn(
+            r#"fn double(x: i64) -> i64 { let n = x; n * 2 }"#,
+        ))
+        .into_formula();
+
+        // The kit emits the let FAITHFULLY (no pre-resolution): the result
+        // term is an `IrTerm::Let`, not a leaked free `n`.
+        let rhs = libsugar::wp::find_result_equation(&reformat, "result")
+            .expect("reformat has a result equation");
+        assert!(
+            matches!(rhs, IrTerm::Let { .. }),
+            "leading let must be emitted as a faithful IrTerm::Let, got {rhs:?}"
+        );
+
+        // The CLI canonicalizer inlines the pure let: inline and reformat share
+        // ONE behavior identity.
+        let ci = canonicalize_property(&inline, &["x".to_string()], "result");
+        let cr = canonicalize_property(&reformat, &["x".to_string()], "result");
+        assert_eq!(
+            ci, cr,
+            "inline x*2 and let-reformat must canonicalize to the same behavior"
+        );
+
+        // A genuine behavior change (x*3) must NOT be identified with x*2.
+        let changed = lift_function_postcondition(&parse_fn(
+            r#"fn double(x: i64) -> i64 { let n = x; n * 3 }"#,
+        ))
+        .into_formula();
+        let cc = canonicalize_property(&changed, &["x".to_string()], "result");
+        assert_ne!(
+            ci, cc,
+            "a real behavior change (x*3) must not share x*2's identity"
+        );
+    }
+
+    /// An unrelated leading `let` the tail never touches must NOT change the
+    /// emitted term: `fn f(x){ let _k = 99; x*2 }` still emits a bare `x*2`.
+    #[test]
+    fn unreferenced_leading_let_is_not_wrapped() {
+        let post = lift_function_postcondition(&parse_fn(
+            r#"fn f(x: i64) -> i64 { let k = 99; x * 2 }"#,
+        ))
+        .into_formula();
+        let rhs = libsugar::wp::find_result_equation(&post, "result")
+            .expect("has a result equation");
+        assert!(
+            !matches!(rhs, IrTerm::Let { .. }),
+            "an unreferenced leading let must not wrap the result term, got {rhs:?}"
         );
     }
 }

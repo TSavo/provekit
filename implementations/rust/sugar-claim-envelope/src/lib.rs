@@ -850,19 +850,71 @@ pub fn mint_authority(args: &MintAuthorityArgs) -> Result<MintedEnvelope, ClaimE
 /// also available directly without minting via this public function.
 ///
 /// Per spec naming convention (`contract_cid(decl)` for Rust).
+/// JSON -> canonical `Value` (mirror of the verifier's `serde_to_canonical`).
+fn json_to_cvalue(v: &JsonValue) -> Arc<Value> {
+    match v {
+        JsonValue::Null => Value::null(),
+        JsonValue::Bool(b) => Value::boolean(*b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::integer(i)
+            } else if let Some(u) = n.as_u64() {
+                Value::integer(u as i64)
+            } else if let Some(f) = n.as_f64() {
+                if f == (f as i64 as f64) {
+                    Value::integer(f as i64)
+                } else {
+                    Value::string(f.to_string())
+                }
+            } else {
+                Value::null()
+            }
+        }
+        JsonValue::String(s) => Value::string(s.clone()),
+        JsonValue::Array(arr) => Value::array(arr.iter().map(json_to_cvalue).collect()),
+        JsonValue::Object(map) => Value::object(
+            map.iter()
+                .map(|(k, val)| (k.as_str(), json_to_cvalue(val)))
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+/// Canonicalize a contract formula slot (pre/post/inv) to the alpha + pure-let
+/// normal form BEFORE it enters a content hash. The kits emit ProofIR; the
+/// substrate computes over it, so two surface formulations of the same behavior
+/// (a leaked `let` binding, a renamed bound variable) must hash to the same
+/// contract identity. If the value is not a parseable `IrFormula`, it is hashed
+/// unchanged.
+fn canon_formula_value(v: &Arc<Value>) -> Arc<Value> {
+    let json: JsonValue = match serde_json::from_str(&encode_jcs(v)) {
+        Ok(j) => j,
+        Err(_) => return v.clone(),
+    };
+    let formula: sugar_ir_types::IrFormula = match serde_json::from_value(json) {
+        Ok(f) => f,
+        Err(_) => return v.clone(),
+    };
+    let canon = sugar_ir_types::canonicalize_formula(&formula);
+    match serde_json::to_value(&canon) {
+        Ok(j) => json_to_cvalue(&j),
+        Err(_) => v.clone(),
+    }
+}
+
 pub fn contract_cid(args: &MintContractArgs) -> String {
     let mut kvs: Vec<(String, Arc<Value>)> = vec![
         ("name".into(), Value::string(args.contract_name.clone())),
         ("outBinding".into(), Value::string(args.out_binding.clone())),
     ];
     if let Some(pre) = &args.pre {
-        kvs.push(("pre".into(), pre.clone()));
+        kvs.push(("pre".into(), canon_formula_value(pre)));
     }
     if let Some(post) = &args.post {
-        kvs.push(("post".into(), post.clone()));
+        kvs.push(("post".into(), canon_formula_value(post)));
     }
     if let Some(inv) = &args.inv {
-        kvs.push(("inv".into(), inv.clone()));
+        kvs.push(("inv".into(), canon_formula_value(inv)));
     }
     // Body-derived op-contracts carry their formals as part of contract
     // identity: two functions with the same `post` but different formal
@@ -902,13 +954,13 @@ fn contract_content_cid(args: &MintContractArgs) -> String {
 pub fn contract_property_hash(args: &MintContractArgs) -> String {
     let mut ph_kvs: Vec<(String, Arc<Value>)> = Vec::new();
     if let Some(pre) = &args.pre {
-        ph_kvs.push(("pre".into(), pre.clone()));
+        ph_kvs.push(("pre".into(), canon_formula_value(pre)));
     }
     if let Some(post) = &args.post {
-        ph_kvs.push(("post".into(), post.clone()));
+        ph_kvs.push(("post".into(), canon_formula_value(post)));
     }
     if let Some(inv) = &args.inv {
-        ph_kvs.push(("inv".into(), inv.clone()));
+        ph_kvs.push(("inv".into(), canon_formula_value(inv)));
     }
     ph_kvs.push(("outBinding".into(), Value::string(args.out_binding.clone())));
     hash_value(&Arc::new(Value::Object(ph_kvs)))

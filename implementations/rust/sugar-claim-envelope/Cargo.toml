@@ -8,6 +8,7 @@ description = "Sugar: claim/memento envelope minters (contract, bridge, implicat
 
 [dependencies]
 sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+sugar-ir-types = { path = "../sugar-ir-types" }
 sugar-proof-envelope = { path = "../sugar-proof-envelope" }
 serde = { workspace = true }
 serde_json = { workspace = true }
