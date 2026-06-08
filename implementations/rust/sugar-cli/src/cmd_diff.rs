@@ -47,6 +47,16 @@ pub struct DiffArgs {
     /// In --git mode, the project subdirectory within each revision's tree.
     #[arg(long, default_value = ".")]
     pub path: String,
+    /// Honest-semver gate: fail unless the behavior delta fits within this bump.
+    /// none < minor < major. `--require minor` rejects a MAJOR delta (a behavior
+    /// loss dressed up as a non-breaking release). The pre-publish hook.
+    #[arg(long, value_name = "BUMP")]
+    pub require: Option<String>,
+    /// Supply-chain pin: fail on ANY behavior delta. A pinned dependency must
+    /// denote byte-identical behavior; new, lost, or renamed all mean it mutated
+    /// under a fixed version. The install-time hook. Overrides --require.
+    #[arg(long)]
+    pub frozen: bool,
 }
 
 /// `name -> CID`, as loaded from a proof set.
@@ -89,6 +99,34 @@ impl Summary {
             "none"
         }
     }
+}
+
+/// Rank of a semver bump for ordering: none < minor < major.
+fn rank(bump: &str) -> Option<u8> {
+    match bump.to_ascii_lowercase().as_str() {
+        "none" => Some(0),
+        "minor" => Some(1),
+        "major" => Some(2),
+        _ => None,
+    }
+}
+
+/// Does the delta pass the chosen exit gate? `Ok(true)` passes, `Ok(false)`
+/// fails the gate, `Err` is bad input. This is the policy; `run` maps it to an
+/// exit code. Pure, so it is unit-tested directly.
+///   default          fail iff a behavior was lost (breaking).
+///   --require BUMP    fail iff the required bump exceeds BUMP.
+///   --frozen          fail iff anything changed at all (new/lost/renamed).
+pub fn gate_ok(s: &Summary, require: Option<&str>, frozen: bool) -> Result<bool, String> {
+    if frozen {
+        return Ok(s.new_behaviors == 0 && s.lost_behaviors == 0 && s.renamed == 0);
+    }
+    if let Some(req) = require {
+        let allowed = rank(req).ok_or_else(|| format!("invalid --require '{req}' (none|minor|major)"))?;
+        let needed = rank(s.bump()).expect("bump() returns a valid rank");
+        return Ok(needed <= allowed);
+    }
+    Ok(!s.breaking())
 }
 
 fn short(cid: &str) -> String {
@@ -235,10 +273,20 @@ pub fn run(args: DiffArgs) -> u8 {
     );
     println!("required bump: {}", s.bump());
 
-    if s.breaking() {
-        EXIT_VERIFY_FAIL
-    } else {
-        EXIT_OK
+    match gate_ok(&s, args.require.as_deref(), args.frozen) {
+        Ok(true) => EXIT_OK,
+        Ok(false) => {
+            if args.frozen {
+                eprintln!("frozen: dependency behavior changed under a fixed pin");
+            } else if let Some(req) = &args.require {
+                eprintln!("gate: behavior requires {}, exceeds claimed {req}", s.bump());
+            }
+            EXIT_VERIFY_FAIL
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            EXIT_USER_ERROR
+        }
     }
 }
 
@@ -298,6 +346,59 @@ mod tests {
         assert_eq!((s.lost_behaviors, s.held), (1, 1));
         assert!(s.breaking());
         assert_eq!(s.bump(), "MAJOR");
+    }
+
+    // --- exit gates: --require (honest semver) and --frozen (supply-chain) ---
+
+    fn lost() -> Summary {
+        summarize(&table(&[("f", "c1"), ("g", "c2")]), &table(&[("f", "c1")]))
+    }
+    fn added() -> Summary {
+        summarize(&table(&[("f", "c1")]), &table(&[("f", "c1"), ("g", "c2")]))
+    }
+    fn renamed() -> Summary {
+        summarize(&table(&[("old", "cA")]), &table(&[("new", "cA")]))
+    }
+    fn identity() -> Summary {
+        let a = table(&[("f", "c1")]);
+        summarize(&a, &a)
+    }
+
+    #[test]
+    fn default_gate_fails_on_loss_passes_on_addition() {
+        assert_eq!(gate_ok(&lost(), None, false), Ok(false));
+        assert_eq!(gate_ok(&added(), None, false), Ok(true));
+    }
+
+    #[test]
+    fn require_minor_allows_addition_rejects_loss() {
+        assert_eq!(gate_ok(&added(), Some("minor"), false), Ok(true));
+        // a loss is MAJOR, which exceeds the claimed minor.
+        assert_eq!(gate_ok(&lost(), Some("minor"), false), Ok(false));
+    }
+
+    #[test]
+    fn require_none_rejects_even_an_addition() {
+        assert_eq!(gate_ok(&added(), Some("none"), false), Ok(false));
+        assert_eq!(gate_ok(&identity(), Some("none"), false), Ok(true));
+    }
+
+    #[test]
+    fn require_major_allows_anything() {
+        assert_eq!(gate_ok(&lost(), Some("major"), false), Ok(true));
+    }
+
+    #[test]
+    fn frozen_fails_on_any_delta_including_rename() {
+        assert_eq!(gate_ok(&identity(), None, true), Ok(true));
+        assert_eq!(gate_ok(&added(), None, true), Ok(false));
+        assert_eq!(gate_ok(&renamed(), None, true), Ok(false));
+        assert_eq!(gate_ok(&lost(), None, true), Ok(false));
+    }
+
+    #[test]
+    fn invalid_require_is_an_error() {
+        assert!(gate_ok(&identity(), Some("patchy"), false).is_err());
     }
 
     // --- git mode: build a throwaway repo from the real committed example
