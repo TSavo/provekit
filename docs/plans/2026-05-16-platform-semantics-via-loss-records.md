@@ -80,7 +80,7 @@ Each value is a small content-addressed memento. Extensible: new platform behavi
 
 ## Kit registration extension
 
-Extend `ConformanceDeclaration::Carrier` (or add a sibling `PlatformSemanticsDeclaration`) to carry per-concept-op semantic tags:
+Extend `ConformanceDeclaration::Carrier` (or add a sibling `PlatformSemanticsDeclaration`) to carry per-target-op semantic tags:
 
 ```rust
 struct PlatformSemanticsDeclaration {

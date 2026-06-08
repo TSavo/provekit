@@ -148,48 +148,36 @@
   "candidates_examined": 7,
   "content_address_verification": [
     {
-      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-1.blake3-512:c093b406713302e57214aa9ee9c0aaae951c26f0be86e471f0c0800ebf04966094d66e46a2bd5b0ee52831be3c0c6b7e83c0b16733c350ba7aee1ef2ca2be10a.json",
-      "catalog_path_exists": true,
       "cid": "blake3-512:c093b406713302e57214aa9ee9c0aaae951c26f0be86e471f0c0800ebf04966094d66e46a2bd5b0ee52831be3c0c6b7e83c0b16733c350ba7aee1ef2ca2be10a",
       "promoted_op": "UNNAMED-CONCEPT-1",
       "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_1.spec.json",
       "verified": true
     },
     {
-      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-6.blake3-512:2fe5b5099c631a3beed511039dcc930992aa5716a834ff277099194a54efca0da4a39714b140ccad263966e850ca42b77136826e159d1c62d4675c2bf2599962.json",
-      "catalog_path_exists": true,
       "cid": "blake3-512:2fe5b5099c631a3beed511039dcc930992aa5716a834ff277099194a54efca0da4a39714b140ccad263966e850ca42b77136826e159d1c62d4675c2bf2599962",
       "promoted_op": "UNNAMED-CONCEPT-6",
       "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_6.spec.json",
       "verified": true
     },
     {
-      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-85.blake3-512:a46bcade8eadf15d4524d4ab3be0782ee64c1ab0176d6318ae31543a002325fbb9a6c1f5778d1c31ed5febb277a7fa5501ca64f3bfe45d0296abcaf125145114.json",
-      "catalog_path_exists": true,
       "cid": "blake3-512:a46bcade8eadf15d4524d4ab3be0782ee64c1ab0176d6318ae31543a002325fbb9a6c1f5778d1c31ed5febb277a7fa5501ca64f3bfe45d0296abcaf125145114",
       "promoted_op": "UNNAMED-CONCEPT-85",
       "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_85.spec.json",
       "verified": true
     },
     {
-      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-d.blake3-512:9a2bb4dc33a8d6480366a91b6d977fd177c4558a7a4f1a506b6679a157d65ee89ec6da15da10e2a9bea23977ae70bb481dcc44d90f72706f670758dc10938106.json",
-      "catalog_path_exists": true,
       "cid": "blake3-512:9a2bb4dc33a8d6480366a91b6d977fd177c4558a7a4f1a506b6679a157d65ee89ec6da15da10e2a9bea23977ae70bb481dcc44d90f72706f670758dc10938106",
       "promoted_op": "UNNAMED-CONCEPT-d",
       "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_d.spec.json",
       "verified": true
     },
     {
-      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/concept:guard-then-commit.blake3-512:b7d0dbf9bc04b913b588d07722d965050d474357cea1fe6aefcda7012801e7c6ed2e477c2857a84a9ec2bdfe3c5edcc9cb79ce7bc7b157a855002d86f5232fa4.json",
-      "catalog_path_exists": true,
       "cid": "blake3-512:b7d0dbf9bc04b913b588d07722d965050d474357cea1fe6aefcda7012801e7c6ed2e477c2857a84a9ec2bdfe3c5edcc9cb79ce7bc7b157a855002d86f5232fa4",
       "promoted_op": "concept:guard-then-commit",
       "spec": "menagerie/concept-shapes/specs/op_guard_then_commit.spec.json",
       "verified": true
     },
     {
-      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/concept:retry-with-bounded-attempts.blake3-512:263728665e2513206f3d015db90791d559943fa920c7ec520555ef77485d9843bda671b5839dec4ee05d87bf2d09e5c6726a7ebf05be36dd8f36ff4f68e18192.json",
-      "catalog_path_exists": true,
       "cid": "blake3-512:263728665e2513206f3d015db90791d559943fa920c7ec520555ef77485d9843bda671b5839dec4ee05d87bf2d09e5c6726a7ebf05be36dd8f36ff4f68e18192",
       "promoted_op": "concept:retry-with-bounded-attempts",
       "spec": "menagerie/concept-shapes/specs/op_retry_with_bounded_attempts.spec.json",

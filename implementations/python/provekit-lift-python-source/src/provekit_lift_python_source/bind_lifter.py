@@ -5,7 +5,6 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -918,24 +917,18 @@ def _bool_literal(value: bool) -> _ShapeResult:
 
 
 def _operator_shape(concept_name: str, args: list[Json]) -> Json:
-    op_cid = _concept_op_cid(concept_name)
-    if op_cid is None:
-        return {}
     return {
         "args": [_operand_slot(arg) for arg in args],
         "concept_name": concept_name,
-        "op_cid": op_cid,
+        "op_cid": _local_op_cid(concept_name),
     }
 
 
 def _comment_shape(surface: str) -> Json:
-    op_cid = _concept_op_cid("concept:comment")
-    if op_cid is None:
-        return {}
     return {
         "args": [{"kind": "literal", "value": surface}],
         "concept_name": "concept:comment",
-        "op_cid": op_cid,
+        "op_cid": _local_op_cid("concept:comment"),
     }
 
 
@@ -1517,34 +1510,6 @@ def _concept_citation_witness(
             )
             return None
 
-    catalog = _concept_shape_catalog()
-    if catalog is not None:
-        catalog_entry = catalog.get(payload["concept_cid"])
-        if catalog_entry is None:
-            _concept_citation_diag(
-                diagnostics,
-                rel_path,
-                line_no,
-                "concept-citation:unknown-concept",
-                "concept not in local catalog",
-            )
-            return None
-        expected_shape_cid, expected_operation_kind = catalog_entry
-        if expected_shape_cid != payload["shape_cid"]:
-            raise _ConceptCitationRefusal(
-                "concept-citation:shape-mismatch",
-                rel_path,
-                line_no,
-                "shape CID mismatch",
-            )
-        if expected_operation_kind != operation_kind:
-            raise _ConceptCitationRefusal(
-                "concept-citation:operation-kind-mismatch",
-                rel_path,
-                line_no,
-                "operation_kind mismatch",
-            )
-
     extension_fields = {
         "args_jcs_cid": payload["args_jcs_cid"],
         "concept_site_cid": payload["concept_site_cid"],
@@ -1621,96 +1586,8 @@ def _concept_citation_diag(
     )
 
 
-def _concept_op_cid(name: str) -> str | None:
-    return _concept_op_cids_by_name().get(name)
-
-
-@lru_cache(maxsize=1)
-def _concept_op_cids_by_name() -> dict[str, str]:
-    root = _repo_root()
-    if root is None:
-        return {}
-    index_path = root / "menagerie/concept-shapes/catalog/index.json"
-    try:
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    entries = index.get("entries")
-    if not isinstance(entries, dict):
-        return {}
-    cids: dict[str, str] = {}
-    for cid, meta in entries.items():
-        if not isinstance(cid, str) or CID_RE.fullmatch(cid) is None:
-            continue
-        if not isinstance(meta, dict) or meta.get("kind") != "algorithm":
-            continue
-        name = meta.get("name")
-        if isinstance(name, str) and name.startswith("concept:"):
-            meta_cid = meta.get("cid")
-            cids[name] = (
-                meta_cid
-                if isinstance(meta_cid, str) and CID_RE.fullmatch(meta_cid) is not None
-                else cid
-            )
-    return cids
-
-
-@lru_cache(maxsize=1)
-def _concept_shape_catalog() -> dict[str, tuple[str, str]] | None:
-    root = _repo_root()
-    if root is None:
-        return None
-    index_path = root / "menagerie/concept-shapes/catalog/index.json"
-    try:
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    entries = index.get("entries")
-    if not isinstance(entries, dict):
-        return None
-    catalog: dict[str, tuple[str, str]] = {}
-    catalog_root = index_path.parent
-    for cid, meta in entries.items():
-        if not isinstance(cid, str) or CID_RE.fullmatch(cid) is None:
-            continue
-        if not isinstance(meta, dict) or meta.get("kind") != "algorithm":
-            continue
-        name = meta.get("name")
-        rel_path = meta.get("path")
-        if not isinstance(name, str) or not name.startswith("concept:"):
-            continue
-        if not isinstance(rel_path, str):
-            continue
-        try:
-            document = json.loads((catalog_root / rel_path).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        memento = document.get("memento")
-        if not isinstance(memento, dict):
-            continue
-        operation_kind = _catalog_operation_kind(name, memento)
-        shape_cid = document.get("cid")
-        if operation_kind and isinstance(shape_cid, str) and CID_RE.fullmatch(shape_cid):
-            catalog[cid] = (shape_cid, operation_kind)
-    return catalog
-
-
-def _catalog_operation_kind(name: str, memento: dict[str, Json]) -> str | None:
-    post = memento.get("post")
-    if isinstance(post, dict):
-        operator = post.get("operator")
-        if isinstance(operator, str) and operator:
-            return operator
-    if name.startswith("concept:"):
-        return name.removeprefix("concept:")
-    return None
-
-
-def _repo_root() -> Path | None:
-    for candidate in Path(__file__).resolve().parents:
-        if (candidate / "menagerie/concept-shapes/catalog/index.json").exists():
-            return candidate
-    return None
+def _local_op_cid(name: str) -> str:
+    return cid_of_json({"kind": "local-operator", "name": name})
 
 
 def _valid_emitted_by(value: Json) -> bool:

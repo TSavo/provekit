@@ -42,7 +42,7 @@ The operation identity now lives inside a citation `Term::Const` as the FIRST ar
 
 Four load-bearing reasons, in priority order:
 
-1. **M+N hub federation literal.** Per the transport architecture (`project_provekit_transport_architecture` memory): cross-language transport via the `concept:*` hub. Applicative encoding makes `concept:op-application` THE hub. Every kit implements one primitive (apply-this-CID-to-args) instead of M op-shapes. Adding a new concept-op never requires kit-side syntax additions; it just registers a CID. The transport becomes "lift to op-application form, transport CIDs, realize via apply-by-CID."
+1. **M+N hub federation literal.** Per the transport architecture (`project_provekit_transport_architecture` memory): cross-language transport via the `concept:*` hub. Applicative encoding makes `concept:op-application` THE hub. Every kit implements one primitive (apply-this-CID-to-args) instead of M op-shapes. Adding a new target-op never requires kit-side syntax additions; it just registers a CID. The transport becomes "lift to op-application form, transport CIDs, realize via apply-by-CID."
 
 2. **Content-addressing alignment.** Sugar's substrate is content-addressed: `k(I)=t` is a claim about CIDs. `concept:add` is a NAME for human readability; the CID is what the substrate compares. Applicative encoding puts the CID where it's load-bearing (as a value), not where it's a label (as op_name). The substrate's syntax matches its semantics.
 
@@ -61,7 +61,7 @@ Four load-bearing reasons, in priority order:
 - ALL substrate consumers (lifters, realizers, transport, tests, FFI) MUST read the applicative shape when walking bind output. Direct-encoded readers are obsolete invariants.
 - The McCarthy desugar lives at `named_tree_op_tree` in `libprovekit/src/core/bind.rs`. Any new substrate transformation that emits Term trees MUST produce applicative shape from the start. Adding new direct-encoded emission paths is a regression.
 - Concept-op identity recovery from a citation Term::Const is via `value.get("conceptName").and_then(Value::as_str)` for the name and `value.get("conceptCid").and_then(Value::as_str)` for the CID.
-- The catalog fallback in `ConceptOpCatalog::resolved_name_and_cid` returns `("concept:op-application", op-application-CID)` for unknown concept names. This is the "uncharacterized operation" case. Consumers reading `name = "concept:op-application"` AND finding no underlying conceptName in the citation should treat this as a refused operation, not a successful unknown.
+- The catalog fallback in `GrammarOpRegistry::resolved_name_and_cid` returns `("concept:op-application", op-application-CID)` for unknown concept names. This is the "uncharacterized operation" case. Consumers reading `name = "concept:op-application"` AND finding no underlying conceptName in the citation should treat this as a refused operation, not a successful unknown.
 
 ## Future work
 

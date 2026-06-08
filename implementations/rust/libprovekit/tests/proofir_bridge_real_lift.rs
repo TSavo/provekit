@@ -3,12 +3,11 @@
 use std::path::PathBuf;
 
 use libprovekit::canonical::{json_cid, json_jcs};
-use libprovekit::proofir_bridge::CatalogIndex;
-use libprovekit::{proofir_resolve, proofir_unresolve};
-use provekit_ir_types::Term;
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 
-const EXPECTED_FIXTURE_CID: &str = "blake3-512:bcb10be48ad632abc71c406355b6d11b0191a959b523aa755ee00ad7496afa2270ce28821af4abcd5949427026fb16d8d8b38af702b1810dec3bdff810ec8f32";
+const EXPECTED_FIXTURE_CID: &str = "blake3-512:0859471677c6f49a8f1add647671930db39754ad7d758a8d87202b29be2da8b86a839cfb5d27dd2d937b2b8beaec6dcf81f5aa32554e79f436afa2de693bbf39";
+const EXPECTED_RETURN_CID: &str = "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6";
+const EXPECTED_CALL_NEW_CID: &str = "blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8";
 
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,15 +17,7 @@ fn fixture_path() -> PathBuf {
         .join("d7_v0_value_null.json")
 }
 
-fn resolved_sort(name: &str) -> JsonValue {
-    json!({
-        "args": [],
-        "kind": "ctor",
-        "name": name,
-    })
-}
-
-fn fixture_op_cid(fixture: &JsonValue, name: &str) -> String {
+fn fixture_op_cid<'a>(fixture: &'a JsonValue, name: &str) -> &'a str {
     fixture["proofir_catalog_ops"]
         .as_array()
         .expect("proofir_catalog_ops array")
@@ -34,62 +25,35 @@ fn fixture_op_cid(fixture: &JsonValue, name: &str) -> String {
         .find(|op| op["name"] == name)
         .and_then(|op| op["op_cid"].as_str())
         .unwrap_or_else(|| panic!("fixture has op cid for {name}"))
-        .to_string()
-}
-
-fn value_null_catalog(fixture: &JsonValue) -> CatalogIndex {
-    let mut catalog = CatalogIndex::new();
-    catalog.insert_op(
-        "return",
-        fixture_op_cid(fixture, "return"),
-        Some(vec![resolved_sort("Expr")]),
-        Some(resolved_sort("Stmt")),
-    );
-    catalog.insert_op(
-        "call:new",
-        fixture_op_cid(fixture, "call:new"),
-        Some(vec![
-            resolved_sort("FnContract"),
-            resolved_sort("ListOfExpr"),
-        ]),
-        Some(resolved_sort("Expr")),
-    );
-    catalog
 }
 
 #[test]
-fn value_null_lift_round_trips_byte_identical() {
+fn value_null_lift_fixture_pins_local_op_cids_and_content_cid() {
     let text = std::fs::read_to_string(fixture_path()).expect("read D7-v0 value null fixture");
-    let original_json: JsonValue = serde_json::from_str(&text).expect("parse D7-v0 fixture");
-    let original_loss_record = original_json["loss_record"].clone();
-    let original_term: Term =
-        serde_json::from_value(original_json["proofir_term"].clone()).expect("decode ProofIR term");
+    let fixture: JsonValue = serde_json::from_str(&text).expect("parse D7-v0 fixture");
 
-    let catalog = value_null_catalog(&original_json);
-    let resolved = proofir_resolve(&original_term, &catalog).expect("resolve real-lift ProofIR");
-    let unresolved = proofir_unresolve(&resolved, &catalog).expect("unresolve real-lift ProofIR");
-
-    let mut round_trip_json = original_json.clone();
-    round_trip_json["proofir_term"] =
-        serde_json::to_value(&unresolved).expect("encode unresolved ProofIR term");
-
-    let original_jcs = json_jcs(&original_json).expect("JCS original fixture");
-    let round_trip_jcs = json_jcs(&round_trip_json).expect("JCS round-trip fixture");
-
+    assert_eq!(fixture_op_cid(&fixture, "return"), EXPECTED_RETURN_CID);
+    assert_eq!(fixture_op_cid(&fixture, "call:new"), EXPECTED_CALL_NEW_CID);
+    assert_eq!(fixture["proofir_term"]["name"], "return");
+    assert_eq!(fixture["proofir_term"]["args"][0]["name"], "call:new");
     assert_eq!(
-        original_jcs.as_bytes(),
-        round_trip_jcs.as_bytes(),
-        "resolve then unresolve must preserve fixture JCS bytes"
-    );
-    assert_eq!(
-        round_trip_json["loss_record"], original_loss_record,
-        "loss record must be preserved verbatim"
+        fixture["loss_record"]
+            .as_array()
+            .expect("loss_record array")
+            .len(),
+        4,
+        "loss record must stay present as the real-lift partiality witness"
     );
 
-    let fixture_cid = json_cid(&original_json).expect("fixture CID");
-    let round_trip_cid = json_cid(&round_trip_json).expect("round-trip CID");
+    let fixture_jcs = json_jcs(&fixture).expect("JCS fixture");
+    let reparsed: JsonValue = serde_json::from_str(&fixture_jcs).expect("reparse JCS fixture");
+    let reparsed_jcs = json_jcs(&reparsed).expect("JCS reparsed fixture");
+    assert_eq!(
+        fixture_jcs, reparsed_jcs,
+        "fixture JCS must be byte-stable without a name catalog round trip"
+    );
+
+    let fixture_cid = json_cid(&fixture).expect("fixture CID");
     assert_eq!(fixture_cid, EXPECTED_FIXTURE_CID);
-    assert_eq!(fixture_cid, round_trip_cid);
     println!("fixture_cid={fixture_cid}");
-    println!("round_trip_cid={round_trip_cid}");
 }

@@ -8,7 +8,7 @@ Source path: implementations/rust/provekit-canonicalizer/src/value.rs.
 D7-v0 proved that this fixture round-trips byte-identically at the ProofIR layer.
 D7-v1 measures the next layer only.
 The measured equation is:
-rustfmt(realize_rust(proofir_resolve(fixture))) == rustfmt(original_source)
+rustfmt(realize_rust(local_cid_fixture_check(fixture))) == rustfmt(original_source)
 
 The fixture is implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json.
 The fixture CID is blake3-512:f78e468e6f80e305c8abb4f1b5ccbe54cdea54bf3d5104a63970be8500f7f0a5e7a467fa2cf3bcd2894502ff045c4aede5dbc83f3b76d5818a0aeb2fcacaca3e.

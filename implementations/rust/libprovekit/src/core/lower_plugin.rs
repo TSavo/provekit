@@ -210,100 +210,11 @@ const CONCEPT_MAP_CID: &str =
 const CONCEPT_REF_CID: &str =
     "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534";
 
-/// Load source-token aliases for a kit. Rust aliases are source-lifter-owned;
-/// the legacy catalog read remains only as a transitional supplement for
-/// retained catalog slices.
+/// Load source-token aliases for a kit. Rust aliases are source-lifter-owned.
 pub fn load_kit_source_aliases(
     kit: &str,
 ) -> std::collections::BTreeMap<String, KitSourceAliasEntry> {
-    let mut map = builtin_kit_source_aliases(kit);
-    let Some(root) = find_menagerie_root() else {
-        return map;
-    };
-    let aliases_dir = root
-        .join("menagerie")
-        .join("concept-shapes")
-        .join("catalog")
-        .join("kit-source-aliases");
-    if !aliases_dir.is_dir() {
-        return map;
-    }
-    let algorithms_dir = root
-        .join("menagerie")
-        .join("concept-shapes")
-        .join("catalog")
-        .join("algorithms");
-    let prefix = format!("{}-", kit);
-    let Ok(entries) = std::fs::read_dir(&aliases_dir) else {
-        return map;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        if !name.starts_with(&prefix) || !name.ends_with(".json") {
-            continue;
-        }
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(doc): Result<serde_json::Value, _> = serde_json::from_str(&raw) else {
-            continue;
-        };
-        let Some(memento) = doc.get("memento") else {
-            continue;
-        };
-        let Some(morphism_cid) = memento.get("sort_morphism_cid").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(target_cid) = resolve_morphism_target_cid(&algorithms_dir, morphism_cid) else {
-            continue;
-        };
-        let Some(aliases) = memento.get("source_aliases").and_then(|v| v.as_array()) else {
-            continue;
-        };
-        let shorthand = memento.get("denotes_parametric_application");
-        let arity = memento.get("parametric_arity").and_then(|v| v.as_u64());
-        for alias_v in aliases {
-            let Some(token) = alias_v.as_str() else {
-                continue;
-            };
-            let entry = if let Some(sh) = shorthand.and_then(|v| v.as_object()) {
-                let ctor = sh
-                    .get("constructor_cid")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let arg_cids: Vec<String> = sh
-                    .get("arg_cids")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|x| x.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let composite = ParametricSortExpansion::compose_cid(&ctor, &arg_cids);
-                KitSourceAliasEntry::Shorthand {
-                    composite_cid: composite,
-                    constructor_cid: ctor,
-                    arg_cids,
-                }
-            } else if let Some(a) = arity {
-                KitSourceAliasEntry::Constructor {
-                    constructor_cid: target_cid.clone(),
-                    arity: a as usize,
-                }
-            } else {
-                KitSourceAliasEntry::Primitive {
-                    target_cid: target_cid.clone(),
-                }
-            };
-            map.entry(token.to_string()).or_insert(entry);
-        }
-    }
-    map
+    builtin_kit_source_aliases(kit)
 }
 
 fn builtin_kit_source_aliases(
@@ -371,42 +282,13 @@ fn insert_constructor_aliases(
     }
 }
 
-fn find_menagerie_root() -> Option<std::path::PathBuf> {
-    let mut p = std::env::current_dir().ok()?;
-    loop {
-        if p.join("menagerie").is_dir() {
-            return Some(p);
-        }
-        p = p.parent()?.to_path_buf();
-    }
-}
-
-fn resolve_morphism_target_cid(
-    algorithms_dir: &std::path::Path,
-    morphism_cid: &str,
-) -> Option<String> {
-    let entries = std::fs::read_dir(algorithms_dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path.file_name()?.to_str()?;
-        if !name.contains(morphism_cid) || !name.ends_with(".json") {
-            continue;
-        }
-        let raw = std::fs::read_to_string(&path).ok()?;
-        let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
-        let target = doc.get("header")?.get("target_sort_cid")?.as_str()?;
-        return Some(target.to_string());
-    }
-    None
-}
-
-/// Resolve a rust type-string to a concept-hub sort CID via the kit-source-alias
-/// catalog (#1370). Parametric types produce COMPOSITE CIDs computed via
+/// Resolve a rust type-string to a concept-hub sort CID via source-lifter-owned
+/// aliases. Parametric types produce COMPOSITE CIDs computed via
 /// blake3-512(JCS(constructor + args)). The `expansions` accumulator captures
 /// each composite CID's canonical form so the realize plugin can decompose them.
 ///
-/// NO hardcoded source-token names. The map is loaded once via
-/// load_kit_source_aliases("rust") and queried recursively for parametric types.
+/// The map is loaded once via load_kit_source_aliases("rust") and queried
+/// recursively for parametric types.
 pub fn rust_type_to_concept_hub_sort_cid(
     rust_type: &str,
     aliases: &std::collections::BTreeMap<String, KitSourceAliasEntry>,

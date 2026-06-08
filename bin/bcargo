@@ -206,7 +206,6 @@ sync_dir implementations/go
 sync_dir implementations/java
 sync_dir examples
 remove_remote_dir menagerie
-sync_dir menagerie/concept-shapes/catalog
 sync_dir menagerie/csharp-language-signature/specs
 sync_dir menagerie/python-language-signature/specs
 sync_dir tools

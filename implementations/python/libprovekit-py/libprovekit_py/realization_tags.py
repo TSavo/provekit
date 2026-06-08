@@ -109,7 +109,7 @@ RealizationMemento: TypeAlias = (
 
 
 def tag_first_class(
-    concept_op: str,
+    op_name: str,
     syntactic_pattern: str,
     surface_locator: str,
 ) -> FirstClassRealization:
@@ -128,14 +128,14 @@ def tag_first_class(
         ... def add(x, y):
         ...     return x + y
     """
-    _require_text(concept_op, "concept_op")
+    _require_text(op_name, "op_name")
     return FirstClassRealization(
         syntactic_pattern=_require_text(syntactic_pattern, "syntactic_pattern"),
         surface_locator=_require_text(surface_locator, "surface_locator"),
     )
 
 
-def tag_composition(concept_op: str, composition_tree: str) -> CompositionRealization:
+def tag_composition(op_name: str, composition_tree: str) -> CompositionRealization:
     """Tag a concept op with a content-addressed composition tree.
 
     Example:
@@ -147,14 +147,14 @@ def tag_composition(concept_op: str, composition_tree: str) -> CompositionRealiz
         ... def build_list(xs):
         ...     return list(xs)
     """
-    _require_text(concept_op, "concept_op")
+    _require_text(op_name, "op_name")
     return CompositionRealization(
         composition_tree_cid=_require_text(composition_tree, "composition_tree"),
     )
 
 
 def tag_boundary(
-    concept_op: str,
+    op_name: str,
     library: str,
     api: str,
     boundary_contract_cid: str,
@@ -175,7 +175,7 @@ def tag_boundary(
         ... def get(url):
         ...     return requests.get(url)
     """
-    _require_text(concept_op, "concept_op")
+    _require_text(op_name, "op_name")
     return BoundaryRealization(
         library=_require_text(library, "library"),
         api=_require_text(api, "api"),
@@ -183,7 +183,7 @@ def tag_boundary(
     )
 
 
-def tag_sugar_carrier(concept_op: str) -> SugarCarrierRealization:
+def tag_sugar_carrier(op_name: str) -> SugarCarrierRealization:
     """Tag a concept op as a concept-citation sugar carrier.
 
     Example:
@@ -195,7 +195,7 @@ def tag_sugar_carrier(concept_op: str) -> SugarCarrierRealization:
         ... def no_native_free(ptr):
         ...     return ptr
     """
-    _require_text(concept_op, "concept_op")
+    _require_text(op_name, "op_name")
     return SugarCarrierRealization()
 
 

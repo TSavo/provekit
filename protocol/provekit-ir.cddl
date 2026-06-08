@@ -462,7 +462,7 @@ loss-record = LossRecord
 ;   PartialMorphismMemento   -- a morphism valid under a precondition (§1.2)
 ;   LossyMorphismMemento     -- a morphism with characterized loss (§1.4)
 ;
-; Amendment 1: `no-such-concept-op` added to gap-kind enum (this PR).
+; Amendment 1: `no-such-target-op` added to gap-kind enum (this PR).
 ; This is the case where a source-language op has no matching concept:* hub op
 ; at all (target_op_cid is null). Distinct from missing-target-construct
 ; (the construct exists in the language but not the hub; this is: the hub
@@ -470,7 +470,7 @@ loss-record = LossRecord
 ; language op is in a signature directory but has no matching OPS entry.
 ;
 ; Amendment 2: `reason` is optional (`? reason`) in TransportGapMemento.
-; Rationale: for gap_kind "missing-source-op" and "no-such-concept-op",
+; Rationale: for gap_kind "missing-source-op" and "no-such-target-op",
 ; there is no source-spec vs concept-spec comparison to perform, so no
 ; structured diff can be computed. The mint script always populates `reason`
 ; when a comparison is possible; it is absent only when neither an after_spec
@@ -492,7 +492,7 @@ gap-kind = "sort-mismatch"
          / "divergent-semantics"
          / "missing-target-construct"
          / "missing-source-op"
-         / "no-such-concept-op"            ; NEW (this PR): source op has no hub op at all
+         / "no-such-target-op"            ; NEW (this PR): source op has no hub op at all
          / "effect-mismatch"
          / "arity-shape-mismatch"
          / "wp-rule-mismatch"              ; post-WPF: the wp_rules do not refine
@@ -511,7 +511,7 @@ gap-reason = {
   ? "formal_sorts_delta": { "got": [* ir-formula], "want": [* ir-formula] },
   ? "post_delta":         { "got": any, "want": any },   ; the operation-contract subtree that differs
   ? "pre_delta":          { "got": ir-formula, "want": ir-formula },
-  ? "source_supported":   bool,            ; for missing-source-op / no-such-concept-op
+  ? "source_supported":   bool,            ; for missing-source-op / no-such-target-op
   ? "wp_rule_delta":      { "got": ir-formula, "want": ir-formula }, ; post-WPF
 }
 
@@ -561,7 +561,7 @@ resolution-option = {
 ; Locked key order (alphabetical):
 ;   fn_name, gap_kind, kind, ? reason, ? reason_note, resolution_options,
 ;   schema_version, ? signature, source_lang, source_op_cid,
-;   target_concept_op, ? target_op_cid
+;   target_op, ? target_op_cid
 
 TransportGapMemento = {
   fn_name:           tstr,                ; e.g. "gap:python:add:to:concept:add"
@@ -574,8 +574,8 @@ TransportGapMemento = {
   ? signature:       tstr / null,        ; ed25519 over the canonical bytes; null in the unsigned exhibit
   source_lang:       tstr,               ; e.g. "python"
   source_op_cid:     cid,               ; the lifter-emitted <lang>:op contract memento
-  target_concept_op: tstr,              ; e.g. "concept:add"
-  ? target_op_cid:   cid,              ; the concept:op hub contract memento; OMITTED for no-such-concept-op
+  target_op: tstr,              ; e.g. "concept:add"
+  ? target_op_cid:   cid,              ; the concept:op hub contract memento; OMITTED for no-such-target-op
 }
 
 ; ----------------------------------------------------------------

@@ -44,4 +44,3 @@ pub mod kit_dispatch;
 pub mod lift_plugin;
 pub mod panic_annotations_runtime;
 pub mod project_config;
-pub mod sort_morphism_catalog;

@@ -18,7 +18,7 @@ Implemented in the worktree, but local commit creation is blocked by the gitdir 
 - `cargo test -p provekit-walk --test term_emit_d2`
 - `cargo test -p provekit-walk`
 - `python3 -m py_compile menagerie/concept-shapes/scripts/mint_core_sorts.py`
-- `jq empty menagerie/concept-shapes/specs/sort_shape.spec.json menagerie/concept-shapes/catalog/index.json menagerie/concept-shapes/catalog/algorithms/concept:sort.blake3-512:8d9e3d54325e7a123528a38f7fc268c64a2dfe9a43fca08a234dd530015c7e53f89510093404db9ab63cdcfee59fe1de712f1b7ac6a736475ae2f090c1d2eab0.json`
+- `jq empty menagerie/concept-shapes/specs/sort_shape.spec.json deleted concept-shapes catalog/index.json`
 - `git diff --check`
 - Touched-file scan for en dash and em dash returned no matches.
 

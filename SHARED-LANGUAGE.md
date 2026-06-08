@@ -277,7 +277,7 @@ everything a catalog would hold already lives, content-addressed + signed, in ve
 a consumer has resolved** (`union(resolve(dependencies).proof)`) — a query/view at resolve
 time, per-consumer, never a stored global object. A central catalog is the registry
 anti-pattern this content-addressed, vendor-pinned substrate exists to abolish.
-- INFECTION (delete): the central `menagerie/concept-shapes/catalog/realizations/` store
+- INFECTION (delete): the central `deleted concept-shapes catalog/realizations/` store
   the realizer walks up to find. Replace with: resolve the dependency .proofs, union them.
 
 ## Protocol record (currently MISNAMED "protocol catalog") — REAL

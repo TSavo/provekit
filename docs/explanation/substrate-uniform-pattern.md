@@ -13,9 +13,9 @@ issue, brief, or kit declaration.
 The substrate is one machine. Every cross-language, cross-binding, cross-version
 gap closes via these existing primitives:
 
-1. **Concept catalog.** Concept-CIDs (and boundary-CIDs) minted via JCS+blake3-512
-   into `menagerie/concept-shapes/catalog/algorithms/`. Two namespaces:
-   `concept:*` for things-in-code, `boundary:*` for kinds-of-boundary-interactions.
+1. **Concept identities.** Concept-CIDs (and boundary-CIDs) are content
+   addresses over local concept definitions. Two namespaces: `concept:*` for
+   things-in-code, `boundary:*` for kinds-of-boundary-interactions.
 2. **Per-kit `PlatformSemanticsDeclaration`.** Each language kit and each
    library/binding kit ships one declaration of shape
    `{ tags, dimension_values, op_aliases }`. The declaration is a (concept-CID,
@@ -83,14 +83,14 @@ parallel to op declarations.
 
 Per `docs/plans/2026-05-18-dimension-naming-conventions.md`, dimensions are
 kit-minted open-keyed strings. The substrate does NOT catalog dimension
-identities (no `menagerie/concept-shapes/catalog/dimensions/` tier). Both
+identities (no `deleted concept-shapes catalog/dimensions/` tier). Both
 type-layer and boundary-layer dimensions share the same
 `BTreeMap<String, Cid>` storage in `PlatformSemanticTag.dimensions`. What
 distinguishes the layers is the SEMANTIC CONTENT of the dimension VALUE
 mementos' `compare_to` formulas:
 
 - Type-layer value mementos cite substrate-canonical concept CIDs (e.g.,
-  SortAdmission values draw from `menagerie/concept-shapes/catalog/sorts/`).
+  SortAdmission values draw from `deleted concept-shapes catalog/sorts/`).
   The formula structure looks like `Atomic { name: "admits_sorts", args: [
   set of canonical sort CIDs ] }`. The substrate provides the value
   vocabulary via existing canonical catalogs.
@@ -257,13 +257,12 @@ neuromorphic, stack machines, lambda-calculus combinator machines, future
 substrates). The substrate accommodates these by being open-extensible
 across every tier:
 
-- **Concept catalog grows.** New platforms mint new ops in
-  `menagerie/concept-shapes/catalog/algorithms/` (`concept:state-prep` for
-  quantum state preparation, `concept:cell-rule` for cellular automata,
-  `concept:spike-train` for neuromorphic, etc.). No substrate primitive
-  change.
+- **Concept definitions grow.** New platforms mint new local ops
+  (`concept:state-prep` for quantum state preparation, `concept:cell-rule`
+  for cellular automata, `concept:spike-train` for neuromorphic, etc.). No
+  substrate primitive change.
 - **Sort catalog grows.** New architectures mint new sorts in
-  `menagerie/concept-shapes/catalog/sorts/` (`Qubit`, `QuantumRegister`,
+  `deleted concept-shapes catalog/sorts/` (`Qubit`, `QuantumRegister`,
   `Tensor<...>`, `Stream`, `Cell`, etc.). No substrate primitive change.
 - **Dimension vocabulary grows.** Kit-minted open-keyed strings admit new
   dimensions (`QuantumStateAdmission`, `MeasurementCollapse`,

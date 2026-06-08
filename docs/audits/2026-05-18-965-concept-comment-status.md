@@ -114,11 +114,10 @@ Unicode dash check over touched files found no en dash or em dash characters.
 - `implementations/rust/provekit-realize-rust-core/src/lib.rs`
 - `implementations/rust/provekit-walk/src/bin/walk_rpc.rs`
 - `menagerie/concept-shapes/README.md`
-- `menagerie/concept-shapes/catalog/index.json`
+- `deleted concept-shapes catalog/index.json`
 - `menagerie/concept-shapes/cids.tsv`
 - `menagerie/concept-shapes/mint.sh`
 - `menagerie/concept-shapes/scripts/mint_comment.py`
 - `menagerie/concept-shapes/specs/comment_shape.spec.json`
 - `menagerie/concept-shapes/specs/op-definitions/concept:comment.op-def.ccl.json`
 - `menagerie/concept-shapes/specs/op-definitions/index.cids.json`
-- `menagerie/concept-shapes/catalog/algorithms/concept:comment.blake3-512:d9c806063bb97d59ca655b6c50b6ad2ff4cbadd02d6238a51a33a63ec6626af6d92e338ca10f9598fa322cd960d007349752f477fdf3a9384491282d8d12fef2.json`

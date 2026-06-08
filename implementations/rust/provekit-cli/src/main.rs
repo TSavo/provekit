@@ -47,7 +47,6 @@ mod lift_plugin;
 pub mod panic_annotations_runtime;
 mod project_config;
 mod report_fmt;
-mod sort_morphism_catalog;
 mod witness_verify;
 
 /// Exit codes used across subcommands.

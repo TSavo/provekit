@@ -84,7 +84,7 @@ How an INSERT operation surfaces the newly-inserted row's id.
 
 Each dimension value memento is content-addressed via a BLAKE3-512 CID computed from the JCS-canonical JSON of `DimensionValueMemento { kit_cid, dimension_name, value_name, compare_to: IrFormula }`. CIDs are NOT human-typable; the value_name is the human handle, but the CID is what the substrate compares.
 
-Concept-op CIDs (e.g., for `concept:insert-and-get-id`) are minted similarly via `compute_fixture_cid` from the full AlgorithmMemento JSON. Catalog file naming follows `concept:<name>.blake3-512:<hex>.json` under `menagerie/concept-shapes/catalog/algorithms/`.
+Concept-op CIDs (e.g., for `concept:insert-and-get-id`) are minted similarly via `compute_fixture_cid` from the full AlgorithmMemento JSON. The CID, not a global catalog path, is the stable identity.
 
 ## Discipline
 
@@ -96,7 +96,7 @@ Concept-op CIDs (e.g., for `concept:insert-and-get-id`) are minted similarly via
 
 ## Type-layer dimensions
 
-Added 2026-05-19. Declared by both language-kits and binding-kits, on `concept:literal` and related value-tier ops. Value mementos CITE substrate-canonical concept CIDs (from `menagerie/concept-shapes/catalog/sorts/`), in contrast to Library-API dimensions whose values are kit-minted structural formulas. Both kinds share the same storage (`BTreeMap<String, Cid>`) and the same `compare_op_with` machinery; the distinction is in the value memento's `compare_to` formula CONTENT, not in any new substrate tier.
+Added 2026-05-19. Declared by both language-kits and binding-kits, on `concept:literal` and related value-tier ops. Value mementos CITE substrate-canonical concept CIDs (from `deleted concept-shapes catalog/sorts/`), in contrast to Library-API dimensions whose values are kit-minted structural formulas. Both kinds share the same storage (`BTreeMap<String, Cid>`) and the same `compare_op_with` machinery; the distinction is in the value memento's `compare_to` formula CONTENT, not in any new substrate tier.
 
 ### `SortAdmission`
 
@@ -110,7 +110,7 @@ Atomic { name: "admits_sorts", args: [Set [<sort_cid_1>, <sort_cid_2>, ...]] }
 
 Cross-kit equivalence emerges when two kits declare the same admission set: identical formula content yields identical CID (after #1260's envelope-violation fix lands).
 
-Substrate-canonical sort vocabulary today (in `menagerie/concept-shapes/catalog/sorts/`):
+Substrate-canonical sort vocabulary today (in `deleted concept-shapes catalog/sorts/`):
 `Bool`, `Bytes`, `Cid`, `EffectName`, `Formula`, `Int`, `List<T>`, `Map<K,V>`, `OpCid`, `SortCid`, `String`, `Term`. New additions per #1261: `Float`, `Null`.
 
 Example declarations:
