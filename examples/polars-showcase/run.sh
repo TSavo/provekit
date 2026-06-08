@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 RUST="$REPO/implementations/rust"
 BIN_DIR="$RUST/target/debug"
-PROVEKIT="$BIN_DIR/provekit"
+PROVEKIT="$BIN_DIR/sugar"
 ASSERT_RPC="$BIN_DIR/rust_test_assertions_rpc"
 WITNESS_RPC="$BIN_DIR/witness_rpc"
 DISCHARGE_CLI="$BIN_DIR/discharge_cli"
@@ -22,7 +22,7 @@ if [ "${POLARS_SHOWCASE_ON_REMOTE:-0}" != "1" ] \
   && [ "$(uname -s)" != "Linux" ]; then
   echo "== run polars showcase on battleaxe via bcargo =="
   "$REPO/bin/bcargo" build --manifest-path "$RUST/Cargo.toml" \
-    -p sugar-cli --bin provekit \
+    -p sugar-cli --bin sugar \
     -p sugar-lift-rust-tests --bin rust_test_assertions_rpc \
     -p sugar-lift-rust-cargo-test-witness --bin witness_rpc \
     -p sugar-lift-rust-cargo-test-witness --bin discharge_cli >/dev/null
@@ -40,7 +40,7 @@ fi
 if [ "${POLARS_SHOWCASE_SKIP_LOCAL_BUILD:-0}" != "1" ]; then
   echo "== build local proof binaries =="
   cargo build --manifest-path "$RUST/Cargo.toml" \
-    -p sugar-cli --bin provekit \
+    -p sugar-cli --bin sugar \
     -p sugar-lift-rust-tests --bin rust_test_assertions_rpc \
     -p sugar-lift-rust-cargo-test-witness --bin witness_rpc \
     -p sugar-lift-rust-cargo-test-witness --bin discharge_cli >/dev/null

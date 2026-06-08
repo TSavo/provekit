@@ -11,7 +11,6 @@ from typing import Any, Iterable
 from provekit_lift_py_tests.canonicalizer import blake3_512_of, encode_jcs
 from provekit_lift_py_tests.decorators import _parse_expr_string
 from provekit_lift_py_tests.ir import formula_to_value
-from provekit_lift_py_tests.op_cid import local_op_cid
 
 from .ast_template import function_body_template, function_param_names
 from .canonical import cid_of_json, template_cid_of_json
@@ -1594,7 +1593,7 @@ def _concept_citation_diag(
 
 
 def _local_op_cid(name: str) -> str:
-    return local_op_cid(name)
+    return cid_of_json({"kind": "local-operator", "name": name.removeprefix("concept:")})
 
 
 def _valid_emitted_by(value: Json) -> bool:

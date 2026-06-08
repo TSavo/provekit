@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use libsugar::canonical::op_cid_from_shape;
+use libsugar::canonical::{local_op_cid, local_operator_shape, op_cid_from_shape};
 use serde_json::{json, Value};
 
 fn repo_root() -> PathBuf {
@@ -14,7 +14,7 @@ fn repo_root() -> PathBuf {
         .join("..")
 }
 
-fn python_op_cid_from_shape(shape: &Value) -> String {
+fn run_python_op_cid_helper(script: &str, input: &Value) -> String {
     let root = repo_root();
     let py_path = [
         root.join("implementations/python/provekit-lift-py-tests/src"),
@@ -28,11 +28,7 @@ fn python_op_cid_from_shape(shape: &Value) -> String {
     let mut child = Command::new("python3")
         .env("PYTHONPATH", py_path)
         .arg("-c")
-        .arg(
-            "import json, sys\n\
-             from provekit_lift_py_tests.op_cid import op_cid_from_shape\n\
-             print(op_cid_from_shape(json.loads(sys.stdin.read())))\n",
-        )
+        .arg(script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -42,8 +38,8 @@ fn python_op_cid_from_shape(shape: &Value) -> String {
     {
         let stdin = child.stdin.as_mut().expect("python stdin");
         stdin
-            .write_all(shape.to_string().as_bytes())
-            .expect("write shape JSON to python");
+            .write_all(input.to_string().as_bytes())
+            .expect("write JSON to python");
     }
 
     let output = child.wait_with_output().expect("wait for python op_cid");
@@ -58,6 +54,36 @@ fn python_op_cid_from_shape(shape: &Value) -> String {
         .to_string()
 }
 
+fn python_op_cid_from_shape(shape: &Value) -> String {
+    run_python_op_cid_helper(
+        "import json, sys\n\
+         from provekit_lift_py_tests.op_cid import op_cid_from_shape\n\
+         print(op_cid_from_shape(json.loads(sys.stdin.read())))\n",
+        shape,
+    )
+}
+
+fn python_local_operator_shape(name: &str) -> Value {
+    let output = run_python_op_cid_helper(
+        "import json, sys\n\
+         from provekit_lift_py_tests.op_cid import local_operator_shape\n\
+         params = json.loads(sys.stdin.read())\n\
+         print(json.dumps(local_operator_shape(params['name']), separators=(',', ':'), sort_keys=True))\n",
+        &json!({ "name": name }),
+    );
+    serde_json::from_str(&output).expect("python local_operator_shape JSON")
+}
+
+fn python_local_op_cid(name: &str) -> String {
+    run_python_op_cid_helper(
+        "import json, sys\n\
+         from provekit_lift_py_tests.op_cid import local_op_cid\n\
+         params = json.loads(sys.stdin.read())\n\
+         print(local_op_cid(params['name']))\n",
+        &json!({ "name": name }),
+    )
+}
+
 #[test]
 fn op_cid_from_shape_is_byte_identical_in_rust_and_python_for_local_operator() {
     let shape = json!({
@@ -68,6 +94,23 @@ fn op_cid_from_shape_is_byte_identical_in_rust_and_python_for_local_operator() {
     let rust = op_cid_from_shape(&shape).expect("rust op_cid");
     let python = python_op_cid_from_shape(&shape);
 
+    assert_eq!(rust, python);
+}
+
+#[test]
+fn local_operator_shape_strips_concept_prefix_before_op_cid() {
+    let bare_shape = json!({
+        "kind": "local-operator",
+        "name": "add"
+    });
+
+    let rust_shape = local_operator_shape("concept:add");
+    let python_shape = python_local_operator_shape("concept:add");
+    let rust = local_op_cid("concept:add").expect("rust bare local op_cid");
+    let python = python_local_op_cid("concept:add");
+
+    assert_eq!(rust_shape, bare_shape);
+    assert_eq!(python_shape, bare_shape);
     assert_eq!(rust, python);
 }
 
