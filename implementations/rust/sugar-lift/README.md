@@ -37,9 +37,12 @@ sits **beneath** them.
 Future adapters drop in the same way: `kani`, `prusti`,
 `hypothesis-py`, `deal-py`, `bean-validation-java`, `zod-ts`.
 
-`provekit-macros` is the **fallback** for greenfield code where the
-developer doesn't already have an annotation library. The recommended
-adoption order is: lift first, mint-via-macros only when greenfield.
+There is no bespoke contract-authoring macro. Greenfield code without an
+existing annotation library is handled the same way as everything else:
+write the contract in a native annotation library (or as native source
+the lift adapters already understand), then lift it. A contract only
+enters the substrate by being lifted from native source, never by a
+`provekit`-specific attribute.
 
 ## Usage
 

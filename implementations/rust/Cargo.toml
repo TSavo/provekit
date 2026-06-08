@@ -60,14 +60,12 @@ serde_json = { version = "1", features = ["preserve_order"] }
 walkdir = "2"
 toml = "0.8"
 rayon = "1.10"
-# Proc-macro authoring stack
+# syn/quote/proc-macro2: AST parsing + token manipulation used by the lift
+# adapters (sugar-lift, sugar-lift-contracts, sugar-walk, etc.). NOT a
+# contract-authoring macro stack: the substrate ships no bespoke proc-macro.
 syn = { version = "2", features = ["full", "extra-traits", "visit"] }
 quote = "1"
 proc-macro2 = "1"
-# Distributed-slice registration for #[provekit::contract] / #[provekit::verify]
-inventory = "0.3"
-# Trybuild for compile-fail / pass UI tests on the macros
-trybuild = "1"
 # Temp dirs/files for kits that compile + run emitted source in tests
 tempfile = "3"
 

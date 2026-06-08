@@ -78,7 +78,7 @@ There is no central authority that decides what a protocol version means. The by
   `verify-protocol`, `proof`, `protocol`, `mint`, `dump`, `hash`, `implicate`,
   `link`, `compose`, `emit`, `materialize`, and kit-oriented gates. Bug Zoo is
   checked by the self-contained runner under `menagerie/bug-zoo/`.
-- A Rust workspace of libraries: `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`, `provekit-verifier`, `provekit-macros`, `provekit-lift`, `provekit-lift-proptest`, `provekit-lift-contracts`.
+- A Rust workspace of libraries: `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`, `provekit-verifier`, `provekit-lift`, `provekit-lift-proptest`, `provekit-lift-contracts`.
 - Per-language kits, verifier libs, lift adapters, and self-contract attestations.
 - A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json`, protocol extension specs, proof-protocol fixtures, and PEP evolution witnesses.
 
