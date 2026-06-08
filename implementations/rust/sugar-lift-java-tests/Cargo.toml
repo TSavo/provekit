@@ -23,6 +23,14 @@ name = "java_test_assertions_rpc"
 path = "src/bin/java_test_assertions_rpc.rs"
 
 [[bin]]
+name = "java_jsr380_contracts_rpc"
+path = "src/bin/java_jsr380_contracts_rpc.rs"
+
+[[bin]]
+name = "java_implications_rpc"
+path = "src/bin/java_implications_rpc.rs"
+
+[[bin]]
 name = "java_junit_witness_rpc"
 path = "src/bin/java_junit_witness_rpc.rs"
 

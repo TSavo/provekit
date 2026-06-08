@@ -1049,12 +1049,543 @@ fn is_numeric_literal(expr: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Java JSR-380 method contracts + callsite implication bridge surface.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default)]
+pub struct JavaImplicationLiftOutput {
+    pub ir: Vec<serde_json::Value>,
+    pub diagnostics: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+struct JavaContractMethod {
+    name: String,
+    params: Vec<JavaParamContract>,
+    return_min: Option<i64>,
+    return_expr: Option<String>,
+    is_test: bool,
+}
+
+#[derive(Debug, Clone)]
+struct JavaParamContract {
+    name: String,
+    min: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct JavaCallsite {
+    callee: String,
+    file: String,
+    line: usize,
+    col: usize,
+}
+
+pub fn lift_java_jsr380_contracts_project(
+    workspace_root: &Path,
+    source_paths: &[String],
+) -> Result<JavaImplicationLiftOutput, String> {
+    let mut out = JavaImplicationLiftOutput::default();
+    for rel in enumerate_java_sources_for_lift(workspace_root, source_paths) {
+        let abs = workspace_root.join(&rel);
+        let src = match std::fs::read_to_string(&abs) {
+            Ok(src) => src,
+            Err(e) => {
+                out.diagnostics.push(serde_json::json!({
+                    "kind": "lift-gap",
+                    "path": rel,
+                    "reason": format!("read: {e}"),
+                }));
+                continue;
+            }
+        };
+        let file_out = lift_java_jsr380_contracts_from_source(&src, &rel)?;
+        out.ir.extend(file_out.ir);
+        out.diagnostics.extend(file_out.diagnostics);
+    }
+    Ok(out)
+}
+
+pub fn lift_java_implication_bridges_project(
+    workspace_root: &Path,
+    source_paths: &[String],
+    contract_bindings: &[serde_json::Value],
+) -> Result<JavaImplicationLiftOutput, String> {
+    let mut out = JavaImplicationLiftOutput::default();
+    for rel in enumerate_java_sources_for_lift(workspace_root, source_paths) {
+        let abs = workspace_root.join(&rel);
+        let src = match std::fs::read_to_string(&abs) {
+            Ok(src) => src,
+            Err(e) => {
+                out.diagnostics.push(serde_json::json!({
+                    "kind": "lift-gap",
+                    "path": rel,
+                    "reason": format!("read: {e}"),
+                }));
+                continue;
+            }
+        };
+        let file_out = lift_java_implication_bridges_from_source(&src, &rel, contract_bindings)?;
+        out.ir.extend(file_out.ir);
+        out.diagnostics.extend(file_out.diagnostics);
+    }
+    Ok(out)
+}
+
+pub fn lift_java_jsr380_contracts_from_source(
+    src: &str,
+    source_path: &str,
+) -> Result<JavaImplicationLiftOutput, String> {
+    let mut out = JavaImplicationLiftOutput::default();
+    for method in parse_java_contract_methods(src) {
+        if method.is_test {
+            continue;
+        }
+        let pre = method
+            .params
+            .iter()
+            .find_map(|param| param.min.map(|min| min_formula_json(&param.name, min)));
+        let post = method
+            .return_min
+            .map(|min| min_formula_json("result", min))
+            .or_else(|| {
+                let expr = method.return_expr.as_deref()?;
+                if !expr_contains_call(expr) {
+                    return None;
+                }
+                let term = java_expr_term_json(expr).ok()?;
+                Some(serde_json::json!({
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [
+                        {"kind": "var", "name": "result"},
+                        term
+                    ]
+                }))
+            });
+
+        if pre.is_none() && post.is_none() {
+            continue;
+        }
+        let formals: Vec<String> = method.params.iter().map(|p| p.name.clone()).collect();
+        let formal_sorts: Vec<serde_json::Value> = formals
+            .iter()
+            .map(|_| serde_json::json!({"kind": "primitive", "name": "Int"}))
+            .collect();
+        let mut entry = serde_json::json!({
+            "kind": "function-contract",
+            "name": method.name,
+            "outBinding": "result",
+            "formals": formals,
+            "formalSorts": formal_sorts,
+            "bridgeSourceSymbol": method.name,
+            "source": {
+                "language": "java",
+                "contractSource": "jsr380-annotations-or-body-callsite",
+                "file": source_path,
+            },
+        });
+        if let Some(pre) = pre {
+            entry["pre"] = pre;
+        }
+        if let Some(post) = post {
+            entry["post"] = post;
+        }
+        out.ir.push(entry);
+    }
+    Ok(out)
+}
+
+pub fn lift_java_implication_bridges_from_source(
+    src: &str,
+    source_path: &str,
+    contract_bindings: &[serde_json::Value],
+) -> Result<JavaImplicationLiftOutput, String> {
+    let bindings = java_contract_bindings_by_leaf(contract_bindings);
+    let mut out = JavaImplicationLiftOutput::default();
+    for callsite in collect_java_implication_callsites(src, source_path) {
+        let Some(target_cid) = bindings.get(&callsite.callee) else {
+            out.diagnostics.push(serde_json::json!({
+                "kind": "lift-gap",
+                "category": "implication-callee",
+                "reason": "no-contract-for-callee",
+                "callee": callsite.callee,
+                "file": callsite.file,
+                "line": callsite.line,
+                "col": callsite.col,
+            }));
+            continue;
+        };
+        out.ir.push(serde_json::json!({
+            "kind": "bridge",
+            "name": format!(
+                "intra-body:java:{}@{}:{}:{}",
+                callsite.callee, callsite.file, callsite.line, callsite.col
+            ),
+            "schemaVersion": "1",
+            "sourceContractCid": target_cid,
+            "sourceLayer": "java",
+            "sourceSymbol": callsite.callee,
+            "target": {"kind": "contract", "cid": target_cid},
+            "targetContractCid": target_cid,
+            "targetLayer": "java-jsr380-contracts",
+            "callsite": {
+                "file": callsite.file,
+                "start_line": callsite.line,
+                "start_col": callsite.col,
+            },
+        }));
+    }
+    Ok(out)
+}
+
+fn enumerate_java_sources_for_lift(workspace_root: &Path, source_paths: &[String]) -> Vec<String> {
+    let requested = if source_paths.is_empty() {
+        vec![".".to_string()]
+    } else {
+        source_paths.to_vec()
+    };
+    let mut rel_paths = Vec::new();
+    for entry in requested {
+        let abs = workspace_root.join(&entry);
+        if abs.is_dir() {
+            let scan = if entry == "." && abs.join("src").is_dir() {
+                abs.join("src")
+            } else {
+                abs
+            };
+            for item in walkdir::WalkDir::new(&scan)
+                .into_iter()
+                .filter_entry(|entry| {
+                    let name = entry.file_name().to_string_lossy();
+                    !(entry.file_type().is_dir()
+                        && matches!(name.as_ref(), "target" | ".git" | ".sugar"))
+                })
+                .filter_map(Result::ok)
+            {
+                let path = item.path();
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "java") {
+                    if let Ok(rel) = path.strip_prefix(workspace_root) {
+                        rel_paths.push(rel.to_string_lossy().replace('\\', "/"));
+                    }
+                }
+            }
+        } else if abs.is_file() && abs.extension().is_some_and(|ext| ext == "java") {
+            rel_paths.push(entry);
+        }
+    }
+    rel_paths.sort();
+    rel_paths.dedup();
+    rel_paths
+}
+
+fn parse_java_contract_methods(src: &str) -> Vec<JavaContractMethod> {
+    let mut methods = Vec::new();
+    let mut search = 0usize;
+    while let Some(open_rel) = src[search..].find('{') {
+        let open = search + open_rel;
+        let prefix = &src[..open];
+        let Some(close_paren) = prefix.rfind(')') else {
+            search = open + 1;
+            continue;
+        };
+        let Some(open_paren) = matching_open_paren_before(prefix, close_paren) else {
+            search = open + 1;
+            continue;
+        };
+        let before_paren = &prefix[..open_paren];
+        let tokens = lexical_tokens(before_paren);
+        let Some(name) = tokens.last().cloned() else {
+            search = open + 1;
+            continue;
+        };
+        if matches!(
+            name.as_str(),
+            "if" | "for" | "while" | "switch" | "catch" | "synchronized"
+        ) {
+            search = open + 1;
+            continue;
+        }
+        let Some(close) = matching_brace(src, open) else {
+            break;
+        };
+        let head_start = prefix.rfind(['}', ';']).map(|idx| idx + 1).unwrap_or(0);
+        let head = &src[head_start..open];
+        let params_src = &src[open_paren + 1..close_paren];
+        let params = split_args(params_src)
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, raw)| parse_java_param_contract(raw, idx))
+            .collect();
+        let body = &src[open + 1..close];
+        methods.push(JavaContractMethod {
+            name,
+            params,
+            return_min: find_min_annotation(head),
+            return_expr: find_return_expr(body),
+            is_test: head.contains("@Test"),
+        });
+        search = close + 1;
+    }
+    methods
+}
+
+fn parse_java_param_contract(raw: &str, idx: usize) -> Option<JavaParamContract> {
+    let min = find_min_annotation(raw);
+    let parsed = parse_param(raw, idx)?;
+    Some(JavaParamContract {
+        name: parsed.name,
+        min,
+    })
+}
+
+fn find_min_annotation(src: &str) -> Option<i64> {
+    for needle in ["@Min(", "@javax.validation.constraints.Min("] {
+        if let Some(found) = src.find(needle) {
+            let start = found + needle.len();
+            let end = src[start..].find(')').map(|idx| start + idx)?;
+            return src[start..end].trim().parse::<i64>().ok();
+        }
+    }
+    None
+}
+
+fn find_return_expr(body: &str) -> Option<String> {
+    split_statements(body).into_iter().find_map(|stmt| {
+        stmt.trim()
+            .strip_prefix("return ")
+            .map(|expr| expr.trim().to_string())
+    })
+}
+
+fn min_formula_json(var: &str, min: i64) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "atomic",
+        "name": "≥",
+        "args": [
+            {"kind": "var", "name": var},
+            {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": min}
+        ]
+    })
+}
+
+fn expr_contains_call(expr: &str) -> bool {
+    call_parts(expr).is_some()
+}
+
+fn java_expr_term_json(expr: &str) -> Result<serde_json::Value, String> {
+    let expr = trim_wrapping_parens(expr.trim());
+    if let Ok(value) = expr.parse::<i64>() {
+        return Ok(serde_json::json!({
+            "kind": "const",
+            "sort": {"kind": "primitive", "name": "Int"},
+            "value": value
+        }));
+    }
+    if let Some((head, args_src)) = call_parts(expr) {
+        let name = head.rsplit('.').next().unwrap_or(head).trim();
+        let args = split_args(args_src)
+            .iter()
+            .map(|arg| java_expr_term_json(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(serde_json::json!({
+            "kind": "ctor",
+            "name": name,
+            "args": args
+        }));
+    }
+    if is_java_path(expr) {
+        return Ok(serde_json::json!({"kind": "var", "name": compact(expr)}));
+    }
+    Err(format!("unsupported java expression `{}`", compact(expr)))
+}
+
+fn java_contract_bindings_by_leaf(
+    contract_bindings: &[serde_json::Value],
+) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    for binding in contract_bindings {
+        let Some(name) = binding.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(cid) = binding.get("contract_cid").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let leaf = name
+            .split('@')
+            .next()
+            .unwrap_or(name)
+            .rsplit('.')
+            .next()
+            .unwrap_or(name)
+            .trim();
+        if !leaf.is_empty() && !cid.is_empty() {
+            out.entry(leaf.to_string())
+                .or_insert_with(|| cid.to_string());
+        }
+    }
+    out
+}
+
+fn collect_java_implication_callsites(src: &str, source_path: &str) -> Vec<JavaCallsite> {
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(open_rel) = src[search..].find('{') {
+        let open = search + open_rel;
+        let prefix = &src[..open];
+        let Some(close_paren) = prefix.rfind(')') else {
+            search = open + 1;
+            continue;
+        };
+        let Some(open_paren) = matching_open_paren_before(prefix, close_paren) else {
+            search = open + 1;
+            continue;
+        };
+        let before_paren = &prefix[..open_paren];
+        let tokens = lexical_tokens(before_paren);
+        let Some(name) = tokens.last() else {
+            search = open + 1;
+            continue;
+        };
+        if matches!(
+            name.as_str(),
+            "if" | "for" | "while" | "switch" | "catch" | "synchronized"
+        ) {
+            search = open + 1;
+            continue;
+        }
+        let head_start = prefix.rfind(['}', ';']).map(|idx| idx + 1).unwrap_or(0);
+        if src[head_start..open].contains("@Test") {
+            search = open + 1;
+            continue;
+        }
+        let Some(close) = matching_brace(src, open) else {
+            break;
+        };
+        collect_callsites_in_java_body(src, open + 1, close, source_path, &mut out);
+        search = close + 1;
+    }
+    out.sort_by(|a, b| {
+        (a.file.as_str(), a.line, a.col, a.callee.as_str()).cmp(&(
+            b.file.as_str(),
+            b.line,
+            b.col,
+            b.callee.as_str(),
+        ))
+    });
+    out
+}
+
+fn collect_callsites_in_java_body(
+    src: &str,
+    body_start: usize,
+    body_end: usize,
+    source_path: &str,
+    out: &mut Vec<JavaCallsite>,
+) {
+    let body = &src[body_start..body_end];
+    let bytes = body.as_bytes();
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        if !(bytes[idx] as char == '_'
+            || bytes[idx] as char == '$'
+            || bytes[idx].is_ascii_alphabetic())
+        {
+            idx += 1;
+            continue;
+        }
+        let start = idx;
+        idx += 1;
+        while idx < bytes.len() {
+            let ch = bytes[idx] as char;
+            if is_ident_char(ch) || ch == '.' {
+                idx += 1;
+            } else {
+                break;
+            }
+        }
+        let ident = &body[start..idx];
+        let mut ws = idx;
+        while ws < bytes.len() && (bytes[ws] as char).is_whitespace() {
+            ws += 1;
+        }
+        if ws >= bytes.len() || bytes[ws] != b'(' {
+            continue;
+        }
+        let leaf = ident.rsplit('.').next().unwrap_or(ident);
+        if matches!(
+            leaf,
+            "if" | "for" | "while" | "switch" | "catch" | "return" | "new" | "throw" | "super"
+        ) {
+            continue;
+        }
+        if is_preceded_by_java_keyword(body, start, "new") {
+            continue;
+        }
+        let abs = body_start + start;
+        let (line, col) = line_col(src, abs);
+        out.push(JavaCallsite {
+            callee: leaf.to_string(),
+            file: source_path.to_string(),
+            line,
+            col,
+        });
+    }
+}
+
+fn matching_open_paren_before(src: &str, close: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (idx, ch) in src[..=close].char_indices().rev() {
+        match ch {
+            ')' => depth += 1,
+            '(' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(idx);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_preceded_by_java_keyword(src: &str, offset: usize, keyword: &str) -> bool {
+    let before = src[..offset].trim_end();
+    let Some(start) = before
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !(is_ident_char(*ch) || *ch == '.'))
+        .map(|(idx, ch)| idx + ch.len_utf8())
+        .or(Some(0))
+    else {
+        return false;
+    };
+    before[start..].trim() == keyword
+}
+
+fn line_col(src: &str, offset: usize) -> (usize, usize) {
+    let mut line = 1usize;
+    let mut col = 1usize;
+    for ch in src[..offset].chars() {
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
+// ---------------------------------------------------------------------------
 // JUnit witness package: Java parity for rust-cargo-test-witness.
 // ---------------------------------------------------------------------------
 
 pub const WITNESS_SIGNER_SEED: Ed25519Seed = [0x77u8; 32];
 const SIGNER_SEED_ENV: &str = "SUGAR_WITNESS_SIGNER_SEED";
 const JUNIT_JAR_ENV: &str = "SUGAR_JUNIT_CONSOLE_JAR";
+const JAVA_EXTRA_CLASSPATH_ENV: &str = "SUGAR_JAVA_EXTRA_CLASSPATH";
 const TESTNG_CLASSPATH_ENV: &str = "SUGAR_TESTNG_CLASSPATH";
 const JUNIT_TEST_WITNESS_KIND: &str = "junit-test-witness";
 const JUNIT_PACKAGE_KIND: &str = "junit-test-witness-package";
@@ -1168,7 +1699,8 @@ fn runtime_cid_for(tool: &str, classpath_env: &str) -> String {
     let java = command_version("java", &["-version"]);
     let classpath =
         std::env::var(classpath_env).unwrap_or_else(|_| format!("{tool}-classpath-unknown"));
-    let desc = format!("javac={javac};java={java};{tool}={classpath}");
+    let extra = std::env::var(JAVA_EXTRA_CLASSPATH_ENV).unwrap_or_default();
+    let desc = format!("javac={javac};java={java};{tool}={classpath};extra={extra}");
     blake3_512_of(desc.as_bytes())
 }
 
@@ -1418,8 +1950,38 @@ fn junit_console_jar() -> Result<PathBuf, String> {
     Ok(path)
 }
 
+fn extra_java_classpath() -> Option<String> {
+    std::env::var(JAVA_EXTRA_CLASSPATH_ENV)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn append_extra_java_classpath(jar: &Path) -> String {
+    let base = jar.to_string_lossy().to_string();
+    append_classpath(&base, extra_java_classpath().as_deref())
+}
+
+fn append_classpath(base: &str, extra: Option<&str>) -> String {
+    match extra {
+        Some(extra) if !extra.trim().is_empty() => {
+            format!("{base}{}{extra}", classpath_separator())
+        }
+        _ => base.to_string(),
+    }
+}
+
+fn classpath_separator() -> char {
+    if cfg!(windows) {
+        ';'
+    } else {
+        ':'
+    }
+}
+
 fn run_junit_suite(project_dir: &Path) -> Result<Vec<ParsedTest>, String> {
     let jar = junit_console_jar()?;
+    let compile_cp = append_extra_java_classpath(&jar);
     let (java_files, _) = discover_java_files(project_dir);
     if java_files.is_empty() {
         return Err("no Java source files found".to_string());
@@ -1432,7 +1994,7 @@ fn run_junit_suite(project_dir: &Path) -> Result<Vec<ParsedTest>, String> {
     std::fs::create_dir_all(&reports).map_err(|e| format!("mkdir reports: {e}"))?;
 
     let mut javac = Command::new("javac");
-    javac.arg("-cp").arg(&jar).arg("-d").arg(&classes);
+    javac.arg("-cp").arg(&compile_cp).arg("-d").arg(&classes);
     for rel in &java_files {
         javac.arg(project_dir.join(rel));
     }
@@ -1450,7 +2012,10 @@ fn run_junit_suite(project_dir: &Path) -> Result<Vec<ParsedTest>, String> {
         .arg(&jar)
         .arg("execute")
         .arg("--class-path")
-        .arg(&classes)
+        .arg(append_classpath(
+            &classes.to_string_lossy(),
+            extra_java_classpath().as_deref(),
+        ))
         .arg("--scan-class-path")
         .arg("--reports-dir")
         .arg(&reports)

@@ -176,6 +176,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
+name = "cargo-sugar"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde_json",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1535,6 +1543,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sugar-lift-java-tests"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-symbolic",
+ "sugar-ir-types",
+ "sugar-proof-envelope",
+ "tempfile",
+ "walkdir",
+]
+
+[[package]]
 name = "sugar-lift-rpc-client"
 version = "0.1.0"
 dependencies = [
@@ -1611,14 +1633,6 @@ dependencies = [
  "tokio",
  "toml",
  "tower-lsp",
-]
-
-[[package]]
-name = "sugar-lsp-protocol-catalog"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "sugar-canonicalizer",
 ]
 
 [[package]]

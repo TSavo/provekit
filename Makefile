@@ -281,6 +281,7 @@ SHOWCASE_RUNS = \
 	examples/polars-showcase/run.sh \
 	examples/numpy-attribute-safety-showcase/run.sh \
 	examples/java-test-assertion-consistency/run.sh \
+	examples/java-implication-edge/run.sh \
 	examples/testng-assertion-consistency/run.sh
 
 .PHONY: test-showcases
@@ -295,6 +296,8 @@ test-showcases:
 	    -p sugar-lift-rust-cargo-test-witness --bin discharge_cli \
 	    -p sugar-lift-rust-tests --bin rust_test_assertions_rpc \
 	    -p sugar-lift-java-tests --bin java_test_assertions_rpc \
+	    -p sugar-lift-java-tests --bin java_jsr380_contracts_rpc \
+	    -p sugar-lift-java-tests --bin java_implications_rpc \
 	    -p sugar-lift-java-tests --bin java_junit_witness_rpc \
 	    -p sugar-lift-java-tests --bin java_junit_discharge_cli \
 	    -p sugar-lift-java-tests --bin java_testng_witness_rpc \
@@ -304,7 +307,7 @@ test-showcases:
 	  remote_tag="$${remote_tag:-default}"; \
 	  remote_root="$${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/sugar-bcargo-$$remote_tag}"; \
 	  remote_repo="$$remote_root/sugar"; \
-	  remote_cmd="cd $$(printf '%q' "$$remote_repo") && SHOWCASES_ON_REMOTE=1 POLARS_SHOWCASE_ON_REMOTE=1 POLARS_SHOWCASE_SKIP_LOCAL_BUILD=1 NUMPY_ATTR_SHOWCASE_ON_REMOTE=1 NUMPY_ATTR_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_ASSERT_SHOWCASE_ON_REMOTE=1 JAVA_ASSERT_SHOWCASE_SKIP_LOCAL_BUILD=1 TESTNG_ASSERT_SHOWCASE_ON_REMOTE=1 TESTNG_ASSERT_SHOWCASE_SKIP_LOCAL_BUILD=1 make test-showcases"; \
+	  remote_cmd="cd $$(printf '%q' "$$remote_repo") && SHOWCASES_ON_REMOTE=1 POLARS_SHOWCASE_ON_REMOTE=1 POLARS_SHOWCASE_SKIP_LOCAL_BUILD=1 NUMPY_ATTR_SHOWCASE_ON_REMOTE=1 NUMPY_ATTR_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_ASSERT_SHOWCASE_ON_REMOTE=1 JAVA_ASSERT_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_EDGE_SHOWCASE_ON_REMOTE=1 JAVA_EDGE_SHOWCASE_SKIP_LOCAL_BUILD=1 TESTNG_ASSERT_SHOWCASE_ON_REMOTE=1 TESTNG_ASSERT_SHOWCASE_SKIP_LOCAL_BUILD=1 make test-showcases"; \
 	  ssh -o BatchMode=yes "$$remote_host" "bash -lc $$(printf '%q' "$$remote_cmd")"; \
 	  exit $$?; \
 	fi; \
