@@ -1,11 +1,16 @@
 use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Mutex;
 
 use sugar_ir_symbolic::{ConstValue, Formula, Term};
 use sugar_lift_java_tests::{
-    derive_vocab_from_source, learn_vocab_from_exception_dirs, lift_source_with_vocab,
-    AssertCategory,
+    derive_vocab_from_javap, derive_vocab_from_source, learn_vocab_from_exception_dirs,
+    lift_source_with_vocab, AssertCategory,
 };
 
+// Unit-test fixture only. The showcase learns real JUnit from javap instead of
+// using this demo assertion class as its vocab source.
 const ASSERT_LIB: &str = r#"
 package demo.assertions;
 
@@ -33,6 +38,57 @@ public final class LearnedAssertions {
     private static void record(Object expected, Object actual) {}
 }
 "#;
+
+static JUNIT_JAR_FETCH_LOCK: Mutex<()> = Mutex::new(());
+
+fn real_junit_console_jar() -> String {
+    if let Ok(path) = std::env::var("SUGAR_JUNIT_CONSOLE_JAR") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return path.to_string_lossy().to_string();
+        }
+    }
+
+    let version = std::env::var("JUNIT_VERSION").unwrap_or_else(|_| "1.10.2".to_string());
+    let path = PathBuf::from(format!(
+        "/tmp/sugar-junit/junit-platform-console-standalone-{version}.jar"
+    ));
+    if path.is_file() {
+        return path.to_string_lossy().to_string();
+    }
+
+    let _guard = JUNIT_JAR_FETCH_LOCK.lock().unwrap();
+    if path.is_file() {
+        return path.to_string_lossy().to_string();
+    }
+
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let url = format!(
+        "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/{version}/junit-platform-console-standalone-{version}.jar"
+    );
+    let status = if command_exists("curl") {
+        Command::new("curl")
+            .args(["-fsSL", &url, "-o"])
+            .arg(&path)
+            .status()
+            .expect("spawn curl")
+    } else {
+        Command::new("wget")
+            .args(["-q", &url, "-O"])
+            .arg(&path)
+            .status()
+            .expect("spawn wget")
+    };
+    assert!(status.success(), "fetch real JUnit console jar from {url}");
+    path.to_string_lossy().to_string()
+}
+
+fn command_exists(bin: &str) -> bool {
+    Command::new(bin)
+        .arg("--version")
+        .output()
+        .is_ok_and(|out| out.status.success())
+}
 
 fn inv_operands(decl: &sugar_ir_symbolic::ContractDecl) -> &[std::rc::Rc<Formula>] {
     match decl.inv.as_deref() {
@@ -112,6 +168,128 @@ fn derive_vocab_splits_exact_approx_and_other_from_signatures() {
         )
         .expect("unclear overload is learned");
     assert_eq!(other.category, AssertCategory::Other);
+}
+
+#[test]
+fn real_junit_javap_derives_delta_overload_as_approx_from_signature() {
+    let jar = real_junit_console_jar();
+    let vocab = derive_vocab_from_javap("org.junit.jupiter.api.Assertions", &jar, &[]).unwrap();
+    let dump = vocab
+        .dump_lines()
+        .into_iter()
+        .filter(|line| line.contains("assertEquals") || line.contains("assertTrue"))
+        .collect::<Vec<_>>();
+    eprintln!("real-junit-derived-vocab: {}", dump.join("; "));
+
+    let approx = vocab
+        .classify_call(
+            "assertEquals",
+            3,
+            &[
+                "6.0".to_string(),
+                "makeValue()".to_string(),
+                "0.01".to_string(),
+            ],
+        )
+        .expect("real JUnit delta overload is learned");
+    assert_eq!(approx.category, AssertCategory::Approx);
+    assert_eq!(approx.source, "javap-signature");
+}
+
+#[test]
+fn real_junit_external_override_supplies_body_gap_without_changing_approx_split() {
+    let jar = real_junit_console_jar();
+    let tmp = tempfile::tempdir().unwrap();
+    let exc_dir = tmp.path().join(".sugar").join("vocab-exceptions");
+    fs::create_dir_all(&exc_dir).unwrap();
+    fs::write(
+        exc_dir.join("org.junit.jupiter.api.Assertions.json"),
+        r#"{"overrides":{"equality":["assertEquals"],"truth":["assertTrue"]}}"#,
+    )
+    .unwrap();
+
+    let bare = derive_vocab_from_javap("org.junit.jupiter.api.Assertions", &jar, &[]).unwrap();
+    let learned = derive_vocab_from_javap(
+        "org.junit.jupiter.api.Assertions",
+        &jar,
+        &[exc_dir.to_string_lossy().to_string()],
+    )
+    .unwrap();
+    eprintln!(
+        "real-junit-derived-vocab-with-overrides: {}",
+        learned
+            .dump_lines()
+            .into_iter()
+            .filter(|line| line.contains("assertEquals") || line.contains("assertTrue"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
+
+    let bare_approx = bare
+        .classify_call(
+            "assertEquals",
+            3,
+            &[
+                "6.0".to_string(),
+                "makeValue()".to_string(),
+                "0.01".to_string(),
+            ],
+        )
+        .expect("bare real JUnit delta overload is learned");
+    let learned_approx = learned
+        .classify_call(
+            "assertEquals",
+            3,
+            &[
+                "6.0".to_string(),
+                "makeValue()".to_string(),
+                "0.01".to_string(),
+            ],
+        )
+        .expect("overridden real JUnit delta overload remains learned");
+    assert_eq!(bare_approx.category, AssertCategory::Approx);
+    assert_eq!(learned_approx.category, AssertCategory::Approx);
+    assert_eq!(learned_approx.source, "javap-signature");
+
+    let learned_approx_with_message = learned
+        .classify_call(
+            "assertEquals",
+            4,
+            &[
+                "6.0".to_string(),
+                "makeValue()".to_string(),
+                "0.01".to_string(),
+                "\"close enough\"".to_string(),
+            ],
+        )
+        .expect("overridden real JUnit delta+message overload remains learned");
+    assert_eq!(learned_approx_with_message.category, AssertCategory::Approx);
+    assert_eq!(learned_approx_with_message.source, "javap-signature");
+
+    let bare_exact = bare
+        .classify_call(
+            "assertEquals",
+            2,
+            &["6".to_string(), "makeValue()".to_string()],
+        )
+        .expect("bare exact overload is present from real JUnit signature");
+    assert_ne!(bare_exact.category, AssertCategory::Equality);
+
+    let learned_exact = learned
+        .classify_call(
+            "assertEquals",
+            2,
+            &["6".to_string(), "makeValue()".to_string()],
+        )
+        .expect("override marks exact overload as equality");
+    assert_eq!(learned_exact.category, AssertCategory::Equality);
+    assert_eq!(learned_exact.source, "external-exception");
+
+    let learned_truth = learned
+        .classify_call("assertTrue", 1, &["makeValue() == 6".to_string()])
+        .expect("override marks assertTrue as truth");
+    assert_eq!(learned_truth.category, AssertCategory::Truth);
+    assert_eq!(learned_truth.source, "external-exception");
 }
 
 #[test]

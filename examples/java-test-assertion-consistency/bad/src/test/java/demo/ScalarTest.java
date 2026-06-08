@@ -1,12 +1,13 @@
 package demo;
 
-import demo.assertions.LearnedAssertions;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import org.junit.jupiter.api.Test;
 
 final class ScalarTest {
     @Test
     void scalarSumContradiction() {
-        LearnedAssertions.assertSameValue(6, ScalarBox.scalarSum());
-        LearnedAssertions.assertSameValue(7, ScalarBox.scalarSum());
+        assertEquals(6, ScalarBox.scalarSum());
+        assertEquals(7, ScalarBox.scalarSum());
     }
 }
