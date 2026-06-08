@@ -22,14 +22,19 @@ from .canonicalizer import (
 
 
 Json = Any
+LEGACY_CONCEPT_PREFIX = "concept:"
 
 
 def op_cid_from_shape(shape: Json) -> str:
     return blake3_512_of(encode_jcs(_json_to_value(shape)).encode("utf-8"))
 
 
+def bare_local_operator_name(name: str) -> str:
+    return name.removeprefix(LEGACY_CONCEPT_PREFIX)
+
+
 def local_operator_shape(name: str) -> dict[str, Json]:
-    return {"kind": "local-operator", "name": name}
+    return {"kind": "local-operator", "name": bare_local_operator_name(name)}
 
 
 def local_op_cid(name: str) -> str:

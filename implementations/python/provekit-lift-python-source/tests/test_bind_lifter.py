@@ -22,6 +22,7 @@ if str(REALIZER_SRC) not in sys.path:
 from provekit_lift_python_source.bind_lifter import _operand_slot, lift_source
 from provekit_lift_python_source.bind_rpc import dispatch, initialize_result
 from provekit_lift_py_tests.canonicalizer import blake3_512_of
+from provekit_lift_py_tests.op_cid import local_op_cid
 from provekit_lift_python_source.canonical import cid_of_json
 from provekit_realize_python_core.realizer import emit_stub
 
@@ -197,7 +198,7 @@ def _concept_diagnostics(result: object) -> set[str]:
 
 
 def _local_op_cid(name: str) -> str:
-    return cid_of_json({"kind": "local-operator", "name": name})
+    return local_op_cid(name)
 
 
 def _walk_objects(value: object) -> list[dict]:

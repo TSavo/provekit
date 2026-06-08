@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
+use libsugar::canonical::local_op_cid as canonical_local_op_cid;
 use libsugar::concept::panic_freedom;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_claim_envelope::{
@@ -9849,7 +9850,7 @@ fn local_op_cid(concept_name: &str) -> Option<&'static str> {
     if let Some(cid) = cids.get(concept_name) {
         return Some(*cid);
     }
-    let cid = blake3_512_of(concept_name.as_bytes());
+    let cid = canonical_local_op_cid(concept_name).ok()?;
     let cid = Box::leak(cid.into_boxed_str()) as &'static str;
     cids.insert(concept_name.to_string(), cid);
     Some(cid)

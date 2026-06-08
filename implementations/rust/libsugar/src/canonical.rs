@@ -8,6 +8,8 @@ use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
 use crate::{ProvekitError, Result};
 
+const LEGACY_CONCEPT_PREFIX: &str = "concept:";
+
 pub fn serializable_jcs<T: Serialize>(value: &T) -> Result<String> {
     let json = serde_json::to_value(value)
         .map_err(|e| ProvekitError::Message(format!("serialize JSON: {e}")))?;
@@ -32,6 +34,21 @@ pub fn json_cid(value: &Json) -> Result<String> {
 /// Canonical operation identity: an op CID is the JSON CID of the op shape.
 pub fn op_cid_from_shape(shape: &Json) -> Result<String> {
     json_cid(shape)
+}
+
+pub fn local_operator_shape(name: &str) -> Json {
+    serde_json::json!({
+        "kind": "local-operator",
+        "name": bare_local_operator_name(name),
+    })
+}
+
+pub fn local_op_cid(name: &str) -> Result<String> {
+    op_cid_from_shape(&local_operator_shape(name))
+}
+
+pub fn bare_local_operator_name(name: &str) -> &str {
+    name.strip_prefix(LEGACY_CONCEPT_PREFIX).unwrap_or(name)
 }
 
 pub fn is_blake3_512_cid(value: &str) -> bool {

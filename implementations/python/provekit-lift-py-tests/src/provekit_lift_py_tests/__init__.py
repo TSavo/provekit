@@ -25,7 +25,12 @@ from .canonicalizer import (
     encode_jcs,
     jcs_hash,
 )
-from .op_cid import local_op_cid, local_operator_shape, op_cid_from_shape
+from .op_cid import (
+    bare_local_operator_name,
+    local_op_cid,
+    local_operator_shape,
+    op_cid_from_shape,
+)
 from .ir import (
     Bool,
     BridgeDecl,
@@ -159,6 +164,7 @@ __all__ = [
     "locus_to_value",
     "lt",
     "lte",
+    "bare_local_operator_name",
     "local_op_cid",
     "local_operator_shape",
     "make_var",
