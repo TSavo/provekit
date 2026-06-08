@@ -20,6 +20,7 @@ use clap::{Parser, Subcommand};
 
 mod cmd_bind;
 mod cmd_compose;
+mod cmd_diff;
 mod cmd_doctor;
 mod cmd_dump;
 mod cmd_emit;
@@ -109,6 +110,11 @@ enum Cmd {
     /// This is the real GATE verb (#1405); distinct from `prove` (the
     /// six-stage prover).
     Verify(cmd_verify::VerifyArgs),
+    /// Behavior diff between two minted proof sets: report contracts that
+    /// changed CID (behavior moved), were added, or removed. The CID is the
+    /// name-stripped behavior identity, so a rename shows `unchanged`. Exits
+    /// nonzero when behavior moved or surface dropped.
+    Diff(cmd_diff::DiffArgs),
     /// Mint an implication memento (antecedent CID -> consequent CID) via Z3.
     Implicate(ImplicateArgs),
     /// Short alias for `implicate`.
@@ -272,6 +278,7 @@ fn main() -> ExitCode {
         Cmd::Prove(a) => cmd_prove::run(a),
         Cmd::SelfCheck(a) => cmd_self_check::run(a),
         Cmd::Verify(a) => cmd_verify::run(a),
+        Cmd::Diff(a) => cmd_diff::run(a),
         Cmd::Package(a) => cmd_package::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
         Cmd::Dump(a) => cmd_dump::run(a),
