@@ -12,14 +12,13 @@
 # `test-rust` runs the rust workspace (including the crate-pair inheritance
 # E2E) and exercises the active kit RPC surfaces; `test-python`
 # runs the python lifter/emit kits including the numpy proof. Other per-language suites
-# (test-go / test-java / ...) exist but are not part of the gate.
+# (test-go / ...) exist but are not part of the gate.
 
 .DEFAULT_GOAL := help
 
 SUGAR := implementations/rust/target/release/sugar
 PYTHON ?= python3
 PYTHON := $(shell command -v '$(PYTHON)' 2>/dev/null || printf '%s\n' '$(PYTHON)')
-MVN ?= mvn
 LOCAL_BIN ?= /tmp/sugar-local-bin
 BCARGO ?= $(CURDIR)/bin/bcargo
 CARGO_LOCAL ?= cargo
@@ -50,13 +49,7 @@ CARGO ?= $(CARGO_LOCAL)
 endif
 BCARGO_ACTIVE := $(filter bcargo,$(notdir $(firstword $(CARGO))))
 CARGO_SYNC_BINS = $(if $(BCARGO_ACTIVE),$(CARGO) $(foreach bin,$(1),--sync-bin $(bin)),$(CARGO))
-JAVA_HOME ?= $(shell for d in /usr/local/opt/openjdk /opt/homebrew/opt/openjdk; do if [ -x "$$d/bin/java" ]; then echo "$$d"; exit; fi; done)
-export JAVA_HOME
-ifeq ($(strip $(JAVA_HOME)),)
 export PATH := $(LOCAL_BIN):$(PATH)
-else
-export PATH := $(LOCAL_BIN):$(JAVA_HOME)/bin:$(PATH)
-endif
 
 .PHONY: help
 help:
@@ -68,13 +61,12 @@ help:
 	@echo ""
 	@echo "Per-language build:"
 	@echo "  make build-rust     cargo build --release (workspace)"
-	@echo "  make build-java     mvn package + install sugar-lsp-java to ~/.local/bin"
 	@echo "  make build-python   pip-install Python realize kits and shim packages"
 	@echo "  make build-<lang>   go / cpp / csharp / c"
 	@echo ""
 	@echo "Per-language test:"
 	@echo "  make test-rust  test-python   (the proven provers)"
-	@echo "  make test-<lang>              go / csharp / php / java / c"
+	@echo "  make test-<lang>              go / csharp / php / c"
 	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run sugar-lift against the canonicalizer crate"
@@ -127,23 +119,6 @@ build-c:
 	$(MAKE) -C implementations/c/sugar-realize-c-core all
 	$(MAKE) -C implementations/c/sugar-lsp-c all
 
-.PHONY: build-java
-build-java:
-	# sugar-lift-java-core depends on the sibling sugar-ir module.
-	# Use the parent pom + `-pl ... -am` (also-make) so dependencies are
-	# built first.
-	$(MVN) package -q -f implementations/java/pom.xml -pl sugar-lift-java-core -am
-	# sugar-realize-java-core ships the shaded `sugar-realize-java.jar`
-	# that libsugar's platform_semantics_loader spawns over JSON-RPC for
-	# every `target=java` carrier registration. Without packaging it here,
-	# rust integration tests that touch the java carrier (e.g.
-	# `lower_java_carrier_registration_points_at_required_fixture_set`) fail
-	# with `Unable to access jarfile sugar-realize-java.jar`.
-	$(MVN) package -q -f implementations/java/pom.xml -pl sugar-realize-java-core -am -DskipTests
-	mkdir -p $(LOCAL_BIN)
-	cp implementations/java/sugar-lift-java-core/target/appassembler/bin/sugar-lsp-java $(LOCAL_BIN)/sugar-lsp-java
-	chmod +x $(LOCAL_BIN)/sugar-lsp-java
-
 .PHONY: build-python
 build-python:
 	$(PYTHON) -m venv $(PYTHON_KIT_VENV)
@@ -186,11 +161,7 @@ check-cargo-entrypoint:
 .PHONY: test-rust
 # The rust integration tests register per-language carriers via
 # `register_with_platform_semantics`, which spawns the target kit binary
-# over JSON-RPC (PEP 1.7.0) to fetch the PlatformSemanticsDeclaration. The
-# java carrier in particular requires the shaded jar from
-# sugar-realize-java-core; without `build-java` first, that jar is
-# absent and `lower_java_carrier_registration_points_at_required_fixture_set`
-# panics with `Unable to access jarfile sugar-realize-java.jar`.
+# over JSON-RPC (PEP 1.7.0) to fetch the PlatformSemanticsDeclaration.
 test-rust: build-python
 	@failed=""; \
 	PATH="$(PYTHON_KIT_BIN):$$PATH" \
@@ -269,18 +240,9 @@ test-python: build-python
 test-php:
 	cd implementations/php && composer install && composer test
 
-.PHONY: test-java
-test-java: build-java
-	@failed=""; \
-	$(MVN) test -q -f implementations/java/sugar-lift-java-core/pom.xml \
-	  || failed="$$failed sugar-lift-java-core"; \
-	$(MVN) test -q -f implementations/java/pom.xml -pl sugar-realize-java-core -am \
-	  || failed="$$failed sugar-realize-java-core"; \
-	if [ -n "$$failed" ]; then echo "test-java FAIL:$$failed"; exit 1; fi
-
 # The acid test: the two suites that actually prove real code with zero
 # changes. `test-rust` runs the rust workspace (including the crate-pair
-# inheritance E2E) and exercises the java / python realize kits over RPC;
+# inheritance E2E) and exercises the python realize kits over RPC;
 # `test-python` runs the python kit including the numpy proof. NON-FAIL-FAST:
 # both run regardless of prior failure; results summarize at the end.
 .PHONY: check-no-concept-name

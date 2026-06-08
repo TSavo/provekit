@@ -1,4 +1,0 @@
-# PEP 1.7.0 lift plugin manifest for Java recognize.
-name = "java-bind-lift"
-command = ["/usr/bin/env", "JAVA_HOME=/usr/local/opt/openjdk", "java", "-jar", "implementations/java/sugar-lift-java-core/target/sugar-lsp-java.jar", "--rpc"]
-working_dir = "../.."

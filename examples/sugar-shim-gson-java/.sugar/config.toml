@@ -1,8 +1,0 @@
-[authoring]
-surface = "java-bind"
-
-[platform_profile]
-language = "java"
-family = "concept:family:json"
-library = "gson"
-version = "2.11"
