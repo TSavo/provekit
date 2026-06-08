@@ -31,7 +31,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-BIN="$REPO/implementations/rust/target/debug/provekit"
+BIN="$REPO/implementations/rust/target/debug/sugar"
 PP="$REPO/implementations/python/provekit-lift-python-source/src:$REPO/implementations/python/provekit-lift-py-tests/src"
 VENV="${NUMPY_WITNESS_VENV:-/tmp/numpy-witness-venv}"
 

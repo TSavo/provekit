@@ -16,7 +16,7 @@
 
 .DEFAULT_GOAL := help
 
-PROVEKIT := implementations/rust/target/release/provekit
+PROVEKIT := implementations/rust/target/release/sugar
 PYTHON ?= python3
 PYTHON := $(shell command -v '$(PYTHON)' 2>/dev/null || printf '%s\n' '$(PYTHON)')
 MVN ?= mvn
