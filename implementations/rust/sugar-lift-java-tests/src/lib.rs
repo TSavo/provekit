@@ -2123,6 +2123,7 @@ pub const WITNESS_SIGNER_SEED: Ed25519Seed = [0x77u8; 32];
 const SIGNER_SEED_ENV: &str = "SUGAR_WITNESS_SIGNER_SEED";
 const JUNIT_JAR_ENV: &str = "SUGAR_JUNIT_CONSOLE_JAR";
 const JAVA_EXTRA_CLASSPATH_ENV: &str = "SUGAR_JAVA_EXTRA_CLASSPATH";
+const JAVA_JUNIT_SELECT_CLASS_ENV: &str = "SUGAR_JAVA_JUNIT_SELECT_CLASS";
 const TESTNG_CLASSPATH_ENV: &str = "SUGAR_TESTNG_CLASSPATH";
 const JUNIT_TEST_WITNESS_KIND: &str = "junit-test-witness";
 const JUNIT_PACKAGE_KIND: &str = "junit-test-witness-package";
@@ -2532,6 +2533,12 @@ fn run_junit_suite(project_dir: &Path) -> Result<Vec<ParsedTest>, String> {
 
     let mut javac = Command::new("javac");
     javac.arg("-cp").arg(&compile_cp).arg("-d").arg(&classes);
+    if let Ok(encoding) = std::env::var("SUGAR_JAVA_JAVAC_ENCODING") {
+        let encoding = encoding.trim();
+        if !encoding.is_empty() {
+            javac.arg("-encoding").arg(encoding);
+        }
+    }
     for rel in &java_files {
         javac.arg(project_dir.join(rel));
     }
@@ -2544,16 +2551,36 @@ fn run_junit_suite(project_dir: &Path) -> Result<Vec<ParsedTest>, String> {
         ));
     }
 
-    let output = Command::new("java")
-        .arg("-jar")
-        .arg(&jar)
-        .arg("execute")
-        .arg("--class-path")
-        .arg(append_classpath(
+    let runtime_cp = append_classpath(
+        &jar.to_string_lossy(),
+        Some(&append_classpath(
             &classes.to_string_lossy(),
             extra_java_classpath().as_deref(),
-        ))
-        .arg("--scan-class-path")
+        )),
+    );
+    let class_path = append_classpath(
+        &classes.to_string_lossy(),
+        extra_java_classpath().as_deref(),
+    );
+    let mut junit = Command::new("java");
+    junit
+        .arg("-cp")
+        .arg(&runtime_cp)
+        .arg("org.junit.platform.console.ConsoleLauncher")
+        .arg("execute")
+        .arg("--class-path")
+        .arg(class_path);
+    if let Ok(select_class) = std::env::var(JAVA_JUNIT_SELECT_CLASS_ENV) {
+        let select_class = select_class.trim();
+        if !select_class.is_empty() {
+            junit.arg("--select-class").arg(select_class);
+        } else {
+            junit.arg("--scan-class-path");
+        }
+    } else {
+        junit.arg("--scan-class-path");
+    }
+    let output = junit
         .arg("--reports-dir")
         .arg(&reports)
         .arg("--details=none")
