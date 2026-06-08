@@ -108,6 +108,35 @@ def _contract(ir: list[dict[str, object]], suffix: str) -> dict[str, object]:
     raise AssertionError(f"missing contract ending in {suffix!r}: {ir!r}")
 
 
+def _source_unit_contract(ir: list[dict[str, object]]) -> dict[str, object]:
+    for item in ir:
+        if str(item.get("fnName", "")).startswith("<source-unit:"):
+            return item
+    raise AssertionError(f"missing source-unit contract: {ir!r}")
+
+
+def _class_shapes(ir: list[dict[str, object]]) -> list[dict[str, object]]:
+    shapes = _source_unit_contract(ir).get("classShapes")
+    assert isinstance(shapes, list), ir
+    return [shape for shape in shapes if isinstance(shape, dict)]
+
+
+def _class_shape(ir: list[dict[str, object]], qualname: str) -> dict[str, object]:
+    for shape in _class_shapes(ir):
+        if shape.get("qualname") == qualname:
+            return shape
+    raise AssertionError(f"missing class shape {qualname!r}: {_class_shapes(ir)!r}")
+
+
+def _entries_by_name(entries: object) -> dict[str, dict[str, object]]:
+    assert isinstance(entries, list), entries
+    out: dict[str, dict[str, object]] = {}
+    for entry in entries:
+        assert isinstance(entry, dict), entry
+        out[str(entry["name"])] = entry
+    return out
+
+
 def _runtime_failure_loci(contract: dict[str, object]) -> list[dict[str, object]]:
     loci = contract.get("panicLoci")
     assert isinstance(loci, list), contract
@@ -2888,6 +2917,212 @@ def test_compile_lift_roundtrip_body_term_is_byte_identical() -> None:
     relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
 
     assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+
+
+def test_class_shapes_catalog_records_guaranteed_slots_and_method_receivers() -> None:
+    source = (
+        "class Box:\n"
+        "    species = 'container'\n"
+        "    __slots__ = ('value', 'declared_only')\n"
+        "\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "    def get(self):\n"
+        "        return self.value\n"
+        "\n"
+        "    @classmethod\n"
+        "    def from_value(cls, value):\n"
+        "        return cls(value)\n"
+        "\n"
+        "    @staticmethod\n"
+        "    def accepts(value):\n"
+        "        return value is not None\n"
+    )
+
+    result = lift_source(source, "shape.py")
+
+    box = _class_shape(result.ir, "Box")
+    assert box["status"] == "closed"
+    assert box["openReasons"] == []
+    assert box["assumptions"] == [
+        "presence-guaranteed-assuming-standard-construction-via-__init__",
+        "not-robust-to-__new__-or-pickle-bypass",
+        "not-robust-to-cross-module-monkey-patch-or-delete",
+    ]
+
+    attrs = _entries_by_name(box["attributes"])
+    assert attrs["species"]["memberKind"] == "class-attribute"
+    assert attrs["species"]["presenceSource"] == "class-body-assignment"
+    assert attrs["value"]["memberKind"] == "instance-attribute"
+    assert attrs["value"]["presenceSource"] == "unconditional-init-assignment"
+    assert attrs["value"]["slotBacked"] is True
+    assert "declared_only" not in attrs
+
+    slots = _entries_by_name(box["permittedAttributes"])
+    assert slots["value"]["memberKind"] == "slot"
+    assert slots["value"]["guaranteesPresence"] is False
+    assert slots["declared_only"]["memberKind"] == "slot"
+    assert slots["declared_only"]["guaranteesPresence"] is False
+    assert (
+        slots["declared_only"]["note"]
+        == "slot-membership alone does not discharge presence"
+    )
+
+    methods = _entries_by_name(box["methods"])
+    assert methods["__init__"]["methodKind"] == "instance"
+    assert methods["__init__"]["instanceReceiver"] == "self"
+    assert methods["from_value"]["methodKind"] == "classmethod"
+    assert methods["from_value"]["instanceReceiver"] is None
+    assert methods["from_value"]["classReceiver"] == "cls"
+    assert methods["accepts"]["methodKind"] == "staticmethod"
+    assert methods["accepts"]["instanceReceiver"] is None
+    assert "attribute_present" not in _canon(result.ir)
+
+
+def test_class_shape_taxonomy_opens_soundness_boundary_cases() -> None:
+    source = (
+        "class External(Base):\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "class OverrideSetattr:\n"
+        "    def __setattr__(self, name, value):\n"
+        "        object.__setattr__(self, name, value)\n"
+        "\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "class DeletedElsewhere:\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "    def drop(self, flag):\n"
+        "        if flag:\n"
+        "            del self.value\n"
+        "\n"
+        "class DynamicMutation:\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "    def mutate(self):\n"
+        "        setattr(self, 'late', 2)\n"
+        "        delattr(self, 'value')\n"
+        "\n"
+        "class WithProperty:\n"
+        "    @property\n"
+        "    def value(self):\n"
+        "        return 1\n"
+        "\n"
+        "class ReceiverKinds:\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "    @classmethod\n"
+        "    def bad(cls):\n"
+        "        cls.class_value = 2\n"
+        "        return cls.class_value\n"
+        "\n"
+        "    @staticmethod\n"
+        "    def helper(obj):\n"
+        "        obj.static_value = 3\n"
+    )
+
+    result = lift_source(source, "taxonomy.py")
+
+    external = _class_shape(result.ir, "External")
+    assert external["status"] == "open"
+    assert "non-local-base" in external["openReasons"]
+
+    override = _class_shape(result.ir, "OverrideSetattr")
+    assert override["status"] == "open"
+    assert "setattr-override-in-mro" in override["openReasons"]
+
+    deleted = _class_shape(result.ir, "DeletedElsewhere")
+    assert deleted["status"] == "open"
+    assert "deleted-instance-attribute" in deleted["openReasons"]
+    assert "value" not in _entries_by_name(deleted["attributes"])
+    deleted_open_attrs = _entries_by_name(deleted["openAttributes"])
+    assert "deleted-in-method" in deleted_open_attrs["value"]["reasons"]
+
+    dynamic = _class_shape(result.ir, "DynamicMutation")
+    assert dynamic["status"] == "open"
+    assert "dynamic-setattr" in dynamic["openReasons"]
+    assert "dynamic-delattr" in dynamic["openReasons"]
+    assert "late" not in _entries_by_name(dynamic["attributes"])
+    assert "value" not in _entries_by_name(dynamic["attributes"])
+
+    prop = _class_shape(result.ir, "WithProperty")
+    assert prop["status"] == "open"
+    assert "property-descriptor" in prop["openReasons"]
+    assert "value" not in _entries_by_name(prop["attributes"])
+
+    receivers = _class_shape(result.ir, "ReceiverKinds")
+    receiver_attrs = _entries_by_name(receivers["attributes"])
+    assert set(receiver_attrs) == {"value"}
+    receiver_methods = _entries_by_name(receivers["methods"])
+    assert receiver_methods["bad"]["methodKind"] == "classmethod"
+    assert receiver_methods["bad"]["instanceReceiver"] is None
+    assert receiver_methods["helper"]["methodKind"] == "staticmethod"
+    assert receiver_methods["helper"]["instanceReceiver"] is None
+
+    for shape in _class_shapes(result.ir):
+        assert "presence-guaranteed-assuming-standard-construction-via-__init__" in shape["assumptions"]
+        assert "not-robust-to-__new__-or-pickle-bypass" in shape["assumptions"]
+        assert "not-robust-to-cross-module-monkey-patch-or-delete" in shape["assumptions"]
+
+
+def test_class_shape_lift_is_soundness_inert_for_attribute_panic_loci() -> None:
+    source = (
+        "class Safe:\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "    def read(self):\n"
+        "        return self.value\n"
+    )
+
+    result = lift_source(source, "inert.py")
+
+    read_contract = _contract(result.ir, ".Safe.read")
+    read_body = read_contract["post"]["args"][1]
+    loci = _runtime_failure_loci(read_contract)
+    assert [locus["subkind"] for locus in loci] == ["attribute-access"]
+    assert [locus.get("exceptionClass") for locus in loci] == ["AttributeError"]
+    assert read_contract["effects"] == [{"kind": "panics"}]
+    assert "attribute_present" not in _canon(result.ir)
+    assert "cf_guarded" not in _ctor_names(read_body)
+
+
+def test_class_shapes_are_absent_for_class_free_units() -> None:
+    result = lift_source("def f(x):\n    return x + 1\n", "plain.py")
+
+    source_unit = _source_unit_contract(result.ir)
+    assert "classShapes" not in source_unit
+
+
+def test_class_shapes_are_strippably_additive_for_class_units() -> None:
+    result = lift_source(
+        "class Box:\n"
+        "    species = 'container'\n"
+        "\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n",
+        "additive.py",
+    )
+
+    source_unit = _source_unit_contract(result.ir)
+    assert "classShapes" in source_unit
+    stripped_ir = [
+        (
+            {key: value for key, value in item.items() if key != "classShapes"}
+            if item is source_unit
+            else item
+        )
+        for item in result.ir
+    ]
+    assert canonical_json_bytes(result.ir) != canonical_json_bytes(stripped_ir)
+    assert "classShapes" not in _source_unit_contract(stripped_ir)
 
 
 def test_rpc_initialize_declares_python_source_draft() -> None:
