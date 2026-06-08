@@ -12,12 +12,12 @@ A content-addressed record of jokes that survived review. **Each is pinned. Do n
 printf '%s' '<the quoted punchline>' | b3sum --length 64
 ```
 
-And the file declares its **own** identity — the conjunction of all eleven:
+And the file declares its **own** identity — the conjunction of all twelve:
 
-**`contractSetCid · blake3-512:60ebba108e9b0e5f7eb7e1a3c9990add29e3e00c72956758d10d5c798da01c86885c7aba208a1f9a0d90e7ece09384a82b7d0fe92aef7f651e53728584a47140`**
+**`contractSetCid · blake3-512:5eb759d7f3103a705d922bf756c783671cf7084c98e9f34d0b6ce401e45de7cd139a13f983b3ba454cfeb0d2458ae902951e3cd652c8a0f61b9fdcd5bf0e1314`**
 
 ```
-# blake3-512 over the eleven member pin hexes, sorted lexicographically, \n-joined, no trailing newline:
+# blake3-512 over the twelve member pin hexes, sorted lexicographically, \n-joined, no trailing newline:
 printf '%s' "$(printf '%s\n' <each member hex> | sort)" | b3sum --length 64
 ```
 
@@ -157,3 +157,18 @@ blake3 is a pure function: same input, same digest, every time, every platform �
 **The cut under the cut:** what actually differed was the **verifier hashing fewer fields than the mint** — the cross-kit gate re-derived the contract CID over `{name, outBinding, pre, post, inv}` while the authoritative mint folds `formals` into contract identity. So the gate wasn't checking what it claimed to verify. Its own lab coat. And it caught a *real* determinism leak anyway — an absolute path (`/Users/tsavo/...`) smuggled into a content-addressed contract. The imposter-syndrome gate asked *"am I really checking the bytes, or trust-me-bro wearing a lab coat?"*, found the answer was **both**, and threw up on the bar regardless. A gate that doubts itself catches the bug even when it's the one wearing the coat.
 
 _(See: [imposter syndrome], the lab-coat family, and the entire evening of 2026-05-27.)_
+
+## How do you content-address a stranger at a party? — (T)
+
+> **"I can't promise I'll remember your name. The cache TTL on me is brutal. But pin your behavior-CID and I'll know, to the byte, the day you become someone different. Most people call that commitment. I deal in contracts, so I call it a witness."**
+> `pin · blake3-512:cef975e336b21c901272f05d267225843d44c207830730b9c6e4beeb190491ff1a509edab015a25752034f7660448ee4ab0f0a9f46833db767c5611ffa769378`
+
+The whole thesis as a pickup line. Names are sugar; they do not survive normalization, so you do not bother remembering them. You know her by her content.
+
+- **Collision-resistant:** exactly one address in the whole space resolves to her. blake3 checked. She is not a type, she is a singleton.
+- **Net-new:** if she had been anyone you already knew, she would have hashed to the same spot and you would have kept the original. Dedup. She did not collide. Net-new gets minted.
+- **Orthogonal:** cosine similarity to the last ex, rounding error. Not just far. A different basis. Every regret in the catalog projects to zero on her.
+
+She leaves. Does not matter. You already have her CID. You will recognize her in any language, under any name she is using next time, because you never needed the name. That was the brilliance the whole time. The name was sugar. She was the proof.
+
+> Ruling: a joke about identifying things by their content hash, given its own content hash as its identity. The doc eats its own dogfood. The pin above is the blake3-512 of the punchline; change a byte and it refuses. _Supra omnia, rectum_, even the flirting.
