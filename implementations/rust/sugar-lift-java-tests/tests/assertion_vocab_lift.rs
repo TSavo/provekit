@@ -40,6 +40,7 @@ public final class LearnedAssertions {
 "#;
 
 static JUNIT_JAR_FETCH_LOCK: Mutex<()> = Mutex::new(());
+static TESTNG_JAR_FETCH_LOCK: Mutex<()> = Mutex::new(());
 
 fn real_junit_console_jar() -> String {
     if let Ok(path) = std::env::var("SUGAR_JUNIT_CONSOLE_JAR") {
@@ -83,6 +84,45 @@ fn real_junit_console_jar() -> String {
     path.to_string_lossy().to_string()
 }
 
+fn real_testng_jar() -> String {
+    if let Ok(path) = std::env::var("SUGAR_TESTNG_JAR") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return path.to_string_lossy().to_string();
+        }
+    }
+
+    let version = std::env::var("TESTNG_VERSION").unwrap_or_else(|_| "7.10.2".to_string());
+    let path = PathBuf::from(format!("/tmp/sugar-testng/testng-{version}.jar"));
+    if path.is_file() {
+        return path.to_string_lossy().to_string();
+    }
+
+    let _guard = TESTNG_JAR_FETCH_LOCK.lock().unwrap();
+    if path.is_file() {
+        return path.to_string_lossy().to_string();
+    }
+
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let url =
+        format!("https://repo1.maven.org/maven2/org/testng/testng/{version}/testng-{version}.jar");
+    let status = if command_exists("curl") {
+        Command::new("curl")
+            .args(["-fsSL", &url, "-o"])
+            .arg(&path)
+            .status()
+            .expect("spawn curl")
+    } else {
+        Command::new("wget")
+            .args(["-q", &url, "-O"])
+            .arg(&path)
+            .status()
+            .expect("spawn wget")
+    };
+    assert!(status.success(), "fetch real TestNG jar from {url}");
+    path.to_string_lossy().to_string()
+}
+
 fn command_exists(bin: &str) -> bool {
     Command::new(bin)
         .arg("--version")
@@ -112,6 +152,29 @@ fn assert_eq_atom(formula: &Formula, expected_rhs: i64) {
         }
         other => panic!("expected equality atom, got {other:?}"),
     }
+}
+
+fn assert_method_category(
+    vocab: &sugar_lift_java_tests::AssertionVocab,
+    name: &str,
+    params: &[&str],
+    category: AssertCategory,
+    source: &str,
+) {
+    let method = vocab
+        .methods
+        .iter()
+        .find(|method| {
+            method.name == name
+                && method
+                    .params
+                    .iter()
+                    .map(|param| param.ty.as_str())
+                    .eq(params.iter().copied())
+        })
+        .unwrap_or_else(|| panic!("missing method {name}({})", params.join(", ")));
+    assert_eq!(method.category, category);
+    assert_eq!(method.source, source);
 }
 
 #[test]
@@ -288,6 +351,121 @@ fn real_junit_external_override_supplies_body_gap_without_changing_approx_split(
     let learned_truth = learned
         .classify_call("assertTrue", 1, &["makeValue() == 6".to_string()])
         .expect("override marks assertTrue as truth");
+    assert_eq!(learned_truth.category, AssertCategory::Truth);
+    assert_eq!(learned_truth.source, "external-exception");
+}
+
+#[test]
+fn real_testng_javap_derives_delta_overload_as_approx_from_signature_without_classifier_changes() {
+    let jar = real_testng_jar();
+    let vocab = derive_vocab_from_javap("org.testng.Assert", &jar, &[]).unwrap();
+    let dump = vocab
+        .dump_lines()
+        .into_iter()
+        .filter(|line| line.contains("assertEquals") || line.contains("assertTrue"))
+        .collect::<Vec<_>>();
+    eprintln!("real-testng-derived-vocab: {}", dump.join("; "));
+
+    let approx = vocab
+        .classify_call(
+            "assertEquals",
+            3,
+            &[
+                "makeValue()".to_string(),
+                "6.0".to_string(),
+                "0.01".to_string(),
+            ],
+        )
+        .expect("real TestNG delta overload is learned");
+    assert_eq!(approx.category, AssertCategory::Approx);
+    assert_eq!(approx.source, "javap-signature");
+}
+
+#[test]
+fn real_testng_external_override_supplies_body_gap_without_changing_approx_split() {
+    let jar = real_testng_jar();
+    let tmp = tempfile::tempdir().unwrap();
+    let exc_dir = tmp.path().join(".sugar").join("vocab-exceptions");
+    fs::create_dir_all(&exc_dir).unwrap();
+    fs::write(
+        exc_dir.join("org.testng.Assert.json"),
+        r#"{"overrides":{"equality":["assertEquals"],"truth":["assertTrue"]}}"#,
+    )
+    .unwrap();
+
+    let bare = derive_vocab_from_javap("org.testng.Assert", &jar, &[]).unwrap();
+    let learned = derive_vocab_from_javap(
+        "org.testng.Assert",
+        &jar,
+        &[exc_dir.to_string_lossy().to_string()],
+    )
+    .unwrap();
+    eprintln!(
+        "real-testng-derived-vocab-with-overrides: {}",
+        learned
+            .dump_lines()
+            .into_iter()
+            .filter(|line| line.contains("assertEquals") || line.contains("assertTrue"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
+
+    let bare_approx = bare
+        .classify_call(
+            "assertEquals",
+            3,
+            &[
+                "makeValue()".to_string(),
+                "6.0".to_string(),
+                "0.01".to_string(),
+            ],
+        )
+        .expect("bare real TestNG delta overload is learned");
+    let learned_approx = learned
+        .classify_call(
+            "assertEquals",
+            3,
+            &[
+                "makeValue()".to_string(),
+                "6.0".to_string(),
+                "0.01".to_string(),
+            ],
+        )
+        .expect("overridden real TestNG delta overload remains learned");
+    assert_eq!(bare_approx.category, AssertCategory::Approx);
+    assert_eq!(learned_approx.category, AssertCategory::Approx);
+    assert_eq!(learned_approx.source, "javap-signature");
+
+    assert_method_category(
+        &learned,
+        "assertEquals",
+        &["double", "double", "double", "java.lang.String"],
+        AssertCategory::Approx,
+        "javap-signature",
+    );
+
+    let bare_exact = bare
+        .classify_call(
+            "assertEquals",
+            2,
+            &["makeValue()".to_string(), "6".to_string()],
+        )
+        .expect("bare exact overload is present from real TestNG signature");
+    assert_ne!(bare_exact.category, AssertCategory::Equality);
+
+    let learned_exact = learned
+        .classify_call(
+            "assertEquals",
+            2,
+            &["makeValue()".to_string(), "6".to_string()],
+        )
+        .expect("override marks exact overload as equality");
+    assert_eq!(learned_exact.category, AssertCategory::Equality);
+    assert_eq!(learned_exact.source, "external-exception");
+
+    let learned_truth = learned
+        .classify_call("assertTrue", 1, &["makeValue() == 6".to_string()])
+        .expect("override marks TestNG assertTrue as truth");
     assert_eq!(learned_truth.category, AssertCategory::Truth);
     assert_eq!(learned_truth.source, "external-exception");
 }

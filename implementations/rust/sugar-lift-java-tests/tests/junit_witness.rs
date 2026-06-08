@@ -1,6 +1,7 @@
 use sugar_canonicalizer::blake3_512_of;
 use sugar_lift_java_tests::{
-    build_bundle, junit_witness_package_contract_ir, parse_junit_xml_reports, witness_body,
+    build_bundle, junit_witness_package_contract_ir, parse_junit_xml_reports,
+    testng_witness_package_contract_ir, testng_witness_package_memento, witness_body,
     witness_package_memento, witness_package_proof_data, Witness, WITNESS_SIGNER_SEED,
 };
 use sugar_proof_envelope::ed25519_verify_string;
@@ -88,6 +89,25 @@ fn package_memento_signature_verifies_over_bundle_cid() {
 }
 
 #[test]
+fn testng_package_memento_signature_verifies_over_bundle_cid() {
+    let (_, cid, _) = build_bundle(&[witness("demo.ScalarTest.a", "passed")]);
+    let m = testng_witness_package_memento(
+        &cid,
+        &[".".to_string()],
+        &["src/main/java/demo/Calculator.java".to_string()],
+        1,
+        1,
+        Some(WITNESS_SIGNER_SEED),
+    )
+    .unwrap();
+    assert_eq!(m["witness_cid"], cid);
+    assert_eq!(m["witness_kind"], "testng-test-witness-package");
+    let signer = m["signer"].as_str().unwrap();
+    let signature = m["signature"].as_str().unwrap();
+    assert!(ed25519_verify_string(signer, signature, cid.as_bytes()));
+}
+
+#[test]
 fn contract_ir_carries_junit_custom_evidence() {
     let cid = "blake3-512:bundle";
     let proof_data = witness_package_proof_data(
@@ -115,5 +135,24 @@ fn contract_ir_carries_junit_custom_evidence() {
     assert_eq!(ir["inv"]["name"], "witnessed");
     assert_eq!(ir["evidence"]["proofType"], "custom");
     assert_eq!(ir["evidence"]["certificate"]["tool"], "junit");
+    assert_eq!(ir["evidence"]["certificate"]["formulaHash"], cid);
+}
+
+#[test]
+fn contract_ir_carries_testng_custom_evidence() {
+    let cid = "blake3-512:bundle";
+    let ir = testng_witness_package_contract_ir(
+        cid,
+        RUNTIME_CID,
+        &[".".to_string()],
+        &["src/main/java/demo/Calculator.java".to_string()],
+        2,
+        2,
+    );
+    assert_eq!(ir["kind"], "contract");
+    assert_eq!(ir["name"], "witness-package:blake3-512:bundle");
+    assert_eq!(ir["inv"]["name"], "witnessed");
+    assert_eq!(ir["evidence"]["proofType"], "custom");
+    assert_eq!(ir["evidence"]["certificate"]["tool"], "testng");
     assert_eq!(ir["evidence"]["certificate"]["formulaHash"], cid);
 }

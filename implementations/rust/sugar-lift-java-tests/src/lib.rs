@@ -1055,6 +1055,11 @@ fn is_numeric_literal(expr: &str) -> bool {
 pub const WITNESS_SIGNER_SEED: Ed25519Seed = [0x77u8; 32];
 const SIGNER_SEED_ENV: &str = "SUGAR_WITNESS_SIGNER_SEED";
 const JUNIT_JAR_ENV: &str = "SUGAR_JUNIT_CONSOLE_JAR";
+const TESTNG_CLASSPATH_ENV: &str = "SUGAR_TESTNG_CLASSPATH";
+const JUNIT_TEST_WITNESS_KIND: &str = "junit-test-witness";
+const JUNIT_PACKAGE_KIND: &str = "junit-test-witness-package";
+const TESTNG_TEST_WITNESS_KIND: &str = "testng-test-witness";
+const TESTNG_PACKAGE_KIND: &str = "testng-test-witness-package";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedTest {
@@ -1064,6 +1069,7 @@ pub struct ParsedTest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Witness {
+    pub kind: String,
     pub code_cid: String,
     pub runtime_cid: String,
     pub test_id: String,
@@ -1080,7 +1086,14 @@ impl Witness {
         outcome: &str,
         code_files: &[String],
     ) -> Self {
-        make_witness(code, runtime, test_id, outcome, code_files)
+        make_witness(
+            JUNIT_TEST_WITNESS_KIND,
+            code,
+            runtime,
+            test_id,
+            outcome,
+            code_files,
+        )
     }
 }
 
@@ -1143,10 +1156,19 @@ fn join_with_nul(parts: &[Vec<u8>]) -> Vec<u8> {
 }
 
 pub fn runtime_cid() -> String {
+    runtime_cid_for("junit", JUNIT_JAR_ENV)
+}
+
+pub fn testng_runtime_cid() -> String {
+    runtime_cid_for("testng", TESTNG_CLASSPATH_ENV)
+}
+
+fn runtime_cid_for(tool: &str, classpath_env: &str) -> String {
     let javac = command_version("javac", &["-version"]);
     let java = command_version("java", &["-version"]);
-    let jar = std::env::var(JUNIT_JAR_ENV).unwrap_or_else(|_| "junit-console-unknown".to_string());
-    let desc = format!("javac={javac};java={java};junit={jar}");
+    let classpath =
+        std::env::var(classpath_env).unwrap_or_else(|_| format!("{tool}-classpath-unknown"));
+    let desc = format!("javac={javac};java={java};{tool}={classpath}");
     blake3_512_of(desc.as_bytes())
 }
 
@@ -1166,6 +1188,7 @@ fn command_version(bin: &str, args: &[&str]) -> String {
 }
 
 fn witness_value(
+    kind: &str,
     code: &str,
     runtime: &str,
     test_id: &str,
@@ -1175,7 +1198,7 @@ fn witness_value(
     let mut files = code_files.to_vec();
     files.sort();
     CValue::object([
-        ("kind", CValue::string("junit-test-witness")),
+        ("kind", CValue::string(kind.to_string())),
         ("codeCid", CValue::string(code.to_string())),
         ("codeFiles", CValue::string(files.join(","))),
         ("outcome", CValue::string(outcome.to_string())),
@@ -1186,6 +1209,7 @@ fn witness_value(
 
 pub fn witness_body(w: &Witness) -> Vec<u8> {
     encode_jcs(&witness_value(
+        &w.kind,
         &w.code_cid,
         &w.runtime_cid,
         &w.test_id,
@@ -1196,6 +1220,7 @@ pub fn witness_body(w: &Witness) -> Vec<u8> {
 }
 
 fn make_witness(
+    kind: &str,
     code: &str,
     runtime: &str,
     test_id: &str,
@@ -1204,9 +1229,12 @@ fn make_witness(
 ) -> Witness {
     let mut files = code_files.to_vec();
     files.sort();
-    let body = encode_jcs(&witness_value(code, runtime, test_id, outcome, &files));
+    let body = encode_jcs(&witness_value(
+        kind, code, runtime, test_id, outcome, &files,
+    ));
     let cid = blake3_512_of(body.as_bytes());
     Witness {
+        kind: kind.to_string(),
         code_cid: code.to_string(),
         runtime_cid: runtime.to_string(),
         test_id: test_id.to_string(),
@@ -1276,6 +1304,7 @@ fn xml_unescape(s: &str) -> String {
 }
 
 fn witnesses_from_parsed(
+    kind: &str,
     parsed: &[ParsedTest],
     cc: &str,
     rc: &str,
@@ -1290,7 +1319,7 @@ fn witnesses_from_parsed(
             } else {
                 "failed"
             };
-            make_witness(cc, rc, &p.test_id, outcome, code_files)
+            make_witness(kind, cc, rc, &p.test_id, outcome, code_files)
         })
         .collect()
 }
@@ -1335,7 +1364,13 @@ pub fn run_suite_witnesses(
     let cc = code_cid(project_dir, code_files)?;
     let rc = runtime_cid();
     let parsed = run_junit_suite(project_dir)?;
-    Ok(witnesses_from_parsed(&parsed, &cc, &rc, code_files))
+    Ok(witnesses_from_parsed(
+        JUNIT_TEST_WITNESS_KIND,
+        &parsed,
+        &cc,
+        &rc,
+        code_files,
+    ))
 }
 
 pub fn build_suite_bundle(
@@ -1343,6 +1378,30 @@ pub fn build_suite_bundle(
     code_files: &[String],
 ) -> Result<(Vec<u8>, String, Vec<Witness>), String> {
     let witnesses = run_suite_witnesses(project_dir, code_files)?;
+    Ok(build_bundle(&witnesses))
+}
+
+pub fn run_testng_suite_witnesses(
+    project_dir: &Path,
+    code_files: &[String],
+) -> Result<Vec<Witness>, String> {
+    let cc = code_cid(project_dir, code_files)?;
+    let rc = testng_runtime_cid();
+    let parsed = run_testng_suite(project_dir)?;
+    Ok(witnesses_from_parsed(
+        TESTNG_TEST_WITNESS_KIND,
+        &parsed,
+        &cc,
+        &rc,
+        code_files,
+    ))
+}
+
+pub fn build_testng_suite_bundle(
+    project_dir: &Path,
+    code_files: &[String],
+) -> Result<(Vec<u8>, String, Vec<Witness>), String> {
+    let witnesses = run_testng_suite_witnesses(project_dir, code_files)?;
     Ok(build_bundle(&witnesses))
 }
 
@@ -1410,14 +1469,102 @@ fn run_junit_suite(project_dir: &Path) -> Result<Vec<ParsedTest>, String> {
     Ok(parsed)
 }
 
+fn testng_classpath() -> Result<String, String> {
+    let cp = std::env::var(TESTNG_CLASSPATH_ENV)
+        .map_err(|_| format!("{TESTNG_CLASSPATH_ENV} is not set; cannot run TestNG witness"))?;
+    if cp.trim().is_empty() {
+        return Err(format!("{TESTNG_CLASSPATH_ENV} is empty"));
+    }
+    Ok(cp)
+}
+
+fn run_testng_suite(project_dir: &Path) -> Result<Vec<ParsedTest>, String> {
+    let cp = testng_classpath()?;
+    let (java_files, _) = discover_java_files(project_dir);
+    if java_files.is_empty() {
+        return Err("no Java source files found".to_string());
+    }
+    let test_classes = discover_test_classes(project_dir, &java_files)?;
+    if test_classes.is_empty() {
+        return Err("no TestNG @Test classes found".to_string());
+    }
+
+    let work = project_dir.join("target").join("sugar-java-testng");
+    let classes = work.join("classes");
+    let reports = work.join("reports");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&classes).map_err(|e| format!("mkdir classes: {e}"))?;
+    std::fs::create_dir_all(&reports).map_err(|e| format!("mkdir reports: {e}"))?;
+
+    let mut javac = Command::new("javac");
+    javac.arg("-cp").arg(&cp).arg("-d").arg(&classes);
+    for rel in &java_files {
+        javac.arg(project_dir.join(rel));
+    }
+    let javac_out = javac.output().map_err(|e| format!("spawn javac: {e}"))?;
+    if !javac_out.status.success() {
+        return Err(format!(
+            "javac failed: {}{}",
+            String::from_utf8_lossy(&javac_out.stdout),
+            String::from_utf8_lossy(&javac_out.stderr)
+        ));
+    }
+
+    let runtime_cp = format!("{cp}:{}", classes.display());
+    let output = Command::new("java")
+        .arg("-cp")
+        .arg(runtime_cp)
+        .arg("org.testng.TestNG")
+        .arg("-testclass")
+        .arg(test_classes.join(","))
+        .arg("-d")
+        .arg(&reports)
+        .output()
+        .map_err(|e| format!("spawn TestNG: {e}"))?;
+    let mut parsed = parse_report_dir(&reports)?;
+    if parsed.is_empty() {
+        return Err(format!(
+            "TestNG produced no test cases; stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    parsed.sort_by(|a, b| a.test_id.cmp(&b.test_id));
+    Ok(parsed)
+}
+
+fn discover_test_classes(project_dir: &Path, java_files: &[String]) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for rel in java_files {
+        let src = std::fs::read_to_string(project_dir.join(rel))
+            .map_err(|e| format!("read Java source {rel}: {e}"))?;
+        if !src.contains("@Test") {
+            continue;
+        }
+        let Some(class_name) = first_class_name(&src) else {
+            continue;
+        };
+        if let Some(package) = package_name(&src) {
+            out.push(format!("{package}.{class_name}"));
+        } else {
+            out.push(class_name);
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
 fn parse_report_dir(reports: &Path) -> Result<Vec<ParsedTest>, String> {
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(reports).map_err(|e| format!("read reports dir: {e}"))? {
-        let entry = entry.map_err(|e| format!("read reports entry: {e}"))?;
+    for entry in walkdir::WalkDir::new(reports)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "xml") {
             let xml = std::fs::read_to_string(&path)
-                .map_err(|e| format!("read junit report {}: {e}", path.display()))?;
+                .map_err(|e| format!("read Java test report {}: {e}", path.display()))?;
             out.extend(parse_junit_xml_reports(&xml));
         }
     }
@@ -1425,6 +1572,45 @@ fn parse_report_dir(reports: &Path) -> Result<Vec<ParsedTest>, String> {
 }
 
 pub fn witness_package_memento(
+    bundle_cid: &str,
+    test_files: &[String],
+    code_files: &[String],
+    count: usize,
+    passed: usize,
+    seed: Option<Ed25519Seed>,
+) -> Result<serde_json::Value, String> {
+    witness_package_memento_for(
+        JUNIT_PACKAGE_KIND,
+        bundle_cid,
+        test_files,
+        code_files,
+        count,
+        passed,
+        seed,
+    )
+}
+
+pub fn testng_witness_package_memento(
+    bundle_cid: &str,
+    test_files: &[String],
+    code_files: &[String],
+    count: usize,
+    passed: usize,
+    seed: Option<Ed25519Seed>,
+) -> Result<serde_json::Value, String> {
+    witness_package_memento_for(
+        TESTNG_PACKAGE_KIND,
+        bundle_cid,
+        test_files,
+        code_files,
+        count,
+        passed,
+        seed,
+    )
+}
+
+fn witness_package_memento_for(
+    witness_kind: &str,
     bundle_cid: &str,
     test_files: &[String],
     code_files: &[String],
@@ -1442,7 +1628,7 @@ pub fn witness_package_memento(
     Ok(serde_json::json!({
         "kind": "witness-memento",
         "witness_cid": bundle_cid,
-        "witness_kind": "junit-test-witness-package",
+        "witness_kind": witness_kind,
         "signer": signer,
         "signature": signature,
         "test_files": tfs,
@@ -1514,9 +1700,36 @@ pub fn junit_witness_package_contract_ir(
     count: usize,
     passed: usize,
 ) -> serde_json::Value {
+    witness_package_contract_ir_for(
+        "junit", bundle_cid, runtime, test_files, code_files, count, passed,
+    )
+}
+
+pub fn testng_witness_package_contract_ir(
+    bundle_cid: &str,
+    runtime: &str,
+    test_files: &[String],
+    code_files: &[String],
+    count: usize,
+    passed: usize,
+) -> serde_json::Value {
+    witness_package_contract_ir_for(
+        "testng", bundle_cid, runtime, test_files, code_files, count, passed,
+    )
+}
+
+fn witness_package_contract_ir_for(
+    tool: &str,
+    bundle_cid: &str,
+    runtime: &str,
+    test_files: &[String],
+    code_files: &[String],
+    count: usize,
+    passed: usize,
+) -> serde_json::Value {
     let proof_data = witness_package_proof_data(bundle_cid, test_files, code_files, count, passed);
     let cert = EvidenceCertificate {
-        tool: "junit".to_string(),
+        tool: tool.to_string(),
         version: runtime.to_string(),
         formula_hash: bundle_cid.to_string(),
         proof_data,
@@ -1596,6 +1809,37 @@ pub fn lift_project(project_dir: &Path) -> Result<Option<LiftProjectResult>, Str
     }))
 }
 
+pub fn lift_testng_project(project_dir: &Path) -> Result<Option<LiftProjectResult>, String> {
+    let (code_files, test_files) = discover_java_files(project_dir);
+    if code_files.is_empty() {
+        return Ok(None);
+    }
+    let (bundle_bytes, bundle_cid, witnesses) =
+        build_testng_suite_bundle(project_dir, &code_files)?;
+    if witnesses.is_empty() {
+        return Ok(None);
+    }
+    let count = witnesses.len();
+    let passed = witnesses.iter().filter(|w| w.outcome == "passed").count();
+    let runtime = testng_runtime_cid();
+    let memento =
+        testng_witness_package_memento(&bundle_cid, &test_files, &code_files, count, passed, None)?;
+    let contract = testng_witness_package_contract_ir(
+        &bundle_cid,
+        &runtime,
+        &test_files,
+        &code_files,
+        count,
+        passed,
+    );
+    Ok(Some(LiftProjectResult {
+        ir: vec![contract],
+        mementos: vec![memento],
+        bundle_cid,
+        bundle_bytes,
+    }))
+}
+
 pub fn parse_evidence_proof_data(evidence_json: &str) -> Result<serde_json::Value, String> {
     let ev: serde_json::Value =
         serde_json::from_str(evidence_json).map_err(|e| format!("parse evidence JSON: {e}"))?;
@@ -1623,7 +1867,37 @@ pub fn discharge_bundle(
     code_files: &[String],
     project_dir: &Path,
 ) -> (String, String) {
-    let (_, cid, witnesses) = match build_suite_bundle(project_dir, code_files) {
+    discharge_bundle_with(
+        "JUnit",
+        bundle_cid,
+        code_files,
+        project_dir,
+        build_suite_bundle,
+    )
+}
+
+pub fn discharge_testng_bundle(
+    bundle_cid: &str,
+    code_files: &[String],
+    project_dir: &Path,
+) -> (String, String) {
+    discharge_bundle_with(
+        "TestNG",
+        bundle_cid,
+        code_files,
+        project_dir,
+        build_testng_suite_bundle,
+    )
+}
+
+fn discharge_bundle_with(
+    label: &str,
+    bundle_cid: &str,
+    code_files: &[String],
+    project_dir: &Path,
+    build: fn(&Path, &[String]) -> Result<(Vec<u8>, String, Vec<Witness>), String>,
+) -> (String, String) {
+    let (_, cid, witnesses) = match build(project_dir, code_files) {
         Ok(t) => t,
         Err(e) => return ("REFUSED".to_string(), format!("discharge error: {e}")),
     };
@@ -1661,7 +1935,7 @@ pub fn discharge_bundle(
     }
     (
         "DISCHARGED".to_string(),
-        format!("suite re-ran; all {n} JUnit witnesses reproduced and passed"),
+        format!("suite re-ran; all {n} {label} witnesses reproduced and passed"),
     )
 }
 
@@ -1675,6 +1949,20 @@ pub fn recompute_bundle_body(
     pinned_cid: &str,
 ) -> Result<Vec<u8>, String> {
     let (buf, rcid, _) = build_suite_bundle(project_dir, code_files)?;
+    if rcid != pinned_cid {
+        return Err(format!(
+            "witness package did not reproduce: recomputed {rcid}, pinned {pinned_cid}"
+        ));
+    }
+    Ok(buf)
+}
+
+pub fn recompute_testng_bundle_body(
+    project_dir: &Path,
+    code_files: &[String],
+    pinned_cid: &str,
+) -> Result<Vec<u8>, String> {
+    let (buf, rcid, _) = build_testng_suite_bundle(project_dir, code_files)?;
     if rcid != pinned_cid {
         return Err(format!(
             "witness package did not reproduce: recomputed {rcid}, pinned {pinned_cid}"

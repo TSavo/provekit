@@ -30,5 +30,13 @@ path = "src/bin/java_junit_witness_rpc.rs"
 name = "java_junit_discharge_cli"
 path = "src/bin/java_junit_discharge_cli.rs"
 
+[[bin]]
+name = "java_testng_witness_rpc"
+path = "src/bin/java_testng_witness_rpc.rs"
+
+[[bin]]
+name = "java_testng_discharge_cli"
+path = "src/bin/java_testng_discharge_cli.rs"
+
 [dev-dependencies]
 tempfile = { workspace = true }
