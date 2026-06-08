@@ -165,16 +165,94 @@ fn extract_git(rev: &str, path: &str, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Mint a crate's proofs into `out_dir`. Bootstraps `.sugar/` if the crate has
-/// none (a downloaded crate won't), then runs `sugar mint`.
-fn mint(project: &Path, out_dir: &Path) -> Result<(), String> {
+/// The Rust lift config cargo-sugar stamps into a crate before minting. Two
+/// surfaces drive the behavior fingerprint: `rust-walk-contracts` (body-derived
+/// function contracts via sugar-walk-rpc) and `rust-tests` (harvested `#[test]`
+/// assertions via sugar-lift -- the test *is* the contract). `{walk}`/`{lift}`
+/// are filled with absolute lifter paths.
+const RUST_CONFIG_TOML: &str = r#"[[plugins]]
+name = "rust-walk-contracts"
+surface = "rust-walk-contracts"
+emit = "ir-document"
+[[plugins]]
+name = "rust-tests"
+surface = "rust-tests"
+emit = "ir-document"
+[solvers]
+default = "z3"
+[solvers.dispatch]
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+"#;
+
+/// Resolve a sibling lifter binary next to the `sugar` binary; fall back to the
+/// bare name (assume it is on PATH, as it would be after `cargo install`).
+fn lifter_bin(name: &str) -> String {
     let sugar = sugar_bin();
-    if !project.join(".sugar").join("config.toml").exists() {
-        let _ = Command::new(&sugar)
-            .arg("init")
-            .current_dir(project)
-            .status();
+    if sugar.contains('/') {
+        if let Some(dir) = Path::new(&sugar).parent() {
+            let p = dir.join(name);
+            if p.exists() {
+                return p.to_string_lossy().into_owned();
+            }
+        }
     }
+    name.to_string()
+}
+
+/// Write the Rust lift `.sugar/` config + manifests into `dir` (idempotent: a
+/// crate that already declares a surface is left alone).
+fn bootstrap_rust(dir: &Path) -> Result<(), String> {
+    let s = dir.join(".sugar");
+    if s.join("config.toml").exists() {
+        return Ok(());
+    }
+    let manifest = |surface: &str, bin: &str| {
+        format!("name = \"{surface}\"\ncommand = [\"{bin}\", \"--rpc\"]\nworking_dir = \".\"\n")
+    };
+    std::fs::create_dir_all(s.join("lift/rust-walk-contracts")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(s.join("lift/rust-tests")).map_err(|e| e.to_string())?;
+    std::fs::write(s.join("config.toml"), RUST_CONFIG_TOML).map_err(|e| e.to_string())?;
+    std::fs::write(
+        s.join("lift/rust-walk-contracts/manifest.toml"),
+        manifest("rust-walk-contracts", &lifter_bin("sugar-walk-rpc")),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::write(
+        s.join("lift/rust-tests/manifest.toml"),
+        manifest("rust-tests", &lifter_bin("sugar-lift")),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Copy the current crate's lift-relevant sources into `dst` so we can bootstrap
+/// and mint without writing `.sugar/` into the user's working tree.
+fn copy_current_crate(dst: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for item in ["Cargo.toml", "src", "tests", "benches"] {
+        if Path::new(item).exists() {
+            let ok = Command::new("cp")
+                .arg("-r")
+                .arg(item)
+                .arg(dst)
+                .status()
+                .map_err(|e| format!("cp {item}: {e}"))?
+                .success();
+            if !ok {
+                return Err(format!("cp {item} failed"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Bootstrap Rust lift config into `project` and mint its proofs into `out_dir`.
+fn mint(project: &Path, out_dir: &Path) -> Result<(), String> {
+    bootstrap_rust(project)?;
+    let sugar = sugar_bin();
     let status = Command::new(&sugar)
         .args(["mint", "--project"])
         .arg(project)
@@ -194,6 +272,7 @@ fn check(a: CheckArgs) -> Result<std::process::ExitCode, String> {
     let _ = std::fs::remove_dir_all(&scratch);
     let base_src = scratch.join("baseline-src");
     let base_out = scratch.join("baseline-proofs");
+    let cur_src = scratch.join("current-src");
     let cur_out = scratch.join("current-proofs");
     std::fs::create_dir_all(&base_src).map_err(|e| format!("mkdir: {e}"))?;
 
@@ -210,9 +289,11 @@ fn check(a: CheckArgs) -> Result<std::process::ExitCode, String> {
         format!("crates.io {name} {v}")
     };
 
-    // 2. mint both sides.
+    // 2. mint both sides (current crate copied out so we never write into the
+    // user's working tree).
     eprintln!("cargo sugar: current crate {name} {version} vs baseline {baseline_label}");
-    mint(Path::new("."), &cur_out)?;
+    copy_current_crate(&cur_src)?;
+    mint(&cur_src, &cur_out)?;
     mint(&base_src, &base_out)?;
 
     // 3. diff the two proof sets and enforce the bump.
