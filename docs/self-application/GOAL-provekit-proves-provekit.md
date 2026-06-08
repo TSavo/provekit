@@ -184,7 +184,7 @@ is now the active arc; see Phase 5.
   2026-06-01).** Rust kit reads audited
   `.provekit/contracts/function_postconditions.toml` entries for
   `Cid::parse(format!("blake3-512:{}", "0".repeat(128)))` and
-  `ConceptOpCatalog.cid(CONCEPT_BIND_RESULT)`, emits singleton postcondition
+  `GrammarOpRegistry.cid(CONCEPT_BIND_RESULT)`, emits singleton postcondition
   contracts, and routes manifest-backed panic receivers through fixed std
   partials (`is_ok` -> Result, `is_some` -> Option). The verifier remains
   language-blind: it consumes opaque producer coordinates and generic
@@ -354,7 +354,7 @@ slice contributes 6 current K rows here: 5 prelude/std-shim rows plus
 
 Post-#1771 main libprovekit score: `panicCensus=35`, `panicSafe=12`,
 `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`; the +2 rows are
-`src/core/bind.rs:550` (`ConceptOpCatalog.cid(CONCEPT_BIND_RESULT).expect(...)`)
+`src/core/bind.rs:550` (`GrammarOpRegistry.cid(CONCEPT_BIND_RESULT).expect(...)`)
 and `src/wp/tests.rs:74`
 (`Cid::parse(format!("blake3-512:{}", "0".repeat(128))).expect(...)`).
 

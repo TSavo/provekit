@@ -462,7 +462,7 @@ impl ProcMacroInvocation {
         json!({
             "kind": "concept:op-application",
             "concept_name": self.concept_name,
-            "op_definition_cid": concept_op_definition_cid(self.concept_name),
+            "op_definition_cid": local_op_definition_cid(self.concept_name),
             "macro_cid": self.macro_cid,
             "macro_path": self.macro_path,
             "args": self.args,
@@ -1132,7 +1132,7 @@ fn normalize_attr_tokens(raw: String) -> String {
     normalized
 }
 
-fn concept_op_definition_cid(concept_name: &str) -> String {
+fn local_op_definition_cid(concept_name: &str) -> String {
     blake3_512_of(concept_name.as_bytes())
 }
 

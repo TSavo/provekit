@@ -9,7 +9,7 @@
 
 ## §0: Why this spec exists
 
-The cross-language transport layer mints an *exact* morphism `morphism_<lang>_<op>_to_<concept-op>` when a language's lifter-emitted op spec refines the corresponding `concept:*` hub op, and otherwise records a row in `menagerie/concept-shapes/transport-gaps.md`. That markdown file is, today, 463 lines of `| language | concept op | source spec | reason |`. It is the wrong representation for a structure the rest of the substrate has taught itself to take seriously: a precise, machine-readable, content-addressed fact about why two things that look like they should relate do not relate exactly, and what one could do about it.
+The cross-language transport layer mints an *exact* morphism `morphism_<lang>_<op>_to_<target-op>` when a language's lifter-emitted op spec refines the corresponding `concept:*` hub op, and otherwise records a row in `menagerie/concept-shapes/transport-gaps.md`. That markdown file is, today, 463 lines of `| language | concept op | source spec | reason |`. It is the wrong representation for a structure the rest of the substrate has taught itself to take seriously: a precise, machine-readable, content-addressed fact about why two things that look like they should relate do not relate exactly, and what one could do about it.
 
 The genuine semantic divergences the file records *should stay gaps*. `c11:add` is fixed-width modular arithmetic with undefined behavior on signed overflow; `python:add` is polymorphic, arbitrary-precision, and dispatches on operand sort. `c11:%` truncates toward zero; `python:%` is floored. `python:Int` is unbounded; `concept:Int` is fixed-width. `python:div` is true division; `concept:div` is integer division. Go and Zig short-circuit `&&` and `||` have no expression-position ternary to desugar through. Some languages genuinely lack an op. The substrate refusing to claim equivalence where there is none is correct, and *Supra omnia, rectum* requires exactly that refusal. PTP §3 names it: "a refusal is a precise extension request." But a row in a markdown table is not a precise extension request. It is a note. It is not content-addressed; it does not carry a structured reason a tool can branch on; it carries nothing about the resolution space; and "we considered re-speccing the hub op and chose not to" cannot be recorded against it at all.
 
@@ -67,7 +67,7 @@ transport-gap-memento = {
   source_op_cid:     cid,                    ; the lifter-emitted <lang>:op contract memento
   target_op_cid:     cid,                    ; the concept:op hub contract memento (or null when the gap is "no target op")
   source_lang:       tstr,                   ; e.g. "python"
-  target_concept_op: tstr,                   ; e.g. "concept:add"
+  target_op: tstr,                   ; e.g. "concept:add"
   gap_kind:          gap-kind,
   reason:            gap-reason,             ; structured diff; machine-readable
   ? reason_note:     tstr,                   ; OPTIONAL prose; non-load-bearing; MUST be omitted (not null) when absent
@@ -407,7 +407,7 @@ These four exhibit, between them, every `gap_kind` that carries a non-trivial re
 
 ## §3: The generator change
 
-`mint_language_morphisms.py` (or its successor) changes its per-`(lang, concept-op)` decision:
+`mint_language_morphisms.py` (or its successor) changes its per-`(lang, target-op)` decision:
 
 1. If the canonicalizer discharge lands on the concept shape CID, exact morphism, as today: mint the `MorphismMemento` + `MorphismDischargeReceipt`.
 2. Else if the structural relaxation discharges (today: `wp-text abstraction` / `pre-weakening`; post-WPF: the WPF §3 refinement check), exact morphism with the relaxed method, as today.
@@ -430,12 +430,12 @@ Gap and partial/lossy-morphism mementos live alongside the morphisms they concer
 ```
 menagerie/concept-shapes/
   specs/
-    gap_<lang>_<op>_to_<concept-op>.spec.json            ; TransportGapMemento
-    partial_morphism_<lang>_<op>_to_<concept-op>.spec.json
-    lossy_morphism_<lang>_<op>_to_<concept-op>@<tag>.spec.json
+    gap_<lang>_<op>_to_<target-op>.spec.json            ; TransportGapMemento
+    partial_morphism_<lang>_<op>_to_<target-op>.spec.json
+    lossy_morphism_<lang>_<op>_to_<target-op>@<tag>.spec.json
   receipts/
-    partial_morphism_<lang>_<op>_to_<concept-op>.receipt.json
-    lossy_morphism_<lang>_<op>_to_<concept-op>@<tag>.receipt.json
+    partial_morphism_<lang>_<op>_to_<target-op>.receipt.json
+    lossy_morphism_<lang>_<op>_to_<target-op>@<tag>.receipt.json
   catalog/
     algorithms/  receipts/  gaps/                          ; gaps/ holds the gap memento CIDs
   cids.tsv                                                 ; gains `gap` and `partial-morphism` / `lossy-morphism` kind rows

@@ -17,7 +17,7 @@
       "audit_class": "handles-partially-with-loss-record",
       "lift_refuse_class": "not-bridge-compatible-match_expr-var",
       "walk_emit_result": "accepted",
-      "reason": "the raw term contains match_expr plus var nodes; proofir_resolve rejects Var terms, so no D7-v0 style bridge-compatible single-term fixture is available without extending the bridge or realizer"
+      "reason": "the raw term contains match_expr plus var nodes; local_cid_fixture_check rejects Var terms, so no D7-v0 style bridge-compatible single-term fixture is available without extending the bridge or realizer"
     },
     {
       "name": "array",

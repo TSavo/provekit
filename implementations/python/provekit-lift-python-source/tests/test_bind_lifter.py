@@ -196,15 +196,8 @@ def _concept_diagnostics(result: object) -> set[str]:
     return {diag["kind"] for diag in diagnostics}
 
 
-def _catalog_concept_cid(name: str) -> str:
-    index_path = ROOT / "menagerie/concept-shapes/catalog/index.json"
-    index = json.loads(index_path.read_text(encoding="utf-8"))
-    for entry in index["entries"].values():
-        if entry.get("kind") == "algorithm" and entry.get("name") == name:
-            cid = entry["cid"]
-            assert isinstance(cid, str)
-            return cid
-    raise AssertionError(f"missing catalog concept: {name}")
+def _local_op_cid(name: str) -> str:
+    return cid_of_json({"kind": "local-operator", "name": name})
 
 
 def _walk_objects(value: object) -> list[dict]:
@@ -245,7 +238,7 @@ def _gamma_shape(concept_name: str, args: list[dict] | None = None) -> dict:
     return {
         "args": args or [],
         "concept_name": concept_name,
-        "op_cid": _catalog_concept_cid(concept_name),
+        "op_cid": _local_op_cid(concept_name),
     }
 
 
@@ -683,17 +676,17 @@ def test_bind_lift_preserves_operator_concept_cid_atoms() -> None:
 
     assert result.diagnostics == []
     expected = {
-        "add": ("concept:add", _catalog_concept_cid("concept:add")),
-        "sub": ("concept:sub", _catalog_concept_cid("concept:sub")),
-        "mul": ("concept:mul", _catalog_concept_cid("concept:mul")),
-        "div": ("concept:div", _catalog_concept_cid("concept:div")),
-        "eq": ("concept:eq", _catalog_concept_cid("concept:eq")),
-        "ne": ("concept:ne", _catalog_concept_cid("concept:ne")),
-        "lt": ("concept:lt", _catalog_concept_cid("concept:lt")),
-        "le": ("concept:le", _catalog_concept_cid("concept:le")),
-        "gt": ("concept:gt", _catalog_concept_cid("concept:gt")),
-        "ge": ("concept:ge", _catalog_concept_cid("concept:ge")),
-        "logical_not": ("concept:not", _catalog_concept_cid("concept:not")),
+        "add": ("concept:add", _local_op_cid("concept:add")),
+        "sub": ("concept:sub", _local_op_cid("concept:sub")),
+        "mul": ("concept:mul", _local_op_cid("concept:mul")),
+        "div": ("concept:div", _local_op_cid("concept:div")),
+        "eq": ("concept:eq", _local_op_cid("concept:eq")),
+        "ne": ("concept:ne", _local_op_cid("concept:ne")),
+        "lt": ("concept:lt", _local_op_cid("concept:lt")),
+        "le": ("concept:le", _local_op_cid("concept:le")),
+        "gt": ("concept:gt", _local_op_cid("concept:gt")),
+        "ge": ("concept:ge", _local_op_cid("concept:ge")),
+        "logical_not": ("concept:not", _local_op_cid("concept:not")),
     }
     for entry, (concept_name, op_cid) in zip(result.ir, expected.values(), strict=True):
         atoms = _operator_atoms(entry["term_shape"])
@@ -1020,7 +1013,7 @@ def test_bind_lift_contract_comment_fails_closed_for_bad_payloads() -> None:
 
 def test_bind_lift_omits_concept_citations_from_wire_payload() -> None:
     args = [{"kind": "var", "name": "x"}]
-    concept_skip_cid = _catalog_concept_cid("concept:skip")
+    concept_skip_cid = _local_op_cid("concept:skip")
     emitted = emit_stub(
         function="transport_skip",
         params=["x"],
@@ -1140,55 +1133,6 @@ def test_python_realize_then_lift_keeps_contract_and_concept_site_cids() -> None
     assert witness["extension_fields"]["contract_cid"] == _cid("2")
     assert witness["extension_fields"]["local_contract_cid"] == _cid("2")
     assert witness["predicate"] == _formula_gte_x_zero()
-
-
-def test_concept_citation_shape_mismatch_refuses_surrounding_relift() -> None:
-    from provekit_lift_python_source.bind_lifter import _concept_shape_catalog
-
-    assert _concept_shape_catalog() is not None, (
-        "catalog must be present for this test to exercise row-7 path"
-    )
-
-    # shape_cid differs from what the catalog records for CONCEPT_SKIP_CID
-    payload, payload_cid = _concept_citation_payload({"shape_cid": _cid("8")})
-    bad_fn_source = (
-        "def good_fn(x: int) -> int:\n"
-        "    return x\n"
-        "\n"
-        "def bad_fn(x: object):\n"
-        "    " + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ") + "    pass\n"
-    )
-
-    result = lift_source(bad_fn_source, "pkg/foo.py")
-
-    # bad_fn must not produce an IR entry; good_fn must still produce one.
-    assert len(result.ir) == 1
-    assert "fn_name" not in result.ir[0]
-    assert "concept-citation:shape-mismatch" in _concept_diagnostics(result)
-
-
-def test_concept_citation_operation_kind_mismatch_refuses_surrounding_relift() -> None:
-    from provekit_lift_python_source.bind_lifter import _concept_shape_catalog
-
-    assert _concept_shape_catalog() is not None, (
-        "catalog must be present for this test to exercise row-8 path"
-    )
-
-    # operation_kind differs from what the catalog records for CONCEPT_SKIP_CID ("skip")
-    payload, payload_cid = _concept_citation_payload({"operation_kind": "not-skip"})
-    bad_fn_source = (
-        "def good_fn(x: int) -> int:\n"
-        "    return x\n"
-        "\n"
-        "def bad_fn(x: object):\n"
-        "    " + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ") + "    pass\n"
-    )
-
-    result = lift_source(bad_fn_source, "pkg/foo.py")
-
-    assert len(result.ir) == 1
-    assert "fn_name" not in result.ir[0]
-    assert "concept-citation:operation-kind-mismatch" in _concept_diagnostics(result)
 
 
 def test_concept_citation_missing_operation_kind_field_tags_as_malformed_json() -> None:

@@ -553,7 +553,7 @@ pub fn concept_bind_result_cid() -> Cid {
     // Computed from the pinned SHAPE, never a pinned hash. The address is
     // whatever json_cid(grammar_op_shape) produces, by construction -- there is
     // no magic-number literal to drift from its preimage.
-    ConceptOpCatalog
+    GrammarOpRegistry
         .cid(CONCEPT_BIND_RESULT)
         .expect("concept:bind-result is a language primitive")
 }
@@ -563,14 +563,14 @@ pub fn concept_bind_result_cid() -> Cid {
 /// the address is `json_cid` of its pinned shape, computed, never frozen.
 /// Consumers derive handles from this; they never store a copy.
 pub fn grammar_op_cid(name: &str) -> Option<Cid> {
-    ConceptOpCatalog.cid(name)
+    GrammarOpRegistry.cid(name)
 }
 
 pub fn bind_result_payload(
     original_term: Term,
     named: &NamedTermDocument,
 ) -> Result<Term, BindError> {
-    let catalog = ConceptOpCatalog::load()?;
+    let catalog = GrammarOpRegistry::load()?;
     // Wire form: function cleared (preserving #1093) but fn_name_sugar kept for
     // the lower pipeline to recover the source function name without affecting
     // the named-term-document CID (see named_term_document_cid / bind_payload_named_term_document)
@@ -1252,9 +1252,9 @@ fn named_witness(role: &str, predicate_text: &str, source_kind: &str) -> NamedWi
 // shape, computed here from a shape compiled into the binary. There is no disk
 // load, no catalog, and no `required_cid` that can fail on an empty catalog:
 // the language is always present because it is the code.
-struct ConceptOpCatalog;
+struct GrammarOpRegistry;
 
-impl ConceptOpCatalog {
+impl GrammarOpRegistry {
     fn load() -> Result<Self, BindError> {
         Ok(Self)
     }
@@ -1358,7 +1358,7 @@ fn grammar_op_shape(name: &str) -> Option<Json> {
 
 fn named_term_document_op_tree(
     named: &NamedTermDocument,
-    catalog: &ConceptOpCatalog,
+    catalog: &GrammarOpRegistry,
 ) -> Result<Term, BindError> {
     let mut terms = named
         .terms
@@ -1389,7 +1389,7 @@ fn named_term_document_op_tree(
 fn named_term_op_tree(
     document: &NamedTermDocument,
     term: &NamedTerm,
-    catalog: &ConceptOpCatalog,
+    catalog: &GrammarOpRegistry,
     term_position: Vec<usize>,
 ) -> Result<Term, BindError> {
     if let Some(tree) = &term.named_term_tree {
@@ -1417,7 +1417,7 @@ fn named_tree_op_tree(
     document: &NamedTermDocument,
     term: &NamedTerm,
     tree: &NamedTermTree,
-    catalog: &ConceptOpCatalog,
+    catalog: &GrammarOpRegistry,
     term_position: Vec<usize>,
 ) -> Result<Term, BindError> {
     // McCarthy desugar: concept:and / concept:or are demoted hub members
@@ -1469,7 +1469,7 @@ fn mccarthy_desugar_to_ite(
     document: &NamedTermDocument,
     term: &NamedTerm,
     tree: &NamedTermTree,
-    catalog: &ConceptOpCatalog,
+    catalog: &GrammarOpRegistry,
     term_position: Vec<usize>,
 ) -> Result<Term, BindError> {
     if tree.args.len() != 2 {
@@ -1727,12 +1727,12 @@ fn wp_rule_synthesis_gap_record(
     source_op_cid: &str,
     concept_name: &str,
 ) -> Result<Json, BindError> {
-    let target_concept_op = normalize_concept_name(concept_name);
+    let target_op = normalize_concept_name(concept_name);
     let gap = TransportGapMemento {
         fn_name: format!(
             "gap:{}:bind:to:{}:wp-rule",
             source_lang,
-            target_concept_op.trim_start_matches("concept:")
+            target_op.trim_start_matches("concept:")
         ),
         gap_kind: GapKind::WpRuleMismatch,
         kind: "TransportGapMemento".to_string(),
@@ -1759,7 +1759,7 @@ fn wp_rule_synthesis_gap_record(
         signature: None,
         source_lang: source_lang.to_string(),
         source_op_cid: source_op_cid.to_string(),
-        target_concept_op,
+        target_op,
         target_op_cid: None,
     };
     serde_json::to_value(gap)

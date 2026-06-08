@@ -20,11 +20,11 @@ use crate::{
 /// // Returns RealizationMemento::FirstClass(...)
 /// ```
 pub fn tag_first_class(
-    concept_op: &str,
+    op_name: &str,
     syntactic_pattern: &str,
     surface_locator: &str,
 ) -> RealizationMemento {
-    let _ = concept_op;
+    let _ = op_name;
     RealizationMemento::FirstClass(FirstClassRealization {
         syntactic_pattern: syntactic_pattern.to_string(),
         surface_locator: surface_locator.to_string(),
@@ -44,8 +44,8 @@ pub fn tag_first_class(
 /// );
 /// // Returns RealizationMemento::Composition(...)
 /// ```
-pub fn tag_composition(concept_op: &str, composition_tree: &str) -> RealizationMemento {
-    let _ = concept_op;
+pub fn tag_composition(op_name: &str, composition_tree: &str) -> RealizationMemento {
+    let _ = op_name;
     RealizationMemento::Composition(CompositionRealization {
         composition_tree_cid: composition_tree.to_string(),
     })
@@ -67,12 +67,12 @@ pub fn tag_composition(concept_op: &str, composition_tree: &str) -> RealizationM
 /// // Returns RealizationMemento::Boundary(...)
 /// ```
 pub fn tag_boundary(
-    concept_op: &str,
+    op_name: &str,
     library: &str,
     api: &str,
     boundary_contract_cid: &str,
 ) -> RealizationMemento {
-    let _ = concept_op;
+    let _ = op_name;
     RealizationMemento::Boundary(BoundaryRealization {
         library: library.to_string(),
         api: api.to_string(),
@@ -90,7 +90,7 @@ pub fn tag_boundary(
 /// let realization = tag_sugar_carrier("concept:free");
 /// // Returns RealizationMemento::SugarCarrier(...)
 /// ```
-pub fn tag_sugar_carrier(concept_op: &str) -> RealizationMemento {
-    let _ = concept_op;
+pub fn tag_sugar_carrier(op_name: &str) -> RealizationMemento {
+    let _ = op_name;
     RealizationMemento::SugarCarrier(SugarCarrierRealization {})
 }

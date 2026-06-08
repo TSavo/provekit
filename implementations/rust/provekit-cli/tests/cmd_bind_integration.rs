@@ -278,5 +278,5 @@ fn bind_cli_emits_wp_rule_refusal_gap() {
     let named = serde_json::to_value(named).expect("named term serializes");
     let gap = named["gapRecords"][0].as_object().expect("gap object");
 
-    assert_eq!(gap["target_concept_op"], "concept:add");
+    assert_eq!(gap["target_op"], "concept:add");
 }

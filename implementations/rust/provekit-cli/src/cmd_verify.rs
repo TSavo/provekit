@@ -1699,12 +1699,12 @@ mod tests {
             }
         });
 
-        // Bridge: concept_op_catalog_cid_known -> option-totality contract.
+        // Bridge: grammar_op_registry_cid_known -> option-totality contract.
         let option_totality_bridge = json!({
             "evidence": {
                 "kind": "bridge",
                 "body": {
-                    "sourceSymbol": "concept_op_catalog_cid_known",
+                    "sourceSymbol": "grammar_op_registry_cid_known",
                     "targetContractCid": DLIB_OPTION_TOTALITY_CONTRACT_CID
                 }
             }
@@ -1741,7 +1741,7 @@ mod tests {
         pool.bridges_by_symbol
             .insert("serde_json_to_string_value".into(), totality_bridge);
         pool.bridges_by_symbol.insert(
-            "concept_op_catalog_cid_known".into(),
+            "grammar_op_registry_cid_known".into(),
             option_totality_bridge,
         );
         pool.bridges_by_symbol
@@ -1906,7 +1906,7 @@ mod tests {
         std::fs::create_dir_all(&witness_dir).ok();
 
         let positive = verify_one_claim(
-            &dlib_option_expect_callsite("concept_op_catalog_cid_known", DLIB_OPTION_EXPECT_CID),
+            &dlib_option_expect_callsite("grammar_op_registry_cid_known", DLIB_OPTION_EXPECT_CID),
             &pool,
             &plan,
             &registry,
@@ -1965,7 +1965,7 @@ mod tests {
 
         let wrong_receiver = verify_one_claim(
             &dlib_option_expect_callsite(
-                "concept_op_catalog_cid_known",
+                "grammar_op_registry_cid_known",
                 DLIB_OPTION_EXPECT_MISMATCH_CID,
             ),
             &pool,

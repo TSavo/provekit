@@ -53,7 +53,7 @@ const PYTHON_ADD_GAP_JSON: &str = r#"{
   "schema_version": "1",
   "source_lang": "python",
   "source_op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "target_concept_op": "concept:add",
+  "target_op": "concept:add",
   "target_op_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 }"#;
 
@@ -67,7 +67,7 @@ fn python_add_gap_deserializes_from_spec_shape() {
     assert_eq!(m.kind, "TransportGapMemento");
     assert_eq!(m.schema_version, "1");
     assert_eq!(m.source_lang, "python");
-    assert_eq!(m.target_concept_op, "concept:add");
+    assert_eq!(m.target_op, "concept:add");
     assert!(m.target_op_cid.is_some());
     assert!(m.reason.is_some());
     assert!(m.reason_note.is_some());
@@ -94,13 +94,13 @@ fn python_add_gap_round_trips() {
 }
 
 // ================================================================
-// Fixture B: no-such-concept-op gap (PR amendment -- new gap_kind)
-// target_op_cid is absent; target_concept_op is the placeholder name.
+// Fixture B: no-such-target-op gap (PR amendment -- new gap_kind)
+// target_op_cid is absent; target_op is the placeholder name.
 // ================================================================
 
 const NO_CONCEPT_OP_GAP_JSON: &str = r#"{
   "fn_name": "gap:go:channel-receive:to:concept:channel-receive",
-  "gap_kind": "no-such-concept-op",
+  "gap_kind": "no-such-target-op",
   "kind": "TransportGapMemento",
   "reason": {
     "source_supported": false
@@ -115,18 +115,18 @@ const NO_CONCEPT_OP_GAP_JSON: &str = r#"{
   "schema_version": "1",
   "source_lang": "go",
   "source_op_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-  "target_concept_op": "concept:channel-receive"
+  "target_op": "concept:channel-receive"
 }"#;
 
 #[test]
-fn no_such_concept_op_gap_deserializes() {
+fn no_such_op_name_gap_deserializes() {
     let m: TransportGapMemento =
-        serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse no-such-concept-op gap");
+        serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse no-such-target-op gap");
 
     assert_eq!(m.gap_kind, GapKind::NoSuchConceptOp);
     assert!(
         m.target_op_cid.is_none(),
-        "target_op_cid must be absent for no-such-concept-op"
+        "target_op_cid must be absent for no-such-target-op"
     );
     assert_eq!(m.source_lang, "go");
     assert!(m.reason.is_some());
@@ -135,7 +135,7 @@ fn no_such_concept_op_gap_deserializes() {
 }
 
 #[test]
-fn no_such_concept_op_gap_round_trips() {
+fn no_such_op_name_gap_round_trips() {
     let m: TransportGapMemento = serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse");
     let serialized = serde_json::to_string(&m).expect("serialize");
     let m2: TransportGapMemento = serde_json::from_str(&serialized).expect("re-parse");
@@ -143,7 +143,7 @@ fn no_such_concept_op_gap_round_trips() {
 }
 
 #[test]
-fn no_such_concept_op_omits_target_op_cid_when_none() {
+fn no_such_op_name_omits_target_op_cid_when_none() {
     let m: TransportGapMemento = serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse");
     let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
     assert!(
@@ -179,7 +179,7 @@ const RUST_REM_GAP_JSON: &str = r#"{
   "schema_version": "1",
   "source_lang": "rust",
   "source_op_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-  "target_concept_op": "concept:mod",
+  "target_op": "concept:mod",
   "target_op_cid": "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 }"#;
 
@@ -190,7 +190,7 @@ fn rust_rem_gap_deserializes() {
 
     assert_eq!(m.gap_kind, GapKind::DivergentSemantics);
     assert_eq!(m.source_lang, "rust");
-    assert_eq!(m.target_concept_op, "concept:mod");
+    assert_eq!(m.target_op, "concept:mod");
     assert!(m.reason.is_some());
 }
 

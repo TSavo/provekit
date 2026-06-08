@@ -15,8 +15,8 @@ The fixture keeps the target, source, handling, term surface, op CIDs, and loss 
 The fixture path is implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json.
 
 The ProofIR term is return(call:new(Arc::new, [Null])).
-The test resolves that term through libprovekit::proofir_resolve.
-The test then unresolves it through libprovekit::proofir_unresolve.
+The test resolves that term through libprovekit::local_cid_fixture_check.
+The test then unresolves it through libprovekit::local_cid_fixture_check.
 The reassembled fixture is JCS-canonicalized and compared against the input fixture.
 
 The fixture CID is blake3-512:bcb10be48ad632abc71c406355b6d11b0191a959b523aa755ee00ad7496afa2270ce28821af4abcd5949427026fb16d8d8b38af702b1810dec3bdff810ec8f32.
@@ -42,7 +42,7 @@ The audit gap classes captured in this fixture's loss_record are engineering deb
 - #964 ffi-call-unresolved-effect -> concept:effect-occurrence (admissibility-spine primitive)
 - #965 trivia comments -> concept:comment (formatter handles formatting; comments survive rustfmt)
 
-D7's terminus claim: for any libprovekit submodule M, rustfmt(realize_rust(proofir_resolve(lift_rust(M)))) == rustfmt(M) byte-for-byte.
+D7's terminus claim: for any libprovekit submodule M, rustfmt(realize_rust(local_cid_fixture_check(lift_rust(M)))) == rustfmt(M) byte-for-byte.
 
 This receipt does not claim the lift is lossless.
 This receipt does not re-realize Rust source.
