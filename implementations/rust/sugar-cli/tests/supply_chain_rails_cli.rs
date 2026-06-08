@@ -6,8 +6,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use sugar_canonicalizer::blake3_512_of;
 use serde_json::{json, Value};
+use sugar_canonicalizer::blake3_512_of;
 
 fn tmp_dir(name: &str) -> PathBuf {
     let stamp = std::time::SystemTime::now()

@@ -43,6 +43,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use libsugar::concept::panic_freedom;
+use std::rc::Rc;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use sugar_claim_envelope::{
     compute_contract_set_cid, contract_cid as compute_contract_cid, mint_contract, Authoring,
@@ -52,7 +53,6 @@ use sugar_ir_symbolic::{serialize::formula_to_value, ContractDecl, Formula};
 use sugar_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
-use std::rc::Rc;
 
 pub mod call_edges;
 pub use call_edges::{
@@ -904,9 +904,7 @@ fn kit_declaration_guard_predicates() -> Vec<serde_json::Value> {
 /// remain content-honest before envelope minting.
 fn contract_decl_to_memento(decl: &ContractDecl) -> serde_json::Value {
     use sugar_canonicalizer::encode_jcs;
-    fn formula_pair(
-        f: Option<&sugar_ir_symbolic::Formula>,
-    ) -> (Option<serde_json::Value>, String) {
+    fn formula_pair(f: Option<&sugar_ir_symbolic::Formula>) -> (Option<serde_json::Value>, String) {
         match f {
             Some(formula) => {
                 let cv = formula_to_value(formula);

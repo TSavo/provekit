@@ -2,8 +2,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 use libsugar::concept::panic_freedom;
-use sugar_claim_envelope::{KitDeclaration, KIT_DECLARATION_RPC_METHOD};
 use serde_json::{json, Value};
+use sugar_claim_envelope::{KitDeclaration, KIT_DECLARATION_RPC_METHOD};
 
 const RUST_FN_CONTRACTS_SURFACE: &str = "rust-fn-contracts";
 

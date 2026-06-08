@@ -7,14 +7,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use clap::Parser;
+use serde::Serialize;
+use serde_json::Value;
 use sugar_canonicalizer::blake3_512_of;
 use sugar_claim_envelope::{
     body_discharge_policy_from_object_with_default, BodyDischargePolicyWarning,
 };
 use sugar_verifier::load_all_proofs::{self, ProofBytes};
 use sugar_verifier::types::{EffectSiteAnnotation, LoadError, MementoPool};
-use serde::Serialize;
-use serde_json::Value;
 use tracing::{error, info, warn};
 
 use crate::floor_runtime_check::{
@@ -2038,13 +2038,9 @@ mod tests {
         let mut proofs = BTreeMap::new();
         proofs.insert("shim-std".to_string(), proof.clone());
 
-        let guard = stage_dependency_imports_for_mint(
-            "libsugar",
-            &dependency_root,
-            &["shim-std"],
-            &proofs,
-        )
-        .expect("stage dependency import");
+        let guard =
+            stage_dependency_imports_for_mint("libsugar", &dependency_root, &["shim-std"], &proofs)
+                .expect("stage dependency import");
 
         let staged = dependency_root
             .join(".provekit")
@@ -2075,13 +2071,9 @@ mod tests {
         let mut proofs = BTreeMap::new();
         proofs.insert("shim-std".to_string(), proof);
 
-        let guard = stage_dependency_imports_for_mint(
-            "libsugar",
-            &dependency_root,
-            &["shim-std"],
-            &proofs,
-        )
-        .expect("identical pre-existing proof should be accepted");
+        let guard =
+            stage_dependency_imports_for_mint("libsugar", &dependency_root, &["shim-std"], &proofs)
+                .expect("identical pre-existing proof should be accepted");
 
         drop(guard);
         assert_eq!(
@@ -2103,13 +2095,9 @@ mod tests {
         let mut proofs = BTreeMap::new();
         proofs.insert("shim-std".to_string(), proof);
 
-        let err = stage_dependency_imports_for_mint(
-            "libsugar",
-            &dependency_root,
-            &["shim-std"],
-            &proofs,
-        )
-        .expect_err("different pre-existing proof must fail closed");
+        let err =
+            stage_dependency_imports_for_mint("libsugar", &dependency_root, &["shim-std"], &proofs)
+                .expect_err("different pre-existing proof must fail closed");
         assert!(
             err.contains("already exists with different bytes"),
             "unexpected error: {err}"
@@ -2122,13 +2110,9 @@ mod tests {
         let dependency_root = dir.path().join("libsugar");
         let proofs = BTreeMap::new();
 
-        let err = stage_dependency_imports_for_mint(
-            "libsugar",
-            &dependency_root,
-            &["shim-std"],
-            &proofs,
-        )
-        .expect_err("missing required dependency proof must fail closed");
+        let err =
+            stage_dependency_imports_for_mint("libsugar", &dependency_root, &["shim-std"], &proofs)
+                .expect_err("missing required dependency proof must fail closed");
         assert!(
             err.contains("requires `shim-std` proof before minting"),
             "unexpected error: {err}"
@@ -2204,7 +2188,7 @@ mod tests {
             "expect",
             "unproven",
             "D-lib",
-            "provekit-cli per-type infallible serialization for RealizeRequest",
+            "generic fixture tier",
         )]);
         let prove = json!({
             "rows": [panic_row("src/kit_dispatch.rs", 2416, "expect", "undecidable", None)]
@@ -2216,10 +2200,7 @@ mod tests {
 
         assert_eq!(row["status"], "unproven");
         assert_eq!(row["category"], "D-lib");
-        assert_eq!(
-            row["tierToClose"],
-            "provekit-cli per-type infallible serialization for RealizeRequest"
-        );
+        assert_eq!(row["tierToClose"], "generic fixture tier");
     }
 
     #[test]

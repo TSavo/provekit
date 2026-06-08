@@ -7,11 +7,11 @@
 
 use std::sync::Arc;
 
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use sugar_ir_types::{
     EffectSlotDescriptor, ParametricRealizationMemento, RealizationPlanMemento, SlotDescriptor,
 };
-use serde_json::{json, Value as Json};
 
 const BODY_TEMPLATE_CID: &str = "blake3-512:111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
 const SUGAR_CID: &str = "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";

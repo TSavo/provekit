@@ -39,7 +39,7 @@ same function, so the oracle resolves a derived binding exactly as a tagged one.
    `pub fn` (no tag).
 2. **mint** seals it into a content-addressed `.proof`, staged into the
    consumer's `.provekit/imports/`.
-3. **materialize** (`provekit materialize-boundary`) finds the consumer's
+3. **materialize** (`provekit materialize`) finds the consumer's
    `#[provekit::boundary]` stub, asks the Source Oracle to resolve
    `reverse_chars`'s body from the live vendor crate (CID-verified against the
    frozen pin), and rewrites the stub body in place.
@@ -57,7 +57,7 @@ produce exactly them:
 
 ## Why re-lifting the vendor would be wrong
 
-`materialize-boundary` sources its pins from the FROZEN `.proof`, not a live
+`materialize` sources its pins from the FROZEN `.proof`, not a live
 re-lift. A re-lift could never detect drift: the memento's `source_cid` would
 come from the same disk read the oracle then recomputes against, so they would
 match by construction. The temporal separation — pin frozen at mint, oracle

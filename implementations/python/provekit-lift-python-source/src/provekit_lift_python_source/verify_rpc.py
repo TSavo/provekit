@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from .leaf_assertions import harvest_source
+from .bind_lifter import _local_op_cid
 from .lifter import lift_source
 from .verify_dialect import VerifyDialectRefusal, collect_int_signatures, to_verify_dialect
 
@@ -202,11 +203,13 @@ def lift_workspace(root: str, mode: str) -> tuple[list[Json], list[Json]]:
                 )
                 continue
             seen_fn.add(fn_name)
-            # Tag the contract with the authoring declaration so the emitted
-            # ir-document records WHICH concept the library declared (parallel
-            # to Go's conceptName/authoringKind tagging).
+            # Tag the contract with the authoring declaration's canonical
+            # operator CID; the authoring string itself is not transported as
+            # identity.
             if declaration is not None:
-                item["conceptName"] = declaration.get("concept", "")
+                concept = declaration.get("concept", "")
+                if concept:
+                    item["opCid"] = _local_op_cid(concept)
                 item["authoringKind"] = declaration.get("kind", "")
                 if declaration.get("library"):
                     item["library"] = declaration["library"]

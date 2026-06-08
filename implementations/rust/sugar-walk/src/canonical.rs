@@ -10,9 +10,9 @@
 
 use std::sync::Arc;
 
+use serde_json::Value as JsonValue;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use sugar_ir_types::{IrFormula, IrTerm};
-use serde_json::Value as JsonValue;
 
 /// Convert a serde_json::Value tree into the canonicalizer's Arc<Value> tree.
 /// Object key order is preserved at build time; the JCS encoder re-sorts at

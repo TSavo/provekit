@@ -47,8 +47,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use sugar_canonicalizer::blake3_512_of;
 use serde::{Deserialize, Serialize};
+use sugar_canonicalizer::blake3_512_of;
 
 /// One position's resolution outcome inside a file's cache entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

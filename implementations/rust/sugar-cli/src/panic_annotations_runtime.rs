@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use sugar_verifier::types::EffectSiteAnnotation;
 use serde::Serialize;
 use serde_json::{json, Value};
+use sugar_verifier::types::EffectSiteAnnotation;
 
 pub const PANIC_ANNOTATIONS_RUNTIME_NAME: &str = "panic-annotations-runtime";
 pub const PANIC_ANNOTATIONS_RUNTIME_ID: &str = "panic_annotations.census.joinable";

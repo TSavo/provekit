@@ -18,8 +18,8 @@ const BIND_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarri
 const LIFT_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {
     reason: "lifts source bytes to DomainClaim; no target source produced",
 };
-use sugar_ir_types::Sort;
 use serde_json::{json, Value};
+use sugar_ir_types::Sort;
 
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
@@ -144,14 +144,11 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     let chain = execute_path(&path, &registry, &inputs).expect("bind path executes");
     let claim = chain.terminal_claim();
     let cli_bytes = run_bind_cli(&term_value);
-    // cmd_bind's stdout is the bind-result Term::Op payload (post-citation
-    // wiring); recover the NamedTermDocument via the same helper the
-    // path-execution claim consumers use.
-    let cli_payload: Term =
-        serde_json::from_slice(&cli_bytes).expect("cmd_bind bind-result Term parse");
-    assert!(matches!(cli_payload, Term::Op { .. }));
-    let cli_named = named_term_document_from_bind_payload(&cli_payload)
-        .expect("cmd_bind bind-result recovers named term");
+    // cmd_bind's stdout is the named-term-document payload; recover the
+    // NamedTermDocument via the same helper the path-execution claim consumers use.
+    let cli_payload: Term = serde_json::from_slice(&cli_bytes).expect("cmd_bind Term parse");
+    let cli_named =
+        named_term_document_from_bind_payload(&cli_payload).expect("cmd_bind recovers named term");
     let cli_cid = named_term_document_cid(&cli_named).expect("cmd_bind named terms cid");
 
     assert_eq!(claim.artifacts, vec![cli_cid]);
@@ -159,10 +156,9 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     let canonical_input = strip_realize_sidecar_from_lift_term(input_term.clone());
     assert_eq!(claim.from, vec![address(&canonical_input)]);
     // bind_term_document's recovered named-term has empty `function` because
-    // fn_name is stripped from the bind-result payload hash (closes #1093).
+    // fn_name is stripped from the bind payload hash (closes #1093).
     assert!(cli_named.terms[0].function.is_empty());
     let payload = claim.payload.as_ref().expect("bind claim payload");
-    assert!(matches!(payload, Term::Op { .. }));
     let named =
         named_term_document_from_bind_payload(payload).expect("bind payload recovers named term");
     assert!(named.terms[0].function.is_empty());

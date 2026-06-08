@@ -18,8 +18,8 @@
 // `IrFormula` that makes WP operations explicit at walk call sites) and
 // the small term / atomic-predicate constructors walk's tests use.
 
-use sugar_ir_types::{IrFormula, IrTerm, Sort};
 use serde_json::Value;
+use sugar_ir_types::{IrFormula, IrTerm, Sort};
 
 // Re-export the canonical substitution algebra from libsugar::wp.
 pub use libsugar::wp::{

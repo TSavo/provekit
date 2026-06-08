@@ -35,7 +35,7 @@ class EmitPlan:
     JSON shape (the RPC ``params`` object)::
 
         {
-          "contract_id": "concept:eq",          # concept name OR CID; informational
+          "contract_id": "blake3-512:...",      # contract/operator CID; informational
           "function":    "clamp",               # target function name
           "params":      ["x", "lo", "hi"],     # formal parameter names
           "param_types": ["int", "int", "int"], # python type hints (parallel)
@@ -56,7 +56,7 @@ class EmitPlan:
     def from_params(params: dict[str, Any]) -> "EmitPlan":
         if not isinstance(params, dict):
             return EmitPlan()
-        contract_id = _first_str(params.get("contract_id"), params.get("concept_name"))
+        contract_id = _first_str(params.get("contract_id"))
         function = _first_str(params.get("function"), params.get("function_name")) or "test"
         formals = _string_list(params.get("params"))
         formal_types = _string_list(params.get("param_types"))

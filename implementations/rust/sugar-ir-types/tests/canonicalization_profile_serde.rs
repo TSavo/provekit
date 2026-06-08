@@ -8,12 +8,12 @@
 // These tests pin the substrate declaration shape only. They do not
 // execute canonicalization rules or define a rule sublanguage.
 
+use std::sync::Arc;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_ir_types::{
     CanonicalizationProfileKind, CanonicalizationProfileMemento, CanonicalizationRuleDescriptor,
     UnsupportedEquivalencePolicy,
 };
-use std::sync::Arc;
 
 const PROVENANCE_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
 const LANGUAGE_SIGNATURE_CID: &str = "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";

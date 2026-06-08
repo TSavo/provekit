@@ -25,12 +25,12 @@
 
 use std::sync::Arc;
 
+use serde_json::Value as Json;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use sugar_claim_envelope::{
     mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
 };
 use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_verify_string, Ed25519Seed};
-use serde_json::Value as Json;
 
 fn seed() -> Ed25519Seed {
     [0x42u8; 32]

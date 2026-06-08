@@ -17,8 +17,8 @@ use libsugar::core::{
     Input, KitRegistry, Path as CorePath, PathAlgebra, PathExecutionError, Term, Verb,
 };
 use owo_colors::OwoColorize;
-use sugar_ir_types::{CompositionRefusalMemento, Sort};
 use serde_json::Value as Json;
+use sugar_ir_types::{CompositionRefusalMemento, Sort};
 
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 

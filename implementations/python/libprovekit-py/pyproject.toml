@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "libprovekit-py"
 version = "0.1.0"
-description = "Python realization of libprovekit, lowered via provekit-walk-emit + provekit-realize-python-core. v0: honest refusal at first FFI shim gap."
+description = "Python libprovekit experiment with honest refusal at the first FFI shim gap."
 
 [tool.setuptools.packages.find]
 where = ["."]

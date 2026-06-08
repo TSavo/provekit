@@ -76,10 +76,10 @@ fn carries_procedural_macro_invocation_as_op_application() {
         .as_array()
         .unwrap()
         .iter()
-        .any(
-            |invocation| invocation["concept_name"] == "concept:proc-macro-invocation"
-                && invocation["macro_path"] == "instrument"
-        ));
+        .any(|invocation| invocation["op_cid"]
+            .as_str()
+            .is_some_and(|cid| cid.starts_with("blake3-512:"))
+            && invocation["macro_path"] == "instrument"));
 }
 
 #[test]

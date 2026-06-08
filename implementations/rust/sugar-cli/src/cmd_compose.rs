@@ -56,12 +56,10 @@ use libsugar::compose::{
     AliasingStatus, AtomicKind, ChainStep, Effect, EffectSet, FunctionContractMemento, Locus,
     CCP_VERSION,
 };
-use sugar_canonicalizer::Value;
-use sugar_ir_types::{
-    composition_refusal_header_cid, CompositionRefusalMemento, IrFormula, Sort,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+use sugar_canonicalizer::Value;
+use sugar_ir_types::{composition_refusal_header_cid, CompositionRefusalMemento, IrFormula, Sort};
 
 use crate::ComposeArgs;
 

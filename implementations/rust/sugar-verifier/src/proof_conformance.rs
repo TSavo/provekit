@@ -11,10 +11,10 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use sugar_proof_envelope::{ed25519_verify_bytes, ed25519_verify_string};
 use serde::Serialize;
 use serde_json::Value as Json;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use sugar_proof_envelope::{ed25519_verify_bytes, ed25519_verify_string};
 
 use crate::cbor_decode::{decode, CborValue};
 

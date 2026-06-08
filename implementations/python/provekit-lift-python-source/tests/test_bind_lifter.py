@@ -11,27 +11,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[4]
 PKG_SRC = ROOT / "implementations/python/provekit-lift-python-source/src"
 PY_TESTS_SRC = ROOT / "implementations/python/provekit-lift-py-tests/src"
-REALIZER_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
 if str(PY_TESTS_SRC) not in sys.path:
     sys.path.insert(0, str(PY_TESTS_SRC))
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
-if str(REALIZER_SRC) not in sys.path:
-    sys.path.insert(0, str(REALIZER_SRC))
 
 from provekit_lift_python_source.bind_lifter import _operand_slot, lift_source
 from provekit_lift_python_source.bind_rpc import dispatch, initialize_result
 from provekit_lift_py_tests.canonicalizer import blake3_512_of
 from provekit_lift_py_tests.op_cid import local_op_cid
 from provekit_lift_python_source.canonical import cid_of_json
-from provekit_realize_python_core.realizer import emit_stub
-
-
-CONCEPT_SKIP_CID = (
-    "blake3-512:"
-    "9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e"
-    "610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb"
-)
 
 KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
 
@@ -149,54 +138,6 @@ def _comment_lines(payload: dict, payload_cid: str) -> str:
     )
 
 
-def _concept_citation_payload(overrides: dict | None = None) -> tuple[dict, str]:
-    args = [{"kind": "var", "name": "x"}]
-    payload = {
-        "args_jcs": args,
-        "args_jcs_cid": cid_of_json(args),
-        "artifact_kind": "provekit-concept-citation-comment-sugar",
-        "concept_cid": CONCEPT_SKIP_CID,
-        "concept_name": "concept:skip",
-        "concept_site_cid": _cid("a"),
-        "emitted_by": {
-            "kit_cid": _cid("b"),
-            "kit_id": "provekit-realize-python-core@0.1.0",
-            "kit_kind": "realize",
-            "target_language": "python",
-            "target_library_tag": "python",
-        },
-        "loss_record_cid": _cid("c"),
-        "operation_kind": "skip",
-        "policy_cid": _cid("d"),
-        "schema_version": "1",
-        "shape_cid": CONCEPT_SKIP_CID,
-        "sugar_dict_cid": _cid("e"),
-        "term_position": [0],
-    }
-    if overrides:
-        payload.update(overrides)
-    return payload, cid_of_json(payload)
-
-
-def _concept_comment_lines(payload: dict, payload_cid: str) -> str:
-    return (
-        "# provekit-concept: "
-        + json.dumps(
-            payload,
-            separators=(",", ":"),
-            sort_keys=True,
-            ensure_ascii=False,
-        )
-        + "\n"
-        + f"# provekit-concept-payload-cid: {payload_cid}\n"
-    )
-
-
-def _concept_diagnostics(result: object) -> set[str]:
-    diagnostics = getattr(result, "diagnostics")
-    return {diag["kind"] for diag in diagnostics}
-
-
 def _local_op_cid(name: str) -> str:
     return local_op_cid(name)
 
@@ -217,14 +158,15 @@ def _operator_atoms(term_shape: dict) -> list[dict]:
     return [node for node in _walk_objects(term_shape) if "op_cid" in node]
 
 
-def _operator_concepts(term_shape: dict) -> list[str]:
-    return [str(atom["concept_name"]) for atom in _operator_atoms(term_shape)]
+def _operator_cids(term_shape: dict) -> list[str]:
+    return [str(atom["op_cid"]) for atom in _operator_atoms(term_shape)]
 
 
 def _concept_comment_surfaces(term_shape: dict) -> list[str]:
     surfaces: list[str] = []
+    comment_cid = _local_op_cid("concept:comment")
     for atom in _operator_atoms(term_shape):
-        if atom.get("concept_name") != "concept:comment":
+        if atom.get("op_cid") != comment_cid:
             continue
         args = atom.get("args", [])
         if not isinstance(args, list) or not args:
@@ -235,11 +177,10 @@ def _concept_comment_surfaces(term_shape: dict) -> list[str]:
     return surfaces
 
 
-def _gamma_shape(concept_name: str, args: list[dict] | None = None) -> dict:
+def _gamma_shape(operator: str, args: list[dict] | None = None) -> dict:
     return {
         "args": args or [],
-        "concept_name": concept_name,
-        "op_cid": _local_op_cid(concept_name),
+        "op_cid": _local_op_cid(operator),
     }
 
 
@@ -263,7 +204,7 @@ def test_library_bindings_layer_lifts_requests_shim_from_real_python_source() ->
     assert len(result.ir) == 1
     entry = result.ir[0]
     assert entry["kind"] == "library-sugar-binding-entry"
-    assert entry["concept_name"] == "concept:http-request"
+    assert entry["op_cid"] == _local_op_cid("concept:http-request")
     assert entry["target_language"] == "python"
     assert entry["target_library_tag"] == "requests"
     assert entry["source_function_name"] == "fetch_status"
@@ -689,11 +630,10 @@ def test_bind_lift_preserves_operator_concept_cid_atoms() -> None:
         "ge": ("concept:ge", _local_op_cid("concept:ge")),
         "logical_not": ("concept:not", _local_op_cid("concept:not")),
     }
-    for entry, (concept_name, op_cid) in zip(result.ir, expected.values(), strict=True):
+    for entry, (_operator, op_cid) in zip(result.ir, expected.values(), strict=True):
         atoms = _operator_atoms(entry["term_shape"])
-        assert atoms[0]["concept_name"] == concept_name
         assert atoms[0]["op_cid"] == op_cid
-        assert set(atoms[0]) == {"args", "concept_name", "op_cid"}
+        assert set(atoms[0]) == {"args", "op_cid"}
         assert all(arg == {} for arg in atoms[0]["args"])
         _assert_absent_keys(atoms[0], {"kind", "op", "file", "fn_line", "line", "column"})
 
@@ -729,7 +669,7 @@ def test_bind_lift_compare_single_op_discriminates_concept_atom(
     result = lift_source(f"def f(a, b):\n    return {expr}\n", "pkg/compare_single.py")
 
     assert result.diagnostics == []
-    assert _operator_concepts(result.ir[0]["term_shape"]) == expected
+    assert _operator_cids(result.ir[0]["term_shape"]) == [_local_op_cid(op) for op in expected]
 
 
 @pytest.mark.parametrize(
@@ -747,7 +687,7 @@ def test_bind_lift_compare_two_chain_desugars_to_and_composition(
     result = lift_source(f"def f(a, b, c):\n    return {expr}\n", "pkg/compare_two.py")
 
     assert result.diagnostics == []
-    assert _operator_concepts(result.ir[0]["term_shape"]) == expected
+    assert _operator_cids(result.ir[0]["term_shape"]) == [_local_op_cid(op) for op in expected]
 
 
 @pytest.mark.parametrize(
@@ -765,7 +705,7 @@ def test_bind_lift_compare_three_chain_mixed_ops_desugars_to_and_composition(
     result = lift_source(f"def f(a, b, c, d):\n    return {expr}\n", "pkg/compare_three.py")
 
     assert result.diagnostics == []
-    assert _operator_concepts(result.ir[0]["term_shape"]) == expected
+    assert _operator_cids(result.ir[0]["term_shape"]) == [_local_op_cid(op) for op in expected]
 
 
 def test_bind_lift_line_comments_as_concept_comment_terms() -> None:
@@ -782,7 +722,7 @@ def test_bind_lift_line_comments_as_concept_comment_terms() -> None:
 
     assert result.diagnostics == []
     term_shape = result.ir[0]["term_shape"]
-    assert _operator_concepts(term_shape).count("concept:comment") == 3
+    assert _operator_cids(term_shape).count(_local_op_cid("concept:comment")) == 3
     assert _concept_comment_surfaces(term_shape) == [
         "first line comment",
         "second line comment",
@@ -803,23 +743,6 @@ def test_bind_lift_concept_comment_excludes_comment_carriers() -> None:
     result = lift_source(source, "pkg/comment_carriers.py")
 
     assert _concept_comment_surfaces(result.ir[0]["term_shape"]) == ["ordinary comment"]
-
-
-def test_rust_comment_surface_survives_python_comment_hop() -> None:
-    surface = "// byte exact route"
-    result = emit_stub(
-        function="comment_hop",
-        params=[],
-        param_types=[],
-        return_type="()",
-        concept_name="concept:comment",
-        term_shape=_gamma_shape("concept:comment", [{"kind": "literal", "value": surface}]),
-    )
-
-    lifted = lift_source(result["source"], "pkg/comment_hop.py")
-
-    assert lifted.diagnostics == []
-    assert _concept_comment_surfaces(lifted.ir[0]["term_shape"]) == [surface]
 
 
 def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:
@@ -1021,75 +944,6 @@ def test_bind_lift_contract_comment_fails_closed_for_bad_payloads() -> None:
         assert any(diag["kind"] == "contract-comment-invalid" for diag in result.diagnostics)
 
 
-def test_bind_lift_omits_concept_citations_from_wire_payload() -> None:
-    args = [{"kind": "var", "name": "x"}]
-    concept_skip_cid = _local_op_cid("concept:skip")
-    emitted = emit_stub(
-        function="transport_skip",
-        params=["x"],
-        param_types=["object"],
-        return_type="()",
-        concept_name="missing-python-skip-carrier",
-        transported_op={
-            "args_jcs": args,
-            "concept_cid": concept_skip_cid,
-            "concept_name": "concept:skip",
-            "concept_site_cid": _cid("a"),
-            "loss_record_cid": _cid("c"),
-            "operation_kind": "skip",
-            "policy_cid": _cid("d"),
-            "shape_cid": concept_skip_cid,
-            "sugar_dict_cid": _cid("e"),
-            "term_position": [0],
-        },
-    )
-
-    result = lift_source(emitted["source"], "pkg/foo.py")
-
-    assert result.diagnostics == []
-    assert "concept_citations" not in result.ir[0]
-    assert result.ir[0]["witnesses"] == []
-
-
-def test_concept_citation_payload_cid_mismatch_refuses() -> None:
-    payload, _payload_cid = _concept_citation_payload()
-    source = _concept_comment_lines(payload, _cid("8")) + "def f(x: object):\n    pass\n"
-
-    result = lift_source(source, "pkg/foo.py")
-
-    assert "concept_citations" not in result.ir[0]
-    assert "concept-citation:payload-cid-mismatch" in _concept_diagnostics(result)
-
-
-def test_concept_citation_args_cid_mismatch_refuses() -> None:
-    payload, payload_cid = _concept_citation_payload({"args_jcs_cid": _cid("8")})
-    source = _concept_comment_lines(payload, payload_cid) + "def f(x: object):\n    pass\n"
-
-    result = lift_source(source, "pkg/foo.py")
-
-    assert "concept_citations" not in result.ir[0]
-    assert "concept-citation:args-cid-mismatch" in _concept_diagnostics(result)
-
-
-def test_concept_citation_unknown_schema_version_refuses() -> None:
-    payload, payload_cid = _concept_citation_payload({"schema_version": "999"})
-    source = _concept_comment_lines(payload, payload_cid) + "def f(x: object):\n    pass\n"
-
-    result = lift_source(source, "pkg/foo.py")
-
-    assert "concept_citations" not in result.ir[0]
-    assert "concept-citation:unknown-schema-version" in _concept_diagnostics(result)
-
-
-def test_concept_citation_orphan_payload_cid_line_refuses() -> None:
-    source = "# provekit-concept-payload-cid: " + _cid("8") + "\ndef f():\n    pass\n"
-
-    result = lift_source(source, "pkg/foo.py")
-
-    assert "concept_citations" not in result.ir[0]
-    assert "concept-citation:orphan-cid-line" in _concept_diagnostics(result)
-
-
 def test_bind_lift_recovers_decorator_contract_witnesses() -> None:
     source = (
         "from provekit_lift_py_tests.decorators import contract\n"
@@ -1109,83 +963,6 @@ def test_bind_lift_recovers_decorator_contract_witnesses() -> None:
         witness["extension_fields"]["surface"] == "python-decorator-contract"
         for witness in witnesses
     )
-
-
-def test_python_realize_then_lift_keeps_contract_and_concept_site_cids() -> None:
-    realized = emit_stub(
-        function="wrap_identity",
-        params=["x"],
-        param_types=["int"],
-        return_type="int",
-        concept_name="identity",
-        contract={
-            "concept_site_cid": _cid("1"),
-            "local_contract_cid": _cid("2"),
-            "object_fcm_cid": _cid("3"),
-            "origin": "evidence-lift[native-surface]",
-            "discharge_verdict": "exact",
-            "witnesses": [
-                {
-                    "role": "pre",
-                    "predicate": _formula_gte_x_zero(),
-                    "predicate_text": "x >= 0",
-                    "source_kind": "native-surface",
-                }
-            ],
-        },
-    )
-
-    result = lift_source(realized["source"], "generated.py")
-
-    assert result.diagnostics == []
-    witness = result.ir[0]["witnesses"][0]
-    assert witness["extension_fields"]["concept_site_cid"] == _cid("1")
-    assert witness["extension_fields"]["contract_cid"] == _cid("2")
-    assert witness["extension_fields"]["local_contract_cid"] == _cid("2")
-    assert witness["predicate"] == _formula_gte_x_zero()
-
-
-def test_concept_citation_missing_operation_kind_field_tags_as_malformed_json() -> None:
-    # Build payload without operation_kind to trigger the row-1 (malformed-json) path
-    args = [{"kind": "var", "name": "x"}]
-    payload: dict = {
-        "args_jcs": args,
-        "args_jcs_cid": cid_of_json(args),
-        "artifact_kind": "provekit-concept-citation-comment-sugar",
-        "concept_cid": CONCEPT_SKIP_CID,
-        "concept_name": "concept:skip",
-        "concept_site_cid": _cid("a"),
-        "emitted_by": {
-            "kit_cid": _cid("b"),
-            "kit_id": "provekit-realize-python-core@0.1.0",
-            "kit_kind": "realize",
-            "target_language": "python",
-            "target_library_tag": "python",
-        },
-        "loss_record_cid": _cid("c"),
-        "policy_cid": _cid("d"),
-        "schema_version": "1",
-        "shape_cid": CONCEPT_SKIP_CID,
-        "sugar_dict_cid": _cid("e"),
-        "term_position": [0],
-        # operation_kind intentionally omitted
-    }
-    payload_cid = cid_of_json(payload)
-    bad_fn_source = (
-        "def good_fn(x: int) -> int:\n"
-        "    return x\n"
-        "\n"
-        "def bad_fn(x: object):\n"
-        "    " + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ") + "    pass\n"
-    )
-
-    result = lift_source(bad_fn_source, "pkg/foo.py")
-
-    # Drop and continue: bad_fn still gets an IR entry, just with no citation.
-    assert "concept_citations" not in result.ir[1]
-    assert len(result.ir) == 2
-    assert all("fn_name" not in entry for entry in result.ir)
-    assert "concept-citation:malformed-json" in _concept_diagnostics(result)
 
 
 # =============================================================================
@@ -1536,7 +1313,7 @@ def test_recognize_rpc_self_resolves_sugar_templates_from_python_sources(tmp_pat
     tag = tags[0]
     assert tag["file"] == user_rel
     assert tag["function_name"] == "fetch_url"
-    assert tag["concept_name"] == "concept:http-request"
+    assert tag["op_cid"] == sugar_entry["op_cid"]
     assert tag["library_tag"] == "provekit-shim-python-requests"
     assert tag["family"] == "concept:family:http"
     assert tag["template_cid"] == sugar_entry["body_source"]["template_cid"]
@@ -1636,10 +1413,10 @@ def test_recognize_routes_multiple_bindings_per_call_site_pool(tmp_path: Path) -
 
     tags = response["result"]["tags"]
     assert len(tags) == 2
-    by_concept = {tag["concept_name"]: tag for tag in tags}
-    assert by_concept["concept:json-parse"]["library_tag"] == "json-lib"
-    assert by_concept["concept:sql-execute"]["library_tag"] == "sql-lib"
-    assert by_concept["concept:sql-execute"]["function_name"] == "nested"
+    by_op = {tag["op_cid"]: tag for tag in tags}
+    assert by_op[_local_op_cid("concept:json-parse")]["library_tag"] == "json-lib"
+    assert by_op[_local_op_cid("concept:sql-execute")]["library_tag"] == "sql-lib"
+    assert by_op[_local_op_cid("concept:sql-execute")]["function_name"] == "nested"
 
 
 def test_snake_eats_tail_materialize_then_recognize(tmp_path: Path) -> None:
@@ -1730,7 +1507,7 @@ def test_universal_lift_untagged_function_is_sugar_at_library_bindings_layer() -
     bs = sugar[0]["body_source"]
     assert "body_text" not in bs and "ast_template" not in bs
     assert bs["source_cid"] and bs["template_cid"]
-    assert "concept_name" not in sugar[0]  # concept is gone; symbol is identity
+    assert "op_cid" in sugar[0]
 
     # The general `all` layer does NOT emit a derived sugar binding (untagged) —
     # only the bind-lift-entry — so the contract-path unit tests are unaffected.

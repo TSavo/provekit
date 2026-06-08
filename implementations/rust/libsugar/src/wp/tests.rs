@@ -16,9 +16,9 @@
 
 use std::collections::HashMap;
 
+use serde_json::json;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_ir_types::{IrFormula, IrTerm, Sort};
-use serde_json::json;
 
 use crate::core::types::{Cid, Term};
 use crate::wp::*;
@@ -662,11 +662,11 @@ const PINNED_APPLY_NODE_CID: &str =
 // ============================================================
 
 use crate::wp::{aggregate_conjunction, wp_compound, EvidenceVerdict};
+use std::collections::BTreeMap;
 use sugar_ir_types::{
     AggregationStrategy, CompoundContractMemento, EvidenceMemento, EvidenceRef, LossRecord,
     SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan, VerdictKind,
 };
-use std::collections::BTreeMap;
 
 /// Build a minimal `SourceLocator` for test fixtures.
 fn test_locator() -> SourceLocator {

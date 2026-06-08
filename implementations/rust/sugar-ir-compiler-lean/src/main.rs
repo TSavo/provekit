@@ -2,10 +2,10 @@
 //
 // Binary entry point for provekit-ir-compiler-lean.
 
-use sugar_ir_compiler::IrCompiler;
-use sugar_ir_compiler_lean::{LeanCompiler, DIALECT};
 use serde_json::Value as Json;
 use std::io::{self, Read};
+use sugar_ir_compiler::IrCompiler;
+use sugar_ir_compiler_lean::{LeanCompiler, DIALECT};
 
 fn main() {
     let mut input = String::new();

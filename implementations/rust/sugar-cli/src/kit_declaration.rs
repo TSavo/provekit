@@ -10,8 +10,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use sugar_claim_envelope::{KitDeclaration, KitDeclarationError, KIT_DECLARATION_RPC_METHOD};
 use serde_json::{json, Value};
+use sugar_claim_envelope::{KitDeclaration, KitDeclarationError, KIT_DECLARATION_RPC_METHOD};
 
 #[derive(Debug, thiserror::Error)]
 pub enum KitDeclarationLoadError {

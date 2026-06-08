@@ -23,9 +23,9 @@ use std::{
     sync::Arc,
 };
 
-use sugar_canonicalizer::{blake3_512_of, Value};
 use quote::ToTokens;
 use serde_json::{json, Value as JsonValue};
+use sugar_canonicalizer::{blake3_512_of, Value};
 use syn::parse::Parser;
 use syn::{BinOp, Expr, ExprIf, Lit, Meta, ReturnType, Stmt, Type, UnOp};
 
@@ -450,7 +450,7 @@ struct FfiDeclaration {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProcMacroInvocation {
-    concept_name: &'static str,
+    operator: &'static str,
     macro_path: String,
     macro_cid: String,
     args: Vec<JsonValue>,
@@ -461,8 +461,7 @@ impl ProcMacroInvocation {
     fn to_json(&self) -> JsonValue {
         json!({
             "kind": "concept:op-application",
-            "concept_name": self.concept_name,
-            "op_definition_cid": local_op_definition_cid(self.concept_name),
+            "op_cid": local_op_definition_cid(self.operator),
             "macro_cid": self.macro_cid,
             "macro_path": self.macro_path,
             "args": self.args,
@@ -969,15 +968,15 @@ fn attr_counts_as_proc_macro_invocation(attr: &syn::Attribute) -> bool {
 
 fn proc_macro_invocation_for_attr(attr: &syn::Attribute) -> ProcMacroInvocation {
     let macro_path = rust_path_surface(attr.path());
-    let concept_name = if macro_path == "derive" {
+    let operator = if macro_path == "derive" {
         DERIVE_ATTRIBUTE_CONCEPT
     } else {
         PROC_MACRO_INVOCATION_CONCEPT
     };
     ProcMacroInvocation {
-        concept_name,
+        operator,
         macro_cid: blake3_512_of(format!("rust:attribute-macro:{macro_path}").as_bytes()),
-        args: if concept_name == DERIVE_ATTRIBUTE_CONCEPT {
+        args: if operator == DERIVE_ATTRIBUTE_CONCEPT {
             derive_attribute_args(attr)
         } else {
             attribute_macro_args(attr)
@@ -992,7 +991,7 @@ fn push_proc_macro_invocation(
     invocation: ProcMacroInvocation,
 ) {
     if !invocations.iter().any(|existing| {
-        existing.concept_name == invocation.concept_name
+        existing.operator == invocation.operator
             && existing.macro_path == invocation.macro_path
             && existing.token_stream == invocation.token_stream
     }) {
@@ -1132,8 +1131,8 @@ fn normalize_attr_tokens(raw: String) -> String {
     normalized
 }
 
-fn local_op_definition_cid(concept_name: &str) -> String {
-    blake3_512_of(concept_name.as_bytes())
+fn local_op_definition_cid(operator: &str) -> String {
+    blake3_512_of(operator.as_bytes())
 }
 
 fn lower_function_body_to_term(

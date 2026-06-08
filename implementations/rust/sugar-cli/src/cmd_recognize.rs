@@ -25,10 +25,10 @@ use libsugar::core::emit_obligation::{
     build_bridge_body, build_implication_contract_body, member_envelope_canonical,
 };
 use owo_colors::OwoColorize;
+use serde_json::{json, Value};
 use sugar_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
-use serde_json::{json, Value};
 
 use crate::project_config::{read_project_config, read_user_config, PluginEntry, ProjectConfig};
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
@@ -176,10 +176,7 @@ pub fn run(args: RecognizeArgs) -> u8 {
     } else {
         println!("recognize: {} tag(s) emitted", tags.len());
         for (idx, tag) in tags.iter().enumerate() {
-            let concept = tag
-                .get("concept_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
+            let op_cid = tag.get("op_cid").and_then(|v| v.as_str()).unwrap_or("?");
             let file = tag.get("file").and_then(|v| v.as_str()).unwrap_or("?");
             let span = tag.get("span").cloned().unwrap_or(Value::Null);
             let start_line = span.get("start_line").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -193,7 +190,7 @@ pub fn run(args: RecognizeArgs) -> u8 {
                 .unwrap_or("?");
             println!(
                 "  [{idx}] {} @ {}:{} (fn={}, {})",
-                concept.green(),
+                op_cid.green(),
                 file,
                 start_line,
                 fn_name.cyan(),
@@ -316,7 +313,7 @@ fn recognize_implication_body(tag: &Value) -> Option<Value> {
     if function_name.is_empty() {
         return None;
     }
-    let concept_name = tag.get("concept_name").and_then(|v| v.as_str());
+    let op_cid = tag.get("op_cid").and_then(|v| v.as_str());
     // Collect param source-text strings into Vec<String> so we can hand
     // out &str references to the shared builder.
     let param_texts: Vec<String> = tag
@@ -337,7 +334,7 @@ fn recognize_implication_body(tag: &Value) -> Option<Value> {
     Some(build_implication_contract_body(
         "recognize",
         function_name,
-        concept_name,
+        op_cid,
         &param_refs,
     ))
 }

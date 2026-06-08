@@ -10,8 +10,8 @@
 #   make test-all: the acid test -- test-rust + test-python
 #
 # `test-rust` runs the rust workspace (including the crate-pair inheritance
-# E2E) and exercises the java / python realize kits over RPC; `test-python`
-# runs the python kit including the numpy proof. Other per-language suites
+# E2E) and exercises the active kit RPC surfaces; `test-python`
+# runs the python lifter/emit kits including the numpy proof. Other per-language suites
 # (test-go / test-java / ...) exist but are not part of the gate.
 
 .DEFAULT_GOAL := help
@@ -38,8 +38,7 @@ PYTHON_KIT_EDITABLES = \
 	-e implementations/python/provekit-emit-python-unittest \
 	-e implementations/python/provekit-lift-py-pytest-witness \
 	-e implementations/python/provekit-lift-py-tests \
-	-e implementations/python/provekit-lift-python-source \
-	-e implementations/python/provekit-realize-python-core
+	-e implementations/python/provekit-lift-python-source
 ifeq ($(CI),)
 ifeq ($(USE_BCARGO),0)
 CARGO ?= $(CARGO_LOCAL)
@@ -149,8 +148,6 @@ build-java:
 build-python:
 	$(PYTHON) -m venv $(PYTHON_KIT_VENV)
 	$(PYTHON_KIT_PIP) install --quiet --upgrade pip
-	$(PYTHON_KIT_PIP) install --quiet --no-cache-dir \
-		-e implementations/python/provekit-realize-python-core
 	# The rust integration suite spawns the python lifter over RPC
 	# (python3 -m provekit_lift_py_tests...). Install the lift packages into the
 	# same interpreter so those cross-language tests find it.
@@ -256,11 +253,6 @@ test-python: build-python
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
 		pytest) || failed="$$failed provekit-emit-python-pytest"; \
-	(cd implementations/python/provekit-realize-python-core && \
-		python3 -m venv .venv && \
-		. .venv/bin/activate && \
-		python -m pip install --quiet -e . pytest && \
-		pytest) || failed="$$failed provekit-realize-python-core"; \
 	(cd implementations/python/provekit-lift-python-source && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
@@ -291,8 +283,15 @@ test-java: build-java
 # inheritance E2E) and exercises the java / python realize kits over RPC;
 # `test-python` runs the python kit including the numpy proof. NON-FAIL-FAST:
 # both run regardless of prior failure; results summarize at the end.
+.PHONY: check-no-concept-name
+check-no-concept-name:
+	@if git grep -n -E 'concept_name|conceptName' -- implementations/; then \
+	  echo "check-no-concept-name FAIL: concept_name/conceptName must not appear under implementations/"; \
+	  exit 1; \
+	fi
+
 .PHONY: test-all
-test-all:
+test-all: check-no-concept-name
 	@failed=""; \
 	for s in test-rust test-python; do \
 	  echo ""; \

@@ -2429,16 +2429,10 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
     let target_language = required_str(decl, "target_language", "library-sugar-binding-entry")?;
     let target_library_tag =
         required_str(decl, "target_library_tag", "library-sugar-binding-entry")?;
-    // Identity is symbol-keyed (`numpy.add`); `concept_name` is the legacy hub
-    // key. Require at least one, prefer `symbol`. Both flow into the header.
-    // Existing concept-keyed shims have no `symbol`, so the header is
-    // byte-identical (JCS sorts keys; absent `symbol` adds nothing).
+    // Identity is symbol-keyed when a library symbol exists; otherwise the
+    // canonical op CID is the sole operator identity.
     let symbol = decl
         .get("symbol")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.trim().is_empty());
-    let concept_name = decl
-        .get("concept_name")
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty());
     let op_cid = decl
@@ -2446,10 +2440,8 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
         .or_else(|| decl.get("opCid"))
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty());
-    if symbol.is_none() && concept_name.is_none() {
-        return Err(
-            "`library-sugar-binding-entry` missing `symbol` (or legacy `concept_name`)".to_string(),
-        );
+    if symbol.is_none() && op_cid.is_none() {
+        return Err("`library-sugar-binding-entry` missing `symbol` or `op_cid`".to_string());
     }
     let signature_shape_cid =
         required_str(decl, "signature_shape_cid", "library-sugar-binding-entry")?;
@@ -2460,9 +2452,6 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
 
     let mut header = serde_json::Map::new();
     header.insert("bodySourceCid".to_string(), json!(source_cid));
-    if let Some(concept_name) = concept_name {
-        header.insert("conceptName".to_string(), json!(concept_name));
-    }
     header.insert("kind".to_string(), json!("library-sugar-binding-entry"));
     if let Some(op_cid) = op_cid {
         header.insert("opCid".to_string(), json!(op_cid));
@@ -2569,27 +2558,22 @@ fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
         ));
     }
     let target_language = required_str(decl, "target_language", "realization-memento")?;
-    let concept_name = required_str(decl, "concept_name", "realization-memento")?;
-    let op_cid = optional_str(decl, "op_cid").or_else(|| optional_str(decl, "opCid"));
+    let op_cid = required_str(decl, "op_cid", "realization-memento")?;
     let library = required_str(decl, "library", "realization-memento")?;
     let source_function_name = required_str(decl, "source_function_name", "realization-memento")?;
 
     let envelope = json!({
         "body": decl,
         "header": {
-            "conceptName": concept_name,
             "kind": "realization-memento",
             "realizationKind": "boundary",
             "library": library,
+            "opCid": op_cid,
             "sourceFunctionName": source_function_name,
             "targetLanguage": target_language,
         },
         "schemaVersion": "1",
     });
-    let mut envelope = envelope;
-    if let Some(op_cid) = op_cid {
-        envelope["header"]["opCid"] = json!(op_cid);
-    }
     let canonical = encode_jcs(&json_to_cvalue(&envelope));
     let cid = blake3_512_of(canonical.as_bytes());
     Ok((cid, canonical.into_bytes()))
@@ -2967,7 +2951,7 @@ mod tests {
     fn stamp_fills_absent_family_and_version_on_library_sugar_binding_entry() {
         let mut entries = vec![json!({
             "kind": "library-sugar-binding-entry",
-            "concept_name": "concept:sql-query",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "target_library_tag": "rusqlite",
         })];
         stamp_platform_profile(&mut entries, &sql_profile());
@@ -2981,7 +2965,7 @@ mod tests {
         // Annotation wins — profile MUST NOT overwrite.
         let mut entries = vec![json!({
             "kind": "library-sugar-binding-entry",
-            "concept_name": "concept:sql-query",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "target_library_tag": "rusqlite",
             "family": "concept:family:sql-experimental",
             "library_version": "0.40.0-rc1",
@@ -3003,7 +2987,7 @@ mod tests {
         let mut entries = vec![json!({
             "kind": "realization-memento",
             "realization_kind": "boundary",
-            "concept_name": "concept:sql-query",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "library": "rusqlite",
         })];
         stamp_platform_profile(&mut entries, &sql_profile());
@@ -3023,7 +3007,7 @@ mod tests {
         };
         let mut entries = vec![json!({
             "kind": "library-sugar-binding-entry",
-            "concept_name": "concept:blake3-512-of",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "target_library_tag": "blake3",
         })];
         stamp_platform_profile(&mut entries, &profile);
@@ -3040,7 +3024,7 @@ mod tests {
         let profile = PlatformProfile::default();
         let mut entries = vec![json!({
             "kind": "library-sugar-binding-entry",
-            "concept_name": "concept:foo",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "target_library_tag": "bar",
         })];
         stamp_platform_profile(&mut entries, &profile);
@@ -3056,7 +3040,6 @@ mod tests {
             "target_language": "python",
             "target_library_tag": "numpy",
             "symbol": "numpy.add",
-            "concept_name": "concept:add",
             "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "signature_shape_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "body_source": {
@@ -3066,7 +3049,6 @@ mod tests {
         .expect("mint library sugar binding entry");
         let envelope: Value = serde_json::from_slice(&bytes).expect("canonical JSON envelope");
 
-        assert_eq!(envelope["header"]["conceptName"], "concept:add");
         assert_eq!(
             envelope["header"]["opCid"],
             "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -3083,22 +3065,20 @@ mod tests {
             "kind": "realization-memento",
             "realization_kind": "boundary",
             "target_language": "python",
-            "concept_name": "concept:add",
-            "op_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "library": "numpy",
             "source_function_name": "add"
         }))
         .expect("mint realization memento");
         let envelope: Value = serde_json::from_slice(&bytes).expect("canonical JSON envelope");
 
-        assert_eq!(envelope["header"]["conceptName"], "concept:add");
         assert_eq!(
             envelope["header"]["opCid"],
-            "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
         assert_eq!(
             envelope["body"]["op_cid"],
-            "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
     }
 
@@ -3336,7 +3316,7 @@ mod tests {
                 "source_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "span": {"start_line": 1, "start_col": 0, "end_line": 6, "end_col": 0}
             },
-            "concept_name": "concept:http-request",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "kind": "library-sugar-binding-entry",
             "loss_record_contribution": {"form": "literal", "value": {"entries": []}},
             "param_names": ["url"],
@@ -3402,8 +3382,7 @@ mod tests {
         assert!(filename_cid.starts_with("blake3-512:"));
         assert!(contract_set_cid.starts_with("blake3-512:"));
         let proof_path = PathBuf::from(format!("{filename_cid}.proof"));
-        let report =
-            sugar_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
+        let report = sugar_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
         assert!(
             report.errors.is_empty(),
             "minted ir-document proof should inspect cleanly: {:?}",
@@ -4226,8 +4205,7 @@ mod tests {
         )
         .expect("mint authority plus contract");
         let proof_path = PathBuf::from(format!("{filename_cid}.proof"));
-        let report =
-            sugar_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
+        let report = sugar_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
         assert!(
             report.errors.is_empty(),
             "authority-backed proof should inspect cleanly: {:?}",

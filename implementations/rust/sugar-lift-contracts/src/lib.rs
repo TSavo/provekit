@@ -1312,7 +1312,7 @@ fn classify_attr(a: &syn::Attribute) -> Option<Slot> {
 const CONCEPT_ANNOTATION_PREFIX: &str = "concept:";
 
 /// Validate that `name` matches `[a-zA-Z][a-zA-Z0-9\-:_]*`.
-fn is_valid_concept_name(name: &str) -> bool {
+fn is_valid_concept_label(name: &str) -> bool {
     let mut chars = name.chars();
     match chars.next() {
         None => false,
@@ -1328,7 +1328,7 @@ fn parse_concept_annotation(line: &str) -> Option<String> {
     let trimmed = line.trim();
     let rest = trimmed.strip_prefix(CONCEPT_ANNOTATION_PREFIX)?;
     let name = rest.trim();
-    if is_valid_concept_name(name) {
+    if is_valid_concept_label(name) {
         Some(name.to_string())
     } else {
         None

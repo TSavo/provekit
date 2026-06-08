@@ -3,9 +3,9 @@
 
 #![allow(unreachable_patterns)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use sugar_ir_compiler::FreeVar;
 use sugar_ir_types::*;
-use std::collections::{BTreeMap, BTreeSet};
 
 pub fn emit_term(term: &Term) -> String {
     match term {

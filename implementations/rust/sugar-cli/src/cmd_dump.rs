@@ -11,9 +11,9 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
 use owo_colors::OwoColorize;
+use serde_json::{json, Map, Value as Json};
 use sugar_canonicalizer::blake3_512_of;
 use sugar_verifier::cbor_decode::{decode, CborValue};
-use serde_json::{json, Map, Value as Json};
 
 use crate::DumpArgs;
 

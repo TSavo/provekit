@@ -345,7 +345,7 @@ def test_contracts_surface_gates_on_boundary_declaration(tmp_path):
     assert "declared" in fn_names
     assert "undeclared" not in fn_names
     declared = next(i for i in ir if i.get("kind") == "function-contract")
-    assert declared["conceptName"] == "concept:mul"
+    assert declared["opCid"]
     assert declared["authoringKind"] == "boundary"
 
 

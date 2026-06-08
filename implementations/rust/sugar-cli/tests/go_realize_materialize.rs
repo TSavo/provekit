@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Residual rust-CLI behavior assertion from the former GO MATERIALIZE/REALIZE
-// gauntlet. The go realize/materialize tests exercised the deleted Go kit
-// (provekit-realize-go-core) and have been removed; this negative test
+// Residual rust-CLI behavior assertion from the former Go codegen
+// gauntlet. The deleted Go codegen kit tests have been removed; this negative test
 // remains because it asserts a property of the *Rust CLI itself* -- that go
 // source discovery is kit-owned over RPC and not hardcoded in the CLI's
 // legacy source scanner.

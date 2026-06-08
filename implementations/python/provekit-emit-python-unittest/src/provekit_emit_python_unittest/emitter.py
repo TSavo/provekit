@@ -25,7 +25,7 @@ class EmitPlan:
     def from_params(params: dict[str, Any]) -> "EmitPlan":
         if not isinstance(params, dict):
             return EmitPlan()
-        contract_id = _first_str(params.get("contract_id"), params.get("concept_name"))
+        contract_id = _first_str(params.get("contract_id"))
         function = _first_str(params.get("function"), params.get("function_name")) or "test"
         formals = _string_list(params.get("params"))
         formal_types = _string_list(params.get("param_types"))
@@ -147,4 +147,3 @@ def _string_list(value: Any) -> list[str]:
 
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
-

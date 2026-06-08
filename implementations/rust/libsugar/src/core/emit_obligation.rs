@@ -28,9 +28,9 @@
 
 use std::sync::Arc;
 
+use serde_json::{json, Value};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
 use sugar_ir_types::{BridgeHeaderV14, BridgeTarget};
-use serde_json::{json, Value};
 
 /// Build the bridge memento body (without the outer evidence wrapping).
 /// The same shape both cmd_materialize's `materialize_bridge_body` and
@@ -84,7 +84,7 @@ pub fn build_bridge_body(
 pub fn build_implication_contract_body(
     verb_tag: &str,
     function_name: &str,
-    concept_name: Option<&str>,
+    op_cid: Option<&str>,
     param_source_texts: &[&str],
 ) -> Value {
     let arg_terms: Vec<Value> = param_source_texts
@@ -104,8 +104,8 @@ pub fn build_implication_contract_body(
         "contractName": format!("{verb_tag}-callsite:{function_name}"),
         "post": post,
     });
-    if let Some(c) = concept_name {
-        body["concept_name"] = json!(c);
+    if let Some(cid) = op_cid {
+        body["op_cid"] = json!(cid);
     }
     body
 }
@@ -180,11 +180,14 @@ mod tests {
         let body = build_implication_contract_body(
             "recognize",
             "json_parse",
-            Some("concept:json-parse"),
+            Some("blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
             &["input"],
         );
         assert_eq!(body["contractName"], "recognize-callsite:json_parse");
-        assert_eq!(body["concept_name"], "concept:json-parse");
+        assert_eq!(
+            body["op_cid"],
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
         let post = &body["post"];
         assert_eq!(post["kind"], "atomic");
         let args = post["args"].as_array().expect("atomic args");
@@ -199,9 +202,9 @@ mod tests {
     }
 
     #[test]
-    fn implication_contract_omits_concept_name_when_absent() {
+    fn implication_contract_omits_op_cid_when_absent() {
         let body = build_implication_contract_body("recognize", "f", None, &[]);
-        assert!(body.get("concept_name").is_none());
+        assert!(body.get("op_cid").is_none());
     }
 
     #[test]

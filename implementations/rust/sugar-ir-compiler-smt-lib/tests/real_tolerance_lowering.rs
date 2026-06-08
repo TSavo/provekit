@@ -13,8 +13,8 @@
 // the first formula in the repo to carry a `Real` const: before this, every
 // literal rolled into the Int universe (see literal_encoding.rs).
 
-use sugar_ir_compiler_smt_lib::emit;
 use serde_json::json;
+use sugar_ir_compiler_smt_lib::emit;
 
 fn tolerance_bound() -> serde_json::Value {
     let diff = json!({

@@ -5,10 +5,10 @@
 // Reads IR JSON from stdin, emits Coq to stdout.
 // Usage: cat input.json | provekit-ir-coq
 
-use sugar_ir_compiler::IrCompiler;
-use sugar_ir_compiler_coq::CoqCompiler;
 use serde_json::Value as Json;
 use std::io::{self, Read};
+use sugar_ir_compiler::IrCompiler;
+use sugar_ir_compiler_coq::CoqCompiler;
 
 fn main() {
     // Read all stdin

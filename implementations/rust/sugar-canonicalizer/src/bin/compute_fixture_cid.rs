@@ -1,7 +1,7 @@
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use serde_json::Value;
 use std::fs;
 use std::sync::Arc;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
 fn to_cvalue(v: &Value) -> Arc<CValue> {
     match v {

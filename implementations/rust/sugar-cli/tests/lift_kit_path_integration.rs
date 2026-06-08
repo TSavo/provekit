@@ -9,8 +9,8 @@ use libsugar::core::{
     Input, Kit, KitError, KitRegistry, LiftKit, LiftPluginKit, Path as CorePath, PathAlgebra, Term,
     Verb, Verdict, Witness,
 };
-use sugar_ir_types::Sort;
 use serde_json::json;
+use sugar_ir_types::Sort;
 
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))

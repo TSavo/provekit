@@ -42,9 +42,9 @@
 
 use std::sync::Arc;
 
+use quote::ToTokens;
 use sugar_canonicalizer::Value;
 use sugar_ir_types::Sort;
-use quote::ToTokens;
 use syn::{File, Item, ItemEnum, ItemImpl, ItemStruct, ItemTrait};
 
 use crate::canonical::{cid_of_value, jcs_bytes_of_value};

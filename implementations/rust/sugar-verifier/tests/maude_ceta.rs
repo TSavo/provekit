@@ -1,11 +1,11 @@
 use std::process::Command;
 use std::time::Duration;
 
+use serde_json::{json, Value as Json};
 use sugar_verifier::solvers::ceta::{parse_ceta_output, CetaDecision};
 use sugar_verifier::solvers::maude::{parse_maude_output, MaudeDecision};
 use sugar_verifier::solvers::{CetaGateConfig, MaudeSubprocessSolver, Solver};
 use sugar_verifier::types::ObligationVerdict;
-use serde_json::{json, Value as Json};
 
 fn binary_on_path(name: &str) -> bool {
     Command::new("sh")

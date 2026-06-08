@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use sugar_walk::emit::rust_function_term_json_for_file;
 use serde_json::{json, Value};
+use sugar_walk::emit::rust_function_term_json_for_file;
 
 const UNRESOLVED_CALL_SIGNATURE_CID: &str = "blake3-512:2d368ad6123c2617a938deb71b7094a20cecfa6229909dad7c1d368aa0f931ed9bd2ff4bbf497962f8cdf104ddda56050275e6ee4a2998ce3d75b36925c362cf";
 

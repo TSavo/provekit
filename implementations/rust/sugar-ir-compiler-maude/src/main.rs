@@ -4,9 +4,9 @@
 
 use std::io::{self, Read};
 
+use serde_json::Value as Json;
 use sugar_ir_compiler::IrCompiler;
 use sugar_ir_compiler_maude::{MaudeCompiler, DIALECT};
-use serde_json::Value as Json;
 
 fn main() {
     let mut input = String::new();

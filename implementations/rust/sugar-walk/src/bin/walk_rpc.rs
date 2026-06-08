@@ -27,6 +27,8 @@ use std::sync::{Arc, OnceLock};
 use base64::Engine;
 use libsugar::canonical::local_op_cid as canonical_local_op_cid;
 use libsugar::concept::panic_freedom;
+use quote::ToTokens;
+use serde_json::{json, Value};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_claim_envelope::{
     body_discharge_policy_from_object, body_discharge_policy_from_object_with_default,
@@ -34,9 +36,7 @@ use sugar_claim_envelope::{
 };
 use sugar_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
 use sugar_lift_contracts::lift_file_with_docstring_evidence;
-use sugar_walk::emit::{
-    rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir,
-};
+use sugar_walk::emit::{rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir};
 use sugar_walk::{
     build_function_contract_with_file_and_post_override, build_shadow_source,
     collect_explicit_function_return_facts, lift_function_postcondition_with_return_facts,
@@ -44,8 +44,6 @@ use sugar_walk::{
     pure_free_guard_arg_is_stable, pure_free_guard_expr_effect_roots, CalleeContract,
     PureFreeGuardRule,
 };
-use quote::ToTokens;
-use serde_json::{json, Value};
 use syn::spanned::Spanned;
 use tracing::{debug, info, trace, warn};
 
@@ -384,7 +382,7 @@ fn recognize_match_item_fn(
             "end_col": end.column,
         },
         "function_name": item_fn.sig.ident.to_string(),
-        "concept_name": body.get("concept_name").cloned().unwrap_or(Value::Null),
+        "op_cid": body.get("op_cid").cloned().unwrap_or(Value::Null),
         "library_tag": body.get("library_tag").cloned().unwrap_or(Value::Null),
         "family": body.get("family").cloned().unwrap_or(Value::Null),
         "template_cid": candidate_cid,
@@ -457,7 +455,10 @@ fn binding_template_from_sugar_entry(
     if entry.get("kind").and_then(Value::as_str) != Some("library-sugar-binding-entry") {
         return None;
     }
-    let concept_name = entry.get("concept_name").and_then(Value::as_str)?;
+    let op_cid = entry
+        .get("op_cid")
+        .or_else(|| entry.get("opCid"))
+        .and_then(Value::as_str)?;
     let library_tag = entry
         .get("target_library_tag")
         .or_else(|| entry.get("library_tag"))
@@ -475,7 +476,7 @@ fn binding_template_from_sugar_entry(
         .unwrap_or_else(|| Value::Array(Vec::new()));
 
     let mut body = json!({
-        "concept_name": concept_name,
+        "op_cid": op_cid,
         "library_tag": library_tag,
         "family": entry.get("family").cloned().unwrap_or(Value::Null),
         "template_cid": template_cid,
@@ -5431,8 +5432,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
     let root = PathBuf::from(workspace_root);
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
-    let library_bindings = LibraryBindingLookup::load(&root)?;
-
     // Derive-from-source: in the `library-bindings` layer, EVERY module-level
     // `pub fn` that carries NO `#[provekit::sugar]` attribute is ALSO sugar —
     // the tag is gone, the binding is DERIVED from the crate name + fn name
@@ -5583,19 +5582,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 entry["concept_annotation"] = json!(concept_annotation);
             }
             entries.push(entry);
-
-            for callsite in collect_bound_library_calls(item_fn, &library_bindings) {
-                let term_shape =
-                    concept_citation_shape(&callsite.pattern.concept_cid, &callsite.resolved_args);
-                let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
-                entries.push(json!({
-                    "kind": "bind-lift-entry",
-                    "param_names": callsite.resolved_args,
-                    "term_shape": cvalue_to_json(&term_shape),
-                    "term_shape_cid": term_shape_cid,
-                    "witnesses": [],
-                }));
-            }
         }
 
         for sugar_target in collect_sugar_targets(&file, &src) {
@@ -5609,6 +5595,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 item_fn,
                 totality_result_ok,
             } = sugar_target;
+            let op_cid = canonical_local_op_cid(&concept)
+                .map_err(|e| format!("derive op cid for sugar binding `{concept}`: {e}"))?;
             let param_names = fn_param_names(&item_fn);
             let param_types = sugar_param_types(&item_fn);
             let original_param_types = sugar_original_param_types(&item_fn);
@@ -5643,14 +5631,14 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             // #1361 chunk 2 part B / #1355: emit concept-hub sort CIDs for
             // each parameter type. The rust kit's @sugar lift translates
             // its source syntax to substrate-canonical sort identities AT
-            // the kit/substrate boundary. Parallel to source_transform's
-            // @boundary carrier emission and JavaBindLifter's @sugar emission.
+            // the kit/substrate boundary. Parallel to other source-lifter
+            // boundary emissions.
             // Kit-internal sort labels (rust:Int, rust:Str, ...) stay inside
             // the rust kit; only concept-hub CIDs cross to substrate. Empty
             // string in a slot signals "kit has no morphism for this type" —
             // substrate-honest gap signal for downstream refusal.
             let mut parametric_sort_expansions: Vec<
-                libsugar::core::lower_plugin::ParametricSortExpansion,
+                libsugar::core::source_aliases::ParametricSortExpansion,
             > = Vec::new();
             let param_sort_cids: Vec<String> = param_types
                 .iter()
@@ -5669,7 +5657,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "kind": "library-sugar-binding-entry",
                 "target_language": "rust",
                 "target_library_tag": library,
-                "concept_name": concept,
+                "op_cid": op_cid,
                 "source_function_name": item_fn.sig.ident.to_string(),
                 "visibility": match &item_fn.vis {
                     syn::Visibility::Public(_) => "pub",
@@ -5780,7 +5768,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         // still-tagged fn (emitted above), a `#[provekit::boundary]` consumer
         // stub, and test fns. Impl methods + nested-module fns are the next
         // increment of "anything" (a structural walk, not an access rule). No
-        // `concept_name` is emitted, so `recognize` (which requires it) keeps the
+        // no name-keyed identity is emitted, so `recognize` (which requires a
+        // pinned op CID) keeps the
         // project's own functions out of its published match-template set; the
         // derived binding is materialize-only, exactly like python's derived
         // path.
@@ -5811,6 +5800,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
 
                 let fn_name = item_fn.sig.ident.to_string();
                 let symbol = format!("{crate_tag}.{fn_name}");
+                let op_cid = canonical_local_op_cid(&symbol)
+                    .map_err(|err| format!("failed to derive op_cid for `{symbol}`: {err}"))?;
                 let param_names = fn_param_names(item_fn);
                 let param_types = sugar_param_types(item_fn);
                 let original_param_types = sugar_original_param_types(item_fn);
@@ -5842,7 +5833,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 ]);
                 let signature_shape_cid = blake3_512_of(encode_jcs(&sig_shape).as_bytes());
                 let mut parametric_sort_expansions: Vec<
-                    libsugar::core::lower_plugin::ParametricSortExpansion,
+                    libsugar::core::source_aliases::ParametricSortExpansion,
                 > = Vec::new();
                 let param_sort_cids: Vec<String> = param_types
                     .iter()
@@ -5862,6 +5853,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     "target_language": "rust",
                     "target_library_tag": crate_tag,
                     "symbol": symbol,
+                    "op_cid": op_cid,
                     "binding_origin": "derived",
                     "source_function_name": fn_name,
                     "visibility": match &item_fn.vis {
@@ -5931,11 +5923,13 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 loss,
                 source_function_name,
             } = boundary_target;
+            let op_cid = canonical_local_op_cid(&concept)
+                .map_err(|e| format!("derive op cid for boundary `{concept}`: {e}"))?;
             let mut entry = json!({
                 "kind": "realization-memento",
                 "realization_kind": "boundary",
                 "target_language": "rust",
-                "concept_name": concept,
+                "op_cid": op_cid,
                 "library": library,
                 "source_function_name": source_function_name,
                 "loss_record_contribution": {
@@ -7210,366 +7204,6 @@ fn normalize_rust_symbol(raw: &str) -> String {
     s
 }
 
-#[derive(Debug, Clone)]
-struct LibraryBindingLookup {
-    patterns: Vec<LibraryCallPattern>,
-}
-
-#[derive(Debug, Clone)]
-struct LibraryCallPattern {
-    concept_cid: String,
-    callee: String,
-    min_params: Option<usize>,
-    max_params: Option<usize>,
-}
-
-#[derive(Debug, Clone)]
-struct BoundLibraryCall {
-    pattern: LibraryCallPattern,
-    resolved_args: Vec<String>,
-}
-
-impl LibraryBindingLookup {
-    fn load(workspace_root: &Path) -> Result<Self, String> {
-        let config_path = workspace_root
-            .join(".provekit")
-            .join("library-bindings.json");
-        if !config_path.is_file() {
-            return Ok(Self {
-                patterns: Vec::new(),
-            });
-        }
-        let raw = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("read {}: {e}", config_path.display()))?;
-        let config: Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("parse {}: {e}", config_path.display()))?;
-        let language = config
-            .get("language")
-            .and_then(Value::as_str)
-            .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| {
-                format!(
-                    "{} must contain non-empty string field `language`",
-                    config_path.display()
-                )
-            })?;
-        let bindings = config
-            .get("bindings")
-            .and_then(Value::as_object)
-            .ok_or_else(|| {
-                format!(
-                    "{} must contain object field `bindings`",
-                    config_path.display()
-                )
-            })?;
-
-        let mut pairs = bindings.iter().collect::<Vec<_>>();
-        pairs.sort_by(|a, b| a.0.cmp(b.0));
-        let mut patterns = Vec::new();
-        for (concept_name, surface_value) in pairs {
-            if !concept_name.starts_with("concept:") {
-                return Err(format!(
-                    "{} binding key `{concept_name}` must start with `concept:`",
-                    config_path.display()
-                ));
-            }
-            let surface = surface_value.as_str().ok_or_else(|| {
-                format!(
-                    "{} binding `{concept_name}` must be a string library surface",
-                    config_path.display()
-                )
-            })?;
-            let (surface_language, library_tag) = split_library_surface(surface)?;
-            if surface_language != language {
-                return Err(format!(
-                    "{} binding `{concept_name}` points to `{surface}` but top-level language is `{language}`",
-                    config_path.display()
-                ));
-            }
-            let concept_cid = concept_shape_cid(workspace_root, concept_name)?;
-            let entries = body_template_entries(workspace_root, &surface_language, &library_tag)?;
-            let mut matched = 0usize;
-            for entry in entries
-                .into_iter()
-                .filter(|entry| concept_names_match(&entry.concept_name, concept_name))
-            {
-                for callee in infer_call_patterns_from_template(&entry.emission_template) {
-                    matched += 1;
-                    patterns.push(LibraryCallPattern {
-                        concept_cid: concept_cid.clone(),
-                        callee,
-                        min_params: entry.min_params,
-                        max_params: entry.max_params,
-                    });
-                }
-            }
-            if matched == 0 {
-                return Err(format!(
-                    "body template for `{surface}` contains no callable emission template for `{concept_name}`"
-                ));
-            }
-        }
-        Ok(Self { patterns })
-    }
-
-    fn match_call(&self, callee: &str, arity: usize) -> Option<&LibraryCallPattern> {
-        let normalized = normalize_call_pattern(callee);
-        self.patterns.iter().find(|pattern| {
-            pattern.callee == normalized
-                && pattern.min_params.is_none_or(|min| arity >= min)
-                && pattern.max_params.is_none_or(|max| arity <= max)
-        })
-    }
-}
-
-#[derive(Debug)]
-struct BodyTemplateCallEntry {
-    concept_name: String,
-    emission_template: String,
-    min_params: Option<usize>,
-    max_params: Option<usize>,
-}
-
-fn split_library_surface(surface: &str) -> Result<(String, String), String> {
-    let Some((language, tag)) = surface.split_once('-') else {
-        return Err(format!(
-            "library surface `{surface}` must look like `<language>-<library>`"
-        ));
-    };
-    if language.is_empty() || tag.is_empty() {
-        return Err(format!(
-            "library surface `{surface}` must have non-empty language and library"
-        ));
-    }
-    Ok((language.to_string(), tag.to_string()))
-}
-
-fn body_template_entries(
-    workspace_root: &Path,
-    language: &str,
-    library_tag: &str,
-) -> Result<Vec<BodyTemplateCallEntry>, String> {
-    let rel = PathBuf::from("menagerie")
-        .join(format!("{language}-language-signature"))
-        .join("specs")
-        .join("body-templates")
-        .join(format!("{language}-canonical-bodies-{library_tag}.json"));
-    let path = find_repo_file(workspace_root, &rel)
-        .ok_or_else(|| format!("missing body template {}", rel.display()))?;
-    let raw =
-        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let root: Value =
-        serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
-    let entries = root
-        .pointer("/header/content/entries")
-        .and_then(Value::as_array)
-        .ok_or_else(|| format!("{} missing /header/content/entries", path.display()))?;
-    Ok(entries
-        .iter()
-        .filter_map(body_template_call_entry_from_json)
-        .collect())
-}
-
-fn body_template_call_entry_from_json(entry: &Value) -> Option<BodyTemplateCallEntry> {
-    let concept_name = entry.get("concept_name")?.as_str()?.to_string();
-    let emission_template = entry
-        .get("emission_template")?
-        .get("template")?
-        .as_str()?
-        .to_string();
-    let guard = entry.get("signature_guard");
-    Some(BodyTemplateCallEntry {
-        concept_name,
-        emission_template,
-        min_params: guard
-            .and_then(|g| g.get("min_params"))
-            .and_then(Value::as_u64)
-            .map(|n| n as usize),
-        max_params: guard
-            .and_then(|g| g.get("max_params"))
-            .and_then(Value::as_u64)
-            .map(|n| n as usize),
-    })
-}
-
-fn concept_shape_cid(workspace_root: &Path, concept_name: &str) -> Result<String, String> {
-    let rel = Path::new("menagerie")
-        .join("concept-shapes")
-        .join("cids.tsv");
-    let path =
-        find_repo_file(workspace_root, &rel).ok_or_else(|| format!("missing {}", rel.display()))?;
-    let raw =
-        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    for line in raw.lines() {
-        let cols = line.split('\t').collect::<Vec<_>>();
-        if cols.len() >= 3 && cols[0] == "shape" && cols[1] == concept_name {
-            return Ok(cols[2].to_string());
-        }
-    }
-    Err(format!(
-        "{} has no shape CID entry for `{concept_name}`",
-        path.display()
-    ))
-}
-
-fn find_repo_file(workspace_root: &Path, relative: &Path) -> Option<PathBuf> {
-    let mut bases = vec![workspace_root.to_path_buf()];
-    if let Some(root) = std::env::var_os("PROVEKIT_REPO_ROOT") {
-        bases.push(PathBuf::from(root));
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        bases.extend(cwd.ancestors().map(Path::to_path_buf));
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            bases.extend(parent.ancestors().map(Path::to_path_buf));
-        }
-    }
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    bases.extend(manifest_dir.ancestors().map(Path::to_path_buf));
-
-    for base in bases {
-        let candidate = base.join(relative);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn infer_call_patterns_from_template(template: &str) -> Vec<String> {
-    let bytes = template.as_bytes();
-    let mut out = Vec::new();
-    for (idx, ch) in template.char_indices() {
-        if ch != '(' {
-            continue;
-        }
-        let mut start = idx;
-        while start > 0 {
-            let prev = bytes[start - 1] as char;
-            if prev.is_ascii_alphanumeric() || matches!(prev, '_' | '.' | ':') {
-                start -= 1;
-            } else {
-                break;
-            }
-        }
-        let token = &template[start..idx];
-        if token.contains('.') || token.contains("::") {
-            let normalized = normalize_call_pattern(token);
-            if !normalized.is_empty() && !out.contains(&normalized) {
-                out.push(normalized);
-            }
-        }
-    }
-    out
-}
-
-fn normalize_call_pattern(raw: &str) -> String {
-    raw.trim()
-        .replace("::", ".")
-        .split_whitespace()
-        .collect::<String>()
-}
-
-fn concept_names_match(entry_name: &str, requested: &str) -> bool {
-    entry_name == requested
-        || entry_name
-            .strip_prefix("concept:")
-            .is_some_and(|name| name == requested)
-        || requested
-            .strip_prefix("concept:")
-            .is_some_and(|name| name == entry_name)
-}
-
-fn collect_bound_library_calls(
-    item_fn: &syn::ItemFn,
-    bindings: &LibraryBindingLookup,
-) -> Vec<BoundLibraryCall> {
-    if bindings.patterns.is_empty() {
-        return Vec::new();
-    }
-    let mut collector = BoundCallCollector {
-        bindings,
-        calls: Vec::new(),
-    };
-    syn::visit::Visit::visit_item_fn(&mut collector, item_fn);
-    collector.calls
-}
-
-struct BoundCallCollector<'a> {
-    bindings: &'a LibraryBindingLookup,
-    calls: Vec<BoundLibraryCall>,
-}
-
-impl<'ast> syn::visit::Visit<'ast> for BoundCallCollector<'_> {
-    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
-        if let Some(callee) = callee_name_from_expr(&node.func) {
-            self.record_call(&callee, &node.args);
-        }
-        syn::visit::visit_expr_call(self, node);
-    }
-
-    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-        let receiver = expr_surface(&node.receiver);
-        let callee = format!("{receiver}.{}", node.method);
-        self.record_call(&callee, &node.args);
-        syn::visit::visit_expr_method_call(self, node);
-    }
-}
-
-impl BoundCallCollector<'_> {
-    fn record_call(
-        &mut self,
-        callee: &str,
-        args: &syn::punctuated::Punctuated<syn::Expr, syn::token::Comma>,
-    ) {
-        let arity = args.len();
-        let Some(pattern) = self.bindings.match_call(callee, arity) else {
-            return;
-        };
-        let resolved_args = args.iter().map(expr_surface).collect::<Vec<_>>();
-        self.calls.push(BoundLibraryCall {
-            pattern: pattern.clone(),
-            resolved_args,
-        });
-    }
-}
-
-fn callee_name_from_expr(expr: &syn::Expr) -> Option<String> {
-    match expr {
-        syn::Expr::Path(path) => Some(
-            path.path
-                .segments
-                .iter()
-                .map(|segment| segment.ident.to_string())
-                .collect::<Vec<_>>()
-                .join("."),
-        ),
-        _ => Some(expr_surface(expr)),
-    }
-}
-
-fn expr_surface(expr: &syn::Expr) -> String {
-    use quote::ToTokens;
-    normalize_ws(&expr.to_token_stream().to_string())
-}
-
-fn concept_citation_shape(concept_cid: &str, resolved_args: &[String]) -> std::sync::Arc<CValue> {
-    CValue::object([
-        (
-            "args",
-            CValue::array(
-                resolved_args
-                    .iter()
-                    .map(|arg| CValue::string(arg.clone()))
-                    .collect(),
-            ),
-        ),
-        ("concept_cid", CValue::string(concept_cid.to_string())),
-        ("kind", CValue::string("concept-citation")),
-    ])
-}
-
 fn contract_witnesses_by_function_symbol(
     file: &syn::File,
     rel: &str,
@@ -7866,23 +7500,21 @@ fn fn_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
 /// Catalog-driven rust-source-syntax → concept-hub sort CID (#1370).
 ///
 /// NO hardcoded source-token names. Reads kit-source-alias mementos via
-/// libsugar::core::lower_plugin::load_kit_source_aliases("rust") and
+/// libsugar::core::source_aliases::load_kit_source_aliases("rust") and
 /// dispatches via the recursive resolver. Parametric types emit composite
 /// CIDs computed via content-addressing; expansions are accumulated for
 /// realize-side dispatch.
 fn rust_source_type_to_concept_hub_sort_cid(
     rust_type: &str,
-    expansions: &mut Vec<libsugar::core::lower_plugin::ParametricSortExpansion>,
+    expansions: &mut Vec<libsugar::core::source_aliases::ParametricSortExpansion>,
 ) -> Option<String> {
     let aliases = RUST_ALIASES
-        .get_or_init(|| libsugar::core::lower_plugin::load_kit_source_aliases("rust"));
-    libsugar::core::lower_plugin::rust_type_to_concept_hub_sort_cid(
-        rust_type, aliases, expansions,
-    )
+        .get_or_init(|| libsugar::core::source_aliases::load_kit_source_aliases("rust"));
+    libsugar::core::source_aliases::rust_type_to_sort_cid(rust_type, aliases, expansions)
 }
 
 static RUST_ALIASES: OnceLock<
-    std::collections::BTreeMap<String, libsugar::core::lower_plugin::KitSourceAliasEntry>,
+    std::collections::BTreeMap<String, libsugar::core::source_aliases::KitSourceAliasEntry>,
 > = OnceLock::new();
 
 fn sugar_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
@@ -8328,7 +7960,6 @@ fn comment_shape(surface: &str) -> Option<Arc<CValue>> {
                 ("value", CValue::string(surface.to_string())),
             ])]),
         ),
-        ("concept_name", CValue::string("concept:comment")),
         ("op_cid", CValue::string(op_cid.to_string())),
     ]))
 }
@@ -8666,7 +8297,7 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             bindings_of_expr(&e.right, ctx),
         ]),
         syn::Expr::Binary(e) => {
-            if binary_operator_concept_name(&e.op).is_none() {
+            if binary_operator_name(&e.op).is_none() {
                 return BindingResult::default();
             }
             operation_binding_result(vec![
@@ -8675,7 +8306,7 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             ])
         }
         syn::Expr::Unary(e) => {
-            if unary_operator_concept_name(&e.op, expr_sort(&e.expr, ctx)).is_none() {
+            if unary_operator_name(&e.op, expr_sort(&e.expr, ctx)).is_none() {
                 return BindingResult::default();
             }
             operation_binding_result(vec![bindings_of_expr(&e.expr, ctx)])
@@ -9068,7 +8699,6 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                     };
                     assign_args.push(CValue::object([
                         ("args", CValue::array(Vec::new())),
-                        ("concept_name", CValue::string("concept:literal")),
                         ("op_cid", CValue::string(op_cid)),
                         ("sort", CValue::string(SORT_BOOL_CID)),
                         ("value", CValue::boolean(true)),
@@ -9187,7 +8817,6 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 };
                 CValue::object([
                     ("args", CValue::array(Vec::new())),
-                    ("concept_name", CValue::string("concept:literal")),
                     ("op_cid", CValue::string(op_cid)),
                     ("sort", CValue::string(SORT_BOOL_CID)),
                     ("value", CValue::boolean(true)),
@@ -9233,20 +8862,19 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             vec![shape_of_expr(&e.left, ctx), shape_of_expr(&e.right, ctx)],
         ),
         syn::Expr::Binary(e) => {
-            let Some(concept_name) = binary_operator_concept_name(&e.op) else {
+            let Some(operator) = binary_operator_name(&e.op) else {
                 return non_operation_shape();
             };
             gamma_operation(
-                concept_name,
+                operator,
                 vec![shape_of_expr(&e.left, ctx), shape_of_expr(&e.right, ctx)],
             )
         }
         syn::Expr::Unary(e) => {
-            let Some(concept_name) = unary_operator_concept_name(&e.op, expr_sort(&e.expr, ctx))
-            else {
+            let Some(operator) = unary_operator_name(&e.op, expr_sort(&e.expr, ctx)) else {
                 return non_operation_shape();
             };
-            gamma_operation(concept_name, vec![shape_of_expr(&e.expr, ctx)])
+            gamma_operation(operator, vec![shape_of_expr(&e.expr, ctx)])
         }
         syn::Expr::Call(e) => {
             // Extract callee path text from `func`. Only Expr::Path callees are
@@ -9281,11 +8909,11 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             // collapses to the abstraction at the substrate seam.
             let m_name = e.method.to_string();
             // args[0]: receiver shape, matching bindings_of_expr layout above.
-            // args[1]: canonical method-concept leaf (kind:"method",
-            // concept_name:"method:<name>", arity:<n>, op_cid:<derived>).
+            // args[1]: canonical method leaf (kind:"method",
+            // name:"<name>", arity:<n>, op_cid:<derived>).
             // The CID is determined by structure — no minting required.
             // args[2..]: call arguments.
-            let method_leaf = method_concept_leaf(&m_name, e.args.len());
+            let method_leaf = method_operator_leaf(&m_name, e.args.len());
             let mut args = vec![shape_of_expr(&e.receiver, ctx), method_leaf];
             args.extend(e.args.iter().map(|arg| shape_of_expr(arg, ctx)));
             gamma_operation("concept:call", args)
@@ -9600,7 +9228,7 @@ fn collapse_operation_shapes(shapes: impl IntoIterator<Item = Arc<CValue>>) -> A
     }
 }
 
-fn binary_operator_concept_name(op: &syn::BinOp) -> Option<&'static str> {
+fn binary_operator_name(op: &syn::BinOp) -> Option<&'static str> {
     match op {
         syn::BinOp::Add(_) | syn::BinOp::AddAssign(_) => Some("concept:add"),
         syn::BinOp::Sub(_) | syn::BinOp::SubAssign(_) => Some("concept:sub"),
@@ -9624,10 +9252,7 @@ fn binary_operator_concept_name(op: &syn::BinOp) -> Option<&'static str> {
     }
 }
 
-fn unary_operator_concept_name(
-    op: &syn::UnOp,
-    operand_sort: Option<ShapeSort>,
-) -> Option<&'static str> {
+fn unary_operator_name(op: &syn::UnOp, operand_sort: Option<ShapeSort>) -> Option<&'static str> {
     match op {
         syn::UnOp::Deref(_) => Some("concept:deref"),
         syn::UnOp::Not(_) => match operand_sort {
@@ -9670,25 +9295,22 @@ fn format_macro_tokens(s: &str) -> String {
     out.trim().to_string()
 }
 
-/// Build a substrate-canonical method-concept leaf.
+/// Build a substrate-canonical method leaf.
 ///
 /// A method's identity comes from its STRUCTURE — the canonical shape
-/// is `{kind:"method-concept", name:"<name>", arity:<n>}`, and its
+/// is `{kind:"method-operator", name:"<name>", arity:<n>}`, and its
 /// op_cid is `blake3_512(JCS(that))`. No catalog minting required:
 /// the structure IS the identity. Any source language emitting a
 /// method with the same (name, arity) gets the same CID automatically.
 ///
-/// The leaf also keeps `text` for legacy readers that haven't migrated
-/// to `concept_name` yet. New readers should prefer `concept_name`
-/// + `op_cid`.
-fn method_concept_leaf(method_name: &str, arity: usize) -> Arc<CValue> {
-    let concept_name = format!("method:{}", method_name);
+/// The leaf also keeps `text` for readers that consume source spelling.
+fn method_operator_leaf(method_name: &str, arity: usize) -> Arc<CValue> {
     // Canonical content-addressable shape (no text/legacy fields,
     // no op_cid yet — those are derived/auxiliary).
     let canonical = CValue::object([
         ("arity", CValue::integer(arity as i64)),
-        ("concept_name", CValue::string(concept_name.clone())),
-        ("kind", CValue::string("method-concept")),
+        ("kind", CValue::string("method-operator")),
+        ("name", CValue::string(method_name.to_string())),
     ]);
     let op_cid = blake3_512_of(encode_jcs(&canonical).as_bytes());
     // Emitted leaf includes op_cid (self-describing) AND keeps text/
@@ -9696,29 +9318,24 @@ fn method_concept_leaf(method_name: &str, arity: usize) -> Arc<CValue> {
     // (e.g. the java realize plugin's pattern-match on "kind":"method").
     CValue::object([
         ("arity", CValue::integer(arity as i64)),
-        ("concept_name", CValue::string(concept_name)),
         ("kind", CValue::string("method")),
+        ("name", CValue::string(method_name.to_string())),
         ("op_cid", CValue::string(op_cid.to_string())),
         ("text", CValue::string(method_name.to_string())),
     ])
 }
 
-fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
-    let op_cid = match local_op_cid(concept_name) {
+fn gamma_operation(operator: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
+    let op_cid = match local_op_cid(operator) {
         Some(cid) => cid.to_string(),
         None => {
-            // Not in the live catalogue yet — derive a CID from the
-            // concept name. The substrate's accretion-over-time model:
-            // new concepts come into existence at lift time, get their
-            // CID from structure (here just the name), and join the
-            // catalogue. Catalog memento files can be generated later
-            // from observed CIDs.
-            blake3_512_of(concept_name.as_bytes())
+            // Unknown local operator label: derive a deterministic CID from
+            // the label bytes rather than guessing a body template.
+            blake3_512_of(operator.as_bytes())
         }
     };
     CValue::object([
         ("args", CValue::array(args)),
-        ("concept_name", CValue::string(concept_name.to_string())),
         ("op_cid", CValue::string(op_cid)),
     ])
 }
@@ -9761,7 +9378,6 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             };
             CValue::object([
                 ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_INT_CID)),
                 ("value", CValue::integer(decoded)),
@@ -9781,7 +9397,6 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             };
             CValue::object([
                 ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_STRING_CID)),
                 ("value", CValue::string(value.value())),
@@ -9806,7 +9421,6 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             };
             CValue::object([
                 ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_STRING_CID)),
                 ("value", CValue::string(value.value().to_string())),
@@ -9825,7 +9439,6 @@ fn concept_literal_shape(value: Arc<CValue>, sort_cid: &str) -> Arc<CValue> {
     };
     CValue::object([
         ("args", CValue::array(Vec::new())),
-        ("concept_name", CValue::string("concept:literal")),
         ("op_cid", CValue::string(op_cid.to_string())),
         ("sort", CValue::string(sort_cid.to_string())),
         ("value", value),
@@ -9841,18 +9454,15 @@ fn byte_array_value(bytes: Vec<u8>) -> Arc<CValue> {
     )
 }
 
-fn local_op_cid(concept_name: &str) -> Option<&'static str> {
-    if !concept_name.starts_with("concept:") {
-        return None;
-    }
+fn local_op_cid(operator: &str) -> Option<&'static str> {
     let cache = CONCEPT_OP_CIDS.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()));
     let mut cids = cache.lock().ok()?;
-    if let Some(cid) = cids.get(concept_name) {
+    if let Some(cid) = cids.get(operator) {
         return Some(*cid);
     }
-    let cid = canonical_local_op_cid(concept_name).ok()?;
+    let cid = canonical_local_op_cid(operator).ok()?;
     let cid = Box::leak(cid.into_boxed_str()) as &'static str;
-    cids.insert(concept_name.to_string(), cid);
+    cids.insert(operator.to_string(), cid);
     Some(cid)
 }
 
@@ -9875,13 +9485,13 @@ mod tests {
     use super::*;
     use libsugar::concept::panic_freedom;
     use libsugar::core::{bind_result_payload, bind_term_document, BindOptions, Term};
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use sugar_ir_types::Sort;
     use sugar_proof_envelope::{
         build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
     };
-    use std::collections::{BTreeMap, BTreeSet};
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     // ---- Source Oracle + materialize (#1359) --------------------------------
 
@@ -10479,7 +10089,10 @@ async fn fetch_status(url: String) -> i64 {
         assert_eq!(e["kind"], "library-sugar-binding-entry");
         assert_eq!(e["target_language"], "rust");
         assert_eq!(e["target_library_tag"], "reqwest");
-        assert_eq!(e["concept_name"], "concept:http-request");
+        assert_eq!(
+            e["op_cid"],
+            local_op_cid("concept:http-request").expect("http-request op cid")
+        );
         assert_eq!(e["source_function_name"], "fetch_status");
         assert!(
             e["signature_shape_cid"]
@@ -10553,9 +10166,9 @@ async fn fetch_status(url: String) -> i64 {
         assert_eq!(e["symbol"], "rust-boundary-vendor.reverse_chars");
         assert_eq!(e["binding_origin"], "derived");
         assert_eq!(e["source_function_name"], "reverse_chars");
-        assert!(
-            e.get("concept_name").is_none(),
-            "derived entry must NOT carry concept_name (materialize-only; keeps recognize from publishing the project's own fns)"
+        assert_eq!(
+            e["op_cid"],
+            json!(canonical_local_op_cid("rust-boundary-vendor.reverse_chars").unwrap())
         );
         assert!(
             e["body_source"]["source_cid"]
@@ -10831,7 +10444,7 @@ pub fn json_parse(s: &str) -> i64 {
 "##;
         let sugar_entry = single_sugar_entry_for_source("recognize_sugar_src", sugar_src);
         let binding_template = json!({
-            "concept_name": sugar_entry["concept_name"],
+            "op_cid": sugar_entry["op_cid"],
             "library_tag": sugar_entry["target_library_tag"],
             "family": sugar_entry.get("family").cloned().unwrap_or(Value::Null),
             "template_cid": sugar_entry["body_source"]["template_cid"],
@@ -10861,7 +10474,10 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         let tags = resp["tags"].as_array().expect("tags array");
         assert_eq!(tags.len(), 1, "alpha-equivalent body must match: {tags:?}");
         let tag = &tags[0];
-        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(
+            tag["op_cid"],
+            local_op_cid("concept:json-parse").expect("json op cid")
+        );
         assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
         assert_eq!(tag["match_tier"], "exact");
         assert_eq!(tag["file"], user_rel);
@@ -10916,7 +10532,10 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
             "Rust recognizer must self-resolve imported sugar binding proofs without CLI binding_templates: {tags:?}"
         );
         let tag = &tags[0];
-        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(
+            tag["op_cid"],
+            local_op_cid("concept:json-parse").expect("json op cid")
+        );
         assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
         assert_eq!(tag["contract_cid"], contract_cid);
         assert_eq!(tag["target_proof_cid"], proof_cid);
@@ -10973,7 +10592,10 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
             "Rust recognizer must match imported sugar proofs by pinned template_cid alone: {tags:?}"
         );
         let tag = &tags[0];
-        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(
+            tag["op_cid"],
+            local_op_cid("concept:json-parse").expect("json op cid")
+        );
         assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
         assert_eq!(tag["contract_cid"], contract_cid);
         assert_eq!(tag["target_proof_cid"], proof_cid);
@@ -11049,7 +10671,10 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
             "Rust recognizer must resolve package proof templates through Cargo metadata: {tags:?}"
         );
         let tag = &tags[0];
-        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(
+            tag["op_cid"],
+            local_op_cid("concept:json-parse").expect("json op cid")
+        );
         assert_eq!(tag["contract_cid"], contract_cid);
         assert_eq!(tag["target_proof_cid"], proof_cid);
 
@@ -11066,7 +10691,7 @@ pub fn json_parse(s: &str) -> i64 {
 "##;
         let sugar_entry = single_sugar_entry_for_source("recognize_neg_sugar", sugar_src);
         let binding_template = json!({
-            "concept_name": sugar_entry["concept_name"],
+            "op_cid": sugar_entry["op_cid"],
             "library_tag": sugar_entry["target_library_tag"],
             "template_cid": sugar_entry["body_source"]["template_cid"],
             "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
@@ -11120,13 +10745,13 @@ pub fn sql_execute(conn: &i64, sql: &str, args: &i64) -> i64 {
         let sql_entry = single_sugar_entry_for_source("recognize_multi_sql", sql_sugar);
         let bindings = json!([
             {
-                "concept_name": json_entry["concept_name"],
+                "op_cid": json_entry["op_cid"],
                 "library_tag": json_entry["target_library_tag"],
                 "template_cid": json_entry["body_source"]["template_cid"],
                 "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             },
             {
-                "concept_name": sql_entry["concept_name"],
+                "op_cid": sql_entry["op_cid"],
                 "library_tag": sql_entry["target_library_tag"],
                 "template_cid": sql_entry["body_source"]["template_cid"],
                 "contract_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -11157,12 +10782,9 @@ pub fn sql_execute(c: &i64, q: &str, p: &i64) -> i64 {
 
         let tags = resp["tags"].as_array().expect("tags array");
         assert_eq!(tags.len(), 2, "expected 2 tags (json + sql): {tags:?}");
-        let concepts: Vec<&str> = tags
-            .iter()
-            .filter_map(|t| t["concept_name"].as_str())
-            .collect();
-        assert!(concepts.contains(&"concept:json-parse"));
-        assert!(concepts.contains(&"concept:sql-execute"));
+        let op_cids: Vec<&str> = tags.iter().filter_map(|t| t["op_cid"].as_str()).collect();
+        assert!(op_cids.contains(&local_op_cid("concept:json-parse").expect("json op cid")));
+        assert!(op_cids.contains(&local_op_cid("concept:sql-execute").expect("sql op cid")));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -11225,7 +10847,10 @@ pub fn query(conn: &i64, sql: &str) -> i64 {
         assert_eq!(e["target_library_tag"], "rusqlite");
         assert_eq!(e["library_version"], "0.39.0");
         assert_eq!(e["family"], "concept:family:sql");
-        assert_eq!(e["concept_name"], "concept:sql-query");
+        assert_eq!(
+            e["op_cid"],
+            local_op_cid("concept:sql-query").expect("sql-query op cid")
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -11295,7 +10920,10 @@ pub fn query_stub(_conn: &i64, _sql: &str) -> i64 {
         assert_eq!(memento["library"], "rusqlite");
         assert_eq!(memento["library_version"], "0.39.0");
         assert_eq!(memento["family"], "concept:family:sql");
-        assert_eq!(memento["concept_name"], "concept:sql-query");
+        assert_eq!(
+            memento["op_cid"],
+            local_op_cid("concept:sql-query").expect("sql-query op cid")
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -11370,12 +10998,18 @@ fn query_db(sql: String) -> String {
             2,
             "two annotated fns must produce two sugar entries"
         );
-        let concepts: Vec<_> = sugar
+        let op_cids: Vec<_> = sugar
             .iter()
-            .map(|e| e["concept_name"].as_str().expect("concept string"))
+            .map(|e| e["op_cid"].as_str().expect("op cid"))
             .collect();
-        assert!(concepts.contains(&"concept:http-request"), "{concepts:?}");
-        assert!(concepts.contains(&"concept:sql-query"), "{concepts:?}");
+        assert!(
+            op_cids.contains(&local_op_cid("concept:http-request").expect("http op cid")),
+            "{op_cids:?}"
+        );
+        assert!(
+            op_cids.contains(&local_op_cid("concept:sql-query").expect("sql op cid")),
+            "{op_cids:?}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -11456,7 +11090,6 @@ pub fn add(x: i64, y: i64) -> i64 {
                     {},
                     {},
                 ],
-                "concept_name": "concept:add",
                 "op_cid": add_cid
             })
         );
@@ -11564,8 +11197,8 @@ pub fn first() -> char {
 "#,
         );
         assert_eq!(
-            shape.get("concept_name").and_then(|v| v.as_str()),
-            Some("concept:literal"),
+            shape.get("op_cid").and_then(|v| v.as_str()),
+            local_op_cid("concept:literal"),
             "Char literal must lift as concept:literal: {shape}"
         );
         assert_eq!(
@@ -11815,11 +11448,9 @@ pub fn add_via_let(a: i64, b: i64) -> i64 {
                             {},
                             {},
                         ],
-                        "concept_name": "concept:add",
                         "op_cid": add_cid
                     }
                 ],
-                "concept_name": "concept:assign",
                 "op_cid": assign_cid
             })
         );
@@ -11846,8 +11477,8 @@ pub fn f(a: i64, b: i64) -> i64 {
 
         assert_ne!(top_level, let_rhs);
         assert_eq!(
-            top_level["concept_name"],
-            json!("concept:add"),
+            top_level["op_cid"],
+            json!(local_op_cid("concept:add").expect("add cid")),
             "top-level tail expression remains an add shape"
         );
         // #1075 federation: `{ let q = a+b; q }` lifts as concept:assign(q, add).
@@ -11857,8 +11488,8 @@ pub fn f(a: i64, b: i64) -> i64 {
         // assignment boundary is still structurally distinct from a top-level
         // operator (assign != add), which is what this test guards.
         assert_eq!(
-            let_rhs["concept_name"],
-            json!("concept:assign"),
+            let_rhs["op_cid"],
+            json!(local_op_cid("concept:assign").expect("assign cid")),
             "let+bare-tail-return body collapses to the concept:assign for the let-binding"
         );
         assert_eq!(
@@ -11880,7 +11511,10 @@ pub fn f(a: i64) -> i64 {
 "#,
         );
 
-        assert_eq!(shape["concept_name"], json!("concept:return"));
+        assert_eq!(
+            shape["op_cid"],
+            json!(local_op_cid("concept:return").expect("return cid"))
+        );
         assert_no_forbidden_term_shape_fields(&shape);
     }
 
@@ -11906,24 +11540,25 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
         // identity; each kit re-spells from concept-hub identities.
         assert_no_forbidden_term_shape_fields(&shape);
         assert_eq!(
-            shape.get("concept_name").and_then(|v| v.as_str()),
-            Some("concept:conditional"),
+            shape.get("op_cid").and_then(|v| v.as_str()),
+            local_op_cid("concept:conditional"),
             "if-as-tail-expression lifts as concept:conditional: {shape:#?}"
         );
-        // Collect every concept_name in the tree — verify the structural
+        // Collect every op_cid in the tree — verify the structural
         // shape carries the expected operator chain (eq for the equality
         // check, conditional for nested if, div for /, lt for <, etc.).
-        let mut names = Vec::new();
-        collect_concept_names(&shape, &mut names);
+        let mut op_cids = Vec::new();
+        collect_op_cids(&shape, &mut op_cids);
         for expected in [
             "concept:conditional",
             "concept:eq",
             "concept:div",
             "concept:lt",
         ] {
+            let expected_cid = local_op_cid(expected).expect("expected op cid");
             assert!(
-                names.contains(&expected.to_string()),
-                "expected operator {expected} in shape names: {names:?}\nshape: {shape:#?}"
+                op_cids.contains(&expected_cid.to_string()),
+                "expected operator {expected} in shape op_cids: {op_cids:?}\nshape: {shape:#?}"
             );
         }
         assert!(
@@ -12005,7 +11640,7 @@ pub fn shaped(x: i64) -> i64 {
 
         let named = bind_term_document(&out, &BindOptions::default())
             .expect("bind term document builds from relifted source");
-        assert_eq!(named.terms[0].concept_name, "concept:my-thing");
+        assert!(named.terms[0].op_cid.starts_with("blake3-512:"));
 
         let original_term = Term::Const {
             value: out,
@@ -12190,8 +11825,14 @@ pub fn bitwise_not() -> i64 {
 "#,
         );
 
-        assert_eq!(logical_shape["concept_name"], "concept:not");
-        assert_eq!(bitwise_shape["concept_name"], "concept:bitnot");
+        assert_eq!(
+            logical_shape["op_cid"],
+            local_op_cid("concept:not").expect("logical not cid")
+        );
+        assert_eq!(
+            bitwise_shape["op_cid"],
+            local_op_cid("concept:bitnot").expect("bitnot cid")
+        );
         assert_ne!(
             logical_shape["op_cid"], bitwise_shape["op_cid"],
             "logical not and bitwise not must resolve to distinct concept atoms"
@@ -12276,7 +11917,7 @@ pub fn bitwise_not() -> i64 {
     fn collect_comment_surfaces(value: &Value, surfaces: &mut Vec<String>) {
         match value {
             Value::Object(object) => {
-                if object.get("concept_name").and_then(Value::as_str) == Some("concept:comment") {
+                if object.get("op_cid").and_then(Value::as_str) == local_op_cid("concept:comment") {
                     if let Some(surface) = object
                         .get("args")
                         .and_then(Value::as_array)
@@ -12336,19 +11977,19 @@ pub fn bitwise_not() -> i64 {
         }
     }
 
-    fn collect_concept_names(value: &Value, out: &mut Vec<String>) {
+    fn collect_op_cids(value: &Value, out: &mut Vec<String>) {
         match value {
             Value::Object(object) => {
-                if let Some(name) = object.get("concept_name").and_then(Value::as_str) {
-                    out.push(name.to_string());
+                if let Some(op_cid) = object.get("op_cid").and_then(Value::as_str) {
+                    out.push(op_cid.to_string());
                 }
                 for child in object.values() {
-                    collect_concept_names(child, out);
+                    collect_op_cids(child, out);
                 }
             }
             Value::Array(values) => {
                 for child in values {
-                    collect_concept_names(child, out);
+                    collect_op_cids(child, out);
                 }
             }
             _ => {}
@@ -12965,8 +12606,8 @@ file = "src/kit_dispatch.rs"
 line = 2416
 callee = "expect"
 category = "D-lib"
-tier_to_close = "provekit-cli per-type infallible serialization for RealizeRequest"
-reason = "serde_json::to_value(RealizeRequest) is closeable by a provekit-cli owned per-type manifest."
+tier_to_close = "generic fixture tier"
+reason = "synthetic fixture reason."
 "#,
         );
 
@@ -13209,8 +12850,8 @@ pub fn identity(value: i64) -> i64 {
 [[serde_json]]
 function = "to_value"
 type_crate = "consumer_crate"
-type_name = "RealizedSource"
-contract = "serde_json_to_value__realized_source"
+type_name = "SerializableRecord"
+contract = "serde_json_to_value__serializable_record"
 reason = "derive Serialize over serde_json-infallible fields"
 
 [[serde_json]]
@@ -13235,7 +12876,7 @@ reason = "derive Serialize over serde_json-infallible fields"
                 .find(|entry| entry["name"] == name)
                 .unwrap_or_else(|| panic!("missing synthetic contract `{name}`: {entries:?}"))
         };
-        let to_value = by_name("serde_json_to_value__realized_source");
+        let to_value = by_name("serde_json_to_value__serializable_record");
         assert_eq!(to_value["kind"], "contract");
         assert_eq!(to_value["library"], "consumer_crate");
         assert_eq!(to_value["outBinding"], "out");
@@ -13268,8 +12909,8 @@ reason = "derive Serialize over serde_json-infallible fields"
 [serde_json]
 function = "to_value"
 type_crate = "consumer_crate"
-type_name = "RealizedSource"
-contract = "serde_json_to_value__realized_source"
+type_name = "SerializableRecord"
+contract = "serde_json_to_value__serializable_record"
 reason = "derive Serialize over serde_json-infallible fields"
 "#,
             ),
@@ -13279,7 +12920,7 @@ reason = "derive Serialize over serde_json-infallible fields"
 [[serde_json]]
 function = "to_value"
 type_crate = "consumer_crate"
-type_name = "RealizedSource"
+type_name = "SerializableRecord"
 reason = "derive Serialize over serde_json-infallible fields"
 "#,
             ),
@@ -14206,9 +13847,9 @@ pub fn missing_definition(line: &str) -> Option<&str> {
         let src = r##"
 use serde_json as sj;
 
-pub struct RealizedSource;
+pub struct SerializableRecord;
 
-pub fn caller(realized: &RealizedSource) {
+pub fn caller(realized: &SerializableRecord) {
     sj::to_value(realized).unwrap();
 }
 "##;
@@ -14233,8 +13874,8 @@ edition = "2021"
 [[serde_json]]
 function = "to_value"
 type_crate = "consumer_crate"
-type_name = "RealizedSource"
-contract = "serde_json_to_value__realized_source"
+type_name = "SerializableRecord"
+contract = "serde_json_to_value__serializable_record"
 reason = "derive Serialize over serde_json-infallible fields"
 "#,
         );
@@ -14245,7 +13886,7 @@ reason = "derive Serialize over serde_json-infallible fields"
             "source_paths": [rel],
             "contract_bindings": [
                 {
-                    "name": "serde_json_to_value__realized_source",
+                    "name": "serde_json_to_value__serializable_record",
                     "library": "consumer_crate",
                     "contract_cid": expected_cid,
                     "bodyDischargeEligible": false,
@@ -16126,7 +15767,7 @@ edition = "2021"
     #[test]
     fn lift_implications_refuses_unregistered_concrete_and_generic_bound_manifest_hits() {
         let src = r##"
-pub struct RealizedSource;
+pub struct SerializableRecord;
 pub struct Unregistered;
 
 pub fn unregistered(value: &Unregistered) {
@@ -16137,7 +15778,7 @@ pub fn generic<T: serde::Serialize>(value: &T) {
     serde_json::to_value(value).unwrap();
 }
 
-pub fn wrong_method(value: &RealizedSource) {
+pub fn wrong_method(value: &SerializableRecord) {
     value.to_string();
 }
 "##;
@@ -16162,8 +15803,8 @@ edition = "2021"
 [[serde_json]]
 function = "to_value"
 type_crate = "consumer_crate"
-type_name = "RealizedSource"
-contract = "serde_json_to_value__realized_source"
+type_name = "SerializableRecord"
+contract = "serde_json_to_value__serializable_record"
 reason = "derive Serialize over serde_json-infallible fields"
 "#,
         );
@@ -16174,7 +15815,7 @@ reason = "derive Serialize over serde_json-infallible fields"
             "source_paths": [rel],
             "contract_bindings": [
                 {
-                    "name": "serde_json_to_value__realized_source",
+                    "name": "serde_json_to_value__serializable_record",
                     "library": "consumer_crate",
                     "contract_cid": forbidden_cid,
                     "bodyDischargeEligible": false,

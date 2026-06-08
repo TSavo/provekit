@@ -41,9 +41,9 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
+use serde_json::Value as Json;
 use sugar_canonicalizer::blake3_512_of;
 use sugar_linker::{LinkerCallEdge, LinkerContract};
-use serde_json::Value as Json;
 use tokio::sync::Mutex;
 use tokio::task;
 use tracing::instrument;
@@ -397,9 +397,9 @@ pub async fn handle_resolve_receiver_crate(
 ) -> Json {
     use crate::ra_host::{Phase, PosResult};
     use crate::resolve_cache::{CachedPosition, FileResolution, PosOutcome, ResolutionDeps};
-    use sugar_walk::ra_oracle::ResolveQuery;
     use std::collections::BTreeMap;
     use std::time::Duration;
+    use sugar_walk::ra_oracle::ResolveQuery;
 
     let workspace_root = match params.get("workspaceRoot").and_then(|v| v.as_str()) {
         Some(w) => PathBuf::from(w),

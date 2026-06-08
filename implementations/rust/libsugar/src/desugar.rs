@@ -5,9 +5,9 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use sugar_ir_types::{IrTerm, Sort};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sugar_ir_types::{IrTerm, Sort};
 
 use crate::canonical::serializable_jcs;
 use crate::ProvekitError;

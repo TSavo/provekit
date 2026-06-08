@@ -5,9 +5,9 @@
 // cross-kit conformance fixture containing Sort::Region and
 // Sort::Dependent variants.
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use std::fs;
 use std::sync::Arc;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
 fn to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
     match v {

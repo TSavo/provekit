@@ -29,9 +29,9 @@ use libsugar::ffi::{
     compose_chain_contracts_jcs, pk_compose_chain_contracts, pk_composition_result_body_jcs,
     pk_composition_result_cid, pk_composition_result_error, pk_composition_result_free,
 };
+use serde_json::{json, Value as JsonValue};
 use sugar_canonicalizer::Value;
 use sugar_ir_types::{IrFormula, IrTerm, Sort};
-use serde_json::{json, Value as JsonValue};
 
 const PINNED_CID: &str = "blake3-512:36212b7bf7b9ccf264950940a33d64e1cfe88b6f4d8a47c01949fc64d9359d1813d6147aa2e1afe82b01e6e7ebcbe0a413683284b5f47ffef5bf364213304665";
 

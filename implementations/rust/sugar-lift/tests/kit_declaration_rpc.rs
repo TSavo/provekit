@@ -1,8 +1,8 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
-use sugar_claim_envelope::{KitDeclaration, KitDeclarationMapping, KIT_DECLARATION_RPC_METHOD};
 use serde_json::{json, Value};
+use sugar_claim_envelope::{KitDeclaration, KitDeclarationMapping, KIT_DECLARATION_RPC_METHOD};
 
 const RUST_CONTRACTS_SURFACE: &str = "rust-contracts";
 

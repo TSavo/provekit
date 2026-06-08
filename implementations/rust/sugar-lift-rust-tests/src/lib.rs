@@ -9,8 +9,8 @@
 
 use std::rc::Rc;
 
-use sugar_ir_symbolic::{and_, eq, make_var, num, ContractDecl, Formula, Term};
 use quote::ToTokens;
+use sugar_ir_symbolic::{and_, eq, make_var, num, ContractDecl, Formula, Term};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{BinOp, Expr, ExprLit, Item, Lit, Stmt, Token, UnOp};

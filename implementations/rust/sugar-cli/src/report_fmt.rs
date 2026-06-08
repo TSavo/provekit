@@ -3,8 +3,8 @@
 // Pretty + JSON formatting for the verifier `Report`.
 
 use owo_colors::OwoColorize;
-use sugar_verifier::{LoadError, Report, ReportRow};
 use serde_json::{json, Value as Json};
+use sugar_verifier::{LoadError, Report, ReportRow};
 
 pub fn report_to_json(r: &Report) -> Json {
     let rows: Vec<Json> = r.rows.iter().map(row_to_json).collect();

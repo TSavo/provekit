@@ -5,10 +5,10 @@
 // Source of truth:
 //   protocol/specs/2026-05-13-sort-morphism-memento.md §1, §7, §9
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonValue};
-use sugar_ir_types::{MorphismDirection, SortMorphismMemento};
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonValue};
+use sugar_ir_types::{MorphismDirection, SortMorphismMemento};
 
 const RUST_SIG_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
 const JAVA_SIG_CID: &str = "blake3-512:55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555";

@@ -5,6 +5,7 @@
 // Generator: provekit-ir-codegen
 
 use serde::{Deserialize, Serialize};
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
 pub mod realization_tags;
 
@@ -659,14 +660,13 @@ pub struct LiteralEncodingMemento {
     pub source_example: String,
 }
 
-/// The concept:literal leaf shape the kit's bind-lift is expected to emit
+/// The literal leaf shape the kit's bind-lift is expected to emit
 /// for the corresponding source_example.
 ///
-/// Locked JCS key order: concept_name, sort, value.
+/// Locked JCS key order: op_cid, sort, value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExpectedLiteralNode {
-    #[serde(rename = "concept_name")]
-    pub concept_name: String,
+    pub op_cid: String,
     pub sort: Cid,
     pub value: serde_json::Value,
 }
@@ -674,7 +674,7 @@ pub struct ExpectedLiteralNode {
 impl LiteralEncodingMemento {
     pub const KIND: &'static str = "literal-encoding-memento";
     pub const SCHEMA_VERSION: &'static str = "1.0.0";
-    pub const CONCEPT_LITERAL_NAME: &'static str = "concept:literal";
+    pub const LITERAL_OP_NAME: &'static str = "concept:literal";
 
     pub fn new(
         kit_cid: Cid,
@@ -684,7 +684,7 @@ impl LiteralEncodingMemento {
         decoded_value: serde_json::Value,
     ) -> Self {
         let expected_term_shape_node = ExpectedLiteralNode {
-            concept_name: Self::CONCEPT_LITERAL_NAME.to_string(),
+            op_cid: local_op_cid(Self::LITERAL_OP_NAME),
             sort: sort_cid.clone(),
             value: decoded_value,
         };
@@ -709,6 +709,18 @@ impl LiteralEncodingMemento {
     pub fn recompute_cid(&self) -> Cid {
         platform_semantic_cid_without_keys(self, &["cid", "kit_cid"])
     }
+}
+
+fn local_op_cid(name: &str) -> String {
+    let bare = name.strip_prefix("concept:").unwrap_or(name);
+    let shape = CValue::object(vec![
+        (
+            "kind".to_string(),
+            CValue::string("local-operator".to_string()),
+        ),
+        ("name".to_string(), CValue::string(bare.to_string())),
+    ]);
+    blake3_512_of(encode_jcs(&shape).as_bytes())
 }
 
 fn platform_semantic_jcs_string<T: Serialize>(value: &T) -> String {

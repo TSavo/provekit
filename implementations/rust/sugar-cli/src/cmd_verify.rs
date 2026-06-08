@@ -50,6 +50,7 @@ use std::path::PathBuf;
 use crate::witness_verify;
 use clap::Parser;
 use owo_colors::OwoColorize;
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs};
 use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string};
 use sugar_verifier::body_discharge;
@@ -59,7 +60,6 @@ use sugar_verifier::{
     smt_emitter, DispatchConfig, FormulaTheory, MementoPool, ObligationVerdict, SolverHandle,
     SolverPlan, SolversConfig,
 };
-use serde_json::{json, Value as Json};
 use tracing::{debug, info};
 
 use crate::cmd_mint;
@@ -988,9 +988,7 @@ pub(crate) fn jcs_of_json(v: &Json) -> Result<String, String> {
 /// Convert serde_json into the canonicalizer's Value for JCS encoding.
 /// (Mirrors the runner's `json_to_canonical`; integers only — witness
 /// payloads carry no floats.)
-fn json_to_canonical(
-    value: &Json,
-) -> Result<std::sync::Arc<sugar_canonicalizer::Value>, String> {
+fn json_to_canonical(value: &Json) -> Result<std::sync::Arc<sugar_canonicalizer::Value>, String> {
     use sugar_canonicalizer::Value as CV;
     match value {
         Json::Null => Ok(CV::null()),

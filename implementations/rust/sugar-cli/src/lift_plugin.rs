@@ -16,8 +16,8 @@ use libsugar::core::{
     PathExecutionError, Term, Verb,
 };
 use owo_colors::OwoColorize;
-use sugar_ir_types::CompositionRefusalMemento;
 use serde_json::{json, Value};
+use sugar_ir_types::CompositionRefusalMemento;
 
 #[derive(Debug, Clone)]
 pub(crate) struct LiftPluginManifest {
