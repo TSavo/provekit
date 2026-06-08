@@ -54,6 +54,13 @@ class _ClassInfo:
     class_name: str
 
 
+@dataclass(frozen=True)
+class _AttributeReceiverContext:
+    class_name: str
+    class_qualname: str
+    receiver_name: str
+
+
 class _UnsupportedSyntax(Exception):
     def __init__(
         self,
@@ -131,11 +138,18 @@ def lift_source(source: str, source_path: str) -> LiftResult:
     class_shapes = _lift_class_shapes(tree, module_path)
     collector = _DefinitionCollector(module_path)
     collector.visit(tree)
+    receiver_contexts = _receiver_contexts_by_method(class_shapes)
 
     body_terms: list[Json] = []
     contracts: list[Json] = []
     for info in collector.definitions:
-        contract = _lift_function(info, source_path, module_globals, result)
+        contract = _lift_function(
+            info,
+            source_path,
+            module_globals,
+            result,
+            receiver_context=receiver_contexts.get(info.qualname),
+        )
         if contract is None:
             continue
         body_terms.append(contract["post"]["args"][1])
@@ -562,6 +576,7 @@ class _Emitter:
         effects: _EffectSet,
         source_path: str,
         panic_loci: list[Json],
+        attribute_receiver: _AttributeReceiverContext | None = None,
     ) -> None:
         self.fn_name = fn_name
         self.locals = set(locals_)
@@ -569,6 +584,7 @@ class _Emitter:
         self.effects = effects
         self.source_path = source_path
         self.panic_loci = panic_loci
+        self.attribute_receiver = attribute_receiver
 
     def statements(self, statements: list[ast.stmt]) -> Json:
         emitted: list[Json] = []
@@ -633,6 +649,14 @@ class _Emitter:
             guarded = self.none_guarded_if(node.test, condition, then_branch, else_branch)
             if guarded is not None:
                 return guarded
+            attribute_guarded = self.attribute_presence_guarded_if(
+                node.test,
+                condition,
+                then_branch,
+                else_branch,
+            )
+            if attribute_guarded is not None:
+                return attribute_guarded
             return ctor(
                 "python:if",
                 condition,
@@ -730,6 +754,26 @@ class _Emitter:
             locus["exceptionClass"] = exception_class
         return locus
 
+    def attribute_runtime_failure_locus(
+        self,
+        node: ast.Attribute,
+        arg_term: Json,
+        *,
+        subkind: str,
+        exception_class: str | None = None,
+    ) -> Json:
+        locus = self.runtime_failure_locus(
+            node,
+            arg_term,
+            subkind=subkind,
+            exception_class=exception_class,
+        )
+        if subkind == "attribute-access":
+            safety = self.attribute_safety_obligation(node)
+            if safety is not None:
+                locus["attributeSafety"] = safety
+        return locus
+
     def target(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Name):
             return var(node.id)
@@ -741,7 +785,7 @@ class _Emitter:
             )
             self.effects.add_panics()
             self.panic_loci.append(
-                self.runtime_failure_locus(
+                self.attribute_runtime_failure_locus(
                     node,
                     term,
                     subkind="attribute-write",
@@ -812,7 +856,7 @@ class _Emitter:
             term = ctor("python:attribute", self.expr(node.value), str_const(node.attr))
             self.effects.add_panics()
             self.panic_loci.append(
-                self.runtime_failure_locus(
+                self.attribute_runtime_failure_locus(
                     node,
                     term,
                     subkind="attribute-access",
@@ -820,7 +864,7 @@ class _Emitter:
                 )
             )
             self.panic_loci.append(
-                self.runtime_failure_locus(
+                self.attribute_runtime_failure_locus(
                     node,
                     term,
                     subkind="attribute-write",
@@ -927,7 +971,7 @@ class _Emitter:
             term = ctor("python:attribute", self.expr(node.value), str_const(node.attr))
             self.effects.add_panics()
             self.panic_loci.append(
-                self.runtime_failure_locus(
+                self.attribute_runtime_failure_locus(
                     node,
                     term,
                     subkind="attribute-access",
@@ -1048,6 +1092,47 @@ class _Emitter:
             substrate_ctor("cf_guarded", substrate_ctor(else_head, receiver), else_branch),
         )
 
+    def attribute_presence_guarded_if(
+        self,
+        test: ast.expr,
+        condition: Json,
+        then_branch: Json,
+        else_branch: Json,
+    ) -> Json | None:
+        guard = self.attribute_presence_guard(test)
+        if guard is None:
+            return None
+        receiver, attr = guard
+        return substrate_ctor(
+            "cf_ite",
+            condition,
+            substrate_ctor(
+                "cf_guarded",
+                substrate_ctor("attribute_present", receiver, str_const(attr)),
+                then_branch,
+            ),
+            else_branch,
+        )
+
+    def attribute_presence_guard(self, test: ast.expr) -> tuple[Json, str] | None:
+        if self.attribute_receiver is None:
+            return None
+        if not isinstance(test, ast.Call):
+            return None
+        if _callee_name(test.func) not in {"hasattr", "builtins.hasattr"}:
+            return None
+        if len(test.args) != 2 or test.keywords:
+            return None
+        receiver_node, attr_node = test.args
+        if (
+            not isinstance(receiver_node, ast.Name)
+            or receiver_node.id != self.attribute_receiver.receiver_name
+        ):
+            return None
+        if not isinstance(attr_node, ast.Constant) or not isinstance(attr_node.value, str):
+            return None
+        return var(receiver_node.id), attr_node.value
+
     def none_guard(self, test: ast.expr, condition: Json) -> tuple[str, str, Json] | None:
         if not isinstance(test, ast.Compare):
             return None
@@ -1087,12 +1172,31 @@ class _Emitter:
         elif isinstance(node, ast.Subscript):
             self.effects.add_writes(_target_text(node))
 
+    def attribute_safety_obligation(self, node: ast.Attribute) -> Json | None:
+        if self.attribute_receiver is None:
+            return None
+        if (
+            not isinstance(node.value, ast.Name)
+            or node.value.id != self.attribute_receiver.receiver_name
+        ):
+            return None
+        return {
+            "schemaVersion": "1",
+            "kind": "python:attribute-safety-obligation",
+            "receiverClass": self.attribute_receiver.class_name,
+            "receiverQualname": self.attribute_receiver.class_qualname,
+            "receiverName": self.attribute_receiver.receiver_name,
+            "attribute": node.attr,
+        }
+
 
 def _lift_function(
     info: _FunctionInfo,
     source_path: str,
     module_globals: set[str],
     result: LiftResult,
+    *,
+    receiver_context: _AttributeReceiverContext | None = None,
 ) -> Json | None:
     node = info.node
     assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -1115,6 +1219,11 @@ def _lift_function(
             raise refused
 
         locals_ = _function_locals(node, formals)
+        if receiver_context is not None and _receiver_name_reassigned(
+            node,
+            receiver_context.receiver_name,
+        ):
+            receiver_context = None
         effects = _EffectSet()
         panic_loci: list[Json] = []
         emitter = _Emitter(
@@ -1124,6 +1233,7 @@ def _lift_function(
             effects=effects,
             source_path=source_path,
             panic_loci=panic_loci,
+            attribute_receiver=receiver_context,
         )
         body = emitter.statements(node.body)
         return function_contract(
@@ -1169,6 +1279,77 @@ def _lift_class_shapes(tree: ast.Module, module_path: str) -> list[Json]:
         shapes_by_name[info.node.name] = shape
         setattr_override_by_name[info.node.name] = setattr_override_in_mro
     return shapes
+
+
+def _receiver_contexts_by_method(class_shapes: list[Json]) -> dict[str, _AttributeReceiverContext]:
+    contexts: dict[str, _AttributeReceiverContext] = {}
+    for shape in class_shapes:
+        class_name = shape.get("className")
+        class_qualname = shape.get("qualname")
+        methods = shape.get("methods", [])
+        if not isinstance(class_name, str) or not isinstance(class_qualname, str):
+            continue
+        if not isinstance(methods, list):
+            continue
+        for method in methods:
+            if not isinstance(method, dict):
+                continue
+            if method.get("methodKind") != "instance":
+                continue
+            qualname = method.get("qualname")
+            receiver = method.get("instanceReceiver")
+            if not isinstance(qualname, str) or not isinstance(receiver, str) or not receiver:
+                continue
+            contexts[qualname] = _AttributeReceiverContext(
+                class_name=class_name,
+                class_qualname=class_qualname,
+                receiver_name=receiver,
+            )
+    return contexts
+
+
+def _receiver_name_reassigned(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    receiver_name: str,
+) -> bool:
+    class _ReceiverReassignmentScanner(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.reassigned = False
+            self._nested_depth = 0
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            if self._nested_depth > 0:
+                return
+            self._nested_depth += 1
+            try:
+                for stmt in node.body:
+                    self.visit(stmt)
+            finally:
+                self._nested_depth -= 1
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            if self._nested_depth > 0:
+                return
+            self._nested_depth += 1
+            try:
+                for stmt in node.body:
+                    self.visit(stmt)
+            finally:
+                self._nested_depth -= 1
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            return
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if node.id == receiver_name and isinstance(node.ctx, (ast.Store, ast.Del)):
+                self.reassigned = True
+
+    scanner = _ReceiverReassignmentScanner()
+    scanner.visit(node)
+    return scanner.reassigned
 
 
 def _build_class_shape(

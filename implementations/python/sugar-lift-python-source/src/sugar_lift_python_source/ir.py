@@ -51,7 +51,7 @@ def ctor(name: str, *args: Json) -> Json:
 
 
 def substrate_ctor(name: str, *args: Json) -> Json:
-    allowed = {"cf_ite", "cf_guarded", "is_none", "is_some"}
+    allowed = {"cf_ite", "cf_guarded", "is_none", "is_some", "attribute_present"}
     if name not in allowed:
         raise ValueError(f"unsupported substrate operation name: {name}")
     return {"kind": "ctor", "name": name, "args": list(args)}

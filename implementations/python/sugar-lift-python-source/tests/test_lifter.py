@@ -3094,6 +3094,79 @@ def test_class_shape_lift_is_soundness_inert_for_attribute_panic_loci() -> None:
     assert "cf_guarded" not in _ctor_names(read_body)
 
 
+def test_known_receiver_attribute_access_carries_attribute_safety_obligation() -> None:
+    source = (
+        "class Safe:\n"
+        "    def __init__(self):\n"
+        "        self.value = 1\n"
+        "\n"
+        "    def read(self):\n"
+        "        return self.value\n"
+    )
+
+    result = lift_source(source, "shape.py")
+
+    loci = _runtime_failure_loci(_contract(result.ir, ".Safe.read"))
+    assert len(loci) == 1
+    assert loci[0]["subkind"] == "attribute-access"
+    assert loci[0]["attributeSafety"] == {
+        "schemaVersion": "1",
+        "kind": "python:attribute-safety-obligation",
+        "receiverClass": "shape.Safe",
+        "receiverQualname": "Safe",
+        "receiverName": "self",
+        "attribute": "value",
+    }
+
+
+def test_unknown_receiver_attribute_access_stays_untyped_and_unproven() -> None:
+    result = lift_source("def read(obj):\n    return obj.value\n", "unknown.py")
+
+    loci = _runtime_failure_loci(_contract(result.ir, ".read"))
+    assert len(loci) == 1
+    assert loci[0]["subkind"] == "attribute-access"
+    assert "attributeSafety" not in loci[0]
+
+
+def test_hasattr_known_receiver_lifts_attribute_present_cf_guarded_fact() -> None:
+    source = (
+        "class Maybe:\n"
+        "    def __init__(self, flag):\n"
+        "        if flag:\n"
+        "            self.maybe = 1\n"
+        "\n"
+        "    def read(self):\n"
+        "        if hasattr(self, 'maybe'):\n"
+        "            return self.maybe\n"
+        "        return 0\n"
+    )
+
+    result = lift_source(source, "maybe.py")
+
+    body = _contract(result.ir, ".Maybe.read")["post"]["args"][1]
+    assert isinstance(body, dict)
+    assert body["name"] == "python:seq"
+    guarded_if = body["args"][0]
+    assert guarded_if["name"] == "cf_ite"
+    condition, then_branch, else_branch = guarded_if["args"]
+    assert condition["name"] == "python:call"
+    assert then_branch["name"] == "cf_guarded"
+    assert then_branch["args"][0] == {
+        "kind": "ctor",
+        "name": "attribute_present",
+        "args": [
+            {"kind": "var", "name": "self"},
+            {"kind": "const", "value": "maybe", "sort": {"kind": "primitive", "name": "String"}},
+        ],
+    }
+    assert else_branch["name"] == "python:pass"
+    assert body["args"][1]["name"] == "python:return"
+    loci = _runtime_failure_loci(_contract(result.ir, ".Maybe.read"))
+    assert len(loci) == 1
+    assert loci[0]["attributeSafety"]["receiverClass"] == "maybe.Maybe"
+    assert loci[0]["attributeSafety"]["attribute"] == "maybe"
+
+
 def test_class_shapes_are_absent_for_class_free_units() -> None:
     result = lift_source("def f(x):\n    return x + 1\n", "plain.py")
 

@@ -44,6 +44,7 @@ fn fixture_proof_bytes() -> (String, Vec<u8>) {
         body_discharge_eligible: true,
         body_discharge_refusal_reason: None,
         panic_loci: Vec::new(),
+        class_shapes: Vec::new(),
         contract_name: declaration.name.clone(),
         pre: declaration.pre.as_deref().map(formula_to_value),
         post: declaration.post.as_deref().map(formula_to_value),

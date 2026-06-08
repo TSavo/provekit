@@ -186,6 +186,7 @@ pub fn mint_args(
         // field, so per-occurrence source provenance cannot perturb contract
         // identity or invalidate existing proofs.
         panic_loci,
+        class_shapes: Vec::new(),
     })
 }
 

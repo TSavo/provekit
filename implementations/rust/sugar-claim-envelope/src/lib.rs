@@ -576,6 +576,10 @@ pub struct MintContractArgs {
     /// `verdict`): the locus is developer-facing provenance, not part of what is
     /// proven, so it must not move the contract identity. Empty omits the key.
     pub panic_loci: Vec<Arc<Value>>,
+    /// Python source-unit class shape catalog. This is signed, load-bearing
+    /// evidence for the verifier's attribute-safety discharge arm. Empty omits
+    /// the key so class-free units keep their existing bytes.
+    pub class_shapes: Vec<Arc<Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1006,6 +1010,12 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     // empty so contracts with no panic leaf keep their existing header bytes.
     if !args.panic_loci.is_empty() {
         kind_specific.push(("panicLoci".into(), Value::array(args.panic_loci.clone())));
+    }
+    if !args.class_shapes.is_empty() {
+        kind_specific.push((
+            "classShapes".into(),
+            Value::array(args.class_shapes.clone()),
+        ));
     }
     // Execution-witness evidence: PROVENANCE (how-discharged), carried in the
     // body for the verifier's witness arm, omitted when None so non-witness
@@ -1745,6 +1755,7 @@ mod tests {
             body_discharge_eligible: true,
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
+            class_shapes: Vec::new(),
             contract_name: "x".into(),
             pre: None,
             post: None,
@@ -1795,6 +1806,7 @@ mod tests {
             body_discharge_eligible: true,
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
+            class_shapes: Vec::new(),
             contract_name: "parseInt".into(),
             pre: Some(pre),
             post: None,
@@ -1830,6 +1842,7 @@ mod tests {
             body_discharge_eligible: true,
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
+            class_shapes: Vec::new(),
             contract_name: "checked_add_u8.postcondition".into(),
             pre: None,
             post: Some(post),

@@ -1200,6 +1200,22 @@ fn work_one(
     invs_sink: &Mutex<Vec<SolverInvocation>>,
     minted_sink: &Mutex<Vec<(String, Json)>>,
 ) -> CallsiteResult {
+    if let Some(result) = crate::attribute_safety::try_discharge(cs, pool) {
+        if result.verdict == ObligationVerdict::Discharged {
+            n_solved.fetch_add(1, Ordering::Relaxed);
+            n_substantive.fetch_add(1, Ordering::Relaxed);
+        } else {
+            n_residue.fetch_add(1, Ordering::Relaxed);
+        }
+        return (
+            cs.clone(),
+            result.verdict,
+            result.reason,
+            result.discharge_method,
+            None,
+        );
+    }
+
     // ROUTING (the call-site-obligation precedence rule, generic + language-blind):
     // if the resolved TARGET CONTRACT carries a non-trivial `pre` (a real
     // precondition, not None/true), this call-site obligation is to DISCHARGE

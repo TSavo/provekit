@@ -536,6 +536,16 @@ fn verify_one_claim(
     // tautology) and `solver-substantive` (arithmetic/refinement).
     let mut panic_guarded = false;
 
+    if let Some(discharge) = sugar_verifier::attribute_safety::try_discharge(cs, pool) {
+        result.verdict = discharge.verdict;
+        result.reason = discharge.reason;
+        result.discharge_method = discharge.discharge_method;
+        result.obligation_class = "attribute-safety".to_string();
+        result.routed_solver = "classShapes".to_string();
+        result.discharging_solver = "classShapes".to_string();
+        return result;
+    }
+
     // ROUTING (the call-site-obligation precedence rule, generic + language-blind):
     // if the resolved TARGET CONTRACT carries a non-trivial `pre` (a real
     // precondition, not None/true), this call-site obligation is to DISCHARGE
@@ -1292,6 +1302,7 @@ mod tests {
             line: None,
             callee: None,
             panic_site: false,
+            attribute_safety: None,
         };
         let obligation = json!({"kind":"atomic","name":"true","args":[]});
         let cid = mint_verification_witness(
@@ -1405,6 +1416,7 @@ mod tests {
             // unguarded split keys off `panic_site` to demand the `panic-safe`
             // discharge method, so it MUST be a panic site.
             panic_site: true,
+            attribute_safety: None,
         }
     }
 
@@ -1933,10 +1945,8 @@ mod tests {
         let pool = dlib_pool();
         let no_kit = std::path::Path::new("/nonexistent-dlib-option-negative-test-kit");
         let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
-        let witness_dir = std::env::temp_dir().join(format!(
-            "sugar-dlib-option-neg-test-{}",
-            std::process::id()
-        ));
+        let witness_dir =
+            std::env::temp_dir().join(format!("sugar-dlib-option-neg-test-{}", std::process::id()));
         std::fs::create_dir_all(&witness_dir).ok();
 
         let wrong_predicate = verify_one_claim(

@@ -202,6 +202,11 @@ pub struct MementoPool {
     /// and the pinned parameter name.
     /// Spec: protocol/specs/2026-05-05-pin-invariant-memento.md
     pub pin_invariant_to_memento: BTreeMap<String, String>,
+    /// Python class-shape catalog entries, indexed by their fully-qualified
+    /// `className`. These entries are signed contract-header evidence emitted by
+    /// the Python source lifter and are consumed only by the attribute-safety
+    /// discharge arm.
+    pub class_shapes_by_class: BTreeMap<String, Json>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -429,6 +434,28 @@ impl MementoPool {
             }
         }
 
+        let class_shapes_to_index: Vec<Json> = if let Some(env) = self.mementos.get(&memento_cid) {
+            if memento_kind(env) == Some("contract") {
+                if let Some(body) = memento_body(env) {
+                    body.get("classShapes")
+                        .and_then(|v| v.as_array())
+                        .into_iter()
+                        .flatten()
+                        .cloned()
+                        .collect()
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        for shape in class_shapes_to_index {
+            self.index_class_shape_for_tests(shape);
+        }
+
         // ---- Opacity discharge indexing (issue #384 B.5) ----
         // Index discharge mementos by their opacity-site CID fields so that
         // OpacityMementoLookup queries are O(log n) BTreeMap lookups rather
@@ -646,6 +673,22 @@ impl MementoPool {
         for (k, v) in other.pin_invariant_to_memento {
             self.pin_invariant_to_memento.entry(k).or_insert(v);
         }
+        for (k, v) in other.class_shapes_by_class {
+            self.class_shapes_by_class.entry(k).or_insert(v);
+        }
+    }
+
+    pub fn index_class_shape_for_tests(&mut self, shape: Json) {
+        if let Some(class_name) = shape
+            .get("className")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+        {
+            self.class_shapes_by_class
+                .entry(class_name)
+                .or_insert(shape);
+        }
     }
 }
 
@@ -830,6 +873,20 @@ pub struct CallSite {
     /// True when the kit classified this callsite as panic-relevant. The
     /// verifier and CLI do not derive this from language semantics.
     pub panic_site: bool,
+    /// Python attribute-access safety obligation metadata. Present only when
+    /// the Python source lifter knows the receiver's class at the access site.
+    /// The verifier discharges it from signed `classShapes` evidence or from a
+    /// dominating `attribute_present(receiver, attr)` guard; no other panic
+    /// path reads it.
+    pub attribute_safety: Option<AttributeSafetyObligation>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct AttributeSafetyObligation {
+    pub receiver_class: Option<String>,
+    pub receiver_qualname: Option<String>,
+    pub receiver_name: Option<String>,
+    pub attribute: String,
 }
 
 #[derive(Debug, Default, Clone)]
