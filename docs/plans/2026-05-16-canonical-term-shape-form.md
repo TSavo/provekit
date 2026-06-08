@@ -20,7 +20,7 @@ This ruling supersedes the lift-kit-specific term_shape conventions that produce
 
 ## Why this matters
 
-Paper 16 (Universal Address Space) establishes federation by content-addressed identity. The substrate's first principle (Supra omnia, rectum) demands that two byte-identical algebras across any two federated languages produce byte-identical bind CIDs. The bind CID is computed over the JCS-canonical bytes of the bind payload BEFORE deserialization (see `libprovekit::core::bind::bind_term_document` and `libprovekit::canonical::serializable_jcs`).
+Paper 16 (Universal Address Space) establishes federation by content-addressed identity. The substrate's first principle (Supra omnia, rectum) demands that two byte-identical algebras across any two federated languages produce byte-identical bind CIDs. The bind CID is computed over the JCS-canonical bytes of the bind payload BEFORE deserialization (see `libsugar::core::bind::bind_term_document` and `libsugar::canonical::serializable_jcs`).
 
 Therefore: every byte in the bind payload that the CID hashes must encode concept-level structure, not lift-side surface syntax. Surface syntax differs across languages by definition; encoding it in the CID hashes a coincidence rather than an algebra.
 
@@ -172,7 +172,7 @@ This extension is deferred until the first polymorphic concept operation lands. 
 
 The original A14 closed the UNNAMED-CONCEPT residual via a sparse-term_shape change (`syn::Stmt::Local` routes through `shape_of_expr`; literal/path leaves emit `non_operation_shape()`). Under γ, the sparse form is wrong. The redesign:
 
-- Rust lift's term_shape emitter (`implementations/rust/provekit-walk/src/bin/walk_rpc.rs`) MUST emit the canonical γ shape per this doc.
+- Rust lift's term_shape emitter (`implementations/rust/sugar-walk/src/bin/walk_rpc.rs`) MUST emit the canonical γ shape per this doc.
 - The UNNAMED-CONCEPT gap A14 originally targeted is now closed by a position-agnostic operator-naming pass that runs over the whole AST and emits canonical γ for every binary operation encountered, regardless of position (let-RHS, conditional-else, top-level). No syntactic-position special-casing.
 - Regression tests stay (let-RHS, top-level discrimination, nested conditional else) but assert against canonical γ output.
 
@@ -180,7 +180,7 @@ The original A14 closed the UNNAMED-CONCEPT residual via a sparse-term_shape cha
 
 The original A15 deleted `concept_citations` from `bind_lifter.py`. That deletion was correct (and stays) but insufficient. The redesign:
 
-- Python lift's term_shape emitter (`implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/bind_lifter.py`) MUST emit the canonical γ shape per this doc.
+- Python lift's term_shape emitter (`implementations/python/sugar-lift-python-source/src/sugar_lift_python_source/bind_lifter.py`) MUST emit the canonical γ shape per this doc.
 - Drop `kind`, `op`, surface-syntax fields, `exit` wrappers around tail expressions, and UNNAMED-CONCEPT-N wrappers.
 - Keep `concept_name` and `op_cid` embedding (these are γ-canonical).
 - Strip source-location from bind payload entirely.

@@ -2,7 +2,7 @@
 //
 // SMT-LIB v2.6 emitter tests. Each formula kind translates correctly,
 // free-variable collection respects shadowing, bad inputs are
-// rejected. Moved here from provekit-verifier/tests/smt_emitter.rs as
+// rejected. Moved here from sugar-verifier/tests/smt_emitter.rs as
 // part of the IR compiler protocol extraction.
 
 use serde_json::json;

@@ -90,7 +90,7 @@ never touches the logic; the domain lives entirely in the sugar and the sugar ne
 the solver. The logic layer is **domain-blind by construction.**
 
 This is the deepest reason there is **no bespoke contract language** (see
-[`project_provekit_no_bespoke_contract_language`]): you were never meant to formalize the
+[`project_sugar_no_bespoke_contract_language`]): you were never meant to formalize the
 subject. `.invariant` tried to author the sugar into a formal intermediate. The truth is the
 inverse — leave the subject arbitrary, lift only the obligation, and the one formal
 vocabulary (first-order logic) is **universal**: the same for the poem and the kernel. No new
@@ -136,7 +136,7 @@ content-addressed proof. Mint an implication once, compose with it forever.
 The three facts are one coin:
 - **Composition over AST trees** = laying the `post → pre` edges along the call structure.
   You compose over the tree because the call graph *is* the composition order — it tells you
-  whose post meets whose pre. (`libprovekit::compose` + the AST composition in
+  whose post meets whose pre. (`libsugar::compose` + the AST composition in
   `core/source_transform.rs` / `core/bind.rs`.)
 - **Contradiction = a failed edge.** `post(B) ∧ ¬pre(A)` is SAT ⟹ the composition is unsound
   ⟹ **refuse**. Detecting a contradiction *is* finding a composition implication that does
@@ -165,13 +165,13 @@ pre/post interface and call-edges; none is a bare-proposition emitter)**:**
 1. The contract as **pre/post over the operation's symbol** — the typed interface, so the
    substrate can align one op's output to the next op's input. *Java today:*
    `ContractDecl { symbol, preconditions, postconditions, invariants }` →
-   `{"precondition": …, "postcondition": …}` (`provekit-lift-java-core/ContractDecl.java`).
+   `{"precondition": …, "postcondition": …}` (`sugar-lift-java-core/ContractDecl.java`).
 2. The **call-edges of its own language's call graph** — because only the java lifter can parse
    java, only the python lifter python. *Java today:* `ProductionWalk` finds each callee's
    callsites in each caller and, per hit, `substituteVar(callee.precondition,
    callee.formals[i], actualArg[i])` — i.e. `post → pre` **with variables aligned to the actual
-   call** — emitting the implication (`provekit-lift-java-core/ProductionWalk.java`,
-   `provekit-lift-java-junit`).
+   call** — emitting the implication (`sugar-lift-java-core/ProductionWalk.java`,
+   `sugar-lift-java-junit`).
 
 Call-edge **extraction is necessarily per-lifter** (it requires parsing the source language's
 AST) and **all lifters must do it.** A lifter that emits a bare proposition with no interface
@@ -182,7 +182,7 @@ run, not asserted here.)
 
 **The rust CLI stays language-agnostic** because all of the above crosses the RPC line as
 **uniform ProofIR** — contracts + `post → pre` implications. The CLI composes and discharges
-the graph (`provekit-linker`: `bindings = f(contracts ∪ call-edges)`; `libprovekit::compose`;
+the graph (`sugar-linker`: `bindings = f(contracts ∪ call-edges)`; `libsugar::compose`;
 the solver) without ever knowing the source language. It "deals with all languages' call
 edges" precisely because, by the time they reach it, they are no longer java/python/rust ASTs
 but the one content-addressed implication form. **Language-specific parsing stops at the
@@ -234,13 +234,13 @@ contract OUT as a test/annotation; lift reads it back IN.
 
 The discharge engine for contracts. A contract is ProofIR FOL; the solver composes,
 refutes, or accepts it. The clean discharge receipt is what the **witness axis** pins.
-(Z3/CVC5/Vampire/CeTA/Lean/Maude/Coq — `provekit-verifier/src/solvers/`.)
+(Z3/CVC5/Vampire/CeTA/Lean/Maude/Coq — `sugar-verifier/src/solvers/`.)
 
 ## LSP — DERIVED FROM T ("red squigglies when they violate a contract at compile time"), confirm
 
 The per-language editor face that DELIVERS the contract to the user. It sees the boundaries
 (sugar usages) in the user's code, knows the contract each sugar carries, and surfaces
-violations live as diagnostics. (Per-kit `provekit-lsp-<lang>`.)
+violations live as diagnostics. (Per-kit `sugar-lsp-<lang>`.)
 - OPEN: does the LSP drive the solver live at the boundary, or is the squiggle a cheaper
   structural check with full solver discharge at verify/CI time? (T to settle.)
 
@@ -292,7 +292,7 @@ registry of vendor content — the substrate's own ledger of how its rules chang
 ## Everything is config — lift/lower dispatch to a plugin roster
 
 The substrate ships **two translation verbs** and **no hardcoded translators**. Which
-lifters and lowerers run is declared in `config.toml` (today: `.provekit/lift/*/manifest.toml`,
+lifters and lowerers run is declared in `config.toml` (today: `.sugar/lift/*/manifest.toml`,
 each a `command` that spawns a kit over RPC).
 - Want to lift contracts from a new idiom? Add a **contract-lifter** to config.
 - Want to lift sugar? Add a **sugar-lifter**. Same on lower.
@@ -323,7 +323,7 @@ This is why most "new verbs" are a mistake — **a composition frozen into a pri
 
 Ship orthogonal primitives; let the `.proof` be the pipe; anything that looks like a new
 verb is almost always two old verbs and a config line. (`compose` survives the cull
-precisely because it is **not** a composition — it's a genuine `libprovekit` primitive the
+precisely because it is **not** a composition — it's a genuine `libsugar` primitive the
 pipe exposes.)
 
 ## CLI

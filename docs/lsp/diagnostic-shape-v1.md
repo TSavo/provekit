@@ -8,7 +8,7 @@ The check is:
 current_post implies callee_pre
 ```
 
-When the verifier rejects that implication, the LSP plugin emits one `provekit.lsp.implication_failed` diagnostic at the callsite.
+When the verifier rejects that implication, the LSP plugin emits one `sugar.lsp.implication_failed` diagnostic at the callsite.
 
 ## Scope
 
@@ -23,8 +23,8 @@ Forward-propagation precondition failures always use:
 | Field | Value |
 |---|---|
 | `severity` | `1` |
-| `source` | `"provekit"` |
-| `code` | `"provekit.lsp.implication_failed"` |
+| `source` | `"sugar"` |
+| `code` | `"sugar.lsp.implication_failed"` |
 
 Severity `1` is the LSP Error severity.
 
@@ -34,7 +34,7 @@ The diagnostic MUST preserve the v1.6.2 CID separation:
 
 | Field | Meaning |
 |---|---|
-| `protocol_catalog_cid` | The active shared LSP protocol catalog CID from `protocol/catalogs/provekit-lsp-shared-1.catalog.json`. |
+| `protocol_catalog_cid` | The active shared LSP protocol catalog CID from `protocol/catalogs/sugar-lsp-shared-1.catalog.json`. |
 | `baseline_catalog_cid` | The CID of the verified `.proof` baseline catalog artifact used for lookup. This is the artifact CID, not a friendly filename. |
 | `baseline_contract_set_cid` | The signer-independent content set CID for the baseline contracts, when present or derivable. |
 | `baseline_index_cid` | The CID of the LSP callsite index artifact described in [callsite-resolution-v1.md](callsite-resolution-v1.md). |
@@ -57,12 +57,12 @@ The LSP diagnostic object is:
     "end": { "line": 41, "character": 24 }
   },
   "severity": 1,
-  "source": "provekit",
-  "code": "provekit.lsp.implication_failed",
+  "source": "sugar",
+  "code": "sugar.lsp.implication_failed",
   "message": "callee precondition not established at this callsite",
   "data": {
     "schema_version": 1,
-    "kind": "provekit.lsp.implication_failed",
+    "kind": "sugar.lsp.implication_failed",
     "callee": "std::option::Option::unwrap",
     "callee_contract_cid": "blake3-512:...",
     "callee_attestation_cid": "blake3-512:...",
@@ -99,7 +99,7 @@ An LSP plugin emits this diagnostic only when all of the following hold:
 
 If the accumulated post is `top`, the plugin suppresses this diagnostic. The floor spec treats `top` as a loss of precision, not as a user-visible contract violation.
 
-If lookup, verification, or trust-policy evaluation fails before the implication query can run, the plugin emits a more specific Sugar diagnostic code instead of `provekit.lsp.implication_failed`.
+If lookup, verification, or trust-policy evaluation fails before the implication query can run, the plugin emits a more specific Sugar diagnostic code instead of `sugar.lsp.implication_failed`.
 
 ## Hover Content
 
@@ -136,7 +136,7 @@ The only per-kit variance is:
 
 ## Issue Map
 
-- [#308](https://github.com/TSavo/provekit/issues/308): parent epic.
-- [#311](https://github.com/TSavo/provekit/issues/311): original diagnostic-shape lock ticket.
-- [#478](https://github.com/TSavo/provekit/issues/478): v1.6.2 baseline and index rebaseline ticket.
-- [#313](https://github.com/TSavo/provekit/issues/313), [#314](https://github.com/TSavo/provekit/issues/314), and [#324](https://github.com/TSavo/provekit/issues/324): representative per-kit forward propagators.
+- [#308](https://github.com/TSavo/sugar/issues/308): parent epic.
+- [#311](https://github.com/TSavo/sugar/issues/311): original diagnostic-shape lock ticket.
+- [#478](https://github.com/TSavo/sugar/issues/478): v1.6.2 baseline and index rebaseline ticket.
+- [#313](https://github.com/TSavo/sugar/issues/313), [#314](https://github.com/TSavo/sugar/issues/314), and [#324](https://github.com/TSavo/sugar/issues/324): representative per-kit forward propagators.

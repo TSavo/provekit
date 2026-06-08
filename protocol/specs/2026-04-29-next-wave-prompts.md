@@ -1,4 +1,4 @@
-# ProvekIt: next-wave implementation prompts
+# Sugar: next-wave implementation prompts
 
 > Authored: 2026-04-29. These are complete agent prompts for the next
 > implementation wave, ready to dispatch. Each is self-contained. The
@@ -8,14 +8,14 @@
 
 ## Prompt 1: Diff-driven intent extraction LLM-producer
 
-You are implementing a new Stage producer in the ProvekIt framework.
-The framework lives at `/Users/tsavo/provekit`. Working tree is clean.
+You are implementing a new Stage producer in the Sugar framework.
+The framework lives at `/Users/tsavo/sugar`. Working tree is clean.
 All 79+ existing tests pass. Do not break them.
 
 ### Stakes
 
 This is the load-bearing feature for mainframe enterprise adoption.
-ProvekIt's market thesis is "point it at your repo, it reads your
+Sugar's market thesis is "point it at your repo, it reads your
 history, it mints mementos." That claim is only true when this Stage
 exists. Without it, every IR formula has to be hand-authored, which
 means: developer behavior change required, annotation discipline
@@ -331,7 +331,7 @@ Do NOT implement:
 ### Verify
 
 ```bash
-cd /Users/tsavo/provekit
+cd /Users/tsavo/sugar
 npx vitest run src/workflow/producers/intentFromDiff.test.ts
 ```
 
@@ -371,8 +371,8 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 ## Prompt 2: YAML manifest extension for `actions:` blocks and kit loading
 
-You are extending the ProvekIt workflow manifest parser and runner.
-The framework lives at `/Users/tsavo/provekit`. Working tree is clean.
+You are extending the Sugar workflow manifest parser and runner.
+The framework lives at `/Users/tsavo/sugar`. Working tree is clean.
 All 79+ existing tests pass. Do not break them.
 
 ### Stakes
@@ -385,9 +385,9 @@ and the bug-fix workflow cannot declare `open-overlay` as an Action in
 its manifest — the caller is forced to hard-code the action call in TS,
 bypassing the manifest runtime entirely.
 
-The second piece — kit loading via `.provekit/kits.lock` — is the
+The second piece — kit loading via `.sugar/kits.lock` — is the
 reproducibility guarantee. Same lockfile + same code = same property
-hashes across machines. Without it, two developers running `provekit
+hashes across machines. Without it, two developers running `sugar
 prove` on the same repo can produce mementos with different kit CIDs
 because their installed kits differ.
 
@@ -420,13 +420,13 @@ spec is explicit on this; the validation must be enforced in code.
      Action→Action edges. Cycles forbidden.
 
 4. `protocol/specs/2026-04-29-per-language-kit-standard.md` — the "Kit
-   registry" section and the `.provekit/kits.lock` format:
+   registry" section and the `.sugar/kits.lock` format:
    ```yaml
    typescript: { version: "0.5.2", cid: hex32 }
    rust: { version: "0.1.0", cid: hex32 }
    ```
    The lockfile pins kit versions. The manifest parser must load it
-   if present at `.provekit/kits.lock` relative to the project root.
+   if present at `.sugar/kits.lock` relative to the project root.
 
 5. `src/workflow/types.ts` — the `Action<TInput, TResource>` interface
    and `ActionResult<TResource>`. Actions are run via
@@ -579,7 +579,7 @@ export interface KitLock {
 export function loadKitsLock(projectRoot: string): KitLock | null;
 ```
 
-Load `.provekit/kits.lock` relative to `projectRoot`. Parse the YAML.
+Load `.sugar/kits.lock` relative to `projectRoot`. Parse the YAML.
 Return `null` if the file does not exist. Throw with a clear message
 if it exists but is malformed. The lockfile is not used by `runManifest`
 itself in v1 — expose it so callers can read it and verify their
@@ -655,7 +655,7 @@ for (const node of nodes) {
   would make the workflow's output an uncacheable live handle. Validate
   that `manifest.output` points to a Stage node, not an Action.
 
-- Kit lockfile: do not fail if `.provekit/kits.lock` doesn't exist.
+- Kit lockfile: do not fail if `.sugar/kits.lock` doesn't exist.
   Most current tests run without it. The function returns `null` in
   that case; callers decide what to do.
 
@@ -671,7 +671,7 @@ Do NOT implement:
 ### Verify
 
 ```bash
-cd /Users/tsavo/provekit
+cd /Users/tsavo/sugar
 npx vitest run src/workflow/manifest.test.ts
 npx vitest run  # full suite, all 79+ must pass
 ```
@@ -697,7 +697,7 @@ feat(workflow): manifest actions blocks, action refs, kit lockfile loading
 Extends WorkflowManifest with optional actions: block. Adds ActionSpec
 type, $action.<id>.resource reference form (rejects .output), mixed
 Stage/Action topo-sort, runManifest action dispatch via runner.runAction,
-and loadKitsLock for .provekit/kits.lock. Existing 79+ tests green;
+and loadKitsLock for .sugar/kits.lock. Existing 79+ tests green;
 new tests cover action grammar, validation, ordering, and lockfile.
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
@@ -708,7 +708,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 ## Prompt 3: Producer-signature key management
 
 You are implementing cryptographic key management for producer signatures
-in the ProvekIt framework. The framework lives at `/Users/tsavo/provekit`.
+in the Sugar framework. The framework lives at `/Users/tsavo/sugar`.
 Working tree is clean. All 79+ existing tests pass. Do not break them.
 
 ### Stakes
@@ -717,7 +717,7 @@ When mementos move between machines — developer → CI → deployment →
 audit — the consumer needs to verify that the memento was actually
 produced by who it claims. Without producer signatures, an attacker who
 compromises the memento store can swap any verdict to `holds` without
-detection. Producer signatures are the mechanism that makes ProvekIt's
+detection. Producer signatures are the mechanism that makes Sugar's
 trust-but-verify architecture non-repudiable: a producer who signed a
 memento cannot later deny it; an attacker forging a memento must also
 forge the producer's signature; consumers verify signatures in
@@ -807,7 +807,7 @@ export function generateKeypair(options?: { seed?: Buffer }): ProducerKeypair;
  * Returns the CID of the published key memento.
  *
  * The memento's witness is the DER-encoded public key, base64.
- * The producedBy is "provekit-key-mgmt@v1".
+ * The producedBy is "sugar-key-mgmt@v1".
  */
 export function publishPublicKey(
   producerId: string,
@@ -896,14 +896,14 @@ export function revokeKey(
 
 Key publication and rotation mementos are stored in the same memento
 store as proof mementos, but with a distinguished `producedBy` of
-`"provekit-key-mgmt@v1"` so they're identifiable in walks.
+`"sugar-key-mgmt@v1"` so they're identifiable in walks.
 
 **Public key memento:**
 - `bindingHash`: `hashCanonical({ producerId, kind: "producer-public-key" })`
 - `propertyHash`: `hashCanonical({ publicKeyDer: <base64 DER> })`
 - `verdict`: `"holds"` (the key exists and is valid)
 - `witness`: JSON string `{ kind: "producer-public-key", producerId, publicKeyDer: <base64> }`
-- `producedBy`: `"provekit-key-mgmt@v1"`
+- `producedBy`: `"sugar-key-mgmt@v1"`
 
 **Rotation memento:**
 - `bindingHash`: `hashCanonical({ producerId, kind: "producer-key-rotation", oldKeyCid })`
@@ -1071,7 +1071,7 @@ Do NOT implement:
 ### Verify
 
 ```bash
-cd /Users/tsavo/provekit
+cd /Users/tsavo/sugar
 npx vitest run src/producerKeys/index.test.ts
 npx vitest run  # full suite, all 79+ must pass
 ```

@@ -1,4 +1,4 @@
-/.provekit/proofs/
-/.provekit/runs/
+/.sugar/proofs/
+/.sugar/runs/
 /target/
 /Cargo.lock

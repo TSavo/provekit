@@ -110,7 +110,7 @@ verify_maude() {
   dir="$tmp_root/maude"
   mkdir -p "$dir"
   cat > "$dir/t.maude" <<'MAUDE'
-fmod PROVEKIT-SMOKE is
+fmod SUGAR-SMOKE is
   sort Nat .
   op 0 : -> Nat .
   op s : Nat -> Nat .
@@ -120,7 +120,7 @@ fmod PROVEKIT-SMOKE is
   eq s(N) + M = s(N + M) .
 endfm
 
-reduce in PROVEKIT-SMOKE : 0 + 0 .
+reduce in SUGAR-SMOKE : 0 + 0 .
 MAUDE
   if ! out="$(maude "$dir/t.maude" 2>&1)"; then
     fail maude "$out"
@@ -207,7 +207,7 @@ verify_lean() {
     fail lean "lean not on PATH"
     return
   fi
-  project="${PROVEKIT_LEAN_PROJECT:-/opt/lean-mathlib}"
+  project="${SUGAR_LEAN_PROJECT:-/opt/lean-mathlib}"
   if [ ! -f "$project/lakefile.lean" ]; then
     fail lean "lake project not found at $project"
     return

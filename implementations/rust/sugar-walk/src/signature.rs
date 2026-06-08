@@ -65,7 +65,7 @@ pub fn canonical_operation_name(surface_name: &str) -> Option<&str> {
 fn load_op_cids() -> HashMap<&'static str, &'static str> {
     let mut by_name = HashMap::new();
     for op_name in KNOWN_OP_NAMES {
-        let cid = blake3_512_of(format!("provekit:rust-op:{op_name}").as_bytes());
+        let cid = blake3_512_of(format!("sugar:rust-op:{op_name}").as_bytes());
         by_name.insert(
             *op_name,
             Box::leak(cid.to_string().into_boxed_str()) as &'static str,

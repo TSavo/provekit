@@ -6,7 +6,7 @@ This is the load-bearing step semantically. Step 2 is mechanical (walk an AST); 
 
 ## The IR primitives you have
 
-From the CDDL grammar at `protocol/provekit-ir.cddl`:
+From the CDDL grammar at `protocol/sugar-ir.cddl`:
 
 - **Term**: variables (`var(s)`), constants (`const(0)`), constructors (`pair(x, y)`), lambdas, let-bindings.
 - **Formula**: atomic predicates (`atomic("eq", [x, 0])`), connectives (`and(p, q)`, `or(p, q)`, `not(p)`, `implies(p, q)`), quantifiers (`forall(x, sort, body)`, `exists(x, sort, body)`), choice.

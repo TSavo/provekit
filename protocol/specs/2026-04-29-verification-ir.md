@@ -1,11 +1,11 @@
-# ProvekIt: the host language is the IR
+# Sugar: the host language is the IR
 
 > Author: shared session 2026-04-29 (T + Claude). Canonical architectural
 > identity document.
 
-## What ProvekIt does
+## What Sugar does
 
-> **ProvekIt proves your code was never correct. Then makes it correct.
+> **Sugar proves your code was never correct. Then makes it correct.
 > Forever.**
 
 The first run against any real codebase surfaces every property the code
@@ -31,7 +31,7 @@ architecture that makes those three sentences operationally true.
 
 ## The thesis in one sentence (technical)
 
-ProvekIt is the host language's type system, plus a library for properties
+Sugar is the host language's type system, plus a library for properties
 beyond types, plus a swarm of producers that verify both, plus a content-
 addressed memento DAG that composes verdicts into proofs.
 
@@ -39,7 +39,7 @@ The host language is always the IR. The framework is invariant under
 host-language choice. The architectural primitive — content-addressed
 hash-and-trust with producer fungibility — is the same one that has
 ridden through Xdrive (1995) → Digital Confetti (1998) → BitTorrent
-(2001) → Bitcoin (2008) → IPFS → Git → and now ProvekIt for proofs.
+(2001) → Bitcoin (2008) → IPFS → Git → and now Sugar for proofs.
 
 ## Adoption: point it at the repo
 
@@ -47,7 +47,7 @@ The framework reads what is already there. No developer behavior change.
 No annotation discipline required.
 
 ```
-Point ProvekIt at your repo.
+Point Sugar at your repo.
 It reads your history.
 It mints mementos for every property your code has ever satisfied.
 ```
@@ -83,7 +83,7 @@ required for the framework to operate.
 ## The market: mainframe enterprises first
 
 The conventional adoption playbook (start with modern dev shops, expand
-outward) is wrong for ProvekIt. The right shape is the inverse: hardest,
+outward) is wrong for Sugar. The right shape is the inverse: hardest,
 oldest, most mission-critical first.
 
 Mainframe COBOL shops at major banks, insurance carriers, healthcare
@@ -102,7 +102,7 @@ have:
   them in millions.
 - **Largest existing budget.** Major banks spend $50M-$500M annually on
   mainframe maintenance + modernization. They are already running 3-10
-  enterprise LLM pilots each. The buying motion is in place; ProvekIt
+  enterprise LLM pilots each. The buying motion is in place; Sugar
   fits an existing line item.
 - **Acute staff-replacement pain.** COBOL developers are aging out. There
   is no pipeline. Every retirement is an institutional knowledge loss
@@ -111,7 +111,7 @@ have:
   before they walk out the door. That is a problem CTOs lose sleep
   over and will pay seven figures to solve.
 - **Differentiation against migration.** The current alternative is
-  COBOL→Java migration, which mostly fails. ProvekIt does not require
+  COBOL→Java migration, which mostly fails. Sugar does not require
   migration. Keep the COBOL; the framework verifies it in place. That
   is a strictly better narrative than rip-and-replace.
 
@@ -120,7 +120,7 @@ The TAM math:
 - Mainframe market: ~$50B/year in software + services, with tens of
   trillions in business value running on it.
 - Conservative capture: 1% of mainframe maintenance spend = $500M/year ARR.
-- Aggressive: ProvekIt becomes the standard verification substrate for
+- Aggressive: Sugar becomes the standard verification substrate for
   legacy modernization = $5B+/year ARR.
 
 Modern dev tooling categories (Copilot, Sentry, Snyk) are $1B-ish at
@@ -163,7 +163,7 @@ You don't author IR formulas in some custom syntax. The IR is a library
 in whatever host language you are already using.
 
 ```typescript
-import { property, forAll, NonZero } from "@provekit/ir";
+import { property, forAll, NonZero } from "@sugar/ir";
 
 function divide(a: number, b: NonZero<number>): number {
   return a / b;
@@ -176,11 +176,11 @@ const denominatorNonZero = property<DivisionNode>({
 ```
 
 ```rust
-use provekit_ir::{forall, NonZero, property};
+use sugar_ir::{forall, NonZero, property};
 
 fn divide(a: f64, b: NonZero<f64>) -> f64 { a / b.into() }
 
-provekit::invariant! {
+sugar::invariant! {
   forall(div: DivisionNode) => div.right() != 0
 }
 ```
@@ -324,7 +324,7 @@ small handful more). The combinators are the *trusted kernel*.
 This is LCF-style verification (Edinburgh, 1972 → HOL → Coq) operationalized
 as a swarm:
 
-| Curry-Howard | ProvekIt |
+| Curry-Howard | Sugar |
 |---|---|
 | Type | IR property (in host language) |
 | Term | Memento (claim + witness) |
@@ -376,7 +376,7 @@ All hash-equivalent, all walkable, all signed, all in one substrate.
 ## Cost economics invert
 
 Today: every meaningful LLM call hits a frontier model. Tomorrow with
-ProvekIt: 95% of work runs on cheap models; 5% needs frontier models.
+Sugar: 95% of work runs on cheap models; 5% needs frontier models.
 Total spend is a fraction of today's.
 
 Producer diversity > producer power. Five 7B models agreeing is more
@@ -393,8 +393,8 @@ instead of running its own. The principle library, the standing
 invariant set, every leaf claim ever produced — all become public goods
 at the proof layer.
 
-A codebase using ProvekIt contributes mementos to the swarm. A codebase
-using ProvekIt benefits from others' mementos. Classic n² value scaling
+A codebase using Sugar contributes mementos to the swarm. A codebase
+using Sugar benefits from others' mementos. Classic n² value scaling
 at the verification layer. The first verification public-goods substrate.
 
 ## Per-language kits
@@ -405,7 +405,7 @@ language needs its own complete kit:
 - Custom LLM prompts (per task, per idiom).
 - Custom AST canonicalizer (host syntax → FOL hash).
 - Custom producer pool (rustc/clippy/miri vs tsc/eslint vs SBCL vs … ).
-- Custom IR library (`@provekit/ir` vs `provekit_ir` crate vs …).
+- Custom IR library (`@sugar/ir` vs `sugar_ir` crate vs …).
 - Custom diagnostic translator (memento → native diagnostic format).
 - Custom IDE integration (LSP server or editor extension).
 
@@ -431,7 +431,7 @@ Per-host-language (write per language, swarm-distributable):
 
 This is exactly LSP's architecture inverted to verification. LSP defined
 a universal protocol; each language community owns its language server.
-ProvekIt defines a universal proof substrate; each language community
+Sugar defines a universal proof substrate; each language community
 owns its kit.
 
 The kits themselves are swarm artifacts subject to the framework's own
@@ -451,7 +451,7 @@ hacks deleted.
 **Phase 3 — type-dialect IR (TypeScript first).** Define the canonical
 form for type-expressible properties. tsserver as a producer.
 
-**Phase 4 — library-dialect IR + the IR npm package.** Ship `@provekit/ir`
+**Phase 4 — library-dialect IR + the IR npm package.** Ship `@sugar/ir`
 with primitives. Canonicalizer to stable AST hash. Translators to SMT-LIB
 and Datalog.
 
@@ -466,7 +466,7 @@ combinator's soundness is itself a memento (verified by Coq or Lean).
 **Phase 7 — meta-IR for new property kinds.** Type-level programming
 patterns for adding new property kinds without modifying the framework.
 
-**Phase 8 — language-server integration.** ProvekIt LSP server.
+**Phase 8 — language-server integration.** Sugar LSP server.
 Surfaces mementos as diagnostics, shows verifier identity on hover,
 displays the proof DAG inline.
 
@@ -499,7 +499,7 @@ domains:
 | 2001 | File swarm at scale | BitTorrent |
 | 2008 | Value (transactions) | Bitcoin |
 | 2014+ | General content | IPFS, Merkle DAG everywhere |
-| 2026 | **Proofs** | **ProvekIt** |
+| 2026 | **Proofs** | **Sugar** |
 
 The arc ends at proofs because proofs are the most consequential domain
 — they are *what makes the other domains safe at scale*. Files, money,
@@ -508,11 +508,11 @@ swarm is the substrate that lets every other swarm be trusted.
 
 This is not a coincidence. The same architectural primitive, applied
 recursively across content domains, finally arrives at the domain that
-verifies all others. ProvekIt is the natural endpoint of the lineage.
+verifies all others. Sugar is the natural endpoint of the lineage.
 
 ## What this is for
 
-A reader who understands this document understands that ProvekIt is:
+A reader who understands this document understands that Sugar is:
 
 - A certificate authority for software correctness (memento store).
 - A workflow runtime that composes certificate requests (workflows).
@@ -530,7 +530,7 @@ every layer's current implementation. The host language is the
 universal substrate; the framework is a library that grows.
 
 The customer-facing thesis is the three sentences at the top of this
-document: ProvekIt proves your code was never correct. Then makes it
+document: Sugar proves your code was never correct. Then makes it
 correct. Forever. Everything in this document is the architecture that
 makes those three sentences operationally true. Vibe coding becomes
 safe by default. Constraint coding becomes the default mode. Programming

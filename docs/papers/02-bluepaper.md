@@ -89,13 +89,13 @@ The two pillars are non-pluggable. The decoration is. This is the architectural 
 
 ### §1.4 Self-contracts: the protocol proves things about itself
 
-The Rust workspace at `implementations/rust/provekit-self-contracts/` carries the kit's own contracts: invariants over the JCS encoder's key-sort order, the CBOR encoder's integer-shortest-form rule, the canonicalizer's idempotence under double-application, the signer's deterministic output for a fixed seed. The published `.proof` of the self-contracts is pinned at:
+The Rust workspace at `implementations/rust/sugar-self-contracts/` carries the kit's own contracts: invariants over the JCS encoder's key-sort order, the CBOR encoder's integer-shortest-form rule, the canonicalizer's idempotence under double-application, the signer's deterministic output for a fixed seed. The published `.proof` of the self-contracts is pinned at:
 
 ```
 self-contracts (stable; v1.1.0+)    blake3-512:3c905e3b27d279fb5d11e49af10d8f1d8c83aec207d0bb695d08cacba5c3192e56457d4683d93e71ffd18bd0acb65b72a2b49404490bce809e8dc1df7fd0bac8
 ```
 
-A peer that runs `provekit verify --target self` performs the recursive verification: the protocol verifying the protocol. Success demonstrates that the implementation satisfies the formal claims the protocol makes about itself. The pinned CID is what such a successful run produces over the current v1.2.0 source tree (the contracts haven't changed since v1.1.0; v1.2.0 is additive, so the self-contracts CID is stable across the version bump).
+A peer that runs `sugar verify --target self` performs the recursive verification: the protocol verifying the protocol. Success demonstrates that the implementation satisfies the formal claims the protocol makes about itself. The pinned CID is what such a successful run produces over the current v1.2.0 source tree (the contracts haven't changed since v1.1.0; v1.2.0 is additive, so the self-contracts CID is stable across the version bump).
 
 ---
 
@@ -226,7 +226,7 @@ The constant-size claim is implementation-checked by code. The Rust verifier's t
 
 ```rust
 // Tier 1: BLAKE3-512 hash equality on the 64-byte digest.
-// implementations/rust/provekit-showcase/src/bench.rs
+// implementations/rust/sugar-showcase/src/bench.rs
 fn ct_eq_64(a: &[u8; 64], b: &[u8; 64]) -> bool {
     let mut diff: u8 = 0;
     for i in 0..64 {
@@ -291,7 +291,7 @@ $ cargo run --release \
 Spec files are content-addressed by raw bytes (the protocol-catalog-format spec §2.1). Any tool that computes BLAKE3-512 of a file's bytes verifies one spec at a time:
 
 ```sh
-$ ./target/release/provekit-showcase hash-spec \
+$ ./target/release/sugar-showcase hash-spec \
     protocol/specs/2026-04-30-lattice-tractability-theorem.md
 ```
 
@@ -347,7 +347,7 @@ $ implementations/rust/target/release/mint-self-contracts | \
 **Go**: 47 contracts across 13 slab files (one per public-API Go source file):
 
 ```sh
-$ cd implementations/go/provekit-self-contracts
+$ cd implementations/go/sugar-self-contracts
 $ go run ./cmd/mint-go-self-contracts | grep "catalog CID:"
   catalog CID:        blake3-512:906fa4f3ca32d97710e327c9e6e914e5c476a3cfdc326459b31dade24d9625c96f7f0595e3d91f316f73e2709a7f05ac79dd0ca768b6ff23cc2b384923487ac3
 ```
@@ -355,7 +355,7 @@ $ go run ./cmd/mint-go-self-contracts | grep "catalog CID:"
 **C++**: 40 contracts across 11 `.invariant.cpp` slab files (one per public-API C++ source file):
 
 ```sh
-$ tools/build-cpp-self-contracts.sh /tmp/provekit-cpp-self-out
+$ tools/build-cpp-self-contracts.sh /tmp/sugar-cpp-self-out
   catalog CID:        blake3-512:9335e6376d776819cfd3b2458da29bc258e7c2ebaad542a8613dd84f50c51c31d6e1a4346cea3903b8ad12294d96aef445d0ed838aa630835b9be0bc17e62842
 ```
 
@@ -371,7 +371,7 @@ $ pnpm vitest run \
 **C#**: 70 contracts across 15 `.invariant.cs` sidecar files (one per public-API C# source file). The orchestrator is a `dotnet` console project that links the sidecars in via `<Compile Include>` so the four lib assemblies stay free of test-only IR dependencies:
 
 ```sh
-$ dotnet run --project implementations/csharp/Provekit.SelfContracts -- /tmp/csharp-self-out | \
+$ dotnet run --project implementations/csharp/Sugar.SelfContracts -- /tmp/csharp-self-out | \
     grep "catalog CID:"
   catalog CID:        blake3-512:45d7cdbd0d5bfba5a1ee9e8386eb4d7dc1eab0882105753504a1f5c06de6f9fc4bd7038f56c7fcea693b152e2ab83de40ca4964a920816142ea43d5b9076415c
 ```
@@ -390,11 +390,11 @@ v1.2.0 (2026-04-30): additive bump over v1.1.0. Adds four pluggability protocols
 
 v1.3.0 (2026-05-02): additive bump over v1.2.0. Adds four protocol enrichments and two new specs. (1) BridgeDeclaration gains `sourceContractCid` + `targetProofCid` for hash-bounded cross-bundle witness pinning. (2) ProofEnvelope catalog memento gains optional `binaryCid` for supply-chain anchoring (rule 5 is MAY in v1.3.0; promotion to MUST awaits a reference verifier in v1.4.0). (3) ProofEnvelope catalog memento gains optional `metadata` map for non-normative tooling/diagnostics. (4) `EvidenceTerm` proof-certificate carrier for `smt-lib`/`coq`/`custom` proof types. New specs: `correctness-is-a-hash` (the memcmp theorem) and `lsp-protocol` (real-time IDE integration with pluggable JSON-RPC backend). All v1.2.0 mementos and `.proof` bundles remain valid; v1.2.0's CID `1e5cfee6...17d0579f` stays attestable for anyone pinned. Catalog CID `5a3129f4...205d24c7`. Signed under the same foundation key.
 
-v1.3.1 (2026-05-02): patch bump over v1.3.0. Re-sync only; no protocol-level changes. Absorbs `ir-formal-grammar` spec-CID drift introduced by PR #10 (the `Bridge target pinning: the shim-poisoning vector` normative example landed without a follow-up catalog cut). Property re-baked: `ir-formal-grammar` from `99f09163...e37cc4bb` to `fc26a82b...29b72f42c`. The other 19 spec CIDs are unchanged. All v1.3.0 mementos and `.proof` bundles remain valid; v1.3.0's CID `5a3129f4...205d24c7` stays attestable via `.provekit/catalog-signatures/v1.3.0.json` for anyone pinned. Catalog CID `dab2eca9...304ff799`. Signed under the same foundation key.
+v1.3.1 (2026-05-02): patch bump over v1.3.0. Re-sync only; no protocol-level changes. Absorbs `ir-formal-grammar` spec-CID drift introduced by PR #10 (the `Bridge target pinning: the shim-poisoning vector` normative example landed without a follow-up catalog cut). Property re-baked: `ir-formal-grammar` from `99f09163...e37cc4bb` to `fc26a82b...29b72f42c`. The other 19 spec CIDs are unchanged. All v1.3.0 mementos and `.proof` bundles remain valid; v1.3.0's CID `5a3129f4...205d24c7` stays attestable via `.sugar/catalog-signatures/v1.3.0.json` for anyone pinned. Catalog CID `dab2eca9...304ff799`. Signed under the same foundation key.
 
-v1.4.0 (2026-05-03): additive bump over v1.3.1. Substrate layering plus three metadata-extension specs. (1) `substrate-layers-envelope-header-body` formalizes envelope/header/body separation as v1.2 of the memento schema; substrate verifiers inspect envelope + header, body fields are carried but verifier-opaque. (2) `contract-cid-vs-attestation-cid` separates the contract's content CID from the attestation CID over `(contractCid, signer, declaredAt, ...)` so contract identity is stable across re-attestation. (3) `contract-set-extension` adds `contractSetCid` and `previousContractSetCid` body fields for ordered, append-only contract-set evolution under semver-minor rules. (4) `version-chains-pinning` adds the three-axis pinning convention (`contractCid`, `witnessCid`, `binaryCid`) carried in the body, plus the version-chain walk used by package-manager-replacement tooling. Per `substrate-layers-envelope-header-body` §4, all v1.3.x mementos and `.proof` bundles remain valid: v1.1 flat structure is read as `header = entire flat object` with synthetic empty `body`; new attestations MUST emit the layered shape. v1.3.1's CID `dab2eca9...304ff799` stays attestable via `.provekit/catalog-signatures/v1.3.1.json` for anyone pinned. Catalog CID `b0f2030d...399b60f52f`. Signed under the same foundation key.
+v1.4.0 (2026-05-03): additive bump over v1.3.1. Substrate layering plus three metadata-extension specs. (1) `substrate-layers-envelope-header-body` formalizes envelope/header/body separation as v1.2 of the memento schema; substrate verifiers inspect envelope + header, body fields are carried but verifier-opaque. (2) `contract-cid-vs-attestation-cid` separates the contract's content CID from the attestation CID over `(contractCid, signer, declaredAt, ...)` so contract identity is stable across re-attestation. (3) `contract-set-extension` adds `contractSetCid` and `previousContractSetCid` body fields for ordered, append-only contract-set evolution under semver-minor rules. (4) `version-chains-pinning` adds the three-axis pinning convention (`contractCid`, `witnessCid`, `binaryCid`) carried in the body, plus the version-chain walk used by package-manager-replacement tooling. Per `substrate-layers-envelope-header-body` §4, all v1.3.x mementos and `.proof` bundles remain valid: v1.1 flat structure is read as `header = entire flat object` with synthetic empty `body`; new attestations MUST emit the layered shape. v1.3.1's CID `dab2eca9...304ff799` stays attestable via `.sugar/catalog-signatures/v1.3.1.json` for anyone pinned. Catalog CID `b0f2030d...399b60f52f`. Signed under the same foundation key.
 
-v1.4.1 (2026-05-03): patch bump over v1.4.0. Re-sync + clarifications, no protocol-level breaking changes. Three property re-bakes: (1) `ir-formal-grammar` re-baked to `82a94704...45bd676` after the Locus type addition (closes a gap surfaced by PR #119 where the Go agent's call-edge emission inferred Locus shape from first principles rather than pulling from spec). (2) `proof-file-format` re-baked to `a78f2148...5eb6d266` after adding §6.1 specifying the v1.4 substrate-layers compatibility cut for catalog mementos and pinning the catalog `header.cid` recipe as `BLAKE3-512(JCS(sorted_member_cids))` (the same recipe as `contractSetCid` generalized to any member-set). (3) `memento-envelope-grammar` re-baked to `8b6b9d9c...bd48278e` after adding a supersession note pointing forward to `2026-05-03-substrate-layers-envelope-header-body.md` for v1.4-and-later mementos (the v1.1 flat shape remains valid for historical mementos under monotonicity). One non-cataloged clarification: `2026-05-03-bridge-linkage-protocol.md` §1 DerivedBridge `schemaVersion` corrected from `"2"` to `"1"` consistent with substrate-layers and bridge-target-dimensionality §1 R3 (this spec is not in the catalog so no further property re-bake). All other 21 cataloged spec CIDs unchanged. All v1.4.0 mementos and `.proof` bundles remain valid; v1.4.0's CID `b0f2030d...399b60f52f` stays attestable via `.provekit/catalog-signatures/v1.4.0.json` for anyone pinned. Catalog CID `dc2f42ff...e31dc641`. Signed under the same foundation key.
+v1.4.1 (2026-05-03): patch bump over v1.4.0. Re-sync + clarifications, no protocol-level breaking changes. Three property re-bakes: (1) `ir-formal-grammar` re-baked to `82a94704...45bd676` after the Locus type addition (closes a gap surfaced by PR #119 where the Go agent's call-edge emission inferred Locus shape from first principles rather than pulling from spec). (2) `proof-file-format` re-baked to `a78f2148...5eb6d266` after adding §6.1 specifying the v1.4 substrate-layers compatibility cut for catalog mementos and pinning the catalog `header.cid` recipe as `BLAKE3-512(JCS(sorted_member_cids))` (the same recipe as `contractSetCid` generalized to any member-set). (3) `memento-envelope-grammar` re-baked to `8b6b9d9c...bd48278e` after adding a supersession note pointing forward to `2026-05-03-substrate-layers-envelope-header-body.md` for v1.4-and-later mementos (the v1.1 flat shape remains valid for historical mementos under monotonicity). One non-cataloged clarification: `2026-05-03-bridge-linkage-protocol.md` §1 DerivedBridge `schemaVersion` corrected from `"2"` to `"1"` consistent with substrate-layers and bridge-target-dimensionality §1 R3 (this spec is not in the catalog so no further property re-bake). All other 21 cataloged spec CIDs unchanged. All v1.4.0 mementos and `.proof` bundles remain valid; v1.4.0's CID `b0f2030d...399b60f52f` stays attestable via `.sugar/catalog-signatures/v1.4.0.json` for anyone pinned. Catalog CID `dc2f42ff...e31dc641`. Signed under the same foundation key.
 
 ---
 

@@ -1,24 +1,24 @@
 # VSCode integration
 
-VSCode is the most-deployed editor for Sugar LSPs. The official extensions live in the marketplace under the `provekit` publisher (when published). Each shipping kit has its own extension.
+VSCode is the most-deployed editor for Sugar LSPs. The official extensions live in the marketplace under the `sugar` publisher (when published). Each shipping kit has its own extension.
 
 ## Extensions per shipping kit
 
 | Kit | Extension ID | Marketplace name |
 |---|---|---|
-| Rust | `provekit.rust-extension` | "Sugar for Rust" |
-| Python | `provekit.python-extension` | "Sugar for Python" |
-| Zig | `provekit.zig-extension` | "Sugar for Zig" |
-| Ruby | `provekit.ruby-extension` | "Sugar for Ruby" |
-| C# | `provekit.csharp-extension` | "Sugar for C#" |
+| Rust | `sugar.rust-extension` | "Sugar for Rust" |
+| Python | `sugar.python-extension` | "Sugar for Python" |
+| Zig | `sugar.zig-extension` | "Sugar for Zig" |
+| Ruby | `sugar.ruby-extension` | "Sugar for Ruby" |
+| C# | `sugar.csharp-extension` | "Sugar for C#" |
 
 > Extension IDs and marketplace names are placeholder; actual identifiers will be set when the extensions are published. Until then, the extensions live as workspace-local installs (`.vsix` files in `tools/vscode/`).
 
 ## Installation (when extensions ship to the marketplace)
 
 ```sh
-code --install-extension provekit.rust-extension
-code --install-extension provekit.python-extension
+code --install-extension sugar.rust-extension
+code --install-extension sugar.python-extension
 # (etc, one per language you use)
 ```
 
@@ -33,11 +33,11 @@ Until the extensions ship to the marketplace:
    cd tools/vscode/<kit-name>
    npm install
    npm run package
-   # produces provekit-<kit>-<version>.vsix
+   # produces sugar-<kit>-<version>.vsix
    ```
 2. Install the VSIX in VSCode:
    ```sh
-   code --install-extension provekit-rust-1.1.0.vsix
+   code --install-extension sugar-rust-1.1.0.vsix
    ```
 3. Reload VSCode.
 
@@ -47,17 +47,17 @@ After installation, the extension exposes settings in `.vscode/settings.json` (w
 
 ```json
 {
-  "provekit.rust.serverPath": "/path/to/provekit-lsp-rust",
-  "provekit.rust.serverArgs": [],
-  "provekit.rust.protocolVersion": "1.1.0",
-  "provekit.rust.diagnosticsEnabled": true,
-  "provekit.rust.tier3Timeout": 5000
+  "sugar.rust.serverPath": "/path/to/sugar-lsp-rust",
+  "sugar.rust.serverArgs": [],
+  "sugar.rust.protocolVersion": "1.1.0",
+  "sugar.rust.diagnosticsEnabled": true,
+  "sugar.rust.tier3Timeout": 5000
 }
 ```
 
-The `serverPath` is typically auto-detected (the extension shells out to find `provekit-lsp-rust` on PATH, falling back to a vendored binary). Override only if the auto-detect fails.
+The `serverPath` is typically auto-detected (the extension shells out to find `sugar-lsp-rust` on PATH, falling back to a vendored binary). Override only if the auto-detect fails.
 
-Setting names per kit follow the convention `provekit.<kit>.<setting>`.
+Setting names per kit follow the convention `sugar.<kit>.<setting>`.
 
 ## Verifying it works
 
@@ -93,14 +93,14 @@ If you don't see these:
 
 ### Squigglies don't appear
 
-- Check `provekit verify-protocol` from a terminal. If this fails, the install is broken.
+- Check `sugar verify-protocol` from a terminal. If this fails, the install is broken.
 - Check the Output panel → Sugar LSP for errors.
 - Verify the file extension matches what the lift adapter expects (e.g., `.rs` for Rust, `.py` for Python).
 
 ### LSP repeatedly restarts
 
 - The plugin process is crashing. The Output panel will have stack traces.
-- Common cause: a malformed `.proof` in the workspace's dependency tree. Run `provekit verify --check-proofs` from the terminal to find the culprit.
+- Common cause: a malformed `.proof` in the workspace's dependency tree. Run `sugar verify --check-proofs` from the terminal to find the culprit.
 
 ### Diagnostics are stale
 
@@ -110,7 +110,7 @@ If you don't see these:
 
 - Open the Output panel → Sugar LSP. Look for log entries indicating Tier 3 invocations are slow.
 - Lower `tier3Timeout` to fail fast on slow Tier 3 cases.
-- Check `provekit prove` from the terminal; if Tier 3 is dominating, the lattice is cold.
+- Check `sugar prove` from the terminal; if Tier 3 is dominating, the lattice is cold.
 
 ## Quick fixes (LSP code actions)
 
@@ -140,7 +140,7 @@ For best results, enable Pyright or pylsp alongside Sugar. Sugar focuses on cont
 
 ### Zig
 
-The Zig extension reads `build.zig.zon`. Comment-based annotations (`//provekit:contract`, etc.) are recognized.
+The Zig extension reads `build.zig.zon`. Comment-based annotations (`//sugar:contract`, etc.) are recognized.
 
 ### Ruby
 

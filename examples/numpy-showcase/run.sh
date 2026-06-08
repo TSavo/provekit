@@ -3,7 +3,7 @@
 #
 #   sugar-lift  — the universal lifter reads numpy's INSTALLED python source and
 #                 lifts numpy.rot90 as sugar into a lean .proof (CIDs + spans, no
-#                 inline bodies) staged in .provekit/imports/. The symbol is the
+#                 inline bodies) staged in .sugar/imports/. The symbol is the
 #                 PUBLIC name (`numpy.rot90`), derived from numpy's __init__
 #                 re-exports; the SourceMemento still points at the real source
 #                 (lib/_function_base_impl.py), so the oracle resolves the body
@@ -24,12 +24,12 @@
 # Everything is kit-side; the .proof is the transport; rust stays proof-blind.
 # NOTE: no `set -e`. `prove` exits nonzero on the (expected) degenerate refusal,
 # exactly like pandas-showcase; this script captures the report and PASSES iff
-# provekit produces the right verdict (good proved both ways, degenerate refused).
+# sugar produces the right verdict (good proved both ways, degenerate refused).
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 BIN="$REPO/implementations/rust/target/debug/sugar"
-PP="$REPO/implementations/python/provekit-lift-python-source/src:$REPO/implementations/python/provekit-lift-py-tests/src"
+PP="$REPO/implementations/python/sugar-lift-python-source/src:$REPO/implementations/python/sugar-lift-py-tests/src"
 
 # The pytest-witness lifter RUNS numpy's test, and the numpy.testing lifter
 # introspects numpy.testing to classify the assertion vocabulary -- both need
@@ -39,20 +39,20 @@ VENV="${NUMPY_WITNESS_VENV:-/tmp/numpy-witness-venv}"
 if [ ! -x "$VENV/bin/python" ]; then
   python3 -m venv "$VENV"
   "$VENV/bin/pip" install -q numpy pytest pynacl blake3 cbor2 \
-    -e "$REPO/implementations/python/provekit-lift-py-tests" \
-    -e "$REPO/implementations/python/provekit-lift-python-source" \
-    -e "$REPO/implementations/python/provekit-lift-py-pytest-witness"
+    -e "$REPO/implementations/python/sugar-lift-py-tests" \
+    -e "$REPO/implementations/python/sugar-lift-python-source" \
+    -e "$REPO/implementations/python/sugar-lift-py-pytest-witness"
 fi
 NUMPY_DIR="$("$VENV/bin/python" -c 'import numpy,os;print(os.path.dirname(numpy.__file__))')"
 
 cd "$HERE"
 rm -f blake3-512:*.proof 2>/dev/null || true
-rm -rf .provekit/runs .provekit/witnesses 2>/dev/null || true
-rm -f .provekit/imports/*.proof 2>/dev/null || true
+rm -rf .sugar/runs .sugar/witnesses 2>/dev/null || true
+rm -f .sugar/imports/*.proof 2>/dev/null || true
 # Restore the @boundary stub (materialize rewrites it in place; a re-run needs
 # the unfilled stub back).
 cat > boundary.py <<'PY'
-from provekit import boundary
+from sugar import boundary
 
 
 @boundary(library="numpy", call="rot90")
@@ -60,12 +60,12 @@ def my_rot90(m):
     raise NotImplementedError
 PY
 
-echo "== sugar-lift numpy -> .provekit/imports/ (lean: CIDs, not inline bodies) =="
+echo "== sugar-lift numpy -> .sugar/imports/ (lean: CIDs, not inline bodies) =="
 # Stage the universal-lift config in numpy's own installed tree (mirrors
 # numpy-vendor). The bind lifter only READS source (AST); working_dir is a
 # NEUTRAL path so the kit's own imports are not shadowed by numpy/typing.
-mkdir -p "$NUMPY_DIR/.provekit/lift/python-bind"
-cat > "$NUMPY_DIR/.provekit/config.toml" <<EOF
+mkdir -p "$NUMPY_DIR/.sugar/lift/python-bind"
+cat > "$NUMPY_DIR/.sugar/config.toml" <<EOF
 [[plugins]]
 name = "python-bind-lift"
 kind = "lift"
@@ -76,26 +76,26 @@ default = "z3"
 binary = "z3"
 flags = ["-smt2", "-in"]
 EOF
-cat > "$NUMPY_DIR/.provekit/lift/python-bind/manifest.toml" <<EOF
+cat > "$NUMPY_DIR/.sugar/lift/python-bind/manifest.toml" <<EOF
 name = "python-bind-lift"
 version = "0.1.0"
 kind = "lift"
-command = ["/usr/bin/env", "PROVEKIT_LEAN_SOURCE=1", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "provekit_lift_python_source.bind_rpc"]
+command = ["/usr/bin/env", "SUGAR_LEAN_SOURCE=1", "PYTHONPATH=$PP", "$VENV/bin/python", "-m", "sugar_lift_python_source.bind_rpc"]
 working_dir = "$REPO"
 [capabilities]
 authoring_surfaces = ["python-bind"]
 EOF
-mkdir -p .provekit/imports
-"$BIN" mint --project "$NUMPY_DIR" --out .provekit/imports --library-bindings --quiet
-NUMPY_PROOF="$(ls .provekit/imports/*.proof)"
+mkdir -p .sugar/imports
+"$BIN" mint --project "$NUMPY_DIR" --out .sugar/imports --library-bindings --quiet
+NUMPY_PROOF="$(ls .sugar/imports/*.proof)"
 echo "  numpy sugar .proof: $(du -h "$NUMPY_PROOF" | cut -f1) (public symbol numpy.rot90, lean SourceMemento)"
 
 echo "== materialize @boundary(numpy.rot90) (body resolved by the oracle) =="
 # Run via the venv python: the source oracle locates the installed numpy by the
 # binding's library tag, and the system python3 has no numpy.
 PYTHONPATH="$PP" "$VENV/bin/python" -c "
-from provekit_lift_python_source.bind_rpc import dispatch
-r=dispatch({'jsonrpc':'2.0','id':1,'method':'provekit.plugin.materialize','params':{'project_root':'.','source_paths':['boundary.py'],'write':True}})
+from sugar_lift_python_source.bind_rpc import dispatch
+r=dispatch({'jsonrpc':'2.0','id':1,'method':'sugar.plugin.materialize','params':{'project_root':'.','source_paths':['boundary.py'],'write':True}})
 res=r['result']['results'][0]
 print(' ', res['outcome'], res.get('materialized'))"
 
@@ -113,7 +113,7 @@ report="$(PATH="$VENV/bin:$PATH" "$BIN" prove . 2>/dev/null)"
 echo "$report"
 
 echo ""
-echo "== self-check: provekit must prove the good rot90 contract and refuse the degenerate both ways =="
+echo "== self-check: sugar must prove the good rot90 contract and refuse the degenerate both ways =="
 fail=0
 check() { if echo "$report" | grep -q "$2"; then echo "  ok: $1"; else echo "  MISSING: $1 ($2)"; fail=1; fi; }
 # Consistency axis: the good rot90 element facts discharge; the contradiction is UNSAT.
@@ -131,5 +131,5 @@ echo ""
 if [ "$fail" -eq 0 ]; then
   echo "PASS: numpy.rot90 proved correct (consistency AND witness); the degenerate refused both ways."
 else
-  echo "FAIL: provekit did not produce the expected verdict."; exit 1
+  echo "FAIL: sugar did not produce the expected verdict."; exit 1
 fi

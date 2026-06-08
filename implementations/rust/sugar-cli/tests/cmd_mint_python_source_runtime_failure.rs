@@ -8,7 +8,7 @@ use serde_json::{json, Value as Json};
 
 const RUNTIME_FAILURE_SITE_CONCEPT: &str = "concept:panic-freedom.leaf.runtime-failure-site";
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -27,7 +27,7 @@ fn python_source_lift_src() -> PathBuf {
     repo_root()
         .join("implementations")
         .join("python")
-        .join("provekit-lift-python-source")
+        .join("sugar-lift-python-source")
         .join("src")
 }
 
@@ -48,7 +48,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-py-source-runtime-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-py-source-runtime-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }
@@ -76,12 +76,12 @@ fn build_python_lift_source() -> PathBuf {
         .expect("Python lift source root must be UTF-8");
     let quoted_pythonpath = shell_single_quote(&pythonpath);
     let script_dir = unique_dir("lift-script");
-    let script = script_dir.join("provekit-lift-python-source.sh");
+    let script = script_dir.join("sugar-lift-python-source.sh");
     let body = format!(
         "#!/bin/sh\nPYTHON=${{PYTHON:-python3}}\n\
          PYTHONPATH={quoted_pythonpath}${{PYTHONPATH:+:$PYTHONPATH}}\n\
          export PYTHONPATH\n\
-         exec \"$PYTHON\" -c \"from provekit_lift_python_source.rpc import run_rpc; run_rpc()\"\n"
+         exec \"$PYTHON\" -c \"from sugar_lift_python_source.rpc import run_rpc; run_rpc()\"\n"
     );
     write_executable(&script, &body);
     script
@@ -95,11 +95,11 @@ fn stage_python_source_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write boom.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -108,14 +108,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -141,11 +141,11 @@ fn stage_python_access_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write access.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -154,14 +154,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -187,11 +187,11 @@ fn stage_python_store_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write store.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -200,14 +200,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -233,11 +233,11 @@ fn stage_python_slice_assign_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write slice.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -246,14 +246,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -279,11 +279,11 @@ fn stage_python_slice_access_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write slice_access.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -292,14 +292,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -325,11 +325,11 @@ fn stage_python_slice_augassign_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write slice_augassign.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -338,14 +338,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -371,11 +371,11 @@ fn stage_python_slice_annassign_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write slice_annassign.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -384,14 +384,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -417,11 +417,11 @@ fn stage_python_walrus_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write walrus.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -430,14 +430,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -463,11 +463,11 @@ fn stage_python_unpack_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write unpack.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -476,14 +476,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -509,11 +509,11 @@ fn stage_python_augassign_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write augassign.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -522,14 +522,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -555,11 +555,11 @@ fn stage_python_annassign_project(lift_script: &Path) -> PathBuf {
     )
     .expect("write annassign.py");
 
-    let provekit = project.join(".provekit");
-    fs::create_dir_all(provekit.join("lift").join("python-source"))
-        .expect("mkdir .provekit/lift/python-source");
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python-source"))
+        .expect("mkdir .sugar/lift/python-source");
     fs::write(
-        provekit.join("config.toml"),
+        sugar.join("config.toml"),
         r#"[[plugins]]
 name = "python-source"
 kind = "lift"
@@ -568,14 +568,14 @@ surface = "python-source"
     )
     .expect("write config.toml");
     fs::write(
-        provekit
+        sugar
             .join("lift")
             .join("python-source")
             .join("manifest.toml"),
         format!(
             r#"name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 kind = "lift"
 command = ["{}", "--rpc"]
 working_dir = "."
@@ -594,7 +594,7 @@ emits_signed_mementos = false
 }
 
 fn run_mint(project: &Path) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("mint")
         .arg("--project")
         .arg(project)
@@ -602,10 +602,10 @@ fn run_mint(project: &Path) {
         .arg(project)
         .arg("--quiet")
         .output()
-        .expect("spawn provekit mint");
+        .expect("spawn sugar mint");
     assert!(
         out.status.success(),
-        "provekit mint must succeed\nstdout:\n{}\nstderr:\n{}",
+        "sugar mint must succeed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );

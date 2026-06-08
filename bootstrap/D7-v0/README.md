@@ -1,22 +1,22 @@
 # D7-v0 Value::null ProofIR bridge receipt
 
 Scope: one production function only.
-Target crate: provekit-canonicalizer.
+Target crate: sugar-canonicalizer.
 Target function: impl Value::null.
-Source path: implementations/rust/provekit-canonicalizer/src/value.rs.
+Source path: implementations/rust/sugar-canonicalizer/src/value.rs.
 
-The lift was produced with provekit-walk through provekit-walk-emit term mode.
+The lift was produced with sugar-walk through sugar-walk-emit term mode.
 The command used was:
-cd implementations/rust && cargo run --bin provekit-walk-emit -- term provekit-canonicalizer/src/value.rs null /tmp/d7_v0_value_null.raw.json
+cd implementations/rust && cargo run --bin sugar-walk-emit -- term sugar-canonicalizer/src/value.rs null /tmp/d7_v0_value_null.raw.json
 
 The raw walk output was a rust-algebra-term envelope.
 For this D7-v0 bridge smoke, that envelope was trimmed to one bridge-compatible ProofIR term.
 The fixture keeps the target, source, handling, term surface, op CIDs, and loss record from the raw lift.
-The fixture path is implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json.
+The fixture path is implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json.
 
 The ProofIR term is return(call:new(Arc::new, [Null])).
-The test resolves that term through libprovekit::local_cid_fixture_check.
-The test then unresolves it through libprovekit::local_cid_fixture_check.
+The test resolves that term through libsugar::local_cid_fixture_check.
+The test then unresolves it through libsugar::local_cid_fixture_check.
 The reassembled fixture is JCS-canonicalized and compared against the input fixture.
 
 The fixture CID is blake3-512:bcb10be48ad632abc71c406355b6d11b0191a959b523aa755ee00ad7496afa2270ce28821af4abcd5949427026fb16d8d8b38af702b1810dec3bdff810ec8f32.
@@ -42,7 +42,7 @@ The audit gap classes captured in this fixture's loss_record are engineering deb
 - #964 ffi-call-unresolved-effect -> concept:effect-occurrence (admissibility-spine primitive)
 - #965 trivia comments -> concept:comment (formatter handles formatting; comments survive rustfmt)
 
-D7's terminus claim: for any libprovekit submodule M, rustfmt(realize_rust(local_cid_fixture_check(lift_rust(M)))) == rustfmt(M) byte-for-byte.
+D7's terminus claim: for any libsugar submodule M, rustfmt(realize_rust(local_cid_fixture_check(lift_rust(M)))) == rustfmt(M) byte-for-byte.
 
 This receipt does not claim the lift is lossless.
 This receipt does not re-realize Rust source.

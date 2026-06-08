@@ -1,7 +1,7 @@
 // Tiny LSP server, spec-only. Run with `node server.mjs --stdio`.
 // Surfaces the propertyHash CID as a hover card when the user's cursor is over
 // a JSON object with kind:"property". Builds entirely from the protocol spec
-// stack: no provekit framework dependency.
+// stack: no sugar framework dependency.
 //
 // This is a PROTOTYPE. It demonstrates the architectural path. To grow it into
 // a production LSP, see README.md §"What this prototype is not."
@@ -66,7 +66,7 @@ connection.onHover(({ textDocument }) => {
   } catch {
     return null;
   }
-  const lines = ["**ProvekIt invariant file**", ""];
+  const lines = ["**Sugar invariant file**", ""];
   for (const d of decls) {
     if (d.kind !== "property") continue;
     const cid = propertyHash(d.formula);

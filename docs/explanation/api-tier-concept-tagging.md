@@ -68,7 +68,7 @@ The substrate then runs the discharge: lift both surfaces, check structural equi
 
 ### Path 4: Self-Attested
 
-The library author signs the binding themselves and publishes it alongside their package release. `npm publish` ships the package and a `provekit-sugar.json` (or equivalent convention) declaring the surface-to-concept mapping. The trust profile is identical to trusting the library itself: the signature on the binding is the existing release key.
+The library author signs the binding themselves and publishes it alongside their package release. `npm publish` ships the package and a `sugar-sugar.json` (or equivalent convention) declaring the surface-to-concept mapping. The trust profile is identical to trusting the library itself: the signature on the binding is the existing release key.
 
 **Why a library author ships sugar.** When a developer checks out a repo that uses your library and chooses to work in a target language different from the repo's authoritative surface, the realize-pass needs your sugar at every call site that uses your library. Without your sugar, the realize refuses at those call sites and the developer cannot work in their surface of choice. With it, the developer gets working code end to end. You become the missing piece that completes the developer's surface choice.
 
@@ -76,7 +76,7 @@ This is competitive, not altruistic. The first library in each cross-X cell to s
 
 This is the scaling path. The other three paths bottleneck on curator-hours, lifter coverage, or LLM compute. Self-Attested bottlenecks on world publication rate, which is several orders of magnitude larger.
 
-Memory: `project_provekit_libraries_ship_sugar.md`. Future paper 22 (working title: *After Packages: Libraries Ship Their Own Bindings*) makes the architectural argument; the rule of thumb here is the operational consequence.
+Memory: `project_sugar_libraries_ship_sugar.md`. Future paper 22 (working title: *After Packages: Libraries Ship Their Own Bindings*) makes the architectural argument; the rule of thumb here is the operational consequence.
 
 ## Loss behavior when a target has no realization
 
@@ -120,4 +120,4 @@ A reviewer who reads this should be able to answer:
 4. What happens when a target has no realization for a concept the source needs? One of three principled outcomes: refuse, loudly-bounded-lossy stub with receipt, or generative-completion candidate. Never silent emission.
 5. What is the first API-tier backlog? HTTP request/response, deep-equality, JSON encode/decode, regex-match, retry-with-backoff, debounce.
 
-The trinity HTTP receipt (issues #847, #848, #849) is not yet the byte-identical empirical receipt for this rule. Current trinity status is v0 loudly-bounded-lossy, fresh-target hermetic, Branch 2 mode: the PR #861 hermetic fixture plus the v0 lossy expectations in `implementations/rust/provekit-cli/tests/trinity_roundtrip_test.rs`, diagnosed in `docs/incidents/2026-05-14-trinity-baseline-diagnosis.md` and closed through PRs #860, #861, #862, #863. Branch 1 byte-identity still needs Java and Python lift fixture wiring. Paper 21 (`docs/papers/21-after-cross-language-every-cross-x-dissolves.md`) is the argument. This doc is the design clarification that sits between them.
+The trinity HTTP receipt (issues #847, #848, #849) is not yet the byte-identical empirical receipt for this rule. Current trinity status is v0 loudly-bounded-lossy, fresh-target hermetic, Branch 2 mode: the PR #861 hermetic fixture plus the v0 lossy expectations in `implementations/rust/sugar-cli/tests/trinity_roundtrip_test.rs`, diagnosed in `docs/incidents/2026-05-14-trinity-baseline-diagnosis.md` and closed through PRs #860, #861, #862, #863. Branch 1 byte-identity still needs Java and Python lift fixture wiring. Paper 21 (`docs/papers/21-after-cross-language-every-cross-x-dissolves.md`) is the argument. This doc is the design clarification that sits between them.

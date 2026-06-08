@@ -12,7 +12,7 @@ A Sugar release is many things at once:
 2. **Updated specs** (IR grammar, proof file format, handshake algorithm, lattice tractability theorem, signatures, kit standard), only those that changed.
 3. **Updated kits**, one per host language, all re-minting their self-contracts to match the new catalog.
 4. **Updated conformance fixtures** if the canonical input/output bytes changed.
-5. **Updated tooling**: `provekit` CLI, lift adapters that depend on new IR primitives.
+5. **Updated tooling**: `sugar` CLI, lift adapters that depend on new IR primitives.
 6. **Extension witnesses** where relevant: PEP body/witness artifacts, proof-protocol fixtures, or Bug Zoo closure receipts.
 7. **Distributed packages** to crates.io, npm, PyPI, Maven Central, NuGet, RubyGems, etc.
 
@@ -41,11 +41,11 @@ Bumping the catalog CID is a coordinated activity:
 1. **Freeze**: announce the bump on the project repository. Adapter authors should hold non-essential PRs.
 2. **Update specs** in `protocol/specs/`. Add new spec files; update existing ones if needed. Each spec's bytes determine its CID; recompute via `tools/recompute-spec-cids/`.
 3. **Update CDDL grammar** if new IR primitives are added.
-4. **Regenerate codegen artifacts** in every kit (`provekit-ir-codegen` and equivalents).
+4. **Regenerate codegen artifacts** in every kit (`sugar-ir-codegen` and equivalents).
 5. **Re-mint self-contracts** in every kit. The new pinned CIDs replace the old ones in `make conformance`.
-6. **Update `provekit verify-protocol`** in the Rust CLI to expect the new catalog CID.
+6. **Update `sugar verify-protocol`** in the Rust CLI to expect the new catalog CID.
 7. **Update conformance fixtures** if the canonical input/output bytes changed.
-8. **Emit or check the PEP transition** with `provekit protocol evolve` or `provekit protocol check-evolution`.
+8. **Emit or check the PEP transition** with `sugar protocol evolve` or `sugar protocol check-evolution`.
 9. **Run `make ci`** to verify the whole stack.
 10. **Tag the release** in git.
 11. **Publish packages** in dependency order: protocol catalog first, then kits, then lift adapters, then tooling.
@@ -64,7 +64,7 @@ When a spec change affects existing kits, write migration notes. Example:
 >
 > **Action required by lift adapter authors**: optionally support `temporal_atomic` if your source library has temporal annotations. No-op for adapters that don't.
 >
-> **Action required by users**: re-run `provekit verify-protocol` after upgrading to the new CLI. Existing `.proof` bundles remain valid (provability is monotonic). New `.proof` bundles minted under v1.2.0 may use the new primitive.
+> **Action required by users**: re-run `sugar verify-protocol` after upgrading to the new CLI. Existing `.proof` bundles remain valid (provability is monotonic). New `.proof` bundles minted under v1.2.0 may use the new primitive.
 
 The note explicitly addresses each role's required action and clarifies what stays the same.
 
@@ -88,7 +88,7 @@ The default kit behavior on encountering an unknown primitive is to log a warnin
 Publish in dependency order to avoid "I just published an adapter that depends on a kit version that isn't on npm yet" deadlocks:
 
 1. Protocol catalog CIDs (just file changes; no package).
-2. Rust workspace (canonical CLI). Publish library crates before `provekit-cli`; include `libprovekit` when reusable protocol body logic changed.
+2. Rust workspace (canonical CLI). Publish library crates before `sugar-cli`; include `libsugar` when reusable protocol body logic changed.
 3. Per-language kits in arbitrary order. Each kit's packages are published per its ecosystem's convention.
 4. Lift adapters per kit, after the kit is published.
 5. Tooling (LSP plugins, build-script integrations).
@@ -114,7 +114,7 @@ After the release is announced:
 
 ## When this is done
 
-Every shipping implementation is on the new catalog CID. `provekit verify-protocol` reports the new CID. Tutorials and reference docs reference the new CID. Adapter authors have migrated.
+Every shipping implementation is on the new catalog CID. `sugar verify-protocol` reports the new CID. Tutorials and reference docs reference the new CID. Adapter authors have migrated.
 
 The next release cycle begins with adapter requests, spec proposals, and bug reports against the new version.
 

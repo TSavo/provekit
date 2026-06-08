@@ -17,7 +17,7 @@
 //     all deserialize, and the verdict-consistency rules (§5.2) are
 //     ENFORCED externally; this serde layer is purely shape-level.
 //
-// Byte-exact CID pinning lives in provekit-claim-envelope (this crate has
+// Byte-exact CID pinning lives in sugar-claim-envelope (this crate has
 // no JCS encoder).
 
 use std::collections::BTreeMap;

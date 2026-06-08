@@ -85,11 +85,11 @@ pub fn load_plugin_from_rpc(endpoint: &str) -> Result<PluginMemento, LoadError> 
     }
 }
 
-/// Spawn `cmd_str` as a subprocess, send `provekit.plugin.describe`, parse
+/// Spawn `cmd_str` as a subprocess, send `sugar.plugin.describe`, parse
 /// the returned plugin memento from the result.
 ///
 /// The JSON-RPC request body (§4.2.1):
-///   { "jsonrpc": "2.0", "id": 1, "method": "provekit.plugin.describe",
+///   { "jsonrpc": "2.0", "id": 1, "method": "sugar.plugin.describe",
 ///     "params": { "runtime_protocol_versions": ["pep/1.7.0"] } }
 ///
 /// Response must be `{ "jsonrpc": "2.0", "id": 1, "result": { ... } }`.
@@ -106,9 +106,9 @@ fn load_plugin_from_stdio_rpc(cmd_str: &str) -> Result<PluginMemento, LoadError>
     // NO-SILENT-FAILURE: a plugin subprocess's stderr carries its diagnostics
     // (lift gaps, oracle decisions, refusals). Nulling it by default is what hid
     // a load-bearing bug from five investigations. Inherit by default so plugin
-    // diagnostics reach the operator's tracing stream; set PROVEKIT_PLUGIN_STDERR=null
+    // diagnostics reach the operator's tracing stream; set SUGAR_PLUGIN_STDERR=null
     // only to deliberately silence them.
-    let plugin_stderr = if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+    let plugin_stderr = if std::env::var("SUGAR_PLUGIN_STDERR").as_deref() == Ok("null") {
         Stdio::null()
     } else {
         Stdio::inherit()
@@ -127,7 +127,7 @@ fn load_plugin_from_stdio_rpc(cmd_str: &str) -> Result<PluginMemento, LoadError>
     let request = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.describe",
+        "method": "sugar.plugin.describe",
         "params": {
             "runtime_protocol_versions": RUNTIME_PROTOCOL_VERSIONS
         }

@@ -16,7 +16,7 @@ use sugar_ir_types::{Formula, Sort, Term};
 pub const DIALECT: &str = "lean";
 pub const COMPILER_NAME: &str = "lean4-mathlib-reference";
 pub const COMPILER_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const THEOREM_NAME: &str = "provekit_obligation";
+pub const THEOREM_NAME: &str = "sugar_obligation";
 
 pub struct LeanCompiler;
 
@@ -783,6 +783,6 @@ mod tests {
             "args": []
         }))
         .expect("emit");
-        assert!(out.contains("theorem provekit_obligation : True := by"));
+        assert!(out.contains("theorem sugar_obligation : True := by"));
     }
 }

@@ -2,7 +2,7 @@
 
 Issue: #1145
 Branch: `kit/pk-1145-rust-trinity-floor`
-Worktree: `/Users/tsavo/provekit-worktrees/pk-1145-rust-trinity-floor`
+Worktree: `/Users/tsavo/sugar-worktrees/pk-1145-rust-trinity-floor`
 
 ## Completed
 
@@ -30,27 +30,27 @@ Worktree: `/Users/tsavo/provekit-worktrees/pk-1145-rust-trinity-floor`
 
 - `python3 tools/classify-realization-tags.py`
   - Rust row: `first-class=37`, `sugar-carrier=19`, `absent=0`
-- `cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-realize-rust-core`
-- `cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-mint-amp`
-- `cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-cli --lib --bins`
-- Non-burned `provekit-cli` integration test targets passed individually.
+- `cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-realize-rust-core`
+- `cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-mint-amp`
+- `cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-cli --lib --bins`
+- Non-burned `sugar-cli` integration test targets passed individually.
 - `cargo build --workspace --manifest-path implementations/rust/Cargo.toml`
 - Changed-file scan found no U+2013 or U+2014 characters.
-- Sugar-carrier RPC smoke for `concept:postinc` emitted `provekit-concept`, payload CID, loss record, and `used_sugars`.
+- Sugar-carrier RPC smoke for `concept:postinc` emitted `sugar-concept`, payload CID, loss record, and `used_sugars`.
 
 ## Commit Blocker
 
 Local commit could not be created from this sandbox. Git can read the worktree state, but cannot create lock files or objects in the linked worktree git dir:
 
 ```text
-fatal: Unable to create '/Users/tsavo/provekit/.git/worktrees/pk-1145-rust-trinity-floor/index.lock': Operation not permitted
+fatal: Unable to create '/Users/tsavo/sugar/.git/worktrees/pk-1145-rust-trinity-floor/index.lock': Operation not permitted
 ```
 
 Direct write probes also failed:
 
 ```text
-touch: /Users/tsavo/provekit/.git/worktrees/pk-1145-rust-trinity-floor/index.lock: Operation not permitted
-touch: /Users/tsavo/provekit/.git/objects/test-write-probe: Operation not permitted
+touch: /Users/tsavo/sugar/.git/worktrees/pk-1145-rust-trinity-floor/index.lock: Operation not permitted
+touch: /Users/tsavo/sugar/.git/objects/test-write-probe: Operation not permitted
 ```
 
 The worktree files are ready for Kit to commit outside this sandbox with identity `T Savo <evilgenius@nefariousplan.com>`.

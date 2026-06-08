@@ -88,7 +88,7 @@ If any answer is "yes," the annotation belongs in B. Don't lift fudge.
 Each adapter ships a `COVERAGE.md` with the breakdown:
 
 ```markdown
-# Coverage: provekit-lift-zod
+# Coverage: sugar-lift-zod
 
 ## A: handled (47 annotations)
 
@@ -106,12 +106,12 @@ z.literal(V), z.enum([...]), z.nativeEnum(E)
 
 ## B: skipped with warning (8 annotations)
 
-z.string().datetime(): temporal sort not yet in IR primitives [provekit#142]
-z.string().ip(): requires ip-format predicate [provekit#143]
+z.string().datetime(): temporal sort not yet in IR primitives [sugar#142]
+z.string().ip(): requires ip-format predicate [sugar#143]
 z.preprocess(...): runtime transforms, structurally not liftable
 z.transform(...): same
 z.refine(fn): custom predicate; refines runtime, not statically liftable
-z.lazy(...): recursive schemas, planned for v0.4 [provekit#144]
+z.lazy(...): recursive schemas, planned for v0.4 [sugar#144]
 z.intersection([...]): intersect of schemas; semantics differ from logical and
 z.brand(...): phantom-type tagging; no IR equivalent
 

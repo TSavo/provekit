@@ -416,11 +416,11 @@ Structural drops in v1 assume the global allocator does not panic during dealloc
 
 ## §8. Cross-references
 
-- The `Effect` enum lives in `implementations/rust/provekit-walk/src/contract.rs`. `Effect::Drop` must be added alongside existing variants.
+- The `Effect` enum lives in `implementations/rust/sugar-walk/src/contract.rs`. `Effect::Drop` must be added alongside existing variants.
 - The `DropKind` and `DropMemento` types are NEW and should live in `contract.rs` alongside `AliasingMemento`, `AliasingStatus`, etc.
 - The `compose_function_contracts_checked` procedure in `contract.rs` must be extended with the drop pre-cycle check from §5.1.
 - The `OpacityMementoLookup` trait must be extended with `lookup_drop_memento(target_type: &str) -> Option<&DropMemento>`.
-- The `MementoPool` in `provekit-verifier/src/types.rs` must be extended with a drop-memento index.
+- The `MementoPool` in `sugar-verifier/src/types.rs` must be extended with a drop-memento index.
 - For the implementation tracking issues, see #384 C.10 (parent), #417 (this RFC), and the future C.10 lifter implementation issue (to be filed after this RFC lands).
 - The existing `Effect::Drop { name }` in PR #400 is a simpler first-pass implementation that does NOT include DropKind classification or DropMemento discharge. This RFC replaces that design. Once this RFC lands and is approved, PR #400 must be updated to match.
 

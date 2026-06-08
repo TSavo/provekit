@@ -249,8 +249,8 @@ cid = "blake3-512:" ++ hex(BLAKE3-512(JCS_bytes))
 
 ## §7. Cross-references
 
-- The `loopCid` field's value is produced by `llbc_loops::extract_loops()` in `implementations/rust/provekit-walk/src/llbc_loops.rs`. It is the BLAKE3-512 of the JCS-canonical bytes of the loop's LLBC body block.
-- The substrate check lives in `EffectSet::check_opacity` and `compose_function_contracts` in `implementations/rust/provekit-walk/src/contract.rs`.
-- The pool indexing lives in `MementoPool::insert` in `implementations/rust/provekit-verifier/src/types.rs`, keyed by `header.loopCid`.
+- The `loopCid` field's value is produced by `llbc_loops::extract_loops()` in `implementations/rust/sugar-walk/src/llbc_loops.rs`. It is the BLAKE3-512 of the JCS-canonical bytes of the loop's LLBC body block.
+- The substrate check lives in `EffectSet::check_opacity` and `compose_function_contracts` in `implementations/rust/sugar-walk/src/contract.rs`.
+- The pool indexing lives in `MementoPool::insert` in `implementations/rust/sugar-verifier/src/types.rs`, keyed by `header.loopCid`.
 - For the `TryBranchMemento` (discharges `Effect::EarlyReturn`), see `2026-05-05-try-branch-memento.md`.
 - For the `ClosureBindingMemento` (discharges `Effect::ClosureCapture`), see `2026-05-05-closure-binding-memento.md`.

@@ -56,12 +56,12 @@ bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/
   java/
     lab/
     exhibit/
-      provekit-native/
+      sugar-native/
       spring-web/
       equivalence.json
       sat-witness.json
     fixed/
-      provekit-native/
+      sugar-native/
       spring-web/
 
   typescript/
@@ -79,13 +79,13 @@ bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/
     lab/
     exhibit/
       data-annotations/
-      provekit-annotations/
+      sugar-annotations/
       linq-where/
       equivalence.json
       sat-witness.json
     fixed/
       data-annotations/
-      provekit-annotations/
+      sugar-annotations/
       linq-where/
 ```
 
@@ -112,7 +112,7 @@ run, and pass ordinary checks while leaving the Sugar obligation latent.
 `exhibit/` proves native source surfaces can express the boundary. For Java,
 that can be Sugar-native annotations and Spring Web. For TypeScript, that can
 be zod and class-validator. For C#, that can be DataAnnotations,
-`//provekit:` annotations, and LINQ. Each exhibit lifts through its language kit
+`//sugar:` annotations, and LINQ. Each exhibit lifts through its language kit
 and must match the species-level missing edge.
 
 `fixed/` proves closure. It contains the same exhibit surface after the source
@@ -141,9 +141,9 @@ languages:
   - id: java
     lab: java/lab
     exhibits:
-      - id: provekit-native
+      - id: sugar-native
         fixed:
-          id: provekit-native
+          id: sugar-native
       - id: spring-web
         fixed:
           id: spring-web
@@ -162,9 +162,9 @@ languages:
       - id: data-annotations
         fixed:
           id: data-annotations
-      - id: provekit-annotations
+      - id: sugar-annotations
         fixed:
-          id: provekit-annotations
+          id: sugar-annotations
       - id: linq-where
         fixed:
           id: linq-where

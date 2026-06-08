@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the C++ LSP plugin binary (provekit-lsp-cpp).
+# Build the C++ LSP plugin binary (sugar-lsp-cpp).
 #
 # Prereqs: no system BLAKE3 dependency; this uses the vendored portable C
 # implementation under tools/blake3-vendored.
@@ -11,14 +11,14 @@
 set -e
 
 WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
-KIT_INC="$WORKSPACE/implementations/cpp/provekit-ir-symbolic/include"
-SRC="$WORKSPACE/implementations/cpp/provekit-lsp-cpp/main.cpp"
+KIT_INC="$WORKSPACE/implementations/cpp/sugar-ir-symbolic/include"
+SRC="$WORKSPACE/implementations/cpp/sugar-lsp-cpp/main.cpp"
 B3_DIR="$WORKSPACE/tools/blake3-vendored"
 B3_FLAGS="-DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_USE_NEON=0"
 
 OUT_DIR="$WORKSPACE/implementations/cpp/target"
 mkdir -p "$OUT_DIR"
-OUT_BIN="$OUT_DIR/provekit-lsp-cpp"
+OUT_BIN="$OUT_DIR/sugar-lsp-cpp"
 
 if [ "${1:-}" = "--out" ] && [ -n "${2:-}" ]; then
     OUT_BIN="$2"
@@ -46,7 +46,7 @@ done
     "$B3_OBJ_DIR/blake3.o" \
     "$B3_OBJ_DIR/blake3_dispatch.o" \
     "$B3_OBJ_DIR/blake3_portable.o" \
-    "$WORKSPACE/implementations/cpp/provekit/canonicalizer/hash.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar/canonicalizer/hash.cpp" \
     "$SRC" \
     -o "$OUT_BIN"
 

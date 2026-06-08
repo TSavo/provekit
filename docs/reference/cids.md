@@ -2,7 +2,7 @@
 
 Every spec in Sugar is content-addressed by BLAKE3-512. Verify the local
 install conforms to the protocol catalog embedded in the CLI via
-`provekit verify-protocol`.
+`sugar verify-protocol`.
 
 ## Two hashing rules
 
@@ -49,15 +49,15 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 
 The detailed property list below was originally written for v1.6.3 and still
 records the stable core CIDs used by the current catalog. The current CLI's
-authoritative answer is the embedded catalog checked by `provekit verify-protocol`;
-historical signatures live under `.provekit/catalog-signatures/`.
+authoritative answer is the embedded catalog checked by `sugar verify-protocol`;
+historical signatures live under `.sugar/catalog-signatures/`.
 
 ## v1.6.3 changes (patch over v1.6.2)
 
 One extension-surface re-bake; no core verifier, ProofIR grammar, canonicalization, proof-file format, or cross-language fixture semantic obligation changed. v1.6.2 mementos, fixtures, `.proof` bundles, and kit conformance obligations remain valid forever against the bytes they were minted for.
 
 - **`lift-plugin-protocol`** formalizes `options.layer = "identify-only"` and the `package-inspection-document` result.
-- `provekit package inspect` is specified as a client command over `pep/1.7.0`: it dispatches to the configured lifter and requires a `package-inspection-document`.
+- `sugar package inspect` is specified as a client command over `pep/1.7.0`: it dispatches to the configured lifter and requires a `package-inspection-document`.
 - Package inspection now has named rails for package artifact bytes, CI input closure, release contract sets, conventional receipts, admission hints, and shipped `.proof` files.
 - The PEP transition is recorded under [`../../protocol/evolution/v1.6.3/`](../../protocol/evolution/v1.6.3/), with a `ProtocolEvolutionBodyClaim` and TDP-shaped witness.
 
@@ -114,7 +114,7 @@ The full list of current spec CIDs is in `protocol/specs/2026-04-30-protocol-cat
 
 ## Per-kit self-contract attestations
 
-Each conformant peer ships hand-written contracts about its own public surface, mints them as signed mementos under the foundation key, and signs an external attestation under `.provekit/self-contracts-attestations/`.
+Each conformant peer ships hand-written contracts about its own public surface, mints them as signed mementos under the foundation key, and signs an external attestation under `.sugar/self-contracts-attestations/`.
 
 The live attestation files, not this page, are the source of truth for per-kit bundle and `contractSetCid` values. Verify them with:
 

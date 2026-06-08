@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -11,10 +11,10 @@ fn write_fake_recognizer_project(project: &Path) -> PathBuf {
     fs::create_dir_all(&src_dir).expect("create src dir");
     fs::write(src_dir.join("lib.rs"), "fn value() -> i32 { 1 }\n").expect("write source");
 
-    let manifest_dir = project.join(".provekit/lift/no-proof-reader");
+    let manifest_dir = project.join(".sugar/lift/no-proof-reader");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         r#"[[plugins]]
 name = "no-proof-reader"
 surface = "no-proof-reader"
@@ -33,7 +33,7 @@ import sys
 
 line = sys.stdin.readline()
 request = json.loads(line)
-pathlib.Path(os.environ["PROVEKIT_CAPTURE_REQUEST"]).write_text(
+pathlib.Path(os.environ["SUGAR_CAPTURE_REQUEST"]).write_text(
     json.dumps(request, sort_keys=True),
     encoding="utf-8",
 )
@@ -50,7 +50,7 @@ print(json.dumps({
     fs::write(
         manifest_dir.join("manifest.toml"),
         format!(
-            "name = \"no-proof-reader\"\ncommand = [\"env\", \"PROVEKIT_CAPTURE_REQUEST={}\", \"python3\", \"{}\"]\nworking_dir = \".\"\n",
+            "name = \"no-proof-reader\"\ncommand = [\"env\", \"SUGAR_CAPTURE_REQUEST={}\", \"python3\", \"{}\"]\nworking_dir = \".\"\n",
             captured_request.display(),
             plugin.display()
         ),
@@ -65,7 +65,7 @@ fn recognize_without_surface_uses_configured_recognizer_plugin() {
     let project = tempfile::tempdir().expect("tempdir");
     let captured_request = write_fake_recognizer_project(project.path());
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("recognize")
         .arg("--project")
         .arg(project.path())
@@ -73,7 +73,7 @@ fn recognize_without_surface_uses_configured_recognizer_plugin() {
         .arg("src/lib.rs")
         .arg("--json")
         .output()
-        .expect("spawn provekit recognize");
+        .expect("spawn sugar recognize");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -94,7 +94,7 @@ fn recognize_rejects_cli_binding_proof_paths() {
     fs::write(&binding, r#"{"members":[]}"#).expect("write proof");
     let _captured_request = write_fake_recognizer_project(project.path());
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("recognize")
         .arg("--project")
         .arg(project.path())
@@ -106,7 +106,7 @@ fn recognize_rejects_cli_binding_proof_paths() {
         .arg(&binding)
         .arg("--json")
         .output()
-        .expect("spawn provekit recognize");
+        .expect("spawn sugar recognize");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -125,7 +125,7 @@ fn recognize_rpc_request_does_not_include_cli_binding_templates() {
     let project = tempfile::tempdir().expect("tempdir");
     let captured_request = write_fake_recognizer_project(project.path());
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("recognize")
         .arg("--project")
         .arg(project.path())
@@ -135,7 +135,7 @@ fn recognize_rpc_request_does_not_include_cli_binding_templates() {
         .arg("src/lib.rs")
         .arg("--json")
         .output()
-        .expect("spawn provekit recognize");
+        .expect("spawn sugar recognize");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

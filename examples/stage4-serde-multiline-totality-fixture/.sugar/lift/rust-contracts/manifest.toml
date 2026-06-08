@@ -1,0 +1,3 @@
+name = "rust-contracts-lift"
+command = ["../../implementations/rust/target/debug/sugar-walk-rpc", "--rpc"]
+working_dir = "."

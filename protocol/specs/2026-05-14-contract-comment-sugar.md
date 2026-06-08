@@ -78,7 +78,7 @@ contract-comment-role = "pre" / "post" / "invariant" / "throws" / "observation"
 ; local_contract_cid, loss_record_cid, policy_cid, role,
 ; schema_version, sugar_dict_cid
 contract-comment-payload = {
-  artifact_kind:       "provekit-contract-comment-sugar",
+  artifact_kind:       "sugar-contract-comment-sugar",
   concept_site_cid:    cid,
   contract_cid:        cid,
   emitted_by:          emitted-by,
@@ -105,7 +105,7 @@ emitted-by = {
 
 | Field | Required | Meaning |
 |---|---:|---|
-| `artifact_kind` | yes | MUST be `"provekit-contract-comment-sugar"`. |
+| `artifact_kind` | yes | MUST be `"sugar-contract-comment-sugar"`. |
 | `schema_version` | yes | MUST be `"1"`. Unknown versions MUST fail closed. |
 | `concept_site_cid` | yes | The concept site the contract evidence is attached to. |
 | `contract_cid` | yes | The public contract or compound contract CID being cited. |
@@ -128,7 +128,7 @@ payload_cid = blake3-512(JCS(contract-comment-payload))
 ```
 
 The payload CID MAY be emitted next to the payload as a host-language comment
-field (for example `provekit-contract-payload-cid`). If present, the lifter MUST
+field (for example `sugar-contract-payload-cid`). If present, the lifter MUST
 recompute and compare it. If absent, the lifter computes it and records it in
 `extension_fields.payload_cid`.
 
@@ -180,7 +180,7 @@ normal `sugar-entry` with a precise `surface_locator`, for example:
   "emission_template": {
     "kind": "computed",
     "surface_locator": "comment:above-method",
-    "template": "provekit-contract:<computed-payload>"
+    "template": "sugar-contract:<computed-payload>"
   },
   "loss_record_contribution": {
     "form": "literal",
@@ -224,8 +224,8 @@ Java implementations SHOULD use adjacent line comments above a method or inside
 an observation wrapper body:
 
 ```java
-// provekit-contract: {"artifact_kind":"provekit-contract-comment-sugar",...}
-// provekit-contract-payload-cid: blake3-512:...
+// sugar-contract: {"artifact_kind":"sugar-contract-comment-sugar",...}
+// sugar-contract-payload-cid: blake3-512:...
 ```
 
 Javadoc MAY carry the same fields, but a Java lifter MUST treat the line-comment
@@ -239,12 +239,12 @@ that hold string literals, or native contract libraries. For the comment
 surface, the recommended embedding is:
 
 ```python
-# provekit-contract: {"artifact_kind":"provekit-contract-comment-sugar",...}
-# provekit-contract-payload-cid: blake3-512:...
+# sugar-contract: {"artifact_kind":"sugar-contract-comment-sugar",...}
+# sugar-contract-payload-cid: blake3-512:...
 ```
 
 Docstring payloads MUST be parsed only from lines beginning with
-`provekit-contract:` after indentation normalization. Free prose in the same
+`sugar-contract:` after indentation normalization. Free prose in the same
 docstring is not contract-comment sugar.
 
 ### §3.3 Rust
@@ -252,8 +252,8 @@ docstring is not contract-comment sugar.
 Rust implementations SHOULD use ordinary or doc comments:
 
 ```rust
-// provekit-contract: {"artifact_kind":"provekit-contract-comment-sugar",...}
-// provekit-contract-payload-cid: blake3-512:...
+// sugar-contract: {"artifact_kind":"sugar-contract-comment-sugar",...}
+// sugar-contract-payload-cid: blake3-512:...
 ```
 
 `#[...]` attributes are native Rust sugar and are outside this comment-sugar
@@ -265,8 +265,8 @@ C implementations MAY use line comments or block comments. When block comments
 are used, the payload MUST be the only machine-readable content in the block:
 
 ```c
-/* provekit-contract: {"artifact_kind":"provekit-contract-comment-sugar",...} */
-/* provekit-contract-payload-cid: blake3-512:... */
+/* sugar-contract: {"artifact_kind":"sugar-contract-comment-sugar",...} */
+/* sugar-contract-payload-cid: blake3-512:... */
 ```
 
 Preprocessor macros that expand to comments are not visible to all lifters and
@@ -277,11 +277,11 @@ MUST NOT be the only carrier of required contract-comment sugar.
 TypeScript implementations SHOULD use line comments or JSDoc tags:
 
 ```ts
-// provekit-contract: {"artifact_kind":"provekit-contract-comment-sugar",...}
-// provekit-contract-payload-cid: blake3-512:...
+// sugar-contract: {"artifact_kind":"sugar-contract-comment-sugar",...}
+// sugar-contract-payload-cid: blake3-512:...
 ```
 
-JSDoc payloads MUST be extracted only from explicit `@provekit-contract` tags.
+JSDoc payloads MUST be extracted only from explicit `@sugar-contract` tags.
 Other JSDoc prose remains docstring evidence at best, not exact comment sugar.
 
 ## §4. Lifter behavior
@@ -361,7 +361,7 @@ A lifter MUST reject the payload as trusted contract-comment sugar when any of
 the following holds:
 
 - malformed JSON or invalid UTF-8 after host comment unwrapping;
-- `artifact_kind` is not `"provekit-contract-comment-sugar"`;
+- `artifact_kind` is not `"sugar-contract-comment-sugar"`;
 - `schema_version` is unknown;
 - a required field is missing;
 - any CID field is malformed;
@@ -399,8 +399,8 @@ formula_cid      = blake3-512:6666...
 The Java realizer may emit:
 
 ```java
-// provekit-contract: {"artifact_kind":"provekit-contract-comment-sugar","concept_site_cid":"blake3-512:1111...","contract_cid":"blake3-512:2222...","emitted_by":{"kit_cid":"blake3-512:9999...","kit_kind":"realize","target_language":"java"},"fol_text":"out == x","ir_formula_jcs":{"args":[{"kind":"var","name":"out"},{"kind":"var","name":"x"}],"kind":"atomic","name":"eq"},"ir_formula_jcs_cid":"blake3-512:6666...","loss_record_cid":"blake3-512:5555...","policy_cid":"blake3-512:3333...","role":"post","schema_version":"1","sugar_dict_cid":"blake3-512:4444..."}
-// provekit-contract-payload-cid: blake3-512:aaaa...
+// sugar-contract: {"artifact_kind":"sugar-contract-comment-sugar","concept_site_cid":"blake3-512:1111...","contract_cid":"blake3-512:2222...","emitted_by":{"kit_cid":"blake3-512:9999...","kit_kind":"realize","target_language":"java"},"fol_text":"out == x","ir_formula_jcs":{"args":[{"kind":"var","name":"out"},{"kind":"var","name":"x"}],"kind":"atomic","name":"eq"},"ir_formula_jcs_cid":"blake3-512:6666...","loss_record_cid":"blake3-512:5555...","policy_cid":"blake3-512:3333...","role":"post","schema_version":"1","sugar_dict_cid":"blake3-512:4444..."}
+// sugar-contract-payload-cid: blake3-512:aaaa...
 public static long identity(long x) {
     return x;
 }
@@ -459,7 +459,7 @@ When this contract is realized into Python, the Python kit may choose a Pythonic
 surface:
 
 ```python
-# provekit-contract: {"artifact_kind":"provekit-contract-comment-sugar",...}
+# sugar-contract: {"artifact_kind":"sugar-contract-comment-sugar",...}
 def identity(x: int) -> int:
     return x
 ```
@@ -473,7 +473,7 @@ survived the language hop.
 This spec carries contract clauses. It composes with, but does not replace:
 
 - concept tags (`// concept: identity`, concept site anchors);
-- observation tags (`provekit-observation:*`) from
+- observation tags (`sugar-observation:*`) from
   `concept:contract-observation(callsite_cid, contract_cid, mode)`;
 - body-template citations such as `concept:log-emit`; and
 - native library sugars such as Bean Validation, JUnit, pydantic, Zod, JML, or

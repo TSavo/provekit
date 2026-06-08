@@ -15,43 +15,43 @@ Add Sugar LSPs to your `lsp-mode` configuration:
   ;; Register each Sugar LSP
   (lsp-register-client
     (make-lsp-client
-      :new-connection (lsp-stdio-connection "provekit-lsp-rust")
+      :new-connection (lsp-stdio-connection "sugar-lsp-rust")
       :major-modes '(rust-mode)
       :priority 0
-      :server-id 'provekit-rust
-      :initialization-options '(:provekit (:protocolVersion "1.1.0"))))
+      :server-id 'sugar-rust
+      :initialization-options '(:sugar (:protocolVersion "1.1.0"))))
 
   (lsp-register-client
     (make-lsp-client
-      :new-connection (lsp-stdio-connection "provekit-lsp-py")
+      :new-connection (lsp-stdio-connection "sugar-lsp-py")
       :major-modes '(python-mode)
       :priority 0
-      :server-id 'provekit-python
-      :initialization-options '(:provekit (:protocolVersion "1.1.0"))))
+      :server-id 'sugar-python
+      :initialization-options '(:sugar (:protocolVersion "1.1.0"))))
 
   (lsp-register-client
     (make-lsp-client
-      :new-connection (lsp-stdio-connection (lambda () (list "provekit-lift-zig" "--rpc")))
+      :new-connection (lsp-stdio-connection (lambda () (list "sugar-lift-zig" "--rpc")))
       :major-modes '(zig-mode)
       :priority 0
-      :server-id 'provekit-zig
-      :initialization-options '(:provekit (:protocolVersion "1.1.0"))))
+      :server-id 'sugar-zig
+      :initialization-options '(:sugar (:protocolVersion "1.1.0"))))
 
   (lsp-register-client
     (make-lsp-client
-      :new-connection (lsp-stdio-connection "provekit-lsp-ruby")
+      :new-connection (lsp-stdio-connection "sugar-lsp-ruby")
       :major-modes '(ruby-mode)
       :priority 0
-      :server-id 'provekit-ruby
-      :initialization-options '(:provekit (:protocolVersion "1.1.0"))))
+      :server-id 'sugar-ruby
+      :initialization-options '(:sugar (:protocolVersion "1.1.0"))))
 
   (lsp-register-client
     (make-lsp-client
-      :new-connection (lsp-stdio-connection "provekit-lsp-csharp")
+      :new-connection (lsp-stdio-connection "sugar-lsp-csharp")
       :major-modes '(csharp-mode)
       :priority 0
-      :server-id 'provekit-csharp
-      :initialization-options '(:provekit (:protocolVersion "1.1.0"))))
+      :server-id 'sugar-csharp
+      :initialization-options '(:sugar (:protocolVersion "1.1.0"))))
 )
 ```
 
@@ -63,15 +63,15 @@ Add Sugar LSPs to your `lsp-mode` configuration:
 (use-package eglot
   :config
   (add-to-list 'eglot-server-programs
-               '(rust-mode . ("provekit-lsp-rust")))
+               '(rust-mode . ("sugar-lsp-rust")))
   (add-to-list 'eglot-server-programs
-               '(python-mode . ("provekit-lsp-py")))
+               '(python-mode . ("sugar-lsp-py")))
   (add-to-list 'eglot-server-programs
-               '(zig-mode . ("provekit-lift-zig" "--rpc")))
+               '(zig-mode . ("sugar-lift-zig" "--rpc")))
   (add-to-list 'eglot-server-programs
-               '(ruby-mode . ("provekit-lsp-ruby")))
+               '(ruby-mode . ("sugar-lsp-ruby")))
   (add-to-list 'eglot-server-programs
-               '(csharp-mode . ("provekit-lsp-csharp"))))
+               '(csharp-mode . ("sugar-lsp-csharp"))))
 ```
 
 Note: eglot only manages one LSP per buffer. To run Sugar alongside another LSP, use `lsp-mode` or compose via a wrapper.
@@ -94,16 +94,16 @@ Sugar diagnostics will appear in the modeline (`flycheck-mode-line`) and inline 
 ## Filter to Sugar only
 
 ```elisp
-(defun my/provekit-only-errors ()
+(defun my/sugar-only-errors ()
   "Show only Sugar errors in the current buffer."
   (interactive)
   (let ((errors (flycheck-overlay-errors-in (point-min) (point-max))))
-    (let ((provekit-errors
+    (let ((sugar-errors
            (cl-remove-if-not
-            (lambda (e) (string= "provekit" (flycheck-error-checker e)))
+            (lambda (e) (string= "sugar" (flycheck-error-checker e)))
             errors)))
       (with-output-to-temp-buffer "*Sugar Errors*"
-        (dolist (e provekit-errors)
+        (dolist (e sugar-errors)
           (princ (format "%s\n" (flycheck-error-message e))))))))
 ```
 
@@ -111,7 +111,7 @@ Sugar diagnostics will appear in the modeline (`flycheck-mode-line`) and inline 
 
 ```elisp
 ;; Lower Tier 3 timeout
-(setq lsp-provekit-tier3-timeout 2000)
+(setq lsp-sugar-tier3-timeout 2000)
 
 ;; Disable LSP for huge buffers
 (setq lsp-file-watch-threshold 1000)
@@ -123,8 +123,8 @@ Sugar diagnostics will appear in the modeline (`flycheck-mode-line`) and inline 
 Use `.dir-locals.el` for per-project configuration:
 
 ```elisp
-((rust-mode . ((lsp-provekit-tier3-timeout . 5000)
-               (lsp-provekit-protocol-version . "1.1.0"))))
+((rust-mode . ((lsp-sugar-tier3-timeout . 5000)
+               (lsp-sugar-protocol-version . "1.1.0"))))
 ```
 
 ## Troubleshooting
@@ -133,8 +133,8 @@ Use `.dir-locals.el` for per-project configuration:
 
 - `M-x lsp-describe-session` (lsp-mode) shows registered LSPs.
 - `M-x lsp-toggle-trace-io` enables verbose logging in `*lsp-log*` buffer.
-- Verify `which provekit-lsp-rust` returns a path; if not, the binary isn't on PATH.
-- Verify `provekit verify-protocol` works from a shell.
+- Verify `which sugar-lsp-rust` returns a path; if not, the binary isn't on PATH.
+- Verify `sugar verify-protocol` works from a shell.
 
 ### Squigglies don't appear
 
@@ -145,11 +145,11 @@ Use `.dir-locals.el` for per-project configuration:
 ### LSP repeatedly restarts
 
 - Check `*lsp-log*` for crashes.
-- Common cause: protocol version mismatch. Verify with `provekit verify-protocol`.
+- Common cause: protocol version mismatch. Verify with `sugar verify-protocol`.
 
 ### Slow performance
 
-- Lower `lsp-provekit-tier3-timeout`.
+- Lower `lsp-sugar-tier3-timeout`.
 - Increase `lsp-idle-delay` to 1.0 (parses less often).
 - Check if Tier 3 is dominating; if so, the lattice is cold.
 
@@ -157,7 +157,7 @@ Use `.dir-locals.el` for per-project configuration:
 
 ### Rust
 
-Run alongside `rust-analyzer` (configured via `lsp-mode` with `rust-analyzer` as the primary LSP and `provekit-rust` as secondary).
+Run alongside `rust-analyzer` (configured via `lsp-mode` with `rust-analyzer` as the primary LSP and `sugar-rust` as secondary).
 
 ### Python
 

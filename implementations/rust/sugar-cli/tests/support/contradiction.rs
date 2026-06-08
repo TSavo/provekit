@@ -171,18 +171,18 @@ pub fn plant_contradictory_implication_proof(
     members.insert(consumer_bridge_cid, consumer_bridge_bytes);
     write_proof(
         proof_dir,
-        &format!("@provekit/{symbol_prefix}-contradictory-implication"),
+        &format!("@sugar/{symbol_prefix}-contradictory-implication"),
         members,
     )
 }
 
-pub fn run_prove_json_with_code(provekit_bin: &Path, project: &Path) -> (Json, i32) {
-    let output = Command::new(provekit_bin)
+pub fn run_prove_json_with_code(sugar_bin: &Path, project: &Path) -> (Json, i32) {
+    let output = Command::new(sugar_bin)
         .arg("prove")
         .arg(project)
         .arg("--json")
         .output()
-        .expect("spawn provekit prove");
+        .expect("spawn sugar prove");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let report = serde_json::from_str(&stdout)
         .unwrap_or_else(|error| panic!("prove JSON parse failed: {error}\nstdout: {stdout}"));

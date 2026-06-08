@@ -6,7 +6,7 @@
 // deterministic timing or known disagreements.
 //
 // Wired in via `binary = "stub:unsat"` / `"stub:sat"` /
-// `"stub:undecidable"` / `"stub:timeout"` in `.provekit/config.toml`.
+// `"stub:undecidable"` / `"stub:timeout"` in `.sugar/config.toml`.
 
 use std::time::{Duration, Instant};
 

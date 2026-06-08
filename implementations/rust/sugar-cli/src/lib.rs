@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-cli library root.
+// sugar-cli library root.
 //
 // Exposes selected internal modules for integration-test access.
 // The binary (src/main.rs) is the full CLI; this lib target provides

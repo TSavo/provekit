@@ -30,7 +30,7 @@ When plugins are in the JetBrains Marketplace:
 For sideloading (until marketplace publish):
 
 1. Settings → Plugins → ⚙ → Install Plugin from Disk...
-2. Select `tools/jetbrains/<kit>/build/distributions/provekit-<kit>-<version>.zip`
+2. Select `tools/jetbrains/<kit>/build/distributions/sugar-<kit>-<version>.zip`
 3. Restart
 
 ## Configuration
@@ -38,7 +38,7 @@ For sideloading (until marketplace publish):
 Per-IDE settings live in Settings → Tools → Sugar:
 
 - **Server path**: path to the LSP plugin binary (auto-detected; override if needed).
-- **Protocol version**: `1.1.0` (must match `provekit verify-protocol` output).
+- **Protocol version**: `1.1.0` (must match `sugar verify-protocol` output).
 - **Diagnostics enabled**: toggle.
 - **Tier 3 timeout (ms)**: max time per Tier 3 invocation.
 
@@ -96,12 +96,12 @@ If lift adapters can't find annotations, check that the workspace root is correc
 
 ### Plugin doesn't load
 
-- IDE Log: Help → Show Log in Files. Look for `provekit` errors.
+- IDE Log: Help → Show Log in Files. Look for `sugar` errors.
 - Plugin compatibility: Sugar plugins target specific IDE platform versions. Check the plugin's compatibility range against your IDE version.
 
 ### Squigglies don't appear
 
-- Confirm `provekit verify-protocol` works from a terminal.
+- Confirm `sugar verify-protocol` works from a terminal.
 - Confirm the IDE's PATH includes the plugin's binary location.
 - Restart the IDE.
 
@@ -109,7 +109,7 @@ If lift adapters can't find annotations, check that the workspace root is correc
 
 - Lower `Tier 3 timeout` in Settings.
 - Lower `Tier 3 max invocations per parse`.
-- Run `provekit prove` from a terminal; if slow there too, the lattice is cold.
+- Run `sugar prove` from a terminal; if slow there too, the lattice is cold.
 
 ## Per-IDE specifics
 

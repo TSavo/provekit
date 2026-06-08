@@ -4,7 +4,7 @@
 // callsite via rayon. Stage 6 (solve) is now driven by the
 // `solvers::run_plan` multi-solver layer (see
 // `protocol/specs/2026-04-30-multi-solver-protocol.md`); the
-// legacy single-Z3 path is preserved when no `.provekit/config.toml`
+// legacy single-Z3 path is preserved when no `.sugar/config.toml`
 // is found.
 //
 // Stage 4 handshake is unchanged: Tier 1 (publisher-post hash ==
@@ -74,7 +74,7 @@ pub enum ProofRunArtifactError {
 pub struct RunnerConfig {
     pub project_root: PathBuf,
     /// Legacy: path to z3 binary. Used as a fallback when no
-    /// `.provekit/config.toml` `[solvers]` table is found. Existing
+    /// `.sugar/config.toml` `[solvers]` table is found. Existing
     /// examples and tests pass this directly.
     pub z3_path: String,
     /// Per-project implication-memento cache directory.
@@ -84,7 +84,7 @@ pub struct RunnerConfig {
     /// Producer id stamped into minted implication mementos.
     pub mint_producer_id: Option<String>,
     /// Optional pre-loaded SolversConfig. If set, bypasses
-    /// `.provekit/config.toml` discovery (used by tests and the
+    /// `.sugar/config.toml` discovery (used by tests and the
     /// multi-solver demo).
     pub solvers_config: Option<SolversConfig>,
     /// Additional project directories whose .proof files should
@@ -158,7 +158,7 @@ impl Runner {
     pub fn new(cfg: RunnerConfig) -> Self {
         // Resolve solver config. Precedence:
         //   1. cfg.solvers_config (test/demo override)
-        //   2. .provekit/config.toml under project_root
+        //   2. .sugar/config.toml under project_root
         //   3. fallback: single Z3 at cfg.z3_path
         let (plan, registry) = build_plan_and_registry(&cfg);
         Self {
@@ -885,7 +885,7 @@ fn make_proof_run_memento(
             verifier_pipeline_cid: verifier_pipeline_placeholder_cid(),
         },
         metadata: sugar_ir_types::ProofRunMetadata {
-            note: Some("provekit-verifier run receipt".into()),
+            note: Some("sugar-verifier run receipt".into()),
             source_url: None,
         },
     };
@@ -924,7 +924,7 @@ fn write_proof_run_bundle(
     let signer = sugar_proof_envelope::ed25519_pubkey_string(&RUN_SIGNER_SEED);
     let signer_cid = sugar_canonicalizer::blake3_512_of(signer.as_bytes());
     let built = build_proof_envelope(&ProofEnvelopeInput {
-        name: "@provekit/verifier-run".into(),
+        name: "@sugar/verifier-run".into(),
         version: "1.0.0".into(),
         binary_cid: None,
         metadata: None,
@@ -933,7 +933,7 @@ fn write_proof_run_bundle(
         signer_seed: RUN_SIGNER_SEED,
         declared_at: iso_now(),
     });
-    let out_dir = project_root.join(".provekit").join("runs");
+    let out_dir = project_root.join(".sugar").join("runs");
     std::fs::create_dir_all(&out_dir)?;
     let hex = built.cid.trim_start_matches("blake3-512:");
     let path = out_dir.join(format!("{hex}.proof"));
@@ -1027,7 +1027,7 @@ fn discover_named_artifact_cid(project_root: &Path, name: &str) -> Option<String
 }
 
 fn placeholder_cid(label: &str) -> String {
-    sugar_canonicalizer::blake3_512_of(format!("provekit-verifier:{label}:v1").as_bytes())
+    sugar_canonicalizer::blake3_512_of(format!("sugar-verifier:{label}:v1").as_bytes())
 }
 
 fn sorted(mut values: Vec<String>) -> Vec<String> {
@@ -1838,7 +1838,7 @@ fn mint_and_cache(
 
     // Layered shape (v1.2). The verifier's own implication-extension
     // mint emits the same `{envelope, header, metadata}` shape that
-    // `provekit-claim-envelope::mint_implication` produces; mirroring
+    // `sugar-claim-envelope::mint_implication` produces; mirroring
     // it inline keeps the runner free of an extra runtime dep on the
     // claim-envelope crate.
     let bh = Value::object([

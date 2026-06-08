@@ -1,23 +1,23 @@
-# ProvekIt LSP Protocol
+# Sugar LSP Protocol
 
 **Content-addressed verification as a language server.**
 
-The ProvekIt Language Server Protocol (LSP) implementation provides real-time contract verification, bridge validation, and cross-domain proof transfer directly in the developer's IDE. It treats formal contracts as first-class IDE features — comparable to TypeScript's type checker, but for behavioral properties.
+The Sugar Language Server Protocol (LSP) implementation provides real-time contract verification, bridge validation, and cross-domain proof transfer directly in the developer's IDE. It treats formal contracts as first-class IDE features — comparable to TypeScript's type checker, but for behavioral properties.
 
 ## Architecture
 
-The language server is a **pluggable wrapper** around a JSON-RPC-capable `provekit` backend. It does not reimplement verification logic; it delegates to a configurable backend via JSON-RPC and translates responses to LSP messages.
+The language server is a **pluggable wrapper** around a JSON-RPC-capable `sugar` backend. It does not reimplement verification logic; it delegates to a configurable backend via JSON-RPC and translates responses to LSP messages.
 
 ```
 IDE (VS Code, Neovim, Emacs)
   ↓ LSP messages
-ProvekIt Language Server (per language, swappable)
+Sugar Language Server (per language, swappable)
   ├── Text Document Synchronization (open/change/close)
-  ├── Annotation Extraction (#[provekit::implement], etc.)
+  ├── Annotation Extraction (#[sugar::implement], etc.)
   ├── Position Mapping (line/col ↔ symbol)
   └── JSON-RPC Invocation (configurable backend)
         ↓
-ProvekIt Backend (pluggable verifier)
+Sugar Backend (pluggable verifier)
   ├── Canonical Rust CLI (default)
   ├── Custom fork with custom solvers
   ├── Remote verifier over TCP/Unix socket
@@ -33,29 +33,29 @@ Language Server
 
 The language server communicates with the backend via **JSON-RPC over stdio** (line-delimited NDJSON). This is the same protocol already used by:
 
-- `provekit-lift --rpc` (lift plugins)
-- `provekit-ir-compiler-smt-lib` (compiler subprocesses)
-- `provekit-self-contracts --rpc` (self-contract minting)
+- `sugar-lift --rpc` (lift plugins)
+- `sugar-ir-compiler-smt-lib` (compiler subprocesses)
+- `sugar-self-contracts --rpc` (self-contract minting)
 
 Because the boundary is JSON-RPC, **both sides are independently swappable**:
 
 | Swap | What changes | What stays |
 |---|---|---|
-| **Backend** | Point `provekit.path` to a different binary | Same LSP server, same IDE features |
+| **Backend** | Point `sugar.path` to a different binary | Same LSP server, same IDE features |
 | **LSP server** | Use a custom parser or different IDE features | Same backend, same verification |
 | **Both** | Custom LSP + custom backend for a specialized domain | Same JSON-RPC contract |
 
 ### Runtime configuration
 
-The language server reads `.provekit/config.toml` at workspace root:
+The language server reads `.sugar/config.toml` at workspace root:
 
 ```toml
 [server]
 # Which backend to spawn for verification
-backend = "provekit"  # default: looks up in PATH
-# backend = "/path/to/custom/provekit"
+backend = "sugar"  # default: looks up in PATH
+# backend = "/path/to/custom/sugar"
 # backend = "tcp://remote-verifier.example.com:8080"
-# backend = "unix:///var/run/provekit.sock"
+# backend = "unix:///var/run/sugar.sock"
 
 # Backend arguments passed on every invocation
 backend_args = ["verify", "--format", "json"]
@@ -64,7 +64,7 @@ backend_args = ["verify", "--format", "json"]
 timeout_ms = 5000
 
 # Cache directory for verification results
-cache_dir = ".provekit/cache"
+cache_dir = ".sugar/cache"
 ```
 
 ### Backend contract
@@ -73,12 +73,12 @@ Any backend binary must speak JSON-RPC over stdio:
 
 **Handshake (required):**
 ```json
-{"jsonrpc":"2.0","id":1,"method":"provekit.lsp.handshake","params":{"provekit_version":"1.1.0","protocol_version":"lsp-1.0"}}
+{"jsonrpc":"2.0","id":1,"method":"sugar.lsp.handshake","params":{"sugar_version":"1.1.0","protocol_version":"lsp-1.0"}}
 ```
 
 **Verify (core method):**
 ```json
-{"jsonrpc":"2.0","id":2,"method":"provekit.lsp.verify","params":{"file":"src/lib.rs","function":"my_parse_int","target_cid":"bafy...","workspace":"/project"}}
+{"jsonrpc":"2.0","id":2,"method":"sugar.lsp.verify","params":{"file":"src/lib.rs","function":"my_parse_int","target_cid":"bafy...","workspace":"/project"}}
 ```
 
 **Response:**
@@ -86,13 +86,13 @@ Any backend binary must speak JSON-RPC over stdio:
 {"jsonrpc":"2.0","id":2,"result":{"status":"verified","transfers":[],"evidence":{}}}
 ```
 
-A backend that implements these three methods (handshake, verify, and optionally `provekit.lsp.resolve_cid` for bundle loading) is a valid ProvekIt LSP backend. No recompilation of the language server needed.
+A backend that implements these three methods (handshake, verify, and optionally `sugar.lsp.resolve_cid` for bundle loading) is a valid Sugar LSP backend. No recompilation of the language server needed.
 
 ### Why this matters
 
-- **Custom solvers:** A research team writes a backend that uses a custom SMT solver. They point `backend = "/usr/local/bin/provekit-custom"` in their config. Their team gets the same IDE experience with different verification.
+- **Custom solvers:** A research team writes a backend that uses a custom SMT solver. They point `backend = "/usr/local/bin/sugar-custom"` in their config. Their team gets the same IDE experience with different verification.
 - **Remote verification:** A CI system runs the heavy verifier on a GPU cluster. Developers point `backend = "tcp://ci-cluster.internal:9000"`. Their local IDE stays lightweight.
-- **Mock backends:** Language server tests use `backend = "./mock-provekit"` that returns canned responses. No real Z3 needed for unit tests.
+- **Mock backends:** Language server tests use `backend = "./mock-sugar"` that returns canned responses. No real Z3 needed for unit tests.
 - **Specialized domains:** A blockchain team writes a backend that understands EVM semantics. They swap the backend; the IDE (diagnostics, hover, lenses) works unchanged.
 
 The language server is **just the IDE glue**. The backend is **just the verifier**. The JSON-RPC boundary is the plugin surface. Both are independently deployable, independently versioned, and independently authored.
@@ -116,7 +116,7 @@ The server advertises these LSP capabilities:
 
 On document open or change, the server:
 1. Parses the document with tree-sitter (or host-language parser)
-2. Extracts `#[provekit::implement]`, `#[provekit::contract]`, `#[provekit::verify]` annotations
+2. Extracts `#[sugar::implement]`, `#[sugar::contract]`, `#[sugar::verify]` annotations
 3. Resolves target contract CIDs against the `.proof` index
 4. Queues background verification for new or changed functions
 
@@ -135,7 +135,7 @@ On document open or change, the server:
 }
 ```
 
-**Response (on function with `#[provekit::implement]`):**
+**Response (on function with `#[sugar::implement]`):**
 ```json
 {
   "jsonrpc": "2.0",
@@ -143,7 +143,7 @@ On document open or change, the server:
   "result": {
     "contents": {
       "kind": "markdown",
-      "value": "## ✅ Contract Verified\n\n**Function:** `my_parse_int`\n**Implements:** `bafy...js-parseInt-v24`\n\n**Postcondition:**\n```ir\nparseInt(s) ≥ 0\n```\n\n**Cross-domain transfers:**\n- `js-parseInt-v24` → `ref-parseInt-v1` (ECMAScript reference)\n- `js-parseInt-v24` → `v8-parseInt-impl` (V8 implementation)\n\n**Evidence:** Z3 unsat (cached, minted 2026-04-30)\n\n[Show Proof DAG](command:provekit.showDag?bafy...) | [Re-verify](command:provekit.reverify?bafy...)"
+      "value": "## ✅ Contract Verified\n\n**Function:** `my_parse_int`\n**Implements:** `bafy...js-parseInt-v24`\n\n**Postcondition:**\n```ir\nparseInt(s) ≥ 0\n```\n\n**Cross-domain transfers:**\n- `js-parseInt-v24` → `ref-parseInt-v1` (ECMAScript reference)\n- `js-parseInt-v24` → `v8-parseInt-impl` (V8 implementation)\n\n**Evidence:** Z3 unsat (cached, minted 2026-04-30)\n\n[Show Proof DAG](command:sugar.showDag?bafy...) | [Re-verify](command:sugar.reverify?bafy...)"
     }
   }
 }
@@ -155,7 +155,7 @@ On document open or change, the server:
   "result": {
     "contents": {
       "kind": "markdown",
-      "value": "## ❌ Bridge Verification Failed\n\n**Function:** `my_parse_int`\n**Target:** `bafy...js-parseInt-v24`\n\n**Error:** Body does not satisfy contract postcondition\n\n**Counterexample:**\n```\ns = \"\"\n```\n\n**Analysis:** `s.parse().unwrap()` panics on empty string. Contract requires `parseInt(s) ≥ 0` for all `s`.\n\n**Suggestion:** Use `s.parse().unwrap_or(0)`\n\n[Apply Fix](command:provekit.applyFix?) | [Show Z3 Trace](command:provekit.showTrace?) | [Ignore](command:provekit.ignore?)"
+      "value": "## ❌ Bridge Verification Failed\n\n**Function:** `my_parse_int`\n**Target:** `bafy...js-parseInt-v24`\n\n**Error:** Body does not satisfy contract postcondition\n\n**Counterexample:**\n```\ns = \"\"\n```\n\n**Analysis:** `s.parse().unwrap()` panics on empty string. Contract requires `parseInt(s) ≥ 0` for all `s`.\n\n**Suggestion:** Use `s.parse().unwrap_or(0)`\n\n[Apply Fix](command:sugar.applyFix?) | [Show Z3 Trace](command:sugar.showTrace?) | [Ignore](command:sugar.ignore?)"
     }
   }
 }
@@ -173,13 +173,13 @@ Pushed from server to client when verification completes.
     {
       "range": { "start": {"line":42,"character":0}, "end": {"line":42,"character":20} },
       "severity": 4,  // Hint
-      "code": "provekit.verified",
-      "source": "provekit",
+      "code": "sugar.verified",
+      "source": "sugar",
       "message": "✅ Bridge verified: my_parse_int → js-parseInt-v24 (3 domain transfers)",
       "relatedInformation": [
         {
           "location": {
-            "uri": "file:///project/target/provekit/bafy....proof",
+            "uri": "file:///project/target/sugar/bafy....proof",
             "range": { "start": {"line":0,"character":0}, "end":{"line":0,"character":0} }
           },
           "message": "Contract definition in @types/node-v24.proof"
@@ -198,8 +198,8 @@ Pushed from server to client when verification completes.
     {
       "range": { "start": {"line":45,"character":4}, "end": {"line":45,"character":28} },
       "severity": 1,  // Error
-      "code": "provekit.violation",
-      "source": "provekit",
+      "code": "sugar.violation",
+      "source": "sugar",
       "message": "❌ Contract violation: parseInt(s) ≥ 0 fails for s = \"\" (panic)",
       "relatedInformation": [
         {
@@ -219,7 +219,7 @@ Pushed from server to client when verification completes.
 ```json
 {
   "severity": 2,  // Warning
-  "code": "provekit.unresolved-target",
+  "code": "sugar.unresolved-target",
   "message": "⚠️ Target proof not found: bafy...nonexistent-contract",
   "relatedInformation": [
     {
@@ -242,7 +242,7 @@ Provides action buttons above annotated functions.
   "range": { "start": {"line":42,"character":0}, "end": {"line":47,"character":1} },
   "command": {
     "title": "✅ Verified (3 domains)",
-    "command": "provekit.showDag",
+    "command": "sugar.showDag",
     "arguments": ["bafy...js-parseInt-v24"]
   }
 }
@@ -254,7 +254,7 @@ For unverified functions:
   "range": { "start": {"line":42,"character":0}, "end": {"line":47,"character":1} },
   "command": {
     "title": "⚠️ Verify",
-    "command": "provekit.verify",
+    "command": "sugar.verify",
     "arguments": ["my_parse_int", "bafy...js-parseInt-v24"]
   }
 }
@@ -269,7 +269,7 @@ Quick fixes for common violations.
 {
   "textDocument": { "uri": "file:///project/src/lib.rs" },
   "range": { "start": {"line":45,"character":4}, "end": {"line":45,"character":28} },
-  "context": { "diagnostics": [{"code":"provekit.violation"}] }
+  "context": { "diagnostics": [{"code":"sugar.violation"}] }
 }
 ```
 
@@ -280,7 +280,7 @@ Quick fixes for common violations.
     {
       "title": "Replace unwrap() with unwrap_or(0)",
       "kind": "quickfix",
-      "diagnostics": [{"code":"provekit.violation"}],
+      "diagnostics": [{"code":"sugar.violation"}],
       "edit": {
         "changes": {
           "file:///project/src/lib.rs": [
@@ -310,7 +310,7 @@ Quick fixes for common violations.
       "title": "Ignore this contract violation",
       "kind": "quickfix",
       "command": {
-        "command": "provekit.ignoreViolation",
+        "command": "sugar.ignoreViolation",
         "arguments": ["bafy...js-parseInt-v24", "s.parse().unwrap()"]
       }
     }
@@ -322,17 +322,17 @@ Quick fixes for common violations.
 
 Server-side commands invoked by client actions.
 
-**Command: `provekit.verify`**
+**Command: `sugar.verify`**
 - Input: `(functionName: string, targetCid: string)`
-- Action: Run `provekit verify` on the function body against the target contract
+- Action: Run `sugar verify` on the function body against the target contract
 - Result: Publish diagnostics with verification result
 
-**Command: `provekit.showDag`**
+**Command: `sugar.showDag`**
 - Input: `(cid: string)`
 - Action: Compute transitive closure of bridges from CID
 - Result: Open webview panel showing interactive DAG visualization
 
-**Command: `provekit.reverify`**
+**Command: `sugar.reverify`**
 - Input: `(cid: string)`
 - Action: Invalidate cache and re-run verification
 - Result: Publish fresh diagnostics
@@ -351,9 +351,9 @@ When the user types, the server:
 4. Publishes diagnostics when results arrive
 
 The verification queue is **prioritized**:
-1. Functions with `#[provekit::implement]` (highest — explicit contract)
-2. Functions with `#[provekit::verify]` (high — need verification)
-3. Functions with `#[provekit::contract]` (medium — may affect callers)
+1. Functions with `#[sugar::implement]` (highest — explicit contract)
+2. Functions with `#[sugar::verify]` (high — need verification)
+3. Functions with `#[sugar::contract]` (medium — may affect callers)
 4. Call sites to verified functions (low — inherited verification)
 
 ## Workspace Indexing
@@ -374,7 +374,7 @@ On workspace open, the server:
 
 3. **Scans for source annotations:**
    - Tree-sitter parse of all source files
-   - Extract `#[provekit::implement]`, `#[provekit::contract]`, `#[provekit::verify]`
+   - Extract `#[sugar::implement]`, `#[sugar::contract]`, `#[sugar::verify]`
    - Build symbol → contract CID mapping
 
 4. **Builds bridge graph:**
@@ -410,13 +410,13 @@ fn parse_int(s: &str) -> i64  /* parseInt(s) ≥ 0 */ {
 
 The language server invokes the canonical CLI for all verification. The CLI is the single implementation of the verifier; the LSP never reimplements verification logic.
 
-### `provekit verify --format json`
+### `sugar verify --format json`
 
 **Input:** The CLI reads the workspace, discovers `.proof` bundles, and verifies the specified function.
 
 **Invocation:**
 ```bash
-provekit verify \
+sugar verify \
   --function my_parse_int \
   --target-cid bafy...js-parseInt-v24 \
   --file src/lib.rs \
@@ -442,7 +442,7 @@ provekit verify \
 }
 ```
 
-### `provekit verify --format json` (failure)
+### `sugar verify --format json` (failure)
 
 ```json
 {
@@ -480,11 +480,11 @@ The language server parses this JSON and maps it to LSP diagnostics. The CLI is 
 If the language server is unavailable, the IDE falls back to:
 - Syntax highlighting from tree-sitter grammar
 - Basic hover (just the annotation text)
-- No real-time verification (run `provekit prove` manually)
+- No real-time verification (run `sugar prove` manually)
 
 ## Protocol Version
 
-This spec is v1.0.0 of the ProvekIt LSP protocol. Future versions add:
+This spec is v1.0.0 of the Sugar LSP protocol. Future versions add:
 - v1.1.0: Folding ranges for nested contract scopes
 - v1.2.0: Workspace symbols (search contracts by name/CID)
 - v1.3.0: Call hierarchy (show all implementations of a reference contract)

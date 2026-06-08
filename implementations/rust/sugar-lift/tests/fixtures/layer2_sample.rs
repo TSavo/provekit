@@ -1,5 +1,5 @@
 // Fixture: Layer 2 lift patterns. Used by integration tests in
-// provekit-lift/tests/. NOT compiled (this file has no Cargo target);
+// sugar-lift/tests/. NOT compiled (this file has no Cargo target);
 // the lift adapter parses it as text via syn.
 //
 // Layer 2 catches structural patterns Layer 0 cannot:

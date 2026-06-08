@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit version`.
+// `sugar version`.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

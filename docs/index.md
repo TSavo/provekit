@@ -21,7 +21,7 @@ verification, while semantic proving still happens when a claim is minted,
 changed, or newly composed.
 
 The canonical CLI embeds its current protocol catalog. Verify your local binary
-with `provekit verify-protocol`; see [reference/cids.md](reference/cids.md) for
+with `sugar verify-protocol`; see [reference/cids.md](reference/cids.md) for
 spec CID background.
 
 ## References
@@ -75,7 +75,7 @@ See [reference/per-language-status.md](reference/per-language-status.md) for the
 | Run Bug Zoo specimens | [how-to/bug-zoo.md](how-to/bug-zoo.md) |
 | Debug a failed verifier or IDE handshake | [how-to/debugging-a-failed-handshake.md](how-to/debugging-a-failed-handshake.md) |
 | Integrate an IDE | [how-to/ide-integration/overview.md](how-to/ide-integration/overview.md) |
-| Use the example GitHub workflow | [templates/provekit-example-workflow.yml](templates/provekit-example-workflow.yml) |
+| Use the example GitHub workflow | [templates/sugar-example-workflow.yml](templates/sugar-example-workflow.yml) |
 | Read CI and operational logs | [operations/logging.md](operations/logging.md) |
 
 ## Protocol surface

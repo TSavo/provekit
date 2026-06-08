@@ -8,8 +8,8 @@
 //
 // The Value trees are hand-built here to exactly mirror the Python
 // kit's construction in ir.py / proof_envelope.py, so the probe is
-// self-contained and needs no dependency on provekit-ir-symbolic or
-// provekit-proof-envelope.
+// self-contained and needs no dependency on sugar-ir-symbolic or
+// sugar-proof-envelope.
 
 use std::process::ExitCode;
 use std::sync::Arc;

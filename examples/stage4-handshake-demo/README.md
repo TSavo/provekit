@@ -25,7 +25,7 @@ bash examples/stage4-handshake-demo/run.sh
 ```
 
 Requirements: `cargo`, `go`, `z3` on PATH. Override the z3 binary
-with `PROVEKIT_Z3=/path/to/z3` if needed.
+with `SUGAR_Z3=/path/to/z3` if needed.
 
 ## Four scripted runs
 
@@ -48,7 +48,7 @@ empty, Tier 2 also misses. The verifier falls through to Tier 3,
 which builds the implication obligation
 `forall x: Int. (x >= 1) -> (x > 0)`, hands it to Z3, gets `unsat`
 (the implication holds), and **mints a signed implication memento**
-into `.provekit/cache/`. The memento's `propertyHash` is
+into `.sugar/cache/`. The memento's `propertyHash` is
 `BLAKE3("implication:<post_hash>:<pre_hash>")`.
 
 The script then re-runs the same scenario with the cache warm. Tier
@@ -61,7 +61,7 @@ invocations** on the warm replay.
 Go switches its post to `forall n: Int. n >= 0`. The post's
 propertyHash changes. The cache key the verifier computes for this
 new pair is `BLAKE3("implication:<NEW post_hash>:<pre_hash>")`, which
-matches no file in `.provekit/cache/`. The cached memento from Run B
+matches no file in `.sugar/cache/`. The cached memento from Run B
 indexed under the *old* post_hash is not invalidated; it is simply
 not addressed by the new key. Tier 2 misses without any cache
 maintenance event ever firing.
@@ -134,7 +134,7 @@ examples/stage4-handshake-demo/
 ├── README.md                this file
 ├── run.sh                   orchestrates all four runs
 ├── stage4_driver.rs         per-run Rust driver (added as an
-│                            example to provekit-verifier)
+│                            example to sugar-verifier)
 └── go-validate-kit/
     ├── go.mod               module replace pointing at the in-tree
     │                        Go ir-symbolic kit
@@ -143,16 +143,16 @@ examples/stage4-handshake-demo/
 
 The artifacts each run produces (one Go-published .proof, two
 Rust-published .proofs, one signed implication memento) live under
-`$TMPDIR/provekit-stage4-<timestamp>/`. Set `STAGE4_KEEP=1` to keep
+`$TMPDIR/sugar-stage4-<timestamp>/`. Set `STAGE4_KEEP=1` to keep
 them on disk for inspection.
 
 ## Verifier internals
 
 The Tier 1/2/3 ladder lives in
-`implementations/rust/provekit-verifier/src/runner.rs::work_one`. The
+`implementations/rust/sugar-verifier/src/runner.rs::work_one`. The
 content-addressed cache scanner is
-`implementations/rust/provekit-verifier/src/handshake.rs`. Both run
-unchanged for any consumer of `provekit-verifier::Runner` that
+`implementations/rust/sugar-verifier/src/handshake.rs`. Both run
+unchanged for any consumer of `sugar-verifier::Runner` that
 populates `RunnerConfig::cache_dir`, `mint_seed`, and
 `mint_producer_id`.
 
@@ -162,5 +162,5 @@ inline so any Tier-2 reader can verify the signature without an
 external key store. The memento's `bindingHash` and `propertyHash`
 are derived per
 `protocol/specs/2026-04-30-memento-envelope-grammar.md`. Any other
-ProvekIt verifier (Go, C++, TypeScript) that loads the same .proof
+Sugar verifier (Go, C++, TypeScript) that loads the same .proof
 catalog will see the same memento and verify the same signature.

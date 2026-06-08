@@ -4,7 +4,7 @@ This page is the short operational reference for kit-local editor helpers.
 The shared editor protocol is defined in
 [`2026-05-25-lsp-shared-protocol.md`](../../protocol/specs/2026-05-25-lsp-shared-protocol.md).
 Its canonical machine-readable catalog is
-[`protocol/catalogs/provekit-lsp-shared-1.catalog.json`](../../protocol/catalogs/provekit-lsp-shared-1.catalog.json),
+[`protocol/catalogs/sugar-lsp-shared-1.catalog.json`](../../protocol/catalogs/sugar-lsp-shared-1.catalog.json),
 whose `protocol_catalog_cid` is
 `blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c`.
 
@@ -42,11 +42,11 @@ The helper should cache by source-text hash, AST hash, protocol catalog CID, and
 
 ## Diagnostics
 
-Diagnostics use source `provekit`, stable codes, and source ranges from the
-editor's document snapshot. The `provekit.lsp.*` code authority is
+Diagnostics use source `sugar`, stable codes, and source ranges from the
+editor's document snapshot. The `sugar.lsp.*` code authority is
 [`2026-05-25-lsp-shared-protocol.md` §6](../../protocol/specs/2026-05-25-lsp-shared-protocol.md#6-diagnostics);
 [error codes](error-codes.md) covers the broader cross-component
-`PROVEKIT_*` handles. The helper should report the protocol catalog CID it used
+`SUGAR_*` handles. The helper should report the protocol catalog CID it used
 so editor logs can diagnose catalog mismatch.
 
 ## Read Next

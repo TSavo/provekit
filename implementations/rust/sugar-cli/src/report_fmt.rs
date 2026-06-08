@@ -102,7 +102,7 @@ fn load_error_to_json(e: &LoadError) -> Json {
 
 pub fn print_report_pretty(r: &Report, quiet: bool) {
     if !quiet {
-        println!("{}", "ProvekIt verifier report".bold());
+        println!("{}", "Sugar verifier report".bold());
         println!("  total callsites : {}", r.total_callsites);
         println!("  discharged      : {}", r.discharged.to_string().green());
         println!(

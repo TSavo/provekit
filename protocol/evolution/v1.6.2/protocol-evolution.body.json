@@ -1,7 +1,7 @@
 {
   "kind": "ProtocolEvolutionBodyClaim",
   "schemaVersion": "1",
-  "protocolName": "provekit-protocol",
+  "protocolName": "sugar-protocol",
   "fromCatalogCid": "blake3-512:fa1fbf90b7f092b732cd2b088d12210befe304065acbe0f9640785a911dd917f1c49fb90d1ff4dcd1861310cf739350ef60b46f1b54be0ea54ccb09d0c1b76f0",
   "toCatalogCid": "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f",
   "fromVersionLabel": "v1.6.1-2026-05-07",
@@ -49,7 +49,7 @@
   ],
   "producer": {
     "kind": "automation",
-    "name": "provekit-cicp-dogfood",
+    "name": "sugar-cicp-dogfood",
     "version": "0.1.0"
   }
 }

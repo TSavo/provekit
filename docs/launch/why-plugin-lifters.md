@@ -18,7 +18,7 @@ The "any verifiable proposition" claim is aspirational under this model. Operati
 
 ## With the plugin lifter
 
-A pharma company writes an FDA-forms lifter in Python. They drop a manifest at `~/.config/provekit/lift/fda-forms/manifest.toml` and a `.provekit/config.toml` in their project root saying `[authoring] surface = "fda-forms"`. `provekit mint` discovers it, dispatches over JSON-RPC stdio, gets canonical IR back, mints. Their FDA forms become content-addressed propositions in the proof DAG. They never spoke to the protocol's authors.
+A pharma company writes an FDA-forms lifter in Python. They drop a manifest at `~/.config/sugar/lift/fda-forms/manifest.toml` and a `.sugar/config.toml` in their project root saying `[authoring] surface = "fda-forms"`. `sugar mint` discovers it, dispatches over JSON-RPC stdio, gets canonical IR back, mints. Their FDA forms become content-addressed propositions in the proof DAG. They never spoke to the protocol's authors.
 
 A bank writes a SOC2-controls lifter. Same shape. Their auditors verify content-addressed `.proof` files instead of reviewing PDFs.
 

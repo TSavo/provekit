@@ -1,7 +1,7 @@
 # OpCoverageVerdict: Four-State Trichotomy Ruling
 
 Date: 2026-05-18
-Status: Active. Implemented in libprovekit/src/core/types.rs via PR #1204.
+Status: Active. Implemented in libsugar/src/core/types.rs via PR #1204.
 
 ## Ruling
 

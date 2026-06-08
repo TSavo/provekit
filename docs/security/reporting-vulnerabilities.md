@@ -33,7 +33,7 @@ Two channels:
 
 For anything that fits the "vulnerability" definition above:
 
-- **Email**: `security@provekit.dev` (or whatever address the project's `SECURITY.md` lists).
+- **Email**: `security@sugar.dev` (or whatever address the project's `SECURITY.md` lists).
 - **GitHub Security Advisories**: open a private advisory on the project's GitHub repository.
 
 Do NOT post vulnerability details in public issue trackers, public PRs, or public chat channels.
@@ -61,7 +61,7 @@ Example template:
 
 ```
 ## Affected component
-provekit-canonicalizer, version 1.1.0, in implementations/rust/provekit-canonicalizer
+sugar-canonicalizer, version 1.1.0, in implementations/rust/sugar-canonicalizer
 
 ## Severity
 High: produces non-canonical bytes for a specific edge case, breaking

@@ -1,4 +1,4 @@
-# ProvekIt: AST canonicalizer
+# Sugar: AST canonicalizer
 
 > Author: shared session 2026-04-29 (T + Claude). The byte-identical-
 > FOL-hash machinery that makes cross-language equivalence operational.
@@ -458,8 +458,8 @@ interface AstCanonicalizer {
 ```
 
 Kits implement this interface in their host language's idiomatic form.
-The TypeScript reference lives in `@provekit/ast-canonicalizer`. The
-Go reimplementation lives in `provekit/canonicalizer`. Each is a
+The TypeScript reference lives in `@sugar/ast-canonicalizer`. The
+Go reimplementation lives in `sugar/canonicalizer`. Each is a
 small library (~1000 LOC) containing the canonicalization rules; the
 heavy lifting is the host-language AST walk.
 
@@ -578,8 +578,8 @@ versions match before composing mementos.
 
 With the canonicalizer specified:
 
-- The IR library specs become operational. `@provekit/ir` and
-  `provekit/ir` (Go) and equivalent libraries in any host language
+- The IR library specs become operational. `@sugar/ir` and
+  `sugar/ir` (Go) and equivalent libraries in any host language
   produce comparable IR-formula data, which produces matching hashes.
 - Cross-language cross-validation is mechanical, not aspirational.
 - The kit-standard's acceptance test (formulas in two host languages
@@ -587,7 +587,7 @@ With the canonicalizer specified:
 - The whitepaper's central claim — *the framework rides every host
   language ever made and the artifacts compose* — is empirically
   defensible against the corpus.
-- The fungibility claim (ProvekIt / ProvegIt / ProverIt produce
+- The fungibility claim (Sugar / ProvegIt / ProverIt produce
   interchangeable artifacts) is testable: their canonicalizers must
   pass the same corpus.
 

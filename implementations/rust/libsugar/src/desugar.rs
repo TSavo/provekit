@@ -10,7 +10,7 @@ use serde_json::Value as JsonValue;
 use sugar_ir_types::{IrTerm, Sort};
 
 use crate::canonical::serializable_jcs;
-use crate::ProvekitError;
+use crate::SugarError;
 
 const MAX_REWRITE_STEPS: usize = 10_000;
 
@@ -315,7 +315,7 @@ pub fn desugar(set: &DesugaringSet, term: IrTerm) -> std::result::Result<Desugar
     ))
 }
 
-fn refusal_from_error(error: ProvekitError) -> Refusal {
+fn refusal_from_error(error: SugarError) -> Refusal {
     Refusal::new(
         RefusalKind::InvalidDesugaringEquation,
         error.to_string(),

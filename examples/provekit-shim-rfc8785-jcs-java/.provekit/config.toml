@@ -1,8 +1,0 @@
-[authoring]
-surface = "java-bind"
-
-[platform_profile]
-language = "java"
-family = "concept:family:json-canonicalization"
-library = "provekit-rfc8785-jcs-java"
-version = "0.1"

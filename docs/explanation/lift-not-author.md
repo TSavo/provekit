@@ -74,7 +74,7 @@ Sugar's adoption story:
 
 1. Notice your codebase already uses an annotation library.
 2. Install the lift adapter for that library.
-3. Run `provekit prove`.
+3. Run `sugar prove`.
 4. Receive verification reports.
 
 Steps 1 and 2 are trivial. Step 3 is automated. The friction that defeated formal verification for fifty years is bypassed.
@@ -105,7 +105,7 @@ The framing "Sugar sits beneath every annotation library" is precise. The protoc
 
 This is intentional. Competing with annotation libraries would re-introduce the adoption problem (developers would have to choose between their existing library and Sugar's). Sitting beneath them eliminates the choice.
 
-A codebase using `pydantic` for type validation now has a path: ship the same `pydantic` annotations, and let `provekit-lift-pydantic` (running underneath) emit canonical IR. The team's authoring workflow is unchanged; the verification surface is gained.
+A codebase using `pydantic` for type validation now has a path: ship the same `pydantic` annotations, and let `sugar-lift-pydantic` (running underneath) emit canonical IR. The team's authoring workflow is unchanged; the verification surface is gained.
 
 ## Comparison to "convince developers to spec"
 

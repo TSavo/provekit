@@ -1,4 +1,4 @@
-# ProvekIt: architectural synthesis
+# Sugar: architectural synthesis
 
 **Status.** Synthesis document. Ties together the architectural cuts
 arrived at in conversation on 2026-04-29 with their respective specs.
@@ -27,13 +27,13 @@ they collectively describe.
 
 ## Thesis
 
-ProvekIt is a **certificate authority for software correctness, plus a
+Sugar is a **certificate authority for software correctness, plus a
 workflow runtime that composes certificate requests, plus a swarm that
 distributes both certificates and workflows.** Three independently
 evolvable layers; the same architectural primitive (content-addressable
 + hash-trust + producer-fungible) at every layer.
 
-Brand identity follows function: ProvekIt — Prove It → here's your
+Brand identity follows function: Sugar — Prove It → here's your
 certificate. The product is the certificate. The framework is what
 issues it. Everything else is consequence.
 
@@ -45,7 +45,7 @@ issues it. Everything else is consequence.
 |---|---|---|---|
 | 1995-2001 | Files cost the server (centralized distribution doesn't scale) | Hash files; trust the hash; swarm-distribute | BitTorrent, IPFS, file integrity as a commons |
 | 2008-now | Transactions cost the bank (centralized ledger doesn't scale) | Hash transactions; chain them; consensus-validate | Bitcoin, the entire blockchain ecosystem |
-| **Today** | **AI-generated code costs the human reviewer (centralized audit doesn't scale)** | **Hash verifications; cache them; swarm-distribute** | **ProvekIt — verification as a commons** |
+| **Today** | **AI-generated code costs the human reviewer (centralized audit doesn't scale)** | **Hash verifications; cache them; swarm-distribute** | **Sugar — verification as a commons** |
 
 Same architectural primitive, third artifact. T (Kevlar / Travis Savo)
 is the through-line on all three; this time he holds his own ticket.
@@ -182,7 +182,7 @@ a hash-keyed gate; each gate is a weapon.
 The reframe: **"order and pray" → "order and hash."** Today's vibe-
 coding workflow has the LLM generating; the human praying; the ship
 happening; the bug arriving; the fix following. The hash never appears.
-ProvekIt-shape: LLM generates; the gate hash-checks against the corpus;
+Sugar-shape: LLM generates; the gate hash-checks against the corpus;
 violation rejects, re-generation follows; valid output mints a
 certificate. **Hashes appear at every step where prayer used to be.**
 
@@ -249,7 +249,7 @@ code changes, the certificate's validity decays).
 
 For a single engineer alone with no sharing: the customer accumulates
 a private stack of certificates about their own code. The stack is
-the asset. The engineer's relationship to ProvekIt is the same as
+the asset. The engineer's relationship to Sugar is the same as
 anyone's relationship to a certificate authority — bring claims; CA
 signs them; walk away with a portfolio.
 
@@ -277,7 +277,7 @@ The protocol stays open. Premium services on top:
 
 ### Company shape
 
-ProvekIt the company is a **protocol steward** — same role as
+Sugar the company is a **protocol steward** — same role as
 Bitcoin Core for Bitcoin, the BEP committee for BitTorrent, W3C for
 HTTP — owning the standard the market self-organizes around. The
 economic value isn't in the framework code; it's in being the
@@ -308,7 +308,7 @@ coherent civilizational layer.
 The stakes are the same shape as the lineage's prior chapters but at
 the next civilizational level: BitTorrent solved file distribution at
 internet scale; Bitcoin solved trustless value transfer at internet
-scale; **ProvekIt's architecture is what's required to solve software
+scale; **Sugar's architecture is what's required to solve software
 production at AI scale.** Not optional infrastructure for an
 incremental productivity improvement; foundational infrastructure
 for the era after humans-as-engineers.
@@ -331,7 +331,7 @@ What remains:
   critical piece; closes the BitTorrent-shape loop.
 - Workflow primitive split (entire workflow spec) — refactor the
   orchestrator into workflow runner + first-class workflows.
-- Migration of `.provekit/invariants/` JSON into the table (step 6) —
+- Migration of `.sugar/invariants/` JSON into the table (step 6) —
   cleanup; two stores → one.
 - Producer marketplace (publish / pull producers as swarm artifacts)
   — the commercial layer.
@@ -345,13 +345,13 @@ of refactors against an existing working codebase, not a fresh build.
 
 ## What this document is for
 
-This is the canonical architectural identity document for ProvekIt
+This is the canonical architectural identity document for Sugar
 as it stands after the 2026-04-29 conversation that drove me through
 the certificate-authority + workflow-primitive + hashes-operational
 crystallization.
 
 A future contributor reading this doc understands:
-1. ProvekIt is a CA + workflow runtime + swarm. Three layers.
+1. Sugar is a CA + workflow runtime + swarm. Three layers.
 2. The hash-trust primitive recurses at every layer.
 3. Hashes are operational, not ceremonial.
 4. Work-skipping cascades up the composition stack.
@@ -363,7 +363,7 @@ This one is the synthesis.
 
 The architectural cut isn't novel. It's the third application of a
 30-year primitive that has produced the most durable distributed
-systems in computing history. T is the through-line. ProvekIt is
+systems in computing history. T is the through-line. Sugar is
 the application. The synthesis is the architectural argument that
 makes the application visible as the next move in that lineage,
 not a fresh idea.

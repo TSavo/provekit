@@ -21,9 +21,9 @@ proptest! {
 }
 ```
 
-`provekit-lift-proptest` walks `proptest!` blocks, recognizes the universal-quantification idiom, and emits a contract memento whose `pre` is the conjunction of `prop_assume!` clauses and whose `post` is the conjunction of `prop_assert!` clauses. The memento is bridged to the function under test (`divide` in this example) via a bridge memento in the same `.proof`.
+`sugar-lift-proptest` walks `proptest!` blocks, recognizes the universal-quantification idiom, and emits a contract memento whose `pre` is the conjunction of `prop_assume!` clauses and whose `post` is the conjunction of `prop_assert!` clauses. The memento is bridged to the function under test (`divide` in this example) via a bridge memento in the same `.proof`.
 
-After `provekit mint --project <workspace-root>`, the resulting catalog carries the universal property as a content-addressed signed contract. Consumers downstream verify against the contract without re-running the property test.
+After `sugar mint --project <workspace-root>`, the resulting catalog carries the universal property as a content-addressed signed contract. Consumers downstream verify against the contract without re-running the property test.
 
 **Coverage today:** `prop_assume!`, `prop_assert!`, `prop_assert_eq!`, `prop_assert_ne!`, basic arithmetic and comparison predicates. Strategy expressions are recognized but not all are lifted.
 
@@ -39,7 +39,7 @@ fn divide(a: f64, b: f64) -> f64 {
 }
 ```
 
-`provekit-lift-contracts` walks `#[requires(...)]`, `#[ensures(...)]`, and `#[invariant(...)]` macros. Each annotation becomes one term of the contract memento's `pre`, `post`, or `inv`. The bridge memento maps the function symbol to the contract CID.
+`sugar-lift-contracts` walks `#[requires(...)]`, `#[ensures(...)]`, and `#[invariant(...)]` macros. Each annotation becomes one term of the contract memento's `pre`, `post`, or `inv`. The bridge memento maps the function symbol to the contract CID.
 
 **Coverage today:** `requires`, `ensures`, `invariant`. Old/new variable references in `ensures` are partially supported; complex existential quantification routes through Tier 3 of the handshake.
 
@@ -209,7 +209,7 @@ The C++ adapter walks `[[expects:]]` and `[[ensures:]]` attributes (C++26 contra
 
 ## How to read this list
 
-Each adapter is real engineering. The shipping adapters in v1.1 are `provekit-lift-proptest` and `provekit-lift-contracts` for Rust. Everything else is on the v1.2 roadmap or under evaluation.
+Each adapter is real engineering. The shipping adapters in v1.1 are `sugar-lift-proptest` and `sugar-lift-contracts` for Rust. Everything else is on the v1.2 roadmap or under evaluation.
 
 The pattern's uniformity is the load-bearing claim. Whatever annotation library a codebase already uses, the lift adapter's job is the same: walk the idiom, emit canonical IR, mint a signed contract memento. The protocol bytes the adapter produces are identical regardless of which source library the input came from. Two contract mementos, one from `proptest` and one from `pydantic`, expressing the same proposition, share a CID.
 
@@ -228,9 +228,9 @@ Lifting does not require the source library at runtime. Once the `.proof` is pro
 The interface is small. A lift adapter implements:
 
 1. A walker over the source library's idiom (typically using `syn` for Rust, the TypeScript Compiler API for TS, `ast` for Python, JavaParser for Java).
-2. A translator from idiom to IR (using the host-language IR library: `provekit-ir-symbolic`).
+2. A translator from idiom to IR (using the host-language IR library: `sugar-ir-symbolic`).
 3. A bridge emitter that maps each lifted contract to its source-language symbol.
 
-The output is a sequence of `(contractMemento, bridgeMemento)` pairs. The driver (`provekit mint --project <workspace-root>` for Rust, equivalents for other languages) takes care of canonicalization, hashing, signing, and writing the `.proof`.
+The output is a sequence of `(contractMemento, bridgeMemento)` pairs. The driver (`sugar mint --project <workspace-root>` for Rust, equivalents for other languages) takes care of canonicalization, hashing, signing, and writing the `.proof`.
 
 If you want to write an adapter for a library not on this list, the per-language kit standard at CID `blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88` defines the contract every adapter implements. Reach out via the project repository; adapter contributions are explicitly in scope.

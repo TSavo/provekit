@@ -169,7 +169,7 @@ fn chain_integrity_failure_witness_round_trips_through_jcs() {
 }
 
 #[test]
-fn provekit_transform_returns_claim_input_unchanged() {
+fn sugar_transform_returns_claim_input_unchanged() {
     let claim = claim_fixture("identity");
     let root_cid = claim.cid();
     let kit = ProveKit::new(root_cid, HashMapCatalog::default());
@@ -182,7 +182,7 @@ fn provekit_transform_returns_claim_input_unchanged() {
 }
 
 #[test]
-fn provekit_prove_sets_proved_verdict_and_chain_integrity_witness() {
+fn sugar_prove_sets_proved_verdict_and_chain_integrity_witness() {
     let root = claim_fixture("root");
     let root_cid = root.cid();
     let mut terminal = claim_fixture("terminal");
@@ -205,7 +205,7 @@ fn provekit_prove_sets_proved_verdict_and_chain_integrity_witness() {
 }
 
 #[test]
-fn provekit_prove_sets_refuted_verdict_and_failure_witness_on_missing_premise() {
+fn sugar_prove_sets_refuted_verdict_and_failure_witness_on_missing_premise() {
     let root_cid = address(&"root");
     let missing_cid = address(&"missing-premise");
     let mut terminal = claim_fixture("terminal");
@@ -231,7 +231,7 @@ fn provekit_prove_sets_refuted_verdict_and_failure_witness_on_missing_premise() 
 }
 
 #[test]
-fn provekit_prove_reflects_cycle_detected_in_failure_witness() {
+fn sugar_prove_reflects_cycle_detected_in_failure_witness() {
     let root_cid = address(&"root");
     let cycle_cid = address(&"cycle");
     let mut cycle_claim = claim_fixture("cycle-claim");
@@ -261,7 +261,7 @@ fn provekit_prove_reflects_cycle_detected_in_failure_witness() {
 }
 
 #[test]
-fn kit_registry_registers_provekit_under_public_prove_name() {
+fn kit_registry_registers_sugar_under_public_prove_name() {
     let root_cid = address(&"root");
     let mut registry = KitRegistry::default();
 

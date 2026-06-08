@@ -1,7 +1,7 @@
 {
   "kind": "ProtocolCatalogDiff",
   "schemaVersion": "1",
-  "protocolName": "provekit-protocol",
+  "protocolName": "sugar-protocol",
   "fromCatalogCid": "blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781",
   "toCatalogCid": "blake3-512:fa1fbf90b7f092b732cd2b088d12210befe304065acbe0f9640785a911dd917f1c49fb90d1ff4dcd1861310cf739350ef60b46f1b54be0ea54ccb09d0c1b76f0",
   "fromVersionLabel": "v1.6.0-2026-05-05",

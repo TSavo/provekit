@@ -69,7 +69,7 @@ predicates:
   missingEdge: maybe_null(name) => non_null(name)
 languages:
   - id: java
-    surface: java-provekit-native-and-spring-web
+    surface: java-sugar-native-and-spring-web
     paths:
       labLibrary: java/lab/library
       labHarness: java/lab/harness
@@ -79,15 +79,15 @@ languages:
         cwd: java/lab/harness
         argv: ["./run.sh"]
     exhibits:
-      - id: provekit-native
-        surface: java-provekit-native
-        harness: java/exhibit/provekit-native/harness
-        kitRpc: java/exhibit/provekit-native/kit-rpc
+      - id: sugar-native
+        surface: java-sugar-native
+        harness: java/exhibit/sugar-native/harness
+        kitRpc: java/exhibit/sugar-native/kit-rpc
         liftRpc:
-          cwd: java/exhibit/provekit-native/kit-rpc
+          cwd: java/exhibit/sugar-native/kit-rpc
           argv: ["./run-java-lifter.sh"]
-        proofIrFile: java/exhibit/provekit-native/expected.proofir.json
-        diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
+        proofIrFile: java/exhibit/sugar-native/expected.proofir.json
+        diagnosticFile: java/exhibit/sugar-native/expected-diagnostic.txt
         lossiness:
           erased: ["Java body"]
           preserved: ["precondition neq(name, null)"]
@@ -133,7 +133,7 @@ wildSightings: []
         assert_eq!(manifest.id, "BZ-SHAPE-005");
         assert_eq!(manifest.languages.len(), 2);
         assert_eq!(manifest.languages[0].id, "java");
-        assert_eq!(manifest.languages[0].exhibits[0].id, "provekit-native");
+        assert_eq!(manifest.languages[0].exhibits[0].id, "sugar-native");
         assert_eq!(manifest.languages[1].id, "typescript");
         assert_eq!(
             manifest.languages[1].exhibits[0].harness,
@@ -150,19 +150,19 @@ In `bug-zoo/tests/smoke.rs`, add this test after `all_specimens_pass`:
 #[test]
 fn all_specimens_reports_one_null_boundary_species() {
     let root = repo_root();
-    let output = Command::new(env!("CARGO_BIN_EXE_provekit-bug-zoo"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sugar-bug-zoo"))
         .arg(root.join("bug-zoo/species"))
         .arg("--all")
         .arg("--json")
         .current_dir(&root)
         .output()
-        .expect("spawn provekit-bug-zoo --all --json");
+        .expect("spawn sugar-bug-zoo --all --json");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit-bug-zoo --all --json failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar-bug-zoo --all --json failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let report: serde_json::Value =
         serde_json::from_str(&stdout).expect("bug zoo JSON report parses");
@@ -609,7 +609,7 @@ let exhibit = &language.exhibits[0];
 Update the remaining validation tests with the same nesting:
 
 - `validation_rejects_missing_lossiness`: clear `manifest.languages[0].exhibits[0].lossiness.erased`.
-- `validation_rejects_duplicate_exposure_ids`: rename the test to `validation_rejects_duplicate_exhibit_ids`, push the duplicate onto `manifest.languages[0].exhibits`, use `java/exhibit/provekit-native/...` paths, and assert the error contains `duplicate exhibit id`.
+- `validation_rejects_duplicate_exposure_ids`: rename the test to `validation_rejects_duplicate_exhibit_ids`, push the duplicate onto `manifest.languages[0].exhibits`, use `java/exhibit/sugar-native/...` paths, and assert the error contains `duplicate exhibit id`.
 - `validation_rejects_unknown_equivalence_references`: set `manifest.languages[0].equivalence.required`.
 - `validation_rejects_empty_command_argv`: clear `manifest.languages[0].commands.host_check.argv` and `manifest.languages[0].exhibits[0].lift_rpc.argv`; assert the messages contain `commands.hostCheck.argv is required` and `exhibit \`spring-web\` liftRpc.argv is required`.
 - `validation_rejects_language_dropper_without_proof_plan`: assign the `Dropper` to `manifest.languages[0].dropper` and use `java/...` paths.
@@ -744,7 +744,7 @@ predicates:
   missingEdge: maybe_null(name) => non_null(name)
 languages:
   - id: java
-    surface: java-provekit-native-and-spring-web
+    surface: java-sugar-native-and-spring-web
     paths:
       labLibrary: java/lab/library
       labHarness: java/lab/harness
@@ -754,15 +754,15 @@ languages:
         cwd: java/lab/harness
         argv: ["./run.sh"]
     exhibits:
-      - id: provekit-native
-        surface: java-provekit-native
-        harness: java/exhibit/provekit-native/harness
-        kitRpc: java/exhibit/provekit-native/kit-rpc
+      - id: sugar-native
+        surface: java-sugar-native
+        harness: java/exhibit/sugar-native/harness
+        kitRpc: java/exhibit/sugar-native/kit-rpc
         liftRpc:
-          cwd: java/exhibit/provekit-native/kit-rpc
+          cwd: java/exhibit/sugar-native/kit-rpc
           argv: ["./run-java-lifter.sh"]
-        proofIrFile: java/exhibit/provekit-native/expected.proofir.json
-        diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
+        proofIrFile: java/exhibit/sugar-native/expected.proofir.json
+        diagnosticFile: java/exhibit/sugar-native/expected-diagnostic.txt
         lossiness:
           erased:
             - Java method body string concatenation
@@ -786,23 +786,23 @@ languages:
             - precondition neq(name, null)
     equivalence:
       required:
-        - [provekit-native, spring-web]
+        - [sugar-native, spring-web]
     exposure:
       satWitnessFile: java/exhibit/sat-witness.json
     dropper:
       available: true
-      surface: java-provekit-native
+      surface: java-sugar-native
       source: java/lab/library/src/main/java/zoo/UserDirectory.java
       targetSymbol: lookup
       proofVar: name
       realizerRpc:
-        cwd: java/dropped/provekit-native/kit-rpc
+        cwd: java/dropped/sugar-native/kit-rpc
         argv: ["./run-java-realizer.sh"]
-      outputSource: java/dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java
-      proofPlanFile: java/dropped/provekit-native/proof-plan.json
-      languageDropperFile: java/dropped/provekit-native/language-dropper.json
-      closureProofIrFile: java/dropped/provekit-native/closure.proofir.json
-      fixReceiptFile: java/dropped/provekit-native/fix-receipt.json
+      outputSource: java/dropped/sugar-native/library/src/main/java/zoo/UserDirectory.java
+      proofPlanFile: java/dropped/sugar-native/proof-plan.json
+      languageDropperFile: java/dropped/sugar-native/language-dropper.json
+      closureProofIrFile: java/dropped/sugar-native/closure.proofir.json
+      fixReceiptFile: java/dropped/sugar-native/fix-receipt.json
   - id: typescript
     surface: typescript-zod-and-class-validator
     paths:
@@ -864,7 +864,7 @@ languages:
       closureProofIrFile: typescript/dropped/typescript-native/closure.proofir.json
       fixReceiptFile: typescript/dropped/typescript-native/fix-receipt.json
   - id: csharp
-    surface: csharp-data-annotations-provekit-annotations-and-linq
+    surface: csharp-data-annotations-sugar-annotations-and-linq
     paths:
       labLibrary: csharp/lab/library
       labHarness: csharp/lab/harness
@@ -889,19 +889,19 @@ languages:
             - concrete DataAnnotations runtime implementation
           preserved:
             - precondition neq(name, null)
-      - id: provekit-annotations
-        surface: csharp-provekit-annotations
-        harness: csharp/exhibit/provekit-annotations/harness
-        kitRpc: csharp/exhibit/provekit-annotations/kit-rpc
+      - id: sugar-annotations
+        surface: csharp-sugar-annotations
+        harness: csharp/exhibit/sugar-annotations/harness
+        kitRpc: csharp/exhibit/sugar-annotations/kit-rpc
         liftRpc:
-          cwd: csharp/exhibit/provekit-annotations/kit-rpc
+          cwd: csharp/exhibit/sugar-annotations/kit-rpc
           argv: ["./run-csharp-lifter.sh"]
-        proofIrFile: csharp/exhibit/provekit-annotations/expected.proofir.json
-        diagnosticFile: csharp/exhibit/provekit-annotations/expected-diagnostic.txt
+        proofIrFile: csharp/exhibit/sugar-annotations/expected.proofir.json
+        diagnosticFile: csharp/exhibit/sugar-annotations/expected-diagnostic.txt
         lossiness:
           erased:
             - C# method body string concatenation
-            - concrete provekit annotation scanner declaration shape
+            - concrete sugar annotation scanner declaration shape
           preserved:
             - precondition neq(name, null)
       - id: linq-where
@@ -921,7 +921,7 @@ languages:
             - precondition neq(name, null)
     equivalence:
       required:
-        - [data-annotations, provekit-annotations]
+        - [data-annotations, sugar-annotations]
         - [data-annotations, linq-where]
     exposure:
       satWitnessFile: csharp/exhibit/sat-witness.json
@@ -960,9 +960,9 @@ and:
 
 ```json
 "source": "java/lab/library/src/main/java/zoo/UserDirectory.java",
-"outputSource": "java/dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java",
+"outputSource": "java/dropped/sugar-native/library/src/main/java/zoo/UserDirectory.java",
 "postLift": {
-  "proofIrFile": "java/dropped/provekit-native/closure.proofir.json"
+  "proofIrFile": "java/dropped/sugar-native/closure.proofir.json"
 }
 ```
 
@@ -1002,7 +1002,7 @@ the same ProofIR precondition: `neq(name, null)`.
 
 - `java/`: Sugar-native annotations and Spring Web `@RequestParam`.
 - `typescript/`: zod and class-validator.
-- `csharp/`: DataAnnotations, `//provekit:` annotations, and LINQ.
+- `csharp/`: DataAnnotations, `//sugar:` annotations, and LINQ.
 
 Each language keeps separate evidence states:
 
@@ -1112,7 +1112,7 @@ Update command examples to:
 ```sh
 pnpm exec tsx bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/tools/ts-boundary-discover.ts zod bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/exhibit/zod/harness
 
-dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj -- discover csharp-linq bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
+dotnet run --project implementations/csharp/Sugar.BugZoo/Sugar.BugZoo.csproj -- discover csharp-linq bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
 ```
 
 - [ ] **Step 3: Update explanation docs**
@@ -1127,7 +1127,7 @@ The current zoo includes one null-boundary species:
 
 The Java exhibit uses Sugar-native annotations and Spring Web
 `@RequestParam`. The TypeScript exhibit uses zod and class-validator. The C#
-exhibit uses DataAnnotations, `//provekit:` annotations, and LINQ.
+exhibit uses DataAnnotations, `//sugar:` annotations, and LINQ.
 ```
 
 Update direct discovery paths with the new paths from Step 2.
@@ -1252,7 +1252,7 @@ Expected stdout contains:
 Run:
 
 ```sh
-dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj -- discover csharp-linq bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
+dotnet run --project implementations/csharp/Sugar.BugZoo/Sugar.BugZoo.csproj -- discover csharp-linq bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
 ```
 
 Expected stdout contains:
@@ -1282,7 +1282,7 @@ Run:
 git status --short --branch
 ```
 
-Expected: only unrelated pre-existing untracked `.vscode/` and `provekit-warnings/` remain, unless the implementation deliberately leaves no other changes.
+Expected: only unrelated pre-existing untracked `.vscode/` and `sugar-warnings/` remain, unless the implementation deliberately leaves no other changes.
 
 - [ ] **Step 8: Commit final fixes if formatter/docs changed anything**
 

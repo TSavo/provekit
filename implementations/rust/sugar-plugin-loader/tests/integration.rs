@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Integration tests for provekit-plugin-loader (PEP 1.7.0).
+// Integration tests for sugar-plugin-loader (PEP 1.7.0).
 //
 // Test inventory:
 //   file_load_valid_fixture          — §3 + §6: load fixture JSON, assert CID matches pinned value
@@ -168,8 +168,8 @@ fn registry_memento_includes_loaded_cid() {
 #[test]
 fn rpc_stdio_load_valid() {
     // Spawn the stub_rpc_server binary (built as part of this crate).
-    // The binary lives at target/debug/provekit-plugin-loader-stub-rpc.
-    let bin = env!("CARGO_BIN_EXE_provekit-plugin-loader-stub-rpc");
+    // The binary lives at target/debug/sugar-plugin-loader-stub-rpc.
+    let bin = env!("CARGO_BIN_EXE_sugar-plugin-loader-stub-rpc");
     let endpoint = format!("stdio:{bin}");
     let plugin = load_plugin_from_rpc(&endpoint).expect("rpc load should succeed");
 
@@ -188,7 +188,7 @@ fn rpc_stdio_registry_cid_matches_file_load_when_payload_identical() {
     // N1 fix: the stub server now emits byte-identical JCS content to the
     // fixture file, so file-loaded CID MUST equal RPC-loaded CID.
     // This test now exercises the real invariant.
-    let bin = env!("CARGO_BIN_EXE_provekit-plugin-loader-stub-rpc");
+    let bin = env!("CARGO_BIN_EXE_sugar-plugin-loader-stub-rpc");
     let endpoint = format!("stdio:{bin}");
     let rpc_plugin = load_plugin_from_rpc(&endpoint).expect("rpc load");
 

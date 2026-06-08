@@ -2,12 +2,12 @@
 name = "sugar-lsp"
 version = "0.1.0"
 edition = "2021"
-authors = ["ProvekIt Contributors"]
-description = "Language Server Protocol implementation for ProvekIt. Delegates verification to configurable JSON-RPC backends."
+authors = ["Sugar Contributors"]
+description = "Language Server Protocol implementation for Sugar. Delegates verification to configurable JSON-RPC backends."
 license = "Apache-2.0"
 
 [[bin]]
-name = "provekit-lsp"
+name = "sugar-lsp"
 path = "src/main.rs"
 
 [dependencies]

@@ -75,9 +75,9 @@ Whatever tier, document it. The adapter's README should list every annotation it
 
 ## Examples of well-scoped first adapters
 
-- `provekit-lift-zod`: started with `z.string`, `z.number`, `z.object`, `z.array` plus the most-used validators (`min`, `max`, `email`, `regex`). Now broader. Tier B initial scope was the right call.
-- `provekit-lift-pydantic`: started with `BaseModel` field annotations and `Field` constraints. The constraints handled in v1.1 are roughly the Bean Validation 80% set, mapped to pydantic equivalents.
-- `provekit-lift-active_model`: started with the `presence`, `length`, `numericality`, `format` validators. Tier B.
+- `sugar-lift-zod`: started with `z.string`, `z.number`, `z.object`, `z.array` plus the most-used validators (`min`, `max`, `email`, `regex`). Now broader. Tier B initial scope was the right call.
+- `sugar-lift-pydantic`: started with `BaseModel` field annotations and `Field` constraints. The constraints handled in v1.1 are roughly the Bean Validation 80% set, mapped to pydantic equivalents.
+- `sugar-lift-active_model`: started with the `presence`, `length`, `numericality`, `format` validators. Tier B.
 
 ## What this step produces
 

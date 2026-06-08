@@ -29,7 +29,7 @@
             "args": [
               {
                 "kind": "const",
-                "value": "/**\n * Native TypeScript source for the runtime-eval lifting demo.\n *\n * ProvekIt lifts this file directly. There is no sibling contract file: the\n * function bodies are the native surface from which function-contract\n * mementos are derived.\n */\n\nexport function parseIntOrZero(input: string): number {\n  const parsed = Number.parseInt(input, 10);\n  if (Number.isNaN(parsed)) {\n    return 0;\n  }\n  return parsed;\n}\n\nexport function absoluteValue(x: number): number {\n  return Math.abs(x);\n}\n",
+                "value": "/**\n * Native TypeScript source for the runtime-eval lifting demo.\n *\n * Sugar lifts this file directly. There is no sibling contract file: the\n * function bodies are the native surface from which function-contract\n * mementos are derived.\n */\n\nexport function parseIntOrZero(input: string): number {\n  const parsed = Number.parseInt(input, 10);\n  if (Number.isNaN(parsed)) {\n    return 0;\n  }\n  return parsed;\n}\n\nexport function absoluteValue(x: number): number {\n  return Math.abs(x);\n}\n",
                 "sort": {
                   "kind": "primitive",
                   "name": "String"

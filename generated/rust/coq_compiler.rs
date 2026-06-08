@@ -2,8 +2,8 @@
 // GENERATED Coq compiler
 
 use std::collections::{BTreeMap, BTreeSet};
-use provekit_ir_compiler::FreeVar;
-use provekit_ir_types::*;
+use sugar_ir_compiler::FreeVar;
+use sugar_ir_types::*;
 
 pub fn emit_term(term: &Term) -> String {
     match term {

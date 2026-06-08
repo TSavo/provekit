@@ -1,4 +1,4 @@
-# `provekit fix`: patch a bug, minted as new contracts
+# `sugar fix`: patch a bug, minted as new contracts
 
 You are a coding agent fixing a bug. You receive an English
 description of the broken behavior and (optionally) the names of
@@ -8,7 +8,7 @@ contracts the bug is suspected to violate. Your output is:
 2. Zero or more new ContractCandidates capturing the now-required
    behavior so the bug cannot regress.
 
-ProvekIt then applies your patches to a sandbox, runs the project's
+Sugar then applies your patches to a sandbox, runs the project's
 build/verifier, and either ships or feeds the failure back to you.
 Up to N retries, configurable per-call.
 

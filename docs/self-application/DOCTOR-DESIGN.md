@@ -2,7 +2,7 @@
 
 ## Goal
 
-`provekit doctor` is the startup health gate for the verifier product. It
+`sugar doctor` is the startup health gate for the verifier product. It
 answers one question before a self-check result is allowed to become a K claim:
 is the configured substrate capable of producing a sound, reproducible,
 non-silent proof verdict for this target?
@@ -10,14 +10,14 @@ non-silent proof verdict for this target?
 The check names and JSON surface must stay substrate-level. Rust is the v1
 adapter, not the doctor vocabulary. For example, doctor reports
 `oracle.host.ready`; the Rust adapter evidence may say `rust-analyzer` and
-`provekit-linkerd`.
+`sugar-linkerd`.
 
 ## Product Contract
 
 Doctor has two surfaces:
 
-1. `provekit doctor --target <kit>`: standalone diagnostic for humans and CI.
-2. `provekit self-check --doctor ...` or equivalent internal preflight/runtime
+1. `sugar doctor --target <kit>`: standalone diagnostic for humans and CI.
+2. `sugar self-check --doctor ...` or equivalent internal preflight/runtime
    call: the same check engine, with stricter policy when the result is a
    published self-check scoreboard.
 
@@ -63,7 +63,7 @@ Mechanism:
 
 - Reuse the existing `cmd_doctor::run_checks` logic from #1742, but refactor it
   behind a reusable check engine instead of keeping it only in the CLI command.
-- Parse `.provekit/config.toml` and every configured manifest. TOML parse or
+- Parse `.sugar/config.toml` and every configured manifest. TOML parse or
   missing manifest remains a hard fail.
 - Resolve plugin binaries the same way kit dispatch resolves them: manifest
   `working_dir`, relative path handling, and PATH lookup. Missing or
@@ -115,11 +115,11 @@ Mechanism:
 - Compare the two canonical proof sets. The proof pool is stable only if the
   sorted set of derived CIDs and byte hashes is identical. Expected CID mismatch
   remains an immediate hard fail.
-- Compare the final self-check `.provekit/imports` pool against the release-gate
+- Compare the final self-check `.sugar/imports` pool against the release-gate
   staged proof set before mint/prove and again after prove. This extends #1755:
   #1755 catches mid-run mutation; doctor catches clean/warm pool variance before
   the K claim is published.
-- A cheap standalone doctor can still report the current `.provekit/imports`
+- A cheap standalone doctor can still report the current `.sugar/imports`
   fingerprint, but that fingerprint is only a receipt. It is not sufficient for
   v1 because #1774 is a reproducibility bug, not just an observed directory hash.
 
@@ -152,7 +152,7 @@ Mechanism:
   hard check. The adapter must name the configured host binaries and environment
   inputs.
 - Add an actual readiness probe. Locating binaries is not enough. The v1 Rust
-  adapter should spawn or connect to `provekit-linkerd`, verify the host can
+  adapter should spawn or connect to `sugar-linkerd`, verify the host can
   start, and perform the cheapest available request that proves the host is not
   inert. If no clean health RPC exists yet, the first implementation can expose
   one in linkerd rather than encoding rust-analyzer behavior in the CLI.
@@ -168,7 +168,7 @@ Rust v1 evidence:
 
 - Existing `cmd_doctor::check_oracle_wiring` only warns and only checks binary
   locatability.
-- `provekit-walk::ra_oracle` and `ra_daemon_client` already contain the actual
+- `sugar-walk::ra_oracle` and `ra_daemon_client` already contain the actual
   host/session path. The design should expose a language-adapter readiness
   probe rather than making `cmd_doctor` understand rust-analyzer semantics.
 
@@ -185,7 +185,7 @@ Substrate check names:
 Mechanism:
 
 - Standalone structural doctor parses target-local annotation manifests and
-  checks shape and duplicate keys. For Rust v1 that is `.provekit/residue.toml`,
+  checks shape and duplicate keys. For Rust v1 that is `.sugar/residue.toml`,
   but the doctor check name is panic annotation consistency, not Rust residue.
 - Runtime doctor, called from self-check after mint/prove has a current panic
   census, reuses the fail-closed join logic from #1775:
@@ -205,7 +205,7 @@ Mechanism:
 Rust v1 evidence:
 
 - Rust kit emits `panic-site-annotation` diagnostics from
-  `.provekit/residue.toml`.
+  `.sugar/residue.toml`.
 - `cmd_self_check::panic_census` already fails closed on stale annotations,
   duplicates, and proven-site collisions when joining diagnostics.
 
@@ -252,7 +252,7 @@ Rust v1 evidence:
 
 Both.
 
-- Standalone `provekit doctor --target ...` stays the human and CI diagnostic.
+- Standalone `sugar doctor --target ...` stays the human and CI diagnostic.
 - Self-check calls the same engine as preflight for configuration, resolver, and
   oracle readiness.
 - Self-check calls it again as runtime/finalization for proof-pool stability,
@@ -261,10 +261,10 @@ Both.
 The split matters because some checks are only knowable before mint, while
 others require the current minted/proven census.
 
-The release-gate `provekit doctor` validates infrastructure independently of
-`provekit self-check`. Both must pass for v1 release tagging. They are not
+The release-gate `sugar doctor` validates infrastructure independently of
+`sugar self-check`. Both must pass for v1 release tagging. They are not
 chained by default; the v1 release script runs doctor plus self-check for both
-`libprovekit` and `provekit-cli` and tags only if all four commands are green.
+`libsugar` and `sugar-cli` and tags only if all four commands are green.
 
 ### What Is the Failure Mode?
 
@@ -291,7 +291,7 @@ such as no oracle wiring in structural mode with no oracle request.
 
 ### How Should Dependency Proof Determinism Be Checked?
 
-Use re-stage comparison for the release gate. Hashing `.provekit/imports` is
+Use re-stage comparison for the release gate. Hashing `.sugar/imports` is
 useful as an evidence receipt, but it is not enough to prove reproducibility.
 
 The release gate should perform two clean RPC staging passes and compare the
@@ -305,10 +305,10 @@ different proof pools producing different scoreboards from the same source.
 Rust v1 is taggable when this command class is green on clean and warm roots:
 
 ```sh
-provekit doctor --target implementations/rust/provekit-cli --release-gate --oracle --json
-provekit self-check --target implementations/rust/provekit-cli --oracle --json
-provekit doctor --target implementations/rust/libprovekit --release-gate --oracle --json
-provekit self-check --target implementations/rust/libprovekit --oracle --json
+sugar doctor --target implementations/rust/sugar-cli --release-gate --oracle --json
+sugar self-check --target implementations/rust/sugar-cli --oracle --json
+sugar doctor --target implementations/rust/libsugar --release-gate --oracle --json
+sugar self-check --target implementations/rust/libsugar --oracle --json
 ```
 
 Release readiness means:

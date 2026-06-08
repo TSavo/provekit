@@ -17,7 +17,7 @@ pub struct ReleaseGateArgs {
     /// Emit structured JSON release evidence.
     #[arg(long)]
     pub json: bool,
-    /// Optional TOML target list. Defaults to provekit-cli and libsugar.
+    /// Optional TOML target list. Defaults to sugar-cli and libsugar.
     #[arg(long)]
     pub config: Option<PathBuf>,
 }
@@ -261,7 +261,7 @@ fn release_gate_targets(args: &ReleaseGateArgs) -> Result<Vec<ReleaseGateTarget>
     }
     Ok(vec![
         ReleaseGateTarget {
-            name: "provekit-cli".to_string(),
+            name: "sugar-cli".to_string(),
             path: "implementations/rust/sugar-cli".to_string(),
         },
         ReleaseGateTarget {
@@ -470,13 +470,13 @@ fn discover_repo_root() -> Result<PathBuf, String> {
             return Ok(dir);
         }
         if !dir.pop() {
-            return Err("could not discover provekit repository root".to_string());
+            return Err("could not discover sugar repository root".to_string());
         }
     }
 }
 
 fn print_human(receipt: &ReleaseGateReceipt) {
-    println!("ProvekIt release-gate");
+    println!("Sugar release-gate");
     for target in &receipt.targets {
         let status = if target.release_ready {
             "ready"

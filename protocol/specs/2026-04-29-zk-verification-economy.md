@@ -113,7 +113,7 @@ Each one has the same shape. Each currently has weak trust solutions:
 | Submit to regulator with NDA | Regulators leak; trust still needed |
 | Open-source / publish | Defeats trade secrets, kills moat |
 
-ProvekIt + ZK + content-addressed measurements is structurally a fifth
+Sugar + ZK + content-addressed measurements is structurally a fifth
 option: trust becomes mechanical, trade secrets stay private, the
 audit is a DAG walk.
 
@@ -249,8 +249,8 @@ buyerSignature: <consumer's key>
 ## Why deferred
 
 v1 scope is software correctness. The TS-IR language spec, the
-canonicalizer, the kit catalog, the lifter, `provekit prove` and
-`provekit generate` — all without ZK.
+canonicalizer, the kit catalog, the lifter, `sugar prove` and
+`sugar generate` — all without ZK.
 
 ZK absorption is downstream of v1 adoption. Reasons:
 

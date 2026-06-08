@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-verifier
+// sugar-verifier
 //
 // Six-stage bridge-enforcement pipeline. Mirrors the Go and C++
 // verifiers. Stages:

@@ -4,7 +4,7 @@
 //
 // Source of truth:
 //   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.1-§1.4
-//   protocol/provekit-ir.cddl  (TransportGapMemento, PartialMorphismMemento, LossyMorphismMemento)
+//   protocol/sugar-ir.cddl  (TransportGapMemento, PartialMorphismMemento, LossyMorphismMemento)
 //
 // These tests pin:
 //   * Each of the three mementos deserializes from the wire shape the spec defines.
@@ -14,7 +14,7 @@
 //   * `GapKind::NoSuchConceptOp` round-trips correctly (PR amendment).
 //   * `LossRecord` with dimensions round-trips inside LossyMorphismMemento.
 //
-// Byte-exact CID pinning (if any) belongs in provekit-claim-envelope/tests/.
+// Byte-exact CID pinning (if any) belongs in sugar-claim-envelope/tests/.
 
 use sugar_ir_types::{
     DivergentSemanticsTag, FieldDelta, GapKind, GapReason, IrFormula, LossSeverityLevel,

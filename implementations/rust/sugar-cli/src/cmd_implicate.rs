@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit implicate <ANT-CID> <CONS-CID>`.
+// `sugar implicate <ANT-CID> <CONS-CID>`.
 //
 // Honest stub for v0. Minting an implication requires:
 //   1. A CID -> memento resolver (not yet shipped; "TBD" per the
@@ -18,7 +18,7 @@ use crate::ImplicateArgs;
 
 pub fn run(args: ImplicateArgs) -> u8 {
     eprintln!(
-        "{}: `provekit implicate` is not yet implemented in v0. Planned for v1.2.0.",
+        "{}: `sugar implicate` is not yet implemented in v0. Planned for v1.2.0.",
         "notice".yellow().bold()
     );
     eprintln!("  antecedent : {}", args.antecedent);

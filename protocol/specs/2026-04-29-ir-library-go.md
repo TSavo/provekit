@@ -1,7 +1,7 @@
-# ProvekIt: Go kit IR — `provekit/ir`
+# Sugar: Go kit IR — `sugar/ir`
 
 > Author: shared session 2026-04-29 (T + Claude). The Go-side reference
-> IR library. Parallel to `@provekit/ir` (TypeScript); same logical
+> IR library. Parallel to `@sugar/ir` (TypeScript); same logical
 > surface, Go-idiomatic implementation.
 
 ## Why this spec exists
@@ -67,10 +67,10 @@ Go's strengths for IR authoring:
 ## Module identity
 
 ```
-import "github.com/provekit/ir"
+import "github.com/sugar/ir"
 
 // or, after a community fork:
-import "github.com/<org>/provekit-ir"
+import "github.com/<org>/sugar-ir"
 ```
 
 Module path is canonical; the framework's kit registry pins the CID.
@@ -87,7 +87,7 @@ staticcheck as producers; mementos emitted on every clean check.
 package main
 
 import (
-    "github.com/provekit/ir"
+    "github.com/sugar/ir"
 )
 
 // Branded primitives via wrapper structs with private fields.
@@ -115,10 +115,10 @@ func Divide[T ir.Numeric](a T, b NonZero[T]) T {
 }
 ```
 
-The framework ships standard brands as part of `provekit/ir`:
+The framework ships standard brands as part of `sugar/ir`:
 
 ```go
-// provekit/ir/brands.go
+// sugar/ir/brands.go
 package ir
 
 type NonZero[T Numeric] struct { ... }
@@ -148,9 +148,9 @@ higher-order functions.
 package divide
 
 import (
-    "github.com/provekit/ir"
-    "github.com/provekit/ir/assert"
-    "github.com/provekit/ir/scope"
+    "github.com/sugar/ir"
+    "github.com/sugar/ir/assert"
+    "github.com/sugar/ir/scope"
 )
 
 var DenominatorNonZero = ir.Property{
@@ -204,7 +204,7 @@ func init() {
 }
 ```
 
-The framework's `provekit prove` command picks up properties via
+The framework's `sugar prove` command picks up properties via
 both static discovery and `init()`-time registration.
 
 ## Required exports
@@ -407,7 +407,7 @@ logical formula — that's the cross-language equivalence contract.
 The Go kit registers the following producers:
 
 ```go
-// provekit/ir/producers/
+// sugar/ir/producers/
 //   gopls/        — type-check-pass producer for gopls
 //   govet/        — pattern-match producer for go vet
 //   staticcheck/  — pattern-match producer for staticcheck
@@ -418,7 +418,7 @@ The Go kit registers the following producers:
 //   datalog/      — translates pattern properties to Datalog/Soufflé
 ```
 
-Each producer wraps an existing tool. The kit's `provekit prove`
+Each producer wraps an existing tool. The kit's `sugar prove`
 invocation runs them in parallel and aggregates mementos.
 
 The mandate-able floor for Go: `go vet ./... && staticcheck ./... &&
@@ -432,13 +432,13 @@ catch many classes of correctness issues by default.
 Memento failures surface as Go-native errors:
 
 ```
-./api/divide.go:42:9: provekit-violation: denominator-nonzero
+./api/divide.go:42:9: sugar-violation: denominator-nonzero
     Z3 counterexample: b = 0
     Suggestion: change b's type to NonZero[float64]
 ```
 
 For LSP integration via gopls, mementos surface as standard
-diagnostics with severity Error and code "PROVEKIT-V<n>" where
+diagnostics with severity Error and code "SUGAR-V<n>" where
 `<n>` is a stable property identifier.
 
 ## File extensions
@@ -468,7 +468,7 @@ const denominatorNonZero = property({
 **Rust:**
 
 ```rust
-provekit::property! {
+sugar::property! {
     name: "denominator-nonzero",
     scope: function!("calculate"),
     bindings: { b: Int },
@@ -525,7 +525,7 @@ backend engineering.
 
 - The kit's reference implementation lives in the framework's
   `implementations/go/` directory. Published to Go modules as
-  `github.com/provekit/ir`.
+  `github.com/sugar/ir`.
 - Brands use Go 1.18+ generics. For Go versions <1.18, fall back to
   per-type brand structs (less ergonomic but functional).
 - Property registration via `init()` functions integrates with Go's

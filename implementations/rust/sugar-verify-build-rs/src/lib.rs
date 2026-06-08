@@ -1,12 +1,12 @@
-// provekit-verify crate: Cargo build.rs integration
+// sugar-verify crate: Cargo build.rs integration
 //
 // Add to Cargo.toml:
 //   [build-dependencies]
-//   provekit-verify = "0.1"
+//   sugar-verify = "0.1"
 //
 // In your build.rs:
 //   fn main() {
-//       provekit_verify::verify_project().expect("proof verification failed");
+//       sugar_verify::verify_project().expect("proof verification failed");
 //   }
 //
 // The memento IS the verification. The .proof protocol IS the cache.
@@ -25,10 +25,10 @@ pub fn verify_project() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     
-    println!("cargo:rerun-if-changed=.provekit/config.toml");
-    println!("cargo:rerun-if-changed=.provekit/");
+    println!("cargo:rerun-if-changed=.sugar/config.toml");
+    println!("cargo:rerun-if-changed=.sugar/");
     
-    // Run provekit verify
+    // Run sugar verify
     let output = Command::new("sugar")
         .arg("verify")
         .current_dir(&manifest_dir)

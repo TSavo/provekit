@@ -1,0 +1,23 @@
+{
+  "id": "e83c8b6fd250c434",
+  "createdAt": "2026-04-29T06:37:01.289Z",
+  "originatingBug": "Verdict is 'proven' when Z3 result matches expected, 'violation' when they differ, 'error' otherwise",
+  "smt": {
+    "kind": "other",
+    "declarations": [
+      "(declare-const expected_unsat Bool) (declare-const z3_result_unsat Bool) (declare-const verdict_proven Bool) (assert (and expected_unsat (not z3_result_unsat) verdict_proven))"
+    ],
+    "assertion": "(declare-const expected_unsat Bool) (declare-const z3_result_unsat Bool) (declare-const verdict_proven Bool) (assert (and expected_unsat (not z3_result_unsat) verdict_proven))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/sugar/src/axiom-engine.ts",
+    "function": null,
+    "startLine": 44,
+    "endLine": 44
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "6d558ec416d9f288bef626017727f5220dc8b2d2",
+  "retired": null
+}

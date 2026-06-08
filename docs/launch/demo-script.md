@@ -14,12 +14,12 @@ A black terminal. The narrator says one line.
 
 ---
 
-## Step 1: `provekit init` (40 seconds)
+## Step 1: `sugar init` (40 seconds)
 
 The narrator types:
 
 ```sh
-$ provekit init
+$ sugar init
 ```
 
 The init flow asks three questions in turn. The narrator picks the answers without commentary.
@@ -45,9 +45,9 @@ Solver (witness for the IR compiler):
   vampire
   bitwuzla
 
-Wrote .provekit/config.toml
-Wrote .provekit/keys/foundation.seed (gitignored)
-Wrote .provekit/proofs/.gitkeep
+Wrote .sugar/config.toml
+Wrote .sugar/keys/foundation.seed (gitignored)
+Wrote .sugar/proofs/.gitkeep
 Project ready.
 ```
 
@@ -57,12 +57,12 @@ The narrator says:
 
 ---
 
-## Step 2: `provekit must` mints a contract (60 seconds)
+## Step 2: `sugar must` mints a contract (60 seconds)
 
 The narrator opens `app.ts` in the editor. It is twenty lines of TypeScript that exposes a `transfer(from, to, amount)` function. The narrator types:
 
 ```sh
-$ provekit must app.ts "users can't have negative balance"
+$ sugar must app.ts "users can't have negative balance"
 ```
 
 The agent runs. Output:
@@ -82,7 +82,7 @@ The agent runs. Output:
 [verifier] tier 2 lookup ... no cached implication; falling through
 [verifier] tier 3 z3 -in ... discharged in 78ms
 [mint] CID: blake3-512:8fe93fc11f5c04aae1c9ffe11d165d880436732052dc2d59738340e19c6fce92eabb04a389c04604c4bd5930556006377d033e7b3be2efe5a6492929fab7a33a
-[mint] wrote .provekit/proofs/8f/e9/<cid>.proof  (1124 bytes)
+[mint] wrote .sugar/proofs/8f/e9/<cid>.proof  (1124 bytes)
 ```
 
 The narrator says:
@@ -96,13 +96,13 @@ The narrator says:
 The narrator changes directory.
 
 ```sh
-$ ls .provekit/proofs/8f/e9/
+$ ls .sugar/proofs/8f/e9/
 8fe93fc11f5c04aae1c9ffe11d165d880436732052dc2d59738340e19c6fce92eabb04a389c04604c4bd5930556006377d033e7b3be2efe5a6492929fab7a33a.proof
 
-$ wc -c .provekit/proofs/8f/e9/8f*.proof
-   1124 .provekit/proofs/8f/e9/8fe93fc11f5c04aae1c9ffe11d165d880436732052dc2d59738340e19c6fce92eabb04a389c04604c4bd5930556006377d033e7b3be2efe5a6492929fab7a33a.proof
+$ wc -c .sugar/proofs/8f/e9/8f*.proof
+   1124 .sugar/proofs/8f/e9/8fe93fc11f5c04aae1c9ffe11d165d880436732052dc2d59738340e19c6fce92eabb04a389c04604c4bd5930556006377d033e7b3be2efe5a6492929fab7a33a.proof
 
-$ provekit dump .provekit/proofs/8f/e9/8f*.proof
+$ sugar dump .sugar/proofs/8f/e9/8f*.proof
 catalog
   name:        app.ts/Account.balance.nonneg
   version:     1.0.0
@@ -124,10 +124,10 @@ The narrator says:
 
 ---
 
-## Step 4: `provekit verify-protocol --signed` (20 seconds)
+## Step 4: `sugar verify-protocol --signed` (20 seconds)
 
 ```sh
-$ provekit verify-protocol --signed
+$ sugar verify-protocol --signed
 protocol catalog: blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
 peer claim:       blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
 match:            yes
@@ -141,10 +141,10 @@ The narrator:
 
 ---
 
-## Step 5: `provekit search` finds the new contract (30 seconds)
+## Step 5: `sugar search` finds the new contract (30 seconds)
 
 ```sh
-$ provekit search consequent="balance >= 0"
+$ sugar search consequent="balance >= 0"
 1 result:
   blake3-512:8fe93fc1...   contract Account.balance.nonneg
     out_binding: Account.balance
@@ -159,12 +159,12 @@ The narrator:
 
 ---
 
-## Step 6: `provekit fix` repairs a bug from a bug report (60 seconds)
+## Step 6: `sugar fix` repairs a bug from a bug report (60 seconds)
 
 The narrator opens `bugreport.md` in the editor. The bug report says: "When `transfer` is called with a negative amount, the source account ends up with a negative balance. Repro: `transfer(alice, bob, -100)` produces alice.balance = -100." The narrator types:
 
 ```sh
-$ provekit fix --file bugreport.md
+$ sugar fix --file bugreport.md
 [agent] reading bugreport.md ...
 [agent] identifying failing class of input:
   amount < 0 in transfer(from, to, amount)
@@ -179,7 +179,7 @@ $ provekit fix --file bugreport.md
 [verifier] tier 1 hash check on app.ts ... new postcondition observed
 [verifier] tier 3 z3 -in ... regression contract discharged in 51ms
 [mint] CID: blake3-512:b22de7a0...
-[mint] wrote .provekit/proofs/b2/2d/<cid>.proof
+[mint] wrote .sugar/proofs/b2/2d/<cid>.proof
 [git] committed: "fix: reject negative amount in transfer; add regression contract"
 ```
 
@@ -189,10 +189,10 @@ The narrator:
 
 ---
 
-## Step 7: `provekit ask` shows tier outcomes (30 seconds)
+## Step 7: `sugar ask` shows tier outcomes (30 seconds)
 
 ```sh
-$ provekit ask 'forall (account). account.balance >= 0'
+$ sugar ask 'forall (account). account.balance >= 0'
 tier 1 (hash equality):       miss
 tier 2 (cached implication):  hit  (blake3-512:8fe93fc1...)
 tier 3 (z3 from scratch):     not run (tier 2 hit)
@@ -210,7 +210,7 @@ The narrator:
 The narrator runs the showcase summary:
 
 ```sh
-$ provekit-showcase benchmark --lattice /tmp/showcase-lattice --queries 10000 --summary
+$ sugar-showcase benchmark --lattice /tmp/showcase-lattice --queries 10000 --summary
 lattice:
   proof_files:    1100000
   implications:   1000000
@@ -226,7 +226,7 @@ The narrator says, looking at the camera:
 
 > "One point one million signed mementos on disk. Five gigabytes. Ten thousand random queries. Tier 1 in nanoseconds, Tier 2 in microseconds, Tier 3 in milliseconds. The cost of any one query is sixty-four bytes. Pick your depth in the DAG; the bytes do not grow. This took sixty-four bytes."
 
-The narrator presses control-D. The terminal closes. End screen: the project URL, the spec catalog CID, "github.com/wopr-network/provekit".
+The narrator presses control-D. The terminal closes. End screen: the project URL, the spec catalog CID, "github.com/wopr-network/sugar".
 
 ---
 
@@ -250,4 +250,4 @@ Notes for the recording:
 - Pre-warm the lattice fixture before recording so generate output is already on disk.
 - Do not edit out the "tier 3 z3 -in ... discharged in 78ms" line in step 2; the wall-clock numbers are part of the demo.
 - Keep the `wc -c` line in step 3 visible. Audiences want to see "this is a kilobyte file" before they believe "the verification is sixty-four bytes."
-- The agent backend output above assumes Claude Code; switch verbatim for Codex / OpenAI by setting `[agent].backend` in `.provekit/config.toml`. The CLI lines above are unchanged.
+- The agent backend output above assumes Claude Code; switch verbatim for Codex / OpenAI by setting `[agent].backend` in `.sugar/config.toml`. The CLI lines above are unchanged.

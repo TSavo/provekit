@@ -20,13 +20,13 @@ Exit 0 iff every spec hashes to the value the catalog declares. The protocol ver
 ### Protocol surface
 
 - **Pattern Predicate Protocol (PPP).** New draft extension protocol. Names how an editorially-defined bug class compiles to a content-addressed substrate query whose result-set delta discharges an FRP receipt's policy. PPP closes the gap between pattern catalog entries and FRP closure: pattern, predicate, query application, closure witness, FRP receipt, proofchain head. Spec at `protocol/specs/2026-05-09-pattern-predicate-protocol.md`. Reference tooling at `menagerie/pattern-predicate-protocol/`.
-- **Contract Composition Protocol (CCP).** New draft extension protocol. Names canonical contract composition over the existing handshake tier 2 cache: atomic contract mementos compose at function call sites into `ComposedFunctionContract` mementos whose CIDs the cache reuses for O(1) discharge of structurally-equivalent chains across any future program in any language. Names the canonical compose primitive in libprovekit and its FFI / CLI / direct-link binding modes. Spec at `protocol/specs/2026-05-09-contract-composition-protocol.md`.
+- **Contract Composition Protocol (CCP).** New draft extension protocol. Names canonical contract composition over the existing handshake tier 2 cache: atomic contract mementos compose at function call sites into `ComposedFunctionContract` mementos whose CIDs the cache reuses for O(1) discharge of structurally-equivalent chains across any future program in any language. Names the canonical compose primitive in libsugar and its FFI / CLI / direct-link binding modes. Spec at `protocol/specs/2026-05-09-contract-composition-protocol.md`.
 - **PPP / CCP cross-link.** PPP additively extends its v1 substrate schema with `effects` and `composed_contracts` relations populated by CCP. The two protocols compose: PPP queries can range over CCP composition state.
 
 ### Implementation extensions
 
-- `libprovekit::compose` and `libprovekit::ffi` — canonical composition entry points exposed via direct-link, FFI, and CLI binding modes. Effects tracking is the per-language prerequisite for federation across languages.
-- `provekit-cli` `cmd_compose` — CLI surface for ad-hoc composition over a contract set.
+- `libsugar::compose` and `libsugar::ffi` — canonical composition entry points exposed via direct-link, FFI, and CLI binding modes. Effects tracking is the per-language prerequisite for federation across languages.
+- `sugar-cli` `cmd_compose` — CLI surface for ad-hoc composition over a contract set.
 - C lifter `effects.c` + `composition.c` — first-language wiring of the composition protocol against the C kit.
 
 ### Specimens

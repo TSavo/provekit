@@ -7,7 +7,7 @@ use sugar_walk::emit::rust_function_term_json_for_file;
 fn read_canonicalizer_source(filename: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("provekit-walk has a parent dir")
+        .expect("sugar-walk has a parent dir")
         .join("sugar-canonicalizer")
         .join("src")
         .join(filename);
@@ -21,7 +21,7 @@ fn term_emit_ssa_hoists_statement_method_effects() {
     let bytes = rust_function_term_json_for_file(
         &file,
         "blake3_512_of",
-        "provekit-canonicalizer/src/hash.rs",
+        "sugar-canonicalizer/src/hash.rs",
     )
     .expect("blake3_512_of term JSON");
     let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("term JSON");

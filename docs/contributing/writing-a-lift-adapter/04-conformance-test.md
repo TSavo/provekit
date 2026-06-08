@@ -125,7 +125,7 @@ This is how you avoid silent canonicalization drift: every byte change is review
 
 If your adapter is not Rust, your adapter's canonical IR must agree with what the equivalent Rust adapter would produce (if a Rust adapter exists for the same library). Where parity exists, add cross-kit parity tests.
 
-Practically, this means: when the TypeScript `provekit-lift-zod` adapter produces canonical IR for `z.string().min(5)`, those bytes must match what a hypothetical Rust `provekit-lift-zod` adapter would produce for the equivalent expression. Today there is no Rust zod adapter; cross-kit parity for zod is moot. But if a Python `provekit-lift-zod` adapter were added, parity would be required.
+Practically, this means: when the TypeScript `sugar-lift-zod` adapter produces canonical IR for `z.string().min(5)`, those bytes must match what a hypothetical Rust `sugar-lift-zod` adapter would produce for the equivalent expression. Today there is no Rust zod adapter; cross-kit parity for zod is moot. But if a Python `sugar-lift-zod` adapter were added, parity would be required.
 
 The general rule: equivalent inputs produce equivalent canonical IR, regardless of which kit's adapter ran. Conformance fixtures enforce this.
 

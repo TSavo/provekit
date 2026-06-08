@@ -8,16 +8,16 @@ the FIXED worktree kit + worktree rust binary, over ALL numpy test files.
 
 ## Corpus
 ALL numpy test files in the extracted source: **179** `test_*.py`
-(`/tmp/provekit-classshape-src-20260603/src/numpy/**`). Lift is AST-only —
+(`/tmp/sugar-classshape-src-20260603/src/numpy/**`). Lift is AST-only —
 numpy need not be installed/importable.
 
 ## Run setup (reproducible, footgun-proof)
-- Project `.provekit/{config.toml, lift/python-tests/manifest.toml}`.
+- Project `.sugar/{config.toml, lift/python-tests/manifest.toml}`.
 - Manifest `command` uses ABSOLUTE PYTHONPATH at the worktree kit src + python3.14
-  (NOT the global `provekit-lift-python` console script, which is STALE 49KB).
-- Sanity-checked `provekit_lift_py_tests.layer2.__file__` -> worktree src, and
+  (NOT the global `sugar-lift-python` console script, which is STALE 49KB).
+- Sanity-checked `sugar_lift_py_tests.layer2.__file__` -> worktree src, and
   `hasattr(_coalesce_same_named_decls) == True`.
-- Rust binary: worktree `implementations/rust/target/release/provekit`.
+- Rust binary: worktree `implementations/rust/target/release/sugar`.
 - Flat copy with collision-safe names (9 numpy basenames collide across subdirs);
   the surface does NOT discover recursively, so a nested tree mints empty/errors.
 

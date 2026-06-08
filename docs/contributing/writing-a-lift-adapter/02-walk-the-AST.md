@@ -35,7 +35,7 @@ Cons: more setup. Couples to a specific compiler version.
 The adapter parses source files directly with a regex or hand-written tokenizer. Examples:
 
 - The Java JML adapter uses a hand-written tokenizer + recursive-descent parser for `//@ requires` comments.
-- The Zig adapter walks `//provekit:contract` comment blocks with a custom parser.
+- The Zig adapter walks `//sugar:contract` comment blocks with a custom parser.
 
 Pros: works without the language's compiler infrastructure.
 Cons: hand-rolled parsers are easy to get wrong. Locating annotations precisely (line, column, scope) is harder.
@@ -67,7 +67,7 @@ fn add_one(x: i32) -> i32 { x + 1 }
 
 Walk: locate functions with the relevant attributes, parse the attribute argument expression, extract pre/post predicates.
 
-This is the shape of `contracts` (Rust), `provekit::contract`, JML `//@ requires` after parsing.
+This is the shape of `contracts` (Rust), `sugar::contract`, JML `//@ requires` after parsing.
 
 ### Pattern C: chain-style schema
 
@@ -103,7 +103,7 @@ Under the Bridge Linkage Protocol ([`protocol/specs/2026-05-03-bridge-linkage-pr
 
 A call edge captures the caller-callee relationship: `sourceContractCid` (the calling function's contract), `targetContractCid` or `targetSymbol` (the callee), `callSiteLocus`, and an `evidenceTerm` encoding the satisfaction obligation `post_callee ⊃ pre_caller`. When the target contract is not yet known (cross-kit calls), set `targetContractCid: null` and populate `targetSymbol` for linker resolution.
 
-The two streams are emitted in the same response envelope. The linker (`provekit prove`) derives bridge mementos mechanically from the union of contracts and call edges across all kits. The adapter must NOT emit `kind: "bridge"` mementos directly; bridges are linker-derived.
+The two streams are emitted in the same response envelope. The linker (`sugar prove`) derives bridge mementos mechanically from the union of contracts and call edges across all kits. The adapter must NOT emit `kind: "bridge"` mementos directly; bridges are linker-derived.
 
 Walk the AST for call sites the same way you walk for annotations: parse, recognize the call graph, extract caller-callee pairs and locus information. This data flows alongside the canonical IR formulas produced in step 3.
 

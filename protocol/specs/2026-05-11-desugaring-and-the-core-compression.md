@@ -4,14 +4,14 @@
 **Date:** 2026-05-11
 **Status:** design draft for review
 **Author:** T Savo
-**Companion specs:** LSP (2026-05-09-language-signature-protocol.md), AMP (2026-05-09-algorithm-memento-protocol.md), CCP (2026-05-09-contract-composition-protocol.md), Equational Portfolio Extension (2026-05-10-equational-portfolio-extension.md), provekit migrate Protocol (2026-05-02-provekit-migrate-protocol.md)
+**Companion specs:** LSP (2026-05-09-language-signature-protocol.md), AMP (2026-05-09-algorithm-memento-protocol.md), CCP (2026-05-09-contract-composition-protocol.md), Equational Portfolio Extension (2026-05-10-equational-portfolio-extension.md), sugar migrate Protocol (2026-05-02-sugar-migrate-protocol.md)
 **Companion papers:** [paper 13: After Grammars](../../docs/papers/13-after-grammars-programming-languages-as-content-addressed-algebras.md), [paper 16: After Portability](../../docs/papers/16-after-portability-the-universal-address-space.md)
 
 ## §0: Why this spec exists
 
 LSP hosts each language as a `LanguageSignatureMemento` and each cross-language translation as a discharged `LanguageMorphismMemento`. The naive reading of that is dangerous. If a language's signature were a flat list of independent operations and the cross-language layer needed one `A:op -> concept:op` morphism per operation, the morphism budget would be `N` languages times `|surface ops|` discharged morphisms, and discovering a translation between any two languages would scale with `|surface ops|` as well. For a real language `|surface ops|` is large: `foreach`, `using`, `??`, `?.`, the `switch` expression, pattern bindings, properties, indexers, comprehensions, `for-else`, `with`, `unless`, postfix `if`, `do-while`, the compound assignment family, and so on. Multiply by every language and the catalog stops being `O(N)` and starts being `O(N times |ops|)`, trending toward `O(N^2)` once anyone wants pairwise sameness.
 
-This spec records why that does not happen. A language's full operation algebra is not flat. Almost all of its operations are *derived*: `csharp:foreach` is `csharp:while` plus the iterator protocol; `csharp:using` is `try`/`finally` plus `Dispose`; `??` is `ite` plus a null check; a `switch` expression is nested `ite`s; a property is a getter/setter method pair; a list comprehension is a fold; `ruby:unless` is `if !`; Python's `for` is sugar over `__iter__`/`__next__`. The surface algebra is *generated over* a small core algebra by a finite set of *expansion rules*, and those expansion rules are equations. Orient them left to right and you have desugaring. The cross-language layer therefore operates on the *core*, never the surface, and the budget is `N` within-language collapses plus `N` core renamings, which is `O(N)`. This spec defines: the surface-as-composition decomposition (§1), the desugaring-equation memento (§2), the `desugar` operation (§3), the homomorphic compression and its morphism-count lemma (§4), `provekit migrate` over the broader op set (§5), the concept-core negotiation (§6), the ties to LSP / AMP / the equational portfolio / Lemma 6 / paper 16 Lemma 2 (§7), what this does and does not claim (§8), and what is already built versus a follow-up (§9).
+This spec records why that does not happen. A language's full operation algebra is not flat. Almost all of its operations are *derived*: `csharp:foreach` is `csharp:while` plus the iterator protocol; `csharp:using` is `try`/`finally` plus `Dispose`; `??` is `ite` plus a null check; a `switch` expression is nested `ite`s; a property is a getter/setter method pair; a list comprehension is a fold; `ruby:unless` is `if !`; Python's `for` is sugar over `__iter__`/`__next__`. The surface algebra is *generated over* a small core algebra by a finite set of *expansion rules*, and those expansion rules are equations. Orient them left to right and you have desugaring. The cross-language layer therefore operates on the *core*, never the surface, and the budget is `N` within-language collapses plus `N` core renamings, which is `O(N)`. This spec defines: the surface-as-composition decomposition (§1), the desugaring-equation memento (§2), the `desugar` operation (§3), the homomorphic compression and its morphism-count lemma (§4), `sugar migrate` over the broader op set (§5), the concept-core negotiation (§6), the ties to LSP / AMP / the equational portfolio / Lemma 6 / paper 16 Lemma 2 (§7), what this does and does not claim (§8), and what is already built versus a follow-up (§9).
 
 ## §1: A surface algebra is a composition
 
@@ -60,7 +60,7 @@ DesugaringEquationMemento ⊆ EquationMemento where:
   - effects           : empty
 ```
 
-Same canonicalizer (`provekit-canonicalizer`, JCS), same hash (BLAKE3-512), same CID rules as any `EquationMemento`. The `role` and `direction` fields are part of the canonical bytes, so a desugaring equation and a non-oriented equation with the same `lhs`/`rhs` have different CIDs. That is correct: orientation is semantically load-bearing here. Refining an existing `EquationMemento` into a desugaring-equation memento by adding these tags is therefore a successor mint with `refines = <old CID>` per LSP section 4.4, not an edit in place.
+Same canonicalizer (`sugar-canonicalizer`, JCS), same hash (BLAKE3-512), same CID rules as any `EquationMemento`. The `role` and `direction` fields are part of the canonical bytes, so a desugaring equation and a non-oriented equation with the same `lhs`/`rhs` have different CIDs. That is correct: orientation is semantically load-bearing here. Refining an existing `EquationMemento` into a desugaring-equation memento by adding these tags is therefore a successor mint with `refines = <old CID>` per LSP section 4.4, not an edit in place.
 
 ### §2.1 Per-equation discharge obligation
 
@@ -76,7 +76,7 @@ The *set* `E_L` of a language's desugaring equations carries an additional oblig
 
 When `E_L` has **not** cleared the §2.2 gate (mutually recursive sugar, a macro whose right-hand side does not reduce, an overlap with no joining), `desugar_L` is not a function: there is no canonical normal form. In that case `desugar_L` **refuses** the program. *Supra omnia, rectum*: a non-confluent or non-terminating rewrite has no canonical core image, so there is no honest answer to "what is the core form of this program," so the substrate refuses rather than picking one rewrite order arbitrarily and pretending. A refusal here is a precise request: it names the subset of `E_L` whose orientation broke the gate. Re-presenting that subset as a confluent set (a critical-pair completion, a different decomposition) is the path to acceptance, not a softer policy.
 
-`desugar_L`'s output CID is `BLAKE3-512(JCS(<normal-form term payload>))` via `provekit-canonicalizer`, the same as any term CID.
+`desugar_L`'s output CID is `BLAKE3-512(JCS(<normal-form term payload>))` via `sugar-canonicalizer`, the same as any term CID.
 
 ## §4: The homomorphic compression
 
@@ -100,9 +100,9 @@ This composes with, and does not replace, the hub-and-spoke topology of LSP and 
 
 Without the alphabet-plateau dependency (paper 16 Lemma 2) the `O(N)` claim is a hope rather than a lemma: it is the plateau that makes `B` a constant.
 
-## §5: `provekit migrate A → B` over the broader op set
+## §5: `sugar migrate A → B` over the broader op set
 
-`provekit migrate` (2026-05-02-provekit-migrate-protocol.md) over the broader op set is the pipeline:
+`sugar migrate` (2026-05-02-sugar-migrate-protocol.md) over the broader op set is the pipeline:
 
 ```
 lift(A-src)
@@ -152,9 +152,9 @@ That is, one desugaring equation per surface operation that is not itself in the
 
 **Follow-up.**
 - Minting the actual per-language desugaring-equation sets `E_L` (the `foreach`/`using`/`??`/`switch`-expression/comprehension/`unless`/postfix-`if`/`for`-over-iterator macros for each language signature).
-- The `desugar` rewriter itself: the `provekit desugar --lang <L>` (or equivalent) implementation that drives `E_L` left to right to the core normal form and refuses when `E_L` failed the §2.2 gate.
+- The `desugar` rewriter itself: the `sugar desugar --lang <L>` (or equivalent) implementation that drives `E_L` left to right to the core normal form and refuses when `E_L` failed the §2.2 gate.
 - Running each `E_L` through the §2.2 CeTA gate to certify it induces a function.
-- Re-sugar search: the reverse-macro search that recovers B's surface idioms from a core fragment, as a cosmetic post-pass in `provekit migrate`.
+- Re-sugar search: the reverse-macro search that recovers B's surface idioms from a core fragment, as a cosmetic post-pass in `sugar migrate`.
 - A worked `migrate` exhibit over the broader op set (e.g. a `foreach` loop in C# transported to a `for`-over-iterator in Python via the core), with the transported `.proof`.
 
 ## §10: Open questions

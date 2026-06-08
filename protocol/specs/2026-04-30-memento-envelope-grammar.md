@@ -1,4 +1,4 @@
-# ProvekIt: Memento Envelope Grammar (CDDL)
+# Sugar: Memento Envelope Grammar (CDDL)
 
 **Date:** 2026-04-30
 **Status:** Specification (v1.1 flat shape). CDDL (RFC 8610) is normative; prose is exposition.
@@ -8,7 +8,7 @@
 
 ## What this document specifies
 
-Every memento ProvekIt produces is a `ClaimEnvelope` (defined in
+Every memento Sugar produces is a `ClaimEnvelope` (defined in
 `2026-04-29-universal-claim-envelope.md`). This spec adds **role**:
 the application-level purpose a memento serves. Eight roles are defined:
 **catalog**, **contract**, **bridge**, **verdict**, **audit**,
@@ -76,7 +76,7 @@ but fails a post-pass constraint is **invalid**.
 ; Master CDDL for memento envelope grammar
 ; ============================================================
 
-; Reference: ProvekitIrFormula (rule name `ir-formula`) is defined in
+; Reference: SugarIrFormula (rule name `ir-formula`) is defined in
 ; protocol/specs/2026-04-30-ir-formal-grammar.md and imported by name.
 
 ; ----- Scalars and CIDs --------------------------------------
@@ -189,7 +189,7 @@ produced and consumed in-process.
 ## Role: CatalogMemento
 
 A library or kit's published list of `(name, role, cid)` entries.
-The catalog's CID is what `package.json`'s `provekit.proofHash`
+The catalog's CID is what `package.json`'s `sugar.proofHash`
 field points at. Consumers fetch the catalog, verify the signature,
 and walk `inputCids` to enumerate the propertyHashes the library has
 committed to upholding. The catalog IS the kit's identity at the
@@ -243,7 +243,7 @@ catalog-entry = {
   `cid` before computing the multiset comparison above.
 
 **Signature.** REQUIRED for swarm-distributed catalogs. The kit
-author's public key is published as `package.json`.`provekit.publicKey`
+author's public key is published as `package.json`.`sugar.publicKey`
 (SPKI base64). An unsigned catalog cannot serve as the root of a
 downstream consumer's proofHash.
 
@@ -273,7 +273,7 @@ downstream consumer's proofHash.
           "role": "property"
         }
       ],
-      "kitName": "@provekit/ts-kit",
+      "kitName": "@sugar/ts-kit",
       "kitVersion": "1.0.0"
     },
     "kind": "kit-catalog",
@@ -368,7 +368,7 @@ kit-author-authoring = {
 
 lift-authoring = {
   producerKind: "lift",
-  lifter:       producer-id,       ; e.g. "provekit-lift@1.0"
+  lifter:       producer-id,       ; e.g. "sugar-lift@1.0"
   evidence:     "tests" / "types" / "docs" / "symbolic-exec",
   ? sourceCid:  cid                ; the source artifact lift derived from
 }
@@ -426,7 +426,7 @@ lift-authoring = {
     "body": {
       "authoring": {
         "evidence": "tests",
-        "lifter": "provekit-lift@1.0",
+        "lifter": "sugar-lift@1.0",
         "producerKind": "lift",
         "sourceCid": "0000000000000000000000000000beef"
       },
@@ -470,7 +470,7 @@ lift-authoring = {
   },
   "inputCids": [],
   "producedAt": "2026-04-30T12:00:00.000Z",
-  "producedBy": "provekit-lift@1.0",
+  "producedBy": "sugar-lift@1.0",
   "producerSignature": "MEUCIQ==",
   "propertyHash": "f0e1d2c3b4a59687",
   "verdict": "holds"
@@ -1025,7 +1025,7 @@ addressed and shared. Future verifiers that need the same
 implication look it up by the (antecedent, consequent) hash pair,
 verify the producer's signature, and skip the solver entirely.
 
-This memento type is what makes ProvekIt anti-rivalrous: a Z3
+This memento type is what makes Sugar anti-rivalrous: a Z3
 invocation that produces an unsat result becomes a publishable
 artifact, indexable by any party. An external **implication server**
 crawls published `.proof` files, extracts implication mementos, and

@@ -3,7 +3,7 @@
 // Emit the shadow source as a v1.5.0-shape proof.ir bundle.
 //
 // The bundle is a single JCS-canonical JSON document containing:
-//   - schemaVersion: "provekit-walk/1"
+//   - schemaVersion: "sugar-walk/1"
 //   - shadowSourceCid: top-level CID for the shadow source
 //   - shadowSource: the canonical shadow-source bytes (decoded back to a
 //     JSON object so consumers can inspect without re-canonicalizing)
@@ -2608,7 +2608,7 @@ fn build_bundle_value(s: &ShadowSource) -> Arc<Value> {
     };
 
     Value::object([
-        ("schemaVersion", Value::string("provekit-walk/1")),
+        ("schemaVersion", Value::string("sugar-walk/1")),
         ("kind", Value::string("walk-bundle")),
         ("shadowSourceCid", Value::string(s.cid.clone())),
         ("fnName", Value::string(s.fn_name.clone())),
@@ -2814,7 +2814,7 @@ mod tests {
         assert_eq!(cid, shadow_proof_ir_cid(&s));
         // The bytes should parse as JSON.
         let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
-        assert_eq!(parsed["schemaVersion"].as_str(), Some("provekit-walk/1"));
+        assert_eq!(parsed["schemaVersion"].as_str(), Some("sugar-walk/1"));
         assert_eq!(parsed["shadowSourceCid"].as_str(), Some(s.cid.as_str()));
     }
 

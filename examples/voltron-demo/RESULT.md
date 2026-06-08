@@ -1,6 +1,6 @@
-# voltron-demo — multi-vendor, multi-file ProvekIt consumer
+# voltron-demo — multi-vendor, multi-file Sugar consumer
 
-This crate is the smallest non-trivial M × N consumer of the ProvekIt
+This crate is the smallest non-trivial M × N consumer of the Sugar
 substrate. The intent: prove that **a single user-authored program can
 compose contracts from multiple independent vendor `.proof` envelopes
 into one verifiable spine**.
@@ -8,27 +8,27 @@ into one verifiable spine**.
 - **M = 3** module files (`ingest.rs`, `persist.rs`, `report.rs`) + a
   thin binary entry (`src/bin/voltron-demo.rs`) and a top-level library
   spine (`lib.rs`).
-- **N = 2** vendors: `provekit-shim-serde-json-rust` (JSON family) and
-  `provekit-shim-rusqlite` (SQL family).
+- **N = 2** vendors: `sugar-shim-serde-json-rust` (JSON family) and
+  `sugar-shim-rusqlite` (SQL family).
 - **5** materialize boundary citations spread across two of the three
   module files (ingest.rs owns the JSON ones; persist.rs owns the SQL
   ones; report.rs is pure user code that crosses both vendors at the
   seam where SQL row text is decoded back into a JSON `Value`).
 - **3** test files (`ingest_test.rs`, `persist_test.rs`,
   `voltron_e2e_test.rs`) — these ARE the canonical user-side contract
-  surface, lifted by `provekit-lift-rust-tests`. Per the rust-tests
+  surface, lifted by `sugar-lift-rust-tests`. Per the rust-tests
   lifter contract, panics and early-returns inside user functions
   (`parse_event`, `install_schema`, `insert_event`, `compose_report`)
   also lift to implicit pre/post conditions.
 
-When everything runs end-to-end, `provekit prove` against this crate
+When everything runs end-to-end, `sugar prove` against this crate
 unions THREE `.proof` envelopes:
 
   1. `voltron-demo.proof`                    — the head (this crate's spine)
-  2. `provekit-shim-serde-json-rust.proof`   — the JSON lion
-  3. `provekit-shim-rusqlite.proof`          — the SQL lion
+  2. `sugar-shim-serde-json-rust.proof`   — the JSON lion
+  3. `sugar-shim-rusqlite.proof`          — the SQL lion
 
-surfaced through the rust kit's `provekit.plugin.resolve_dependency_proofs`
+surfaced through the rust kit's `sugar.plugin.resolve_dependency_proofs`
 RPC (PR #1568) walking `cargo metadata`. Discharge composes across every
 cross-vendor seam in the spine.
 
@@ -69,17 +69,17 @@ final `age=30` from the round-tripped JSON.
 ### Recognizer pilot — Voltron from the recognize side (overnight)
 
 The full Recognizer foundation lives in `feat/recognizer-foundation`
-(PR pending). With both shim `.proof`s as bindings, `provekit recognize`
+(PR pending). With both shim `.proof`s as bindings, `sugar recognize`
 derives the same five boundary tags the explicit-carrier-comment path
 produces — Phase 2 parity proven, on the real demo:
 
 ```
-$ provekit recognize \
+$ sugar recognize \
     --project /…/examples/voltron-demo \
     --source src/lib.rs --source src/ingest.rs \
     --source src/persist.rs --source src/report.rs \
-    --binding /…/provekit-shim-serde-json-rust/blake3-512:….proof \
-    --binding /…/provekit-shim-rusqlite/blake3-512:….proof
+    --binding /…/sugar-shim-serde-json-rust/blake3-512:….proof \
+    --binding /…/sugar-shim-rusqlite/blake3-512:….proof
 
 dispatch: surface=`rust-bind` bindings=46 sources=4
 recognize: 5 tag(s) emitted
@@ -108,7 +108,7 @@ the same linkage the rust-tests lifter would produce. With the shim
 `.proof`'s staged into the demo's pool:
 
 ```
-$ provekit prove examples/voltron-demo
+$ sugar prove examples/voltron-demo
 
   total callsites: 6
   discharged:      2    ← was 0; the Voltron loop closes
@@ -126,12 +126,12 @@ $ provekit prove examples/voltron-demo
 
 **SUPERSEDED AGAIN — final state below.** With #1580 also landed
 (walk_rpc now emits a sibling `kind: contract` decl per
-`#[provekit::sugar]`, cmd_mint mints it into the shim's `.proof`),
+`#[sugar::sugar]`, cmd_mint mints it into the shim's `.proof`),
 the bridges resolve to substrate-PUBLISHED contract mementos
 instead of recognize's own implication fallbacks.
 
 ```
-$ provekit prove examples/voltron-demo
+$ sugar prove examples/voltron-demo
 
   total callsites : 9
   discharged      : 9    ← all
@@ -142,7 +142,7 @@ $ provekit prove examples/voltron-demo
 The full Voltron loop end-to-end with substrate-honest provenance:
 
 1. **Lift** — walk_rpc walks the shim source, emits two records
-   per `#[provekit::sugar(...)]` annotation:
+   per `#[sugar::sugar(...)]` annotation:
    a. `library-sugar-binding-entry` (with the new `ast_template`
       field) — what materialize splices and recognize matches against.
    b. `kind: contract` decl with a trivial-identity post — what
@@ -175,22 +175,22 @@ end-to-end.
 Four sub-issues all closed:
   - #1577 — recognizer foundation (this PR)
   - #1578 — emit bridge + implication mementos (closed)
-  - #1579 — shared emission code in libprovekit (closed)
+  - #1579 — shared emission code in libsugar (closed)
   - #1580 — shims mint contracts per sugar (closed)
   - #84 — substrate gap #84 refused=no-op (closed in PR #1572 earlier)
 
 ### Mint + prove (also wired up tonight)
 
-`.provekit/config.toml` declares `rust-sugar` + `rust-contracts` lift
-surfaces. Per-project lift manifests at `.provekit/lift/rust-bind/`
-and `.provekit/lift/rust-contracts/` mirror the
-`provekit-shim-blake3-rust` pattern: `command = ["../../implementations/
+`.sugar/config.toml` declares `rust-sugar` + `rust-contracts` lift
+surfaces. Per-project lift manifests at `.sugar/lift/rust-bind/`
+and `.sugar/lift/rust-contracts/` mirror the
+`sugar-shim-blake3-rust` pattern: `command = ["../../implementations/
 rust/target/debug/<binary>", "--rpc"]` with `working_dir = "."`. The
 relative path resolves from the demo's project root up two levels to
 the workspace root, finding the shared lifter binaries.
 
 ```
-$ provekit mint /Users/tsavo/provekit/examples/voltron-demo
+$ sugar mint /Users/tsavo/sugar/examples/voltron-demo
 config: 2 plugin(s) declared: rust-sugar, rust-contracts
 dispatch: surface=rust-bind plugin=rust-bind-lift ok
 dispatch: surface=rust-contracts plugin=rust-contracts-lift ok
@@ -199,8 +199,8 @@ dispatch: surface=rust-contracts plugin=rust-contracts-lift ok
   proof bytes:     7676
   .proof file:     blake3-512:016f3412….proof
 
-$ provekit prove /Users/tsavo/provekit/examples/voltron-demo
-ProvekIt verifier report
+$ sugar prove /Users/tsavo/sugar/examples/voltron-demo
+Sugar verifier report
   total callsites: 0
   discharged:      0
   violations:      0
@@ -221,7 +221,7 @@ requires the rust kit's `resolve_dependency_proofs` to find the shim
 crates' `.proof`s in cargo metadata. Today voltron-demo depends on
 `rusqlite` and `serde_json` directly (the post-materialize bodies call
 them); to surface the shim contracts into the pool, the demo would
-depend on `provekit-shim-rusqlite` and `provekit-shim-serde-json-rust`
+depend on `sugar-shim-rusqlite` and `sugar-shim-serde-json-rust`
 instead (they re-export the underlying crates plus carry the signed
 `.proof` envelopes). This is the canonical Voltron-time consumer
 shape; deferred as a small follow-up so the demo's current commit
@@ -242,7 +242,7 @@ Two regression tests added.
 ### Gap #2 — `--library` is single-vendor; should be deleted
 **State:** Tracked as task #84, follow-up PR.
 
-`provekit materialize --library <lib>` accepts a single library tag per
+`sugar materialize --library <lib>` accepts a single library tag per
 invocation and routes ALL boundaries to that library (refusing anything
 the library doesn't provide). The substrate-honest contract is per-family
 routing: every boundary declares its `family` (e.g. `concept:family:json`,
@@ -289,7 +289,7 @@ resolution path (b): user-side `sql_query_row<T, P, F>` matches the
 shim's 4-param mapper form. Callers pass `|row| row.get(0)` closures.
 This keeps the demo green without growing the shim's concept vocabulary.
 
-`provekit-shim-rusqlite`'s `concept:sql-query-row` binding emits a body
+`sugar-shim-rusqlite`'s `concept:sql-query-row` binding emits a body
 calling `conn.query_row(sql, params, mapper)` — a generic 4-param form
 requiring a closure mapping `&Row<'_>` to `T`. A user who wants a
 typed-string-row helper has to either match the shim's exact 4-param
@@ -298,7 +298,7 @@ shapes.
 
 **Resolution paths (#1575 long-term):**
   (a) Add `concept:sql-query-row-string` (and similar monomorphic
-      forms) to provekit-shim-rusqlite's `provides_concepts`.
+      forms) to sugar-shim-rusqlite's `provides_concepts`.
   (b) Redesign user-side function to match the shim's 4-param form
       (carries a mapper closure). **THIS DEMO PATH.**
   (c) Add a kit-side adaptation: when the user declares fewer params
@@ -331,15 +331,15 @@ With the substrate-fix PR #1572 merged, run from the repo root:
 
 ```bash
 # Pass 1: fill SQL boundaries (refused JSON sites stay intact thanks to #1572).
-provekit materialize --target rust --library rust-rusqlite \
+sugar materialize --target rust --library rust-rusqlite \
   --source-dir examples/voltron-demo/src \
-  --project /Users/tsavo/provekit \
+  --project /Users/tsavo/sugar \
   --write
 
 # Pass 2: fill JSON boundaries.
-provekit materialize --target rust --library provekit-shim-serde-json-rust \
+sugar materialize --target rust --library sugar-shim-serde-json-rust \
   --source-dir examples/voltron-demo/src \
-  --project /Users/tsavo/provekit \
+  --project /Users/tsavo/sugar \
   --write
 ```
 
@@ -357,8 +357,8 @@ adopts the 4-param mapper shape closes this and unblocks build+test.
 After build is green:
 
 ```bash
-provekit mint  --project examples/voltron-demo
-provekit prove --project examples/voltron-demo
+sugar mint  --project examples/voltron-demo
+sugar prove --project examples/voltron-demo
 ```
 
 `prove` will union three `.proof` envelopes (voltron-demo + serde-json

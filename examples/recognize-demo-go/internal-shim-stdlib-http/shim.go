@@ -5,12 +5,12 @@ import (
 	"net/http"
 )
 
-//provekit:sugar(concept="concept:http-get", library="recognize-demo-go-stdlib-http", version="1", family="concept:family:http")
+//sugar:sugar(concept="concept:http-get", library="recognize-demo-go-stdlib-http", version="1", family="concept:family:http")
 func HTTPGet(url string) *http.Response {
 	return mustResponse(http.Get(url))
 }
 
-//provekit:sugar(concept="concept:sql-open", library="recognize-demo-go-stdlib-http", version="1", family="concept:family:sql")
+//sugar:sugar(concept="concept:sql-open", library="recognize-demo-go-stdlib-http", version="1", family="concept:family:sql")
 func SQLOpen(driverName string, dataSourceName string) *sql.DB {
 	return mustDB(sql.Open(driverName, dataSourceName))
 }

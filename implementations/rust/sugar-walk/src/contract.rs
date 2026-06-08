@@ -1236,7 +1236,7 @@ mod tests {
         //   b) The reduced formula is NOT reflexive (sides differ: *(3,3) vs 6).
         //   c) The formula does NOT simplify to `true` or a tautology.
         //
-        // The real z3 SAT check on the negation is performed by `provekit prove`
+        // The real z3 SAT check on the negation is performed by `sugar prove`
         // in the battleaxe integration run; this test confirms the formula shape
         // (the pre-condition for z3 to find the counterexample is that the
         // reduced formula be non-trivial with differing sides).

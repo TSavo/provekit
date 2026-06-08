@@ -1,8 +1,0 @@
-[authoring]
-surface = "java-bind"
-
-[platform_profile]
-language = "java"
-family = "concept:family:stdio-stream"
-library = "java-io"
-version = "jdk-1.0+"

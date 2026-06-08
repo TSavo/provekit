@@ -4,7 +4,7 @@
 //
 // This module contains contracts that verify the formal invariants from
 // protocol/specs/2026-04-30-ir-formal-grammar.md. These contracts can be
-// minted as proofs via the provekit verification workflow.
+// minted as proofs via the sugar verification workflow.
 //
 // Each contract is declared using the contract! macro and is verified against
 // the implementation. Kit-defined predicates (roundTrips, isMalformed, isErr)

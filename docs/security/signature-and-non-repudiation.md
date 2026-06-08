@@ -82,7 +82,7 @@ These are the residue. The protocol gives you "this signer signed"; the protocol
 The protocol does not dictate which keys are trusted. The verifier decides:
 
 ```yaml
-# provekit.config.yaml
+# sugar.config.yaml
 trusted_keys:
   contract_signers:
     - "ed25519/MIIBIjANBgkqhkiG..."  # alice@example.com

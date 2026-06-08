@@ -1,8 +1,8 @@
-# ProvekIt IR — Formal Grammar (External JSON Encoding)
+# Sugar IR — Formal Grammar (External JSON Encoding)
 
 **Date:** 2026-04-30
 **Status:** Specification + reference parser, paired with `src/ir/grammar/parse.ts`
-**Scope:** The textual JSON encoding emitted by every ProvekIt IR symbolic-primitives kit (TypeScript, Rust, Go, C++) when serializing a `Declaration[]`.
+**Scope:** The textual JSON encoding emitted by every Sugar IR symbolic-primitives kit (TypeScript, Rust, Go, C++) when serializing a `Declaration[]`.
 
 ## What this document specifies
 
@@ -611,7 +611,7 @@ Memento {
 
 This memento is **not** inside the `.proof` bundle (which is signed by the
 package author). It is minted by **your** build script, signed by **your**
-build key, and stored in **your** `target/provekit/` directory. It is the
+build key, and stored in **your** `target/sugar/` directory. It is the
 witness that says: "I, the build system, checked that the body of
 `my_parse_int` satisfies contract `A`, and here is the Z3 model to prove it."
 
@@ -1512,7 +1512,7 @@ to the grammar.
 | TypeScript       | yes              | Manual object literals with deterministic key order; runs in `src/ir/symbolic/`.            |
 | Rust             | yes              | `serde::Serialize` with field declaration order matching this document.                    |
 | Go               | yes              | `encoding/json` with struct field order matching this document.                             |
-| C++              | yes              | Hand-written JSON serialization in `implementations/cpp/provekit-ir-symbolic/include/`.                |
+| C++              | yes              | Hand-written JSON serialization in `implementations/cpp/sugar-ir-symbolic/include/`.                |
 
 Conformance today is a *fact* (the harness verifies byte-equality on three
 fixtures). This grammar promotes it to a *contract* — any future kit, or any

@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Default solver portfolio for the Sugar workspace.
+#
+# Loaded by sugar-verifier via `SolversConfig::load(project_root)`
+# (see `implementations/rust/sugar-verifier/src/solvers/config.rs`).
+# The runner picks this up automatically; passing
+# `RunnerConfig.solvers_config` from a host process overrides this file.
+#
+# Spec: protocol/specs/2026-05-02-multi-solver-protocol-v2.md (§7).
+#
+# Closes:
+#   - #251 (cvc5 in default portfolio)
+#   - #252 Tier 1 (Vampire in default portfolio via SMT-LIB-v2.6)
+#   - Lean 4 plus mathlib as the dependent type and category theory seat
+#
+# Mode: first-wins
+# -----------------
+# We use `first-wins` (not `consensus`) so that solvers absent from the
+# host's PATH degrade gracefully: any seat that fails to spawn returns
+# Undecidable, the post-collection sort skips it, and the first
+# definitive verdict from an installed solver authors the result.
+# This keeps single-solver developer environments (z3 only) working
+# byte-for-byte, while CI (which installs all available solvers) exercises the full
+# portfolio. `coverage_required` (v2 §7) is intentionally unset; we do
+# not opt into the v2 ConsensusCoverage rule from this PR. That gate
+# can land later when the OpacityManifest types are wired through.
+#
+# IR-compiler tags
+# ----------------
+# `smt-lib-v2.6` routes to `SubprocessSolver` (generic SMT-LIB-v2.6
+# subprocess); `coq` routes to `CoqSubprocessSolver` (per
+# `registry::is_coq_compiler`); `lean` routes to `LeanSubprocessSolver`.
+# The v2 spec text uses `gallina` for
+# Coq's IR-compiler tag, but the existing
+# `sugar_ir_compiler_coq::DIALECT` constant is `"coq"`, so we match
+# the implementation rather than the spec example.
+
+# Project-level kit aliases. These power `--kit=<alias>` without baking
+# language/package knowledge into the Rust CLI; third-party projects can
+# declare their own aliases the same way.
+[[kits]]
+alias = "rust"
+project = "implementations/rust"
+surface = "rust"
+lang = "rust"
+
+[[kits]]
+alias = "csharp"
+project = "implementations/csharp"
+surface = "csharp"
+lang = "csharp"
+
+[[kits]]
+alias = "clr-bytecode"
+project = "implementations/csharp"
+surface = "clr-bytecode"
+lang = "clr-bytecode"
+
+[solvers]
+mode = "first-wins"
+portfolio = ["maude", "z3", "cvc5", "vampire", "coq", "lean"]
+
+[solvers.maude]
+binary = "maude"
+ir_compiler = "maude"
+timeout_seconds = 30
+version = "3.x"
+ceta_gate = true
+ceta_binary = "ceta"
+termination_prover = "aprove"
+confluence_checker = "csi"
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.cvc5]
+binary = "cvc5"
+ir_compiler = "smt-lib-v2.6"
+# `--lang=smt2` selects the SMT-LIB-v2 input dialect; `--produce-models`
+# is required for cvc5 to emit model assignments after `(check-sat)`
+# returns sat (parity with z3's default behavior under `-smt2 -in`).
+flags = ["--lang=smt2", "--produce-models"]
+timeout_seconds = 30
+version = "1.x"
+
+[solvers.vampire]
+binary = "vampire"
+ir_compiler = "smt-lib-v2.6"
+# Tier 1 of #252: Vampire in SMT-LIB-2 mode. `--input_syntax smtlib2`
+# tells Vampire to parse SMT-LIB rather than its native TPTP;
+# `--output_mode smtcomp` switches output to the SMT-COMP-conformant
+# `sat`/`unsat`/`unknown` lines that the generic `SubprocessSolver`
+# parser expects. Tier 2 (a dedicated TPTP `sugar-ir-compiler-vampire`
+# crate) is deferred per #252 until empirical signal that Vampire's
+# UNKNOWN rate on SMT-LIB inputs justifies the second pipeline.
+flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
+timeout_seconds = 30
+# Match the pinned upstream release in CI (v5.0.1 from
+# github.com/vprover/vampire/releases). Reported in implication mementos
+# as solver provenance; bumping CI's pinned version requires bumping this.
+version = "5.x"
+
+[solvers.coq]
+binary = "coqc"
+ir_compiler = "coq"
+timeout_seconds = 60
+version = "8.x"
+
+[solvers.lean]
+binary = "lake"
+ir_compiler = "lean"
+timeout_seconds = 60
+version = "4.x"
+lake_project = "tools/portfolio/lean-mathlib"

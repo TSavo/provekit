@@ -10,7 +10,7 @@ The package manifest carries one pointer:
 
 ```json
 {
-  "provekit": "./provekit.proof"
+  "sugar": "./sugar.proof"
 }
 ```
 
@@ -39,7 +39,7 @@ This is what discriminates the binding from "what your code looks like" in any w
 The envelope is a typed catalog of mementos, each with a CID, each signed.
 
 ```
-provekit.proof
+sugar.proof
   FunctionContractMemento        (paper 14, paper 17)
   EvidenceMemento                (paper 16)
   EffectOccurrence / effect-set  (paper 12)
@@ -85,7 +85,7 @@ bindings.sugar     (optional, human-authored, build-time)
    |
    |  publish pipeline compiles + signs
    v
-provekit.proof     (durable, content-addressed, substrate-facing)
+sugar.proof     (durable, content-addressed, substrate-facing)
 ```
 
 The analogy is `.ts` -> `.js` or `.scss` -> `.css`. The library author can write binding claims in a DSL the substrate's tooling provides. The publish step compiles those into `ConceptBindingMemento`s, packs them into the envelope, signs, and uploads. The published artifact is the proof envelope. The sugar source can be checked into the library's repo for the author's convenience and is irrelevant to the consumer.
@@ -115,22 +115,22 @@ The package manifest gets one line. In `package.json`:
   "name": "better-sqlite3",
   "version": "11.0.0",
   "main": "lib/index.js",
-  "provekit": "./provekit.proof"
+  "sugar": "./sugar.proof"
 }
 ```
 
 In `pyproject.toml`:
 
 ```toml
-[tool.provekit]
-envelope = "provekit.proof"
+[tool.sugar]
+envelope = "sugar.proof"
 ```
 
 In `Cargo.toml`:
 
 ```toml
-[package.metadata.provekit]
-envelope = "provekit.proof"
+[package.metadata.sugar]
+envelope = "sugar.proof"
 ```
 
 In every package manifest format, one entry pointing at the envelope. The tooling reads the manifest, finds the pointer, loads the envelope. The substrate's distribution problem reduces to whatever the language's package distribution already solved.
@@ -145,7 +145,7 @@ Paper 21 §6 named three paths a binding can enter the catalog. This paper compl
 
 **Self-Attested.** The library author ships an envelope whose binding claims have not been independently discharged; the author signs the assertion that the bindings hold. The substrate treats this as a stronger claim than third-party Inferred but weaker than third-party Discharged. The consumer's verifier policy decides whether to trust Self-Attested without independent discharge.
 
-**Third-party (Inferred).** A third party (a community contributor, a research project, a substrate maintainer) writes binding claims about a library whose author has not shipped its own envelope. The third party publishes a separate package, signed by the third party's key, that names the target library's CIDs and asserts the bindings. The package manifest has its own `provekit` pointer; consumers who install both packages get both envelopes; the substrate consumes the bindings with their admission tier transparently named.
+**Third-party (Inferred).** A third party (a community contributor, a research project, a substrate maintainer) writes binding claims about a library whose author has not shipped its own envelope. The third party publishes a separate package, signed by the third party's key, that names the target library's CIDs and asserts the bindings. The package manifest has its own `sugar` pointer; consumers who install both packages get both envelopes; the substrate consumes the bindings with their admission tier transparently named.
 
 **Generated.** A language model proposes binding claims; the substrate discharges them; the discharged claims enter the catalog with `Generated` admission. The substrate's honesty gradient ensures the receipt names the generation method; the consumer's verifier policy decides whether to weight Generated claims as equal to Authored, lower, or refused outright.
 
@@ -161,7 +161,7 @@ The proof envelope is signed bytes. Signed bytes are what registries already dis
 2. Build pipeline compiles claims into mementos, packs them into the envelope, signs the envelope
 3. The envelope is included in the package tarball
 4. `npm publish` (or `cargo publish`, `pip upload`, etc.) ships the tarball
-5. Consumers' `npm install` (etc.) puts the envelope in `node_modules/<pkg>/provekit.proof`
+5. Consumers' `npm install` (etc.) puts the envelope in `node_modules/<pkg>/sugar.proof`
 6. The substrate's tooling reads the envelope from disk
 
 No new infrastructure. No new registry. No new governance question. The cypherpunk shape: the catalog is the union of every package author's signed claims, distributed through whichever channel already moves the package, federated by the existing trust infrastructure of the language's ecosystem.
@@ -174,11 +174,11 @@ Paper 22 §7 names the developer-keyboard pitch: refusals at your callsites beco
 
 The bootstrap shape:
 
-1. A contributor writes a binding envelope for an existing library (e.g., `@provekit/bindings-better-sqlite3`)
+1. A contributor writes a binding envelope for an existing library (e.g., `@sugar/bindings-better-sqlite3`)
 2. The envelope claims the library's surface ops map to specific concept hub CIDs
 3. The contributor signs and publishes the envelope as a standalone npm package
-4. Consumers `npm install @provekit/bindings-better-sqlite3` alongside `npm install better-sqlite3`
-5. The substrate's tooling discovers two `provekit.proof` files in `node_modules/`; both bind operations in the better-sqlite3 surface; both are signed; the consumer's verifier policy decides which to trust
+4. Consumers `npm install @sugar/bindings-better-sqlite3` alongside `npm install better-sqlite3`
+5. The substrate's tooling discovers two `sugar.proof` files in `node_modules/`; both bind operations in the better-sqlite3 surface; both are signed; the consumer's verifier policy decides which to trust
 
 When the library author later ships their own envelope inside `better-sqlite3/`, the same surface ops have two competing envelopes: the third-party and the official. The consumer's policy decides. Typically the official wins, the third-party deprecates itself, but neither artifact mechanically supersedes the other; both remain in npm history, signed by their respective keys, available to anyone who wants to verify the migration history of their codebase across decade boundaries.
 
@@ -204,11 +204,11 @@ The substrate is honest about its scope: it dissolves the work of being commensu
 
 This paper's claim is empirical at three sites, with shipped status mixed.
 
-**Site one: shipped memento families.** Paper 14's universal-correctness-bundle work landed `.proof` envelopes for the menagerie exhibits. PR #873 (Stage 2 of paper 22) shipped `AggregateSummaryMemento`, `ConceptSiteMemento`, `PromotionDecisionMemento`, `HaltMemento`, `RefusalMemento`, and `LossRecordMemento` as typed Rust structs in `provekit-ir-types`. PR #875 (the witness experiment) shipped `WitnessMemento` plus a per-family `WitnessRegistry` consumer in `libprovekit` (parse, validate, index by `(subject, fixture_state_cid)`, reject malformed). Those mementos are not hypothetical; they are in `main` today.
+**Site one: shipped memento families.** Paper 14's universal-correctness-bundle work landed `.proof` envelopes for the menagerie exhibits. PR #873 (Stage 2 of paper 22) shipped `AggregateSummaryMemento`, `ConceptSiteMemento`, `PromotionDecisionMemento`, `HaltMemento`, `RefusalMemento`, and `LossRecordMemento` as typed Rust structs in `sugar-ir-types`. PR #875 (the witness experiment) shipped `WitnessMemento` plus a per-family `WitnessRegistry` consumer in `libsugar` (parse, validate, index by `(subject, fixture_state_cid)`, reject malformed). Those mementos are not hypothetical; they are in `main` today.
 
-**Pending memento families.** `ConceptBindingMemento` and `LibraryRealizationProfile` are NOT yet shipped as typed structs in `provekit-ir-types` or backed by registry consumers in `libprovekit`. #858 is the still-open spec for the `LibraryRealizationProfile` shape; `ConceptBindingMemento` is the binding claim this paper names but has no typed implementation today. The §3 envelope catalog is the trajectory we are committing to as we ship those families. Until they land, a `.proof` envelope can carry binding intent only as untyped JSON cells, which is the failure mode #856 names; we should not call those typed-registry-backed mementos before they are.
+**Pending memento families.** `ConceptBindingMemento` and `LibraryRealizationProfile` are NOT yet shipped as typed structs in `sugar-ir-types` or backed by registry consumers in `libsugar`. #858 is the still-open spec for the `LibraryRealizationProfile` shape; `ConceptBindingMemento` is the binding claim this paper names but has no typed implementation today. The §3 envelope catalog is the trajectory we are committing to as we ship those families. Until they land, a `.proof` envelope can carry binding intent only as untyped JSON cells, which is the failure mode #856 names; we should not call those typed-registry-backed mementos before they are.
 
-**Site two: the cross-library receipt landed.** PR #872 (Stage 1) shipped the SQL concept-shape catalog (`concept:sql-query`, `concept:sql-execute`) and TS realize kits for `better-sqlite3` and `pg` keyed by `library_tag` (Bridge E PR #867's mechanism). PR #873 (Stage 2) shipped the async-rewrite engine and produced the receipt at root CID `blake3-512:9faa22b51d6bb08e166a0ebd99bf95a21ab3ea61951c6f420840c68fb985d7f523a5bbfc72888d82d1269d4cc50303f8a243f978b76836ada8fe343f6ba88910`. The natural next packaging step is to extract the bootstrap kits as `@provekit/bindings-better-sqlite3` and `@provekit/bindings-pg` standalone npm packages, each with a `provekit.proof` envelope, each signed. That extraction is the empirical demo of §10's bootstrap shape (still future).
+**Site two: the cross-library receipt landed.** PR #872 (Stage 1) shipped the SQL concept-shape catalog (`concept:sql-query`, `concept:sql-execute`) and TS realize kits for `better-sqlite3` and `pg` keyed by `library_tag` (Bridge E PR #867's mechanism). PR #873 (Stage 2) shipped the async-rewrite engine and produced the receipt at root CID `blake3-512:9faa22b51d6bb08e166a0ebd99bf95a21ab3ea61951c6f420840c68fb985d7f523a5bbfc72888d82d1269d4cc50303f8a243f978b76836ada8fe343f6ba88910`. The natural next packaging step is to extract the bootstrap kits as `@sugar/bindings-better-sqlite3` and `@sugar/bindings-pg` standalone npm packages, each with a `sugar.proof` envelope, each signed. That extraction is the empirical demo of §10's bootstrap shape (still future).
 
 **Site three: the runtime-witness anchor.** PR #875 (the witness experiment) committed a fixture sqlite at `examples/migrate-demo/users-better-sqlite3/fixture.sqlite` with `fixture_state_cid: blake3-512:295e0fd280088fc1e5e00d7bade11a2bf850c932180622e28f2fc92e64f97cd5bd757a73acf07f888b7c523e8efb65d8f0d01d50bc02740e5d771e750485d8f4`, plus the substrate's first runtime-observed signed claims: four `WitnessMemento`s observing the row-shape for `concept:sql-query` callsites against that fixture. The witnesses re-discharge byte-equal under fresh re-runs. This is the substrate's first claim grounded in observed runtime behavior against a content-addressed environment, lighting up paper 19's empirical-contract discharge as a fifth admission path: Witnessed.
 

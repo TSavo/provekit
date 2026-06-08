@@ -84,11 +84,11 @@ This is what the term "constraint-driven development" names. Software ages backw
 ## Install path
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 cd your-rust-crate
-cargo provekit-lift
-provekit prove
+cargo sugar-lift
+sugar prove
 ```
 
 The Rust CLI is the canonical shipping implementation. Per-language libs embed

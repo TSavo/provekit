@@ -1,0 +1,3 @@
+name = "python-bind"
+command = ["sugar-lift-python-verify", "--rpc"]
+working_dir = "."

@@ -19,8 +19,8 @@ The substrate already has:
 
 1. `ConceptAbstractionMemento` (2026-05-15 §2.1): a content-addressed catalog node carrying a `contract: ir-formula` (a `wp_rule`) over named slots, sorted result, and a list of realizations.
 2. `RealizationDesugaringMemento` (2026-05-15 §2.2): a content-addressed equation pinning a concept to a per-language operation-layer expansion, with `loss_record` over the five canonical dimensions.
-3. `FunctionContractMemento` (per-language lifters via `provekit-lift-contracts`): a content-addressed per-function contract lifted from user annotations (`#[requires]`, `#[ensures]`, assertions in tests, and so on).
-4. The wp evaluator in `libprovekit/src/wp.rs` over `ir-formula`.
+3. `FunctionContractMemento` (per-language lifters via `sugar-lift-contracts`): a content-addressed per-function contract lifted from user annotations (`#[requires]`, `#[ensures]`, assertions in tests, and so on).
+4. The wp evaluator in `libsugar/src/wp.rs` over `ir-formula`.
 5. The structural morphism catalog in `cmd_transport.rs`: identifies, for each user operation site, which concept op the site binds to. This binding is computed and immediately discarded; it is not minted as a memento, and there is no content-addressed object that records the binding plus its discharge verdict.
 
 What is missing is exactly the connector: a content-addressed memento that says
@@ -55,7 +55,7 @@ Per-site `witnesses` in this memento are pinned witness IDs and per-site confide
 
 `realization_mode_hint` is a NON-NORMATIVE field that carries a deployment-policy suggestion: this binding can be instrumented at runtime as a `witness` (recording samples), `emitter` (asserting and aborting on violation), or `monitor` (asserting and logging). The hint is policy advice from the discharger to the realize-side compiler. It does not affect the binding's CID-determining bytes only via being PART of the bytes; see §3.1.
 
-The compile-side honors the hint via `provekit.toml` settings (PR-E). The substrate makes no claim about what the runtime mode SHOULD be; that is a deployment decision, not a correctness decision.
+The compile-side honors the hint via `sugar.toml` settings (PR-E). The substrate makes no claim about what the runtime mode SHOULD be; that is a deployment decision, not a correctness decision.
 
 ## §1. Wire shape (CDDL, v1.6.x layered)
 
@@ -181,7 +181,7 @@ A per-site `witnesses` array MAY be empty: a binding can be discharged symbolica
 
 Let `C_local` be the user-lifted contract (the `FunctionContractMemento` at `local_contract_cid`) and `C_concept` be the catalog contract (the `wp_rule` of the `ConceptAbstractionMemento` at `concept_cid`).
 
-Let `wp_local` and `wp_concept` be their predicate transformers under the wp evaluator (`libprovekit/src/wp.rs`).
+Let `wp_local` and `wp_concept` be their predicate transformers under the wp evaluator (`libsugar/src/wp.rs`).
 
 Let `loss` be the `loss_record`, a map from dimension name to `ir-formula` per 2026-05-15 §2.4.
 
@@ -396,11 +396,11 @@ A third case: the user wrote `fn double(x: i64) -> i64 { x.wrapping_add(x) }`. T
 
 This PR-A lands the SPEC and the Rust types only.
 
-- **PR-A (this PR):** CDDL spec at `protocol/specs/2026-05-12-concept-site-memento.md` (this document) and `ConceptSiteMemento`, `CodeSite`, `Span`, `Discharge`, `Provenance`, `WitnessRef` types in `provekit-ir-types/src/lib.rs` with serde round-trip tests in `provekit-ir-types/tests/concept_site_serde.rs`.
-- **PR-B (lifter wiring):** `provekit-walk` and each per-language lifter gain a `concept_cid: Option<String>` field on `FunctionContractMemento` (or auto-mint a sibling `ConceptSiteMemento` into `auto_minted_mementos` when the function's term clusters to a catalog concept). The clusterer that today lives inline in `cmd_transport.rs` is extracted into a callable surface.
-- **PR-C (discharge wiring):** The discharger (a new binary or a mode of `provekit-discharge`) consumes a `(local_contract_cid, concept_cid)` pair and produces the `discharge` block by running the wp evaluator (algebraic) and witness sampling (empirical) against the concept's contract and its inherited witnesses. The `MorphismDischargeReceipt` is the per-binding receipt for `exact` and `loudly-bounded-lossy`.
-- **PR-D (CLI):** `provekit catalog summarize` lists `ConceptSiteMemento`s grouped by concept, with per-concept discharge breakdown (counts of `exact` / `loudly-bounded-lossy` / `refuse`) and a gap-list of `refuse` rationales.
-- **PR-E (realize-side compiler):** Each binding's contract is compiled into one of `witness` / `emitter` / `monitor` runtime wrappers per the `provekit.toml` deployment policy. The `realization_mode_hint` is consulted but not authoritative; the policy decides.
+- **PR-A (this PR):** CDDL spec at `protocol/specs/2026-05-12-concept-site-memento.md` (this document) and `ConceptSiteMemento`, `CodeSite`, `Span`, `Discharge`, `Provenance`, `WitnessRef` types in `sugar-ir-types/src/lib.rs` with serde round-trip tests in `sugar-ir-types/tests/concept_site_serde.rs`.
+- **PR-B (lifter wiring):** `sugar-walk` and each per-language lifter gain a `concept_cid: Option<String>` field on `FunctionContractMemento` (or auto-mint a sibling `ConceptSiteMemento` into `auto_minted_mementos` when the function's term clusters to a catalog concept). The clusterer that today lives inline in `cmd_transport.rs` is extracted into a callable surface.
+- **PR-C (discharge wiring):** The discharger (a new binary or a mode of `sugar-discharge`) consumes a `(local_contract_cid, concept_cid)` pair and produces the `discharge` block by running the wp evaluator (algebraic) and witness sampling (empirical) against the concept's contract and its inherited witnesses. The `MorphismDischargeReceipt` is the per-binding receipt for `exact` and `loudly-bounded-lossy`.
+- **PR-D (CLI):** `sugar catalog summarize` lists `ConceptSiteMemento`s grouped by concept, with per-concept discharge breakdown (counts of `exact` / `loudly-bounded-lossy` / `refuse`) and a gap-list of `refuse` rationales.
+- **PR-E (realize-side compiler):** Each binding's contract is compiled into one of `witness` / `emitter` / `monitor` runtime wrappers per the `sugar.toml` deployment policy. The `realization_mode_hint` is consulted but not authoritative; the policy decides.
 - **PR-F (empirical floor):** `WitnessMemento` gets a canonical `Vec<WitnessRef>` and confidence-interval discharge mechanism. The witness propagation rule of §0.3 is implemented end-to-end: tests attached to ONE site become witnesses at the concept level and propagate by REFERENCE through `concept_cid` to every binding citing the concept.
 
 ## §9. The smoke test (the architectural acceptance test)
@@ -411,7 +411,7 @@ A complete round-trip on a real Rust codebase:
 2. Cluster: every function term that matches a catalog concept gets a `concept_cid` assigned.
 3. Bind: every `(function_term_cid, concept_cid)` pair gets a `ConceptSiteMemento` with a discharge verdict.
 4. Discharge: the verdict is `exact` for sites whose local contracts wp-equal the concept contract; `loudly-bounded-lossy` for sites with a non-empty `loss_record`; `refuse` for sites where the discharger cannot close.
-5. Realize: the realize-side compiler picks per-language realizations from each binding's `concept_cid` and emits Rust output. The runtime mode is set per `provekit.toml`.
+5. Realize: the realize-side compiler picks per-language realizations from each binding's `concept_cid` and emits Rust output. The runtime mode is set per `sugar.toml`.
 
 **Acceptance:** every contract in the output traces back to (a) lifted user annotations, (b) lifted user test assertions, or (c) wp_rule synthesized structurally from the term algebra at clustering-mint time. ZERO contracts authored by humans during the round-trip.
 
@@ -419,11 +419,11 @@ This is the architectural acceptance test for the whole substrate. It pins the s
 
 ## §10. Cross-references
 
-- The `concept_cid` is produced today by the clusterer inline in `implementations/rust/provekit-transport/src/cmd_transport.rs`; PR-B extracts that surface.
-- The `local_contract_cid` is produced by `provekit-lift-contracts` per language; the same CID semantics as `FunctionContractMemento.cid` per `2026-05-03-contract-cid-vs-attestation-cid.md`.
+- The `concept_cid` is produced today by the clusterer inline in `implementations/rust/sugar-transport/src/cmd_transport.rs`; PR-B extracts that surface.
+- The `local_contract_cid` is produced by `sugar-lift-contracts` per language; the same CID semantics as `FunctionContractMemento.cid` per `2026-05-03-contract-cid-vs-attestation-cid.md`.
 - The `discharge_receipt_cid` references a `MorphismDischargeReceipt`, the discharge type defined in 2026-05-15 §2.5.
 - The substrate composition guard lives in `compose_function_contracts`; PR-B extends it to consult `ConceptSiteMemento`s in the pool.
-- The wp evaluator at `libprovekit/src/wp.rs` is the single algebraic verdict-source.
+- The wp evaluator at `libsugar/src/wp.rs` is the single algebraic verdict-source.
 - For sibling per-site discharge mementos see the closure / loop / try-branch mementos (2026-05-05).
 - For the loss-record discipline see 2026-05-15 §2.4 (`domain_narrowing`, `effect_divergence`, `structural_divergence`, `ub_introduction`, `value_divergence`).
 - For the trichotomy precedent see `docs/papers/09-lossy-boundary-compression.md` (obligation-preserving loss).
@@ -433,7 +433,7 @@ This is the architectural acceptance test for the whole substrate. It pins the s
 
 - Implementation of the lifter, clusterer, and discharger wiring (PR-B and PR-C).
 - The `MorphismDischargeReceipt` schema beyond what 2026-05-15 §2.5 already specifies.
-- The CLI surface for `provekit catalog summarize` (PR-D).
+- The CLI surface for `sugar catalog summarize` (PR-D).
 - The realize-side compiler integration (PR-E).
 - The `WitnessMemento` canonical schema (PR-F).
 - Backward-compatibility migration of existing `cmd_transport.rs` bindings (handled as a one-shot data migration in PR-B).

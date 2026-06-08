@@ -366,7 +366,7 @@ The structural-elimination theorem was articulated in conversation with Claude O
 
 ## §15: Citation
 
-> Savo, T. (2026). *After Verification: Bug Classes as Missing Edges in the Federated Proof Substrate*. Sugar Papers, vol. 7. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/07-after-verification-bug-classes-as-missing-edges.md.
+> Savo, T. (2026). *After Verification: Bug Classes as Missing Edges in the Federated Proof Substrate*. Sugar Papers, vol. 7. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/sugar/blob/main/docs/papers/07-after-verification-bug-classes-as-missing-edges.md.
 
 ---
 

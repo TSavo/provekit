@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit mint`: the lift-plugin protocol dispatcher.
+// `sugar mint`: the lift-plugin protocol dispatcher.
 //
 // Architecture (substrate-as-only-mint-pipeline):
 //
@@ -170,7 +170,7 @@ pub(crate) fn configured_kit_alias_names_from_configs(
 pub(crate) fn format_unknown_kit_error(kit: &str, aliases: &[String]) -> String {
     if aliases.is_empty() {
         format!(
-            "{}: unknown kit `{}`; no kit aliases configured in .provekit/config.toml or user config",
+            "{}: unknown kit `{}`; no kit aliases configured in .sugar/config.toml or user config",
             "error".red().bold(),
             kit
         )
@@ -419,7 +419,7 @@ fn assert_oracle_ready_if_requested(surface: &str, lift: &Value) -> Result<(), S
     let oracle = oracle_observation_from_lift(lift);
     if oracle.requested && oracle.attempted > 0 && !oracle.ready {
         return Err(format!(
-            "lift surface `{surface}` requested rust-analyzer oracle and found {} receiver query candidate(s), but provekit-linkerd did not report rust-analyzer ready; refusing to mint a syntactic-only proof",
+            "lift surface `{surface}` requested rust-analyzer oracle and found {} receiver query candidate(s), but sugar-linkerd did not report rust-analyzer ready; refusing to mint a syntactic-only proof",
             oracle.attempted
         ));
     }
@@ -469,7 +469,7 @@ impl MintKit {
         let mint_step = path
             .terminal_steps()
             .into_iter()
-            .find(|step| step.name == "mint" || step.kit == "provekit-mint")
+            .find(|step| step.name == "mint" || step.kit == "sugar-mint")
             .ok_or_else(|| {
                 KitError::Transformation("mint path missing terminal `mint` step".to_string())
             })?;
@@ -493,7 +493,7 @@ impl MintKit {
         }
 
         let mint_request = self.path_step_spec(mint_step, "mint path mint step")?;
-        // The project root (where `.provekit/` lives) is the canonical
+        // The project root (where `.sugar/` lives) is the canonical
         // location for manifest discovery, regardless of any per-plugin
         // workspace_override. Read it from the mint_request so it stays
         // stable across all lift steps in the path.
@@ -618,7 +618,7 @@ impl MintKit {
             .map_err(KitError::Transformation)?;
             // Dependency-proof bridging, one level up the crate graph: harvest
             // contracts published by dependency proofs already in
-            // `.provekit/imports/` (libsugar, the rust stdlib shim, ...) and
+            // `.sugar/imports/` (libsugar, the rust stdlib shim, ...) and
             // forward them alongside this crate's own producer contracts. The
             // implication lifter then emits a bridge for each cross-crate /
             // stdlib call site instead of leaving it a vacuous lift-gap.
@@ -892,7 +892,7 @@ fn contract_bindings_from_producer_responses(
 }
 
 /// Harvest contract bindings from dependency proofs already loaded under
-/// `<project_root>/.provekit/imports/`. This is the M×N bridge model one
+/// `<project_root>/.sugar/imports/`. This is the M×N bridge model one
 /// level up the crate graph: a dependency crate (libsugar, the rust
 /// stdlib shim, ...) publishes its contracts as a `.proof`, the consumer's
 /// pool loads it, and the implication lifter — handed these (name, cid,
@@ -903,12 +903,12 @@ fn contract_bindings_from_producer_responses(
 /// witnessed-fact one for the same callee. Returns empty when imports/ holds
 /// no dependency proofs.
 fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
-    // Scope strictly to declared dependency proofs under `.provekit/imports/`.
+    // Scope strictly to declared dependency proofs under `.sugar/imports/`.
     // (`load_all_proofs::run` recursively walks the WHOLE crate tree, which
     // would slurp stale proofs under target/, examples/, the crate's own
     // freshly-minted output, etc. — we want only what the kit author placed
     // in imports/ as a dependency.)
-    let imports_dir = project_root.join(".provekit").join("imports");
+    let imports_dir = project_root.join(".sugar").join("imports");
     let mut proof_files = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&imports_dir) {
         for entry in entries.flatten() {
@@ -1076,7 +1076,7 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
 
 impl Kit for MintKit {
     fn dialect(&self) -> Dialect {
-        Dialect::Other("provekit-mint".to_string())
+        Dialect::Other("sugar-mint".to_string())
     }
 
     fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
@@ -1120,7 +1120,7 @@ fn dispatch(
 /// step. Delegates to the same `MintKit::transform_session` as
 /// single-plugin dispatch — the substrate's path executor and the
 /// MintKit's predecessor-fan-in logic handle the rest. The user-facing
-/// wrapper for projects whose `.provekit/config.toml` declares
+/// wrapper for projects whose `.sugar/config.toml` declares
 /// `[[plugins]]`.
 fn dispatch_multi(
     project_root: &Path,
@@ -1254,7 +1254,7 @@ fn mint_input_multi(
 
     algebra.push(PathAlgebra {
         name: "mint".to_string(),
-        kit: "provekit-mint".to_string(),
+        kit: "sugar-mint".to_string(),
         inputs: vec![mint_input_cid],
         depends_on: lift_step_names,
         verb: Verb::Transform,
@@ -1455,7 +1455,7 @@ fn mint_result_claim(
         .unwrap_or_default();
 
     Ok(DomainClaim {
-        domain: DomainKind::Other("provekit-mint".to_string()),
+        domain: DomainKind::Other("sugar-mint".to_string()),
         contract,
         artifacts: vec![result_cid],
         from: vec![address(input)],
@@ -1620,7 +1620,7 @@ fn mint_bridge_from_decl(
     // minted panic leaf and the panic-safe discharge path is never entered.
     let callsite = parse_bridge_callsite(decl, source_symbol)?;
     let bridge = mint_bridge(&MintBridgeArgs {
-        produced_by: "provekit-cli".to_string(),
+        produced_by: "sugar-cli".to_string(),
         produced_at: produced_at.to_string(),
         source_symbol: source_symbol.to_string(),
         source_layer: source_layer.to_string(),
@@ -1753,7 +1753,7 @@ fn mint_ir_document(
                 scope_kind: scope_kind.to_string(),
                 scope: scope.to_string(),
                 parent_authority_cid,
-                produced_by: "provekit-cli".to_string(),
+                produced_by: "sugar-cli".to_string(),
                 produced_at: produced_at.clone(),
                 signer_seed,
             };
@@ -2072,7 +2072,7 @@ fn mint_ir_document(
             .unwrap_or(default_signer_seed);
         let produced_by = authority
             .map(|authority| authority.principal.clone())
-            .unwrap_or_else(|| "provekit-cli".to_string());
+            .unwrap_or_else(|| "sugar-cli".to_string());
 
         // Tier-1 crate tag (Tier 2b enabler): the SEMANTIC library the kit
         // declares in `platform_profile.library` WINS. For the rust-std shim
@@ -2081,10 +2081,10 @@ fn mint_ir_document(
         // looks the target up by.
         //
         // The kit's rust-fn-contracts surface stamps each contract's `library`
-        // with the CARGO PACKAGE NAME (`provekit_shim_rust_std`), which is NOT
+        // with the CARGO PACKAGE NAME (`sugar_shim_rust_std`), which is NOT
         // the semantic library. Letting that stamp win split the shim's
         // `option_unwrap` across two keys: the PRE-bearing fn-contract under
-        // `(provekit_shim_rust_std, option_unwrap)` and the post-only sugar
+        // `(sugar_shim_rust_std, option_unwrap)` and the post-only sugar
         // contract under `(std, option_unwrap)`. A call resolved to `std` then
         // found ONLY the post-only shell and vacuous-passed. So the declared
         // semantic library takes precedence; the per-decl stamp is the fallback
@@ -2145,7 +2145,7 @@ fn mint_ir_document(
         // on any source language.
         if let Some(source_symbol) = bridge_source_symbol {
             let bridge = mint_bridge(&MintBridgeArgs {
-                produced_by: "provekit-cli".to_string(),
+                produced_by: "sugar-cli".to_string(),
                 produced_at: produced_at.clone(),
                 source_symbol,
                 source_layer: "source".to_string(),
@@ -2326,7 +2326,7 @@ fn mint_ir_document(
                 .unwrap_or(default_signer_seed);
             let produced_by = authority
                 .map(|authority| authority.principal.clone())
-                .unwrap_or_else(|| "provekit-cli".to_string());
+                .unwrap_or_else(|| "sugar-cli".to_string());
 
             let args = MintImplicationArgs {
                 produced_by,
@@ -2542,13 +2542,13 @@ fn mint_refusal_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
 }
 
 /// Mint a `realization-memento` (Boundary variant) into the envelope.
-/// Emitted by `walk_rpc` for each `#[provekit::boundary]` annotation
+/// Emitted by `walk_rpc` for each `#[sugar::boundary]` annotation
 /// it finds: a function tagged as the EDGE where a concept binds to
 /// a per-language library. The materializer (downstream) reads these
 /// when retargeting consumers to other languages and substitutes the
 /// per-target sister library at each boundary callsite. The data type
 /// already exists as `RealizationMemento::Boundary` in
-/// `provekit-ir-types`; here we just envelope-mint it for the .proof.
+/// `sugar-ir-types`; here we just envelope-mint it for the .proof.
 fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     let realization_kind = required_str(decl, "realization_kind", "realization-memento")?;
     if realization_kind != "boundary" {
@@ -2650,7 +2650,7 @@ fn emit_witnesses_by_contract(
 }
 
 fn deterministic_signer_seed(principal: &str) -> Ed25519Seed {
-    let digest = blake3_512_of(format!("provekit-signer:{principal}").as_bytes());
+    let digest = blake3_512_of(format!("sugar-signer:{principal}").as_bytes());
     let hex = digest
         .strip_prefix("blake3-512:")
         .expect("blake3_512_of returns tagged digest");
@@ -2709,10 +2709,10 @@ fn json_to_cvalue(j: &Value) -> Arc<CValue> {
 
 #[derive(Parser, Debug, Clone)]
 pub struct MintArgs {
-    /// Project root containing `.provekit/config.toml`. Defaults to current dir.
+    /// Project root containing `.sugar/config.toml`. Defaults to current dir.
     #[arg(long)]
     pub project: Option<PathBuf>,
-    /// Project-configured kit shortcut from `[[kits]]` in `.provekit/config.toml`
+    /// Project-configured kit shortcut from `[[kits]]` in `.sugar/config.toml`
     /// or user config.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
@@ -2830,7 +2830,7 @@ pub fn run(args: MintArgs) -> u8 {
                 Some(s) => s,
                 None => {
                     eprintln!(
-                        "{}: no lift surface configured. Set [[plugins]] or [authoring] surface in .provekit/config.toml, or pass --surface/--kit.",
+                        "{}: no lift surface configured. Set [[plugins]] or [authoring] surface in .sugar/config.toml, or pass --surface/--kit.",
                         "error".red().bold()
                     );
                     return EXIT_USER_ERROR;
@@ -3121,7 +3121,7 @@ mod tests {
         let user_cfg = ProjectConfig {
             kits: vec![KitAliasEntry {
                 alias: "external".to_string(),
-                project: "/opt/provekit/external-kit".to_string(),
+                project: "/opt/sugar/external-kit".to_string(),
                 surface: "external-lift".to_string(),
                 lang: "external".to_string(),
             }],
@@ -3134,7 +3134,7 @@ mod tests {
 
         assert_eq!(
             resolved.project_root,
-            PathBuf::from("/opt/provekit/external-kit")
+            PathBuf::from("/opt/sugar/external-kit")
         );
         assert_eq!(resolved.surface, "external-lift");
         assert_eq!(resolved.lang_key, "external");
@@ -3156,7 +3156,7 @@ mod tests {
         let user_cfg = ProjectConfig {
             kits: vec![KitAliasEntry {
                 alias: "java".to_string(),
-                project: "/opt/provekit/java".to_string(),
+                project: "/opt/sugar/java".to_string(),
                 surface: "java-user".to_string(),
                 lang: "java-user".to_string(),
             }],
@@ -3213,7 +3213,7 @@ mod tests {
         assert_eq!(params["surface"].as_str(), Some("go"));
         assert_eq!(
             params["config_path"].as_str(),
-            Some(".provekit/config.toml")
+            Some(".sugar/config.toml")
         );
         assert!(
             params["workspace_root"].as_str().is_some(),
@@ -3238,7 +3238,7 @@ mod tests {
         let lift = path.step("lift").expect("lift algebra step");
         let mint = path.step("mint").expect("mint algebra step");
         assert_eq!(lift.kit, "lift-plugin:rust");
-        assert_eq!(mint.kit, "provekit-mint");
+        assert_eq!(mint.kit, "sugar-mint");
         assert_eq!(lift.inputs.len(), 1);
         assert_eq!(mint.inputs.len(), 1);
         assert_eq!(mint.depends_on, vec!["lift".to_string()]);
@@ -3288,7 +3288,7 @@ mod tests {
                 },
                 PathAlgebra {
                     name: "mint".to_string(),
-                    kit: "provekit-mint".to_string(),
+                    kit: "sugar-mint".to_string(),
                     inputs: vec![address(&Input::Spec(json!({
                         "outDir": "out"
                     })))],
@@ -3993,7 +3993,7 @@ mod tests {
     #[test]
     fn dependency_contract_bindings_keep_same_leaf_different_libraries() {
         let root = temp_workspace("dependency_contract_library_bindings");
-        let imports_dir = root.join(".provekit").join("imports");
+        let imports_dir = root.join(".sugar").join("imports");
         std::fs::create_dir_all(&imports_dir).expect("create imports dir");
 
         for library in ["lib_a", "lib_b"] {
@@ -4007,7 +4007,7 @@ mod tests {
             let minted = mint_ir_document(&ir, None, None, None, &root, &root, true)
                 .expect("mint dependency proof");
             // Name the proof by its content CID (blake3-512:...), as production
-            // `.provekit/imports/` does: the loader rejects non-CID filenames
+            // `.sugar/imports/` does: the loader rejects non-CID filenames
             // ("v1.1.0 requires blake3-512:"). Each library yields distinct
             // bytes -> distinct CID -> a separate proof file.
             let fname = format!("{}.proof", minted.filename_cid);
@@ -4042,7 +4042,7 @@ mod tests {
     #[test]
     fn dependency_contract_bindings_accept_discharge_policy_body_reduction_refused() {
         let root = temp_workspace("dependency_contract_discharge_policy_refused");
-        let imports_dir = root.join(".provekit").join("imports");
+        let imports_dir = root.join(".sugar").join("imports");
         std::fs::create_dir_all(&imports_dir).expect("create imports dir");
         let signer_seed: Ed25519Seed = [0x42; 32];
         let produced_at = "2026-06-01T00:00:00.000Z".to_string();

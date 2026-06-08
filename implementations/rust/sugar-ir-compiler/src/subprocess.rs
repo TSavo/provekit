@@ -87,7 +87,7 @@ impl IrCompiler for JsonRpcCompiler {
         let req = json!({
             "jsonrpc": "2.0",
             "id": id,
-            "method": "provekit.ir.compile",
+            "method": "sugar.ir.compile",
             "params": {
                 "ir_json": ir,
                 "target_dialect": dialect,
@@ -114,9 +114,9 @@ fn handshake(io: &mut ChildIo) -> Result<Capabilities, CompileError> {
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.ir.handshake",
+        "method": "sugar.ir.handshake",
         "params": {
-            "provekit_version": env!("CARGO_PKG_VERSION"),
+            "sugar_version": env!("CARGO_PKG_VERSION"),
             "protocol_version": PROTOCOL_VERSION,
         }
     });

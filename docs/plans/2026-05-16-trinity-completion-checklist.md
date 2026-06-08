@@ -8,19 +8,19 @@ This document enumerates what is required for that claim to be real. Each item i
 
 - **A4 merged** (PR #1061 / SHA a48c6f45). `Term::walk()` iterator + `TermNode { op_cid, term_position: Vec<usize> }` slot-path semantics on main. 7 unit tests green.
 - **A6 merged** (PR #1063 / SHA 431b2c19). `Catalog::contains(&Cid) -> bool` trait method with default impl `self.get(cid).is_some()` + HashMapCatalog override. Doc-comment names the fs-backed override as a future optimization for when an fs-backed impl is minted.
-- **`walk_premises_to_root` landed** in `libprovekit::core::walks` (PR #1067 / SHA 3218f42c, Path A). Four `ChainBreak` variants (CycleDetected, PremiseNotInCatalog, OriginUnreachable, DeserializationFailed) + DFS-coloring algorithm (visited + on_path + reached_origin three-set discrimination) + eight unit tests (4 ChainBreak variants + 3 dedup discrimination + 1 happy). Algorithm corrects A2's single-HashSet bug that collapsed within-claim-dup / diamond-DAG / true-cycle to the same error.
-- **`assert_concept_tier` landed** in `libprovekit::core::walks` (PR #1067 / SHA 3218f42c, Path A). Consumes `Term::walk()` + `Catalog::contains()` + `HubMissingNode { node_op_cid, term_position }` failure variant. Two unit tests (fail + happy).
+- **`walk_premises_to_root` landed** in `libsugar::core::walks` (PR #1067 / SHA 3218f42c, Path A). Four `ChainBreak` variants (CycleDetected, PremiseNotInCatalog, OriginUnreachable, DeserializationFailed) + DFS-coloring algorithm (visited + on_path + reached_origin three-set discrimination) + eight unit tests (4 ChainBreak variants + 3 dedup discrimination + 1 happy). Algorithm corrects A2's single-HashSet bug that collapsed within-claim-dup / diamond-DAG / true-cycle to the same error.
+- **`assert_concept_tier` landed** in `libsugar::core::walks` (PR #1067 / SHA 3218f42c, Path A). Consumes `Term::walk()` + `Catalog::contains()` + `HubMissingNode { node_op_cid, term_position }` failure variant. Two unit tests (fail + happy).
 
 ## Substrate primitives (executor + chain)
 
 - **A1 merged** (PR #1064 / SHA 8627786b). `PathExecutionChain` with `terminal_claim`, `claim_at_step`, `source_at_step`, `term_at_step` accessors. `execute_path` returns the chain. 11 call sites migrated. Three executor unit tests green.
-- **A2 merged** (PR #1066 / SHA 9ecd9730). `ProveKit` registered with `KitRegistry` under name `"prove"` with `ConformanceDeclaration::NonCarrier`. `ProveKit::prove(claim)` runs `walk_premises_to_root` (inlined helper in `libprovekit/src/core/prove_kit.rs`) and returns `Verdict::Proved` + `Witness::ChainIntegrity(ChainIntegrityWitness)` on success; `Verdict::Refuted` + `Witness::ChainIntegrityFailure(ChainIntegrityFailureWitness)` on any `ChainBreak` (architect amendment: refutation is positive evidence, not the absence of a witness). 8 prove_kit tests green.
+- **A2 merged** (PR #1066 / SHA 9ecd9730). `ProveKit` registered with `KitRegistry` under name `"prove"` with `ConformanceDeclaration::NonCarrier`. `ProveKit::prove(claim)` runs `walk_premises_to_root` (inlined helper in `libsugar/src/core/prove_kit.rs`) and returns `Verdict::Proved` + `Witness::ChainIntegrity(ChainIntegrityWitness)` on success; `Verdict::Refuted` + `Witness::ChainIntegrityFailure(ChainIntegrityFailureWitness)` on any `ChainBreak` (architect amendment: refutation is positive evidence, not the absence of a witness). 8 prove_kit tests green.
 - **A3 merged** (PR #1065 / SHA a79214cb). BindKit's payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_term_as_op_tree] }`. `concept:bind-result` op-CID minted in the concept-shapes catalog. Round-trip walkability test asserts every node's op_cid resolves via catalog lookup. Wire-format backward-compat preserved via `parse_named_or_bind_payload` helper.
 - **#1049 lands.** Producer-side premise dedup in `execute_path`. Two-layer defense composes with `walk_premises_to_root`'s `HashSet` visited tracking.
 
 ## Capstone exhibit
 
-- **Path A merged** (PR #1067 / SHA 3218f42c). The substrate primitives `walk_premises_to_root` (with DFS-coloring fix) + `assert_concept_tier` are on main in `libprovekit::core::walks`. The two helpers are ready for consumption by the exhibit.
+- **Path A merged** (PR #1067 / SHA 3218f42c). The substrate primitives `walk_premises_to_root` (with DFS-coloring fix) + `assert_concept_tier` are on main in `libsugar::core::walks`. The two helpers are ready for consumption by the exhibit.
 - **Path B in flight as follow-up.** The runnable exhibit + integration test (single `execute_path()` call constructing a Path with seven steps lift → bind → lower → relift → rebind → lower-back → prove, six binding assertions, real lift/bind/lower/relift through registered kits) is split off as a separate follow-up issue. Path B requires architect ruling on real Python/Java toolchain in cargo test (assertion 4 demands real plugin invocation; existing precedent stubs target output). Open question: real-toolchain-in-cargo-test acceptable + slow-test lane shape + minimum fidelity for the federation check.
 - **The six binding assertions, when Path B lands:**
   1. Source-CID equality at cycle close (`terminal_source.cid() == original_source.cid()`).
@@ -29,7 +29,7 @@ This document enumerates what is required for that claim to be real. Each item i
   4. Hub-tier CID equality across legs (`post_bind_term.cid() == post_rebind_term.cid()`).
   5. Terminal `Verdict::Proved` with `terminal_claim.witness.is_some()`.
   6. `walk_premises_to_root(&terminal_claim, &origin_cid, &catalog, false).is_ok()`.
-- Exhibit runs against a real `libprovekit::core` function (not a toy fixture-only example). Smallest function that exercises the algebra non-trivially: at least one arithmetic op, one conditional, one return.
+- Exhibit runs against a real `libsugar::core` function (not a toy fixture-only example). Smallest function that exercises the algebra non-trivially: at least one arithmetic op, one conditional, one return.
 
 ## Per-kit emit-compile-run conformance (#1039)
 
@@ -60,7 +60,7 @@ This document enumerates what is required for that claim to be real. Each item i
 
 ## Bitcoin-anchored lineage update
 
-- **v2 attestation directory created** at `provekit-warnings/provenance/v2/` post-Trinity. New `sign-ceremony.py` invocation captures the Trinity-proven substrate state (Trinity exhibit merged at SHA X, on Bitcoin block Y).
+- **v2 attestation directory created** at `sugar-warnings/provenance/v2/` post-Trinity. New `sign-ceremony.py` invocation captures the Trinity-proven substrate state (Trinity exhibit merged at SHA X, on Bitcoin block Y).
 - **OTS stamp** on v2 `attestation.json`.
 - **OP_RETURN broadcast** of v2 attestation CID, txid saved to `v2/anchor-bitcoin-txid.txt`.
 - **v1's pending OP_RETURN** also completed so the lineage is unbroken: v1 anchors the pre-Trinity substrate, v2 anchors the Trinity-proven substrate, both signed by T Savo, both on chain.
@@ -108,11 +108,11 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 
 **Census seams 2, 5, and 7 closed.** Seam 2 (bind to lower forward leg): closed by A7's claim_spec_value descent + shared spec builder. Seam 5 (rebind to lower-back, same producer-consumer pair): closed by same A7 work. Seam 7 (verdict-propagation): locked by A8 as the lenient policy with regression test antibody.
 
-**Composition test census merged** (PR #1074 / SHA 032cd1f5, closes #1073). 9 tests covering 4 seams (1, 3, 4, 6) against real subprocess toolchains in the slow-test lane (`cargo test ... --features provekit-cli/slow-tests`). CI workflow adds a `trinity-composition-census` job. Three `#[should_panic]` markers document the surfaced gaps; when those gaps close, the markers come off and the tests go fully green. Parallel-surfacing payoff realized: three integration gaps visible in one PR instead of discovered serially.
+**Composition test census merged** (PR #1074 / SHA 032cd1f5, closes #1073). 9 tests covering 4 seams (1, 3, 4, 6) against real subprocess toolchains in the slow-test lane (`cargo test ... --features sugar-cli/slow-tests`). CI workflow adds a `trinity-composition-census` job. Three `#[should_panic]` markers document the surfaced gaps; when those gaps close, the markers come off and the tests go fully green. Parallel-surfacing payoff realized: three integration gaps visible in one PR instead of discovered serially.
 
 **Three gaps filed and all three closed in parallel:**
 
-- **A9 #1075 / PR #1078 / SHA 2c3695b6: MERGED.** Federation type-erasure at hub (architect option a locked: lifters strip types; realize kits reconstruct via two-layer canonical-token + per-plugin-map). Independent Opus retry caught Kit's locality-bias error (Kit-as-fallback reviewer initially posted MERGE-WITH-NITS on a non-existent deviation; fresh-context Opus found that `provekit-realize-rust-core::map_source_type(\"int\") -> \"i64\"` and `provekit-realize-python-core::map_source_type(\"int\") -> \"int\"` empirically implement the architect's "each realize plugin owns its language's type reconstruction" specification).
+- **A9 #1075 / PR #1078 / SHA 2c3695b6: MERGED.** Federation type-erasure at hub (architect option a locked: lifters strip types; realize kits reconstruct via two-layer canonical-token + per-plugin-map). Independent Opus retry caught Kit's locality-bias error (Kit-as-fallback reviewer initially posted MERGE-WITH-NITS on a non-existent deviation; fresh-context Opus found that `sugar-realize-rust-core::map_source_type(\"int\") -> \"i64\"` and `sugar-realize-python-core::map_source_type(\"int\") -> \"int\"` empirically implement the architect's "each realize plugin owns its language's type reconstruction" specification).
 - **A10 #1076 / PR #1079 / SHA d37cb8d3: MERGED.** Python source lifter operator-atom preservation. 13-operator op-CID table at bind-IR boundary; add-vs-sub distinctness asserted; census seam 4 discrimination antibody promoted from `#[should_panic]` to `assert_ne`.
 - **A11 #1077 / PR #1080 / SHA 16a973bc: MERGED.** Python realize body templates for 5 named concepts (concept:conditional, concept:eq, concept:decl, concept:lt, concept:mul). Per-template render+compile+execute verification. Decl-in-expression-position refusal pattern. Seam 3 positive antibody now refuses only on 2 UNNAMED entries (which A10 resolved to named ops; A11 follow-up flip pending).
 
@@ -141,9 +141,9 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 **Honest qualification on the seam 4 federation milestone:** the byte-identity holds for the no-contract pure-expression algebra. Federation across functions with contracts (attr_pre/post extracted differently per language), loops/sequences/function-calls (Python emits γ statement concepts post-A20 matching Rust's coverage), and bitwise-not on integers (A22 disambiguation) ALL fall under the same federation claim and pass once the per-axis fixes land (most have already landed).
 
 **Behavioral-correctness follow-ups filed (not blocking algebra-layer federation claim):**
-- A23 #1093: libprovekit-side bind-payload hashes function-name field (federation residual at one layer deeper than A19 stripped).
+- A23 #1093: libsugar-side bind-payload hashes function-name field (federation residual at one layer deeper than A19 stripped).
 - A24 #1095: operand-binding-from-context derivation in body synthesis. γ's bare-`{}` operand slots leave operand identity to be derived from context; current synthesis uses positional fallback. Emitted Python parses but operand bindings are semantically wrong for fixtures with let-bindings or literals.
-- A25 #1096: function-name non-hashed sidecar channel. Current architecture uses `_provekit_synth` placeholder; production federation needs the real channel flowing from lift to realize without entering the bind CID hash.
+- A25 #1096: function-name non-hashed sidecar channel. Current architecture uses `_sugar_synth` placeholder; production federation needs the real channel flowing from lift to realize without entering the bind CID hash.
 
 A24 and A25 are both architectural-judgment-required to spec but mechanical-once-architected to implement; share a sidecar-channel architecture pattern. Likely worth implementing together in one PR.
 
@@ -151,9 +151,9 @@ A24 and A25 are both architectural-judgment-required to spec but mechanical-once
 
 **Behavioral-correctness layer operational** (PR #1097 A23 merged 22:39:33Z, PR #1098 A24+A25 combined merged 23:58:09Z).
 
-**A23 #1093 merged (PR #1097):** libprovekit's bind-payload hash no longer carries `function`/`fn_name` envelope fields. Federation byte-identity now holds across languages with diverging function naming conventions (camelCase vs snake_case). Companion in-place fallback in `realize_function_name` falls back to `term.name` when `term.function` is empty (bridge until A25's sidecar arrived).
+**A23 #1093 merged (PR #1097):** libsugar's bind-payload hash no longer carries `function`/`fn_name` envelope fields. Federation byte-identity now holds across languages with diverging function naming conventions (camelCase vs snake_case). Companion in-place fallback in `realize_function_name` falls back to `term.name` when `term.function` is empty (bridge until A25's sidecar arrived).
 
-**A24+A25 #1095+#1096 combined merged (PR #1098):** the operand-binding sidecar channel + function-name sidecar channel both flow through libprovekit's lower request via non-hashed metadata fields per the locked schema at `docs/plans/2026-05-16-operand-binding-sidecar-schema.md` (β with integer-array paths).
+**A24+A25 #1095+#1096 combined merged (PR #1098):** the operand-binding sidecar channel + function-name sidecar channel both flow through libsugar's lower request via non-hashed metadata fields per the locked schema at `docs/plans/2026-05-16-operand-binding-sidecar-schema.md` (β with integer-array paths).
 
 - Both lift kits (Rust walk_rpc.rs + Python bind_lifter.py) emit `operand_bindings` as a flat list of `{position: [int...], symbol: str}` tuples walked from term_shape root, plus optional `source_function_name`.
 - Python realize plugin pre-processes `operand_bindings` into a path-to-symbol map and synthesizes function bodies from term_shape using the map, with a completeness gate (Supra omnia rectum) that asserts every term_shape leaf has a binding entry and refuses synthesis on misalignment.
@@ -162,7 +162,7 @@ A24 and A25 are both architectural-judgment-required to spec but mechanical-once
 **Empirical signals on the combined merge:**
 - Trinity census slow lane: 9/9 GREEN with CORRECT operand bindings (no longer positional fallback).
 - Python realize + lift tests: 39/39 each.
-- Bridgeworks targeted smoke: passes (incidental closure of task #70 pre-existing red via `.provekit/lower/<surface>` RPC manifest dispatch fix landed alongside A24+A25).
+- Bridgeworks targeted smoke: passes (incidental closure of task #70 pre-existing red via `.sugar/lower/<surface>` RPC manifest dispatch fix landed alongside A24+A25).
 
 **The substrate's behavioral-correctness layer is fully operational:**
 - Structural federation at algebra layer (γ canonical form + bind CID byte-identity): CI-gated.
@@ -188,7 +188,7 @@ Carrier PRs that break the realize layer can no longer merge silently across any
 **PlatformSemanticTag schema ruling locked** (`78fcb45f0` + em-dash fix `ec2f329c5`). Independent Opus authored after Sir caught Kit's substrate-enumerates framing as the same mistake the γ canonical-form ruling rejected at the term-shape layer. Schema: `PlatformSemanticTag { dimensions: BTreeMap<String, Cid> }` with kit-minted DimensionValueMemento carrying compare_to IrFormula. Substrate enumerates nothing; kits mint dimension names AND value mementos. Composition: pairwise intersection on key sets; CID-equality is equivalence; non-identical produces LossRecord entry with DivergenceBetween IrFormula. Refusal: asymmetric dimension keys → RefusalMemento with reason "uncharacterizable_platform_divergence". Zero new memento families; composes with existing LossRecord + RefusalMemento.
 
 **Implementation work surface for the PlatformSemanticTag ruling (Stream A Stages 2-5) unblocked:**
-- Stage 2: mint PlatformSemanticTag + DimensionValueMemento types in provekit-ir-types + extend kit registration with PlatformSemanticsDeclaration carrier field. Substrate-only; no kit changes yet.
+- Stage 2: mint PlatformSemanticTag + DimensionValueMemento types in sugar-ir-types + extend kit registration with PlatformSemanticsDeclaration carrier field. Substrate-only; no kit changes yet.
 - Stage 3 (per-kit, parallel-safe): each kit on main declares its per-op platform semantics by minting its own dimension names + value mementos at registration time.
 - Stage 4: semantic-comparison step in execute_path; LossRecord emission on dimension intersection divergence; RefusalMemento emission on key asymmetry.
 - Stage 5: CI gate asserting cross-platform composition emits the right artifact per the trichotomy.

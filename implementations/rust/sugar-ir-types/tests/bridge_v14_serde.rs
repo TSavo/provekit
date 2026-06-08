@@ -5,7 +5,7 @@
 // Source of truth:
 //   protocol/specs/2026-05-03-bridge-target-dimensionality.md
 //   protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md
-//   protocol/provekit-ir.cddl  (BridgeDeclarationV14, BridgeTarget, ...)
+//   protocol/sugar-ir.cddl  (BridgeDeclarationV14, BridgeTarget, ...)
 //
 // These tests pin:
 //   * The Rust IR types deserialize from the spec sample wire shape.
@@ -13,7 +13,7 @@
 //     accepts both `"contract"` and `"contractSet"` variants.
 //   * Round-trip parity at the serde layer: parse -> serialize -> parse
 //     yields the same value. (Byte-equality round-trip lives in
-//     `provekit-claim-envelope/tests/bridge_v14_roundtrip.rs` because
+//     `sugar-claim-envelope/tests/bridge_v14_roundtrip.rs` because
 //     this crate has no JCS encoder.)
 
 use sugar_ir_types::{
@@ -40,7 +40,7 @@ const CANONICAL_FIXTURE_JSON: &str = r#"{
   },
   "metadata": {
     "targetLayer": "rust-kit",
-    "producedBy": "provekit-canonical-reference@v1.4",
+    "producedBy": "sugar-canonical-reference@v1.4",
     "producedAt": "2026-05-03T00:00:00.000Z"
   }
 }"#;
@@ -73,7 +73,7 @@ fn bridge_v14_deserializes_from_spec_shape() {
     assert_eq!(bridge.metadata.target_layer.as_deref(), Some("rust-kit"),);
     assert_eq!(
         bridge.metadata.produced_by.as_deref(),
-        Some("provekit-canonical-reference@v1.4"),
+        Some("sugar-canonical-reference@v1.4"),
     );
 }
 
@@ -119,7 +119,7 @@ fn bridge_v14_serde_round_trip_preserves_value() {
     //
     // Note: this is NOT a JCS byte-equality test (serde_json's default
     // emit is not JCS-canonical). The canonical-bytes round-trip lives
-    // in `provekit-claim-envelope/tests/bridge_v14_roundtrip.rs`.
+    // in `sugar-claim-envelope/tests/bridge_v14_roundtrip.rs`.
 
     let bridge_in: BridgeDeclarationV14 =
         serde_json::from_str(CANONICAL_FIXTURE_JSON).expect("parse #1");

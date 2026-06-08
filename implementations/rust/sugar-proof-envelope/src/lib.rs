@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-proof-envelope
+// sugar-proof-envelope
 //
 // Two responsibilities:
 //

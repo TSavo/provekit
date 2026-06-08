@@ -20,20 +20,20 @@ In v1.2: a `.proof` lifted from `assert.h` macros (partial coverage; `assert` di
 ## 3. Install
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 cd implementations/c && make
 ```
 
 ## 4. Author
 
-In v1.1, author through `implementations/c/provekit-ir`. The library provides IR types, a JCS canonical JSON emitter, and a BLAKE3-512 wrapper (Python subprocess for v1.1).
+In v1.1, author through `implementations/c/sugar-ir`. The library provides IR types, a JCS canonical JSON emitter, and a BLAKE3-512 wrapper (Python subprocess for v1.1).
 
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 ## 6. Wire your IDE

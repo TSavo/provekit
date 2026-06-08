@@ -13,7 +13,7 @@
 // found) and the previously-discharged obligation regresses to `unsatisfied`.
 //
 // The interpreted term-operator set is exactly `+ - *` -- the same set the
-// verifier's solver dispatcher (provekit-verifier/src/solvers/dispatch.rs)
+// verifier's solver dispatcher (sugar-verifier/src/solvers/dispatch.rs)
 // classifies as linear-arithmetic. Integer `/` and `%` deliberately stay
 // uninterpreted (SMT Int division/modulo semantics differ from source
 // truncation; see `fix(go): leave integer division/modulo uninterpreted`).

@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 RUST="$REPO/implementations/rust"
 BIN_DIR="$RUST/target/debug"
-PROVEKIT="$BIN_DIR/sugar"
+SUGAR="$BIN_DIR/sugar"
 ASSERT_RPC="$BIN_DIR/rust_test_assertions_rpc"
 WITNESS_RPC="$BIN_DIR/witness_rpc"
 DISCHARGE_CLI="$BIN_DIR/discharge_cli"
@@ -30,8 +30,8 @@ if [ "${POLARS_SHOWCASE_ON_REMOTE:-0}" != "1" ] \
   remote_host="${BCARGO_REMOTE_HOST:-battleaxe}"
   remote_tag="$(printf '%s' "$(cd "$REPO" && pwd -P)" | shasum 2>/dev/null | cut -c1-12)"
   remote_tag="${remote_tag:-default}"
-  remote_root="${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/provekit-bcargo-${remote_tag}}"
-  remote_repo="$remote_root/provekit"
+  remote_root="${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/sugar-bcargo-${remote_tag}}"
+  remote_repo="$remote_root/sugar"
   remote_cmd="cd $(printf '%q' "$remote_repo") && POLARS_SHOWCASE_ON_REMOTE=1 POLARS_SHOWCASE_SKIP_LOCAL_BUILD=1 examples/polars-showcase/run.sh"
   ssh -o BatchMode=yes "$remote_host" "bash -lc $(printf '%q' "$remote_cmd")"
   exit $?
@@ -46,7 +46,7 @@ if [ "${POLARS_SHOWCASE_SKIP_LOCAL_BUILD:-0}" != "1" ]; then
     -p sugar-lift-rust-cargo-test-witness --bin discharge_cli >/dev/null
 fi
 
-for bin in "$PROVEKIT" "$ASSERT_RPC" "$WITNESS_RPC" "$DISCHARGE_CLI"; do
+for bin in "$SUGAR" "$ASSERT_RPC" "$WITNESS_RPC" "$DISCHARGE_CLI"; do
   if [ ! -x "$bin" ]; then
     echo "missing executable: $bin" >&2
     exit 1
@@ -55,7 +55,7 @@ done
 
 render_manifests() {
   local suite="$1"
-  local base="$HERE/$suite/.provekit/lift"
+  local base="$HERE/$suite/.sugar/lift"
 
   sed "s|@BIN_DIR@|$BIN_DIR|g" \
     "$base/rust-test-assertions/manifest.toml.in" \
@@ -70,7 +70,7 @@ clean_suite() {
   local suite="$1"
   local dir="$HERE/$suite"
   rm -f "$dir"/blake3-512:*.proof "$dir/.prove.json" "$dir/.verify.json" "$dir/.verify_recompute.json"
-  rm -rf "$dir/.provekit/runs" "$dir/.provekit/witnesses" "$dir/target"
+  rm -rf "$dir/.sugar/runs" "$dir/.sugar/witnesses" "$dir/target"
 }
 
 consistency_status() {
@@ -185,7 +185,7 @@ run_suite() {
   clean_suite "$suite"
 
   echo "== mint $suite =="
-  (cd "$dir" && "$PROVEKIT" mint --out .) >/dev/null
+  (cd "$dir" && "$SUGAR" mint --out .) >/dev/null
 
   local proof
   proof="$(find "$dir" -maxdepth 1 -name 'blake3-512:*.proof' -print -quit)"
@@ -196,7 +196,7 @@ run_suite() {
 
   echo "== prove $suite =="
   set +e
-  (cd "$dir" && "$PROVEKIT" prove . --json) > "$dir/.prove.json" 2>&1
+  (cd "$dir" && "$SUGAR" prove . --json) > "$dir/.prove.json" 2>&1
   local prove_rc=$?
   set -e
 
@@ -228,7 +228,7 @@ run_suite() {
     : "$prove_rc"
 
     echo "== verify $suite witness =="
-    (cd "$dir" && PATH="$BIN_DIR:$PATH" "$PROVEKIT" verify --project . --json) > "$dir/.verify.json" 2>&1
+    (cd "$dir" && PATH="$BIN_DIR:$PATH" "$SUGAR" verify --project . --json) > "$dir/.verify.json" 2>&1
     local verify_verdict
     verify_verdict="$(witness_verdict "$dir/.verify.json")"
     if [ "$verify_verdict" != "verified" ]; then
@@ -237,8 +237,8 @@ run_suite() {
       exit 1
     fi
 
-    rm -rf "$dir/.provekit/witnesses"
-    (cd "$dir" && PATH="$BIN_DIR:$PATH" "$PROVEKIT" verify --project . --json) > "$dir/.verify_recompute.json" 2>&1
+    rm -rf "$dir/.sugar/witnesses"
+    (cd "$dir" && PATH="$BIN_DIR:$PATH" "$SUGAR" verify --project . --json) > "$dir/.verify_recompute.json" 2>&1
     local recompute_strategy
     recompute_strategy="$(witness_recompute_strategy "$dir/.verify_recompute.json")"
     if [ "$recompute_strategy" != "content-address:recompute" ]; then

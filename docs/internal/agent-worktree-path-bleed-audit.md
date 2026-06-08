@@ -33,21 +33,21 @@ tool set (Bash, Read, Write, Edit, Glob, Grep), model binding, and scope boundar
 ## 2. The bleed: root cause
 
 When an agent task prompt contains an absolute path referencing the maintainer's main worktree
-(e.g. `/Users/tsavo/provekit/src/workflow/producers/foo.ts`), the agent's Edit/Write tools resolve
+(e.g. `/Users/tsavo/sugar/src/workflow/producers/foo.ts`), the agent's Edit/Write tools resolve
 that path literally on the filesystem. The agent is executing in an isolated worktree at
-`/Users/tsavo/provekit/.claude/worktrees/agent-XXXXXXXXXX/`, but the absolute path points to the
-maintainer's primary clone at `/Users/tsavo/provekit/`.
+`/Users/tsavo/sugar/.claude/worktrees/agent-XXXXXXXXXX/`, but the absolute path points to the
+maintainer's primary clone at `/Users/tsavo/sugar/`.
 
 **Why this happens:**
 
 1. Task dispatch prompts are authored from the maintainer's main worktree and include absolute paths
-   (e.g. "Modify `src/workflow/producers/foo.ts`" becomes `file_path: "/Users/tsavo/provekit/src/workflow/producers/foo.ts"`).
+   (e.g. "Modify `src/workflow/producers/foo.ts`" becomes `file_path: "/Users/tsavo/sugar/src/workflow/producers/foo.ts"`).
 2. The agent's worktree is a full clone -- the same directory hierarchy exists under a different root.
 3. The LLM sees a string path, not a filesystem context. It passes it verbatim to the tool.
-4. The tool implementation resolves the path against the real filesystem. `/Users/tsavo/provekit/`
+4. The tool implementation resolves the path against the real filesystem. `/Users/tsavo/sugar/`
    is the maintainer's main worktree, not the agent's.
 
-**Consequence:** a Write tool call against `/Users/tsavo/provekit/src/foo.ts` mutates the maintainer's
+**Consequence:** a Write tool call against `/Users/tsavo/sugar/src/foo.ts` mutates the maintainer's
 working tree, not the agent's isolated copy. If multiple agents are active (e.g. one porting Go conformance
 fields, another porting Python conformance fields, a third running a conformance harness), all three can
 race on the same files.
@@ -68,7 +68,7 @@ The algorithm works in two passes:
 
 1. **Collect:** scan every tool use for `file_path` parameters. If the path is absolute and resolves
    outside the overlay root, record it as a bypass event. Also record all in-overlay paths.
-2. **Decide:** for each bypass event, if it is a Write and the same relative tail (e.g. `.provekit/foo`)
+2. **Decide:** for each bypass event, if it is a Write and the same relative tail (e.g. `.sugar/foo`)
    was also written inside the overlay, tolerate it (self-correction). For Read/Edit bypass events,
    throw `OverlayBypassError`.
 
@@ -78,15 +78,15 @@ go through this function.
 
 **What the bypass detector catches and tolerates:**
 
-- Agent hallucinates `/home/user/.provekit/foo`, runs `pwd`, sees real overlay path, re-writes everything
+- Agent hallucinates `/home/user/.sugar/foo`, runs `pwd`, sees real overlay path, re-writes everything
   under the correct path. The bypass detector tolerates the first Write because a later Write with the
-  same `.provekit/`-rooted tail happened inside the overlay.
+  same `.sugar/`-rooted tail happened inside the overlay.
 - Read/Edit bypasses always throw because those touch real existing files outside the overlay.
 
 **What the bypass detector does not catch:**
 
 - Writes that land on the maintainer's main worktree without a corresponding self-correction Write.
-  If the agent only issues a single Write to `/Users/tsavo/provekit/src/foo.ts`, it's a silent mutation.
+  If the agent only issues a single Write to `/Users/tsavo/sugar/src/foo.ts`, it's a silent mutation.
 - Any tool use from a general Task/subagent dispatch (not going through `runAgentInOverlay`).
 - Concurrent writes from multiple agents -- the detector is post-hoc (agent has already finished).
 
@@ -94,8 +94,8 @@ go through this function.
 
 | Failure                                                        | Observability  | Root cause                                                                   |
 |----------------------------------------------------------------|----------------|------------------------------------------------------------------------------|
-| Agent writes to `/Users/tsavo/provekit/src/` (main tree)       | Silent         | Prompt contains absolute paths; agent uses them literally                    |
-| Agent writes to `/home/user/.provekit/` (hallucinated)         | Detected + tolerated | Agent hallucinates a Linux home path on macOS; self-corrects after `pwd`|
+| Agent writes to `/Users/tsavo/sugar/src/` (main tree)       | Silent         | Prompt contains absolute paths; agent uses them literally                    |
+| Agent writes to `/home/user/.sugar/` (hallucinated)         | Detected + tolerated | Agent hallucinates a Linux home path on macOS; self-corrects after `pwd`|
 | Agent edits a real file outside overlay                        | Caught (throw) | `OverlayBypassError` thrown in `captureChange.ts`                            |
 | Agent dispatches parallel task and both agents write to main tree concurrently | Silent | No coordination; no CWD enforcement on Task/subagent dispatch                |
 | Agent stash-recover (`git stash` before commit) hides bleed    | Invisible      | Agent's own recovery masks the fact that it touched the main tree            |
@@ -142,7 +142,7 @@ descriptive error and log the full request.
 ### (b) Strip absolute paths from agent prompts
 
 **Mechanism:** before dispatching a Task/subagent, scan the prompt for absolute paths pointing
-to the maintainer's main worktree and rewrite them as relative paths (e.g. `/Users/tsavo/provekit/src/foo` -> `./src/foo`).
+to the maintainer's main worktree and rewrite them as relative paths (e.g. `/Users/tsavo/sugar/src/foo` -> `./src/foo`).
 
 **Pros:**
 - Prevents the issue at the source (prompt authorship).
@@ -157,8 +157,8 @@ to the maintainer's main worktree and rewrite them as relative paths (e.g. `/Use
 
 ### (c) Per-agent symlink alias
 
-**Mechanism:** create a symlink at `/Users/tsavo/provekit/.claude/worktrees/agent-XXX/Users/tsavo/provekit`
-pointing to the worktree root, so that `/Users/tsavo/provekit/src/foo.ts` inside the worktree resolves
+**Mechanism:** create a symlink at `/Users/tsavo/sugar/.claude/worktrees/agent-XXX/Users/tsavo/sugar`
+pointing to the worktree root, so that `/Users/tsavo/sugar/src/foo.ts` inside the worktree resolves
 to the agent's copy.
 
 **Pros:**
@@ -167,21 +167,21 @@ to the agent's copy.
 **Cons:**
 - Breaks git's internal path tracking. Git worktrees do not expect symlink aliasing.
 - Platform-specific (symlink permissions, macOS SIP restrictions, Linux container isolation).
-- Non-portable across machines (the maintainer path `/Users/tsavo/provekit` is not universal).
+- Non-portable across machines (the maintainer path `/Users/tsavo/sugar` is not universal).
 - Confuses the LLM further (tools that show realpath output will reveal the worktree path, not the
   aliased path).
 
 ### (d) Wrap Edit/Write to resolve relative-to-worktree-root
 
 **Mechanism:** when an Edit/Write tool receives an absolute path, resolve it relative to the
-worktree root (strip the prefix `/Users/tsavo/provekit` and prepend the worktree path).
+worktree root (strip the prefix `/Users/tsavo/sugar` and prepend the worktree path).
 
 **Pros:**
 - Silent correction -- agent never sees the error.
 - Prevents write corruption transparently.
 
 **Cons:**
-- Masks the problem. The agent's mental model of "I'm writing to /Users/tsavo/provekit/src/foo.ts"
+- Masks the problem. The agent's mental model of "I'm writing to /Users/tsavo/sugar/src/foo.ts"
   is silently mapped to the worktree. If the agent later reads the file via an absolute path,
   it gets the main tree's version -- inconsistency that produces subtle bugs.
 - Similar fragility to (b): what about paths that are genuinely meant to be absolute (e.g. system
@@ -220,8 +220,8 @@ For every Edit/Write/Read tool call in the agent dispatch layer:
   3. If file_path does NOT start with worktree_root:
      a. Log the full tool input for audit.
      b. Return a tool_result with an error message:
-        "Path '/Users/tsavo/provekit/src/foo.ts' is outside the agent's
-         worktree at '/Users/tsavo/provekit/.claude/worktrees/agent-XXX'.
+        "Path '/Users/tsavo/sugar/src/foo.ts' is outside the agent's
+         worktree at '/Users/tsavo/sugar/.claude/worktrees/agent-XXX'.
          Use a relative path (./src/foo.ts) or the worktree-relative
          absolute path."
      c. Do NOT execute the tool.
@@ -230,7 +230,7 @@ For every Edit/Write/Read tool call in the agent dispatch layer:
 
 **Scope of instrumentation:**
 - General Task/subagent dispatch: add the check to the tool call handler (Claude Code level or
-  provekit's agent orchestration layer).
+  sugar's agent orchestration layer).
 - `runAgentInOverlay`: keep the existing post-hoc detection as a second line of defense, but
   add the pre-tool check as the primary line.
 
@@ -254,7 +254,7 @@ worktree is for build artifacts in system temp directories, which do not use Edi
   (`src/fix/captureChange.ts` -- post-hoc bypass detector for fix-loop agents only).
 - `docs/LOGGING.md` line 14: initial recognition of the bypass bug as a logging visibility problem.
 - `docs/plans/2026-04-25-bug1-substrate-postmortem.md` line 33 (v16): "Agent hallucinated
-  `/home/user/.provekit/...` for the first round of Writes, then ran `pwd`, saw the real overlay,
+  `/home/user/.sugar/...` for the first round of Writes, then ran `pwd`, saw the real overlay,
   and re-wrote everything to the correct path."
 - `docs/plans/2026-04-25-bug1-substrate-postmortem.md` line 29 (v13): overlay-bypass via detached-HEAD
   worktree (`git diff HEAD..HEAD` resolved to same commit).

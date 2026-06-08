@@ -26,17 +26,17 @@ neq(name, null)
 ## The Two Steps
 
 Each zoo specimen starts with a host-only lab, then separates discovery from
-verification. The lab has no `.provekit` project; it only shows that the
+verification. The lab has no `.sugar` project; it only shows that the
 ordinary host code still passes native checks.
 
 1. **Language discovery.** The host language uses its own toolchain and kit.
    Each exhibit/fixed harness is a tiny Sugar project with
-   `.provekit/config.toml` selecting a surface and
-   `.provekit/lift/<surface>/manifest.toml` naming the native RPC lifter.
-   The zoo invokes `provekit mint` for lift exhibits and validates checked-in
+   `.sugar/config.toml` selecting a surface and
+   `.sugar/lift/<surface>/manifest.toml` naming the native RPC lifter.
+   The zoo invokes `sugar mint` for lift exhibits and validates checked-in
    LinkBundle receipts for historical cross-kit link exhibits; the CLI resolves
    the surface and drives the native lifter.
-2. **Proof verification.** The normal project gate is `provekit prove`. Bug Zoo
+2. **Proof verification.** The normal project gate is `sugar prove`. Bug Zoo
    owns a self-contained runner under `menagerie/bug-zoo/`: it receives canonical Bug Zoo
    ProofIR or LinkBundle output from the CLI result, hashes it, compares it to
    checked-in witness bytes, checks required equivalences across surfaces and
@@ -121,11 +121,11 @@ You can also run each discovery step directly:
 ```sh
 pnpm exec tsx menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/tools/ts-boundary-discover.ts zod menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/exhibit/zod/harness
 
-dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj -- discover csharp-linq menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
+dotnet run --project implementations/csharp/Sugar.BugZoo/Sugar.BugZoo.csproj -- discover csharp-linq menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
 ```
 
 Those commands show the first phase: the language compiler/kit maps source to a
-witnessed bug output. The `provekit-bug-zoo` runner is the lab harness for the
+witnessed bug output. The `sugar-bug-zoo` runner is the lab harness for the
 second phase: proving that output lands on the expected addressable shape or
 receipt CID for the specimen.
 

@@ -40,7 +40,7 @@ fn default_plan_runs_doctor_and_self_check_for_cli_and_lib() {
         actual,
         vec![
             (
-                "provekit-cli".to_string(),
+                "sugar-cli".to_string(),
                 "doctor".to_string(),
                 vec![
                     "doctor",
@@ -56,7 +56,7 @@ fn default_plan_runs_doctor_and_self_check_for_cli_and_lib() {
                 .collect(),
             ),
             (
-                "provekit-cli".to_string(),
+                "sugar-cli".to_string(),
                 "self-check".to_string(),
                 vec![
                     "self-check",
@@ -154,7 +154,7 @@ path = "examples/custom"
 fn all_four_green_gates_mark_release_ready() {
     let args = ReleaseGateArgs::try_parse_from(["release-gate"]).unwrap();
     let mut executor = FakeExecutor::new(vec![
-        ok_doctor("provekit-cli"),
+        ok_doctor("sugar-cli"),
         ok_self_check("implementations/rust/sugar-cli", 21, 53, 0),
         ok_doctor("libsugar"),
         ok_self_check("implementations/rust/libsugar", 12, 35, 0),
@@ -172,7 +172,7 @@ fn all_four_green_gates_mark_release_ready() {
 fn any_failed_gate_marks_release_not_ready_and_names_failure() {
     let args = ReleaseGateArgs::try_parse_from(["release-gate"]).unwrap();
     let mut executor = FakeExecutor::new(vec![
-        ok_doctor("provekit-cli"),
+        ok_doctor("sugar-cli"),
         failed_self_check("implementations/rust/sugar-cli"),
         ok_doctor("libsugar"),
         ok_self_check("implementations/rust/libsugar", 12, 35, 0),
@@ -186,7 +186,7 @@ fn any_failed_gate_marks_release_not_ready_and_names_failure() {
         sugar_cli::EXIT_VERIFY_FAIL
     );
     assert_eq!(receipt.failures.len(), 1);
-    assert_eq!(receipt.failures[0].target, "provekit-cli");
+    assert_eq!(receipt.failures[0].target, "sugar-cli");
     assert_eq!(receipt.failures[0].command, "self-check");
 }
 
@@ -194,7 +194,7 @@ fn any_failed_gate_marks_release_not_ready_and_names_failure() {
 fn receipt_extracts_k_floor_residue_and_doctor_evidence() {
     let args = ReleaseGateArgs::try_parse_from(["release-gate"]).unwrap();
     let mut executor = FakeExecutor::new(vec![
-        ok_doctor("provekit-cli"),
+        ok_doctor("sugar-cli"),
         ok_self_check("implementations/rust/sugar-cli", 21, 53, 9),
         ok_doctor("libsugar"),
         ok_self_check("implementations/rust/libsugar", 12, 35, 1),
@@ -204,8 +204,8 @@ fn receipt_extracts_k_floor_residue_and_doctor_evidence() {
     let cli = receipt
         .targets
         .iter()
-        .find(|target| target.name == "provekit-cli")
-        .expect("provekit-cli target");
+        .find(|target| target.name == "sugar-cli")
+        .expect("sugar-cli target");
 
     assert_eq!(cli.evidence.k_panic_safe, 21);
     assert_eq!(cli.evidence.floor.silently_dropped, 0);
@@ -227,7 +227,7 @@ fn receipt_extracts_k_floor_residue_and_doctor_evidence() {
 fn total_callsites_zero_in_self_check_json_fails_floor_aggregation() {
     let args = ReleaseGateArgs::try_parse_from(["release-gate"]).unwrap();
     let mut executor = FakeExecutor::new(vec![
-        ok_doctor("provekit-cli"),
+        ok_doctor("sugar-cli"),
         ok_self_check("implementations/rust/sugar-cli", 21, 0, 0),
         ok_doctor("libsugar"),
         ok_self_check("implementations/rust/libsugar", 12, 35, 0),
@@ -237,8 +237,8 @@ fn total_callsites_zero_in_self_check_json_fails_floor_aggregation() {
     let cli = receipt
         .targets
         .iter()
-        .find(|target| target.name == "provekit-cli")
-        .expect("provekit-cli target");
+        .find(|target| target.name == "sugar-cli")
+        .expect("sugar-cli target");
 
     assert!(!receipt.release_ready, "{receipt:#?}");
     assert!(cli.floor_report.checks.iter().any(|check| check.id

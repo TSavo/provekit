@@ -1,4 +1,0 @@
-name = "java-junit5"
-command = ["java", "-jar", "../../implementations/java/provekit-emit-java-junit/target/provekit-emit-java-junit.jar", "--rpc"]
-working_dir = "."
-protocol_versions = ["pep/1.7.0"]

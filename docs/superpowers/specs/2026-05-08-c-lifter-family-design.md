@@ -4,7 +4,7 @@
 
 Build a family of C contract lifters over a shared C lifting core. The Linux kernel is the first serious corpus and composition target, but it is not a single semantic lifter and it is not a `--dialect=kernel` mode.
 
-The reusable part is `libprovekit-c-lift-core`: parsing, source loci, facts, diagnostics, opacity reporting, IR helpers, and merge-friendly output. Each contract language used by C projects is a separate lifter with its own manifest, capabilities, tests, and semantic vocabulary.
+The reusable part is `libsugar-c-lift-core`: parsing, source loci, facts, diagnostics, opacity reporting, IR helpers, and merge-friendly output. Each contract language used by C projects is a separate lifter with its own manifest, capabilities, tests, and semantic vocabulary.
 
 The core exposes parser-backend provenance. The temporary regex backend remains the conservative default for existing lifters, while an opt-in libclang AST backend can populate the same fact model when a caller supplies enough compiler context. Missing or unavailable AST context is an extraction visibility issue, not a semantic refusal.
 
@@ -30,7 +30,7 @@ The core exposes parser-backend provenance. The temporary regex backend remains 
 The architecture has one shared C lift core and many standalone C-family lifters.
 
 ```text
-libprovekit-c-lift-core
+libsugar-c-lift-core
   source input
   source loci
   parser/fact model
@@ -41,20 +41,20 @@ libprovekit-c-lift-core
   IR/call-edge emission helpers
 
 standalone lifters
-  provekit-lift-c-sparse
-  provekit-lift-c-kernel-doc
-  provekit-lift-c-lockdep
-  provekit-lift-c-rcu
-  provekit-lift-c-errno
-  provekit-lift-c-kunit
-  provekit-lift-c-assertions
+  sugar-lift-c-sparse
+  sugar-lift-c-kernel-doc
+  sugar-lift-c-lockdep
+  sugar-lift-c-rcu
+  sugar-lift-c-errno
+  sugar-lift-c-kunit
+  sugar-lift-c-assertions
 ```
 
 Each lifter consumes core facts and emits only the claims it owns. A kernel-oriented command can later orchestrate these lifters, but that command is only a convenience bundle. It does not own semantics.
 
 ## Components
 
-### `libprovekit-c-lift-core`
+### `libsugar-c-lift-core`
 
 Shared library used by all C-family lifters.
 
@@ -72,7 +72,7 @@ Responsibilities:
 
 The core does not decide that `__user` means user-address-space or that `KUNIT_EXPECT_EQ` is a witness. Those meanings belong to semantic lifters.
 
-### `provekit-lift-c-sparse`
+### `sugar-lift-c-sparse`
 
 Lifts sparse-style annotations and related C address-space facts:
 
@@ -86,7 +86,7 @@ Lifts sparse-style annotations and related C address-space facts:
 
 It emits contracts about address space, RCU pointer discipline, and lock-holding requirements when the annotation is visible in source facts.
 
-### `provekit-lift-c-kernel-doc`
+### `sugar-lift-c-kernel-doc`
 
 Lifts kernel-doc comments as contracts when they are deterministically attached to a function or type.
 
@@ -99,7 +99,7 @@ Initial fields:
 
 Malformed or unattached kernel-doc produces diagnostics. Missing comment context is opacity only when the source layout prevents deterministic attachment.
 
-### `provekit-lift-c-lockdep`
+### `sugar-lift-c-lockdep`
 
 Lifts lock discipline from lockdep and common lock primitives.
 
@@ -113,7 +113,7 @@ Initial vocabulary:
 
 Non-local lock transfer, function-pointer mediated transfer, or ownership crossing an unmodeled callback boundary is a refusal when recognized.
 
-### `provekit-lift-c-rcu`
+### `sugar-lift-c-rcu`
 
 Lifts RCU read-side and pointer-access contracts.
 
@@ -129,7 +129,7 @@ Initial vocabulary:
 
 The first slice should stay local and bounded. Grace-period and cross-thread claims require later witness backends or stronger models.
 
-### `provekit-lift-c-errno`
+### `sugar-lift-c-errno`
 
 Lifts kernel-style return conventions:
 
@@ -143,7 +143,7 @@ Lifts kernel-style return conventions:
 
 Mixed `NULL` and `ERR_PTR` conventions are declarations only when the contract is explicit; otherwise the lifter emits diagnostics or refusals depending on what it can recognize.
 
-### `provekit-lift-c-kunit`
+### `sugar-lift-c-kunit`
 
 Lifts KUnit assertions and expectations as test witness declarations:
 
@@ -154,7 +154,7 @@ Lifts KUnit assertions and expectations as test witness declarations:
 
 KUnit is a witness surface, not the main place kernel contracts live. It should emit witness-shaped claims over observed assertions.
 
-### `provekit-lift-c-assertions`
+### `sugar-lift-c-assertions`
 
 Lifts general C and kernel assertion macros:
 
@@ -239,7 +239,7 @@ Refusals are not extraction gaps. They are explicit boundaries in semantic cover
 ## Data Flow
 
 1. A lifter receives source text or source paths through the existing JSON-RPC style.
-2. The lifter calls `libprovekit-c-lift-core` to build stable source facts and core opacity.
+2. The lifter calls `libsugar-c-lift-core` to build stable source facts and core opacity.
 3. The semantic lifter filters only facts it owns.
 4. The semantic lifter emits declarations, call edges, diagnostics, opacity entries, and refusals.
 5. A later orchestration layer can run multiple C-family lifters over the same corpus and merge their outputs deterministically.
@@ -292,7 +292,7 @@ The first slice should be small enough to land safely:
 2. Port the current regex C LSP parser logic into the core as a temporary parser backend, preserving existing behavior.
 3. Add opacity support to the core result shape.
 4. Add refusal support to the core result shape.
-5. Implement one semantic lifter first, preferably `provekit-lift-c-sparse`, because sparse annotations are the closest thing to native C/kernel contract syntax.
+5. Implement one semantic lifter first, preferably `sugar-lift-c-sparse`, because sparse annotations are the closest thing to native C/kernel contract syntax.
 6. Add a composition fixture showing sparse plus assertions or sparse plus kernel-doc can coexist without sharing semantic code.
 7. Add an opt-in libclang AST backend behind the same fact API. Keep the regex backend available for fallback and small fixtures, but make the backend choice visible on `pk_c_source_facts`.
 8. Add reusable compile-context ingestion so kernel-style command lines can feed the AST backend without making compile flags part of any one semantic lifter.
@@ -301,6 +301,6 @@ The temporary regex backend can be retired later behind the same core fact model
 
 ## Decisions For Implementation
 
-- Every standalone C-family lifter gets its own `.provekit/lift/<name>/manifest.toml` from the start, even when only one semantic lifter exists. The manifest is part of the lifter's identity.
+- Every standalone C-family lifter gets its own `.sugar/lift/<name>/manifest.toml` from the start, even when only one semantic lifter exists. The manifest is part of the lifter's identity.
 - The first implementation emits `opacityReport` and `refusals` as first-class fields in the lifter result object. If the broader protocol later chooses a different catalog field, an adapter can translate without changing lifter semantics.
-- KUnit source assertions and KUnit execution results are separate lifters. `provekit-lift-c-kunit` handles source-level KUnit assertion syntax; a future KUnit result lifter handles executed test output as a witness feed.
+- KUnit source assertions and KUnit execution results are separate lifters. `sugar-lift-c-kunit` handles source-level KUnit assertion syntax; a future KUnit result lifter handles executed test output as a witness feed.

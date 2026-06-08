@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// ProvekIt sugar, boundary, and refuse attributes. All three are recognized
-// at lift time by `provekit-walk`'s bind-lift pass (see walk_rpc.rs) and
+// Sugar sugar, boundary, and refuse attributes. All three are recognized
+// at lift time by `sugar-walk`'s bind-lift pass (see walk_rpc.rs) and
 // emitted as IR records:
 //   sugar    → `library-sugar-binding-entry`     (this code IS a concept materialization)
 //   boundary → `realization-memento` (Boundary)  (this code is the EDGE where the concept binds to a library)
@@ -10,20 +10,20 @@
 // annotated items unchanged. The substrate's structural meaning lives in
 // the attribute paths, which is what the lift kit pattern-matches.
 //
-// `provekit::sugar` carries:
+// `sugar::sugar` carries:
 //   concept = "<concept name>"
 //   library = "<library tag>"
 //   loss = [<dimension list>]                  (optional; empty if omitted)
 //   observed_dimension = "<observation tag>"   (optional; observation bindings only)
 //
-// `provekit::boundary` carries:
+// `sugar::boundary` carries:
 //   concept = "<concept name>"                 the shared contract identity
 //   library = "<source-language library>"     this source's library (e.g., "blake3")
 //   api = "<symbol or surface path>"           optional: specific API binding
 //   boundary_contract = "<boundary:* name>"    optional: catalog entry CID-keyed
 //   loss = [<dimension list>]                  (optional; empty if omitted)
 //
-// `provekit::refuse` carries:
+// `sugar::refuse` carries:
 //   surface = "<path::to::surface>"
 //   concept = "<would-close concept name>"
 //   reason = "<honest text reason>"

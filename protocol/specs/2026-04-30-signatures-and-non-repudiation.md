@@ -1,4 +1,4 @@
-# ProvekIt: Signatures and Non-Repudiation
+# Sugar: Signatures and Non-Repudiation
 
 > Author: shared session 2026-04-30 (T + Claude). The signature
 > protocol that makes propertyHash composition load-bearing. Companion
@@ -24,7 +24,7 @@ there.
 
 ## 2. Why signatures matter
 
-ProvekIt mementos are content-addressed. A CID answers the question
+Sugar mementos are content-addressed. A CID answers the question
 "are these the same bytes?" It does not answer the question "who
 attested to these bytes?" That second question is the load-bearing
 foundation of the supply-chain argument: a library author signing
@@ -152,7 +152,7 @@ A *distribution boundary* is any of:
 - A memento read from a swarm peer.
 
 Within a single process and a single trust principal (the local
-ProvekIt cache, e.g.), unsigned mementos are operationally tolerable.
+Sugar cache, e.g.), unsigned mementos are operationally tolerable.
 The boundary determines the requirement.
 
 ### 5.3 Canonical bytes per memento type
@@ -518,7 +518,7 @@ strict.
 
 ## 11. Trust roots are out of scope
 
-ProvekIt **MUST NOT** ship with a hardcoded trust anchor, root CA, or
+Sugar **MUST NOT** ship with a hardcoded trust anchor, root CA, or
 default key registry. The framework provides:
 
 - The signature verification primitive (§10).
@@ -529,8 +529,8 @@ The framework does **not** decide who any particular consumer should
 trust. Trust-root selection is a per-consumer policy decision and
 **MUST** live above the protocol.
 
-Consequence for implementations: there is no `provekit verify`
-default-allow list. Any binary that ships with hardcoded "ProvekIt
+Consequence for implementations: there is no `sugar verify`
+default-allow list. Any binary that ships with hardcoded "Sugar
 trusts these keys" is implementing a layer above the protocol and
 **MUST NOT** present that policy as if it were part of the protocol.
 Consumers may build their own trust-anchor mechanism (a project-level
@@ -539,7 +539,7 @@ upstream library author keys; an organizational PKI) and layer it on
 top.
 
 This is the same separation that the semantic-envelope spec imposes
-overall: ProvekIt has no PKI, no governance, no central trust root.
+overall: Sugar has no PKI, no governance, no central trust root.
 The math is neutral. Trust is the consumer's call.
 
 ## 12. Non-repudiation properties
@@ -779,7 +779,7 @@ C17. Construct an audit-only-role memento with a non-empty
 
 C18. The conformance test suite **MUST NOT** depend on any specific
 key being trusted. Tests publish their own keys, sign with their own
-keys, and verify against their own keys. No "ProvekIt ships with key
+keys, and verify against their own keys. No "Sugar ships with key
 X" assumption is permitted.
 
 C19. The reference implementation **MUST NOT** ship a default

@@ -21,13 +21,13 @@ fn term_emit_cli_writes_statement_macro_as_partial_loss_term_json() {
     )
     .expect("write source");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_provekit-walk-emit"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sugar-walk-emit"))
         .arg("term")
         .arg(&source_path)
         .arg("bad")
         .arg(&output_path)
         .output()
-        .expect("run provekit-walk-emit");
+        .expect("run sugar-walk-emit");
 
     assert!(output.status.success());
     assert!(
@@ -65,7 +65,7 @@ fn unique_temp_dir() -> PathBuf {
         .expect("system time")
         .as_nanos();
     std::env::temp_dir().join(format!(
-        "provekit-walk-term-emit-{}-{nanos}",
+        "sugar-walk-term-emit-{}-{nanos}",
         std::process::id()
     ))
 }

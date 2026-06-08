@@ -8,7 +8,7 @@ A walkthrough for TypeScript developers. By the end you have a `.proof` catalog 
 
 - A `.proof` file shipping alongside your `package.json`.
 - Mementos derived from your existing `z.object`, `@IsEmail`, `fc.assert(fc.property(...))` annotations (no new spec language, no parallel spec to maintain).
-- A handshake report from `provekit prove` showing the discharge breakdown.
+- A handshake report from `sugar prove` showing the discharge breakdown.
 
 ## 2. Prerequisites
 
@@ -20,8 +20,8 @@ A walkthrough for TypeScript developers. By the end you have a `.proof` catalog 
 
 ```bash
 # the canonical verifier (Rust CLI)
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 # the in-tree TypeScript kit
 cd implementations/typescript && pnpm install --frozen-lockfile
@@ -45,24 +45,24 @@ export const UserSchema = z.object({
 Run the lift adapter:
 
 ```bash
-npx provekit-lift
+npx sugar-lift
 ```
 
 The lifter walks every `z.object`, `z.string`, `z.number` chain, canonicalizes each schema into IR, hashes each IR formula to a CID, signs each memento, and writes `target/.proof`.
 
-**`class-validator`** decorators (`@IsNotEmpty`, `@MinLength`, `@Min`, `@Max`, `@IsEmail`, etc.) and **`fast-check`** properties (`fc.assert(fc.property(...))`) are picked up by the same `npx provekit-lift` invocation.
+**`class-validator`** decorators (`@IsNotEmpty`, `@MinLength`, `@Min`, `@Max`, `@IsEmail`, etc.) and **`fast-check`** properties (`fc.assert(fc.property(...))`) are picked up by the same `npx sugar-lift` invocation.
 
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 The handshake walks the catalog, runs the three tiers, and reports the discharge breakdown. See the [Rust tutorial step 4](rust.md#step-4-verify) for the output shape; it is identical regardless of which kit produced the catalog.
 
 ## 6. Wire your IDE
 
-- **IDE:** the TypeScript LSP plugin is planned. Until then, no in-editor squigglies. The `npx provekit-lift` + `provekit prove` cycle is the loop today.
+- **IDE:** the TypeScript LSP plugin is planned. Until then, no in-editor squigglies. The `npx sugar-lift` + `sugar prove` cycle is the loop today.
 
 ## What's next
 

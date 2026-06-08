@@ -139,7 +139,7 @@ unsafe fn write_raw(x: *mut u32, val: u32) {
 
 ### §5a.1 Signing ceremony
 
-A `ProvenanceMemento` MUST be signed by a curator-level key. The signing key follows the provenance path `secret/provekit/provenance-ed25519`. Signing proceeds: construct header/metadata → JCS-canonicalize → Ed25519 sign → place in `envelope.signature`.
+A `ProvenanceMemento` MUST be signed by a curator-level key. The signing key follows the provenance path `secret/sugar/provenance-ed25519`. Signing proceeds: construct header/metadata → JCS-canonicalize → Ed25519 sign → place in `envelope.signature`.
 
 ### §5a.2 Verifier validation
 
@@ -161,4 +161,4 @@ The pool validates the signature before admitting the memento: extract pubkey, r
 - `2026-05-06-atomic-ordering-memento.md` — sibling memento with same layered shape
 - `2026-05-06-aliasing-memento.md` — companion memento for reference aliasing
 - Paper 07 §8 — raw pointer lifting in LLBC
-- `provekit-walk/src/contract.rs` — `Effect::RawPointerProvenance`
+- `sugar-walk/src/contract.rs` — `Effect::RawPointerProvenance`

@@ -3,8 +3,8 @@ name = "sugar-lifter"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "ProvekIt sugar attribute proc-macro. No-op at compile time; recognized by the ProvekIt lift kit at lift time."
-repository = "https://github.com/TSavo/provekit"
+description = "Sugar sugar attribute proc-macro. No-op at compile time; recognized by the Sugar lift kit at lift time."
+repository = "https://github.com/TSavo/sugar"
 
 [lib]
 proc-macro = true

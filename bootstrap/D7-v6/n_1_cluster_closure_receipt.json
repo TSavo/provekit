@@ -5,9 +5,9 @@
   "base_commit": "b3553412",
   "branch": "bootstrap/D7-v6-retire-method-into-arg",
   "implementation": {
-    "crate": "provekit-realize-rust-core",
+    "crate": "sugar-realize-rust-core",
     "entrypoint": "emit_from_resolved",
-    "extended_file": "implementations/rust/provekit-realize-rust-core/src/lib.rs",
+    "extended_file": "implementations/rust/sugar-realize-rust-core/src/lib.rs",
     "retired_shape": "method:<method_name>(<first_param>, []) as a Value::<Variant> constructor argument",
     "composed_shape": "return(call:new(Arc::new, [call:String(Value::String, [method:into(s, [])])]))",
     "emitted_surface": "Arc::new(Value::String(s.into()))",
@@ -30,7 +30,7 @@
   "outcomes": [
     {
       "method": "impl Value::null",
-      "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json",
+      "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json",
       "receipt": "bootstrap/D7-v3/value_null_source_round_trip_receipt.json",
       "term_surface": "return(call:new(Arc::new, [Null]))",
       "verdict": "BYTE_IDENTICAL",
@@ -40,7 +40,7 @@
     },
     {
       "method": "impl Value::boolean",
-      "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_boolean.json",
+      "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_boolean.json",
       "receipt": "bootstrap/D7-v4/boolean_source_round_trip_receipt.json",
       "term_surface": "return(call:new(Arc::new, [call:Bool(Value::Bool, [b])]))",
       "verdict": "BYTE_IDENTICAL",
@@ -50,7 +50,7 @@
     },
     {
       "method": "impl Value::integer",
-      "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_integer.json",
+      "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_integer.json",
       "receipt": "bootstrap/D7-v4/integer_source_round_trip_receipt.json",
       "term_surface": "return(call:new(Arc::new, [call:Integer(Value::Integer, [n])]))",
       "verdict": "BYTE_IDENTICAL",
@@ -60,7 +60,7 @@
     },
     {
       "method": "impl Value::string",
-      "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_string.json",
+      "fixture": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v4_value_string.json",
       "receipt": "bootstrap/D7-v4/string_source_round_trip_receipt.json",
       "term_surface": "return(call:new(Arc::new, [call:String(Value::String, [method:into(s, [])])]))",
       "verdict": "BYTE_IDENTICAL",
@@ -70,10 +70,10 @@
     }
   ],
   "verification": {
-    "d7_v4_widen": "D7_V4_RECEIPT_OUT_DIR=/private/tmp/d7-v4-receipts cargo test -p libprovekit --test d7_v4_widen -- --nocapture",
+    "d7_v4_widen": "D7_V4_RECEIPT_OUT_DIR=/private/tmp/d7-v4-receipts cargo test -p libsugar --test d7_v4_widen -- --nocapture",
     "string_verdict": "BYTE_IDENTICAL",
     "string_regenerated_source_cid": "blake3-512:11ae0368cb858bbcd2806358c139bc80027e302997e2dc51067ad35779289f605026442c059e9b413722cbf3754f7d7b76354e2cc5a296f8b12c1fd9df2b1f43",
     "string_original_slice_post_rustfmt_cid": "blake3-512:11ae0368cb858bbcd2806358c139bc80027e302997e2dc51067ad35779289f605026442c059e9b413722cbf3754f7d7b76354e2cc5a296f8b12c1fd9df2b1f43"
   },
-  "next_step": "D7-v7 should sweep implementations/rust/provekit-canonicalizer/src/value.rs at module scope before Value::array or Value::object are treated as closed."
+  "next_step": "D7-v7 should sweep implementations/rust/sugar-canonicalizer/src/value.rs at module scope before Value::array or Value::object are treated as closed."
 }

@@ -9,7 +9,7 @@ shim**:
 
 ```text
 numpy.proof:  13M, 2909 sugar members          # all of numpy's python surface
-witness: passed -> .provekit/witnesses/<cid>.witness
+witness: passed -> .sugar/witnesses/<cid>.witness
 [pass] <cid>  (signature+content-address:package)
        oracle resolved via package; rust recomputed the CID and it matched
 ```

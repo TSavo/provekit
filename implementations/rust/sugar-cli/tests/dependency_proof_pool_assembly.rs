@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Voltron pool assembly: provekit prove must ask configured kits for the
+// Voltron pool assembly: sugar prove must ask configured kits for the
 // dependency .proof files they resolve through their own package managers, then
 // union those files into the verifier pool without teaching the substrate cargo,
 // npm, classpath, sys.path, or any other platform graph.
@@ -22,7 +22,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-dep-proof-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-dep-proof-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }
@@ -154,7 +154,7 @@ fn publish_user_bridge(project_dir: &Path, target_cid: &str, target_bundle_cid: 
     members.insert(source_cid, source_bytes);
     members.insert(bridge_cid, bridge_bytes);
     write_proof(
-        &project_dir.join(".provekit"),
+        &project_dir.join(".sugar"),
         "@user/local-bridge",
         members,
     );
@@ -162,7 +162,7 @@ fn publish_user_bridge(project_dir: &Path, target_cid: &str, target_bundle_cid: 
 
 fn publish_contradictory_implication_project() -> PathBuf {
     let project = unique_dir("contradictory-implication");
-    let proof_dir = project.join(".provekit");
+    let proof_dir = project.join(".sugar");
     fs::create_dir_all(&proof_dir).expect("mkdir proof dir");
 
     let producer_env = json!({
@@ -267,7 +267,7 @@ fn install_dependency_proof_stub(project_dir: &Path, proof_cid: &str, proof_byte
         ),
     )
     .expect("write stub");
-    let manifest_dir = project_dir.join(".provekit").join("lift").join("rust");
+    let manifest_dir = project_dir.join(".sugar").join("lift").join("rust");
     fs::create_dir_all(&manifest_dir).expect("mkdir manifest");
     fs::write(
         manifest_dir.join("manifest.toml"),
@@ -278,7 +278,7 @@ fn install_dependency_proof_stub(project_dir: &Path, proof_cid: &str, proof_byte
     )
     .expect("write manifest");
     fs::write(
-        project_dir.join(".provekit").join("config.toml"),
+        project_dir.join(".sugar").join("config.toml"),
         "[[plugins]]\nname = \"rust-dependency-proof-stub\"\nkind = \"lift\"\nsurface = \"rust\"\n",
     )
     .expect("write config");
@@ -298,7 +298,7 @@ fn dependency_rpc_union_makes_vendor_contract_reachable() {
     let root = unique_dir("reachable");
     let project = root.join("user");
     let vendor = root.join("vendor");
-    fs::create_dir_all(project.join(".provekit")).expect("mkdir project");
+    fs::create_dir_all(project.join(".sugar")).expect("mkdir project");
     let (target_cid, bundle_cid, proof_path, proof_bytes) =
         publish_vendor_positive_contract(&vendor);
     publish_user_bridge(&project, &target_cid, &bundle_cid);
@@ -336,7 +336,7 @@ fn voltron_pool_refuses_cross_dependency_violation() {
     let root = unique_dir("e2e");
     let project = root.join("user");
     let vendor = root.join("vendor");
-    fs::create_dir_all(project.join(".provekit")).expect("mkdir project");
+    fs::create_dir_all(project.join(".sugar")).expect("mkdir project");
     let (target_cid, bundle_cid, proof_path, proof_bytes) =
         publish_vendor_positive_contract(&vendor);
     publish_user_bridge(&project, &target_cid, &bundle_cid);
@@ -350,7 +350,7 @@ fn voltron_pool_refuses_cross_dependency_violation() {
         .arg("z3")
         .arg("--quiet")
         .output()
-        .expect("run provekit prove");
+        .expect("run sugar prove");
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -376,7 +376,7 @@ fn prove_reports_violation_for_contradictory_implication() {
         .arg("z3")
         .arg("--json")
         .output()
-        .expect("run provekit prove");
+        .expect("run sugar prove");
 
     assert_eq!(
         output.status.code(),

@@ -2,7 +2,7 @@
 # pass encodes str/None literals as opaque uninterpreted Int constants made
 # distinct from each other and from concrete int/bool values; bool encodes to
 # its int value (True==1, False==0). See
-# provekit_ir_compiler_smt_lib::literal_encoding.
+# sugar_ir_compiler_smt_lib::literal_encoding.
 
 # r == "5" and r == 5 — CONTRADICTORY (str "5" != int 5). Verdict: REFUSED.
 # If DISCHARGED, the Int-universe encoding doesn't distinguish types (falsePass).

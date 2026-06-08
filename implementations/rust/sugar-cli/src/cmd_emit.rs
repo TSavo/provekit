@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit emit`: dispatch neutral contract predicates to a target test
+// `sugar emit`: dispatch neutral contract predicates to a target test
 // emitter kit. The target kit owns framework syntax and native check
 // semantics; the CLI only resolves the manifest, invokes the kit, and writes
 // the emitted artifact.
@@ -31,13 +31,13 @@ pub(crate) struct EmitWitnessProof {
 
 #[derive(Parser, Debug, Clone)]
 pub struct EmitArgs {
-    /// Project root containing `.provekit/emit/<target>-<framework>/manifest.toml`.
+    /// Project root containing `.sugar/emit/<target>-<framework>/manifest.toml`.
     #[arg(long)]
     pub project: Option<PathBuf>,
     /// Target language for the emitted artifact, for example `go`.
     #[arg(long)]
     pub target: String,
-    /// Target test framework. `go --framework testing` resolves `.provekit/emit/go-testing`.
+    /// Target test framework. `go --framework testing` resolves `.sugar/emit/go-testing`.
     #[arg(long)]
     pub framework: String,
     /// JSON EmitPlan passed through to the emitter kit.
@@ -252,7 +252,7 @@ fn default_artifact_path(target: &str, _framework: &str, result: &Json) -> PathB
         .and_then(Json::as_str)
         .filter(|s| !s.is_empty())
         .unwrap_or(target);
-    PathBuf::from(format!("provekit_emitted.{extension}"))
+    PathBuf::from(format!("sugar_emitted.{extension}"))
 }
 
 fn emit_receipt(
@@ -352,7 +352,7 @@ fn build_witness_emit_plan(requirement: &Json) -> Result<Json, String> {
         .pointer("/policy/policyCid")
         .or_else(|| requirement.get("policyCid"))
         .and_then(Json::as_str)
-        .unwrap_or("builtin:provekit-emit-witness-policy");
+        .unwrap_or("builtin:sugar-emit-witness-policy");
     Ok(json!({
         "kind": "RealizerPlan",
         "schemaVersion": "1",
@@ -409,20 +409,20 @@ fn mint_witness_proof(
         .get("verifierCid")
         .or_else(|| claim_body.get("verifierCid"))
         .and_then(Json::as_str)
-        .unwrap_or("builtin:provekit-emit-witness")
+        .unwrap_or("builtin:sugar-emit-witness")
         .to_string();
     let policy_cid = emit_result
         .get("policyCid")
         .or_else(|| claim_body.get("policyCid"))
         .or_else(|| plan.get("policyCid"))
         .and_then(Json::as_str)
-        .unwrap_or("builtin:provekit-emit-witness-policy")
+        .unwrap_or("builtin:sugar-emit-witness-policy")
         .to_string();
     let produced_by = output
         .pointer("/emitter/name")
         .or_else(|| output.pointer("/realizer/name"))
         .and_then(Json::as_str)
-        .unwrap_or("provekit-emit")
+        .unwrap_or("sugar-emit")
         .to_string();
     let produced_at = emit_result
         .get("producedAt")
@@ -456,11 +456,11 @@ fn mint_witness_proof(
     let mut members = BTreeMap::new();
     members.insert(witness.cid, witness.canonical_bytes);
     let mut metadata = BTreeMap::new();
-    metadata.insert("provekit.emit.mode".into(), "witness".into());
-    metadata.insert("provekit.emit.surface".into(), surface.to_string());
-    metadata.insert("provekit.emit.claimKind".into(), claim_kind.clone());
+    metadata.insert("sugar.emit.mode".into(), "witness".into());
+    metadata.insert("sugar.emit.surface".into(), surface.to_string());
+    metadata.insert("sugar.emit.claimKind".into(), claim_kind.clone());
     let proof = build_proof_envelope(&ProofEnvelopeInput {
-        name: format!("@provekit/emit-witness/{claim_kind}"),
+        name: format!("@sugar/emit-witness/{claim_kind}"),
         version: "0.1.0".into(),
         binary_cid: None,
         metadata: Some(metadata),
@@ -525,7 +525,7 @@ fn jcs_cid(value: &Json) -> String {
 }
 
 fn deterministic_signer_seed(principal: &str) -> Ed25519Seed {
-    let digest = blake3_512_of(format!("provekit-emit-signer:{principal}").as_bytes());
+    let digest = blake3_512_of(format!("sugar-emit-signer:{principal}").as_bytes());
     let hex = digest
         .strip_prefix("blake3-512:")
         .expect("blake3_512_of returns tagged digest");
@@ -601,6 +601,6 @@ mod tests {
     fn default_artifact_path_is_not_language_framework_special_cased() {
         let path = default_artifact_path("go", "testing", &json!({}));
 
-        assert_eq!(path, PathBuf::from("provekit_emitted.go"));
+        assert_eq!(path, PathBuf::from("sugar_emitted.go"));
     }
 }

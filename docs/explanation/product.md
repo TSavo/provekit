@@ -43,17 +43,17 @@ unresolved residue when the graph cannot justify the assembled system.
 
 This is demonstrated end to end, not aspirational. A numpy vendor mints a
 `.proof` carrying the callsite-keyed contract `np.add(2,3) == 5`. A consumer
-stages that `.proof` in `.provekit/imports/`, asserts `np.add(2,3) == 6`, and
+stages that `.proof` in `.sugar/imports/`, asserts `np.add(2,3) == 6`, and
 runs `prove`. The consumer is REFUSED: it inherited numpy's `== 5`, the verifier
 conjoins the two same-callsite contracts, and z3 finds `and(== 5, == 6)` UNSAT. A
 consumer that asserts `== 5` agrees and is PROVEN. The consumer inherits the
 vendor's correctness and is caught contradicting it. This works because contracts
 key to the callsite under test, not to the test, so a downstream assertion about
 the same call meets the upstream contract about it.
-(`implementations/python/provekit-lift-py-tests/tests/test_inheritance_e2e.py`,
+(`implementations/python/sugar-lift-py-tests/tests/test_inheritance_e2e.py`,
 parametrized `consumer-agrees-PROVEN` and `consumer-contradicts-REFUSED`; the
 cross-proof conjoin is locked by `cross_proof_same_named_contracts_are_conjoined`
-in `implementations/rust/provekit-verifier/src/consistency.rs`.)
+in `implementations/rust/sugar-verifier/src/consistency.rs`.)
 
 That makes Sugar a supply-chain tool as much as a verification tool. The
 question is not only "did this package pass its own checks?" The question is
@@ -141,20 +141,20 @@ loss record, or refusal. Silent loss is the forbidden case.
 The current source-built CLI is:
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 ```
 
 A project that declares lift plugins can mint proof data:
 
 ```bash
-provekit mint --project .
+sugar mint --project .
 ```
 
 A consumer can run the proof gate over local and dependency `.proof` artifacts:
 
 ```bash
-provekit prove .
+sugar prove .
 ```
 
 The exact plugin manifests, kit coverage, and package-manager proof resolution

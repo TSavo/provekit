@@ -14,7 +14,7 @@
 //! 1. **The substitution algebra** — capture-avoiding, single-variable
 //!    substitution over `IrFormula` / `IrTerm`, plus free-variable
 //!    computation. This was previously duplicated between
-//!    `provekit-walk`'s `wp.rs` and `libsugar::compose`; both now
+//!    `sugar-walk`'s `wp.rs` and `libsugar::compose`; both now
 //!    consume it from here. (CCP §5: one primitive, every consumer.)
 //!
 //! 2. **The two grammar-node reductions** — `substitute` and `apply`
@@ -506,7 +506,7 @@ fn wp_op<R: OpContractResolver + ?Sized>(
 /// constructor `op(name, <recursed args>)` when the contract carries no
 /// usable `post`; a `unit` is the `unit` constructor.
 ///
-/// `pub` so that `provekit-verifier`'s body-discharge spine can reduce
+/// `pub` so that `sugar-verifier`'s body-discharge spine can reduce
 /// nested-call terms in the NESTED-CALL tier (reduce-in-place). Treat
 /// this as verifier-internal infrastructure, not a stable public API.
 pub fn value_expr_of_term<R: OpContractResolver + ?Sized>(
@@ -772,7 +772,7 @@ fn is_atomic_true(f: &IrFormula) -> bool {
 // ============================================================
 // Substitution algebra (capture-avoiding) over IrFormula / IrTerm.
 //
-// Single canonical home. `provekit-walk`'s `wp.rs` re-exports these;
+// Single canonical home. `sugar-walk`'s `wp.rs` re-exports these;
 // `libsugar::compose` imports them. (Previously duplicated in both;
 // CCP §5: one primitive, every consumer.)
 // ============================================================

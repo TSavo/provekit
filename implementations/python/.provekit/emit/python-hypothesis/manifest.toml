@@ -1,6 +1,0 @@
-name = "python-hypothesis"
-version = "0.1.0"
-protocol_versions = ["pep/1.7.0"]
-kind = "emit"
-command = ["python3", "-m", "provekit_emit_python_hypothesis", "--rpc"]
-working_dir = "provekit-emit-python-hypothesis/src"

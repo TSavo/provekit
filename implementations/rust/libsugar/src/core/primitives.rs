@@ -17,7 +17,7 @@ use super::types::{
 
 /// Signing-key type for primitive 8, `sign`.
 ///
-/// This wraps the reachable `provekit-proof-envelope` Ed25519 helper. The
+/// This wraps the reachable `sugar-proof-envelope` Ed25519 helper. The
 /// helper accepts deterministic 32-byte seeds and emits the protocol's
 /// self-identifying `ed25519:<base64>` public-key and signature strings.
 pub type SigningKey = Ed25519Seed;
@@ -26,7 +26,7 @@ pub type SigningKey = Ed25519Seed;
 ///
 /// This is the substrate identity function: canonical bytes are computed by
 /// the value's [`Canonical`] implementation, then hashed by
-/// `provekit-canonicalizer::blake3_512_of`.
+/// `sugar-canonicalizer::blake3_512_of`.
 pub fn address<T: Canonical + ?Sized>(structure: &T) -> Cid {
     Cid::from_hash_output(blake3_512_of(&structure.canonical_bytes()))
 }

@@ -1,0 +1,11 @@
+[package]
+name = "sugar-rpc-minimal"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal RPC server using only constructs the substrate's lift→lower vocabulary supports today. Lowers cleanly to java."
+
+[dependencies]
+sugar = { package = "sugar-lifter", path = "../../implementations/rust/sugar-lifter" }
+
+[lib]
+path = "src/lib.rs"

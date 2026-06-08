@@ -27,7 +27,7 @@ pub(crate) struct LiftPluginManifest {
     pub working_dir: Option<PathBuf>,
     /// Optional JSON-RPC method override. Defaults to `lift`.
     /// Used by a kit binary that owns several lift surfaces, such as
-    /// Rust's `provekit.plugin.lift_implications` consumer surface.
+    /// Rust's `sugar.plugin.lift_implications` consumer surface.
     pub method: Option<String>,
     /// Optional lift phase. Defaults to producer. `consumer` surfaces are
     /// run after producers with producer contract CIDs forwarded as
@@ -60,7 +60,7 @@ pub struct LiftPluginOptions {
     pub workspace_override: Option<String>,
     /// Optional `options.emit` field passed through to the plugin via
     /// the lift request. `"ir-document"` flips self-minting plugins
-    /// (provekit-lift) into composable mode so their output can be
+    /// (sugar-lift) into composable mode so their output can be
     /// merged with sibling plugins' ir-documents at mint time.
     pub emit: Option<String>,
     /// Optional explicit `options.layer` override (from config.toml's
@@ -351,7 +351,7 @@ pub(crate) fn surface_phase(project_root: &Path, surface: &str) -> String {
 
 fn find_manifest(project_root: &Path, surface: &str) -> Result<LiftPluginManifest, String> {
     let project_local = project_root
-        .join(".provekit")
+        .join(".sugar")
         .join("lift")
         .join(surface)
         .join("manifest.toml");
@@ -361,7 +361,7 @@ fn find_manifest(project_root: &Path, surface: &str) -> Result<LiftPluginManifes
     if let Some(home) = std::env::var_os("HOME") {
         let user_global = PathBuf::from(home)
             .join(".config")
-            .join("provekit")
+            .join("sugar")
             .join("lift")
             .join(surface)
             .join("manifest.toml");
@@ -370,7 +370,7 @@ fn find_manifest(project_root: &Path, surface: &str) -> Result<LiftPluginManifes
         }
     }
     Err(format!(
-        "no plugin manifest for surface `{surface}` (looked in .provekit/lift/{surface}/manifest.toml and ~/.config/provekit/lift/{surface}/manifest.toml)"
+        "no plugin manifest for surface `{surface}` (looked in .sugar/lift/{surface}/manifest.toml and ~/.config/sugar/lift/{surface}/manifest.toml)"
     ))
 }
 
@@ -430,7 +430,7 @@ pub fn build_lift_params(project_root: &Path, surface: &str, options: LiftPlugin
     let mut params = json!({
         "surface": surface,
         "workspace_root": workspace_root,
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": options_obj,
     });

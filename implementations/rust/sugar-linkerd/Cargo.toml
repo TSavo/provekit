@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Long-running JSON-RPC daemon that serves the provekit linker to per-kit LSP plugins. Implements spec 2026-05-04-linker-daemon-protocol.md."
+description = "Long-running JSON-RPC daemon that serves the sugar linker to per-kit LSP plugins. Implements spec 2026-05-04-linker-daemon-protocol.md."
 
 [[bin]]
-name = "provekit-linkerd"
+name = "sugar-linkerd"
 path = "src/main.rs"
 
 [dependencies]

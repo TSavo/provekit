@@ -18,7 +18,7 @@
 //     ConceptSiteMemento with verdict X produces a DomainClaim with
 //     VerdictKind X for every X.
 //
-// Byte-exact CID pinning lives in provekit-claim-envelope (this crate has
+// Byte-exact CID pinning lives in sugar-claim-envelope (this crate has
 // no JCS encoder).
 
 use std::collections::BTreeMap;
@@ -365,7 +365,7 @@ fn concept_site_to_domain_claim_round_trips_through_wire() {
     // The conversion produces a DomainClaim whose JCS bytes deserialize
     // back to an equal DomainClaim. This is the serde-level shape
     // invariant; byte-exact JCS canonicalization lives in
-    // provekit-claim-envelope.
+    // sugar-claim-envelope.
     let cs = make_concept_site("exact", Some(CS_RECEIPT_CID), None, LossRecord::default());
     let claim = DomainClaim::try_from(&cs).expect("convert");
     let serialized = serde_json::to_string(&claim).expect("serialize");

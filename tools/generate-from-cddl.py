@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-CDDL-based code generator for ProvekIt IR.
+CDDL-based code generator for Sugar IR.
 
 Usage:
-    python tools/generate-from-cddl.py protocol/provekit-ir.cddl rust > ir_generated.rs
+    python tools/generate-from-cddl.py protocol/sugar-ir.cddl rust > ir_generated.rs
 
 This script reads the machine-readable CDDL grammar and generates:
 - Type definitions (structs/enums)
@@ -53,7 +53,7 @@ def generate_rust(rules: dict) -> str:
     output.append("// SPDX-License-Identifier: Apache-2.0")
     output.append("//")
     output.append("// GENERATED FILE: DO NOT EDIT")
-    output.append("// Source: protocol/provekit-ir.cddl")
+    output.append("// Source: protocol/sugar-ir.cddl")
     output.append("// Generator: tools/generate-from-cddl.py")
     output.append("")
     output.append("use serde::{Deserialize, Serialize};")

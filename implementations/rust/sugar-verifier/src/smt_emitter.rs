@@ -3,9 +3,9 @@
 // Stage 5: smt_emitter. Render an obligation's IR to an SMT-LIB
 // script.
 //
-// The implementation moved to crate `provekit-ir-compiler-smt-lib` so
+// The implementation moved to crate `sugar-ir-compiler-smt-lib` so
 // the same code serves both the in-process fast path (this re-export)
-// and the standalone `provekit-ir-smt-lib` subprocess binary used by
+// and the standalone `sugar-ir-smt-lib` subprocess binary used by
 // the IR compiler plugin protocol.
 //
 // Spec: protocol/specs/2026-04-30-ir-compiler-protocol.md.

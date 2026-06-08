@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // GENERATED FILE: DO NOT EDIT
-// Source: protocol/provekit-ir.cddl
-// Generator: provekit-ir-codegen
+// Source: protocol/sugar-ir.cddl
+// Generator: sugar-ir-codegen
 
 use serde::{Deserialize, Serialize};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
@@ -180,9 +180,9 @@ pub type ProofType = String;
 // codegen output to add Function + Dependent variants per the v1.5.0
 // grammar grow (issue #330, rust gap from PR #361), Float per #385,
 // and Region per #401 (v1.6.0 grammar grow).
-// The codegen (`provekit-ir-codegen`) currently only emits the Primitive
+// The codegen (`sugar-ir-codegen`) currently only emits the Primitive
 // arm even though the CDDL spec defines a 7-way union. If you regenerate
-// this file via `cargo run -p provekit-ir-codegen`, you WILL clobber the
+// this file via `cargo run -p sugar-ir-codegen`, you WILL clobber the
 // manual extensions. Re-apply them from this comment block down through
 // the closing `}` of the `Sort` enum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -390,12 +390,12 @@ pub enum IrTerm {
 // (docs/plans/2026-05-16-platform-semantic-tag-schema-ruling.md §2).
 // `Substitute` and `Apply` are the "wp-rule schema" nodes: they appear inside a
 // `wp_rule` term and are reduced away by `libsugar::wp` before any
-// formula reaches a solver backend. The codegen (`provekit-ir-codegen`)
+// formula reaches a solver backend. The codegen (`sugar-ir-codegen`)
 // currently emits only the generated union without these arms; if you
-// regenerate this file via `cargo run -p provekit-ir-codegen`, you WILL
+// regenerate this file via `cargo run -p sugar-ir-codegen`, you WILL
 // clobber the manual extensions. Re-apply them from this comment block
 // through the closing `}` of the `IrFormula` enum, keeping the CDDL
-// (`protocol/provekit-ir.cddl`) as the source of truth.
+// (`protocol/sugar-ir.cddl`) as the source of truth.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum IrFormula {
@@ -486,10 +486,10 @@ pub type Formula = IrFormula;
 //
 // The types below are manually added per the convention established in
 // the Sort enum above. They implement the CDDL defined in
-// protocol/provekit-ir.cddl §"Abstraction layer" and are sourced from
+// protocol/sugar-ir.cddl §"Abstraction layer" and are sourced from
 // protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.1-§2.4.
 //
-// DO NOT regenerate this file via `cargo run -p provekit-ir-codegen`
+// DO NOT regenerate this file via `cargo run -p sugar-ir-codegen`
 // without re-applying this block. See the Sort enum NOTE above.
 //
 // Key-order rule: struct field names mirror the CDDL key names exactly.
@@ -760,7 +760,7 @@ pub struct AbstractionSlot {
 /// A hub node at the abstraction tier of the `concept:*` hub.
 ///
 /// Source of truth: protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.1
-/// CDDL: protocol/provekit-ir.cddl `ConceptAbstractionMemento`
+/// CDDL: protocol/sugar-ir.cddl `ConceptAbstractionMemento`
 ///
 /// Locked JCS key order:
 ///   kind, operator, tier, slots, formal_sorts, result_sort, contract,
@@ -802,7 +802,7 @@ pub struct RealizationPost {
 /// "abstraction-realization" role.
 ///
 /// Source of truth: protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.2
-/// CDDL: protocol/provekit-ir.cddl `RealizationDesugaringMemento`
+/// CDDL: protocol/sugar-ir.cddl `RealizationDesugaringMemento`
 ///
 /// Locked JCS key order:
 ///   kind, fn_name, formals, formal_sorts, pre (omitted when absent),
@@ -1218,7 +1218,7 @@ fn legacy_object_is_sugar_carrier(object: &serde_json::Map<String, serde_json::V
 // Three new memento types per
 // protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md
 // §1.1 (TransportGapMemento), §1.2 (PartialMorphismMemento), §1.4 (LossyMorphismMemento).
-// CDDL: protocol/provekit-ir.cddl "Transport gap mementos" block.
+// CDDL: protocol/sugar-ir.cddl "Transport gap mementos" block.
 //
 // Amendment (this PR): `no-such-target-op` added to GapKind.
 //
@@ -1434,7 +1434,7 @@ pub struct ResolutionOption {
 ///
 /// Source of truth:
 ///   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.1
-/// CDDL: protocol/provekit-ir.cddl `TransportGapMemento`
+/// CDDL: protocol/sugar-ir.cddl `TransportGapMemento`
 ///
 /// Amendment (this PR): `gap_kind: "no-such-target-op"` -- source op has no
 /// hub op at all; `target_op_cid` is absent in that case.
@@ -1487,7 +1487,7 @@ pub struct PartialHomomorphismObligation {
 ///
 /// Source of truth:
 ///   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.2
-/// CDDL: protocol/provekit-ir.cddl `PartialMorphismMemento`
+/// CDDL: protocol/sugar-ir.cddl `PartialMorphismMemento`
 ///
 /// Locked JCS key order (alphabetical):
 ///   fn_name, gap_memento_cid (omitted when absent),
@@ -1539,7 +1539,7 @@ pub struct LossyHomomorphismObligation {
 ///
 /// Source of truth:
 ///   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.4
-/// CDDL: protocol/provekit-ir.cddl `LossyMorphismMemento`
+/// CDDL: protocol/sugar-ir.cddl `LossyMorphismMemento`
 ///
 /// Locked JCS key order (alphabetical):
 ///   coarsening_kind, fn_name, gap_memento_cid (omitted when absent),
@@ -1600,8 +1600,8 @@ pub struct LossyMorphismMemento {
 // when None.
 //
 // The CID-determining bytes for a ConceptSiteMemento are JCS(header) with
-// `cid` elided; that JCS encoding lives in provekit-claim-envelope
-// (provekit-ir-types has no JCS encoder). Byte-pin tests for the CID
+// `cid` elided; that JCS encoding lives in sugar-claim-envelope
+// (sugar-ir-types has no JCS encoder). Byte-pin tests for the CID
 // belong in that crate; this crate carries serde round-trip tests only.
 // ============================================================
 
@@ -1703,7 +1703,7 @@ pub struct ConceptSiteProvenance {
 /// This struct represents the `header` layer per
 /// 2026-05-03-substrate-layers-envelope-header-body.md; envelope + metadata
 /// layers are carried by the wrapping envelope structures defined in
-/// provekit-claim-envelope.
+/// sugar-claim-envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConceptSiteMemento {
     /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
@@ -2006,7 +2006,7 @@ impl RealizationPlanMemento {
 // conjunction discharge path is functional in v0.
 //
 // CID-determining bytes for both mementos are JCS(header) with `cid`
-// elided; that JCS encoder lives in provekit-claim-envelope. Byte-pin
+// elided; that JCS encoder lives in sugar-claim-envelope. Byte-pin
 // tests for the compound CID belong there; THIS crate carries serde
 // round-trip tests only.
 // ============================================================
@@ -2165,7 +2165,7 @@ impl From<AggregationStrategy> for String {
 /// layering (`2026-05-03-substrate-layers-envelope-header-body.md`); the
 /// envelope (`declaredAt`, `signature`, `signer`) and metadata (`note`)
 /// are carried by the wrapping envelope structures in
-/// `provekit-claim-envelope`.
+/// `sugar-claim-envelope`.
 ///
 /// Locked JCS key order (alphabetical):
 ///   cid, confidence_basis_points, extension_fields, kind, lifter_cid,
@@ -2237,7 +2237,7 @@ pub struct EvidenceRef {
 /// `composed_pre` and `composed_post` are DERIVED-AND-STORED (cached
 /// truth-source duality). Validators MUST recompute under the recorded
 /// strategy and reject on mismatch; that recompute requires a JCS
-/// encoder and lives in provekit-claim-envelope.
+/// encoder and lives in sugar-claim-envelope.
 ///
 /// Locked JCS key order (alphabetical):
 ///   aggregation_strategy, cid, composed_post, composed_pre, evidences,
@@ -2286,7 +2286,7 @@ pub struct CompoundContractMemento {
 //
 // Substrate-only types: carry CIDs and structured stage receipts but do
 // not execute the verifier pipeline or interpret stage outputs. Wiring
-// these into the actual provekit-verifier runtime is a follow-up.
+// these into the actual sugar-verifier runtime is a follow-up.
 //
 // `header.cid` is DERIVED from JCS(header without cid) and BLAKE3-512.
 // For ProofRunMemento, output_artifact_cids sorts ascending in canonical
@@ -2388,7 +2388,7 @@ pub struct ProofRunMetadata {
     pub source_url: Option<String>,
 }
 
-/// A content-addressed `provekit prove` run record.
+/// A content-addressed `sugar prove` run record.
 ///
 /// Locked JCS key order: envelope, header, metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4646,7 +4646,7 @@ pub struct CanonicalizationProfileMemento {
 // The `signature` field is REQUIRED in the wire form but is REPLACED by
 // the empty string when computing the CID-determining bytes (signer-
 // independent addressing). The CID computation itself lives in
-// `provekit-claim-envelope` (this crate has no JCS encoder).
+// `sugar-claim-envelope` (this crate has no JCS encoder).
 // ============================================================
 
 /// The trichotomy verdict kind for a `DomainClaim`. Exactly one of three.
@@ -4724,7 +4724,7 @@ pub struct DomainClaimProvenance {
 ///
 /// The CID-determining bytes are JCS(claim with `signature` replaced by the
 /// empty string) -- see spec §3.1. CID computation lives in
-/// `provekit-claim-envelope`.
+/// `sugar-claim-envelope`.
 ///
 /// Wire-name semantics (spec §1.1):
 ///   * `kit_cid` = `k`, the operation that produced the claim.

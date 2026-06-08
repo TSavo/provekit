@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The cargo-test witness lift surface (provekit-lift/1 NDJSON). At LIFT time this
+// The cargo-test witness lift surface (sugar-lift/1 NDJSON). At LIFT time this
 // is the PRODUCER: it runs the crate's tests under `cargo test` and emits a
 // ContractDecl carrying the witnessed run as a `custom` EvidenceTerm plus a signed
 // WitnessPackageMemento. At RESOLVE time it is the ORACLE: it resolves a witness
@@ -19,8 +19,8 @@ use sugar_lift_rust_cargo_test_witness as kit;
 const KIT_ID: &str = "rust-cargo-test-witness";
 const KIT_VERSION: &str = "0.1.0";
 const SURFACE: &str = "rust-cargo-test-witness";
-const KIT_DECLARATION_RPC_METHOD: &str = "provekit.plugin.kit_declaration";
-const RESOLVE_WITNESS_RPC_METHOD: &str = "provekit.plugin.resolve_witness";
+const KIT_DECLARATION_RPC_METHOD: &str = "sugar.plugin.kit_declaration";
+const RESOLVE_WITNESS_RPC_METHOD: &str = "sugar.plugin.resolve_witness";
 
 fn send(obj: &Value) {
     let mut out = std::io::stdout().lock();
@@ -80,7 +80,7 @@ fn handle_lift(id: &Value, params: &Value) -> Value {
 /// return them base64-encoded. CONTENT, never a verdict.
 ///
 /// Resolution order:
-///   1. PACKAGE -- read `.provekit/witnesses/<cid>.witness` if present.
+///   1. PACKAGE -- read `.sugar/witnesses/<cid>.witness` if present.
 ///   2a. PACKAGE RECOMPUTE -- a `cargo-test-witness-package` reproduces by
 ///      re-running the suite and rebuilding the content-addressed bundle (ERROR if
 ///      the recomputed cid != pinned).
@@ -241,9 +241,9 @@ fn main() {
         match method {
             "initialize" => send(&json!({
                 "jsonrpc": "2.0", "id": id, "result": {
-                    "name": "provekit-lsp-rust-cargo-test-witness",
+                    "name": "sugar-lsp-rust-cargo-test-witness",
                     "version": KIT_VERSION,
-                    "protocol_version": "provekit-lsp-shared/1",
+                    "protocol_version": "sugar-lsp-shared/1",
                     "kit_id": KIT_ID,
                     "capabilities": {
                         "source_surfaces": [SURFACE],

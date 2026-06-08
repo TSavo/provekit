@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Solver-configuration model. Mirrors the `[solvers]` table in
-// `.provekit/config.toml`:
+// `.sugar/config.toml`:
 //
 //   [solvers]
 //   default = "z3"                            # OR
@@ -147,10 +147,10 @@ pub struct SolversConfig {
 }
 
 impl SolversConfig {
-    /// Load from `.provekit/config.toml` under `project_root`. Returns
+    /// Load from `.sugar/config.toml` under `project_root`. Returns
     /// `Ok(None)` if the file or `[solvers]` table is absent.
     pub fn load(project_root: &Path) -> Result<Option<Self>, String> {
-        let path = project_root.join(".provekit").join("config.toml");
+        let path = project_root.join(".sugar").join("config.toml");
         if !path.exists() {
             return Ok(None);
         }
@@ -304,14 +304,14 @@ default = "z3"
     #[test]
     fn load_without_solvers_table_returns_none() {
         let root = std::env::temp_dir().join(format!(
-            "provekit-solvers-config-{}-{}",
+            "sugar-solvers-config-{}-{}",
             std::process::id(),
             "no-solvers"
         ));
-        let provekit_dir = root.join(".provekit");
-        std::fs::create_dir_all(&provekit_dir).expect("create .provekit");
+        let sugar_dir = root.join(".sugar");
+        std::fs::create_dir_all(&sugar_dir).expect("create .sugar");
         std::fs::write(
-            provekit_dir.join("config.toml"),
+            sugar_dir.join("config.toml"),
             "[authoring]\nsurface = \"rust\"\n",
         )
         .expect("write config");

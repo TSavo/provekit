@@ -3,9 +3,9 @@
 **Status:** v1.0.0 normative draft.
 **Date:** 2026-05-13
 **Related:**
-- `2026-05-13-proof-run-memento.md` (`StageReceipt`, TSavo/provekit#792)
-- `2026-05-13-promotion-decision-memento.md` (`PromotionDecisionMemento`, TSavo/provekit#791)
-- TSavo/provekit#796 (admissibility-spine umbrella)
+- `2026-05-13-proof-run-memento.md` (`StageReceipt`, TSavo/sugar#792)
+- `2026-05-13-promotion-decision-memento.md` (`PromotionDecisionMemento`, TSavo/sugar#791)
+- TSavo/sugar#796 (admissibility-spine umbrella)
 - `2026-05-02-multi-solver-protocol-v2.md`
 - `2026-05-09-algorithm-memento-protocol.md`
 - `2026-04-30-canonicalization-grammar.md` (JCS canonicalization, normative)

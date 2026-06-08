@@ -1,14 +1,14 @@
-# Lift Plugin Protocol (`provekit-lift/1`)
+# Lift Plugin Protocol (`sugar-lift/1`)
 
-**LEGACY-RETAINED.** The protocol identifier `provekit-lift/1` is SUPERSEDED by `pep/1.7.0` per `protocol/specs/2026-05-12-plugin-protocol.md` §0.4 (the Plugin Extension Protocol rename). This spec's `content`-payload normative shape REMAINS authoritative for `kind = "lift"` mementos under `pep/1.7.0`; the kind-specific message shapes (JSON-RPC method set, `package-inspection-document` identity result, identify-only lift layer, error model) defined in the sections below are unchanged and continue to govern the `content` field of any `pep/1.7.0` memento with `kind = "lift"`. ONLY the protocol-version token at the wire layer changes: producers MUST emit `protocol_version = "pep/1.7.0"` (single-token wire field) or `protocol_versions = ["pep/1.7.0"]` (plugin-memento array form). Runtimes accept legacy `provekit-lift/1` for one migration minor version per the plugin-protocol spec §0.4; that acceptance window ends with the next minor bump.
+**LEGACY-RETAINED.** The protocol identifier `sugar-lift/1` is SUPERSEDED by `pep/1.7.0` per `protocol/specs/2026-05-12-plugin-protocol.md` §0.4 (the Plugin Extension Protocol rename). This spec's `content`-payload normative shape REMAINS authoritative for `kind = "lift"` mementos under `pep/1.7.0`; the kind-specific message shapes (JSON-RPC method set, `package-inspection-document` identity result, identify-only lift layer, error model) defined in the sections below are unchanged and continue to govern the `content` field of any `pep/1.7.0` memento with `kind = "lift"`. ONLY the protocol-version token at the wire layer changes: producers MUST emit `protocol_version = "pep/1.7.0"` (single-token wire field) or `protocol_versions = ["pep/1.7.0"]` (plugin-memento array form). Runtimes accept legacy `sugar-lift/1` for one migration minor version per the plugin-protocol spec §0.4; that acceptance window ends with the next minor bump.
 
 Status: v1.6.3 normative update over the v1.2.0 lift-plugin protocol for `content`-payload shape under `kind = "lift"`. Wire protocol-version token renamed under `pep/1.7.0` (see above). The v1.6.3 update formalizes the already-deployed `identify-only` lift layer and the package-inspection identity result. Listed in the protocol catalog under property key `lift-plugin-protocol`. CID is computed from the bytes of this file (raw-bytes BLAKE3-512); see the catalog at `protocol/specs/2026-04-30-protocol-catalog.json` for the value.
 
 ## Why
 
-ProvekIt is the composition of two protocols (canonical IR + content addressing). Lift adapters are decoration: they consume host-language source and emit canonical IR mementos that the protocol then signs, hashes, bundles. Today the Rust CLI bundles Rust-only lift adapters as Rust crates (proptest, contracts, kani, prusti, creusot, flux, quickcheck, verus, rust-tests, .invariant.rs orchestrator). The C++, Go, TypeScript, and Python lifters live in their own per-language tooling and are invoked separately.
+Sugar is the composition of two protocols (canonical IR + content addressing). Lift adapters are decoration: they consume host-language source and emit canonical IR mementos that the protocol then signs, hashes, bundles. Today the Rust CLI bundles Rust-only lift adapters as Rust crates (proptest, contracts, kani, prusti, creusot, flux, quickcheck, verus, rust-tests, .invariant.rs orchestrator). The C++, Go, TypeScript, and Python lifters live in their own per-language tooling and are invoked separately.
 
-`provekit prove` should be one command that produces a `.proof` for any of the four peer impls just by changing directory. The lift plugin protocol is the seam that makes this possible: the Rust CLI subprocess-dispatches to per-language lift plugins via JSON-RPC over stdio (LSP shape; same shape MCP, nvim plugins, and the language-server ecosystem use). The plugin produces canonical IR; the Rust CLI signs/bundles/writes the `.proof`.
+`sugar prove` should be one command that produces a `.proof` for any of the four peer impls just by changing directory. The lift plugin protocol is the seam that makes this possible: the Rust CLI subprocess-dispatches to per-language lift plugins via JSON-RPC over stdio (LSP shape; same shape MCP, nvim plugins, and the language-server ecosystem use). The plugin produces canonical IR; the Rust CLI signs/bundles/writes the `.proof`.
 
 This spec defines:
 
@@ -16,20 +16,20 @@ This spec defines:
 2. The JSON-RPC method shapes.
 3. Capability negotiation.
 4. The error model.
-5. The configuration surface in `.provekit/config.toml`.
+5. The configuration surface in `.sugar/config.toml`.
 
 ## Plugin discovery
 
 Plugins live at:
 
 ```
-~/.config/provekit/lift/<name>/manifest.toml
+~/.config/sugar/lift/<name>/manifest.toml
 ```
 
 Or, project-local:
 
 ```
-.provekit/lift/<name>/manifest.toml
+.sugar/lift/<name>/manifest.toml
 ```
 
 Project-local plugins shadow user-global plugins of the same name. Both are searched; project-local wins.
@@ -39,9 +39,9 @@ Manifest schema:
 ```toml
 name = "go-self-contracts"
 version = "1.0.0"
-protocol_version = "provekit-lift/1"
+protocol_version = "sugar-lift/1"
 command = ["go", "run", "./cmd/mint-go-self-contracts", "--rpc"]
-working_dir = "implementations/go/provekit-self-contracts"
+working_dir = "implementations/go/sugar-self-contracts"
 
 [capabilities]
 authoring_surfaces = ["go-tests", "go-self-contracts"]
@@ -93,7 +93,7 @@ initialize-params = {
     name: text-nonempty,
     version: text-nonempty
   },
-  protocol_version: "provekit-lift/1",
+  protocol_version: "sugar-lift/1",
   workspace_root: text-nonempty,
   config_path: text-nonempty
 }
@@ -101,7 +101,7 @@ initialize-params = {
 initialize-result = {
   name: text-nonempty,
   version: text-nonempty,
-  protocol_version: "provekit-lift/1",
+  protocol_version: "sugar-lift/1",
   capabilities: lift-capabilities
 }
 
@@ -257,7 +257,7 @@ Layer selection is part of the grammar, not an out-of-band CLI convention:
 - `options.layer = "library-bindings"` selects proof-producing host-language library-sugar binding lift. The response MUST be `ir-document`, `signed-mementos`, or `proof-envelope`; when returning `ir-document`, the relevant entries use `kind = "library-sugar-binding-entry"` per `2026-05-13-bind-ir-lift-result.md`.
 - If `options.identifyOnly` is present, it MUST be `true` exactly when `options.layer = "identify-only"` and `false` exactly when `options.layer = "all"` or `"library-bindings"`. It exists only as a legacy mirror for older clients.
 - A plugin that does not implement the requested layer MAY return JSON-RPC error `1006` / `UNSUPPORTED_LIFT_LAYER`. A client MUST NOT accept a proof-producing response kind as an identify-only response.
-- `provekit package inspect` is a client command over this same `lift` method. It dispatches to the configured lift plugin with `options.layer = "identify-only"` and requires a `package-inspection-document`. No separate package-manager JSON-RPC protocol exists.
+- `sugar package inspect` is a client command over this same `lift` method. It dispatches to the configured lift plugin with `options.layer = "identify-only"` and requires a `package-inspection-document`. No separate package-manager JSON-RPC protocol exists.
 
 ## Methods
 
@@ -267,10 +267,10 @@ The first call after spawn. The Rust CLI sends:
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-    "client":{"name":"provekit-cli","version":"v1.1.0"},
-    "protocol_version":"provekit-lift/1",
+    "client":{"name":"sugar-cli","version":"v1.1.0"},
+    "protocol_version":"sugar-lift/1",
     "workspace_root":"/abs/path/to/workspace",
-    "config_path":".provekit/config.toml"
+    "config_path":".sugar/config.toml"
 }}
 ```
 
@@ -280,7 +280,7 @@ The plugin responds with its capabilities and confirms protocol version:
 {"jsonrpc":"2.0","id":1,"result":{
     "name":"go-self-contracts",
     "version":"1.0.0",
-    "protocol_version":"provekit-lift/1",
+    "protocol_version":"sugar-lift/1",
     "capabilities":{
         "authoring_surfaces":["go-tests","go-self-contracts"],
         "ir_version":"v1.1.0",
@@ -298,7 +298,7 @@ The Rust CLI requests canonical IR mementos for a given source set:
 ```json
 {"jsonrpc":"2.0","id":2,"method":"lift","params":{
     "surface":"go-self-contracts",
-    "source_paths":["implementations/go/provekit-ir-symbolic/canonicalizer/encoder.go"],
+    "source_paths":["implementations/go/sugar-ir-symbolic/canonicalizer/encoder.go"],
     "options":{"layer":"all"}
 }}
 ```
@@ -428,7 +428,7 @@ The `initialize` response declares which authoring surfaces the plugin supports.
 
 If two plugins claim the same surface, the project-local plugin wins. If both are project-local or both are user-global, the lexicographically-earlier `name` wins, and the Rust CLI emits a diagnostic.
 
-If no plugin claims the requested surface, `provekit prove` exits with `LIFT_PLUGIN_NOT_FOUND` and lists the candidates.
+If no plugin claims the requested surface, `sugar prove` exits with `LIFT_PLUGIN_NOT_FOUND` and lists the candidates.
 
 ## Error model
 
@@ -450,14 +450,14 @@ JSON-RPC 2.0 error codes:
 
 ## Configuration
 
-`.provekit/config.toml` extension:
+`.sugar/config.toml` extension:
 
 ```toml
 [authoring]
-surface = "go-self-contracts"   # selects which plugin handles `provekit prove`
+surface = "go-self-contracts"   # selects which plugin handles `sugar prove`
 
 [lift]
-plugins_path = ["~/.config/provekit/lift", ".provekit/lift"]   # discovery order
+plugins_path = ["~/.config/sugar/lift", ".sugar/lift"]   # discovery order
 
 [lift.options]
 layer = "all"   # "all" for proof-producing lift; "identify-only" for side-effect-free identity/inspection
@@ -468,19 +468,19 @@ layer = "all"   # "all" for proof-producing lift; "identify-only" for side-effec
 A conformant plugin:
 
 1. Implements `initialize`, `lift`, `shutdown`.
-2. Returns the protocol version `provekit-lift/1` in the `initialize` response.
+2. Returns the protocol version `sugar-lift/1` in the `initialize` response.
 3. Emits canonical IR-JSON in the v1.1.0 shape (per `2026-04-30-ir-formal-grammar.md`) for the `ir-document` response shape.
 4. If returning `signed-mementos` or `proof-envelope`, produces byte-deterministic output for byte-equal inputs (same source paths, same options → same CIDs).
 5. Reports any diagnostics under the `diagnostics` field of the response, never silently dropping warnings.
 6. If implementing `options.layer = "identify-only"`, returns only `identity-document` or `package-inspection-document` and does not mint, sign, write, or lower proof artifacts while answering that request.
 
-A non-conformant plugin produces a different `provekit prove` output than a conformant one for the same inputs. The Rust CLI MAY refuse to dispatch to plugins that fail capability negotiation.
+A non-conformant plugin produces a different `sugar prove` output than a conformant one for the same inputs. The Rust CLI MAY refuse to dispatch to plugins that fail capability negotiation.
 
 ## Two paths into canonical IR
 
 The lift-plugin protocol covers two architecturally distinct authoring paths into canonical IR. Both produce the same byte shape; they differ only in where the contract text lives before it becomes IR.
 
-**Kit-authored**: the contract is written using the host language's kit-authoring API (Rust `provekit-macros-rt`, C++ `provekit/ir.hpp`, Go kit primitives, TS kit primitives). The kit produces canonical IR-JSON deterministically. Self-contracts (`.invariant.rs`, `.invariant.cpp`, `slabs/*.go`, `.invariant.{json,ts}`) are all kit-authored. The protocol uses this path to express its own correctness.
+**Kit-authored**: the contract is written using the host language's kit-authoring API (Rust `sugar-macros-rt`, C++ `sugar/ir.hpp`, Go kit primitives, TS kit primitives). The kit produces canonical IR-JSON deterministically. Self-contracts (`.invariant.rs`, `.invariant.cpp`, `slabs/*.go`, `.invariant.{json,ts}`) are all kit-authored. The protocol uses this path to express its own correctness.
 
 **Decorator-lifted**: the contract lives in an existing host-language annotation library (Zod schema, kani harness, proptest strategy, class-validator decorator, JSDoc tag, Pydantic model, etc.). A lift adapter parses the native annotation and emits canonical IR-JSON. Lift adapters are the canonical path for host code that already has annotations.
 
@@ -490,29 +490,29 @@ The protocol doesn't care which path produced the IR. Both paths hash to identic
 
 ## Reference plugins
 
-Reference CLI plugins ship with ProvekIt for all language implementations:
+Reference CLI plugins ship with Sugar for all language implementations:
 
 | Surface | Plugin command | Reference | Status |
 |---------|---------------|-----------|--------|
 | `typescript` | `npx tsx src/lift/bin/main.ts --rpc` | `implementations/typescript/src/lift/` | ✅ Real lifter (zod, fast-check, vitest) |
-| `rust-self-contracts` | `cargo run -p provekit-self-contracts --rpc` | `implementations/rust/provekit-self-contracts/` | ✅ Real lifter (invariant.rs, proptest, kani) |
-| `go-self-contracts` | `go run ./cmd/mint-go-self-contracts --rpc` | `implementations/go/provekit-self-contracts/cmd/` | ✅ Real lifter (Go test extraction) |
-| `cpp-self-contracts` | `./target/mint_cpp_self_contracts --rpc` | `implementations/cpp/provekit-self-contracts/` | ✅ Real lifter (C++ invariant extraction) |
-| `csharp-self-contracts` | `dotnet run --project Provekit.SelfContracts --rpc` | `implementations/csharp/Provekit.SelfContracts/` | ✅ Real lifter (C# invariant extraction) |
+| `rust-self-contracts` | `cargo run -p sugar-self-contracts --rpc` | `implementations/rust/sugar-self-contracts/` | ✅ Real lifter (invariant.rs, proptest, kani) |
+| `go-self-contracts` | `go run ./cmd/mint-go-self-contracts --rpc` | `implementations/go/sugar-self-contracts/cmd/` | ✅ Real lifter (Go test extraction) |
+| `cpp-self-contracts` | `./target/mint_cpp_self_contracts --rpc` | `implementations/cpp/sugar-self-contracts/` | ✅ Real lifter (C++ invariant extraction) |
+| `csharp-self-contracts` | `dotnet run --project Sugar.SelfContracts --rpc` | `implementations/csharp/Sugar.SelfContracts/` | ✅ Real lifter (C# invariant extraction) |
 
-Each implements the protocol over NDJSON-on-stdio, returning the `proof-envelope` shape (c). The dispatcher resolves these via `.provekit/lift/<surface>/manifest.toml` per peer's directory.
+Each implements the protocol over NDJSON-on-stdio, returning the `proof-envelope` shape (c). The dispatcher resolves these via `.sugar/lift/<surface>/manifest.toml` per peer's directory.
 
 The apex demonstration — **one Rust CLI binary, all projects**:
 
 ```sh
-$ cd implementations/typescript && provekit mint
-$ cd implementations/rust        && provekit mint
-$ cd implementations/go          && provekit mint
-$ cd implementations/cpp         && provekit mint
-$ cd implementations/csharp      && provekit mint
+$ cd implementations/typescript && sugar mint
+$ cd implementations/rust        && sugar mint
+$ cd implementations/go          && sugar mint
+$ cd implementations/cpp         && sugar mint
+$ cd implementations/csharp      && sugar mint
 ```
 
-One `provekit` binary. Five `.proof` files. Configuration via `.provekit/config.toml` per directory. Same protocol catalog. Same foundation key. Different surfaces, different IR contents, byte-deterministic content-addressed output.
+One `sugar` binary. Five `.proof` files. Configuration via `.sugar/config.toml` per directory. Same protocol catalog. Same foundation key. Different surfaces, different IR contents, byte-deterministic content-addressed output.
 
 ## Any language, any tooling
 

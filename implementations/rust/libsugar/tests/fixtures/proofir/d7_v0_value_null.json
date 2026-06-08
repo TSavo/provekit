@@ -1,7 +1,7 @@
 {
   "kind": "proofir-real-lift-fixture",
   "target": "impl Value::null",
-  "source": "provekit-canonicalizer/src/value.rs",
+  "source": "sugar-canonicalizer/src/value.rs",
   "handling": "handles-partially-with-loss-record",
   "loss_record": [
     {

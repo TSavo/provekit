@@ -21,25 +21,25 @@ Today the verifier has per-memento-type knowledge. It dispatches differently on 
 
 This spec introduces a canonical wire-form type, `DomainClaim`, that every memento type decomposes into. The verifier consumes only `DomainClaim`. Per-memento-type knowledge becomes a thin `Into<DomainClaim>` impl per type. The verifier's surface is literally `k(I) = t`, with the verdict attached, in code as well as in prose.
 
-### §0.1 Relationship to the existing `libprovekit::core::types::DomainClaim`
+### §0.1 Relationship to the existing `libsugar::core::types::DomainClaim`
 
-A type with the same name exists in `libprovekit::core::types` (introduced for the in-memory primitives). Its fields are richer: `domain, contract, artifacts, from: Vec<Cid>, premises, to: Cid, witness, verdict, attestation`. That type is a per-domain in-memory aggregate; it is NOT the wire-form surface this spec normalizes.
+A type with the same name exists in `libsugar::core::types` (introduced for the in-memory primitives). Its fields are richer: `domain, contract, artifacts, from: Vec<Cid>, premises, to: Cid, witness, verdict, attestation`. That type is a per-domain in-memory aggregate; it is NOT the wire-form surface this spec normalizes.
 
-This spec defines a NEW canonical wire-form `DomainClaim` in `provekit-ir-types`. The relationship:
+This spec defines a NEW canonical wire-form `DomainClaim` in `sugar-ir-types`. The relationship:
 
-- `provekit_ir_types::DomainClaim` is the wire form. Three content-addressed CIDs (`kit_cid`, `input_cid`, `truth_cid`), a verdict in the trichotomy, provenance, and a signature. This is what the verifier consumes.
-- `libprovekit::core::types::DomainClaim` is the in-memory aggregate used by primitives (`compose`, `address`, `discharge`, etc.). It can be projected onto the wire form via a `From` impl that lives in `libprovekit` (where the dependency direction allows it).
+- `sugar_ir_types::DomainClaim` is the wire form. Three content-addressed CIDs (`kit_cid`, `input_cid`, `truth_cid`), a verdict in the trichotomy, provenance, and a signature. This is what the verifier consumes.
+- `libsugar::core::types::DomainClaim` is the in-memory aggregate used by primitives (`compose`, `address`, `discharge`, etc.). It can be projected onto the wire form via a `From` impl that lives in `libsugar` (where the dependency direction allows it).
 
-Both types coexist for the deprecation window. PR-D considers renaming or retiring the libprovekit aggregate once the verifier refactor in PR-B is complete.
+Both types coexist for the deprecation window. PR-D considers renaming or retiring the libsugar aggregate once the verifier refactor in PR-B is complete.
 
 ### §0.2 The `Verdict` axis disambiguation
 
 Two `Verdict` enums exist on `origin/main`:
 
-- `libprovekit::core::types::Verdict`: `Unresolved | Proved | Refuted | Unknown`. This is a **scheduling/state** axis (has discharge run yet, did it succeed, did it fail, is it indeterminate).
+- `libsugar::core::types::Verdict`: `Unresolved | Proved | Refuted | Unknown`. This is a **scheduling/state** axis (has discharge run yet, did it succeed, did it fail, is it indeterminate).
 - `ConceptSiteMemento.discharge.verdict` (string field): `"exact" | "loudly-bounded-lossy" | "refuse"`. This is the **trichotomy** axis (paper 09 obligation-preserving loss).
 
-This spec aligns the wire-form `DomainClaim` with the trichotomy. The scheduling-state axis stays where it is, on the libprovekit in-memory aggregate. A `DomainClaim` minted from a `ConceptSiteMemento` carries the trichotomy verdict directly. A `DomainClaim` minted from a libprovekit `DomainClaim` (the in-memory aggregate) requires the projector to first resolve scheduling-state to trichotomy (a `Proved` aggregate with `loss_record` empty projects to `exact`; a `Proved` aggregate with non-empty `loss_record` projects to `loudly-bounded-lossy`; a `Refuted` aggregate projects to `refuse`; `Unresolved` and `Unknown` cannot be projected and the projection returns `Err`).
+This spec aligns the wire-form `DomainClaim` with the trichotomy. The scheduling-state axis stays where it is, on the libsugar in-memory aggregate. A `DomainClaim` minted from a `ConceptSiteMemento` carries the trichotomy verdict directly. A `DomainClaim` minted from a libsugar `DomainClaim` (the in-memory aggregate) requires the projector to first resolve scheduling-state to trichotomy (a `Proved` aggregate with `loss_record` empty projects to `exact`; a `Proved` aggregate with non-empty `loss_record` projects to `loudly-bounded-lossy`; a `Refuted` aggregate projects to `refuse`; `Unresolved` and `Unknown` cannot be projected and the projection returns `Err`).
 
 ### §0.3 What "literally reads `k(I) = t`" means at the API level
 
@@ -99,7 +99,7 @@ domain-claim-provenance = {
 ;
 ; `signature` is OMITTED from the CID-determining bytes (signer-independent
 ; addressing per 2026-05-03-contract-cid-vs-attestation-cid.md and the
-; libprovekit `address()` precedent).
+; libsugar `address()` precedent).
 domain-claim = {
   kind:       "domain-claim",
   input_cid:  cid,                      ; I: the artifact the kit operated on
@@ -189,13 +189,13 @@ The result: there is no `Into<DomainClaim>` impl for `RealizationDesugaringMemen
 
 ### §2.3 Why the mapping for `FunctionContractMemento` does not live in this crate
 
-`FunctionContractMemento` is defined in `libprovekit::compose` (not `provekit-ir-types`). A `From` impl on it from `provekit-ir-types` would invert the dependency direction.
+`FunctionContractMemento` is defined in `libsugar::compose` (not `sugar-ir-types`). A `From` impl on it from `sugar-ir-types` would invert the dependency direction.
 
-Therefore: the `From<&FunctionContractMemento> for DomainClaim` impl will live in `libprovekit`, NOT in this PR. It is documented here in the mapping table for completeness:
+Therefore: the `From<&FunctionContractMemento> for DomainClaim` impl will live in `libsugar`, NOT in this PR. It is documented here in the mapping table for completeness:
 
 | Memento type | `kit_cid` (k) | `input_cid` (I) | `truth_cid` (t) | Verdict source |
 |---|---|---|---|---|
-| `FunctionContractMemento` (libprovekit-side impl, PR-B) | the lifter binary CID that produced this contract (carried in `locus` or auto_minted_mementos provenance) | the source CID the function was lifted from | the contract's own `cid` (the substrate asserts "this lift produced this contract" as the truth) | bare contract has no inline discharge: verdict defaults to a special "unverified" sentinel that the wire form rejects; the verifier consumes this only when the contract is wrapped in a binding |
+| `FunctionContractMemento` (libsugar-side impl, PR-B) | the lifter binary CID that produced this contract (carried in `locus` or auto_minted_mementos provenance) | the source CID the function was lifted from | the contract's own `cid` (the substrate asserts "this lift produced this contract" as the truth) | bare contract has no inline discharge: verdict defaults to a special "unverified" sentinel that the wire form rejects; the verifier consumes this only when the contract is wrapped in a binding |
 
 PR-B addresses the practical question of what verdict to attach to a bare contract that has not yet been discharged. The provisional answer: bare contracts are NOT consumable by the verifier directly; they MUST be wrapped in a `ConceptSiteMemento` (the binding) or a `CompoundContractMemento` (PR #716) before reaching the verifier surface.
 
@@ -245,10 +245,10 @@ The `kit_cid`, `input_cid`, and `truth_cid` strings appear in the JCS bytes as C
 
 ## §4. Verifier consumption (preview; full refactor in PR-B)
 
-`provekit prove`, after PR-B, consumes only `DomainClaim` instances:
+`sugar prove`, after PR-B, consumes only `DomainClaim` instances:
 
 ```
-$ provekit prove --claim <DomainClaim.json>
+$ sugar prove --claim <DomainClaim.json>
 verifying k(I) = t at address <DomainClaim.cid>...
   k = <kit_cid> (lifter "rust-contracts v1.6.0")
   I = <input_cid> (source "fixtures/safe_div.rs")
@@ -268,7 +268,7 @@ The CLI surface in PR-C walks a codebase, gathers all derivable mementos, conver
 
 Existing verifier code paths that consume typed memento inputs continue to work. The shim is structured as follows:
 
-1. The `libprovekit` verifier code that today does `match memento_kind { ... }` adds a default arm that calls `memento.into_domain_claim().and_then(verify)`. This routes all not-yet-migrated callers through the unified path automatically.
+1. The `libsugar` verifier code that today does `match memento_kind { ... }` adds a default arm that calls `memento.into_domain_claim().and_then(verify)`. This routes all not-yet-migrated callers through the unified path automatically.
 2. Each existing per-memento-type entry point is marked `#[deprecated(since = "..", note = "use verify(&claim) on the DomainClaim wire form")]` but remains exported. Internally each shim builds a `DomainClaim`, delegates to `verify`, and returns the result in the old shape.
 3. After the deprecation window (PR-D), the per-type entry points are removed. New verifier code paths consume only `DomainClaim`.
 
@@ -278,17 +278,17 @@ The shim is straightforward because §2's mappings are mechanical. The substrate
 
 This is **PR-A**: spec + Rust types + serde round-trip tests + the `ConceptSiteMemento → DomainClaim` mapping impl.
 
-- **PR-A** (this PR): the spec, the `DomainClaim` / `VerdictKind` / `VerdictBody` / `DomainClaimProvenance` types in `provekit-ir-types`, serde round-trip tests for shape parity, the `From<&ConceptSiteMemento> for DomainClaim` impl (the one impl whose source type lives in `provekit-ir-types`).
-- **PR-B** (`feat(domain-claim): refactor verifier to consume DomainClaim`): the `libprovekit` side of the conversion (`From<&FunctionContractMemento> for DomainClaim`, `From<&core::types::DomainClaim> for ir_types::DomainClaim`) and the `verify(&DomainClaim) -> VerificationOutcome` API. The existing verifier paths gain the deprecation shim from §5.
-- **PR-C** (`feat(domain-claim): CLI surface for claim-graph walks`): `provekit prove` gathers mementos from a codebase, converts to DomainClaim, pipes to the verifier. Smoke-test driver gains the optional `--emit-domain-claim-graph` flag (§7).
-- **PR-D** (`refactor(domain-claim): remove deprecation shim, retire libprovekit DomainClaim aggregate or rename it`): the deprecation-window cleanup. Renames `libprovekit::core::types::DomainClaim` to something less collision-prone (candidate name: `core::types::ClaimAggregate`) and routes all internal calls through the wire-form `DomainClaim`.
+- **PR-A** (this PR): the spec, the `DomainClaim` / `VerdictKind` / `VerdictBody` / `DomainClaimProvenance` types in `sugar-ir-types`, serde round-trip tests for shape parity, the `From<&ConceptSiteMemento> for DomainClaim` impl (the one impl whose source type lives in `sugar-ir-types`).
+- **PR-B** (`feat(domain-claim): refactor verifier to consume DomainClaim`): the `libsugar` side of the conversion (`From<&FunctionContractMemento> for DomainClaim`, `From<&core::types::DomainClaim> for ir_types::DomainClaim`) and the `verify(&DomainClaim) -> VerificationOutcome` API. The existing verifier paths gain the deprecation shim from §5.
+- **PR-C** (`feat(domain-claim): CLI surface for claim-graph walks`): `sugar prove` gathers mementos from a codebase, converts to DomainClaim, pipes to the verifier. Smoke-test driver gains the optional `--emit-domain-claim-graph` flag (§7).
+- **PR-D** (`refactor(domain-claim): remove deprecation shim, retire libsugar DomainClaim aggregate or rename it`): the deprecation-window cleanup. Renames `libsugar::core::types::DomainClaim` to something less collision-prone (candidate name: `core::types::ClaimAggregate`) and routes all internal calls through the wire-form `DomainClaim`.
 
 ### §6.1 What does NOT land in PR-A
 
 - No verifier refactor. The verifier still uses its per-type dispatch arms; PR-B does that work.
-- No CLI changes. `provekit prove` keeps its current surface; PR-C does that work.
-- No removal of the libprovekit `DomainClaim` aggregate. PR-D does that work.
-- No `Into<DomainClaim>` for `FunctionContractMemento` (its source type lives in `libprovekit`, not `provekit-ir-types`). PR-B does that work.
+- No CLI changes. `sugar prove` keeps its current surface; PR-C does that work.
+- No removal of the libsugar `DomainClaim` aggregate. PR-D does that work.
+- No `Into<DomainClaim>` for `FunctionContractMemento` (its source type lives in `libsugar`, not `sugar-ir-types`). PR-B does that work.
 - No `Into<DomainClaim>` for `MorphismDischargeReceipt` — this type is referenced in CDDL and compiler READMEs but does not yet have a Rust struct. §6.3 covers it conditionally.
 
 ### §6.2 Conditional mapping rows — `CompoundContractMemento` and `EvidenceMemento` (PR #716)
@@ -304,7 +304,7 @@ When PR #716 lands, a follow-up PR (PR-A2 of this normalization) adds the `Into<
 
 ### §6.3 Conditional mapping rows — `MorphismDischargeReceipt`
 
-`MorphismDischargeReceipt` is referenced in `protocol/provekit-ir.cddl` (line 508), in compiler-crate READMEs and spec.jsons, but does not yet have a corresponding `pub struct MorphismDischargeReceipt` anywhere in Rust. It is currently produced and consumed as JSON-blob payloads identified by CID.
+`MorphismDischargeReceipt` is referenced in `protocol/sugar-ir.cddl` (line 508), in compiler-crate READMEs and spec.jsons, but does not yet have a corresponding `pub struct MorphismDischargeReceipt` anywhere in Rust. It is currently produced and consumed as JSON-blob payloads identified by CID.
 
 The mapping row for when this type is Rust-typed:
 
@@ -312,7 +312,7 @@ The mapping row for when this type is Rust-typed:
 |---|---|---|---|---|
 | `MorphismDischargeReceipt` | `discharger_cid` | tuple-CID of `(lang_term_cid, concept_term_cid)` per §3.2 | `shape_cid` (the morphism's truth: the source's shape equals the concept's shape under the discharger's method) | `discharged` boolean ∧ `method` string: `discharged && method != "refuse" ⇒ exact`; `discharged && loss_record nonempty ⇒ loudly-bounded-lossy`; `!discharged ⇒ refuse` |
 
-When the type is Rust-typed (currently expected to land alongside the discharger refactor in `libprovekit/src/wp.rs`), the `Into<DomainClaim>` impl goes in `libprovekit`. The Rust-typed mint is tracked separately and is NOT part of this PR.
+When the type is Rust-typed (currently expected to land alongside the discharger refactor in `libsugar/src/wp.rs`), the `Into<DomainClaim>` impl goes in `libsugar`. The Rust-typed mint is tracked separately and is NOT part of this PR.
 
 ## §7. Cross-language compatibility
 
@@ -330,7 +330,7 @@ The smoke-test driver (`menagerie/smoke-test-e2e/`) gains an OPTIONAL flag `--em
 - For each binding, it constructs the corresponding `DomainClaim` via the §2 mapping.
 - It emits the resulting graph as `out.json`: a JSON array of `DomainClaim` objects.
 
-Verifying the smoke-test fixture is then equivalent to running `provekit prove` against `out.json`. The expected outcome is byte-identical to the binding-level discharge outcome that the smoke driver already reports.
+Verifying the smoke-test fixture is then equivalent to running `sugar prove` against `out.json`. The expected outcome is byte-identical to the binding-level discharge outcome that the smoke driver already reports.
 
 This is the closure check that pins the substrate-surface normalization to ground truth: the wire-form verifier must give the SAME answer the typed verifier gives, for every binding the smoke test exercises.
 

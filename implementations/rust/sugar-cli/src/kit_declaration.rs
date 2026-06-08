@@ -86,7 +86,7 @@ pub fn load_kit_declaration_with_command(
         "id": 1,
         "method": "initialize",
         "params": {
-            "client": {"name": "provekit-cli-kit-declaration-loader", "version": env!("CARGO_PKG_VERSION")},
+            "client": {"name": "sugar-cli-kit-declaration-loader", "version": env!("CARGO_PKG_VERSION")},
             "protocol_version": "pep/1.7.0",
         }
     });

@@ -1,6 +1,6 @@
 # C6 "near 'SQL': syntax error": diagnosis (Move 2 / r6)
 
-Task: provekit-integration #6
+Task: sugar-integration #6
 Auditor: c6-debugger (read-only)
 Date: 2026-04-29
 
@@ -44,7 +44,7 @@ Six built-in fixtures stress-test the most plausible "near 'SQL'" hypotheses:
 | `variable-named-sql` | DSL var `$SQL` → alias `node_SQL` | OK: valid identifier |
 | `predicate-named-sql` | predicate named `SQL` | parser rejects (separate issue: parser keyword collision; not the SQL bug) |
 
-All six prepare cleanly under `PROVEKIT_SQL_TRACE=1`. The harness is sound; it will *expose* the bug as soon as a real failing DSL is piped to it.
+All six prepare cleanly under `SUGAR_SQL_TRACE=1`. The harness is sound; it will *expose* the bug as soon as a real failing DSL is piped to it.
 
 ## Why the harness cannot enumerate the bug from outside
 

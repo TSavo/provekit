@@ -15,13 +15,13 @@ The bridge-linkage protocol (`2026-05-03-bridge-linkage-protocol.md`) specifies 
 
 Embedding the linker inside each per-kit LSP plugin is Option A. Option A is rejected because it forces every kit to carry a multi-MB linker library, replicates the cross-language cache per-kit, and requires a migration to a shared process once memory or cross-kit cache locality becomes a concern. The migration cost is certain; paying it later costs more.
 
-Option B is a long-running daemon, `provekit-linkerd`, that all per-kit LSP plugins connect to as thin protocol clients. The daemon holds the union of all kits' contract and call-edge streams hot in memory. Per-kit LSP plugins forward each `textDocument/didChange` event as a `parseFile` RPC; the daemon re-derives affected bridges, updates its cache, and returns diagnostics. Cross-language linkage errors are visible in every kit's IDE pane because the daemon owns the complete union.
+Option B is a long-running daemon, `sugar-linkerd`, that all per-kit LSP plugins connect to as thin protocol clients. The daemon holds the union of all kits' contract and call-edge streams hot in memory. Per-kit LSP plugins forward each `textDocument/didChange` event as a `parseFile` RPC; the daemon re-derives affected bridges, updates its cache, and returns diagnostics. Cross-language linkage errors are visible in every kit's IDE pane because the daemon owns the complete union.
 
-This spec defines the wire protocol between per-kit LSP plugins (clients) and `provekit-linkerd` (daemon).
+This spec defines the wire protocol between per-kit LSP plugins (clients) and `sugar-linkerd` (daemon).
 
 ## §1. Definitions
 
-**LinkerDaemon** -- the `provekit-linkerd` binary process. One process per project.
+**LinkerDaemon** -- the `sugar-linkerd` binary process. One process per project.
 
 **Project** -- scoped by a content-addressed project CID, not a path string. The project CID is `blake3-512(JCS(<sorted list of kit-source-roots from the project manifest>))`. The daemon MAY serve multiple concurrent projects; each project's state is isolated by projectCid.
 
@@ -33,7 +33,7 @@ This spec defines the wire protocol between per-kit LSP plugins (clients) and `p
 
 ## §2. Connection
 
-**R1. Transport.** The daemon SHALL bind a Unix domain socket at `${XDG_RUNTIME_DIR}/provekit/linkerd-<projectCid>.sock` on Linux and macOS. On Windows the daemon SHALL bind a named pipe at `\\.\pipe\provekit-linkerd-<projectCid>`. No TCP or UDP listener is permitted.
+**R1. Transport.** The daemon SHALL bind a Unix domain socket at `${XDG_RUNTIME_DIR}/sugar/linkerd-<projectCid>.sock` on Linux and macOS. On Windows the daemon SHALL bind a named pipe at `\\.\pipe\sugar-linkerd-<projectCid>`. No TCP or UDP listener is permitted.
 
 **R2. Permissions.** The socket file SHALL be created with mode 0600, owner-only. The daemon MUST reject connections from any peer whose effective UID differs from the daemon owner's UID.
 
@@ -68,11 +68,11 @@ The daemon's `lift_source` dispatch supports the following kits as of the multi-
 
 | Kit      | Mechanism                          | Status               |
 |----------|------------------------------------|----------------------|
-| `rust`   | In-process `provekit-lift::lift_path` | Supported            |
-| `go`     | Subprocess `provekit-lsp-go` (PATH), method `parse` | Supported (binary must be on PATH) |
-| `csharp` | Subprocess `provekit-lsp-csharp --rpc` (PATH), method `parse` | Supported (binary must be on PATH) |
-| `ruby`   | Subprocess `provekit-lsp-ruby --rpc` (PATH), method `parse` | Supported (binary must be on PATH) |
-| `zig`    | Subprocess `provekit-lift-zig --rpc` (PATH), method `parse`; `callEdges` may be absent (treated as empty) | Supported (binary must be on PATH) |
+| `rust`   | In-process `sugar-lift::lift_path` | Supported            |
+| `go`     | Subprocess `sugar-lsp-go` (PATH), method `parse` | Supported (binary must be on PATH) |
+| `csharp` | Subprocess `sugar-lsp-csharp --rpc` (PATH), method `parse` | Supported (binary must be on PATH) |
+| `ruby`   | Subprocess `sugar-lsp-ruby --rpc` (PATH), method `parse` | Supported (binary must be on PATH) |
+| `zig`    | Subprocess `sugar-lift-zig --rpc` (PATH), method `parse`; `callEdges` may be absent (treated as empty) | Supported (binary must be on PATH) |
 | `python` | No installed binary; ships as Python module only. Response shape diverges: `declarations` is a JSON-encoded string, not a JSON array. | Gap — follow-up required |
 | `java`   | Incompatible RPC protocol: method `lift` (not `parse`), params `workspace_root`/`surface` (not `path`/`source`). | Gap — follow-up required |
 | `swift`  | No LSP plugin binary; Swift package only builds a `conformance` runner. | Gap — follow-up required |
@@ -154,7 +154,7 @@ The daemon SHALL write a cache snapshot (§5), close the socket, and exit cleanl
 
 **R13.** Cache correctness invariant: a cache hit MUST be byte-identical to a fresh derivation over the same inputs. Because the keys are content-addressed, this invariant is mechanical: the same inputs produce the same outputs deterministically.
 
-**R14. Warm-start snapshot.** On shutdown (graceful or idle-timeout), the daemon SHALL write its cache to `${XDG_CACHE_HOME}/provekit/linkerd/<projectCid>/snapshot.bin`. On start, if a snapshot exists, the daemon SHALL load it before accepting connections. Snapshot format is implementation-defined; snapshot integrity MUST be verified by blake3-512 checksum before use.
+**R14. Warm-start snapshot.** On shutdown (graceful or idle-timeout), the daemon SHALL write its cache to `${XDG_CACHE_HOME}/sugar/linkerd/<projectCid>/snapshot.bin`. On start, if a snapshot exists, the daemon SHALL load it before accepting connections. Snapshot format is implementation-defined; snapshot integrity MUST be verified by blake3-512 checksum before use.
 
 ## §6. Multi-Project
 
@@ -166,7 +166,7 @@ The daemon SHALL write a cache snapshot (§5), close the socket, and exit cleanl
 
 ## §8. Conformance
 
-A `provekit-linkerd` implementation conforms to this spec if all of the following hold:
+A `sugar-linkerd` implementation conforms to this spec if all of the following hold:
 
 1. All five methods (R5 through R9) implement the documented request and response shapes.
 2. `parseFile` is idempotent: two calls with byte-identical `(kitId, file, source)` return byte-identical `diagnostics`.

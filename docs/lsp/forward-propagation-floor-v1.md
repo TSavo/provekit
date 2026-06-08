@@ -42,7 +42,7 @@ The diagnostic payload MUST carry the v1.6.2 identifiers that let a user or tool
 - `current_post_cid`
 - `signer` and `signer_role`
 
-The plugin MUST suppress `provekit.lsp.implication_failed` when the accumulated post is `top`.
+The plugin MUST suppress `sugar.lsp.implication_failed` when the accumulated post is `top`.
 
 ## Callsite Resolution
 
@@ -59,8 +59,8 @@ The normative index identity is `baseline_index_cid`. The v1.6.2 LSP baseline in
 
 ## Issue Cross-Links
 
-- [#308](https://github.com/TSavo/provekit/issues/308): parent forward-propagation epic.
-- [#311](https://github.com/TSavo/provekit/issues/311): diagnostic shape.
-- [#312](https://github.com/TSavo/provekit/issues/312): callsite resolution.
-- [#313](https://github.com/TSavo/provekit/issues/313), [#314](https://github.com/TSavo/provekit/issues/314), and [#324](https://github.com/TSavo/provekit/issues/324): representative per-kit implementation issues that should reference these docs.
-- [#478](https://github.com/TSavo/provekit/issues/478): v1.6.2 rebaseline for this doc family.
+- [#308](https://github.com/TSavo/sugar/issues/308): parent forward-propagation epic.
+- [#311](https://github.com/TSavo/sugar/issues/311): diagnostic shape.
+- [#312](https://github.com/TSavo/sugar/issues/312): callsite resolution.
+- [#313](https://github.com/TSavo/sugar/issues/313), [#314](https://github.com/TSavo/sugar/issues/314), and [#324](https://github.com/TSavo/sugar/issues/324): representative per-kit implementation issues that should reference these docs.
+- [#478](https://github.com/TSavo/sugar/issues/478): v1.6.2 rebaseline for this doc family.

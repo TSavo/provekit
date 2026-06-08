@@ -104,7 +104,7 @@ impl CetaGate {
     fn run_external_gate(&self, trs: &TrsSpec) -> CetaGateResult {
         let started = Instant::now();
         let tmp_dir = std::env::temp_dir().join(format!(
-            "provekit-ceta-{}-{}",
+            "sugar-ceta-{}-{}",
             std::process::id(),
             started.elapsed().as_nanos()
         ));

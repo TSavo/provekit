@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """
-Echo IR compiler: reference ProvekIt IR compiler plugin.
+Echo IR compiler: reference Sugar IR compiler plugin.
 
 Demonstrates the JSON-RPC over stdio protocol defined in
 protocol/specs/2026-04-30-ir-compiler-protocol.md.
 
 Reads one JSON-RPC request per stdin line, writes one response per
-stdout line. Implements `provekit.ir.handshake`, `provekit.ir.compile`,
-`provekit.ir.shutdown` for a hypothetical "echo" dialect that just
+stdout line. Implements `sugar.ir.handshake`, `sugar.ir.compile`,
+`sugar.ir.shutdown` for a hypothetical "echo" dialect that just
 stringifies the IR-JSON.
 
 Conformance check:
-    echo '{"jsonrpc":"2.0","id":1,"method":"provekit.ir.handshake","params":{}}' \\
+    echo '{"jsonrpc":"2.0","id":1,"method":"sugar.ir.handshake","params":{}}' \\
       | python3 echo_compiler.py
 """
 import json
@@ -20,7 +20,7 @@ import sys
 
 NAME = "echo-compiler"
 VERSION = "0.1.0"
-PROTOCOL_VERSION = "provekit-ir-compiler/1"
+PROTOCOL_VERSION = "sugar-ir-compiler/1"
 DIALECT = "echo"
 
 
@@ -80,9 +80,9 @@ def main():
         rid = req.get("id")
         method = req.get("method", "")
         params = req.get("params") or {}
-        if method == "provekit.ir.handshake":
+        if method == "sugar.ir.handshake":
             respond(rid, result=handshake(params))
-        elif method == "provekit.ir.compile":
+        elif method == "sugar.ir.compile":
             r = compile_(params)
             if r[0] == "ok":
                 respond(rid, result=r[1])
@@ -92,7 +92,7 @@ def main():
                 if data is not None:
                     err["data"] = data
                 respond(rid, error=err)
-        elif method == "provekit.ir.shutdown":
+        elif method == "sugar.ir.shutdown":
             respond(rid, result={})
             return
         else:

@@ -12,7 +12,7 @@ use libsugar::core::{
 use serde_json::json;
 use sugar_ir_types::Sort;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -127,7 +127,7 @@ fn lift_rust_path_executor_matches_existing_cmd_lift_transport_term_cid() {
     let request = json!({
         "surface": "rust",
         "workspace_root": workspace_root,
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": {
             "layer": "all",
@@ -214,7 +214,7 @@ fn lift_rust_then_prove_stub_path_routes_second_step_to_kit_prove() {
     let request = json!({
         "surface": "rust",
         "workspace_root": workspace_root,
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": {
             "layer": "all",
@@ -352,20 +352,20 @@ fn default_kit_prove_refuses_prove_verb_step_with_composition_refusal_memento() 
 fn lift_cli_refuses_unregistered_dialect_with_composition_refusal_memento() {
     let temp = tempfile::tempdir().expect("tempdir");
     let project = temp.path().join("project");
-    fs::create_dir_all(project.join(".provekit")).expect("create project config dir");
+    fs::create_dir_all(project.join(".sugar")).expect("create project config dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         "[authoring.lift]\nsurface = \"neverlang\"\n",
     )
     .expect("write config");
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("lift")
         .arg(&project)
         .arg("--json")
         .arg("--quiet")
         .output()
-        .expect("spawn provekit lift");
+        .expect("spawn sugar lift");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

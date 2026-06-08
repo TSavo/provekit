@@ -1,17 +1,17 @@
 # D7-v2 Value::null resolved-term realizer receipt
 
 Scope: one production function only.
-Target crate: provekit-canonicalizer.
+Target crate: sugar-canonicalizer.
 Target function: impl Value::null.
-Source path: implementations/rust/provekit-canonicalizer/src/value.rs.
+Source path: implementations/rust/sugar-canonicalizer/src/value.rs.
 
 D7-v1 measured the source-layer gap after ProofIR resolution.
 That receipt showed a CHARACTERIZED_DIFF dominated by stub-body.
-The regenerator emitted panic!("provekit-bind canonical: return").
+The regenerator emitted panic!("sugar-bind canonical: return").
 The resolved body was return(call:new(literal("new"), literal(["Null"]))).
 The flat realizer API could not walk that body tree.
 
-D7-v2 adds one tight realizer extension in provekit-realize-rust-core.
+D7-v2 adds one tight realizer extension in sugar-realize-rust-core.
 The new entrypoint is emit_from_resolved.
 It accepts the resolved term JSON used by the D7-v1 resolve step.
 It recognizes exactly the D7 Value::null body shape.
@@ -51,8 +51,8 @@ The only visible body gap is the missing receiver name.
 That is the #962 trait-path-truncated issue.
 
 Out of scope for this receipt:
-Do not change provekit-walk.
-Do not change libprovekit::local_cid_fixture_check.
+Do not change sugar-walk.
+Do not change libsugar::local_cid_fixture_check.
 Do not add new concept ops.
 Do not generalize beyond return plus call:new plus literal.
 Do not claim source-layer byte identity for Value::null.

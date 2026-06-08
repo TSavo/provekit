@@ -1,4 +1,4 @@
-# ProvekIt: universal claim envelope
+# Sugar: universal claim envelope
 
 > Author: shared session 2026-04-29 (T + Claude). Producer-agnostic
 > memento schema. The contract every producer commits to.
@@ -381,8 +381,8 @@ formats during the transition.
   library's `evidence-schemas/` directory. They are content-hashed at
   package-publish time; the resulting CIDs are baked into the variant
   emitters.
-- The wrapper validation library lives in `@provekit/claim-envelope`
-  (TypeScript) and `provekit_claim_envelope` (Rust crate). Both are
+- The wrapper validation library lives in `@sugar/claim-envelope`
+  (TypeScript) and `sugar_claim_envelope` (Rust crate). Both are
   generated from the same canonical schema definition.
 - Producers in any host language can emit valid envelopes by
   serializing via the canonical-encoding library; the bytes are

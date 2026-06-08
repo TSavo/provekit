@@ -1,4 +1,4 @@
-# ProvekIt: Stages vs Actions
+# Sugar: Stages vs Actions
 
 > Author: shared session 2026-04-29 (T + Claude). Type-level distinction
 > between cacheable claims and side-effecting operations.
@@ -345,7 +345,7 @@ When all six hold, the architectural correction has landed and the
 - `Action<I, R>` lives in `src/workflow/types.ts` next to `Stage<I, O>`.
 - `runAction` lives in `src/workflow/runner.ts` next to `runStage`.
 - The `action-invocation` evidence schema ships in
-  `@provekit/claim-envelope`'s `evidence-schemas/` directory.
+  `@sugar/claim-envelope`'s `evidence-schemas/` directory.
 - The manifest parser in `src/workflow/manifest.ts` extends to handle
   `actions:` blocks and `$action.<id>.resource` references.
 - The walk function in `src/fix/runtime/mementoStore.ts` adds an

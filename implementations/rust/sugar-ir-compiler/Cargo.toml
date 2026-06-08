@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt IR compiler protocol: trait, dispatcher, JSON-RPC subprocess client, plugin discovery."
+description = "Sugar IR compiler protocol: trait, dispatcher, JSON-RPC subprocess client, plugin discovery."
 
 [dependencies]
 serde = { workspace = true }

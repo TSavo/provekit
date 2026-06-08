@@ -1,4 +1,4 @@
-# IR Compiler Protocol (`provekit-ir-compiler/2`)
+# IR Compiler Protocol (`sugar-ir-compiler/2`)
 
 **Status:** v1.4.0 normative draft
 **Date:** 2026-05-02
@@ -14,7 +14,7 @@ A v2 compiler's wire output is a pair of byte strings: the compiled solver scrip
 
 The v1 spec (`2026-04-30-ir-compiler-protocol.md`) gave each compiler a hard binary choice when faced with an IR position it could not soundly translate: refuse the whole compile (`compile_error.unsupported_*`) or silently elide the position. The first cuts off composition; the second is unsound.
 
-ProvekIt v1.4.0 introduces a multi-solver consensus mode that wants to compose partial competence: an SMT solver that handles arithmetic but not predicate quantification; a Coq solver that handles induction but is slow on bitvectors; a Lean solver that handles dependent types but not strings. Each compiler is the authority on what its theory can soundly handle. The verifier's job is to compose them.
+Sugar v1.4.0 introduces a multi-solver consensus mode that wants to compose partial competence: an SMT solver that handles arithmetic but not predicate quantification; a Coq solver that handles induction but is slow on bitvectors; a Lean solver that handles dependent types but not strings. Each compiler is the authority on what its theory can soundly handle. The verifier's job is to compose them.
 
 The v2 contract closes the gap with a third option: **a compiler emits a tractable script for everything it can soundly translate, marks every untranslatable position with a theory-equivalent of "trust me," and records each marked position in an OpacityManifest.** The verifier reads every solver's manifest; consensus succeeds when, for every opaque position any solver reported, some *other* solver in the pool both handled that position AND returned `Discharged`.
 
@@ -35,20 +35,20 @@ The manifest's grammar, byte-for-byte canonicalization rules, and worked example
 
 Everything in `2026-04-30-ir-compiler-protocol.md` carries forward unchanged unless this spec says otherwise:
 
-- Plugin discovery via `~/.config/provekit/ir-compilers/<name>/manifest.toml`.
+- Plugin discovery via `~/.config/sugar/ir-compilers/<name>/manifest.toml`.
 - Manifest schema (`name`, `version`, `protocol_version`, `binary`, `dialects`).
 - JSON-RPC over stdio framing.
-- The `provekit.ir.handshake`, `provekit.ir.compile`, `provekit.ir.shutdown` methods (with the v2 amendments below).
+- The `sugar.ir.handshake`, `sugar.ir.compile`, `sugar.ir.shutdown` methods (with the v2 amendments below).
 - The dialect registry: `smt-lib-v2.6`, `smt-lib-v2.6-bv`, `smt-lib-v2.6-delta`, `tptp-fof`, `tptp-thf`, `lean-tactic-mode`, `gallina`, `isabelle-hol`. New dialects continue to be added by amending the relevant spec.
 - The error model (`-32700`, `-32600`, …, `2000`–`2004`).
 - Capability negotiation at handshake time.
 - The bootstrapping shape: in-process trait + standalone subprocess binary, sharing one emit implementation.
 
-The single substantive change v2 introduces is the OpacityManifest emission requirement. The single contract change is that `provekit.ir.compile` now returns the manifest as a sibling field of `preamble` and `body`.
+The single substantive change v2 introduces is the OpacityManifest emission requirement. The single contract change is that `sugar.ir.compile` now returns the manifest as a sibling field of `preamble` and `body`.
 
 ## §3. The emission requirement
 
-**INVARIANT (v2 emission):** A v2-conformant compiler MUST, on every successful `provekit.ir.compile` call, emit an `OpacityManifest` per `2026-05-02-opacity-manifest-grammar.md`. The manifest's `protocolVersion` field MUST be the literal `"ir-compiler-protocol/2"`. The manifest's `compiler` field MUST equal the dialect identifier this compiler serves. Empty `opacities: []` is the byte-shape for "this compiler translated every position soundly."
+**INVARIANT (v2 emission):** A v2-conformant compiler MUST, on every successful `sugar.ir.compile` call, emit an `OpacityManifest` per `2026-05-02-opacity-manifest-grammar.md`. The manifest's `protocolVersion` field MUST be the literal `"ir-compiler-protocol/2"`. The manifest's `compiler` field MUST equal the dialect identifier this compiler serves. Empty `opacities: []` is the byte-shape for "this compiler translated every position soundly."
 
 **INVARIANT (manifest is non-optional):** A compiler that returns a successful `compile` response without an `opacityManifest` field is non-conformant with v2. A v1.4.0 verifier consuming such a response MUST NOT treat it as v2 input; the verifier MUST either (a) treat the compiler as v1-only (excluded from `coverage_required` consensus) or (b) reject the response.
 
@@ -98,7 +98,7 @@ The v1.4.0 reason codes:
 
 ## §6. Updated JSON-RPC method shapes
 
-### §6.1 `provekit.ir.handshake`
+### §6.1 `sugar.ir.handshake`
 
 The handshake response gains one optional field:
 
@@ -127,7 +127,7 @@ The handshake response gains one optional field:
 
 A verifier that performs handshake MUST reject any compiler whose `protocol_version` is not in `{ "ir-compiler-protocol/1", "ir-compiler-protocol/2" }`. A compiler claiming v1 is excluded from `coverage_required` consensus per `2026-05-02-multi-solver-protocol-v2.md`.
 
-### §6.2 `provekit.ir.compile`
+### §6.2 `sugar.ir.compile`
 
 The response gains a required `opacityManifest` field:
 
@@ -153,7 +153,7 @@ The response gains a required `opacityManifest` field:
 
 When `opacities` is non-empty, the `body` MUST contain the placeholder substitutions specified in §3. The verifier MAY parse the script to confirm the placeholders are present; it is not required to. The trust anchor is the catalog-signed compiler implementation.
 
-### §6.3 `provekit.ir.shutdown`
+### §6.3 `sugar.ir.shutdown`
 
 Unchanged from v1.
 
@@ -181,11 +181,11 @@ The v1 spec CID, for cross-reference: `blake3-512:71fc7ac22997938629d835f87e4e8a
 
 This spec is satisfied by:
 
-- The reference Rust implementation at `implementations/rust/provekit-ir-compiler-smt-lib/` updated to emit OpacityManifests on every `compile` call.
+- The reference Rust implementation at `implementations/rust/sugar-ir-compiler-smt-lib/` updated to emit OpacityManifests on every `compile` call.
 - The byte-fixture suite at `tests/opacity-manifest-fixtures/` (specified in `2026-05-02-opacity-manifest-grammar.md` §10).
 - A v2 conformance test asserting that the worked example in `2026-05-02-opacity-manifest-grammar.md` §8 round-trips byte-identically through the SMT-LIB v2.6 compiler.
 - A v1 backward-compatibility test asserting that an existing v1 multi-solver demo continues to work when its compiler is upgraded to v2 (the manifest is emitted but ignored).
-- The `provekit ir-compiler list` command surfacing each plugin's `protocol_version` so operators can audit pool composition before enabling `coverage_required` consensus.
+- The `sugar ir-compiler list` command surfacing each plugin's `protocol_version` so operators can audit pool composition before enabling `coverage_required` consensus.
 
 ## §10. Related specs
 

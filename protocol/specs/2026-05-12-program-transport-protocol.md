@@ -36,7 +36,7 @@ The protocol is deliberately refusal-first. A transport is valid only when every
 
 ### §2.1 Lift
 
-`lift_L(source)` produces a term over `L` and records any source bytes required for lossless source-unit transport. A lifter can be a compiler front end, a language-specific ProvekIt lifter, or a loader for an already-lifted term.
+`lift_L(source)` produces a term over `L` and records any source bytes required for lossless source-unit transport. A lifter can be a compiler front end, a language-specific Sugar lifter, or a loader for an already-lifted term.
 
 Lift MUST refuse when the source cannot be parsed, when the requested function or unit is absent, or when the lifter cannot preserve enough source structure to build a term over the declared language signature.
 
@@ -155,8 +155,8 @@ This property is the program-level counterpart of LSP morphism composition and p
 The user-facing commands are:
 
 ```
-provekit transport <src> --to <target-lang> [--from <source-lang>] [--function <name>] [--out <dir>]
-provekit migrate   <src> --to <target-lang> [--from <source-lang>] [--function <name>] [--out <dir>]
+sugar transport <src> --to <target-lang> [--from <source-lang>] [--function <name>] [--out <dir>]
+sugar migrate   <src> --to <target-lang> [--from <source-lang>] [--function <name>] [--out <dir>]
 ```
 
 `migrate` is an alias when the intent is a source-language port. Both commands run the same PTP pipeline.

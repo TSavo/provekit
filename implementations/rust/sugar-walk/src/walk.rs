@@ -102,7 +102,7 @@ pub fn walk_callsites_to_entry(
             //    liveness is preserved (other callsites still walk).
             if formal_params.len() != hit.args.len() {
                 eprintln!(
-                    "provekit-walk: arity mismatch at {}→{} callsite \
+                    "sugar-walk: arity mismatch at {}→{} callsite \
                      (formals={}, actuals={}); skipping this callsite",
                     caller_name,
                     callee_name,

@@ -1,10 +1,10 @@
-module github.com/provekit/stage4/go-validate-kit
+module github.com/sugar/stage4/go-validate-kit
 
 go 1.22
 
-require github.com/provekit/ir-symbolic v0.0.0
+require github.com/sugar/ir-symbolic v0.0.0
 
-replace github.com/provekit/ir-symbolic => ../../../implementations/go/provekit-ir-symbolic
+replace github.com/sugar/ir-symbolic => ../../../implementations/go/sugar-ir-symbolic
 
 require lukechampine.com/blake3 v1.4.1 // indirect
 

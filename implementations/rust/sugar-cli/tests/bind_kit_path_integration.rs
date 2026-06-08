@@ -21,7 +21,7 @@ const LIFT_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarri
 use serde_json::{json, Value};
 use sugar_ir_types::Sort;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -67,7 +67,7 @@ fn bind_input_value() -> Value {
     json!({
         "kind": "ir-document",
         "sourceLanguage": "rust",
-        "workspaceRoot": "/tmp/provekit-bind-path-test",
+        "workspaceRoot": "/tmp/sugar-bind-path-test",
         "ir": [{
             "kind": "bind-lift-entry",
             "file": "src/lib.rs",
@@ -95,7 +95,7 @@ fn bind_input_value() -> Value {
 }
 
 fn run_bind_cli(term_value: &Value) -> Vec<u8> {
-    let mut child = Command::new(provekit_bin())
+    let mut child = Command::new(sugar_bin())
         .arg("bind")
         .arg("-")
         .stdin(Stdio::piped())
@@ -175,7 +175,7 @@ fn lift_then_bind_path_carries_lift_output_and_claim_premise() {
     let request = json!({
         "surface": "rust",
         "workspace_root": workspace_root,
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": {
             "layer": "all",

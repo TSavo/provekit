@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit lift <PROJECT>`: dispatch the configured lift-plugin protocol
+// `sugar lift <PROJECT>`: dispatch the configured lift-plugin protocol
 // and emit the raw lifted ProofIR response. Minting is a separate composition
-// step owned by `provekit mint`.
+// step owned by `sugar mint`.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ pub fn run(args: LiftArgs) -> u8 {
         Some(surface) => surface,
         None => {
             eprintln!(
-                "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml.",
+                "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .sugar/config.toml.",
                 "error".red().bold()
             );
             return EXIT_USER_ERROR;
@@ -125,7 +125,7 @@ fn lift_output_document(
     project_root: &PathBuf,
     surface: &str,
     response: &serde_json::Value,
-) -> Result<String, libsugar::ProvekitError> {
+) -> Result<String, libsugar::SugarError> {
     let mut doc = response.clone();
     if let Some(object) = doc.as_object_mut() {
         object
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn lift_returns_ok() {
         let args = LiftArgs {
-            project: Some(PathBuf::from("/provekit/no/such/lift/project")),
+            project: Some(PathBuf::from("/sugar/no/such/lift/project")),
             output: None,
             identify_only: false,
             library_bindings: false,

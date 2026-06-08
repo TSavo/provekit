@@ -1,12 +1,12 @@
 #!/bin/sh
-# Build the C++ source-language lift plugin binary (provekit-lift-cpp-source).
+# Build the C++ source-language lift plugin binary (sugar-lift-cpp-source).
 
 set -e
 
 WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
 LLVM_CONFIG="${LLVM_CONFIG:-}"
 OUT_DIR="$WORKSPACE/implementations/cpp/target"
-OUT_BIN="$OUT_DIR/provekit-lift-cpp-source"
+OUT_BIN="$OUT_DIR/sugar-lift-cpp-source"
 
 if [ "${1:-}" = "--out" ] && [ -n "${2:-}" ]; then
     OUT_BIN="$2"
@@ -103,18 +103,18 @@ for src in blake3.c blake3_dispatch.c blake3_portable.c; do
 done
 
 "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror \
-    -I"$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/include" \
-    -I"$WORKSPACE/implementations/cpp/provekit-ir-symbolic/include" \
+    -I"$WORKSPACE/implementations/cpp/sugar-lift-cpp-source/include" \
+    -I"$WORKSPACE/implementations/cpp/sugar-ir-symbolic/include" \
     -I"$WORKSPACE/implementations/cpp" \
     -I"$LLVM_INC" \
     -I"$B3_DIR" \
     "$B3_OBJ_DIR/blake3.o" \
     "$B3_OBJ_DIR/blake3_dispatch.o" \
     "$B3_OBJ_DIR/blake3_portable.o" \
-    "$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/src/cpp_source_lifter.cpp" \
-    "$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/src/main.cpp" \
-    "$WORKSPACE/implementations/cpp/provekit/canonicalizer/jcs.cpp" \
-    "$WORKSPACE/implementations/cpp/provekit/canonicalizer/hash.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar-lift-cpp-source/src/cpp_source_lifter.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar-lift-cpp-source/src/main.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar/canonicalizer/jcs.cpp" \
+    "$WORKSPACE/implementations/cpp/sugar/canonicalizer/hash.cpp" \
     -L"$LLVM_LIB" -Wl,-rpath,"$LLVM_LIB" -lclang \
     -o "$OUT_BIN"
 

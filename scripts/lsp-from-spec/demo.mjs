@@ -2,7 +2,7 @@
 // transport. Reads sample-invariant.json, parses per IR formal grammar,
 // computes propertyHash per canonicalization spec, prints a "hover card."
 //
-// No provekit dependency. Each step cites the spec section it implements.
+// No sugar dependency. Each step cites the spec section it implements.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -43,5 +43,5 @@ for (const d of decls) {
 }
 
 console.log("\n=== Demonstration complete. ===");
-console.log("No imports from src/, no imports from kits/*, no provekit package.");
+console.log("No imports from src/, no imports from kits/*, no sugar package.");
 console.log("Everything above was implementable from the protocol spec docs alone.");

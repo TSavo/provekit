@@ -16,7 +16,7 @@ Earlier deliberation framed the question as "should concept:add carry a mode ope
 - Reading 1: mode in the algebra (3-formal `concept:add(lhs, rhs, mode)`), federation distinguishes behaviorally-different algebras at the bind-CID layer
 - Reading 2: mode in the platform, federation is purely structural at the algebra layer, behavior captured elsewhere
 
-The decisive observation that unified both readings: when source platform's `+` is Wrapping and target platform's `+` is Trap, that IS a loudly-bounded-lossy transformation. The substrate's existing trichotomy (exact / loudly-bounded-lossy / refuse) from `project_provekit_first_principle` already handles it. Concrete: lowering from i64 source to i32 target IS the loudly-bounded-lossy case the trichotomy was built for. The substrate had this architecture before; the mode-in-algebra question was asking for a NEW mechanism for something the existing mechanism handles natively.
+The decisive observation that unified both readings: when source platform's `+` is Wrapping and target platform's `+` is Trap, that IS a loudly-bounded-lossy transformation. The substrate's existing trichotomy (exact / loudly-bounded-lossy / refuse) from `project_sugar_first_principle` already handles it. Concrete: lowering from i64 source to i32 target IS the loudly-bounded-lossy case the trichotomy was built for. The substrate had this architecture before; the mode-in-algebra question was asking for a NEW mechanism for something the existing mechanism handles natively.
 
 Reading 2 + LossRecord unification:
 - The colimit's universal property is preserved at the algebra layer (structural federation)
@@ -96,7 +96,7 @@ When the substrate composes a source kit and a target kit:
 1. Walk each concept op in the chain
 2. Look up source kit's declared semantic for the op
 3. Look up target kit's declared semantic for the op
-4. If they differ: compute a LossRecord characterizing the divergence (existing `provekit-ir-types::LossRecord` machinery)
+4. If they differ: compute a LossRecord characterizing the divergence (existing `sugar-ir-types::LossRecord` machinery)
 5. Chain the LossRecord to the bind claim's premises as a signed memento
 6. If the divergence is uncharacterizable (no LossRecord shape captures it): refuse the port (refuse leg of the trichotomy)
 
@@ -140,7 +140,7 @@ The current catalog may contain a forward-looking 3-formal `concept:add` (and si
 
 - `docs/plans/2026-05-16-canonical-term-shape-form.md`: the γ ruling at the term_shape layer; consistent with this ruling at the platform-semantics layer
 - `docs/papers/16-after-portability-the-universal-address-space.md`: paper 16's colimit argument; this ruling preserves it
-- `project_provekit_first_principle` (agent memory): Supra omnia, rectum + the trichotomy (exact / loudly-bounded-lossy / refuse); this ruling applies the trichotomy at a new boundary
+- `project_sugar_first_principle` (agent memory): Supra omnia, rectum + the trichotomy (exact / loudly-bounded-lossy / refuse); this ruling applies the trichotomy at a new boundary
 - Post-merge audit `docs/plans/2026-05-16-gamma-postmerge-audit.md`: A18-A22 findings; A18 reclassifies under this ruling
 
 ## Trinity claim under this ruling

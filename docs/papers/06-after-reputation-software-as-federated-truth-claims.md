@@ -196,7 +196,7 @@ The Apache JCS team page lists the architect of this protocol as a member during
 
 ## §11: Citation
 
-> Savo, T. (2026). *After Reputation: Software as Federated Truth-Claims*. Sugar Papers, vol. 6. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/06-after-reputation-software-as-federated-truth-claims.md.
+> Savo, T. (2026). *After Reputation: Software as Federated Truth-Claims*. Sugar Papers, vol. 6. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/sugar/blob/main/docs/papers/06-after-reputation-software-as-federated-truth-claims.md.
 
 ---
 

@@ -8,7 +8,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 RUST="$REPO/implementations/rust"
 BIN_DIR="$RUST/target/debug"
-PROVEKIT="$BIN_DIR/provekit"
+SUGAR="$BIN_DIR/sugar"
 
 echo "== build the CLI + rust test-assertion lifter =="
 cargo build --manifest-path "$RUST/Cargo.toml" \
@@ -17,12 +17,12 @@ cargo build --manifest-path "$RUST/Cargo.toml" \
   --bins >/dev/null 2>&1 || cargo build --manifest-path "$RUST/Cargo.toml" \
   -p sugar-cli -p sugar-lift-rust-tests --bins
 
-[ -x "$PROVEKIT" ] || { echo "FAIL: provekit binary not built at $PROVEKIT"; exit 1; }
+[ -x "$SUGAR" ] || { echo "FAIL: sugar binary not built at $SUGAR"; exit 1; }
 [ -x "$BIN_DIR/rust_test_assertions_rpc" ] || { echo "FAIL: rust_test_assertions_rpc not built"; exit 1; }
 
 for suite in good bad; do
   for p in "$HERE/$suite"/blake3-512:*.proof; do [ -e "$p" ] && rm -f "$p"; done
-  rm -rf "$HERE/$suite/.provekit/runs" "$HERE/$suite/target" 2>/dev/null || true
+  rm -rf "$HERE/$suite/.sugar/runs" "$HERE/$suite/target" 2>/dev/null || true
 done
 
 pyget() { python3 -c "import sys,json; d=json.load(open(sys.argv[1])); print($2)" "$1"; }
@@ -34,7 +34,7 @@ run_suite() {
   echo "==================== suite: $suite (expect $expect) ===================="
 
   echo "-- mint: lift #[test] assertions -> inv-only .proof --"
-  ( cd "$dir" && "$PROVEKIT" mint --out . ) >/dev/null
+  ( cd "$dir" && "$SUGAR" mint --out . ) >/dev/null
 
   local have_proof=0
   for p in "$dir"/blake3-512:*.proof; do [ -e "$p" ] && have_proof=1; done
@@ -42,7 +42,7 @@ run_suite() {
 
   echo "-- prove: raw SAT consistency over the lifted inv --"
   local prove_json="$dir/.prove.json"
-  ( cd "$dir" && "$PROVEKIT" prove . --json ) > "$prove_json" 2>/dev/null || true
+  ( cd "$dir" && "$SUGAR" prove . --json ) > "$prove_json" 2>/dev/null || true
 
   local status reason
   status="$(pyget "$prove_json" "

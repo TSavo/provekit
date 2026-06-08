@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Canonical provekit-cli self-application runner.
+# Canonical sugar-cli self-application runner.
 #
-# Mints the dependency proofs (libprovekit + rust-std shim), places them in the
-# cli's verify pool, mints provekit-cli (all four surfaces) with the Tier 2b
+# Mints the dependency proofs (libsugar + rust-std shim), places them in the
+# cli's verify pool, mints sugar-cli (all four surfaces) with the Tier 2b
 # rust-analyzer oracle and the loud pipeline logging, then proves it. Prints the
 # three gates and the discharge scoreboard. Read docs/self-application/
 # KIT-SETUP-AND-SELF-APPLICATION.md for the why.
@@ -14,15 +14,15 @@
 #
 # Idempotent. Writes scratch to /tmp/self-apply/*. Does NOT commit anything.
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)" || { echo "not in the provekit repo"; exit 1; }
+cd "$(git rev-parse --show-toplevel)" || { echo "not in the sugar repo"; exit 1; }
 
 BIN=implementations/rust/target/debug/sugar
 CLI=implementations/rust/sugar-cli
-IMPORTS="$CLI/.provekit/imports"
+IMPORTS="$CLI/.sugar/imports"
 SCRATCH=/tmp/self-apply
 LOG="$SCRATCH/run.log"
 ORACLE_ENV=()
-[ "${1:-}" != "--no-oracle" ] && ORACLE_ENV=(PROVEKIT_RESOLVE_ORACLE=rust-analyzer)
+[ "${1:-}" != "--no-oracle" ] && ORACLE_ENV=(SUGAR_RESOLVE_ORACLE=rust-analyzer)
 
 [ -x "$BIN" ] || { echo "build first: (cd implementations/rust && cargo build -p sugar-cli -p sugar-walk)"; exit 1; }
 rm -rf "$SCRATCH"; mkdir -p "$SCRATCH" "$IMPORTS"; rm -f "$IMPORTS"/*.proof; : > "$LOG"
@@ -38,11 +38,11 @@ mint_dep () {  # <project-dir> <short-name>
   echo ">> placed $(basename "$p") ($(wc -c <"$p") bytes) into imports" | tee -a "$LOG"
 }
 
-mint_dep implementations/rust/libsugar          libprovekit
-mint_dep examples/provekit-shim-rust-std           shim-std
+mint_dep implementations/rust/libsugar          libsugar
+mint_dep examples/sugar-shim-rust-std           shim-std
 
-echo "==== mint provekit-cli (oracle: ${ORACLE_ENV:+on}${ORACLE_ENV:-off}) ====" | tee -a "$LOG"
-env "${ORACLE_ENV[@]}" RUST_LOG=info,provekit_walk_rpc=info \
+echo "==== mint sugar-cli (oracle: ${ORACLE_ENV:+on}${ORACLE_ENV:-off}) ====" | tee -a "$LOG"
+env "${ORACLE_ENV[@]}" RUST_LOG=info,sugar_walk_rpc=info \
   "$BIN" mint --project "$CLI" --out "$SCRATCH/cli" 2>"$SCRATCH/mint.err" | tee -a "$LOG" >/dev/null
 CLIPROOF=$(ls -t "$SCRATCH/cli"/*.proof 2>/dev/null | head -1)
 

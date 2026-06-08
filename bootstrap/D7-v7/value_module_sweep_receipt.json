@@ -1,10 +1,10 @@
 {
   "version": "1",
-  "target_module": "provekit-canonicalizer::value",
-  "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs",
+  "target_module": "sugar-canonicalizer::value",
+  "source_path": "implementations/rust/sugar-canonicalizer/src/value.rs",
   "base_commit": "63a0bc1a",
   "branch": "bootstrap/D7-v7-value-module-sweep",
-  "walk_emit_command": "cd implementations/rust && target/debug/provekit-walk-emit term provekit-canonicalizer/src/value.rs <fn> /private/tmp/d7-v7-walk/<fn>.raw.json",
+  "walk_emit_command": "cd implementations/rust && target/debug/sugar-walk-emit term sugar-canonicalizer/src/value.rs <fn> /private/tmp/d7-v7-walk/<fn>.raw.json",
   "in_scope_functions": [
     "null",
     "boolean",
@@ -31,7 +31,7 @@
       "audit_class": "refuses-with-typed-reason",
       "lift_refuse_class": "unsupported-value-closure",
       "walk_emit_result": "refused",
-      "reason": "provekit-walk-emit refused object with unsupported value expression Expr::Closure"
+      "reason": "sugar-walk-emit refused object with unsupported value expression Expr::Closure"
     }
   ],
   "per_function_verdicts": {
@@ -50,10 +50,10 @@
     "string": "bootstrap/D7-v7/value_string_source_round_trip_receipt.json"
   },
   "per_function_fixtures": {
-    "null": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_null.json",
-    "boolean": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_boolean.json",
-    "integer": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_integer.json",
-    "string": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_string.json"
+    "null": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_null.json",
+    "boolean": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_boolean.json",
+    "integer": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_integer.json",
+    "string": "implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_string.json"
   },
   "fixture_cids": {
     "null": "blake3-512:754c6ff2c9a0ff92d96bcce0d1269385809944e613c11696df0458703a4e5e187714866b9e35171eb09d7753b66274a5e0d51a99ff1e0a0be3d9da6c1082d23f",

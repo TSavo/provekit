@@ -3,7 +3,7 @@
 // Project / user configuration for lift-plugin, solver, and
 // materialization routing.
 //
-// ProvekIt does not auto-detect the authoring surface. Projects and
+// Sugar does not auto-detect the authoring surface. Projects and
 // users can set a default `[authoring] surface = ...`, and commands can
 // override it with sections such as `[authoring.lift] surface = ...` or
 // `[authoring.recognize] surface = ...`.
@@ -13,11 +13,11 @@
 
 use std::path::{Path, PathBuf};
 
-/// One entry in `.provekit/config.toml`'s `[[plugins]]` array.
+/// One entry in `.sugar/config.toml`'s `[[plugins]]` array.
 ///
 /// Each entry declares one project-enabled plugin. `kind = "lift"` routes
-/// to `.provekit/lift/<surface>/manifest.toml`; `kind = "emit"` routes
-/// to `.provekit/emit/<surface>/manifest.toml`. Omitted kind preserves
+/// to `.sugar/lift/<surface>/manifest.toml`; `kind = "emit"` routes
+/// to `.sugar/emit/<surface>/manifest.toml`. Omitted kind preserves
 /// legacy lift/emit dual-use registrations.
 #[derive(Debug, Clone, Default)]
 pub struct PluginEntry {
@@ -27,16 +27,16 @@ pub struct PluginEntry {
     /// "lift" and "emit"; absent means legacy dual-use registration.
     pub kind: Option<String>,
     /// Plugin surface. The command decides whether this resolves under
-    /// `.provekit/lift` or `.provekit/emit` from `kind`.
+    /// `.sugar/lift` or `.sugar/emit` from `kind`.
     pub surface: String,
     /// Optional absolute path the plugin should treat as its
     /// `workspace_root`. Use case: a shim that lifts from a
     /// cargo-resolved dependency's source instead of from its own
     /// project root. Defaults to the project root (the directory
-    /// containing `.provekit/config.toml`).
+    /// containing `.sugar/config.toml`).
     pub workspace_override: Option<String>,
     /// Optional `options.emit` value passed through to the plugin.
-    /// `"ir-document"` opts a self-minting plugin (provekit-lift) into
+    /// `"ir-document"` opts a self-minting plugin (sugar-lift) into
     /// composable mode for multi-plugin merge; `"proof-envelope"` is
     /// the default self-mint shape.
     pub emit: Option<String>,
@@ -51,7 +51,7 @@ pub struct PluginEntry {
     pub layer: Option<String>,
 }
 
-/// One project- or user-configured shortcut for `provekit --kit`.
+/// One project- or user-configured shortcut for `sugar --kit`.
 ///
 /// This is deliberately data, not a Rust-side catalog. A kit alias names a
 /// project root plus the lift surface/lang key that should be used when the
@@ -91,7 +91,7 @@ impl PluginEntry {
 /// (None) — absent means the axis FLOATS and resolves against the
 /// consumer's profile at materialize time (per #1355 dispatch model).
 ///
-/// Declared inline in `.provekit/config.toml`:
+/// Declared inline in `.sugar/config.toml`:
 /// ```toml
 /// [platform_profile]
 /// language = "rust"
@@ -130,7 +130,7 @@ pub struct ProjectConfig {
     pub solver_portfolio: Vec<String>,
     pub solver_mode: Option<String>, // "first-wins" | "consensus"
 
-    /// Extra contract directories loaded by `provekit prove`.
+    /// Extra contract directories loaded by `sugar prove`.
     /// e.g., an OpenAPI spec project whose .proof files are
     /// consumed alongside the main project.
     pub callees: Vec<String>,
@@ -163,7 +163,7 @@ impl ProjectConfig {
 }
 
 pub fn read_project_config(project_root: &Path) -> ProjectConfig {
-    read_config_file(&project_root.join(".provekit/config.toml"))
+    read_config_file(&project_root.join(".sugar/config.toml"))
 }
 
 pub fn read_user_config() -> ProjectConfig {
@@ -177,11 +177,11 @@ pub fn read_user_config() -> ProjectConfig {
 fn user_config_path() -> Option<PathBuf> {
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         if !xdg.is_empty() {
-            return Some(PathBuf::from(xdg).join("provekit/config.toml"));
+            return Some(PathBuf::from(xdg).join("sugar/config.toml"));
         }
     }
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".config/provekit/config.toml"))
+    Some(PathBuf::from(home).join(".config/sugar/config.toml"))
 }
 
 fn read_config_file(path: &Path) -> ProjectConfig {
@@ -386,11 +386,11 @@ fn strip_comment(s: &str) -> &str {
     }
 }
 
-/// Surface menu shown by `provekit init`.
-#[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
+/// Surface menu shown by `sugar init`.
+#[allow(dead_code)] // public API; menu data for `sugar init` interactive flow (TODO: wire up)
 pub const KNOWN_SURFACES: &[&str] = &[
     "default",
-    "rust-provekit-decorator",
+    "rust-sugar-decorator",
     "rust-invariant-file",
     "rust-contracts-crate",
     "rust-kani",
@@ -420,10 +420,10 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "zig-source",
 ];
 
-/// Solver menu shown by `provekit init`. v1 ships with single-solver
+/// Solver menu shown by `sugar init`. v1 ships with single-solver
 /// support (Z3); the chain / portfolio / consensus modes are
 /// captured in the config schema but not yet implemented in the verifier.
-#[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
+#[allow(dead_code)] // public API; menu data for `sugar init` interactive flow (TODO: wire up)
 pub const KNOWN_SOLVERS: &[&str] = &["z3", "cvc5", "bitwuzla", "yices2", "mathsat"];
 
 #[cfg(test)]
@@ -512,10 +512,10 @@ family = "concept:family:hash"
 
     #[test]
     fn parses_mint_path_file() {
-        let cfg = parse_config("[paths.mint]\nfile = \".provekit/paths/mint.json\"\n");
+        let cfg = parse_config("[paths.mint]\nfile = \".sugar/paths/mint.json\"\n");
         assert_eq!(
             cfg.path_for("mint").as_deref(),
-            Some(".provekit/paths/mint.json")
+            Some(".sugar/paths/mint.json")
         );
         assert_eq!(cfg.path_for("prove"), None);
     }
@@ -561,7 +561,7 @@ lang = "rust"
 
 [[kits]]
 alias = "third-party"
-project = "/opt/provekit/kits/third-party"
+project = "/opt/sugar/kits/third-party"
 surface = "third-party-surface"
 lang = "third-party"
 "#,
@@ -573,7 +573,7 @@ lang = "third-party"
         assert_eq!(cfg.kits[0].surface, "rust-contracts-crate");
         assert_eq!(cfg.kits[0].lang, "rust");
         assert_eq!(cfg.kits[1].alias, "third-party");
-        assert_eq!(cfg.kits[1].project, "/opt/provekit/kits/third-party");
+        assert_eq!(cfg.kits[1].project, "/opt/sugar/kits/third-party");
         assert_eq!(cfg.kits[1].surface, "third-party-surface");
         assert_eq!(cfg.kits[1].lang, "third-party");
     }
@@ -602,7 +602,7 @@ surface = "java-testng"
 
     #[test]
     fn missing_file_yields_default() {
-        let p = std::env::temp_dir().join("provekit-no-such-config.toml");
+        let p = std::env::temp_dir().join("sugar-no-such-config.toml");
         let _ = std::fs::remove_file(&p);
         let cfg = read_config_file(&p);
         assert!(cfg.surface_default.is_none());

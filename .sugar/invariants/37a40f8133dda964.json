@@ -1,0 +1,23 @@
+{
+  "id": "37a40f8133dda964",
+  "createdAt": "2026-04-29T06:37:01.290Z",
+  "originatingBug": "P3 axiom checks only include violations where principle field contains 'P3'",
+  "smt": {
+    "kind": "set_uniqueness",
+    "declarations": [
+      "(declare-const principle String) (declare-const p3_check_generated Bool) (assert (and p3_check_generated (not (str.contains principle \"P3\"))))"
+    ],
+    "assertion": "(declare-const principle String) (declare-const p3_check_generated Bool) (assert (and p3_check_generated (not (str.contains principle \"P3\"))))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/sugar/src/axiom-engine.ts",
+    "function": null,
+    "startLine": 146,
+    "endLine": 146
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "6d558ec416d9f288bef626017727f5220dc8b2d2",
+  "retired": null
+}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-ir-compiler-coq: Coq compiler for IR contracts.
+// sugar-ir-compiler-coq: Coq compiler for IR contracts.
 //
 // Emits Coq .v files that can be verified with coqc.
 // Supports kit-defined predicates via Definitions (unlike SMT-LIB!).

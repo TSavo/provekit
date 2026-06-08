@@ -1,7 +1,7 @@
 # #979 name lifecycle status
 
 Branch: `kit/pk-979-name-lifecycle`
-Worktree: `/Users/tsavo/provekit-worktrees/pk-979-name-lifecycle`
+Worktree: `/Users/tsavo/sugar-worktrees/pk-979-name-lifecycle`
 
 ## Implemented
 
@@ -12,10 +12,10 @@ Worktree: `/Users/tsavo/provekit-worktrees/pk-979-name-lifecycle`
 
 ## Verification
 
-- `cargo test -p provekit-walk --bin provekit-walk-rpc`
-- `cargo test -p provekit-cli --test verb_composition`
-- `cargo test -p provekit-cli --test cmd_bind_integration`
-- `cargo test -p libprovekit core::bind`
+- `cargo test -p sugar-walk --bin sugar-walk-rpc`
+- `cargo test -p sugar-cli --test verb_composition`
+- `cargo test -p sugar-cli --test cmd_bind_integration`
+- `cargo test -p libsugar core::bind`
 - `git diff --check`
 - Diff scan found no en dash or em dash characters in the patch.
 
@@ -24,13 +24,13 @@ Worktree: `/Users/tsavo/provekit-worktrees/pk-979-name-lifecycle`
 Local commit is blocked by sandbox permissions on the main gitdir:
 
 ```text
-fatal: Unable to create '/Users/tsavo/provekit/.git/worktrees/pk-979-name-lifecycle/index.lock': Operation not permitted
+fatal: Unable to create '/Users/tsavo/sugar/.git/worktrees/pk-979-name-lifecycle/index.lock': Operation not permitted
 ```
 
 Direct write probes also fail with `Operation not permitted` under:
 
-- `/Users/tsavo/provekit/.git/worktrees/pk-979-name-lifecycle`
-- `/Users/tsavo/provekit/.git/objects`
-- `/Users/tsavo/provekit/.git/refs`
+- `/Users/tsavo/sugar/.git/worktrees/pk-979-name-lifecycle`
+- `/Users/tsavo/sugar/.git/objects`
+- `/Users/tsavo/sugar/.git/refs`
 
 The worktree files are writable, but this session cannot write Git metadata, so the local commit could not be created here.

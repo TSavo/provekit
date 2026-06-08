@@ -3,7 +3,7 @@
 // IR compiler protocol core. Defines the trait every compiler
 // implements, the registry that dispatches by dialect name, the
 // JSON-RPC subprocess client used for plugins, and the manifest
-// loader that walks ~/.config/provekit/ir-compilers/.
+// loader that walks ~/.config/sugar/ir-compilers/.
 //
 // Spec: protocol/specs/2026-04-30-ir-compiler-protocol.md.
 
@@ -19,7 +19,7 @@ pub use error::CompileError;
 
 /// Result of compiling one canonical IR-JSON formula to a target
 /// dialect. Wire-equivalent to the JSON returned by
-/// `provekit.ir.compile`.
+/// `sugar.ir.compile`.
 ///
 /// Contract: `preamble + body` is the complete script the verifier
 /// hands to the solver.
@@ -69,7 +69,7 @@ pub struct FreeVar {
     pub sort: String,
 }
 
-/// Capability descriptor returned by `provekit.ir.handshake`.
+/// Capability descriptor returned by `sugar.ir.handshake`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub name: String,
@@ -81,7 +81,7 @@ pub struct Capabilities {
 }
 
 /// Canonical protocol identifier, used in handshake and manifests.
-pub const PROTOCOL_VERSION: &str = "provekit-ir-compiler/1";
+pub const PROTOCOL_VERSION: &str = "sugar-ir-compiler/1";
 
 /// The trait every IR compiler implements, whether it lives in-process
 /// or speaks JSON-RPC over a subprocess pipe.

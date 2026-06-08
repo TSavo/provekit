@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift-rust-cargo-test-witness
+// sugar-lift-rust-cargo-test-witness
 //
 // The cargo-test WITNESS lifter -- the proofchain-native correctness producer
 // for Rust, at parity with the python pytest-witness kit.
@@ -20,7 +20,7 @@
 //
 // DISCHARGE has two faces, mirroring python:
 //   - `verify --project` (rust witness axis): the verifier asks this kit (over
-//     `provekit.plugin.resolve_witness`) to RESOLVE the bundle body; the kit
+//     `sugar.plugin.resolve_witness`) to RESOLVE the bundle body; the kit
 //     re-runs the suite, rebuilds the bundle, returns the bytes; the rust
 //     verifier blake3's them and compares to the pinned witness_cid. The kit
 //     oracle is UNTRUSTED -- it returns CONTENT, never a verdict.
@@ -49,9 +49,9 @@ use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Se
 /// prover's provenance key, via the env override below. This globally-known
 /// default is an INTEGRITY TAG ONLY (it proves the body was not altered, not WHO
 /// signed it) and is here so mementos are reproducible in tests. Set
-/// `PROVEKIT_WITNESS_SIGNER_SEED` (64 hex chars) for an authoritative key.
+/// `SUGAR_WITNESS_SIGNER_SEED` (64 hex chars) for an authoritative key.
 pub const WITNESS_SIGNER_SEED: Ed25519Seed = [0x77u8; 32];
-const SIGNER_SEED_ENV: &str = "PROVEKIT_WITNESS_SIGNER_SEED";
+const SIGNER_SEED_ENV: &str = "SUGAR_WITNESS_SIGNER_SEED";
 
 /// Explicit override wins; else the env-provided authoritative seed; else the
 /// well-known dev seed (integrity tag only). Mirrors python `_resolve_signer_seed`.
@@ -488,7 +488,7 @@ pub fn witness_package_contract_ir(
 }
 
 // ---------------------------------------------------------------------------
-// The package on disk: `.provekit/witnesses/<cid-with-colon-as-underscore>.witness`
+// The package on disk: `.sugar/witnesses/<cid-with-colon-as-underscore>.witness`
 // holding the EXACT bundle bytes (mirror python; never fail the lift on write).
 // ---------------------------------------------------------------------------
 
@@ -497,7 +497,7 @@ pub fn cid_filename(cid: &str, ext: &str) -> String {
     format!("{}{ext}", cid.replace(':', "_"))
 }
 
-/// Write the bundle to `.provekit/witnesses/<cid>.witness`. Returns the path on
+/// Write the bundle to `.sugar/witnesses/<cid>.witness`. Returns the path on
 /// success; an I/O error is returned to the caller, which mirrors python by
 /// IGNORING it at lift time (the package is audit material, never fail the lift).
 pub fn write_bundle_package(
@@ -505,7 +505,7 @@ pub fn write_bundle_package(
     bundle_cid: &str,
     bundle_bytes: &[u8],
 ) -> Result<std::path::PathBuf, String> {
-    let dir = project_dir.join(".provekit").join("witnesses");
+    let dir = project_dir.join(".sugar").join("witnesses");
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir witnesses: {e}"))?;
     let path = dir.join(cid_filename(bundle_cid, ".witness"));
     std::fs::write(&path, bundle_bytes).map_err(|e| format!("write witness package: {e}"))?;
@@ -742,7 +742,7 @@ fn collect_rs(root: &Path, dir: &Path, out: &mut Vec<String>, have_tests: &mut b
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if path.is_dir() {
-            if matches!(name.as_str(), "target" | ".git" | ".provekit") {
+            if matches!(name.as_str(), "target" | ".git" | ".sugar") {
                 continue;
             }
             if name == "tests" {

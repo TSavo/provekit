@@ -12,7 +12,7 @@
 // This module does NOT run SMT or touch the MementoPool. The verdict is
 // already on the wire-form claim; verification here is shape-validation +
 // aggregation only. Signature verification and CID recomputation require
-// the JCS encoder in `provekit-claim-envelope`; both are out of scope for
+// the JCS encoder in `sugar-claim-envelope`; both are out of scope for
 // this PR and tracked as follow-ups per spec §3.1.
 //
 // Trichotomy invariants (spec §1.2):

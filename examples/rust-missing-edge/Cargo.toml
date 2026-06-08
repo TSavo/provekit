@@ -1,5 +1,5 @@
 [package]
-name = "provekit-rust-missing-edge-example"
+name = "sugar-rust-missing-edge-example"
 version = "0.1.0"
 edition = "2021"
 publish = false

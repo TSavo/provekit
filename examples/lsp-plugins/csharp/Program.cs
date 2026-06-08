@@ -1,15 +1,15 @@
-// ProvekIt LSP Language Plugin: C#
+// Sugar LSP Language Plugin: C#
 //
-// A standalone binary that speaks provekit-lsp-plugin/1 over stdio.
-// Parses C# source files and extracts provekit annotations.
+// A standalone binary that speaks sugar-lsp-plugin/1 over stdio.
+// Parses C# source files and extracts sugar annotations.
 //
 // Usage: dotnet run -- --rpc
 //
-// To use this plugin, add to `.provekit/config.toml`:
+// To use this plugin, add to `.sugar/config.toml`:
 //   [[language]]
 //   name = "csharp"
 //   extensions = [".cs"]
-//   plugin = "provekit-lsp-csharp"
+//   plugin = "sugar-lsp-csharp"
 //
 // Build: dotnet publish -c Release -o ./out
 
@@ -21,7 +21,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace ProvekitLspCSharp;
+namespace SugarLspCSharp;
 
 class Program
 {
@@ -29,13 +29,13 @@ class Program
     {
         if (!args.Contains("--rpc"))
         {
-            Console.Error.WriteLine("Usage: provekit-lsp-csharp --rpc");
+            Console.Error.WriteLine("Usage: sugar-lsp-csharp --rpc");
             Environment.Exit(1);
         }
 
-        var reImpl = new Regex(@"//\s*provekit:implement\s+([\w-]+)");
-        var reContract = new Regex(@"//\s*provekit:contract");
-        var reVerify = new Regex(@"//\s*provekit:verify");
+        var reImpl = new Regex(@"//\s*sugar:implement\s+([\w-]+)");
+        var reContract = new Regex(@"//\s*sugar:contract");
+        var reVerify = new Regex(@"//\s*sugar:verify");
         var reFn = new Regex(@"\b(?:public|private|protected|internal|static|\s)+\s*[\w<>\[\]]+\s+(\w+)\s*\(");
 
         var stdin = Console.In;
@@ -63,7 +63,7 @@ class Program
             switch (method)
             {
                 case "initialize":
-                    WriteResp(stdout, new { jsonrpc = "2.0", id, result = new { name = "provekit-lsp-csharp", version = "0.1.0", capabilities = Array.Empty<string>() } });
+                    WriteResp(stdout, new { jsonrpc = "2.0", id, result = new { name = "sugar-lsp-csharp", version = "0.1.0", capabilities = Array.Empty<string>() } });
                     break;
 
                 case "parse":

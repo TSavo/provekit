@@ -9,7 +9,7 @@ lifecycle, kit-side, with the `.proof` as the transport and rust proof-blind.
 
 ## The cast
 
-- `.provekit/imports/*.proof` — the **numpy sugar `.proof`** (the transport),
+- `.sugar/imports/*.proof` — the **numpy sugar `.proof`** (the transport),
   sugar-lifted by `run.sh` from the **installed numpy source**. Lean
   `SourceMemento` mode: it carries CIDs + spans, NOT inline bodies; the body is
   resolved on demand from the installed numpy by the Source Oracle. The binding's

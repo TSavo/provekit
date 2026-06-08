@@ -186,14 +186,14 @@ When source programs use different identifier names (e.g., Rust `safe_divide_the
 
 ### A24 scope (operand-binding-from-context derivation)
 
-- `implementations/rust/provekit-walk/src/bin/walk_rpc.rs`: walk AST in the same pass as term_shape construction; record (position, symbol) tuples for each operand slot; emit operand_bindings on the lift output
-- `implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/bind_lifter.py`: same shape on Python side
-- `implementations/rust/libprovekit/src/core/lower_plugin.rs`: extend RealizeRequest to carry operand_bindings (non-hashed); thread from lift output through lower request to realize plugin
-- `implementations/python/provekit-realize-python-core/src/provekit_realize_python_core/realizer.py`: consume operand_bindings in body synthesis; replace the current positional-fallback logic; implement the completeness gate
+- `implementations/rust/sugar-walk/src/bin/walk_rpc.rs`: walk AST in the same pass as term_shape construction; record (position, symbol) tuples for each operand slot; emit operand_bindings on the lift output
+- `implementations/python/sugar-lift-python-source/src/sugar_lift_python_source/bind_lifter.py`: same shape on Python side
+- `implementations/rust/libsugar/src/core/lower_plugin.rs`: extend RealizeRequest to carry operand_bindings (non-hashed); thread from lift output through lower request to realize plugin
+- `implementations/python/sugar-realize-python-core/src/sugar_realize_python_core/realizer.py`: consume operand_bindings in body synthesis; replace the current positional-fallback logic; implement the completeness gate
 
 ### A25 scope (function-name non-hashed sidecar channel)
 
-The function-name sidecar field rides the same non-hashed channel pattern as operand_bindings. Extend RealizeRequest with `source_function_name: Option<String>` (non-hashed); lift kits emit it from AST; realize plugin uses it for the `def`/`fn` emission, falling back to the existing `_provekit_synth` placeholder when absent.
+The function-name sidecar field rides the same non-hashed channel pattern as operand_bindings. Extend RealizeRequest with `source_function_name: Option<String>` (non-hashed); lift kits emit it from AST; realize plugin uses it for the `def`/`fn` emission, falling back to the existing `_sugar_synth` placeholder when absent.
 
 Combined PR: A24 + A25 share the non-hashed-sidecar-on-RealizeRequest architecture. Implement together. Single dispatch.
 

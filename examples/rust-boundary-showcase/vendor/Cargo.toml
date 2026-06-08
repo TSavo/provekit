@@ -1,5 +1,5 @@
 # The "vendor": a path-dependency crate whose REAL source lives on disk. It is
-# PLAIN rust — no provekit dependency, no `#[provekit::sugar]` attribute. Its
+# PLAIN rust — no sugar dependency, no `#[sugar::sugar]` attribute. Its
 # ordinary `pub fn reverse_chars` is the producer of the lean SourceMemento: in
 # the `library-bindings` layer the lift DERIVES the binding from the crate name
 # + fn name (no tag required). This is the rust analog of "installed numpy" in

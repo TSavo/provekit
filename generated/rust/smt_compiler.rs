@@ -2,8 +2,8 @@
 // GENERATED SMT-LIB v2.6 compiler
 
 use std::collections::{BTreeMap, BTreeSet};
-use provekit_ir_compiler::{CompiledFormula, FreeVar};
-use provekit_ir_types::*;
+use sugar_ir_compiler::{CompiledFormula, FreeVar};
+use sugar_ir_types::*;
 
 pub fn emit_term(term: &Term) -> String {
     match term {

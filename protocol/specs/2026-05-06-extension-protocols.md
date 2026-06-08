@@ -14,7 +14,7 @@
 
 ## Section 0. Purpose
 
-This spec defines what ProvekIt means by **extension protocol**.
+This spec defines what Sugar means by **extension protocol**.
 
 An extension protocol is an optional protocol layered on top of the complete core substrate. It standardizes a workflow, signed metadata convention, executable metadata bytecode, body-field convention, producer interface, consumer interpretation, or artifact family without adding a new core primitive.
 
@@ -147,7 +147,7 @@ p -> q
 
 where `p` and `q` are content-addressed predicates, facts, states, or claims. The edge itself is also content-addressed. A higher-arity claim is represented by a CID-bearing object whose body names its input CIDs and output CID, so the multi-input case still reduces to an edge-bearing node in the memento DAG.
 
-This gives ProvekIt DAGs of DAGs:
+This gives Sugar DAGs of DAGs:
 
 ```
 source DAG
@@ -247,11 +247,11 @@ The substrate is not Turing complete. The extension layer may be.
 
 **Proof sketch.** Core verification terminates because it never invokes the extension interpreter. It verifies the signed byte graph: parse, hash, signature-check, reference-resolve, and apply finite core validity rules. Extension execution is a separate computation over already-verifiable bytes. If the extension computation terminates and emits a signed/content-addressed result, that result becomes another memento in the graph. If it does not terminate, the extension result is absent. In neither case does core verification wait on, depend on, or inherit the halting behavior of the extension interpreter. Therefore Turing-complete extension protocols do not make substrate verification Turing complete. QED.
 
-This differs from architectures where script or VM execution is inside the mandatory validation path. In those systems, the validator must execute the script to decide whether the artifact is valid, so VM power directly affects validation liveness and consensus safety. In ProvekIt, the core validates the signed byte graph; extension interpreters compute optional results over that graph. The extension language may be powerful because no consumer is forced to execute it to validate the substrate.
+This differs from architectures where script or VM execution is inside the mandatory validation path. In those systems, the validator must execute the script to decide whether the artifact is valid, so VM power directly affects validation liveness and consensus safety. In Sugar, the core validates the signed byte graph; extension interpreters compute optional results over that graph. The extension language may be powerful because no consumer is forced to execute it to validate the substrate.
 
 ### Section 4.5 Reflective self-witnessing
 
-Because specs, interpreters, witnessers, checker bytecode, implementations, and conformance claims are all content-addressable artifacts, ProvekIt can carry witnesses about its own conformance.
+Because specs, interpreters, witnessers, checker bytecode, implementations, and conformance claims are all content-addressable artifacts, Sugar can carry witnesses about its own conformance.
 
 Example shape:
 
@@ -275,7 +275,7 @@ This is self-witnessing, not proof from nowhere. A consumer still relies on a ba
 Above that base kernel, the substrate can host reflective evidence:
 
 ```
-ProvekIt artifacts witnessing ProvekIt conformance claims.
+Sugar artifacts witnessing Sugar conformance claims.
 ```
 
 The protocol can therefore carry its own self-correctness evidence without making core verification circular. Core verification checks the signed bytes and references. Extension-aware tooling interprets the self-witness under policy. The two layers must not collapse.
@@ -414,7 +414,7 @@ This is a valid extension protocol.
 
 ### Section 8.5 Checker bytecode targets
 
-The Checker Bytecode Protocol (CBP) defines how ProofIR predicates compile to boundary-check bytecode for WASM, eBPF, JVM bytecode, native plugins, interpreted host predicates, or ProvekIt-native instruction streams.
+The Checker Bytecode Protocol (CBP) defines how ProofIR predicates compile to boundary-check bytecode for WASM, eBPF, JVM bytecode, native plugins, interpreted host predicates, or Sugar-native instruction streams.
 
 CBP is an extension because:
 
@@ -465,4 +465,4 @@ Any "yes" answer to question 7 requires core protocol review.
 
 Cite as:
 
-> ProvekIt Protocol Working Notes (2026). *Extension Protocols*. Draft doctrine v0.1.0.
+> Sugar Protocol Working Notes (2026). *Extension Protocols*. Draft doctrine v0.1.0.

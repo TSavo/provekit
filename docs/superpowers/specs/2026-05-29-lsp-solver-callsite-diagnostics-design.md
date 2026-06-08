@@ -26,10 +26,10 @@ Language ownership is strict:
 The current architecture has the right upstream data, but drops the location before it reaches the editor:
 
 - kit/lift output can emit `callSiteLocus` on call edges;
-- `provekit-linker` receives that locus in `LinkerCallEdge.call_site_locus_json`;
+- `sugar-linker` receives that locus in `LinkerCallEdge.call_site_locus_json`;
 - the solver verdict is converted into `LinkerError`;
 - `LinkerError` preserves only `file`;
-- `provekit-lsp` therefore publishes daemon diagnostics at `(0,0)..(0,1)`.
+- `sugar-lsp` therefore publishes daemon diagnostics at `(0,0)..(0,1)`.
 
 That produces a file-level marker, not the red squiggle users expect.
 
@@ -38,9 +38,9 @@ That produces a file-level marker, not the red squiggle users expect.
 Propagate the callsite locus through the existing Rust daemon path.
 
 1. Extend `LinkerError` with an optional callsite range/locus payload derived from `LinkerCallEdge.call_site_locus_json`.
-2. Include that range in `parseFile` and `getDiagnostics` JSON responses from `provekit-linkerd`.
-3. Teach `provekit-lsp` to convert daemon ranges into LSP ranges instead of using the file-start fallback.
-4. Map solver implication failures to `provekit.lsp.implication_failed` with source `provekit` and severity error.
+2. Include that range in `parseFile` and `getDiagnostics` JSON responses from `sugar-linkerd`.
+3. Teach `sugar-lsp` to convert daemon ranges into LSP ranges instead of using the file-start fallback.
+4. Map solver implication failures to `sugar.lsp.implication_failed` with source `sugar` and severity error.
 5. Keep parse/lift failures, unresolved symbols, and undecidable solver results on their own diagnostic codes.
 
 The design keeps lifting as upstream fact production. The product signal is the
@@ -74,7 +74,7 @@ source call expression
   -> linker solver obligation: caller post implies callee pre
   -> LinkerError with callsite locus
   -> parseFile/getDiagnostics JSON
-  -> provekit-lsp Diagnostic at the callsite range
+  -> sugar-lsp Diagnostic at the callsite range
   -> editor red squiggle
 ```
 
@@ -94,8 +94,8 @@ If the locus also carries `endLine`/`endColumn`, the LSP uses it. If it only car
 
 Solver-rejected implication:
 
-- code: `provekit.lsp.implication_failed`
-- source: `provekit`
+- code: `sugar.lsp.implication_failed`
+- source: `sugar`
 - severity: error
 - range: callsite expression or callee token
 - message: explains that the callee precondition is not established at this callsite
@@ -103,13 +103,13 @@ Solver-rejected implication:
 
 Unresolved symbol:
 
-- code: `provekit.lsp.unresolved_symbol`
+- code: `sugar.lsp.unresolved_symbol`
 - severity: warning
 - range: callsite if available
 
 Undecidable implication:
 
-- code: `provekit.lsp.unprovable_obligation`
+- code: `sugar.lsp.unprovable_obligation`
 - severity: warning
 - range: callsite if available
 
@@ -117,9 +117,9 @@ Undecidable implication:
 
 Add tests at the narrowest useful layers:
 
-1. `provekit-linker` unit test: an unsatisfied solver obligation preserves callsite locus in `LinkerError`.
-2. `provekit-linkerd` test: `parseFile` returns a diagnostic containing the callsite locus/range.
-3. `provekit-lsp` test: daemon diagnostic range converts to the expected LSP line/character instead of `(0,0)`.
+1. `sugar-linker` unit test: an unsatisfied solver obligation preserves callsite locus in `LinkerError`.
+2. `sugar-linkerd` test: `parseFile` returns a diagnostic containing the callsite locus/range.
+3. `sugar-lsp` test: daemon diagnostic range converts to the expected LSP line/character instead of `(0,0)`.
 
 The end-to-end fixture should use the existing floor shape: a satisfied call, a violated call such as `checkPositive(-1)`, and a loop/top fallback that does not emit a false positive.
 

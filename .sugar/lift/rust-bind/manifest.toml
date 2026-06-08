@@ -1,0 +1,7 @@
+# PEP 1.7.0 `kind = "lift"` plugin manifest for the Rust bind-IR surface.
+# Returns `ir-document` with `bind-lift-entry` records per
+# `2026-05-13-bind-ir-lift-result.md`. cmd_bind dispatches Verb 1 (Lift)
+# here when --lang=rust (or auto-detected as rust).
+name = "rust-bind-lift"
+command = ["implementations/rust/target/debug/sugar-walk-rpc", "--rpc"]
+working_dir = "."

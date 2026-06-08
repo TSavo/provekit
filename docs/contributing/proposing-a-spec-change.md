@@ -59,7 +59,7 @@ Explicit statement of:
 
 - What old `.proof` bundles look like under the new spec (typically: still valid).
 - What old kits do when reading new `.proof` bundles (typically: skip new primitives with a warning).
-- What old kits do when running on a new catalog (typically: fail `provekit verify-protocol` until upgraded).
+- What old kits do when running on a new catalog (typically: fail `sugar verify-protocol` until upgraded).
 
 ### Alternatives considered
 

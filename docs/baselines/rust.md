@@ -3,7 +3,7 @@
 Foundation v1 advisory catalog of hidden predicates about Rust's
 `std::*` builtins. Authored against `rustc 1.81.0`.
 
-Catalog file: [`.provekit/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof`](../../.provekit/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof).
+Catalog file: [`.sugar/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof`](../../.sugar/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof).
 
 ## Disclaimer
 
@@ -74,7 +74,7 @@ Each contract carries one of three predicate shapes:
 ## How this catalog was minted
 
 The mint orchestrator lives at
-`implementations/rust/provekit-baseline-rust-std/`. It:
+`implementations/rust/sugar-baseline-rust-std/`. It:
 
 1. Walks the seven slab files (one per std module group), authoring
    ContractDecls via the kit DSL (`forall` / `eq` / `gte` / `ctor` /
@@ -90,8 +90,8 @@ The mint orchestrator lives at
 To re-mint locally:
 
 ```sh
-cargo run -p provekit-baseline-rust-std --bin mint-rust-std-baseline -- /tmp/stage
-cp /tmp/stage/blake3-512:*.proof .provekit/baselines/
+cargo run -p sugar-baseline-rust-std --bin mint-rust-std-baseline -- /tmp/stage
+cp /tmp/stage/blake3-512:*.proof .sugar/baselines/
 ```
 
 Byte-determinism is asserted: the orchestrator mints into two separate

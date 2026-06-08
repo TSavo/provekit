@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit hash [FILE]`: print blake3-512:<hex> of file or stdin.
+// `sugar hash [FILE]`: print blake3-512:<hex> of file or stdin.
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -54,7 +54,7 @@ mod tests {
     fn hash_known_input_matches_lib() {
         // Write a temp file, hash it, compare to the lib's direct hash.
         let dir = std::env::temp_dir();
-        let p = dir.join(format!("provekit-cli-hash-test-{}", std::process::id()));
+        let p = dir.join(format!("sugar-cli-hash-test-{}", std::process::id()));
         let bytes = b"the quick brown fox";
         {
             let mut f = std::fs::File::create(&p).unwrap();

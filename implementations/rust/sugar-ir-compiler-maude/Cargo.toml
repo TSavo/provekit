@@ -4,14 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt bundled Maude IR compiler for equational theory obligations."
+description = "Sugar bundled Maude IR compiler for equational theory obligations."
 
 [lib]
 name = "sugar_ir_compiler_maude"
 path = "src/lib.rs"
 
 [[bin]]
-name = "provekit-ir-maude"
+name = "sugar-ir-maude"
 path = "src/main.rs"
 
 [dependencies]

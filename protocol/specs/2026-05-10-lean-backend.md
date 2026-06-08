@@ -10,7 +10,7 @@
 
 The Lean backend adds a Lean 4 plus mathlib seat to the prove portfolio. It is parallel to the existing Coq seat: the IR compiler lowers an `IrFormula` to a single Lean file, and the verifier adapter asks Lean's kernel to check that file through `lake env lean`.
 
-The compiler imports `Mathlib`, states the obligation as `theorem provekit_obligation : <IR proposition>`, and supplies a tactic proof attempt using mathlib automation. The generated file also runs `#print axioms provekit_obligation` so the verifier can record the checked proof's trust base.
+The compiler imports `Mathlib`, states the obligation as `theorem sugar_obligation : <IR proposition>`, and supplies a tactic proof attempt using mathlib automation. The generated file also runs `#print axioms sugar_obligation` so the verifier can record the checked proof's trust base.
 
 ## 2. Coverage Declaration
 
@@ -29,7 +29,7 @@ The Lean solver returns `Discharged` only when all of the following hold:
 
 - `lake env lean <file.lean>` exits with status 0.
 - The emitted file contains no `sorry`.
-- The output from `#print axioms provekit_obligation` contains no `sorryAx`.
+- The output from `#print axioms sugar_obligation` contains no `sorryAx`.
 - Lean reports no errors.
 
 Any failure, timeout, elaboration error, tactic failure, `sorry`, or `sorryAx` produces `Unknown` at the portfolio level, represented by `ObligationVerdict::Undecidable` in the Rust verifier.
@@ -42,8 +42,8 @@ Each Lean invocation records a receipt with:
 
 - `leanVersion`: output from `lean --version`.
 - `mathlibCommit`: the resolved mathlib revision from `lake-manifest.json`.
-- `emittedFileCid`: `blake3-512:<hex>` over the emitted Lean file bytes, computed through `provekit-canonicalizer`.
-- `axioms`: the axiom set reported by `#print axioms provekit_obligation`.
+- `emittedFileCid`: `blake3-512:<hex>` over the emitted Lean file bytes, computed through `sugar-canonicalizer`.
+- `axioms`: the axiom set reported by `#print axioms sugar_obligation`.
 
 This matches the content-addressed receipt model: the proof text has a CID, the kernel version is explicit, the mathlib revision is explicit, and the axiom set is the proof's trust base.
 

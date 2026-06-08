@@ -5,7 +5,7 @@ Parent arc: #943.
 Base commit: 355ed128.
 Branch: bootstrap/D7-v5-retire-stub-body-variant-arg.
 
-D7-v5 extends implementations/rust/provekit-realize-rust-core/src/lib.rs.
+D7-v5 extends implementations/rust/sugar-realize-rust-core/src/lib.rs.
 The only new realizer shape is:
 
 return(call:new(receiver, [call:<Variant>(Value::<Variant>, [first_param])]))
@@ -31,5 +31,5 @@ That is a nested method-call argument, so D7-v5 records it as CHARACTERIZED_DIFF
 The D7-v4 receipt files were refreshed for the current realizer output.
 bootstrap/D7-v5/source_round_trip_receipt.json records the mixed v5 outcome.
 
-Next: D7-v6 should retire the string method:into(s, []) argument surface and then add the submodule-level source round-trip test for implementations/rust/provekit-canonicalizer/src/value.rs.
+Next: D7-v6 should retire the string method:into(s, []) argument surface and then add the submodule-level source round-trip test for implementations/rust/sugar-canonicalizer/src/value.rs.
 That submodule-level test should cover the closed Value::null, Value::boolean, Value::integer, and Value::string cluster before Value::array or Value::object are attempted.

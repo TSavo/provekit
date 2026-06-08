@@ -1,0 +1,4 @@
+name = "python-pytest"
+command = ["sugar-emit-python-pytest", "--rpc"]
+working_dir = "."
+protocol_versions = ["pep/1.7.0"]

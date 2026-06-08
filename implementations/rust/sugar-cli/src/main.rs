@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-cli: user-facing CLI binary.
+// sugar-cli: user-facing CLI binary.
 //
 // Pure routing crate: parses argv via clap, dispatches into the
 // existing workspace crates (canonicalizer, proof-envelope,
@@ -123,7 +123,7 @@ enum Cmd {
     /// directions over one .proof envelope. Tron-named for the kit-side
     /// fingerprint scanner.
     Recognize(cmd_recognize::RecognizeArgs),
-    /// Initialize a project: provekit.toml, .provekit/, sample invariant, GitHub Action.
+    /// Initialize a project: sugar.toml, .sugar/, sample invariant, GitHub Action.
     Init(InitArgs),
     /// Dispatch the configured lift surface and write its ProofIR term JSON (no `.proof` envelope; use `mint` for that).
     Lift(LiftArgs),
@@ -262,7 +262,7 @@ pub struct ComposeArgs {
 
 fn main() -> ExitCode {
     // Structured logging to stderr. Default level: warn, so a bare
-    // `provekit mint`/`prove` run is silent. Override via RUST_LOG:
+    // `sugar mint`/`prove` run is silent. Override via RUST_LOG:
     //   RUST_LOG=info   -> pipeline narrative
     //   RUST_LOG=debug  -> per-item decisions
     //   RUST_LOG=trace  -> RPC payloads, RA queries
@@ -295,7 +295,7 @@ fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::builder()
         .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
         .from_env_lossy();
-    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+    if let Ok(path) = std::env::var("SUGAR_LOG_FILE") {
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -310,7 +310,7 @@ fn init_tracing() {
             }
             Err(error) => {
                 eprintln!(
-                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                    "warning: could not open SUGAR_LOG_FILE {path}: {error}; logging to stderr"
                 );
                 tracing_subscriber::fmt()
                     .with_writer(std::io::stderr)

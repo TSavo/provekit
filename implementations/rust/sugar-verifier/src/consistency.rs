@@ -3,7 +3,7 @@
 // Receipt 1: test-assertion consistency pass.
 //
 // A test that asserts several facts about the SAME term (e.g. a bare
-// variable `x`) lifts, after same-name coalescing in provekit-lift, to a
+// variable `x`) lifts, after same-name coalescing in sugar-lift, to a
 // single contract whose `inv` is the CONJUNCTION of those facts. When the
 // conjuncts are mutually satisfiable the test's assertions are mutually
 // CONSISTENT; when they contradict (`assert x is None` AND
@@ -149,7 +149,7 @@ fn consistency_verdict(raw: ObligationVerdict) -> (ObligationVerdict, &'static s
 
 /// Settle a contract carrying a `custom` execution-witness EvidenceTerm by
 /// RECOMPUTE: write the EvidenceTerm to a temp `.proof` and spawn the kit's
-/// discharge command (`$PROVEKIT_WITNESS_DISCHARGE <witness.proof> <project>`),
+/// discharge command (`$SUGAR_WITNESS_DISCHARGE <witness.proof> <project>`),
 /// which re-runs the pinned test. The verifier stays language-blind; the kit
 /// owns recompute. Returns None when there is no custom witness (caller falls
 /// through to symbolic solving). FAIL-CLOSED: missing config / spawn error /
@@ -172,15 +172,15 @@ fn try_witness_discharge(
     };
     // Route to the TOOL-specific discharge command (federation): the certificate
     // names its `tool`; the kit's manifest declared the matching command, which
-    // `cmd_prove` exported as PROVEKIT_WITNESS_DISCHARGE_<TOOL>. Fall back to the
-    // generic PROVEKIT_WITNESS_DISCHARGE (manual override). Fail-closed if neither.
+    // `cmd_prove` exported as SUGAR_WITNESS_DISCHARGE_<TOOL>. Fall back to the
+    // generic SUGAR_WITNESS_DISCHARGE (manual override). Fail-closed if neither.
     let tool = evidence
         .get("certificate")
         .and_then(|c| c.get("tool"))
         .and_then(|t| t.as_str())
         .unwrap_or("");
     let tool_key = format!(
-        "PROVEKIT_WITNESS_DISCHARGE_{}",
+        "SUGAR_WITNESS_DISCHARGE_{}",
         tool.to_uppercase()
             .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
     );
@@ -188,7 +188,7 @@ fn try_witness_discharge(
         .ok()
         .filter(|c| !c.trim().is_empty())
         .or_else(|| {
-            std::env::var("PROVEKIT_WITNESS_DISCHARGE")
+            std::env::var("SUGAR_WITNESS_DISCHARGE")
                 .ok()
                 .filter(|c| !c.trim().is_empty())
         }) {
@@ -201,11 +201,11 @@ fn try_witness_discharge(
             )))
         }
     };
-    let project = match std::env::var("PROVEKIT_WITNESS_PROJECT_DIR") {
+    let project = match std::env::var("SUGAR_WITNESS_PROJECT_DIR") {
         Ok(p) if !p.trim().is_empty() => p,
         _ => {
             return Some(undecidable(
-                "custom witness present but PROVEKIT_WITNESS_PROJECT_DIR unset (fail-closed)"
+                "custom witness present but SUGAR_WITNESS_PROJECT_DIR unset (fail-closed)"
                     .into(),
             ))
         }
@@ -220,7 +220,7 @@ fn try_witness_discharge(
     let mut parts = cmd.split_whitespace();
     let prog = match parts.next() {
         Some(p) => p,
-        None => return Some(undecidable("empty PROVEKIT_WITNESS_DISCHARGE".into())),
+        None => return Some(undecidable("empty SUGAR_WITNESS_DISCHARGE".into())),
     };
     // Spawn with cwd = the project root so a manifest's RELATIVE discharge
     // command (e.g. `PYTHONPATH=../../implementations/...`) resolves the same
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn witness_arm_routes_by_tool_and_fails_closed() {
         let dir = std::env::temp_dir();
-        let script = dir.join("provekit_test_witness_discharge.sh");
+        let script = dir.join("sugar_test_witness_discharge.sh");
         let write_stub = |verdict: &str| {
             std::fs::write(
                 &script,
@@ -639,10 +639,10 @@ mod tests {
         let call =
             || try_witness_discharge(&body, "blake3-512:cid".into(), "test_x".into()).unwrap();
 
-        std::env::set_var("PROVEKIT_WITNESS_PROJECT_DIR", &dir);
-        // routed to PROVEKIT_WITNESS_DISCHARGE_STUBTOOL (tool="stubtool")
+        std::env::set_var("SUGAR_WITNESS_PROJECT_DIR", &dir);
+        // routed to SUGAR_WITNESS_DISCHARGE_STUBTOOL (tool="stubtool")
         write_stub("DISCHARGED");
-        std::env::set_var("PROVEKIT_WITNESS_DISCHARGE_STUBTOOL", &script);
+        std::env::set_var("SUGAR_WITNESS_DISCHARGE_STUBTOOL", &script);
         let r = call();
         assert_eq!(r.verdict, ObligationVerdict::Discharged);
         assert!(r.witnessed, "discharge must be flagged witnessed");
@@ -653,13 +653,13 @@ mod tests {
         assert!(!r.witnessed);
 
         // fail-closed: no command for this tool, no generic fallback
-        std::env::remove_var("PROVEKIT_WITNESS_DISCHARGE_STUBTOOL");
-        std::env::remove_var("PROVEKIT_WITNESS_DISCHARGE");
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE_STUBTOOL");
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE");
         let r = call();
         assert_eq!(r.verdict, ObligationVerdict::Undecidable);
         assert!(!r.witnessed);
 
-        std::env::remove_var("PROVEKIT_WITNESS_PROJECT_DIR");
+        std::env::remove_var("SUGAR_WITNESS_PROJECT_DIR");
         let _ = std::fs::remove_file(&script);
     }
 

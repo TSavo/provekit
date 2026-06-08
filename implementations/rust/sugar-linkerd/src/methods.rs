@@ -14,23 +14,23 @@
 //     spawn the kit's LSP plugin binary, send a JSON-RPC `parse` request,
 //     read the `{declarations, callEdges}` response, and map into
 //     `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
-//   For `zig`: spawn `provekit-lsp-zig` (no args: reads stdin directly).
+//   For `zig`: spawn `sugar-lsp-zig` (no args: reads stdin directly).
 //     `callEdges` may be omitted from the response and is treated as empty.
-//   For `python`: spawn `provekit-lsp-python` (no args), method `parse`.
-//     Binary is installed from implementations/python/provekit-lift-py-tests.
-//   For `java`: spawn `provekit-lsp-java --rpc`, same protocol as go/csharp/ruby.
-//     Requires `mvn package` in implementations/java/provekit-lift-java-core first;
+//   For `python`: spawn `sugar-lsp-python` (no args), method `parse`.
+//     Binary is installed from implementations/python/sugar-lift-py-tests.
+//   For `java`: spawn `sugar-lsp-java --rpc`, same protocol as go/csharp/ruby.
+//     Requires `mvn package` in implementations/java/sugar-lift-java-core first;
 //     returns LifterUnavailable if the binary is not on PATH.
-//   For `swift`: spawn `provekit-lsp-swift` (no args: reads stdin directly).
+//   For `swift`: spawn `sugar-lsp-swift` (no args: reads stdin directly).
 //     Binary is built via `swift build -c release` in implementations/swift.
-//   For `cpp`: spawn `provekit-lsp-cpp` (no args: native binary, int main()).
-//     Binary built via `g++ -std=c++17 -o provekit-lsp-cpp main.cpp`.
-//   For `c`: spawn `provekit-lsp-c --rpc` (requires --rpc flag).
-//     Binary built via `cc -std=c11 -o provekit-lsp-c main.c`.
-//   For `php`: spawn `provekit-lsp-php` (no args: reads stdin directly).
+//   For `cpp`: spawn `sugar-lsp-cpp` (no args: native binary, int main()).
+//     Binary built via `g++ -std=c++17 -o sugar-lsp-cpp main.cpp`.
+//   For `c`: spawn `sugar-lsp-c --rpc` (requires --rpc flag).
+//     Binary built via `cc -std=c11 -o sugar-lsp-c main.c`.
+//   For `php`: spawn `sugar-lsp-php` (no args: reads stdin directly).
 //     Binary is installed from implementations/php/bin.
-//   For `scala`: spawn `provekit-lsp-scala` (no args: reads stdin directly).
-//     Wrapper lives at implementations/scala/bin/provekit-lsp-scala.
+//   For `scala`: spawn `sugar-lsp-scala` (no args: reads stdin directly).
+//     Wrapper lives at implementations/scala/bin/sugar-lsp-scala.
 //
 // Binary discovery order (for subprocess kits):
 //   1. Check PATH for the named binary.
@@ -644,19 +644,19 @@ enum LiftError {
 ///
 /// Dispatch:
 /// - `rust`: in-process via `sugar_lift::lift_path`.
-/// - `go`: subprocess `provekit-lsp-go` (no args), method `parse`.
-/// - `csharp`: subprocess `provekit-lsp-csharp --rpc`, method `parse`.
-/// - `ruby`: subprocess `provekit-lsp-ruby --rpc`, method `parse`.
-/// - `zig`: subprocess `provekit-lsp-zig` (no args), method `parse`; `callEdges`
+/// - `go`: subprocess `sugar-lsp-go` (no args), method `parse`.
+/// - `csharp`: subprocess `sugar-lsp-csharp --rpc`, method `parse`.
+/// - `ruby`: subprocess `sugar-lsp-ruby --rpc`, method `parse`.
+/// - `zig`: subprocess `sugar-lsp-zig` (no args), method `parse`; `callEdges`
 ///   field may be absent from response and is treated as empty.
-/// - `python`: subprocess `provekit-lsp-python` (no args), method `parse`.
-/// - `java`: subprocess `provekit-lsp-java --rpc`, method `parse`; binary must be
-///   installed via `mvn package` in implementations/java/provekit-lift-java-core.
-/// - `swift`: subprocess `provekit-lsp-swift` (no args), method `parse`.
-/// - `cpp`: subprocess `provekit-lsp-cpp` (no args), method `parse`.
-/// - `c`: subprocess `provekit-lsp-c --rpc`, method `parse`.
-/// - `php`: subprocess `provekit-lsp-php` (no args), method `parse`.
-/// - `scala`: subprocess `provekit-lsp-scala` (no args), method `parse`.
+/// - `python`: subprocess `sugar-lsp-python` (no args), method `parse`.
+/// - `java`: subprocess `sugar-lsp-java --rpc`, method `parse`; binary must be
+///   installed via `mvn package` in implementations/java/sugar-lift-java-core.
+/// - `swift`: subprocess `sugar-lsp-swift` (no args), method `parse`.
+/// - `cpp`: subprocess `sugar-lsp-cpp` (no args), method `parse`.
+/// - `c`: subprocess `sugar-lsp-c --rpc`, method `parse`.
+/// - `php`: subprocess `sugar-lsp-php` (no args), method `parse`.
+/// - `scala`: subprocess `sugar-lsp-scala` (no args), method `parse`.
 async fn lift_source(
     kit_id: &str,
     file: &str,
@@ -666,10 +666,10 @@ async fn lift_source(
         "rust" => lift_rust_source(file, source).await,
 
         "go" => {
-            let binary = find_binary("provekit-lsp-go").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-go").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'go' binary not found on PATH; install via: \
-                     cd implementations/go && go install ./cmd/provekit-lsp-go"
+                     cd implementations/go && go install ./cmd/sugar-lsp-go"
                         .to_string(),
                 )
             })?;
@@ -677,7 +677,7 @@ async fn lift_source(
         }
 
         "csharp" => {
-            let binary = find_binary("provekit-lsp-csharp").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-csharp").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'csharp' binary not found on PATH; install via: \
                      cd implementations/csharp && dotnet publish -c Release -o ~/.local/bin"
@@ -688,10 +688,10 @@ async fn lift_source(
         }
 
         "ruby" => {
-            let binary = find_binary("provekit-lsp-ruby").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-ruby").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'ruby' binary not found on PATH; install via: \
-                     cp implementations/ruby/bin/provekit-lsp-ruby ~/.local/bin/ && chmod +x ~/.local/bin/provekit-lsp-ruby"
+                     cp implementations/ruby/bin/sugar-lsp-ruby ~/.local/bin/ && chmod +x ~/.local/bin/sugar-lsp-ruby"
                         .to_string(),
                 )
             })?;
@@ -699,10 +699,10 @@ async fn lift_source(
         }
 
         "zig" => {
-            let binary = find_binary("provekit-lsp-zig").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-zig").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'zig' binary not found on PATH; install via: \
-                     cd implementations/zig/provekit-lsp-zig && zig build -Doptimize=ReleaseSafe"
+                     cd implementations/zig/sugar-lsp-zig && zig build -Doptimize=ReleaseSafe"
                         .to_string(),
                 )
             })?;
@@ -712,11 +712,11 @@ async fn lift_source(
         }
 
         "python" => {
-            let binary = find_binary("provekit-lsp-python").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-python").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'python' binary not found on PATH; install via: \
                      cd implementations/python && \
-                     pip install -e provekit-lift-py-tests"
+                     pip install -e sugar-lift-py-tests"
                         .to_string(),
                 )
             })?;
@@ -724,12 +724,12 @@ async fn lift_source(
         }
 
         "java" => {
-            let binary = find_binary("provekit-lsp-java").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-java").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'java' binary not found on PATH; install via: \
-                     cd implementations/java/provekit-lift-java-core && \
+                     cd implementations/java/sugar-lift-java-core && \
                      mvn package -q && \
-                     cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/"
+                     cp target/appassembler/bin/sugar-lsp-java ~/.local/bin/"
                         .to_string(),
                 )
             })?;
@@ -737,11 +737,11 @@ async fn lift_source(
         }
 
         "swift" => {
-            let binary = find_binary("provekit-lsp-swift").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-swift").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'swift' binary not found on PATH; install via: \
                      cd implementations/swift && swift build -c release && \
-                     cp .build/release/provekit-lsp-swift ~/.local/bin/"
+                     cp .build/release/sugar-lsp-swift ~/.local/bin/"
                         .to_string(),
                 )
             })?;
@@ -750,12 +750,12 @@ async fn lift_source(
         }
 
         "cpp" => {
-            let binary = find_binary("provekit-lsp-cpp").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-cpp").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'cpp' binary not found on PATH; install via: \
-                     cd implementations/cpp/provekit-lsp-cpp && \
-                     g++ -std=c++17 -O2 -o provekit-lsp-cpp main.cpp && \
-                     cp provekit-lsp-cpp ~/.local/bin/"
+                     cd implementations/cpp/sugar-lsp-cpp && \
+                     g++ -std=c++17 -O2 -o sugar-lsp-cpp main.cpp && \
+                     cp sugar-lsp-cpp ~/.local/bin/"
                         .to_string(),
                 )
             })?;
@@ -764,12 +764,12 @@ async fn lift_source(
         }
 
         "c" => {
-            let binary = find_binary("provekit-lsp-c").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-c").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'c' binary not found on PATH; install via: \
-                     cd implementations/c/provekit-lsp-c && \
-                     cc -std=c11 -Wall -o provekit-lsp-c main.c && \
-                     cp provekit-lsp-c ~/.local/bin/"
+                     cd implementations/c/sugar-lsp-c && \
+                     cc -std=c11 -Wall -o sugar-lsp-c main.c && \
+                     cp sugar-lsp-c ~/.local/bin/"
                         .to_string(),
                 )
             })?;
@@ -778,11 +778,11 @@ async fn lift_source(
         }
 
         "php" => {
-            let binary = find_binary("provekit-lsp-php").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-php").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'php' binary not found on PATH; install via: \
                      cd implementations/php && composer install && \
-                     cp bin/provekit-lsp-php ~/.local/bin/"
+                     cp bin/sugar-lsp-php ~/.local/bin/"
                         .to_string(),
                 )
             })?;
@@ -790,12 +790,12 @@ async fn lift_source(
         }
 
         "scala" => {
-            let binary = find_binary("provekit-lsp-scala").ok_or_else(|| {
+            let binary = find_binary("sugar-lsp-scala").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'scala' binary not found on PATH; install via: \
                      cd implementations/scala && \
-                     chmod +x bin/provekit-lsp-scala && \
-                     ln -sf \"$PWD/bin/provekit-lsp-scala\" ~/.local/bin/provekit-lsp-scala"
+                     chmod +x bin/sugar-lsp-scala && \
+                     ln -sf \"$PWD/bin/sugar-lsp-scala\" ~/.local/bin/sugar-lsp-scala"
                         .to_string(),
                 )
             })?;
@@ -1179,7 +1179,7 @@ async fn lift_rust_source(
 
     let result = tokio::task::spawn_blocking(move || {
         let tmp_dir = std::env::temp_dir().join(format!(
-            "provekit-linkerd-lift-{}",
+            "sugar-linkerd-lift-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.subsec_nanos())
@@ -1220,11 +1220,11 @@ async fn lift_rust_source(
                 post: post_v.clone(),
                 inv: inv_v.clone(),
                 out_binding: decl.out_binding.clone(),
-                produced_by: "provekit-linkerd@0.1.0".into(),
+                produced_by: "sugar-linkerd@0.1.0".into(),
                 produced_at: "2026-05-04T00:00:00.000Z".into(),
                 input_cids: vec![],
                 authoring: Authoring::Lift {
-                    lifter: "provekit-lift".into(),
+                    lifter: "sugar-lift".into(),
                     evidence: format!("lifted from `{}` annotations", decl.name),
                     source_cid: None,
                 },

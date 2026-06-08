@@ -1,5 +1,5 @@
-// A MISSING-EDGE bug, demonstrated through the real ProvekIt verbs
-// (`provekit mint` -> the rust lifter; `provekit verify` -> compose + discharge).
+// A MISSING-EDGE bug, demonstrated through the real Sugar verbs
+// (`sugar mint` -> the rust lifter; `sugar verify` -> compose + discharge).
 //
 // A bug is a missing edge: a call site whose precondition no producer's
 // postcondition establishes, so the composition `post(producer) -> pre(consumer)`

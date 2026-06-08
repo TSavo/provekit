@@ -1,15 +1,15 @@
 {
-  "name": "@provekit/ts-kit",
+  "name": "@sugar/ts-kit",
   "version": "1.0.0",
-  "description": "The TypeScript kit for ProvekIt: built-in symbol bridges to V8 / ECMA-262 / IEEE 754 / hardware",
+  "description": "The TypeScript kit for Sugar: built-in symbol bridges to V8 / ECMA-262 / IEEE 754 / hardware",
   "files": [
     "dist/",
     "lib/",
-    ".provekit/"
+    ".sugar/"
   ],
-  "provekit": {
+  "sugar": {
     "proofHash": "blake3-512:d6fc394e96fd0d147ca96e8291b17141915ba803d33c92ca44afcdf1b061e57da683fc7fa699754c43b20f973d6d943449b20e212ba4de2cf7e2c3256ba50606",
-    "catalogPath": ".provekit/ts-kit-catalog.json",
+    "catalogPath": ".sugar/ts-kit-catalog.json",
     "kitVersion": "ts-kit@1.0",
     "publicKey": "MCowBQYDK2VwAyEABj0kPhB5ZRz+PMSb420yiwI+ihus4yWjI1ezzH40WkE="
   }

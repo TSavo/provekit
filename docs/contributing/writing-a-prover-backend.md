@@ -77,7 +77,7 @@ The backend receives canonical IR. It must translate to its own input language. 
 
 ### Pattern A: SMT-LIB emitter
 
-For SMT-based backends (Z3, CVC5, Yices). The kit's `provekit-ir-compiler-smt-lib` emits SMT-LIB; the backend pipes it to the solver, parses the response.
+For SMT-based backends (Z3, CVC5, Yices). The kit's `sugar-ir-compiler-smt-lib` emits SMT-LIB; the backend pipes it to the solver, parses the response.
 
 The Rust kit's SMT-LIB emitter is generated from the CDDL grammar; an alternative-backend implementation that bridges to a different SMT solver can reuse the emitter directly.
 
@@ -105,7 +105,7 @@ A user who doesn't trust the signing key can re-run the prover offline. The prot
 
 ## Configuration
 
-A user configures which backends are trusted in `provekit.config.yaml`:
+A user configures which backends are trusted in `sugar.config.yaml`:
 
 ```yaml
 trusted_provers:

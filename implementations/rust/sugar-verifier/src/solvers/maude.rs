@@ -285,7 +285,7 @@ fn run_maude_file(
 ) -> Result<crate::solvers::ceta::CommandCapture, String> {
     let started = Instant::now();
     let tmp_dir = std::env::temp_dir().join(format!(
-        "provekit-maude-{}-{}",
+        "sugar-maude-{}-{}",
         std::process::id(),
         started.elapsed().as_nanos()
     ));

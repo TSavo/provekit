@@ -1,9 +1,0 @@
-{
-  "schemaVersion": "1",
-  "protocolName": "provekit-protocol",
-  "protocolVersion": "v1.6.3",
-  "catalogCid": "blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d",
-  "declaredAt": "2026-05-09T00:00:00Z",
-  "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:qniMpkOiVMExFJ3SVE1dyTXCFQ6xtdxIW77PEQUc+0Iy8dyceu3C3VwdUJNZdo2X4NWNVuytWv87Ot1/GiUlCg=="
-}

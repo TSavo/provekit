@@ -163,9 +163,9 @@ When a new effect and its corresponding discharge memento are added concurrently
 
 ## §6. Cross-references
 
-- The `Effect` enum and `to_value()` implementation live in `implementations/rust/provekit-walk/src/contract.rs`.
+- The `Effect` enum and `to_value()` implementation live in `implementations/rust/sugar-walk/src/contract.rs`.
 - `check_opacity_effects` and `compose_function_contracts_checked` are in the same file.
-- `MementoPool::insert()` is in `implementations/rust/provekit-verifier/src/types.rs`.
+- `MementoPool::insert()` is in `implementations/rust/sugar-verifier/src/types.rs`.
 - Individual memento specs define their own header fields, CID construction rules, and discharge semantics. This classification spec maps effects to memento kinds; the memento specs define what each kind means.
 - For effect-specific exceptions (e.g., `PossibleAliasing` requiring ALL pairs discharged, not just one), see the per-effect memento spec.
 

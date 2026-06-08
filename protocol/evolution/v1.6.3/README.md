@@ -12,7 +12,7 @@ v1.6.2 catalog
 ```
 
 The transition is patch-level under PEP because it is an
-extension-surface clarification over the existing `provekit-lift/1`
+extension-surface clarification over the existing `sugar-lift/1`
 wire protocol. It does not change core substrate verification, ProofIR
 grammar, canonicalization, `.proof` format, cross-kit fixture semantics,
 or proof-producing all-layer lift semantics.
@@ -40,12 +40,12 @@ The already-built PEP body can be re-checked without regenerating the
 witness:
 
 ```bash
-provekit protocol check-evolution \
+sugar protocol check-evolution \
   --body protocol/evolution/v1.6.3/protocol-evolution.body.json \
   --from protocol/evolution/v1.6.3/from-catalog-v1.6.2.json \
   --to protocol/evolution/v1.6.3/to-catalog-v1.6.3.json \
   --policy protocol/evolution/v1.6.3/bootstrap-policy.json \
   --verifier protocol/evolution/v1.6.3/bootstrap-verifier.json \
   --catalog-diff protocol/evolution/v1.6.3/catalog-diff.json \
-  --attestation .provekit/catalog-signatures/v1.6.3.json
+  --attestation .sugar/catalog-signatures/v1.6.3.json
 ```

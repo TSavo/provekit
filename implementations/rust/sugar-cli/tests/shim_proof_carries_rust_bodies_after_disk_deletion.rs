@@ -5,7 +5,7 @@ use std::path::PathBuf;
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("provekit-cli has rust workspace parent")
+        .expect("sugar-cli has rust workspace parent")
         .parent()
         .expect("rust workspace has implementations parent")
         .parent()

@@ -212,7 +212,7 @@ pub fn run(args: SelfCheckArgs) -> u8 {
             {
                 failed = true;
                 eprintln!(
-                    "self-check --oracle requested but the oracle resolved 0/{} receivers; the census is SYNTACTIC-ONLY (provekit-linkerd unreachable or rust-analyzer not ready). Set PROVEKIT_LINKERD_BIN and run doctor.",
+                    "self-check --oracle requested but the oracle resolved 0/{} receivers; the census is SYNTACTIC-ONLY (sugar-linkerd unreachable or rust-analyzer not ready). Set SUGAR_LINKERD_BIN and run doctor.",
                     scoreboard.oracle.attempted
                 );
             }
@@ -235,11 +235,11 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
     let target_rel = repo_relative(&repo_root, &target_abs);
     let bin = std::env::current_exe().map_err(|e| format!("resolve current executable: {e}"))?;
     let scratch = std::env::temp_dir()
-        .join("provekit-self-check")
+        .join("sugar-self-check")
         .join(sanitize_path_component(&target_rel));
     recreate_dir(&scratch)?;
 
-    let imports = target_abs.join(".provekit").join("imports");
+    let imports = target_abs.join(".sugar").join("imports");
     recreate_imports(&imports)?;
 
     let libsugar = repo_root.join("implementations/rust/libsugar");
@@ -421,7 +421,7 @@ fn discover_repo_root() -> Result<PathBuf, String> {
     for candidate in cwd.ancestors() {
         if candidate.join("implementations/rust/Cargo.toml").is_file()
             && candidate
-                .join("docs/self-application/GOAL-provekit-proves-provekit.md")
+                .join("docs/self-application/GOAL-sugar-proves-sugar.md")
                 .is_file()
         {
             return candidate
@@ -429,7 +429,7 @@ fn discover_repo_root() -> Result<PathBuf, String> {
                 .map_err(|e| format!("canonicalize repo root {}: {e}", candidate.display()));
         }
     }
-    Err("could not locate provekit repo root from current directory".to_string())
+    Err("could not locate sugar repo root from current directory".to_string())
 }
 
 fn resolve_target(repo_root: &Path, target: Option<&PathBuf>) -> Result<PathBuf, String> {
@@ -444,10 +444,10 @@ fn resolve_target(repo_root: &Path, target: Option<&PathBuf>) -> Result<PathBuf,
     if !abs.exists() {
         return Err(format!("target does not exist: {}", abs.display()));
     }
-    if !abs.join(".provekit/config.toml").is_file() {
+    if !abs.join(".sugar/config.toml").is_file() {
         return Err(format!(
-            "target is not a provekit kit, missing {}",
-            abs.join(".provekit/config.toml").display()
+            "target is not a sugar kit, missing {}",
+            abs.join(".sugar/config.toml").display()
         ));
     }
     abs.canonicalize()
@@ -660,11 +660,11 @@ fn mint_project(
         .arg(out_dir)
         .arg("--json")
         .arg("--quiet")
-        .env("RUST_LOG", "info,provekit_walk_rpc=info");
+        .env("RUST_LOG", "info,sugar_walk_rpc=info");
     if oracle {
-        cmd.env("PROVEKIT_RESOLVE_ORACLE", "rust-analyzer");
+        cmd.env("SUGAR_RESOLVE_ORACLE", "rust-analyzer");
     } else {
-        cmd.env_remove("PROVEKIT_RESOLVE_ORACLE");
+        cmd.env_remove("SUGAR_RESOLVE_ORACLE");
     }
     let output = cmd
         .stdout(Stdio::piped())
@@ -746,14 +746,14 @@ fn prove_project(
 }
 
 fn child_stderr() -> Result<Stdio, String> {
-    let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") else {
+    let Ok(path) = std::env::var("SUGAR_LOG_FILE") else {
         return Ok(Stdio::inherit());
     };
     let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .map_err(|e| format!("open PROVEKIT_LOG_FILE {path} for child stderr: {e}"))?;
+        .map_err(|e| format!("open SUGAR_LOG_FILE {path} for child stderr: {e}"))?;
     Ok(Stdio::from(file))
 }
 
@@ -785,7 +785,7 @@ fn stage_dependency_imports_for_mint(
     required_dependencies: &[&str],
     dependency_proofs: &BTreeMap<String, PathBuf>,
 ) -> Result<StagedDependencyImportsGuard, String> {
-    let imports = dependency_root.join(".provekit").join("imports");
+    let imports = dependency_root.join(".sugar").join("imports");
     let mut guard = StagedDependencyImportsGuard::default();
     for required_name in required_dependencies {
         let proof_file = dependency_proofs.get(*required_name).ok_or_else(|| {
@@ -910,7 +910,7 @@ where
 #[cfg(test)]
 // DEPRECATED (#1783): legacy lift-diagnostic panic-site annotation join.
 // Production self-check uses panic_annotations_runtime with target-local
-// .provekit/residue.toml after prove produces panicCensus. Retain this
+// .sugar/residue.toml after prove produces panicCensus. Retain this
 // test-only route until the old tests are migrated or deleted.
 fn build_scoreboard(
     target_rel: &str,
@@ -1428,7 +1428,7 @@ fn emit_scoreboard(scoreboard: &SelfCheckScoreboard, json: bool) {
         .copied()
         .sum();
     let lift_gap_total: usize = scoreboard.bridges.lift_gaps.values().copied().sum();
-    println!("ProvekIt self-check");
+    println!("Sugar self-check");
     println!("target: {}", scoreboard.target);
     println!("catalogCid: {}", scoreboard.catalog_cid);
     println!(
@@ -2043,7 +2043,7 @@ mod tests {
                 .expect("stage dependency import");
 
         let staged = dependency_root
-            .join(".provekit")
+            .join(".sugar")
             .join("imports")
             .join("shim-std.proof");
         assert_eq!(
@@ -2062,7 +2062,7 @@ mod tests {
     fn dependency_import_staging_preserves_existing_identical_proof() {
         let dir = tempfile::tempdir().expect("tempdir");
         let dependency_root = dir.path().join("libsugar");
-        let imports = dependency_root.join(".provekit").join("imports");
+        let imports = dependency_root.join(".sugar").join("imports");
         fs::create_dir_all(&imports).expect("create imports");
         let existing = imports.join("shim-std.proof");
         fs::write(&existing, b"same proof bytes").expect("write existing proof");
@@ -2087,7 +2087,7 @@ mod tests {
     fn dependency_import_staging_refuses_existing_different_proof() {
         let dir = tempfile::tempdir().expect("tempdir");
         let dependency_root = dir.path().join("libsugar");
-        let imports = dependency_root.join(".provekit").join("imports");
+        let imports = dependency_root.join(".sugar").join("imports");
         fs::create_dir_all(&imports).expect("create imports");
         fs::write(imports.join("shim-std.proof"), b"old bytes").expect("write existing proof");
         let proof = dir.path().join("shim-std.proof");
@@ -2345,9 +2345,9 @@ mod tests {
     }
 
     fn write_self_check_residue_manifest(target: &Path, body: &str) {
-        let provekit = target.join(".provekit");
-        fs::create_dir_all(&provekit).expect("create .provekit");
-        fs::write(provekit.join("residue.toml"), body).expect("write residue manifest");
+        let sugar = target.join(".sugar");
+        fs::create_dir_all(&sugar).expect("create .sugar");
+        fs::write(sugar.join("residue.toml"), body).expect("write residue manifest");
     }
 
     #[test]

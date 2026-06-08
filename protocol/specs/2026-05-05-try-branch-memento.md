@@ -211,8 +211,8 @@ cid = "blake3-512:" ++ hex(BLAKE3-512(JCS_bytes))
 
 ## §7. Cross-references
 
-- The `tryCid` value is produced by `llbc_try::extract_try_branches()` in `implementations/rust/provekit-walk/src/llbc_try.rs`. It is the BLAKE3-512 of the JCS-canonical bytes of the `Switch::Match` block implementing the Try-branch shape.
-- The substrate check lives in `EffectSet::check_opacity` and `compose_function_contracts` in `implementations/rust/provekit-walk/src/contract.rs`.
-- The pool indexing lives in `MementoPool::insert` in `implementations/rust/provekit-verifier/src/types.rs`, keyed by `header.tryCid`.
+- The `tryCid` value is produced by `llbc_try::extract_try_branches()` in `implementations/rust/sugar-walk/src/llbc_try.rs`. It is the BLAKE3-512 of the JCS-canonical bytes of the `Switch::Match` block implementing the Try-branch shape.
+- The substrate check lives in `EffectSet::check_opacity` and `compose_function_contracts` in `implementations/rust/sugar-walk/src/contract.rs`.
+- The pool indexing lives in `MementoPool::insert` in `implementations/rust/sugar-verifier/src/types.rs`, keyed by `header.tryCid`.
 - For the `LoopInvariantMemento` (discharges `Effect::OpaqueLoop`), see `2026-05-05-loop-invariant-memento.md`.
 - For the `ClosureBindingMemento` (discharges `Effect::ClosureCapture`), see `2026-05-05-closure-binding-memento.md`.

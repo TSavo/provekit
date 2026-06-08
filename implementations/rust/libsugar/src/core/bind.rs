@@ -205,7 +205,7 @@ pub struct BindLiftEntry {
     #[serde(default)]
     pub witnesses: Vec<BindContractWitness>,
     /// Doc comment lines from rust source (only `///` after the
-    /// `#[provekit::sugar(...)]` attribute). Propagated end-to-end so
+    /// `#[sugar::sugar(...)]` attribute). Propagated end-to-end so
     /// realize can reproduce them on emit.
     #[serde(default, rename = "docLines", alias = "doc_lines")]
     pub doc_lines: Vec<String>,
@@ -360,7 +360,7 @@ pub struct NamedTerm {
     pub term_shape_cid: String,
     pub witnesses: Vec<NamedWitness>,
     /// Doc comment lines (`///` body, without prefix or trailing newline)
-    /// that appear AFTER the `#[provekit::sugar(...)]` attribute. Threaded
+    /// that appear AFTER the `#[sugar::sugar(...)]` attribute. Threaded
     /// through to realize so cycle output preserves source doc comments.
     /// Empty when the source had no post-sugar docs.
     #[serde(default, rename = "docLines", skip_serializing_if = "Vec::is_empty")]
@@ -862,11 +862,11 @@ fn realize_sidecar_hint(term_json: &Json) -> Result<Option<String>, BindError> {
         return Ok(None);
     }
     let sidecar = json!({
-        "kind": "provekit-realize-sidecar",
+        "kind": "sugar-realize-sidecar",
         "terms": sidecar_terms,
     });
     serde_json::to_string(&sidecar)
-        .map(|text| Some(format!("provekit-realize-sidecar:{text}")))
+        .map(|text| Some(format!("sugar-realize-sidecar:{text}")))
         .map_err(|error| BindError::Failed(format!("serialize realize sidecar: {error}")))
 }
 
@@ -1304,7 +1304,7 @@ mod tests {
             "workspaceRoot": "/tmp/numpy-shim",
             "ir": [{
                 "kind": "library-sugar-binding-entry",
-                "file": "provekit_shim_numpy/__init__.py",
+                "file": "sugar_shim_numpy/__init__.py",
                 "source_function_name": "add",
                 "symbol": "numpy.add",
                 "op_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

@@ -43,11 +43,11 @@ This is a conservative simplification. Full RFC 5322 (and RFC 5321 for the SMTP 
 
 ## Implementations that bridge to this reference
 
-- [TypeScript] zod's `z.string().email()`: *bridge planned in `provekit-lift-zod` v0.4*
-- [Python] pydantic's `EmailStr`: *bridge planned in `provekit-lift-pydantic` v0.5*
-- [Java] Bean Validation's `@Email`: *bridge planned in `provekit-lift-java-bean-validation`*
-- [C#] `[EmailAddress]` data annotation: *bridge planned in `Provekit.Lift.DataAnnotations`*
-- [Ruby] active_model `validates :email, format: { with: URI::MailTo::EMAIL_REGEXP }`: *bridge planned in `provekit-lift-active_model`*
+- [TypeScript] zod's `z.string().email()`: *bridge planned in `sugar-lift-zod` v0.4*
+- [Python] pydantic's `EmailStr`: *bridge planned in `sugar-lift-pydantic` v0.5*
+- [Java] Bean Validation's `@Email`: *bridge planned in `sugar-lift-java-bean-validation`*
+- [C#] `[EmailAddress]` data annotation: *bridge planned in `Sugar.Lift.DataAnnotations`*
+- [Ruby] active_model `validates :email, format: { with: URI::MailTo::EMAIL_REGEXP }`: *bridge planned in `sugar-lift-active_model`*
 
 When all five bridges ship, an email validation in any of these languages discharges at Tier 1 against an email validation in any other.
 

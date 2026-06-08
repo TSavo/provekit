@@ -1,7 +1,7 @@
 {
   "kind": "ProtocolEvolutionVerifier",
   "schemaVersion": "1",
-  "name": "provekit-pep-bootstrap-verifier",
+  "name": "sugar-pep-bootstrap-verifier",
   "version": "0.1.0",
   "acceptedTools": [
     {
@@ -11,12 +11,12 @@
     },
     {
       "name": "compute_fixture_cid",
-      "command": "cargo run --manifest-path implementations/rust/Cargo.toml -p provekit-canonicalizer --bin compute_fixture_cid -- <json>",
+      "command": "cargo run --manifest-path implementations/rust/Cargo.toml -p sugar-canonicalizer --bin compute_fixture_cid -- <json>",
       "purpose": "Recompute JCS-based CIDs for catalog snapshots and PEP JSON bodies."
     },
     {
-      "name": "provekit verify-protocol --signed",
-      "command": "cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-cli protocol::tests::embedded_signature_verifies_against_embedded_pubkey",
+      "name": "sugar verify-protocol --signed",
+      "command": "cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-cli protocol::tests::embedded_signature_verifies_against_embedded_pubkey",
       "purpose": "Verify embedded catalog signature path."
     }
   ],

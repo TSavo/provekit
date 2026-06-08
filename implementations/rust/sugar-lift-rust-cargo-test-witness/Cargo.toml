@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt cargo-test WITNESS lifter: run a crate's tests, content-address the per-test pass/fail outcomes into ONE witness-package bundle, and emit a signed WitnessPackageMemento + custom-evidence contract. Rust parity for the python pytest-witness kit."
+description = "Sugar cargo-test WITNESS lifter: run a crate's tests, content-address the per-test pass/fail outcomes into ONE witness-package bundle, and emit a signed WitnessPackageMemento + custom-evidence contract. Rust parity for the python pytest-witness kit."
 
 [lib]
 doctest = false

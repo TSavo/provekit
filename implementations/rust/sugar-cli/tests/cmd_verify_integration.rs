@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// End-to-end integration test for `provekit verify` (PR-9, #1405).
+// End-to-end integration test for `sugar verify` (PR-9, #1405).
 //
 // Builds a real `.proof` catalog on disk (a contract claim + its bridge,
-// minted via the claim-envelope kit, exactly as `provekit lift`/`mint`
-// would emit), then invokes the `provekit verify --project <dir> --json`
+// minted via the claim-envelope kit, exactly as `sugar lift`/`mint`
+// would emit), then invokes the `sugar verify --project <dir> --json`
 // binary and asserts the verification receipt:
 //
 //   - the contract claim is enumerated and discharged,
@@ -34,13 +34,13 @@ fn unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("provekit-verify-it-{stamp}-{suffix}"));
+    let p = std::env::temp_dir().join(format!("sugar-verify-it-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }
 
 /// Compute the v1.1-flat member CID + canonical bytes for a member
-/// envelope, exactly as `provekit-verifier::load_all_proofs` re-derives
+/// envelope, exactly as `sugar-verifier::load_all_proofs` re-derives
 /// it: strip `cid` / `producerSignature`, JCS-encode, blake3-512.
 fn flat_member(mut env: Json) -> (String, Vec<u8>) {
     if let Json::Object(map) = &mut env {
@@ -80,8 +80,8 @@ fn json_to_canonical_jcs(j: &Json) -> String {
 /// project dir.
 fn publish_claim_project(suffix: &str, name: &str, target_pre_body: Json) -> PathBuf {
     let dir = unique_dir(suffix);
-    let proof_dir = dir.join(".provekit");
-    fs::create_dir_all(&proof_dir).expect("mkdir .provekit");
+    let proof_dir = dir.join(".sugar");
+    fs::create_dir_all(&proof_dir).expect("mkdir .sugar");
 
     let signer_seed: Ed25519Seed = [0x42u8; 32];
     let declared_at = "2026-04-30T00:00:00.000Z";
@@ -189,7 +189,7 @@ fn publish_violated_claim_project() -> PathBuf {
     )
 }
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     // CARGO_BIN_EXE_<name> is set by cargo for integration tests of a
     // binary crate.
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
@@ -203,9 +203,9 @@ fn z3_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Run `provekit verify --project <p> --json` and return (receipt, exit_code).
+/// Run `sugar verify --project <p> --json` and return (receipt, exit_code).
 fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) {
-    let out = Command::new(provekit_bin())
+    let out = Command::new(sugar_bin())
         .arg("verify")
         .arg("--project")
         .arg(project)
@@ -213,7 +213,7 @@ fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) 
         .arg(witness_dir)
         .arg("--json")
         .output()
-        .expect("spawn provekit verify");
+        .expect("spawn sugar verify");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let receipt = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"));
@@ -246,8 +246,8 @@ fn verify_lia_claim_routes_to_smt_and_mints_witness() {
 
     // Emit the receipt under a stable marker so a real sample can be
     // captured for documentation:
-    //   PROVEKIT_VERIFY_SAMPLE=1 cargo test ... -- --nocapture
-    if std::env::var("PROVEKIT_VERIFY_SAMPLE").is_ok() {
+    //   SUGAR_VERIFY_SAMPLE=1 cargo test ... -- --nocapture
+    if std::env::var("SUGAR_VERIFY_SAMPLE").is_ok() {
         eprintln!(
             "SAMPLE-RECEIPT\n{}",
             serde_json::to_string_pretty(&receipt).unwrap()

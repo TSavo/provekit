@@ -20,7 +20,7 @@ gap closes via these existing primitives:
    library/binding kit ships one declaration of shape
    `{ tags, dimension_values, op_aliases }`. The declaration is a (concept-CID,
    dimension-name) -> dimension-value matrix; it is NOT a flat tag list.
-3. **Composition.** `platform_semantics_for_binding(lang, tag)` (libprovekit
+3. **Composition.** `platform_semantics_for_binding(lang, tag)` (libsugar
    `src/core/platform_semantics.rs:124`) merges language-kit and library-kit
    declarations. Binding-wins on conflicts. M+N hub.
 4. **Comparison.** `compare_op_with` produces the 4-state trichotomy verdict
@@ -28,7 +28,7 @@ gap closes via these existing primitives:
    target-kit) pair.
 5. **Propagation.** Divergent and Uncharacterizable verdicts become
    `ChangedCallsite { callsite_cid, dimension_name, effect }`.
-   `propagate_effects` (libprovekit `src/effect_propagation.rs:111`) cascades
+   `propagate_effects` (libsugar `src/effect_propagation.rs:111`) cascades
    up the call graph producing Widen / Halt / Refuse decisions per containing
    function.
 6. **Realization.** `dispatch_realize` (`kit_dispatch.rs:913`) invokes the
@@ -189,11 +189,11 @@ Before filing or rewriting a D-series issue, the body MUST:
 2. Name the dimension(s) the gap adds or extends. Cite the existing sibling
    dimension-value memento that establishes the pattern.
 3. Pin the file path and function the declaration arm lives in. Example:
-   `implementations/rust/libprovekit/src/core/platform_semantics/<tag>.rs`
+   `implementations/rust/libsugar/src/core/platform_semantics/<tag>.rs`
    `declaration()` function.
 4. Pin the existing test that the new declaration must extend. Tests for
    declarations live in
-   `implementations/rust/libprovekit/src/core/platform_semantics.rs:197+` and
+   `implementations/rust/libsugar/src/core/platform_semantics.rs:197+` and
    the per-tag module's own `#[cfg(test)] mod tests`.
 5. Confirm zero changes to: dispatcher, composition function, comparison
    primitive, propagation engine, realize dispatcher, receipt aggregator. The
@@ -230,13 +230,13 @@ These framings are wrong; the substrate already covers them.
 - Trichotomy ruling: `docs/plans/2026-05-18-op-coverage-verdict-trichotomy-ruling.md`.
 - Refuse-leg ruling: `docs/plans/2026-05-18-refuse-leg-short-circuit-ruling.md`.
 - Existing declarations as worked examples:
-  - `implementations/rust/libprovekit/src/core/platform_semantics/better_sqlite3.rs`
-  - `implementations/rust/libprovekit/src/core/platform_semantics/pg.rs`
-  - `implementations/rust/libprovekit/src/core/platform_semantics/python_sqlite3.rs`
+  - `implementations/rust/libsugar/src/core/platform_semantics/better_sqlite3.rs`
+  - `implementations/rust/libsugar/src/core/platform_semantics/pg.rs`
+  - `implementations/rust/libsugar/src/core/platform_semantics/python_sqlite3.rs`
 - The composition + comparison + propagation primitives:
-  - `implementations/rust/libprovekit/src/core/platform_semantics.rs:124`
-  - `implementations/rust/libprovekit/src/effect_propagation.rs:111`
-  - `implementations/rust/provekit-cli/src/kit_dispatch.rs:913`
+  - `implementations/rust/libsugar/src/core/platform_semantics.rs:124`
+  - `implementations/rust/libsugar/src/effect_propagation.rs:111`
+  - `implementations/rust/sugar-cli/src/kit_dispatch.rs:913`
 
 ## 9. Discipline
 
@@ -290,7 +290,7 @@ propagation, realization) operate uniformly across all vocabulary entries.
 - **Non-call-graph control flow.** Dataflow, cellular, neuromorphic,
   stack-machine, and combinator architectures may not have a call graph in
   the conventional sense. The current `propagate_effects`
-  (`implementations/rust/libprovekit/src/effect_propagation.rs:111`) is
+  (`implementations/rust/libsugar/src/effect_propagation.rs:111`) is
   call-graph-based. The substrate PROTOCOL is designed to admit multiple
   propagation primitives as the substrate matures across problem domains;
   domain-specific propagation is a planned protocol capability, not an

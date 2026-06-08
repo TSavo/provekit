@@ -1,17 +1,17 @@
-# IR Compiler Protocol (`provekit-ir-compiler/1`)
+# IR Compiler Protocol (`sugar-ir-compiler/1`)
 
 Status: v1.2.0 normative. Listed in the v1.2.0 catalog under property key `ir-compiler-protocol`. CID is computed from the bytes of this file (raw-bytes BLAKE3-512); see the catalog at `protocol/specs/2026-04-30-protocol-catalog.json` for the value.
 
 ## Why
 
-ProvekIt's verifier consumes a canonical IR-JSON formula and ships it
+Sugar's verifier consumes a canonical IR-JSON formula and ships it
 to a solver. Each solver speaks its own surface syntax: SMT-LIB v2.6
 for Z3 / CVC5, the bitvector fragment for Bitwuzla, dReal's
 delta-precision extension, TPTP for the Vampire / E / iProver lineage,
 Lean tactic mode, Coq's Gallina, Isabelle/HOL.
 
 The translator from canonical IR-JSON to solver-native syntax is the
-**IR compiler**. ProvekIt does not own one per solver; it owns the
+**IR compiler**. Sugar does not own one per solver; it owns the
 protocol that lets any compiler plug in.
 
 This spec defines:
@@ -34,7 +34,7 @@ has shipped one knows how to ship the other.
 Plugins live at:
 
 ```
-~/.config/provekit/ir-compilers/<name>/manifest.toml
+~/.config/sugar/ir-compilers/<name>/manifest.toml
 ```
 
 Missing directory is **not** an error. The dispatcher walks the path
@@ -47,13 +47,13 @@ Manifest schema:
 ```toml
 name = "smt-lib-reference"
 version = "0.1.0"
-protocol_version = "provekit-ir-compiler/1"
-binary = "provekit-ir-smt-lib"           # absolute path or PATH-resolvable
+protocol_version = "sugar-ir-compiler/1"
+binary = "sugar-ir-smt-lib"           # absolute path or PATH-resolvable
 dialects = ["smt-lib-v2.6"]              # the dialect names this binary serves
 ```
 
 `protocol_version` must match the catalog declared by the running
-ProvekIt CLI; mismatch is a hard error reported by `provekit ir-compiler list`.
+Sugar CLI; mismatch is a hard error reported by `sugar ir-compiler list`.
 
 `dialects` enumerates the dialect identifiers this compiler claims to
 serve. The dispatcher builds a `dialect -> binary` index from the union
@@ -66,7 +66,7 @@ All requests are line-delimited JSON-RPC 2.0 over the plugin's stdin;
 all responses go to stdout. Any non-JSON output on stdout is a hard
 error. Logging belongs on stderr.
 
-### `provekit.ir.handshake`
+### `sugar.ir.handshake`
 
 The first call. Establishes capability + version compatibility.
 
@@ -75,10 +75,10 @@ Request:
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "method": "provekit.ir.handshake",
+  "method": "sugar.ir.handshake",
   "params": {
-    "provekit_version": "0.1.0",
-    "protocol_version": "provekit-ir-compiler/1",
+    "sugar_version": "0.1.0",
+    "protocol_version": "sugar-ir-compiler/1",
     "catalog_cid": "blake3-512:..."
   }
 }
@@ -92,7 +92,7 @@ Response:
   "result": {
     "name": "smt-lib-reference",
     "version": "0.1.0",
-    "protocol_version": "provekit-ir-compiler/1",
+    "protocol_version": "sugar-ir-compiler/1",
     "dialects": ["smt-lib-v2.6"],
     "supported_sorts": ["Int", "Bool", "Real", "String"],
     "supported_predicates": [
@@ -110,7 +110,7 @@ predicates appearing in a particular formula. The verifier may consult
 multiple compilers and pick one; it never falls back silently after a
 `compile_error.unsupported_*` failure.
 
-### `provekit.ir.compile`
+### `sugar.ir.compile`
 
 Translate one canonical IR-JSON formula to the target dialect.
 
@@ -119,7 +119,7 @@ Request:
 {
   "jsonrpc": "2.0",
   "id": 2,
-  "method": "provekit.ir.compile",
+  "method": "sugar.ir.compile",
   "params": {
     "ir_json": { "kind": "atomic", "name": ">", "args": [
       { "kind": "var", "name": "x" },
@@ -166,7 +166,7 @@ The IR-JSON input MUST be canonical per
 fail-closed on non-canonical input or pass it through; the spec does
 not require canonicalization on the compiler side.
 
-### `provekit.ir.shutdown`
+### `sugar.ir.shutdown`
 
 Graceful close. After this, the plugin process should exit zero on
 stdin EOF.
@@ -195,7 +195,7 @@ registry table.
 
 ## Error model
 
-JSON-RPC 2.0 error codes plus ProvekIt extensions:
+JSON-RPC 2.0 error codes plus Sugar extensions:
 
 | code  | symbolic name                            | meaning                                                          |
 |-------|------------------------------------------|------------------------------------------------------------------|
@@ -238,16 +238,16 @@ verifier MUST NOT silently drop predicates it thinks are unsupported.
 The bundled `smt-lib-v2.6` compiler ships in two faces:
 
 1. **In-process trait implementation.** Crate
-   `provekit-ir-compiler-smt-lib` exports a struct
+   `sugar-ir-compiler-smt-lib` exports a struct
    `SmtLibCompiler` that implements the `IrCompiler` trait from
-   `provekit-ir-compiler`. The verifier crate depends on it directly
+   `sugar-ir-compiler`. The verifier crate depends on it directly
    for the fast path (no subprocess, no JSON-RPC framing cost). This
-   replaces the inline `provekit_verifier::smt_emitter` module; the
+   replaces the inline `sugar_verifier::smt_emitter` module; the
    verifier re-exports the new emitter under the same path so the
    runner does not have to change.
 
 2. **Standalone subprocess binary.** The same crate produces
-   `provekit-ir-smt-lib`, a binary that speaks the JSON-RPC protocol
+   `sugar-ir-smt-lib`, a binary that speaks the JSON-RPC protocol
    defined here. It is the conformance reference for plugin authors
    in any language.
 

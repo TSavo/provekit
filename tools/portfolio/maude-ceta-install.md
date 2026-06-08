@@ -30,7 +30,7 @@ apt-get install -y --no-install-recommends \
   bash \
   coreutils
 rm -rf /var/lib/apt/lists/*
-install -d /opt/provekit-tools/bin
+install -d /opt/sugar-tools/bin
 ```
 
 Install Java 25 for AProVE:
@@ -52,89 +52,89 @@ Install Maude 3.5.1:
 
 ```sh
 set -eux
-install -d /opt/provekit-tools/maude-3.5.1
+install -d /opt/sugar-tools/maude-3.5.1
 curl -fL \
   -o /tmp/maude-3.5.1-linux-x86_64.zip \
   https://github.com/maude-lang/Maude/releases/download/Maude3.5.1/Maude-3.5.1-linux-x86_64.zip
-unzip -q /tmp/maude-3.5.1-linux-x86_64.zip -d /opt/provekit-tools/maude-3.5.1
-ln -sf /opt/provekit-tools/maude-3.5.1/maude.linux64 /opt/provekit-tools/bin/maude
-/opt/provekit-tools/bin/maude --version
+unzip -q /tmp/maude-3.5.1-linux-x86_64.zip -d /opt/sugar-tools/maude-3.5.1
+ln -sf /opt/sugar-tools/maude-3.5.1/maude.linux64 /opt/sugar-tools/bin/maude
+/opt/sugar-tools/bin/maude --version
 ```
 
 Install AProVE `master_2026_02_15`:
 
 ```sh
 set -eux
-install -d /opt/provekit-tools/aprove-master_2026_02_15
+install -d /opt/sugar-tools/aprove-master_2026_02_15
 curl -fL \
-  -o /opt/provekit-tools/aprove-master_2026_02_15/aprove.jar \
+  -o /opt/sugar-tools/aprove-master_2026_02_15/aprove.jar \
   https://github.com/aprove-developers/aprove-releases/releases/download/master_2026_02_15/aprove.jar
-cat >/opt/provekit-tools/bin/aprove <<'SH'
+cat >/opt/sugar-tools/bin/aprove <<'SH'
 #!/usr/bin/env sh
-exec java -jar /opt/provekit-tools/aprove-master_2026_02_15/aprove.jar "$@"
+exec java -jar /opt/sugar-tools/aprove-master_2026_02_15/aprove.jar "$@"
 SH
-chmod +x /opt/provekit-tools/bin/aprove
-/opt/provekit-tools/bin/aprove -h >/tmp/aprove-help.txt || true
+chmod +x /opt/sugar-tools/bin/aprove
+/opt/sugar-tools/bin/aprove -h >/tmp/aprove-help.txt || true
 ```
 
 Install CeTA 2.46:
 
 ```sh
 set -eux
-install -d /opt/provekit-tools/ceta-2.46
+install -d /opt/sugar-tools/ceta-2.46
 curl -fL \
   -o /tmp/ceta-2.46-linux-x86_64.tar.gz \
   https://cl-informatik.uibk.ac.at/software/ceta/downloads/ceta-2.46-linux-x86_64.tar.gz
-tar -xzf /tmp/ceta-2.46-linux-x86_64.tar.gz -C /opt/provekit-tools/ceta-2.46 --strip-components=1
-ln -sf /opt/provekit-tools/ceta-2.46/ceta /opt/provekit-tools/bin/ceta
-/opt/provekit-tools/bin/ceta --help >/tmp/ceta-help.txt || true
+tar -xzf /tmp/ceta-2.46-linux-x86_64.tar.gz -C /opt/sugar-tools/ceta-2.46 --strip-components=1
+ln -sf /opt/sugar-tools/ceta-2.46/ceta /opt/sugar-tools/bin/ceta
+/opt/sugar-tools/bin/ceta --help >/tmp/ceta-help.txt || true
 ```
 
 Install CSI 1.2.7:
 
 ```sh
 set -eux
-install -d /opt/provekit-tools/csi-1.2.7
+install -d /opt/sugar-tools/csi-1.2.7
 curl -fL \
   -o /tmp/csi-1.2.7-linux-x86_64.tar.gz \
   https://cl-informatik.uibk.ac.at/software/csi/downloads/csi-1.2.7-linux-x86_64.tar.gz
-tar -xzf /tmp/csi-1.2.7-linux-x86_64.tar.gz -C /opt/provekit-tools/csi-1.2.7 --strip-components=1
-ln -sf /opt/provekit-tools/csi-1.2.7/csi /opt/provekit-tools/bin/csi
-/opt/provekit-tools/bin/csi --help >/tmp/csi-help.txt || true
+tar -xzf /tmp/csi-1.2.7-linux-x86_64.tar.gz -C /opt/sugar-tools/csi-1.2.7 --strip-components=1
+ln -sf /opt/sugar-tools/csi-1.2.7/csi /opt/sugar-tools/bin/csi
+/opt/sugar-tools/bin/csi --help >/tmp/csi-help.txt || true
 ```
 
 Install Wanda 0.6.1 as an alternate termination prover:
 
 ```sh
 set -eux
-install -d /opt/provekit-tools/wanda-0.6.1
+install -d /opt/sugar-tools/wanda-0.6.1
 curl -fL \
   -o /tmp/wanda-0.6.1-linux-x86_64.tar.gz \
   https://github.com/hezzel/wanda/releases/download/v0.6.1/wanda-0.6.1-linux-x86_64.tar.gz
-tar -xzf /tmp/wanda-0.6.1-linux-x86_64.tar.gz -C /opt/provekit-tools/wanda-0.6.1 --strip-components=1
-ln -sf /opt/provekit-tools/wanda-0.6.1/wanda /opt/provekit-tools/bin/wanda
-/opt/provekit-tools/bin/wanda --help >/tmp/wanda-help.txt || true
+tar -xzf /tmp/wanda-0.6.1-linux-x86_64.tar.gz -C /opt/sugar-tools/wanda-0.6.1 --strip-components=1
+ln -sf /opt/sugar-tools/wanda-0.6.1/wanda /opt/sugar-tools/bin/wanda
+/opt/sugar-tools/bin/wanda --help >/tmp/wanda-help.txt || true
 ```
 
 Install TTT2 1.26 as an alternate termination prover:
 
 ```sh
 set -eux
-install -d /opt/provekit-tools/ttt2-1.26
+install -d /opt/sugar-tools/ttt2-1.26
 curl -fL \
   -o /tmp/ttt2-1.26-linux-x86_64.tar.gz \
   https://cl-informatik.uibk.ac.at/software/ttt2/downloads/ttt2-1.26-linux-x86_64.tar.gz
-tar -xzf /tmp/ttt2-1.26-linux-x86_64.tar.gz -C /opt/provekit-tools/ttt2-1.26 --strip-components=1
-ln -sf /opt/provekit-tools/ttt2-1.26/ttt2 /opt/provekit-tools/bin/ttt2
-/opt/provekit-tools/bin/ttt2 --help >/tmp/ttt2-help.txt || true
+tar -xzf /tmp/ttt2-1.26-linux-x86_64.tar.gz -C /opt/sugar-tools/ttt2-1.26 --strip-components=1
+ln -sf /opt/sugar-tools/ttt2-1.26/ttt2 /opt/sugar-tools/bin/ttt2
+/opt/sugar-tools/bin/ttt2 --help >/tmp/ttt2-help.txt || true
 ```
 
 Expose the tools:
 
 ```sh
 set -eux
-echo 'export PATH=/opt/provekit-tools/bin:$PATH' >/etc/profile.d/provekit-portfolio-tools.sh
-export PATH=/opt/provekit-tools/bin:$PATH
+echo 'export PATH=/opt/sugar-tools/bin:$PATH' >/etc/profile.d/sugar-portfolio-tools.sh
+export PATH=/opt/sugar-tools/bin:$PATH
 maude --version
 aprove -h >/tmp/aprove-help.txt || true
 ceta --help >/tmp/ceta-help.txt || true
@@ -143,16 +143,16 @@ wanda --help >/tmp/wanda-help.txt || true
 ttt2 --help >/tmp/ttt2-help.txt || true
 ```
 
-Recommended ProvekIt solver config:
+Recommended Sugar solver config:
 
 ```toml
 [solvers.maude]
-binary = "/opt/provekit-tools/bin/maude"
+binary = "/opt/sugar-tools/bin/maude"
 ir_compiler = "maude"
 timeout_seconds = 30
 version = "3.5.1"
 ceta_gate = true
-ceta_binary = "/opt/provekit-tools/bin/ceta"
-termination_prover = "/opt/provekit-tools/bin/aprove"
-confluence_checker = "/opt/provekit-tools/bin/csi"
+ceta_binary = "/opt/sugar-tools/bin/ceta"
+termination_prover = "/opt/sugar-tools/bin/aprove"
+confluence_checker = "/opt/sugar-tools/bin/csi"
 ```

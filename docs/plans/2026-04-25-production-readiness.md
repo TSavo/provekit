@@ -1,6 +1,6 @@
 # ProveKit Production-Readiness Plan
 
-**Goal:** move ProveKit from "the loop demonstrably closes on a real LLM in a controlled scratch project" to "any TypeScript project can run `provekit fix` against a real bug and trust the result."
+**Goal:** move ProveKit from "the loop demonstrably closes on a real LLM in a controlled scratch project" to "any TypeScript project can run `sugar fix` against a real bug and trust the result."
 
 **Architecture:** every primitive is a registry, every LLM output passes a mechanical oracle. Production-readiness is not new architecture; it's hardening, breadth, and operability.
 
@@ -12,7 +12,7 @@
 
 ### Task P1: C5 robustness for arbitrary projects
 
-**Why:** Today's `runTestInOverlay` assumes the user's project has `node_modules/vitest` at the project root. Real projects are: jest, mocha, node:test, monorepos with workspaces, projects with no test runner, projects where vitest is in a workspace package not the root. Each of these breaks oracle #9 in C5 immediately. The first thing a real user encounters when they try `provekit fix` against their codebase.
+**Why:** Today's `runTestInOverlay` assumes the user's project has `node_modules/vitest` at the project root. Real projects are: jest, mocha, node:test, monorepos with workspaces, projects with no test runner, projects where vitest is in a workspace package not the root. Each of these breaks oracle #9 in C5 immediately. The first thing a real user encounters when they try `sugar fix` against their codebase.
 
 **Files to touch:**
 - Modify: `src/fix/testGen.ts` (`runTestInOverlay`, `resolveMainRepoRoot`)
@@ -62,7 +62,7 @@ For monorepo node_modules resolution: use Node's module-resolution algorithm sta
 **Approach:**
 
 1. Reset the dogfood-scratch fixture to its buggy state.
-2. Run `provekit fix bug-report.md --apply --verbose`.
+2. Run `sugar fix bug-report.md --apply --verbose`.
 3. Watch the apply path:
    - Cherry-pick should succeed onto the target branch.
    - The target branch's HEAD should now contain the fix + the regression test.
@@ -93,7 +93,7 @@ Document findings as commits. Most likely: edge cases around merge conflicts, st
 1. Pick one A8 capability gap (suggested: `encloses` for loop-accumulator-overflow; simple semantics, unlocks 5 principles per the memo).
 2. Build a scratch project with a fixture exhibiting the bug pattern.
 3. Write a bug report.
-4. Run `provekit fix bug-report.md --no-confirm --verbose`.
+4. Run `sugar fix bug-report.md --no-confirm --verbose`.
 5. Watch C6 route to `proposeWithCapability`. The full-transcript log captures Claude's reasoning + the proposed CapabilitySpec.
 6. Verify each substrate oracle fires correctly:
    - #14 (migration safety): SQL is non-destructive
@@ -140,7 +140,7 @@ export const DEFAULT_MODEL_TIERS = {
 };
 ```
 
-Override via `PROVEKIT_MODEL_<STAGE>=opus` env vars or `--model-tier <stage>=<tier>` CLI repeat flags.
+Override via `SUGAR_MODEL_<STAGE>=opus` env vars or `--model-tier <stage>=<tier>` CLI repeat flags.
 
 **Tests:** unit tests asserting each stage receives the expected tier given a config map. Integration test: spy on the LLMProvider stub to verify per-stage `model` arg.
 
@@ -159,7 +159,7 @@ Override via `PROVEKIT_MODEL_<STAGE>=opus` env vars or `--model-tier <stage>=<ti
   - `src/sast/schema/capabilities/<name>.ts` (new schema file)
   - `src/sast/capabilities/extractor.ts` (or new file), the new extractor
   - A new drizzle migration
-  - One or more `.provekit/principles/<name>.dsl` migrations to use the new capability
+  - One or more `.sugar/principles/<name>.dsl` migrations to use the new capability
 
 **Approach:**
 
@@ -174,7 +174,7 @@ Sequence by complexity per the A8 memo:
 8. Liveness analysis for variable-staleness (hardest)
 9. Termination analysis for while-loop-termination (hard)
 
-Per gap: write a bug-report fixture, run `provekit fix`, watch C6 propose the CapabilitySpec, verify oracles, apply. Each closure is its own substrate bundle, autonomous through the loop.
+Per gap: write a bug-report fixture, run `sugar fix`, watch C6 propose the CapabilitySpec, verify oracles, apply. Each closure is its own substrate bundle, autonomous through the loop.
 
 **Tests:** each gap's closure includes an updated equivalence test in `src/pipeline/DerivationPhase.dslEquivalence.test.ts` that asserts the previously-gap principle now migrates cleanly.
 
@@ -186,35 +186,35 @@ Per gap: write a bug-report fixture, run `provekit fix`, watch C6 propose the Ca
 
 ### Task P6: Operator CLI surface
 
-**Why:** The system runs but isn't operable. Bundles get persisted to the DB, audit trails accumulate, principle libraries grow; and there's no way for a human to inspect any of it. `provekit fix` is the input surface; we lack the output surface.
+**Why:** The system runs but isn't operable. Bundles get persisted to the DB, audit trails accumulate, principle libraries grow; and there's no way for a human to inspect any of it. `sugar fix` is the input surface; we lack the output surface.
 
 **Files to touch:**
-- Create: `src/cli/review.ts` (`provekit review <bundle-id>` walks audit trail)
-- Create: `src/cli/pending.ts` (`provekit pending` lists pending_fixes queue)
-- Create: `src/cli/promote.ts` (`provekit promote <principle> --tier warning` updates confidence_tier)
-- Create: `src/cli/principles.ts` (`provekit principles list` enumerates the library)
+- Create: `src/cli/review.ts` (`sugar review <bundle-id>` walks audit trail)
+- Create: `src/cli/pending.ts` (`sugar pending` lists pending_fixes queue)
+- Create: `src/cli/promote.ts` (`sugar promote <principle> --tier warning` updates confidence_tier)
+- Create: `src/cli/principles.ts` (`sugar principles list` enumerates the library)
 - Modify: `src/cli.ts` register new subcommands
 
 **Approach:**
 
 Each subcommand is a thin DB-read with formatted output.
 
-`provekit review <bundle-id>`:
+`sugar review <bundle-id>`:
 - Load fix_bundles row + all fix_bundle_artifacts + all llm_calls + the audit_trail JSON
-- Pretty-print: bundle metadata, per-stage timeline, oracle verdicts, full LLM calls (count + char totals; --verbose shows full prompts/responses from the .provekit/fix-loop-<ts>.log)
+- Pretty-print: bundle metadata, per-stage timeline, oracle verdicts, full LLM calls (count + char totals; --verbose shows full prompts/responses from the .sugar/fix-loop-<ts>.log)
 - Highlight any oracle that ran but returned passed=false (rejected sites)
 - Output mode: `--json` for machine consumption, default human-readable
 
-`provekit pending [--principle <name>] [--limit N]`:
+`sugar pending [--principle <name>] [--limit N]`:
 - Query pending_fixes ordered by priority
 - One-line-per-row: source bundle, site file:line, reason
 
-`provekit promote <principle-name> --tier {advisory|warning|blocking}`:
+`sugar promote <principle-name> --tier {advisory|warning|blocking}`:
 - Update principles_library row
 - Confirm with audit log entry
 - Refuse to demote without `--force`
 
-`provekit principles [list|show <name>]`:
+`sugar principles [list|show <name>]`:
 - list: every principles_library row + tier + match counts in main DB
 - show <name>: full DSL source + JSON descriptor + recent matches
 

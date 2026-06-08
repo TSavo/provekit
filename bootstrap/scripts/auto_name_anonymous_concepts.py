@@ -17,7 +17,7 @@ README_PATH = OUT_DIR / "README.md"
 
 ANONYMOUS_RE = re.compile(r"\bUNNAMED-CONCEPT-[0-9A-Fa-f]+\b")
 CONCEPT_COMMENT_RE = re.compile(r"//\s*concept:\s*(UNNAMED-CONCEPT-[0-9A-Fa-f]+)\b")
-PROVEKIT_CONCEPT_RE = re.compile(r"//\s*provekit:concept\[blake3-512:[0-9A-Fa-f]+\]\([^)]*\)")
+SUGAR_CONCEPT_RE = re.compile(r"//\s*sugar:concept\[blake3-512:[0-9A-Fa-f]+\]\([^)]*\)")
 KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 SKIP_DIRS = {
@@ -222,9 +222,9 @@ def anonymous_tags_in_line(line: str) -> list[tuple[str, str]]:
     tags: list[tuple[str, str]] = []
     for match in CONCEPT_COMMENT_RE.finditer(line):
         tags.append((match.group(1), "concept_comment"))
-    if PROVEKIT_CONCEPT_RE.search(line):
+    if SUGAR_CONCEPT_RE.search(line):
         for match in ANONYMOUS_RE.finditer(line):
-            tags.append((match.group(0), "provekit_concept_tag"))
+            tags.append((match.group(0), "sugar_concept_tag"))
     return tags
 
 

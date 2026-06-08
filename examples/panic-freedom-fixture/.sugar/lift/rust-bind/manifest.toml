@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rust bind-IR (sugar) surface. `working_dir = "."` anchors `command` at this
+# kit root (examples/panic-freedom-fixture/), so the walk binary resolves at
+# ../../implementations/rust/target/debug/ (two `..` to repo root, then down
+# into the rust target). THE PATH FOOTGUN: an examples/ kit is two levels deep,
+# so it needs two `..`, unlike an implementations/rust/<crate> kit (one `..`).
+name = "rust-bind-lift"
+command = ["../../implementations/rust/target/debug/sugar-walk-rpc", "--rpc"]
+working_dir = "."

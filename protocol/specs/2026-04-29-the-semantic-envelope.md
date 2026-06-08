@@ -1,4 +1,4 @@
-# ProvekIt: The Semantic Envelope That Was Missing
+# Sugar: The Semantic Envelope That Was Missing
 
 > Author: shared session 2026-04-29 (T + Claude). The architectural punch
 > line, sharpened. Why this stack exists, why nothing else does what it
@@ -7,7 +7,7 @@
 
 ## The load-bearing claim
 
-> **ProvekIt is the first content-addressed envelope for semantic
+> **Sugar is the first content-addressed envelope for semantic
 > correctness claims about code, composing across language and library
 > boundaries via propertyHash CIDs.**
 
@@ -46,7 +46,7 @@ The claim is sharper than any of the above and orthogonal to all of them.
 
 ## What this claim IS saying
 
-Three things existing systems do not do, that ProvekIt does:
+Three things existing systems do not do, that Sugar does:
 
 ### 1. Operates at the semantic layer
 
@@ -71,7 +71,7 @@ None of these say "this function preserves this property." None publish
 this code." That layer — content-addressed semantic claims about
 behavior — has no envelope today.
 
-ProvekIt's contribution is signing at the semantic layer. The
+Sugar's contribution is signing at the semantic layer. The
 propertyHash CID is the leaf type that didn't exist before.
 
 ### 2. Neutral cross-domain composition
@@ -92,7 +92,7 @@ your biome verdict, and your unit-test passes into ONE proofHash for a
 single binary, no system today does that. They each demand to be the
 root.
 
-The envelope's contribution is **neutrality**. ProvekIt has no PKI, no
+The envelope's contribution is **neutrality**. Sugar has no PKI, no
 trust root, no governance over what counts as a valid leaf. A CID is a
 CID. Whether the bytes are an Apple `.p7` signature, a SLSA in-toto
 attestation, a sigstore bundle, a Z3 verdict, or a tsc result — the
@@ -100,7 +100,7 @@ merkle math is identical.
 
 ### 3. The "stop at hashes" discipline
 
-Existing trees verify end-to-end *within* their domain. ProvekIt's
+Existing trees verify end-to-end *within* their domain. Sugar's
 discipline says: **don't re-verify; attach.**
 
 If you trust the Node TSC, take their release tarball signature CID as
@@ -111,7 +111,7 @@ around it.
 
 This is the only way the chain reaches arbitrarily deep. SLSA stops at
 the build host. sigstore stops at the artifact. Apple stops at the OS.
-ProvekIt stops at hashes from independent trust roots, and that lets
+Sugar stops at hashes from independent trust roots, and that lets
 the chain extend through:
 
 ```
@@ -153,7 +153,7 @@ required three things together:
    produced the artifact.
 
 3. **The discipline of stopping at hashes.** Refinement-typed languages
-   try to verify everything end-to-end. ProvekIt deliberately doesn't.
+   try to verify everything end-to-end. Sugar deliberately doesn't.
    You stop at the leaf signature; you trust the signer of that leaf to
    have done their job; you compose by CID. This sounds like giving up,
    but it's what lets the chain reach physics. End-to-end verification
@@ -166,7 +166,7 @@ library boundaries.**
 
 A library author signs N invariants. The library's catalog memento
 holds those N propertyHashes. The catalog's CID is what
-`package.json`'s `provekit.proofHash` field carries.
+`package.json`'s `sugar.proofHash` field carries.
 
 A consumer of that library imports K of the N propertyHashes by CID.
 The consumer authors *bridge mementos* — content-addressed edges that
@@ -229,7 +229,7 @@ catalog memento CID. The minimal version of this:
 
 A library bump is just a new CID. Compatibility is `migrate(oldCID,
 newCID)` returning the punch list. Lockfiles already do this for bytes;
-ProvekIt does it for *meaning*. The version string is at most a
+Sugar does it for *meaning*. The version string is at most a
 human-readable nickname for a catalog CID; the binding constraint is
 the CID.
 
@@ -288,13 +288,13 @@ the artifact is what was intended." That's load-bearing and necessary.
 It is not "the artifact's behavior satisfies these named properties."
 That's the semantic layer, and it's the hole.
 
-ProvekIt's contribution is the hole, plus the discipline of attaching
+Sugar's contribution is the hole, plus the discipline of attaching
 to all the existing layers as leaves rather than competing with them.
 
 ## The institutional inversion
 
 The envelope is what's new; the leaves are mostly what was already
-there. That makes the on-ramp basically free: `provekit init` walks
+there. That makes the on-ramp basically free: `sugar init` walks
 `package.json`, finds tsc / biome / vitest / eslint / their per-language
 analogs, mints a Stage for each, and a real proofHash exists on day one
 without writing a single explicit invariant.

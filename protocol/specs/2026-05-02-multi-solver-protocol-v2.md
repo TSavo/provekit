@@ -34,7 +34,7 @@ The OpacityManifest's grammar, canonicalization, position content-addressing, an
 
 Everything in `2026-04-30-multi-solver-protocol.md` carries forward unchanged unless this spec says otherwise:
 
-- The `[solvers]` configuration grammar in `.provekit/config.toml`, extended in §7 with one new field.
+- The `[solvers]` configuration grammar in `.sugar/config.toml`, extended in §7 with one new field.
 - The execution modes `Single`, `Chain`, `Portfolio { first-wins }`, `Portfolio { consensus }` (now equivalent to `Portfolio { consensus, coverage_required: false }`), `Dispatch`.
 - Stub solver shorthands.
 - Per-fragment dispatch heuristics.
@@ -246,8 +246,8 @@ The verifier's report includes a per-call-site coverage breakdown when `coverage
 
 This spec is satisfied by:
 
-- `cargo build --release -p provekit-verifier` succeeds with the v2 modes.
-- `cargo test --release -p provekit-verifier` passes (v1 tests green plus new tests for `coverage_required` admission, the §5 composition rule, and the §7 configuration error paths).
+- `cargo build --release -p sugar-verifier` succeeds with the v2 modes.
+- `cargo test --release -p sugar-verifier` passes (v1 tests green plus new tests for `coverage_required` admission, the §5 composition rule, and the §7 configuration error paths).
 - Integration test `tests/multi_solver_modes_v2.rs` exercises:
   - The §8 worked example: SMT marks two opacity positions; Coq marks none; Coq returns `Discharged`; consensus holds.
   - The "coverage gap" case: SMT marks one position; no other solver in the pool covers it; consensus fails as `Undecidable("coverage_required: position <p> uncovered")`.

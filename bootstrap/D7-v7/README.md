@@ -1,6 +1,6 @@
 # D7-v7 value module sweep
 
-Scope: provekit-canonicalizer::value.
+Scope: sugar-canonicalizer::value.
 Parent arc: #943.
 Base commit: 63a0bc1a.
 Branch: bootstrap/D7-v7-value-module-sweep.
@@ -8,15 +8,15 @@ Branch: bootstrap/D7-v7-value-module-sweep.
 D7-v6 closed the scalar constructor cluster.
 That cluster contains Value::null, Value::boolean, Value::integer, and Value::string.
 D7-v7 reruns the same lift, bridge, resolve, realize, rustfmt, and byte compare path at module scope.
-The source file is implementations/rust/provekit-canonicalizer/src/value.rs.
+The source file is implementations/rust/sugar-canonicalizer/src/value.rs.
 
-This is the D7 terminus claim for provekit-canonicalizer::value.
-D7 terminus reached for provekit-canonicalizer::value at commit <merge-sha-of-this-PR>.
+This is the D7 terminus claim for sugar-canonicalizer::value.
+D7 terminus reached for sugar-canonicalizer::value at commit <merge-sha-of-this-PR>.
 The claim is scoped to functions whose current lift yields a D7 bridge-compatible single-term fixture.
 Non-goal functions are characterized below and excluded from the terminus check.
 
 The walker command used for each function was:
-cd implementations/rust && target/debug/provekit-walk-emit term provekit-canonicalizer/src/value.rs <fn> /private/tmp/d7-v7-walk/<fn>.raw.json
+cd implementations/rust && target/debug/sugar-walk-emit term sugar-canonicalizer/src/value.rs <fn> /private/tmp/d7-v7-walk/<fn>.raw.json
 
 The in-scope functions are:
 null.
@@ -39,16 +39,16 @@ object.
 | array | NON_GOAL | n/a | n/a | n/a | Value::Array is explicit D7-v6 out-of-scope debt |
 | object | NON_GOAL | n/a | n/a | n/a | lift refuses with unsupported-value-closure |
 
-The #971 inventory is a libprovekit/src bind inventory.
-value.rs lives under provekit-canonicalizer, so it has no useful #971 cluster_canonical_cid.
+The #971 inventory is a libsugar/src bind inventory.
+value.rs lives under sugar-canonicalizer, so it has no useful #971 cluster_canonical_cid.
 The table keeps the cluster fields explicit and marks them n/a for that reason.
 The local scalar cluster cardinality is still useful: 4.
 
 Committed D7-v7 fixtures:
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_null.json.
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_boolean.json.
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_integer.json.
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_string.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_null.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_boolean.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_integer.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v7_value_string.json.
 
 Committed D7-v7 receipts:
 bootstrap/D7-v7/value_null_source_round_trip_receipt.json.
@@ -57,10 +57,10 @@ bootstrap/D7-v7/value_integer_source_round_trip_receipt.json.
 bootstrap/D7-v7/value_string_source_round_trip_receipt.json.
 bootstrap/D7-v7/value_module_sweep_receipt.json.
 
-The integration test is implementations/rust/libprovekit/tests/d7_v7_module_sweep.rs.
+The integration test is implementations/rust/libsugar/tests/d7_v7_module_sweep.rs.
 It recomputes each fixture CID.
-It resolves through libprovekit::local_cid_fixture_check.
-It realizes through provekit_realize_rust_core::emit_from_resolved.
+It resolves through libsugar::local_cid_fixture_check.
+It realizes through sugar_realize_rust_core::emit_from_resolved.
 It extracts the original function slice from value.rs.
 It rustfmts both sides.
 It byte-compares the post-rustfmt strings.
@@ -77,5 +77,5 @@ array is a Value::Array constructor surface, and v6 explicitly left Value::Array
 object still refuses during lift with unsupported value expression Expr::Closure.
 No lifter, realizer, or substrate extension was made in D7-v7.
 
-This is the n=1 case of the cycle invariance theorem on a real libprovekit submodule.
+This is the n=1 case of the cycle invariance theorem on a real libsugar submodule.
 For the in-scope value.rs functions, rustfmt(realize_rust(local_cid_fixture_check(lift_rust(fn)))) equals rustfmt(fn) byte-for-byte.

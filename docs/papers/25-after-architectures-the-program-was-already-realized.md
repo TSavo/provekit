@@ -132,13 +132,13 @@ What remains is a lens.
 
 The CLI vocabulary lags the ontology. It should.
 
-`provekit lift` is closer to `provekit recognize`. It reads a surface and admits what can be named. The word "lift" remains because it is the engineering word for the operation, and the engineering still has to be done.
+`sugar lift` is closer to `sugar recognize`. It reads a surface and admits what can be named. The word "lift" remains because it is the engineering word for the operation, and the engineering still has to be done.
 
-`provekit realize` is closer to `provekit render`. It does not author a target. It emits a target dialect for a structure already present at the term or contract layer, subject to loss and refusal.
+`sugar realize` is closer to `sugar render`. It does not author a target. It emits a target dialect for a structure already present at the term or contract layer, subject to loss and refusal.
 
-`provekit bind` is already arrival-shaped. A binding claim says this surface operation realizes that concept hub operation. If the claim discharges, the two surfaces have a route through the same address space. If it does not, the substrate refuses to pretend.
+`sugar bind` is already arrival-shaped. A binding claim says this surface operation realizes that concept hub operation. If the claim discharges, the two surfaces have a route through the same address space. If it does not, the substrate refuses to pretend.
 
-`provekit prove` is closer to `provekit confirm`. The proof is the path object. The command confirms that the path discharges under the accepted portfolio and policy.
+`sugar prove` is closer to `sugar confirm`. The proof is the path object. The command confirms that the path discharges under the accepted portfolio and policy.
 
 The vocabulary will not change here. A coda is not a rename proposal. The lag is itself a teaching: engineers need verbs for machinery, while the substrate's ontology keeps reducing the machinery to recognition.
 

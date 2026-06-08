@@ -1,18 +1,18 @@
-//! # provekit-linker
+//! # sugar-linker
 //!
-//! Pure linker algebra for ProvekIt. Derives bridge mementos from the union of
+//! Pure linker algebra for Sugar. Derives bridge mementos from the union of
 //! per-kit contracts and call-edges, and emits a content-addressed `LinkBundle`
 //! per spec `2026-05-03-bridge-linkage-protocol.md` R2-R5.
 //!
 //! ## Consumers
 //!
-//! - `provekit-cli`: the `provekit link` subcommand gathers contracts and
+//! - `sugar-cli`: the `sugar link` subcommand gathers contracts and
 //!   call-edges from the filesystem and subprocess lifters, then calls
 //!   `link_with_solvers(inputs, ...)` with the same solver-plan config shape
-//!   used by `provekit prove`. It writes the resulting `LinkBundle` JSON to
+//!   used by `sugar prove`. It writes the resulting `LinkBundle` JSON to
 //!   disk.
 //!
-//! - `provekit-linkerd` (LSP+linker daemon, step 2): the daemon receives
+//! - `sugar-linkerd` (LSP+linker daemon, step 2): the daemon receives
 //!   `parseFile` RPCs from per-kit LSP plugins, reconstructs `LinkerInputs`
 //!   from its in-memory union of kit streams, and calls `link(inputs)` to
 //!   re-derive affected bridges. It returns per-file `LinkerError` diagnostics
@@ -27,7 +27,7 @@
 //!   surface as `implication-undecidable`.
 //! - `link_with_solvers(inputs, &Registry, &SolverPlan)` extends `link()`
 //!   with the workspace's existing solver registry (built by
-//!   `provekit-verifier::solvers::registry::build` from `SolversConfig`).
+//!   `sugar-verifier::solvers::registry::build` from `SolversConfig`).
 //!   Output is byte-deterministic given inputs + a solver set whose
 //!   verdicts are themselves deterministic; subprocess wall-clock varies
 //!   but the chosen verdict is stable.
@@ -48,7 +48,7 @@ use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonValue};
 use sugar_verifier::solvers::{run_plan, SolverHandle, SolverPlan};
 use sugar_verifier::types::ObligationVerdict;
 
-/// Re-exports from `provekit-verifier` so callers do not need a direct
+/// Re-exports from `sugar-verifier` so callers do not need a direct
 /// dependency on the verifier crate to construct a registry / plan.
 pub mod solver_api {
     pub use sugar_verifier::solvers::{
@@ -206,7 +206,7 @@ pub fn link(inputs: LinkerInputs) -> LinkerOutput {
 ///
 /// `registry` and `plan` are typically built by the verifier crate's
 /// `solvers::registry::build` from the same `SolversConfig` the
-/// verifier uses (see `.provekit/config.toml`). The linker does not
+/// verifier uses (see `.sugar/config.toml`). The linker does not
 /// hardcode any solver name; whichever solvers the workspace declares
 /// are reached via the supplied plan.
 ///
@@ -775,7 +775,7 @@ mod tests {
     }
 
     /// Byte-identity gate: linkBundleCid must match the values pinned by
-    /// the polyglot smoke suite in provekit-cli.
+    /// the polyglot smoke suite in sugar-cli.
     #[test]
     fn test_link_bundle_cid_byte_identity_gate() {
         let fail_out = link(LinkerInputs {

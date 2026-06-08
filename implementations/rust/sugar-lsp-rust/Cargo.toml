@@ -7,7 +7,7 @@ authors.workspace = true
 description = "NDJSON LSP plugin for Rust. Thin shim that dispatches the rust-contracts lift kit over RPC; speaks the per-language plugin protocol (initialize/parse/shutdown)."
 
 [[bin]]
-name = "provekit-lsp-rust"
+name = "sugar-lsp-rust"
 path = "src/main.rs"
 
 [lib]

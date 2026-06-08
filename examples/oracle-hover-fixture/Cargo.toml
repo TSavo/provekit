@@ -15,7 +15,7 @@ edition = "2021"
 publish = false
 
 # Empty [workspace] table: declares this fixture its OWN workspace root so cargo
-# and rust-analyzer do NOT search upward into the provekit monorepo workspace
+# and rust-analyzer do NOT search upward into the sugar monorepo workspace
 # (which is exactly the load that makes RA stall and never quiesce). This is the
 # isolation that lets RA index the fixture in seconds.
 [workspace]

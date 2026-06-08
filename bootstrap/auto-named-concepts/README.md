@@ -1,7 +1,7 @@
 # Auto-named anonymous concepts
 
 `bootstrap/scripts/auto_name_anonymous_concepts.py` is an operator workflow for
-annotated source produced by `provekit bind --rewrite annotate`.
+annotated source produced by `sugar bind --rewrite annotate`.
 
 The script walks an annotated source root, finds anonymous concept tags, asks a
 placeholder LLM namer for semantic kebab-case names, edits those source comment
@@ -18,7 +18,7 @@ The LLM agent never touches substrate. It edits source comments only, such as:
 
 ```rust
 // concept: UNNAMED-CONCEPT-1
-// provekit:concept[blake3-512:...](UNNAMED-CONCEPT-1)
+// sugar:concept[blake3-512:...](UNNAMED-CONCEPT-1)
 pub fn deposit_then_balance(balance: i64, amount: i64) -> i64 {
     balance + amount
 }
@@ -29,7 +29,7 @@ human-annotation tier from the existing source comment path:
 
 ```rust
 // concept: deposit-then-balance
-// provekit:concept[blake3-512:...](deposit-then-balance)
+// sugar:concept[blake3-512:...](deposit-then-balance)
 pub fn deposit_then_balance(balance: i64, amount: i64) -> i64 {
     balance + amount
 }

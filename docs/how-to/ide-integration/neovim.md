@@ -10,14 +10,14 @@ Plugin manager-agnostic. Add a config entry per Sugar kit:
 local lspconfig = require('lspconfig')
 local configs = require('lspconfig.configs')
 
-if not configs.provekit_rust then
-  configs.provekit_rust = {
+if not configs.sugar_rust then
+  configs.sugar_rust = {
     default_config = {
-      cmd = { 'provekit-lsp-rust' },
+      cmd = { 'sugar-lsp-rust' },
       filetypes = { 'rust' },
       root_dir = lspconfig.util.root_pattern('Cargo.toml'),
       settings = {
-        provekit = {
+        sugar = {
           protocolVersion = '1.1.0',
           tier3Timeout = 5000,
         },
@@ -26,55 +26,55 @@ if not configs.provekit_rust then
   }
 end
 
-lspconfig.provekit_rust.setup{}
+lspconfig.sugar_rust.setup{}
 ```
 
 Equivalent for other kits:
 
 ```lua
 -- Python
-configs.provekit_python = {
+configs.sugar_python = {
   default_config = {
-    cmd = { 'provekit-lsp-py' },
+    cmd = { 'sugar-lsp-py' },
     filetypes = { 'python' },
     root_dir = lspconfig.util.root_pattern('pyproject.toml', 'setup.py'),
-    settings = { provekit = { protocolVersion = '1.1.0' } },
+    settings = { sugar = { protocolVersion = '1.1.0' } },
   },
 }
-lspconfig.provekit_python.setup{}
+lspconfig.sugar_python.setup{}
 
 -- Zig
-configs.provekit_zig = {
+configs.sugar_zig = {
   default_config = {
-    cmd = { 'provekit-lift-zig', '--rpc' },
+    cmd = { 'sugar-lift-zig', '--rpc' },
     filetypes = { 'zig' },
     root_dir = lspconfig.util.root_pattern('build.zig'),
-    settings = { provekit = { protocolVersion = '1.1.0' } },
+    settings = { sugar = { protocolVersion = '1.1.0' } },
   },
 }
-lspconfig.provekit_zig.setup{}
+lspconfig.sugar_zig.setup{}
 
 -- Ruby
-configs.provekit_ruby = {
+configs.sugar_ruby = {
   default_config = {
-    cmd = { 'provekit-lsp-ruby' },
+    cmd = { 'sugar-lsp-ruby' },
     filetypes = { 'ruby' },
     root_dir = lspconfig.util.root_pattern('Gemfile'),
-    settings = { provekit = { protocolVersion = '1.1.0' } },
+    settings = { sugar = { protocolVersion = '1.1.0' } },
   },
 }
-lspconfig.provekit_ruby.setup{}
+lspconfig.sugar_ruby.setup{}
 
 -- C#
-configs.provekit_csharp = {
+configs.sugar_csharp = {
   default_config = {
-    cmd = { 'provekit-lsp-csharp' },
+    cmd = { 'sugar-lsp-csharp' },
     filetypes = { 'cs' },
     root_dir = lspconfig.util.root_pattern('*.csproj', '*.sln'),
-    settings = { provekit = { protocolVersion = '1.1.0' } },
+    settings = { sugar = { protocolVersion = '1.1.0' } },
   },
 }
-lspconfig.provekit_csharp.setup{}
+lspconfig.sugar_csharp.setup{}
 ```
 
 ## Diagnostic display
@@ -87,21 +87,21 @@ Use whichever diagnostic viewer you have installed. Recommended:
 
 ## Filtering Sugar diagnostics
 
-Sugar diagnostics use source `"provekit"`. Filter for "show only Sugar issues":
+Sugar diagnostics use source `"sugar"`. Filter for "show only Sugar issues":
 
 ```vim
-:lua require('telescope.builtin').diagnostics({ source = 'provekit' })
+:lua require('telescope.builtin').diagnostics({ source = 'sugar' })
 ```
 
 Or in your config:
 
 ```lua
-vim.api.nvim_create_user_command('ProvekitDiagnostics', function()
+vim.api.nvim_create_user_command('SugarDiagnostics', function()
   local diagnostics = vim.diagnostic.get(0, {
     severity = { vim.diagnostic.severity.ERROR, vim.diagnostic.severity.WARN }
   })
-  local provekit_only = vim.tbl_filter(function(d) return d.source == 'provekit' end, diagnostics)
-  vim.diagnostic.setqflist({ open = true, items = provekit_only })
+  local sugar_only = vim.tbl_filter(function(d) return d.source == 'sugar' end, diagnostics)
+  vim.diagnostic.setqflist({ open = true, items = sugar_only })
 end, {})
 ```
 
@@ -110,9 +110,9 @@ end, {})
 If the LSP is slow, tune in your config:
 
 ```lua
-lspconfig.provekit_rust.setup{
+lspconfig.sugar_rust.setup{
   settings = {
-    provekit = {
+    sugar = {
       protocolVersion = '1.1.0',
       tier3Timeout = 2000,           -- fail Tier 3 faster
       tier3MaxInvocationsPerParse = 3, -- cap Tier 3 calls per parse
@@ -128,11 +128,11 @@ A polyglot project (e.g., a Rust backend with Python ML and TypeScript frontend)
 
 ```lua
 -- All shipping Sugar kits, in one config
-lspconfig.provekit_rust.setup{}
-lspconfig.provekit_python.setup{}
-lspconfig.provekit_zig.setup{}
-lspconfig.provekit_ruby.setup{}
-lspconfig.provekit_csharp.setup{}
+lspconfig.sugar_rust.setup{}
+lspconfig.sugar_python.setup{}
+lspconfig.sugar_zig.setup{}
+lspconfig.sugar_ruby.setup{}
+lspconfig.sugar_csharp.setup{}
 ```
 
 When TypeScript / Go / C++ / Java LSP plugins ship, add their configs analogously.
@@ -143,8 +143,8 @@ When TypeScript / Go / C++ / Java LSP plugins ship, add their configs analogousl
 
 - Check `:LspInfo` in command mode. The LSP should appear as registered.
 - Check `:LspLog` for startup errors.
-- Verify `provekit-lsp-rust` (or equivalent) is on PATH: `:echo system("which provekit-lsp-rust")`.
-- Verify `provekit verify-protocol` runs successfully from a terminal.
+- Verify `sugar-lsp-rust` (or equivalent) is on PATH: `:echo system("which sugar-lsp-rust")`.
+- Verify `sugar verify-protocol` runs successfully from a terminal.
 
 ### Squigglies don't appear
 
@@ -156,7 +156,7 @@ When TypeScript / Go / C++ / Java LSP plugins ship, add their configs analogousl
 
 - Check `:LspLog` for repeated Tier 3 fallback log entries.
 - Lower `tier3Timeout` and `tier3MaxInvocationsPerParse` (see above).
-- Run `provekit prove` from a terminal; if it's slow there too, the lattice is cold.
+- Run `sugar prove` from a terminal; if it's slow there too, the lattice is cold.
 
 ## Per-language specifics
 

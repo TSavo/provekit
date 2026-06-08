@@ -1,8 +1,8 @@
 # Trinity body-template completeness audit (post-floor)
 
 Date: 2026-05-18
-Source: TSavo/provekit @ ffbea3064 (post Trinity floor-completion landings #1150, #1151, #1152)
-Worktree: `/Users/tsavo/provekit-worktrees/audit-2026-05-18-body-templates`
+Source: TSavo/sugar @ ffbea3064 (post Trinity floor-completion landings #1150, #1151, #1152)
+Worktree: `/Users/tsavo/sugar-worktrees/audit-2026-05-18-body-templates`
 Branch: `kit/audit-body-templates`
 
 ## 0. Scope and method
@@ -15,12 +15,12 @@ Inputs read:
 
 - `deleted concept-shapes catalog/realizations/*.json`: declarative realization records
 - `menagerie/<lang>-language-signature/specs/body-templates/*.json`: emission templates
-- `implementations/python/provekit-realize-python-core/src/provekit_realize_python_core/realizer.py`
-- `implementations/rust/provekit-realize-rust-core/src/lib.rs`
-- `implementations/java/provekit-realize-java-core/src/main/java/com/provekit/realize/*.java`
-- `implementations/rust/provekit-cli/tests/trinity_roundtrip_test.rs`
-- `implementations/rust/provekit-cli/tests/verb_composition.rs`
-- `implementations/rust/provekit-cli/tests/library_tag_dispatch_test.rs`
+- `implementations/python/sugar-realize-python-core/src/sugar_realize_python_core/realizer.py`
+- `implementations/rust/sugar-realize-rust-core/src/lib.rs`
+- `implementations/java/sugar-realize-java-core/src/main/java/com/sugar/realize/*.java`
+- `implementations/rust/sugar-cli/tests/trinity_roundtrip_test.rs`
+- `implementations/rust/sugar-cli/tests/verb_composition.rs`
+- `implementations/rust/sugar-cli/tests/library_tag_dispatch_test.rs`
 
 The audit writes no substrate. Only this document is produced.
 
@@ -57,7 +57,7 @@ Path: `menagerie/python-language-signature/specs/body-templates/`
 | `python-canonical-bodies.json` | python-canonical-bodies | 27 |
 | `python-canonical-bodies-aiosqlite.json` | python-canonical-bodies-aiosqlite | 2 |
 | `python-canonical-bodies-blake3.json` | python-canonical-bodies-blake3 | 5 |
-| `python-canonical-bodies-libprovekit.json` | python-canonical-bodies-libprovekit | 4 |
+| `python-canonical-bodies-libsugar.json` | python-canonical-bodies-libsugar | 4 |
 | `python-canonical-bodies-requests.json` | python-canonical-bodies-requests | 4 |
 | `python-canonical-bodies-rust-runtime.json` | python-canonical-bodies-rust-runtime | 31 |
 | `python-canonical-bodies-sqlite3.json` | python-canonical-bodies-sqlite3 | 2 |
@@ -84,13 +84,13 @@ Path: `menagerie/java-language-signature/specs/body-templates/`
 
 ### 3.1 Python core realizer
 
-File: `implementations/python/provekit-realize-python-core/src/provekit_realize_python_core/realizer.py`
+File: `implementations/python/sugar-realize-python-core/src/sugar_realize_python_core/realizer.py`
 
 The realizer module loads body-template files via three `lru_cache`-backed loaders:
 
 - `entries()` loads the union of `python-canonical-bodies.json`, `python-canonical-bodies-rust-runtime.json`, `python-canonical-bodies-blake3.json`.
-- `libprovekit_entries()` loads `python-canonical-bodies-libprovekit.json`.
-- Library-tagged kits (`provekit-realize-python-requests`, `provekit-realize-python-aiosqlite`, `provekit-realize-python-sqlite3`) load their own bodies file.
+- `libsugar_entries()` loads `python-canonical-bodies-libsugar.json`.
+- Library-tagged kits (`sugar-realize-python-requests`, `sugar-realize-python-aiosqlite`, `sugar-realize-python-sqlite3`) load their own bodies file.
 
 Dispatch flow (per `term_body_for_term_shape`, `_lower_term_expression`, `_body_template_expression_for_candidates`):
 
@@ -102,15 +102,15 @@ There is no fallback `raise NotImplementedError("trinity lower")` emission in th
 
 ### 3.2 Rust core realizer
 
-File: `implementations/rust/provekit-realize-rust-core/src/lib.rs`
+File: `implementations/rust/sugar-realize-rust-core/src/lib.rs`
 
-`emit_stub_with_mode` calls `operator_body_template_for` first, then `body_template_for`, then `emit_sugar_carrier`, and finally falls back to `stub_body_for(concept_name)` which emits `panic!("provekit-bind canonical: <concept_name>")` (line 828-831). The stub is the explicit unwired path.
+`emit_stub_with_mode` calls `operator_body_template_for` first, then `body_template_for`, then `emit_sugar_carrier`, and finally falls back to `stub_body_for(concept_name)` which emits `panic!("sugar-bind canonical: <concept_name>")` (line 828-831). The stub is the explicit unwired path.
 
 Body-template lookup loads `rust-canonical-bodies.json` only; there is no language-tag dimension on the Rust side (no library-tagged bodies file).
 
 ### 3.3 Java core realizer
 
-Package: `implementations/java/provekit-realize-java-core/src/main/java/com/provekit/realize/`
+Package: `implementations/java/sugar-realize-java-core/src/main/java/com/sugar/realize/`
 
 Key files: `SugarRealizer.java` (template-binding), `RealizerPlan.java`, `JavaNullBoundaryRealizer.java`, `RpcServer.java`.
 
@@ -118,9 +118,9 @@ Java loads `java-canonical-bodies.json` via the SugarRealizer path. Template bin
 
 ### 3.4 Library-tag dispatch (kit selection upstream of body emission)
 
-File: `implementations/rust/provekit-cli/src/kit_dispatch.rs`
+File: `implementations/rust/sugar-cli/src/kit_dispatch.rs`
 
-`dispatch_realize(target_lang, library_tag, request)` resolves a `kind = "realize"` plugin via convention. For Python the workspace can register multiple kits (default `provekit-realize-python-core`, plus `python-requests`, `python-aiosqlite`, `python-sqlite3`), each binding its own body-template file. Test in `library_tag_dispatch_test.rs` shows the routing works for `concept:sql-query` across `python-sqlite3` vs `python-aiosqlite`.
+`dispatch_realize(target_lang, library_tag, request)` resolves a `kind = "realize"` plugin via convention. For Python the workspace can register multiple kits (default `sugar-realize-python-core`, plus `python-requests`, `python-aiosqlite`, `python-sqlite3`), each binding its own body-template file. Test in `library_tag_dispatch_test.rs` shows the routing works for `concept:sql-query` across `python-sqlite3` vs `python-aiosqlite`.
 
 This means the body-template question is two-dimensional:
 
@@ -223,15 +223,15 @@ The task brief cites the Python lower emitting `raise NotImplementedError("trini
 
 ## 6. Why the trinity_roundtrip test still fails (separate question from the audit)
 
-File: `implementations/rust/provekit-cli/tests/trinity_roundtrip_test.rs`, lines 95-110.
+File: `implementations/rust/sugar-cli/tests/trinity_roundtrip_test.rs`, lines 95-110.
 
-The test does NOT invoke `provekit-realize-python-core`. It writes a stub Python script `trinity-lower-python.py` directly into the test temp directory:
+The test does NOT invoke `sugar-realize-python-core`. It writes a stub Python script `trinity-lower-python.py` directly into the test temp directory:
 
 ```
 source = f"# concept: {params.get('concept_name', '')}\ndef {params.get('function', 'f')}({', '.join(params.get('params', []))}):\n    raise NotImplementedError(\"trinity lower\")\n"
 ```
 
-That stub is registered as the `realize/python` plugin via `.provekit/realize/python/manifest.toml` and emits the placeholder for every concept request. The assertion at line 196 (`assert!(py.contains("# concept: concept:http-request"), "{py}")`) only verifies the comment annotation survived the round-trip, NOT that an executable body was emitted.
+That stub is registered as the `realize/python` plugin via `.sugar/realize/python/manifest.toml` and emits the placeholder for every concept request. The assertion at line 196 (`assert!(py.contains("# concept: concept:http-request"), "{py}")`) only verifies the comment annotation survived the round-trip, NOT that an executable body was emitted.
 
 The `verb_composition.rs` test follows the same pattern (line 103, line 240).
 
@@ -245,20 +245,20 @@ Concrete (kit, concept, library) triples where wiring is incomplete:
 
 | kit | concept | declared realization target | gap kind |
 | --- | --- | --- | --- |
-| provekit-realize-java-core | concept:closure | java:lambda-invokedynamic | no template entry, no programmatic branch |
-| provekit-realize-java-core | concept:double-dispatch | java:visitor-itab-pair | no template entry, no programmatic branch |
-| provekit-realize-java-core | concept:dynamic-dispatch | java:virtual-method | no template entry, no programmatic branch |
-| provekit-realize-java-core | concept:exception | java:try-catch | no template entry, no programmatic branch |
-| provekit-realize-java-core | concept:generic-instantiation | java:type-erasure | no template entry, no programmatic branch |
-| provekit-realize-java-core | concept:iterator | java:iterable-iterator | no template entry, no programmatic branch |
-| provekit-realize-java-core | concept:reference | java:object-reference | no template entry, no programmatic branch |
-| provekit-realize-python-core | concept:closure | python:native-closure | no template entry, no programmatic branch |
-| provekit-realize-python-core | concept:double-dispatch | python:match-type-pair | no template entry, no programmatic branch |
-| provekit-realize-python-core | concept:dynamic-dispatch | python:mro-dict-lookup | no template entry, no programmatic branch |
-| provekit-realize-python-core | concept:exception | python:try-except | no template entry, no programmatic branch |
-| provekit-realize-python-core | concept:generic-instantiation | python:duck-typing | no template entry, no programmatic branch |
-| provekit-realize-python-core | concept:iterator | python:iter-next-protocol | no template entry, no programmatic branch |
-| provekit-realize-python-core | concept:reference | python:name-binding | no template entry, no programmatic branch |
+| sugar-realize-java-core | concept:closure | java:lambda-invokedynamic | no template entry, no programmatic branch |
+| sugar-realize-java-core | concept:double-dispatch | java:visitor-itab-pair | no template entry, no programmatic branch |
+| sugar-realize-java-core | concept:dynamic-dispatch | java:virtual-method | no template entry, no programmatic branch |
+| sugar-realize-java-core | concept:exception | java:try-catch | no template entry, no programmatic branch |
+| sugar-realize-java-core | concept:generic-instantiation | java:type-erasure | no template entry, no programmatic branch |
+| sugar-realize-java-core | concept:iterator | java:iterable-iterator | no template entry, no programmatic branch |
+| sugar-realize-java-core | concept:reference | java:object-reference | no template entry, no programmatic branch |
+| sugar-realize-python-core | concept:closure | python:native-closure | no template entry, no programmatic branch |
+| sugar-realize-python-core | concept:double-dispatch | python:match-type-pair | no template entry, no programmatic branch |
+| sugar-realize-python-core | concept:dynamic-dispatch | python:mro-dict-lookup | no template entry, no programmatic branch |
+| sugar-realize-python-core | concept:exception | python:try-except | no template entry, no programmatic branch |
+| sugar-realize-python-core | concept:generic-instantiation | python:duck-typing | no template entry, no programmatic branch |
+| sugar-realize-python-core | concept:iterator | python:iter-next-protocol | no template entry, no programmatic branch |
+| sugar-realize-python-core | concept:reference | python:name-binding | no template entry, no programmatic branch |
 
 Total: 14 triples (7 Java, 7 Python). Rust: zero gap triples.
 
@@ -292,13 +292,13 @@ Discrimination-tests-per-variant rule from `feedback_discrimination_tests_per_va
 Before merging Phase B1, decide:
 
 - Whether Rust's narrower boundary set is correct or whether Rust ALSO needs `concept:exception`, `concept:closure`, `concept:iterator`, `concept:reference`, etc. declared as boundaries. The classifier currently marks these `absent` or `sugar-carrier` for Rust, but Rust definitely has closures, iterators, and references at substrate level. If declared, Rust gains 4+ more boundary realizations and 4+ more body templates.
-- Whether to upgrade the stub lower in `trinity_roundtrip_test.rs` and `verb_composition.rs` to invoke the real `provekit-realize-python-core` kit, so those tests actually exercise the body-template path. Currently they validate only the lift-bind-lower wire shape, not body emission.
+- Whether to upgrade the stub lower in `trinity_roundtrip_test.rs` and `verb_composition.rs` to invoke the real `sugar-realize-python-core` kit, so those tests actually exercise the body-template path. Currently they validate only the lift-bind-lower wire shape, not body emission.
 
 Both items are Sir's call, not dispatcher-mechanical.
 
 ### Phase B3 (library-tagged kits)
 
-For each of the seven Python placeholder concepts, decide whether the concept needs a wired body in any library-tagged kit (e.g. `provekit-realize-python-requests`). `concept:exception` and `concept:iterator` plausibly do; `concept:closure` and `concept:reference` plausibly do not. This decision should be made per concept after Phase B1 lands, not blocked on it.
+For each of the seven Python placeholder concepts, decide whether the concept needs a wired body in any library-tagged kit (e.g. `sugar-realize-python-requests`). `concept:exception` and `concept:iterator` plausibly do; `concept:closure` and `concept:reference` plausibly do not. This decision should be made per concept after Phase B1 lands, not blocked on it.
 
 ## 9. Confidence and replayability
 

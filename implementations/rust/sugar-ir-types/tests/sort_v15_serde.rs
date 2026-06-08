@@ -3,7 +3,7 @@
 // Round-trip serde tests for the v1.5.0 Sort enum extensions.
 //
 // Source of truth:
-//   protocol/provekit-ir.cddl  (Sort = ... / FunctionSort / DependentSort)
+//   protocol/sugar-ir.cddl  (Sort = ... / FunctionSort / DependentSort)
 //
 // Issue context:
 //   #330 (grammar grow), #361 (rust gap closed by this PR)

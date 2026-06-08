@@ -9,7 +9,7 @@
 # so the witness REFUSES it. 8 cells x 2 = 16 files; the witness is per-file, so
 # ok and bad live in separate files.
 #
-# This script PASSES iff provekit discharges every `_ok` and refuses every
+# This script PASSES iff sugar discharges every `_ok` and refuses every
 # `_bad` -- checked per file, so a swapped verdict fails the gate.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -24,10 +24,10 @@ fi
 
 cd "$HERE"
 rm -f blake3-512:*.proof 2>/dev/null || true
-rm -rf .provekit/runs .provekit/witnesses __pycache__ 2>/dev/null || true
+rm -rf .sugar/runs .sugar/witnesses __pycache__ 2>/dev/null || true
 
 echo "== mint (one WitnessPackageMemento over the 16 cases; oracle runs the suite) =="
-rm -rf .provekit/witnesses 2>/dev/null || true
+rm -rf .sugar/witnesses 2>/dev/null || true
 "$BIN" mint --out . --quiet
 
 echo "== self-check: the per-test facts live in the content-addressed .witness package =="
@@ -36,7 +36,7 @@ echo "== self-check: the per-test facts live in the content-addressed .witness p
 # every _bad failed -- per-test discrimination, now pinned by one cid.
 "$VENV/bin/python" - <<'PY'
 import json, sys, glob
-bundles = glob.glob(".provekit/witnesses/*.witness")
+bundles = glob.glob(".sugar/witnesses/*.witness")
 if not bundles:
     print("FAIL: no witness package written"); sys.exit(1)
 seen = {}

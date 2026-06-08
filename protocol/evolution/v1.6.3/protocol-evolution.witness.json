@@ -24,7 +24,7 @@
     "fuelUsed": 0
   },
   "metadata": {
-    "producer": "provekit-lift-identify-only-pep",
+    "producer": "sugar-lift-identify-only-pep",
     "producerVersion": "0.1.0",
     "bootstrapNote": "TDP-shaped PEP witness emitted by extension-aware tooling; core verification does not execute PEP."
   }

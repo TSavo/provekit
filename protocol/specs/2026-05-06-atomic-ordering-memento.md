@@ -165,7 +165,7 @@ After verification, the effect is discharged and composition proceeds with `orde
 
 ### §5a.1 Signing ceremony
 
-An `AtomicOrderingMemento` MUST be signed by a curator-level key (`ed25519:<base64>`). The signing key follows the provenance path `secret/provekit/provenance-ed25519`.
+An `AtomicOrderingMemento` MUST be signed by a curator-level key (`ed25519:<base64>`). The signing key follows the provenance path `secret/sugar/provenance-ed25519`.
 
 1. The author constructs the `header` and `metadata` objects per §1.
 2. The author produces JCS-canonical bytes of `{ header, metadata }`.
@@ -190,6 +190,6 @@ Before an `AtomicOrderingMemento` is admitted into the pool:
 ## §7. References
 
 - Paper 07 §8 (atomic intrinsics in LLBC)
-- `provekit-walk/src/contract.rs` — `Effect::AtomicAccess`, `AtomicKind`
-- `provekit-walk/src/llbc_calls.rs` — `detect_atomic_call`, `atomic_kind_for_method`
+- `sugar-walk/src/contract.rs` — `Effect::AtomicAccess`, `AtomicKind`
+- `sugar-walk/src/llbc_calls.rs` — `detect_atomic_call`, `atomic_kind_for_method`
 - `2026-05-04-linker-daemon-protocol.md` — memento pooling

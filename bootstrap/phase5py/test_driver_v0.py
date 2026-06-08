@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = ROOT / "bootstrap/phase5py/driver_v0.py"
 RECEIPT = ROOT / "bootstrap/phase5py/v0_receipt.json"
-MODULE = ROOT / "bootstrap/phase5py/libprovekit_py_v0.py"
+MODULE = ROOT / "bootstrap/phase5py/libsugar_py_v0.py"
 README = ROOT / "bootstrap/phase5py/README.md"
 
 

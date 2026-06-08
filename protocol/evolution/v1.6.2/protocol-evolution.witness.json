@@ -23,7 +23,7 @@
     "fuelUsed": 0
   },
   "metadata": {
-    "producer": "provekit-cicp-dogfood",
+    "producer": "sugar-cicp-dogfood",
     "producerVersion": "0.1.0",
     "bootstrapNote": "TDP-shaped PEP witness emitted by extension-aware tooling; core verification does not execute PEP."
   }

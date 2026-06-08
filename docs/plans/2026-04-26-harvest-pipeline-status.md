@@ -11,11 +11,11 @@ Recognition gate (Phase 2-A: recognize.ts, locus-constrained)
   ↓ if recognized: append provenance to library entry, skip discovery
   ↓ if unrecognized:
 Discovery (Phase 2-B: discover.ts → tryExistingCapabilities)
-  ↓ writes to .provekit/harvest/staging/<project>-bug-<id>.json
+  ↓ writes to .sugar/harvest/staging/<project>-bug-<id>.json
   ↓
 Promotion (Phase 4-lite: promote.ts)
   ↓ validate.ts: positive (matches own bug) + negative (cohort match rate ≤ 30%)
-  ↓ pass → write .dsl + .json to .provekit/principles/, merge provenance
+  ↓ pass → write .dsl + .json to .sugar/principles/, merge provenance
   ↓ fail → quarantine in staging with audit trail
 ```
 

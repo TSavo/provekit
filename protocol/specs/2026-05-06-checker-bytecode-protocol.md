@@ -112,7 +112,7 @@ CBP uses signed metadata/body fields. The following shape is the draft body conv
   "inputCids": ["blake3-512:..."],
   "metadata": {
     "sourceIrCid": "blake3-512:...",
-    "compilerName": "provekit-checker-wasm",
+    "compilerName": "sugar-checker-wasm",
     "compilerVersion": "0.1.0"
   }
 }
@@ -127,7 +127,7 @@ Normative fields:
 | `obligationCid` | Predicate, edge, or gap CID compiled by the checker. |
 | `obligationKind` | `"predicate"`, `"edge"`, or `"gap"`. |
 | `checkerBytecodeCid` | CID of the executable checker bytes. |
-| `checkerBytecodeEncoding` | Runtime target, e.g. `"wasm32-wasi"`, `"evm-bytecode"`, `"ebpf"`, `"jvm"`, `"native-plugin"`, `"interpreted-proofir"`, `"provekit-checker-ir/0"`, or `"source+compile"`. |
+| `checkerBytecodeEncoding` | Runtime target, e.g. `"wasm32-wasi"`, `"evm-bytecode"`, `"ebpf"`, `"jvm"`, `"native-plugin"`, `"interpreted-proofir"`, `"sugar-checker-ir/0"`, or `"source+compile"`. |
 | `checkerBytecodeInlineBase64` | Optional inline executable bytes. If absent/null, resolve `checkerBytecodeCid` from the content-addressed store. |
 | `checkerCompilerCid` | CID of compiler/spec artifact used to produce bytecode. |
 | `checkerRuntimeCid` | CID of accepted runtime/interpreter spec or implementation. |
@@ -158,7 +158,7 @@ CBP does not require one universal bytecode target, but it reserves a minimal na
 
 ```json
 {
-  "encoding": "provekit-checker-ir/0",
+  "encoding": "sugar-checker-ir/0",
   "instructions": [
     {"op": "load", "dst": "r0", "binding": "amount"},
     {"op": "const_i64", "dst": "r1", "value": 1},
@@ -178,7 +178,7 @@ This JSON instruction stream, once JCS-canonicalized and UTF-8 encoded, is bytec
 CBP does not privilege one executable form. A checker artifact MAY be:
 
 - direct VM bytecode, e.g. WASM, EVM bytecode, JVM bytecode, or eBPF;
-- ProvekIt-native checker instruction bytes;
+- Sugar-native checker instruction bytes;
 - source code that requires a specified compilation DAG before execution;
 - a host-native plugin identified by CID and policy;
 - proof-carrying bytecode whose `.proof` artifact is embedded in metadata/body or referenced by CID;
@@ -482,4 +482,4 @@ A CBP v0.1 implementation is conformant if it:
 
 Cite as:
 
-> ProvekIt Protocol Working Notes (2026). *Checker Bytecode Protocol (CBP)*. Draft extension protocol v0.1.0.
+> Sugar Protocol Working Notes (2026). *Checker Bytecode Protocol (CBP)*. Draft extension protocol v0.1.0.

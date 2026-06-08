@@ -7,7 +7,7 @@ fn nat_obligation() -> Json {
         "kind": "atomic",
         "name": "equational_theory",
         "theory": {
-            "name": "provekit-nat",
+            "name": "sugar-nat",
             "sorts": ["Nat"],
             "operators": [
                 {"name": "zero", "arity": [], "result": "Nat"},
@@ -67,7 +67,7 @@ fn ac_obligation() -> Json {
         "kind": "atomic",
         "name": "equational_theory",
         "theory": {
-            "name": "provekit-ac",
+            "name": "sugar-ac",
             "sorts": ["Elt"],
             "operators": [
                 {"name": "a", "arity": [], "result": "Elt"},
@@ -106,7 +106,7 @@ fn ac_obligation() -> Json {
 #[test]
 fn nat_lowering_is_byte_for_byte_stable() {
     let expected = "\
-fmod PROVEKIT-NAT is
+fmod SUGAR-NAT is
   sort Nat .
   op zero : -> Nat .
   op s : Nat -> Nat .
@@ -116,9 +116,9 @@ fmod PROVEKIT-NAT is
   eq plus(s(N), M) = s(plus(N, M)) .
 endfm
 
-red in PROVEKIT-NAT : plus(s(zero), s(zero)) .
-red in PROVEKIT-NAT : s(s(zero)) .
-search in PROVEKIT-NAT : plus(s(zero), s(zero)) =>* s(s(zero)) .
+red in SUGAR-NAT : plus(s(zero), s(zero)) .
+red in SUGAR-NAT : s(s(zero)) .
+search in SUGAR-NAT : plus(s(zero), s(zero)) =>* s(s(zero)) .
 ";
     assert_eq!(emit(&nat_obligation()).unwrap(), expected);
 }
@@ -126,7 +126,7 @@ search in PROVEKIT-NAT : plus(s(zero), s(zero)) =>* s(s(zero)) .
 #[test]
 fn ac_builtin_lowering_is_byte_for_byte_stable() {
     let expected = "\
-fmod PROVEKIT-AC is
+fmod SUGAR-AC is
   sort Elt .
   op a : -> Elt .
   op b : -> Elt .
@@ -135,9 +135,9 @@ fmod PROVEKIT-AC is
   op _+_ : Elt Elt -> Elt [assoc comm] .
 endfm
 
-red in PROVEKIT-AC : (((a + b) + c) + d) .
-red in PROVEKIT-AC : (a + (b + (c + d))) .
-search in PROVEKIT-AC : (((a + b) + c) + d) =>* (a + (b + (c + d))) .
+red in SUGAR-AC : (((a + b) + c) + d) .
+red in SUGAR-AC : (a + (b + (c + d))) .
+search in SUGAR-AC : (((a + b) + c) + d) =>* (a + (b + (c + d))) .
 ";
     assert_eq!(emit(&ac_obligation()).unwrap(), expected);
 }

@@ -11,7 +11,7 @@ use super::types::{Boundary, Cid, Contract, Dialect, DomainClaim, DomainKind, In
 ///
 /// This is primitive 1's input contract: `address` canonicalizes the structure
 /// and hashes the bytes with BLAKE3-512. Implementations in this module use
-/// `provekit-canonicalizer`'s JCS encoder and hash helper.
+/// `sugar-canonicalizer`'s JCS encoder and hash helper.
 pub trait Canonical {
     /// Return the canonical byte representation used for content addressing.
     ///

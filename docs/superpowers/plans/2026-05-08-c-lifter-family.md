@@ -4,36 +4,36 @@
 
 **Goal:** Build the first slice of the C lifter family: a shared C lift core, preserved C LSP behavior through that core, first-class opacity/refusal output, a sparse lifter, a minimal assertions lifter, and deterministic composition tests.
 
-**Architecture:** `implementations/c/provekit-lift-core` owns shared C facts, source loci, result streams, and JSON helpers. Standalone lifters such as `provekit-lift-c-sparse` and `provekit-lift-c-assertions` consume core facts and emit only their own semantic declarations. The existing `provekit-lsp-c` binary should call the core so current behavior is preserved while new lifters build on the same substrate.
+**Architecture:** `implementations/c/sugar-lift-core` owns shared C facts, source loci, result streams, and JSON helpers. Standalone lifters such as `sugar-lift-c-sparse` and `sugar-lift-c-assertions` consume core facts and emit only their own semantic declarations. The existing `sugar-lsp-c` binary should call the core so current behavior is preserved while new lifters build on the same substrate.
 
-**Tech Stack:** C11, existing C Makefile style, the new shared core JSON/result helpers, POSIX shell integration tests, and per-lifter `.provekit/lift/.../manifest.toml` manifests.
+**Tech Stack:** C11, existing C Makefile style, the new shared core JSON/result helpers, POSIX shell integration tests, and per-lifter `.sugar/lift/.../manifest.toml` manifests.
 
 ---
 
 ## File Structure
 
-- Create `implementations/c/provekit-lift-core/Makefile`: builds and tests the shared core.
-- Create `implementations/c/provekit-lift-core/include/provekit/c_lift_core.h`: public fact/result API shared by C-family lifters.
-- Create `implementations/c/provekit-lift-core/src/core.c`: result management, JSON emission, append helpers.
-- Create `implementations/c/provekit-lift-core/src/parser.c`: temporary regex/parser backend fact extraction, moved out of `provekit-lsp-c`.
-- Create `implementations/c/provekit-lift-core/tests/test_runner.c`: focused unit tests for result streams, facts, opacity, refusals, and composition.
-- Modify `implementations/c/provekit-lsp-c/Makefile`: link the LSP binary against the shared core sources.
-- Modify `implementations/c/provekit-lsp-c/main.c`: delegate parse-source behavior to `provekit-lift-core`.
-- Create `implementations/c/provekit-lift-c-sparse/Makefile`: builds/tests the sparse lifter.
-- Create `implementations/c/provekit-lift-c-sparse/src/main.c`: JSON-RPC-ish CLI for sparse lifter.
-- Create `implementations/c/provekit-lift-c-sparse/src/sparse.c`: sparse semantic extraction.
-- Create `implementations/c/provekit-lift-c-sparse/tests/fixtures/sparse_basic.c`: sparse annotation fixture.
-- Create `implementations/c/provekit-lift-c-sparse/tests/integration.sh`: sparse lifter integration test.
-- Create `implementations/c/.provekit/lift/c-sparse/manifest.toml`: lifter identity manifest.
-- Create `implementations/c/provekit-lift-c-assertions/Makefile`: builds/tests the assertions lifter.
-- Create `implementations/c/provekit-lift-c-assertions/src/main.c`: JSON-RPC-ish CLI for assertions lifter.
-- Create `implementations/c/provekit-lift-c-assertions/src/assertions.c`: assertion macro semantic extraction.
-- Create `implementations/c/provekit-lift-c-assertions/tests/fixtures/assertions_basic.c`: assertion fixture.
-- Create `implementations/c/provekit-lift-c-assertions/tests/integration.sh`: assertions lifter integration test.
-- Create `implementations/c/.provekit/lift/c-assertions/manifest.toml`: lifter identity manifest.
-- Create `implementations/c/provekit-lift-composition/Makefile`: composition test runner.
-- Create `implementations/c/provekit-lift-composition/tests/fixtures/sparse_and_assertions.c`: shared fixture for two lifters.
-- Create `implementations/c/provekit-lift-composition/tests/integration.sh`: runs sparse and assertions lifters over the same source and verifies outputs remain separate and deterministic.
+- Create `implementations/c/sugar-lift-core/Makefile`: builds and tests the shared core.
+- Create `implementations/c/sugar-lift-core/include/sugar/c_lift_core.h`: public fact/result API shared by C-family lifters.
+- Create `implementations/c/sugar-lift-core/src/core.c`: result management, JSON emission, append helpers.
+- Create `implementations/c/sugar-lift-core/src/parser.c`: temporary regex/parser backend fact extraction, moved out of `sugar-lsp-c`.
+- Create `implementations/c/sugar-lift-core/tests/test_runner.c`: focused unit tests for result streams, facts, opacity, refusals, and composition.
+- Modify `implementations/c/sugar-lsp-c/Makefile`: link the LSP binary against the shared core sources.
+- Modify `implementations/c/sugar-lsp-c/main.c`: delegate parse-source behavior to `sugar-lift-core`.
+- Create `implementations/c/sugar-lift-c-sparse/Makefile`: builds/tests the sparse lifter.
+- Create `implementations/c/sugar-lift-c-sparse/src/main.c`: JSON-RPC-ish CLI for sparse lifter.
+- Create `implementations/c/sugar-lift-c-sparse/src/sparse.c`: sparse semantic extraction.
+- Create `implementations/c/sugar-lift-c-sparse/tests/fixtures/sparse_basic.c`: sparse annotation fixture.
+- Create `implementations/c/sugar-lift-c-sparse/tests/integration.sh`: sparse lifter integration test.
+- Create `implementations/c/.sugar/lift/c-sparse/manifest.toml`: lifter identity manifest.
+- Create `implementations/c/sugar-lift-c-assertions/Makefile`: builds/tests the assertions lifter.
+- Create `implementations/c/sugar-lift-c-assertions/src/main.c`: JSON-RPC-ish CLI for assertions lifter.
+- Create `implementations/c/sugar-lift-c-assertions/src/assertions.c`: assertion macro semantic extraction.
+- Create `implementations/c/sugar-lift-c-assertions/tests/fixtures/assertions_basic.c`: assertion fixture.
+- Create `implementations/c/sugar-lift-c-assertions/tests/integration.sh`: assertions lifter integration test.
+- Create `implementations/c/.sugar/lift/c-assertions/manifest.toml`: lifter identity manifest.
+- Create `implementations/c/sugar-lift-composition/Makefile`: composition test runner.
+- Create `implementations/c/sugar-lift-composition/tests/fixtures/sparse_and_assertions.c`: shared fixture for two lifters.
+- Create `implementations/c/sugar-lift-composition/tests/integration.sh`: runs sparse and assertions lifters over the same source and verifies outputs remain separate and deterministic.
 - Modify top-level `Makefile`: include the new packages in `build-c` and `test-c`.
 
 ---
@@ -41,17 +41,17 @@
 ### Task 1: Shared Core Result API
 
 **Files:**
-- Create: `implementations/c/provekit-lift-core/include/provekit/c_lift_core.h`
-- Create: `implementations/c/provekit-lift-core/src/core.c`
-- Create: `implementations/c/provekit-lift-core/tests/test_runner.c`
-- Create: `implementations/c/provekit-lift-core/Makefile`
+- Create: `implementations/c/sugar-lift-core/include/sugar/c_lift_core.h`
+- Create: `implementations/c/sugar-lift-core/src/core.c`
+- Create: `implementations/c/sugar-lift-core/tests/test_runner.c`
+- Create: `implementations/c/sugar-lift-core/Makefile`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `implementations/c/provekit-lift-core/tests/test_runner.c` with a test that uses the core API before it exists:
+Create `implementations/c/sugar-lift-core/tests/test_runner.c` with a test that uses the core API before it exists:
 
 ```c
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,14 +81,14 @@ int main(void) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;
     }
-    puts("provekit-lift-core tests passed");
+    puts("sugar-lift-core tests passed");
     return 0;
 }
 ```
 
 - [ ] **Step 2: Add the package Makefile**
 
-Create `implementations/c/provekit-lift-core/Makefile`:
+Create `implementations/c/sugar-lift-core/Makefile`:
 
 ```makefile
 # SPDX-License-Identifier: Apache-2.0
@@ -110,7 +110,7 @@ test: $(TEST)
 $(TEST): $(OBJ) tests/test_runner.c
 	$(CC) $(CFLAGS) -o $@ $(OBJ) tests/test_runner.c
 
-%.o: %.c include/provekit/c_lift_core.h
+%.o: %.c include/sugar/c_lift_core.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
@@ -120,7 +120,7 @@ clean:
 Create an empty parser file so the Makefile has the planned source set:
 
 ```c
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
@@ -128,19 +128,19 @@ Create an empty parser file so the Makefile has the planned source set:
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-core test
+make -C implementations/c/sugar-lift-core test
 ```
 
-Expected: compile failure because `provekit/c_lift_core.h` and the result API do not exist.
+Expected: compile failure because `sugar/c_lift_core.h` and the result API do not exist.
 
 - [ ] **Step 4: Implement the minimal core API**
 
-Create `implementations/c/provekit-lift-core/include/provekit/c_lift_core.h`:
+Create `implementations/c/sugar-lift-core/include/sugar/c_lift_core.h`:
 
 ```c
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef PROVEKIT_C_LIFT_CORE_H
-#define PROVEKIT_C_LIFT_CORE_H
+#ifndef SUGAR_C_LIFT_CORE_H
+#define SUGAR_C_LIFT_CORE_H
 
 #include <stddef.h>
 
@@ -176,11 +176,11 @@ char *pk_c_lift_result_to_json(const pk_c_lift_result *result);
 #endif
 ```
 
-Create `implementations/c/provekit-lift-core/src/core.c`:
+Create `implementations/c/sugar-lift-core/src/core.c`:
 
 ```c
 /* SPDX-License-Identifier: Apache-2.0 */
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -322,15 +322,15 @@ char *pk_c_lift_result_to_json(const pk_c_lift_result *result) {
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-core test
+make -C implementations/c/sugar-lift-core test
 ```
 
-Expected: `provekit-lift-core tests passed`.
+Expected: `sugar-lift-core tests passed`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add implementations/c/provekit-lift-core
+git add implementations/c/sugar-lift-core
 git commit -m "feat(c): add lift core result streams"
 ```
 
@@ -339,9 +339,9 @@ git commit -m "feat(c): add lift core result streams"
 ### Task 2: Core Parser Facts
 
 **Files:**
-- Modify: `implementations/c/provekit-lift-core/include/provekit/c_lift_core.h`
-- Modify: `implementations/c/provekit-lift-core/src/parser.c`
-- Modify: `implementations/c/provekit-lift-core/tests/test_runner.c`
+- Modify: `implementations/c/sugar-lift-core/include/sugar/c_lift_core.h`
+- Modify: `implementations/c/sugar-lift-core/src/parser.c`
+- Modify: `implementations/c/sugar-lift-core/tests/test_runner.c`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -390,7 +390,7 @@ static void test_parse_functions_and_macros(void) {
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-core test
+make -C implementations/c/sugar-lift-core test
 ```
 
 Expected: compile failure for missing `pk_c_source_facts`, `pk_c_parse_source`, and `pk_c_source_facts_free`.
@@ -439,12 +439,12 @@ void pk_c_source_facts_free(pk_c_source_facts *facts);
 
 - [ ] **Step 4: Implement the temporary parser backend**
 
-Replace `implementations/c/provekit-lift-core/src/parser.c` with this regex-backed fact extractor:
+Replace `implementations/c/sugar-lift-core/src/parser.c` with this regex-backed fact extractor:
 
 ```c
 /* SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 #include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -474,7 +474,7 @@ static int is_keyword(const char *name) {
 
 static int is_contract_annotation(const char *line) {
     while (*line == ' ' || *line == '\t') line++;
-    return strncmp(line, "//provekit:contract", 19) == 0;
+    return strncmp(line, "//sugar:contract", 19) == 0;
 }
 
 static int is_blank_line(const char *line) {
@@ -750,15 +750,15 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-core test
+make -C implementations/c/sugar-lift-core test
 ```
 
-Expected: `provekit-lift-core tests passed`.
+Expected: `sugar-lift-core tests passed`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add implementations/c/provekit-lift-core
+git add implementations/c/sugar-lift-core
 git commit -m "feat(c): extract reusable C source facts"
 ```
 
@@ -767,9 +767,9 @@ git commit -m "feat(c): extract reusable C source facts"
 ### Task 3: Structured Opacity And Refusals
 
 **Files:**
-- Modify: `implementations/c/provekit-lift-core/include/provekit/c_lift_core.h`
-- Modify: `implementations/c/provekit-lift-core/src/core.c`
-- Modify: `implementations/c/provekit-lift-core/tests/test_runner.c`
+- Modify: `implementations/c/sugar-lift-core/include/sugar/c_lift_core.h`
+- Modify: `implementations/c/sugar-lift-core/src/core.c`
+- Modify: `implementations/c/sugar-lift-core/tests/test_runner.c`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -813,7 +813,7 @@ static void test_opacity_and_refusal_are_separate(void) {
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-core test
+make -C implementations/c/sugar-lift-core test
 ```
 
 Expected: compile failure for missing structured helper functions.
@@ -938,30 +938,30 @@ int pk_c_lift_result_add_refusal_entry(
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-core test
+make -C implementations/c/sugar-lift-core test
 ```
 
-Expected: `provekit-lift-core tests passed`.
+Expected: `sugar-lift-core tests passed`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add implementations/c/provekit-lift-core
+git add implementations/c/sugar-lift-core
 git commit -m "feat(c): separate opacity and refusal streams"
 ```
 
 ---
 
-### Task 4: Route `provekit-lsp-c` Through The Core
+### Task 4: Route `sugar-lsp-c` Through The Core
 
 **Files:**
-- Modify: `implementations/c/provekit-lsp-c/Makefile`
-- Modify: `implementations/c/provekit-lsp-c/main.c`
-- Modify: `implementations/c/provekit-lsp-c/tests/integration.sh`
+- Modify: `implementations/c/sugar-lsp-c/Makefile`
+- Modify: `implementations/c/sugar-lsp-c/main.c`
+- Modify: `implementations/c/sugar-lsp-c/tests/integration.sh`
 
 - [ ] **Step 1: Write the failing regression assertion**
 
-In `implementations/c/provekit-lsp-c/tests/integration.sh`, replace the old `warnings` check and shutdown check:
+In `implementations/c/sugar-lsp-c/tests/integration.sh`, replace the old `warnings` check and shutdown check:
 
 ```sh
 check "T9 parse: warnings key present" "$LINE2" '"warnings":'
@@ -982,21 +982,21 @@ check "T12 shutdown: result null" "$LINE3" '"result":null'
 Run:
 
 ```bash
-make -C implementations/c/provekit-lsp-c test
+make -C implementations/c/sugar-lsp-c test
 ```
 
-Expected: failure because current `provekit-lsp-c` emits `warnings` and does not include `diagnostics`, `opacityReport`, or `refusals`.
+Expected: failure because current `sugar-lsp-c` emits `warnings` and does not include `diagnostics`, `opacityReport`, or `refusals`.
 
-- [ ] **Step 3: Link `provekit-lsp-c` against the core**
+- [ ] **Step 3: Link `sugar-lsp-c` against the core**
 
-Modify `implementations/c/provekit-lsp-c/Makefile`:
+Modify `implementations/c/sugar-lsp-c/Makefile`:
 
 ```makefile
 CC      = cc
-CFLAGS  = -std=c11 -Wall -Wextra -Wpedantic -O2 -I../provekit-lift-core/include
+CFLAGS  = -std=c11 -Wall -Wextra -Wpedantic -O2 -I../sugar-lift-core/include
 
-BIN     = provekit-lsp-c
-SRC     = main.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c
+BIN     = sugar-lsp-c
+SRC     = main.c ../sugar-lift-core/src/core.c ../sugar-lift-core/src/parser.c
 TEST_SH = tests/integration.sh
 ```
 
@@ -1013,7 +1013,7 @@ In `main.c`, remove the local parser implementation because the core now owns it
 Then include the core header:
 
 ```c
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 ```
 
 Add this helper above `handle_parse`:
@@ -1082,7 +1082,7 @@ static void handle_parse(const char *id, const char *json_line) {
 Run:
 
 ```bash
-make -C implementations/c/provekit-lsp-c test
+make -C implementations/c/sugar-lsp-c test
 ```
 
 Expected: all integration checks pass, including `opacityReport` and `refusals` keys.
@@ -1092,15 +1092,15 @@ Expected: all integration checks pass, including `opacityReport` and `refusals` 
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-core test
+make -C implementations/c/sugar-lift-core test
 ```
 
-Expected: `provekit-lift-core tests passed`.
+Expected: `sugar-lift-core tests passed`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add implementations/c/provekit-lsp-c implementations/c/provekit-lift-core
+git add implementations/c/sugar-lsp-c implementations/c/sugar-lift-core
 git commit -m "refactor(c): route lsp parser through lift core"
 ```
 
@@ -1109,12 +1109,12 @@ git commit -m "refactor(c): route lsp parser through lift core"
 ### Task 5: Sparse Lifter
 
 **Files:**
-- Create: `implementations/c/provekit-lift-c-sparse/Makefile`
-- Create: `implementations/c/provekit-lift-c-sparse/src/main.c`
-- Create: `implementations/c/provekit-lift-c-sparse/src/sparse.c`
-- Create: `implementations/c/provekit-lift-c-sparse/tests/fixtures/sparse_basic.c`
-- Create: `implementations/c/provekit-lift-c-sparse/tests/integration.sh`
-- Create: `implementations/c/.provekit/lift/c-sparse/manifest.toml`
+- Create: `implementations/c/sugar-lift-c-sparse/Makefile`
+- Create: `implementations/c/sugar-lift-c-sparse/src/main.c`
+- Create: `implementations/c/sugar-lift-c-sparse/src/sparse.c`
+- Create: `implementations/c/sugar-lift-c-sparse/tests/fixtures/sparse_basic.c`
+- Create: `implementations/c/sugar-lift-c-sparse/tests/integration.sh`
+- Create: `implementations/c/.sugar/lift/c-sparse/manifest.toml`
 
 - [ ] **Step 1: Write the sparse fixture and failing integration test**
 
@@ -1142,7 +1142,7 @@ Create `tests/integration.sh`:
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN="$SCRIPT_DIR/../provekit-lift-c-sparse"
+BIN="$SCRIPT_DIR/../sugar-lift-c-sparse"
 FIXTURE="$SCRIPT_DIR/fixtures/sparse_basic.c"
 
 if [ ! -x "$BIN" ]; then
@@ -1172,7 +1172,7 @@ printf '%s\n' "$RESPONSE" | grep -q '"opacityReport":\[\]' || {
     exit 1
 }
 
-printf 'provekit-lift-c-sparse integration passed\n'
+printf 'sugar-lift-c-sparse integration passed\n'
 ```
 
 - [ ] **Step 2: Add the Makefile and manifest**
@@ -1183,10 +1183,10 @@ Create `Makefile`:
 # SPDX-License-Identifier: Apache-2.0
 
 CC = cc
-CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../provekit-lift-core/include -g
+CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../sugar-lift-core/include -g
 
-BIN = provekit-lift-c-sparse
-SRC = src/main.c src/sparse.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c
+BIN = sugar-lift-c-sparse
+SRC = src/main.c src/sparse.c ../sugar-lift-core/src/core.c ../sugar-lift-core/src/parser.c
 TEST_SH = tests/integration.sh
 
 .PHONY: all test clean
@@ -1204,13 +1204,13 @@ clean:
 	rm -f $(BIN)
 ```
 
-Create `implementations/c/.provekit/lift/c-sparse/manifest.toml`:
+Create `implementations/c/.sugar/lift/c-sparse/manifest.toml`:
 
 ```toml
 name = "c-sparse"
 version = "0.1.0"
-protocol_version = "provekit-lift/1"
-command = ["./provekit-lift-c-sparse/provekit-lift-c-sparse", "--rpc"]
+protocol_version = "sugar-lift/1"
+command = ["./sugar-lift-c-sparse/sugar-lift-c-sparse", "--rpc"]
 working_dir = "."
 
 [capabilities]
@@ -1224,7 +1224,7 @@ emits_signed_mementos = false
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-c-sparse test
+make -C implementations/c/sugar-lift-c-sparse test
 ```
 
 Expected: compile failure because `src/main.c` and `src/sparse.c` do not exist.
@@ -1236,7 +1236,7 @@ Create `src/main.c`:
 ```c
 /* SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1276,7 +1276,7 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i], "--rpc") == 0) rpc = 1;
     }
     if (!rpc) {
-        fprintf(stderr, "Usage: provekit-lift-c-sparse --rpc\n");
+        fprintf(stderr, "Usage: sugar-lift-c-sparse --rpc\n");
         return 1;
     }
 
@@ -1311,7 +1311,7 @@ Create `src/sparse.c`:
 
 ```c
 /* SPDX-License-Identifier: Apache-2.0 */
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1357,15 +1357,15 @@ pk_c_lift_result *pk_c_sparse_lift_source(const char *path, const char *source) 
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-c-sparse test
+make -C implementations/c/sugar-lift-c-sparse test
 ```
 
-Expected: `provekit-lift-c-sparse integration passed`.
+Expected: `sugar-lift-c-sparse integration passed`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add implementations/c/provekit-lift-c-sparse implementations/c/.provekit/lift/c-sparse
+git add implementations/c/sugar-lift-c-sparse implementations/c/.sugar/lift/c-sparse
 git commit -m "feat(c): add sparse contract lifter"
 ```
 
@@ -1374,12 +1374,12 @@ git commit -m "feat(c): add sparse contract lifter"
 ### Task 6: Assertions Lifter
 
 **Files:**
-- Create: `implementations/c/provekit-lift-c-assertions/Makefile`
-- Create: `implementations/c/provekit-lift-c-assertions/src/main.c`
-- Create: `implementations/c/provekit-lift-c-assertions/src/assertions.c`
-- Create: `implementations/c/provekit-lift-c-assertions/tests/fixtures/assertions_basic.c`
-- Create: `implementations/c/provekit-lift-c-assertions/tests/integration.sh`
-- Create: `implementations/c/.provekit/lift/c-assertions/manifest.toml`
+- Create: `implementations/c/sugar-lift-c-assertions/Makefile`
+- Create: `implementations/c/sugar-lift-c-assertions/src/main.c`
+- Create: `implementations/c/sugar-lift-c-assertions/src/assertions.c`
+- Create: `implementations/c/sugar-lift-c-assertions/tests/fixtures/assertions_basic.c`
+- Create: `implementations/c/sugar-lift-c-assertions/tests/integration.sh`
+- Create: `implementations/c/.sugar/lift/c-assertions/manifest.toml`
 
 - [ ] **Step 1: Write the fixture and failing integration test**
 
@@ -1400,7 +1400,7 @@ Create `tests/integration.sh`:
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN="$SCRIPT_DIR/../provekit-lift-c-assertions"
+BIN="$SCRIPT_DIR/../sugar-lift-c-assertions"
 FIXTURE="$SCRIPT_DIR/fixtures/assertions_basic.c"
 
 if [ ! -x "$BIN" ]; then
@@ -1424,7 +1424,7 @@ printf '%s\n' "$RESPONSE" | grep -q '"name":"c-assertions.build-bug-on"' || {
     exit 1
 }
 
-printf 'provekit-lift-c-assertions integration passed\n'
+printf 'sugar-lift-c-assertions integration passed\n'
 ```
 
 - [ ] **Step 2: Add Makefile and manifest**
@@ -1435,10 +1435,10 @@ Create `Makefile`:
 # SPDX-License-Identifier: Apache-2.0
 
 CC = cc
-CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../provekit-lift-core/include -g
+CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../sugar-lift-core/include -g
 
-BIN = provekit-lift-c-assertions
-SRC = src/main.c src/assertions.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c
+BIN = sugar-lift-c-assertions
+SRC = src/main.c src/assertions.c ../sugar-lift-core/src/core.c ../sugar-lift-core/src/parser.c
 TEST_SH = tests/integration.sh
 
 .PHONY: all test clean
@@ -1456,13 +1456,13 @@ clean:
 	rm -f $(BIN)
 ```
 
-Create `implementations/c/.provekit/lift/c-assertions/manifest.toml`:
+Create `implementations/c/.sugar/lift/c-assertions/manifest.toml`:
 
 ```toml
 name = "c-assertions"
 version = "0.1.0"
-protocol_version = "provekit-lift/1"
-command = ["./provekit-lift-c-assertions/provekit-lift-c-assertions", "--rpc"]
+protocol_version = "sugar-lift/1"
+command = ["./sugar-lift-c-assertions/sugar-lift-c-assertions", "--rpc"]
 working_dir = "."
 
 [capabilities]
@@ -1476,7 +1476,7 @@ emits_signed_mementos = false
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-c-assertions test
+make -C implementations/c/sugar-lift-c-assertions test
 ```
 
 Expected: compile failure because source files do not exist.
@@ -1488,7 +1488,7 @@ Create `src/main.c`:
 ```c
 /* SPDX-License-Identifier: Apache-2.0 */
 #define _GNU_SOURCE
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1528,7 +1528,7 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i], "--rpc") == 0) rpc = 1;
     }
     if (!rpc) {
-        fprintf(stderr, "Usage: provekit-lift-c-assertions --rpc\n");
+        fprintf(stderr, "Usage: sugar-lift-c-assertions --rpc\n");
         return 1;
     }
 
@@ -1563,7 +1563,7 @@ Create `src/assertions.c`:
 
 ```c
 /* SPDX-License-Identifier: Apache-2.0 */
-#include "provekit/c_lift_core.h"
+#include "sugar/c_lift_core.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -1604,15 +1604,15 @@ pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *sour
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-c-assertions test
+make -C implementations/c/sugar-lift-c-assertions test
 ```
 
-Expected: `provekit-lift-c-assertions integration passed`.
+Expected: `sugar-lift-c-assertions integration passed`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add implementations/c/provekit-lift-c-assertions implementations/c/.provekit/lift/c-assertions
+git add implementations/c/sugar-lift-c-assertions implementations/c/.sugar/lift/c-assertions
 git commit -m "feat(c): add assertions contract lifter"
 ```
 
@@ -1621,9 +1621,9 @@ git commit -m "feat(c): add assertions contract lifter"
 ### Task 7: Composition Fixture
 
 **Files:**
-- Create: `implementations/c/provekit-lift-composition/Makefile`
-- Create: `implementations/c/provekit-lift-composition/tests/fixtures/sparse_and_assertions.c`
-- Create: `implementations/c/provekit-lift-composition/tests/integration.sh`
+- Create: `implementations/c/sugar-lift-composition/Makefile`
+- Create: `implementations/c/sugar-lift-composition/tests/fixtures/sparse_and_assertions.c`
+- Create: `implementations/c/sugar-lift-composition/tests/integration.sh`
 
 - [ ] **Step 1: Write the composition fixture**
 
@@ -1650,8 +1650,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/../.."
 FIXTURE="$SCRIPT_DIR/fixtures/sparse_and_assertions.c"
-SPARSE="$ROOT/provekit-lift-c-sparse/provekit-lift-c-sparse"
-ASSERTIONS="$ROOT/provekit-lift-c-assertions/provekit-lift-c-assertions"
+SPARSE="$ROOT/sugar-lift-c-sparse/sugar-lift-c-sparse"
+ASSERTIONS="$ROOT/sugar-lift-c-assertions/sugar-lift-c-assertions"
 
 SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$FIXTURE" | tr -d '\n' | sed 's/\\n$//')
 REQUEST="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"parse\",\"params\":{\"path\":\"sparse_and_assertions.c\",\"source\":\"$SOURCE\"}}"
@@ -1696,14 +1696,14 @@ Create `Makefile`:
 all: test
 
 test:
-	$(MAKE) -C ../provekit-lift-c-sparse all
-	$(MAKE) -C ../provekit-lift-c-assertions all
+	$(MAKE) -C ../sugar-lift-c-sparse all
+	$(MAKE) -C ../sugar-lift-c-assertions all
 	@chmod +x tests/integration.sh
 	@tests/integration.sh
 
 clean:
-	$(MAKE) -C ../provekit-lift-c-sparse clean
-	$(MAKE) -C ../provekit-lift-c-assertions clean
+	$(MAKE) -C ../sugar-lift-c-sparse clean
+	$(MAKE) -C ../sugar-lift-c-assertions clean
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -1711,7 +1711,7 @@ clean:
 Run:
 
 ```bash
-make -C implementations/c/provekit-lift-composition test
+make -C implementations/c/sugar-lift-composition test
 ```
 
 Expected: `C lifter composition integration passed`.
@@ -1719,7 +1719,7 @@ Expected: `C lifter composition integration passed`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add implementations/c/provekit-lift-composition
+git add implementations/c/sugar-lift-composition
 git commit -m "test(c): add lifter composition fixture"
 ```
 
@@ -1739,7 +1739,7 @@ make build-c
 make test-c
 ```
 
-Expected: passes existing C packages but does not build or test `provekit-lift-core`, `provekit-lift-c-sparse`, `provekit-lift-c-assertions`, or `provekit-lift-composition`.
+Expected: passes existing C packages but does not build or test `sugar-lift-core`, `sugar-lift-c-sparse`, `sugar-lift-c-assertions`, or `sugar-lift-composition`.
 
 - [ ] **Step 2: Update `build-c`**
 
@@ -1754,12 +1754,12 @@ Modify the top-level `build-c` target:
 ```makefile
 .PHONY: build-c
 build-c:
-	$(MAKE) -C implementations/c/provekit-ir all
-	$(MAKE) -C implementations/c/provekit-lift-core all
-	$(MAKE) -C implementations/c/provekit-lift-c-sparse all
-	$(MAKE) -C implementations/c/provekit-lift-c-assertions all
-	$(MAKE) -C implementations/c/provekit-lsp-c all
-	$(MAKE) -C implementations/c/provekit-self-contracts lib
+	$(MAKE) -C implementations/c/sugar-ir all
+	$(MAKE) -C implementations/c/sugar-lift-core all
+	$(MAKE) -C implementations/c/sugar-lift-c-sparse all
+	$(MAKE) -C implementations/c/sugar-lift-c-assertions all
+	$(MAKE) -C implementations/c/sugar-lsp-c all
+	$(MAKE) -C implementations/c/sugar-self-contracts lib
 ```
 
 - [ ] **Step 3: Update `test-c`**
@@ -1769,13 +1769,13 @@ Modify the top-level `test-c` target:
 ```makefile
 .PHONY: test-c
 test-c: build-c
-	$(MAKE) -C implementations/c/provekit-ir test
-	$(MAKE) -C implementations/c/provekit-lift-core test
-	$(MAKE) -C implementations/c/provekit-lift-c-sparse test
-	$(MAKE) -C implementations/c/provekit-lift-c-assertions test
-	$(MAKE) -C implementations/c/provekit-lift-composition test
-	$(MAKE) -C implementations/c/provekit-lsp-c test
-	$(MAKE) -C implementations/c/provekit-self-contracts test
+	$(MAKE) -C implementations/c/sugar-ir test
+	$(MAKE) -C implementations/c/sugar-lift-core test
+	$(MAKE) -C implementations/c/sugar-lift-c-sparse test
+	$(MAKE) -C implementations/c/sugar-lift-c-assertions test
+	$(MAKE) -C implementations/c/sugar-lift-composition test
+	$(MAKE) -C implementations/c/sugar-lsp-c test
+	$(MAKE) -C implementations/c/sugar-self-contracts test
 ```
 
 - [ ] **Step 4: Run the aggregate to verify it passes**
@@ -1825,7 +1825,7 @@ If time permits, also run:
 
 ```bash
 make build-c
-make -C implementations/c/provekit-lsp-c test
+make -C implementations/c/sugar-lsp-c test
 ```
 
 Expected: both exit 0.

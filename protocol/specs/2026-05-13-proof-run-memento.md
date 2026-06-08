@@ -8,27 +8,27 @@
 - `2026-04-30-proof-file-format.md` (`ProofEnvelope` and `.proof` bundle format)
 - `2026-05-03-bridge-linkage-protocol.md` (`LinkBundle`)
 - `2026-05-12-concept-site-memento.md` and `2026-05-13-compound-contract-memento.md` (admissible substrate claims)
-- TSavo/provekit#796 (admissibility-spine umbrella)
-- TSavo/provekit#791 (`PromotionDecisionMemento`)
-- TSavo/provekit#799 (generic `RunMemento` + `VerifierPipelineMemento`, deferred — this spec is the verifier-pipeline profile of that generic shape)
-- `implementations/rust/provekit-verifier/src/lib.rs` and `runner.rs` (current verifier stage sequence)
+- TSavo/sugar#796 (admissibility-spine umbrella)
+- TSavo/sugar#791 (`PromotionDecisionMemento`)
+- TSavo/sugar#799 (generic `RunMemento` + `VerifierPipelineMemento`, deferred — this spec is the verifier-pipeline profile of that generic shape)
+- `implementations/rust/sugar-verifier/src/lib.rs` and `runner.rs` (current verifier stage sequence)
 
 ## §0. Purpose
 
-`provekit prove` is an admissibility boundary. It consumes a `.proof` bundle, the link closure the bundle depends on, and the plugin registry active for the run. It then decides whether the substrate claims in that input may compose downstream.
+`sugar prove` is an admissibility boundary. It consumes a `.proof` bundle, the link closure the bundle depends on, and the plugin registry active for the run. It then decides whether the substrate claims in that input may compose downstream.
 
-Before this spec, that decision was documented in prose and partially in source comments. The CLI comments still say "six-stage verifier", while `provekit-verifier` composes seven source stages. A verifier run that only emits a terminal report forces downstream consumers to trust the report writer's summary of what happened.
+Before this spec, that decision was documented in prose and partially in source comments. The CLI comments still say "six-stage verifier", while `sugar-verifier` composes seven source stages. A verifier run that only emits a terminal report forces downstream consumers to trust the report writer's summary of what happened.
 
 `ProofRunMemento` and `StageReceipt` replace that prose boundary with content-addressed facts:
 
 1. A `StageReceipt` records one completed verifier stage: what CIDs it read, what CIDs it produced, which refusals it emitted, and the stage verdict.
-2. A `ProofRunMemento` records the whole `provekit prove` invocation: the input roots, the sealed plugin registry, the ordered receipt chain, and the run verdict.
+2. A `ProofRunMemento` records the whole `sugar prove` invocation: the input roots, the sealed plugin registry, the ordered receipt chain, and the run verdict.
 
 Together they make a run replayable. Given the same `ProofEnvelope`, `PluginRegistryMemento`, and `LinkBundle`, a verifier can execute the same stage sequence, compare each stage to its receipt, and reconstruct the same run verdict without trusting a human report.
 
 ### §0.1 Profile of the generic RunMemento
 
-This spec defines the verifier-pipeline profile of the generic `RunMemento` (TSavo/provekit#799, deferred). `ProofRunMemento` is `RunMemento` specialized to `provekit prove`: the `verifier_pipeline_cid` slot points at a `VerifierPipelineMemento` (#799) that pins the ordered stage vocabulary, and the `stage_receipt_cids` chain matches that vocabulary. Other pipelines (`provekit bind`, `provekit link`, `provekit lift`) will define their own profile mementos against the same `RunMemento` shape; this spec does not constrain them. When #799 lands, this memento becomes the canonical first instantiation of that umbrella.
+This spec defines the verifier-pipeline profile of the generic `RunMemento` (TSavo/sugar#799, deferred). `ProofRunMemento` is `RunMemento` specialized to `sugar prove`: the `verifier_pipeline_cid` slot points at a `VerifierPipelineMemento` (#799) that pins the ordered stage vocabulary, and the `stage_receipt_cids` chain matches that vocabulary. Other pipelines (`sugar bind`, `sugar link`, `sugar lift`) will define their own profile mementos against the same `RunMemento` shape; this spec does not constrain them. When #799 lands, this memento becomes the canonical first instantiation of that umbrella.
 
 ## §1. Wire Shapes
 
@@ -86,9 +86,9 @@ proof-run-memento = {
 run-verdict = "admissible" / "refused" / "partial"
 ```
 
-The `verifier_pipeline_cid` field is the key separation: ProofRunMemento does NOT bake the stage count or stage names into its shape. Stage vocabulary lives in a separate `VerifierPipelineMemento` (deferred spec, queued for second wave). Future pipelines can add, split, or reorder stages without breaking any minted ProofRunMemento. The current `provekit-verifier`/`provekit-cli` source defines pipeline v1; that pipeline's stage names appear in §3 as the canonical reference, not as a spec-level constraint.
+The `verifier_pipeline_cid` field is the key separation: ProofRunMemento does NOT bake the stage count or stage names into its shape. Stage vocabulary lives in a separate `VerifierPipelineMemento` (deferred spec, queued for second wave). Future pipelines can add, split, or reorder stages without breaking any minted ProofRunMemento. The current `sugar-verifier`/`sugar-cli` source defines pipeline v1; that pipeline's stage names appear in §3 as the canonical reference, not as a spec-level constraint.
 
-`input_run_cids` makes provenance across runs an EXPLICIT graph rather than a reverse lookup. When `provekit prove` consumes the output of a `provekit bind` or `provekit link` run, it cites those predecessor RunMementos here. Verifiers walk forward from a starting input; replay is graph traversal, not search.
+`input_run_cids` makes provenance across runs an EXPLICIT graph rather than a reverse lookup. When `sugar prove` consumes the output of a `sugar bind` or `sugar link` run, it cites those predecessor RunMementos here. Verifiers walk forward from a starting input; replay is graph traversal, not search.
 
 ### §1.2 `StageReceipt`
 
@@ -139,9 +139,9 @@ stage-name = tstr
 stage-verdict = "ok" / "warned" / "refused" / "skipped"
 ```
 
-`stage-name` is intentionally `tstr` only. This spec does NOT bake any stage vocabulary into the CDDL. The ordered stage vocabulary for a verifier version lives in a separate `VerifierPipelineMemento` (deferred to the second-wave spec queue, see TSavo/provekit#799 PipelineMemento + RunMemento).
+`stage-name` is intentionally `tstr` only. This spec does NOT bake any stage vocabulary into the CDDL. The ordered stage vocabulary for a verifier version lives in a separate `VerifierPipelineMemento` (deferred to the second-wave spec queue, see TSavo/sugar#799 PipelineMemento + RunMemento).
 
-The current `provekit-verifier`/`provekit-cli` source defines pipeline v1 with the following seven stage names (verbatim from source, file paths in `implementations/rust/provekit-verifier/src/`):
+The current `sugar-verifier`/`sugar-cli` source defines pipeline v1 with the following seven stage names (verbatim from source, file paths in `implementations/rust/sugar-verifier/src/`):
 
 - `load_all_proofs` (`load_all_proofs.rs`)
 - `enumerate_callsites` (`enumerate_callsites.rs`)
@@ -174,7 +174,7 @@ Those names are pipeline v1's reference vocabulary, NOT spec-level constraints. 
 | header | `sealed_at` | yes | ISO-8601 timestamp at which the final run verdict was sealed. |
 | header | `stage_receipt_cids` | yes | Ordered list of `StageReceipt` CIDs in execution order. Order length and stage sequence MUST match the pipeline named by `verifier_pipeline_cid`. |
 | header | `verdict` | yes | Run verdict per §5. |
-| header | `verifier_pipeline_cid` | yes | CID of the `VerifierPipelineMemento` (deferred spec, see TSavo/provekit#799) that pins the ordered stage vocabulary for this run's verifier version. The vocabulary is NOT baked into this spec. |
+| header | `verifier_pipeline_cid` | yes | CID of the `VerifierPipelineMemento` (deferred spec, see TSavo/sugar#799) that pins the ordered stage vocabulary for this run's verifier version. The vocabulary is NOT baked into this spec. |
 | metadata | `note` | no | Human-readable operator note. Omitted when absent. |
 | metadata | `source_url` | no | Optional URL or locator for the run context, CI job, or artifact page. Omitted when absent. |
 
@@ -206,15 +206,15 @@ The canonical labels are the current Rust verifier module labels. They are inten
 
 | Order | `stage_name` | Source evidence | Consumes | Produces |
 |---:|---|---|---|---|
-| 1 | `load_all_proofs` | `implementations/rust/provekit-verifier/src/load_all_proofs.rs:3` | `proof_envelope_cid`, `.proof` member bytes, extra project proof roots | Accepted member CIDs, bundle-membership index mementos when materialized, load-error refusal CIDs or diagnostics |
-| 2 | `enumerate_callsites` | `implementations/rust/provekit-verifier/src/enumerate_callsites.rs:3` | Loaded contract and bridge memento CIDs | Deterministic callsite-set memento CIDs |
-| 3 | `resolve_target` | `implementations/rust/provekit-verifier/src/resolve_target.rs:3` | Callsite-set CIDs, bridge target CIDs, `LinkBundle` membership facts | Resolved-property-set memento CIDs, forward-pin refusal CIDs |
-| 4 | `instantiate` | `implementations/rust/provekit-verifier/src/instantiate.rs:3` | Resolved-property CIDs and call argument term CIDs or their enclosing callsite-set CID | Obligation memento CIDs. The implication-handshake path in `runner.rs` and `handshake.rs` is part of this discharge-preparation stage unless a future extension splits it. |
-| 5 | `smt_emitter` | `implementations/rust/provekit-verifier/src/smt_emitter.rs:3` | Obligation memento CIDs or implication-obligation CIDs | SMT artifact CIDs or compiler refusal CIDs |
-| 6 | `solve_obligation` | `implementations/rust/provekit-verifier/src/solve_obligation.rs:3` | SMT artifact CIDs, solver-plan plugin CIDs from the sealed registry | Discharge receipt CIDs, implication memento CIDs, solver refusal CIDs |
-| 7 | `report` | `implementations/rust/provekit-verifier/src/report.rs:3` | Prior stage receipt CIDs, callsite verdict CIDs, load-error CIDs | Final report memento CIDs and terminal diagnostics |
+| 1 | `load_all_proofs` | `implementations/rust/sugar-verifier/src/load_all_proofs.rs:3` | `proof_envelope_cid`, `.proof` member bytes, extra project proof roots | Accepted member CIDs, bundle-membership index mementos when materialized, load-error refusal CIDs or diagnostics |
+| 2 | `enumerate_callsites` | `implementations/rust/sugar-verifier/src/enumerate_callsites.rs:3` | Loaded contract and bridge memento CIDs | Deterministic callsite-set memento CIDs |
+| 3 | `resolve_target` | `implementations/rust/sugar-verifier/src/resolve_target.rs:3` | Callsite-set CIDs, bridge target CIDs, `LinkBundle` membership facts | Resolved-property-set memento CIDs, forward-pin refusal CIDs |
+| 4 | `instantiate` | `implementations/rust/sugar-verifier/src/instantiate.rs:3` | Resolved-property CIDs and call argument term CIDs or their enclosing callsite-set CID | Obligation memento CIDs. The implication-handshake path in `runner.rs` and `handshake.rs` is part of this discharge-preparation stage unless a future extension splits it. |
+| 5 | `smt_emitter` | `implementations/rust/sugar-verifier/src/smt_emitter.rs:3` | Obligation memento CIDs or implication-obligation CIDs | SMT artifact CIDs or compiler refusal CIDs |
+| 6 | `solve_obligation` | `implementations/rust/sugar-verifier/src/solve_obligation.rs:3` | SMT artifact CIDs, solver-plan plugin CIDs from the sealed registry | Discharge receipt CIDs, implication memento CIDs, solver refusal CIDs |
+| 7 | `report` | `implementations/rust/sugar-verifier/src/report.rs:3` | Prior stage receipt CIDs, callsite verdict CIDs, load-error CIDs | Final report memento CIDs and terminal diagnostics |
 
-The top-level verifier source also enumerates the seven-stage sequence in `implementations/rust/provekit-verifier/src/lib.rs:5-30`, while the runner states that it composes seven stages in `implementations/rust/provekit-verifier/src/runner.rs:3-6`.
+The top-level verifier source also enumerates the seven-stage sequence in `implementations/rust/sugar-verifier/src/lib.rs:5-30`, while the runner states that it composes seven stages in `implementations/rust/sugar-verifier/src/runner.rs:3-6`.
 
 Extension stages MAY appear before, after, or between canonical stages only when the sealed `PluginRegistryMemento` names the extension plugin and the extension stage declares its ordering constraints. A canonical verifier MUST NOT silently drop an unknown extension stage from `stage_receipt_cids`; it MUST either replay it through the registry or refuse the run.
 
@@ -274,7 +274,7 @@ Every object and sub-object MUST use JCS alphabetical key order. Arrays are orde
 3. As each stage starts, the runtime records the input CIDs it will read.
 4. As each stage completes, the runtime materializes every load-bearing stage output as a CID-bearing artifact, fills `output_cids`, `refusal_cids`, `diagnostics`, timestamps, and `verdict`, derives the `StageReceipt` CID, signs the receipt, and appends the receipt CID to the in-progress run list.
 5. A refused stage still emits a `StageReceipt` unless the process terminates before it can sign. If it cannot emit a receipt, the run cannot seal an admissible `ProofRunMemento`.
-6. At the end of `provekit prove`, the runtime computes the run verdict from §5, fills `stage_receipt_cids` in execution order, derives the `ProofRunMemento` CID, signs it, and seals the run.
+6. At the end of `sugar prove`, the runtime computes the run verdict from §5, fills `stage_receipt_cids` in execution order, derives the `ProofRunMemento` CID, signs it, and seals the run.
 
 A `ProofRunMemento` MUST NOT be sealed before all stage receipts that contributed to its verdict are durable.
 
@@ -301,8 +301,8 @@ Federation follows from CID identity. Any verifier that accepts BLAKE3-512, JCS,
 - PEP 1.7.0 plugin protocol: `2026-05-12-plugin-protocol.md`. The `PluginRegistryMemento` is sealed at run start and is referenced by `ProofRunMemento.header.plugin_registry_cid`.
 - Proof envelope and `.proof` bundle format: `2026-04-30-proof-file-format.md`. The verified proof root is referenced by `ProofRunMemento.header.proof_envelope_cid`.
 - Link bundle: `2026-05-03-bridge-linkage-protocol.md`. The bridge closure consumed by the run is referenced by `ProofRunMemento.header.link_bundle_cid`.
-- Admissibility spine umbrella: TSavo/provekit#796. This spec occupies the "proof runs + receipts" slot.
-- Promotion decisions: TSavo/provekit#791. A `PromotionDecisionMemento` may cite a `ProofRunMemento` when promotion depends on a replayable proof run rather than on a terminal report string.
+- Admissibility spine umbrella: TSavo/sugar#796. This spec occupies the "proof runs + receipts" slot.
+- Promotion decisions: TSavo/sugar#791. A `PromotionDecisionMemento` may cite a `ProofRunMemento` when promotion depends on a replayable proof run rather than on a terminal report string.
 
 ## §9. Out of Scope
 

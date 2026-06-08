@@ -5,7 +5,7 @@
 // Python conformance test can pin them as literals.
 //
 // NOT a permanent part of the workspace. Used to bootstrap cross-language
-// hash agreement for implementations/python/provekit-lift-py-tests.
+// hash agreement for implementations/python/sugar-lift-py-tests.
 
 use std::rc::Rc;
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Integration test: spawn `provekit-lsp-rust`, drive it via NDJSON,
+// Integration test: spawn `sugar-lsp-rust`, drive it via NDJSON,
 // assert protocol contract per spec.
 
 use std::io::{BufRead, BufReader, Write};
@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 fn plugin_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit-lsp-rust"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar-lsp-rust"))
 }
 
 struct Plugin {
@@ -27,7 +27,7 @@ impl Plugin {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("spawn provekit-lsp-rust");
+            .expect("spawn sugar-lsp-rust");
         let stdin = child.stdin.take().expect("stdin");
         let stdout = BufReader::new(child.stdout.take().expect("stdout"));
         Self {
@@ -92,7 +92,7 @@ fn initialize_returns_capabilities() {
 
     assert_eq!(
         result["name"].as_str(),
-        Some("provekit-lsp-rust"),
+        Some("sugar-lsp-rust"),
         "wrong plugin name: {result}"
     );
     assert!(
@@ -101,7 +101,7 @@ fn initialize_returns_capabilities() {
     );
     assert_eq!(
         result["protocol_version"].as_str(),
-        Some("provekit-lsp-shared/1"),
+        Some("sugar-lsp-shared/1"),
         "rust helper must advertise the shared LSP protocol: {result}"
     );
     assert_eq!(
@@ -125,7 +125,7 @@ fn initialize_returns_capabilities() {
             .and_then(|v| v.as_array())
             .into_iter()
             .flatten()
-            .any(|c| c.as_str() == Some("provekit.lsp.implication_failed")),
+            .any(|c| c.as_str() == Some("sugar.lsp.implication_failed")),
         "capabilities must include the stable implication diagnostic code: {caps:?}"
     );
 
@@ -179,14 +179,14 @@ fn parse_floor_fixture_emits_forward_propagation_diagnostic() {
     );
     let diagnostic = &diagnostics[0];
     assert_eq!(diagnostic["severity"].as_i64(), Some(1));
-    assert_eq!(diagnostic["source"].as_str(), Some("provekit"));
+    assert_eq!(diagnostic["source"].as_str(), Some("sugar"));
     assert_eq!(
         diagnostic["code"].as_str(),
-        Some("provekit.lsp.implication_failed")
+        Some("sugar.lsp.implication_failed")
     );
     assert_eq!(
         diagnostic["data"]["kind"].as_str(),
-        Some("provekit.lsp.implication_failed")
+        Some("sugar.lsp.implication_failed")
     );
     assert_eq!(diagnostic["data"]["callee"].as_str(), Some("checkPositive"));
     assert_eq!(
@@ -216,8 +216,8 @@ fn analyze_document_floor_fixture_emits_shared_callsite_diagnostic() {
         "id": 1,
         "method": "initialize",
         "params": {
-            "client": {"name": "provekit-lsp", "version": "0.0.0"},
-            "protocol_version": "provekit-lsp-shared/1"
+            "client": {"name": "sugar-lsp", "version": "0.0.0"},
+            "protocol_version": "sugar-lsp-shared/1"
         }
     }));
 
@@ -283,7 +283,7 @@ fn analyze_document_floor_fixture_emits_shared_callsite_diagnostic() {
     let diagnostic = &diagnostics[0];
     assert_eq!(
         diagnostic["code"].as_str(),
-        Some("provekit.lsp.implication_failed")
+        Some("sugar.lsp.implication_failed")
     );
     assert_eq!(diagnostic["severity"].as_str(), Some("error"));
     assert_eq!(diagnostic["producer"].as_str(), Some("forward-propagation"));

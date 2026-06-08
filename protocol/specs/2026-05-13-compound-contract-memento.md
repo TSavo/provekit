@@ -16,7 +16,7 @@
 
 A real function in a user codebase carries contract evidence from many sources:
 
-1. `#[requires]` / `#[ensures]` annotations (already lifted by `provekit-lift-contracts`).
+1. `#[requires]` / `#[ensures]` annotations (already lifted by `sugar-lift-contracts`).
 2. Test assertions targeting the function (e.g., `assert_eq!(f(3), 9)` inside `#[test]`).
 3. Type signatures, where the return type itself carries a partial post (e.g., `-> Option<T>` says "may be absent").
 4. Docstring contracts (e.g., `/// Returns None if key missing`).
@@ -312,7 +312,7 @@ Each sub-object is JCS-canonicalized with alphabetical key order. The CDDL above
 
 The compound's `evidences` array MUST be sorted by `evidence_cid` ascending at JCS time. Insertion order is not preserved on the wire. This makes evidence reordering CID-invariant: a Rust value with `evidences = [refB, refA]` and one with `evidences = [refA, refB]` produce the same compound CID after JCS sorting.
 
-NOTE: this crate (`provekit-ir-types`) carries no JCS encoder; round-trip serde tests in this crate verify shape but NOT byte-exact CID stability. CID-stability tests live in `provekit-claim-envelope` (where the JCS encoder lives), per the precedent in `2026-05-12-concept-site-memento.md` §0 and §9.
+NOTE: this crate (`sugar-ir-types`) carries no JCS encoder; round-trip serde tests in this crate verify shape but NOT byte-exact CID stability. CID-stability tests live in `sugar-claim-envelope` (where the JCS encoder lives), per the precedent in `2026-05-12-concept-site-memento.md` §0 and §9.
 
 ## §4. Mint procedure
 
@@ -535,12 +535,12 @@ The binding's `discharge.verdict` = `loudly-bounded-lossy`. Composition through 
 
 This PR-A lands the SPEC and the Rust types only.
 
-- **PR-A (this PR):** CDDL spec at `protocol/specs/2026-05-13-compound-contract-memento.md` (this document) and `EvidenceMemento`, `CompoundContractMemento`, `EvidenceRef`, `SourceKind`, `AggregationStrategy`, `SourceLocator`, `SourceLocatorSpan`, `SourceLocatorPoint` types in `provekit-ir-types/src/lib.rs` with serde round-trip tests.
+- **PR-A (this PR):** CDDL spec at `protocol/specs/2026-05-13-compound-contract-memento.md` (this document) and `EvidenceMemento`, `CompoundContractMemento`, `EvidenceRef`, `SourceKind`, `AggregationStrategy`, `SourceLocator`, `SourceLocatorSpan`, `SourceLocatorPoint` types in `sugar-ir-types/src/lib.rs` with serde round-trip tests.
 - **PR-B (backward-compat lift):** Auto-promotion. The validator path that encounters a bare `FunctionContractMemento` at `ConceptSiteMemento.local_contract_cid` mints a single-evidence compound on the fly (§4.3). The promotion is cached pool-side so subsequent lookups are O(1).
 - **PR-C (per-source lifter: test assertions):** Walks `#[test]` functions; for each `assert_eq!(f(...), expected)`, emits an `EvidenceMemento` with `source_kind = "test-assertion"` whose `extension_fields.test_target_function_cid` pins the lifted function-CID of `f`. Re-mints the function's compound to include the new evidences.
 - **PR-D (per-source lifter: type signatures):** Reads the function's signature; generates partial-post evidences from return types (`-> Option<T>` produces `result.is_some() \/ result.is_none()`; `-> Result<T, E>` produces a disjointness predicate; `-> Vec<T>` produces `result.len() >= 0`, and so on).
 - **PR-E (per-source lifter: docstrings):** Extracts `/// Returns ... if ...` patterns with a small grammar. Conservative on ambiguity (emits `confidence_basis_points < 10000`).
-- **PR-F (compound-aware discharge):** `libprovekit::wp` discharger consumes a `CompoundContractMemento` and discharges each evidence; derives the compound verdict per the recorded `aggregation_strategy`. Mints a `MorphismDischargeReceipt` (per 2026-05-15 §2.5) that records per-evidence verdicts. This is also where v0 cuts over the `ConceptSiteMemento` mint path to point `local_contract_cid` at compounds (was: pointed at bare contracts).
+- **PR-F (compound-aware discharge):** `libsugar::wp` discharger consumes a `CompoundContractMemento` and discharges each evidence; derives the compound verdict per the recorded `aggregation_strategy`. Mints a `MorphismDischargeReceipt` (per 2026-05-15 §2.5) that records per-evidence verdicts. This is also where v0 cuts over the `ConceptSiteMemento` mint path to point `local_contract_cid` at compounds (was: pointed at bare contracts).
 - **PR-G (native contract surfaces):** Per-language lifters for JML, Zod, Spring annotations, pydantic, and OpenAPI. Each emits `source_kind = "native-surface"` evidence with the canonical surface name in `extension_fields.surface_name`.
 - **PR-H (smoke-test demonstration):** `menagerie/smoke-test-e2e/` lifts multiple evidences per fixture function. `report.md §11` shows per-evidence + compound verdicts for at least the `safe_div` exemplar from §7.
 
@@ -548,14 +548,14 @@ This PR-A lands the SPEC and the Rust types only.
 
 A complete round-trip on a real Rust function with multiple evidence sources:
 
-1. Lift the function once with `provekit-lift-contracts`: produces a `FunctionContractMemento` for source (1)-(2) plus a list of evidence-mementos for (1)-(7).
+1. Lift the function once with `sugar-lift-contracts`: produces a `FunctionContractMemento` for source (1)-(2) plus a list of evidence-mementos for (1)-(7).
 2. Build the `CompoundContractMemento` aggregating all evidences under `"conjunction"`.
 3. Bind the function to a catalog concept; mint a `ConceptSiteMemento` with `local_contract_cid` pointing at the compound.
 4. Discharge: verify per-evidence verdicts are recorded in the receipt; verify the compound verdict is derived correctly; verify the binding verdict equals the compound verdict.
 
 **Acceptance for PR-A (this PR):**
 
-- `cargo test -p provekit-ir-types` is green on the compound serde round-trip tests.
+- `cargo test -p sugar-ir-types` is green on the compound serde round-trip tests.
 - `cargo check --workspace` is clean.
 
 **Acceptance for PR-F (full end-to-end):**
@@ -563,7 +563,7 @@ A complete round-trip on a real Rust function with multiple evidence sources:
 - The compound's `evidences.len() >= 3` for the exemplar function.
 - The compound's `composed_pre` is the conjunction of evidence pres.
 - The discharge runs against the concept's `wp_rule` and records per-evidence verdicts in the receipt.
-- The byte-exact CID stability tests for the compound live in `provekit-claim-envelope` (where the JCS encoder lives), NOT in `provekit-ir-types`.
+- The byte-exact CID stability tests for the compound live in `sugar-claim-envelope` (where the JCS encoder lives), NOT in `sugar-ir-types`.
 
 ## §10. Per-source lifter inventory
 
@@ -571,7 +571,7 @@ The ten canonical `source_kind` labels and their extraction guidance:
 
 | `source_kind`              | Extracted by                                   | `confidence_basis_points` prior | Required `extension_fields`                                            |
 |----------------------------|------------------------------------------------|---------------------------------|------------------------------------------------------------------------|
-| `annotation`               | `provekit-lift-contracts` (existing)           | 10000                           | `{}` (or `{ "auto_promoted_from": <fcm_cid> }` for backward-compat path) |
+| `annotation`               | `sugar-lift-contracts` (existing)           | 10000                           | `{}` (or `{ "auto_promoted_from": <fcm_cid> }` for backward-compat path) |
 | `test-assertion`           | PR-C (new walker)                              | 10000                           | `{ "test_target_function_cid": <cid> }`                                |
 | `type-signature`           | PR-D (signature reader)                        | 10000                           | `{ "return_type": <type_string> }`                                     |
 | `docstring`                | PR-E (grammar-based extractor)                 | 5000-8000 (per grammar match)   | `{ "extracted_phrase": <text> }`                                       |
@@ -759,8 +759,8 @@ When the `ledger` lifter runs and `account::transfer` resolves to a real `Functi
 - Implementation of the discharger that consumes compounds (PR-F).
 - Implementation of any per-source lifter beyond the `annotation` path that already exists (PR-B through PR-G).
 - The smoke-test demonstration (PR-H).
-- Byte-exact CID-pinning tests for the compound (live in `provekit-claim-envelope`).
+- Byte-exact CID-pinning tests for the compound (live in `sugar-claim-envelope`).
 - Wire-level migration of existing `ConceptSiteMemento`s in any deployed pool (handled as a one-shot pool-walker in PR-B).
 - `"best-confidence"` and `"loudly-bounded-disjunction"` aggregation behavior (spec'd in §2.2 / §2.3; v0 Rust returns `Err(WpError::UnimplementedAggregationStrategy)` for them).
 
-PR-A is the SPEC, the Rust TYPES, and the serde round-trip tests. Validation passes 1-2 are testable from the types layer (CDDL-shape + degenerate-compound); pass 3 (DERIVED constraints) requires the JCS encoder and is tested in `provekit-claim-envelope`; pass 4 (pool REFERENT) is tested in PR-B when the pool is wired.
+PR-A is the SPEC, the Rust TYPES, and the serde round-trip tests. Validation passes 1-2 are testable from the types layer (CDDL-shape + degenerate-compound); pass 3 (DERIVED constraints) requires the JCS encoder and is tested in `sugar-claim-envelope`; pass 4 (pool REFERENT) is tested in PR-B when the pool is wired.

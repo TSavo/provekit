@@ -11,9 +11,9 @@
 
 use std::collections::BTreeMap;
 
-// THE SEVER: the lifter is no longer re-exported from provekit-lift (it is
+// THE SEVER: the lifter is no longer re-exported from sugar-lift (it is
 // now an RPC kit). This test exercises the lifter's `lift_file` directly via
-// the dev-dependency on `provekit-lift-contracts` — the sanctioned way to
+// the dev-dependency on `sugar-lift-contracts` — the sanctioned way to
 // keep lifter-behavior coverage without spawning RPC in a unit test.
 use sugar_lift::extract_call_edges_from_file;
 use sugar_lift_contracts as adapter_contracts;
@@ -63,11 +63,11 @@ fn b(n: i64) -> i64 { a(n) }
                 post: d.post.as_deref().map(formula_to_value),
                 inv: d.inv.as_deref().map(formula_to_value),
                 out_binding: d.out_binding.clone(),
-                produced_by: "provekit-lift".into(),
+                produced_by: "sugar-lift".into(),
                 produced_at: "2026-01-01T00:00:00.000Z".into(),
                 input_cids: vec![],
                 authoring: Authoring::Lift {
-                    lifter: "provekit-lift".into(),
+                    lifter: "sugar-lift".into(),
                     evidence: String::new(),
                     source_cid: None,
                 },
@@ -151,11 +151,11 @@ fn b(x: i64) -> i64 {
                 post: d.post.as_deref().map(formula_to_value),
                 inv: d.inv.as_deref().map(formula_to_value),
                 out_binding: d.out_binding.clone(),
-                produced_by: "provekit-lift".into(),
+                produced_by: "sugar-lift".into(),
                 produced_at: "2026-01-01T00:00:00.000Z".into(),
                 input_cids: vec![],
                 authoring: Authoring::Lift {
-                    lifter: "provekit-lift".into(),
+                    lifter: "sugar-lift".into(),
                     evidence: String::new(),
                     source_cid: None,
                 },
@@ -228,11 +228,11 @@ fn b(n: i64) -> i64 { a(n) }
                     post: d.post.as_deref().map(formula_to_value),
                     inv: d.inv.as_deref().map(formula_to_value),
                     out_binding: d.out_binding.clone(),
-                    produced_by: "provekit-lift".into(),
+                    produced_by: "sugar-lift".into(),
                     produced_at: "2026-01-01T00:00:00.000Z".into(),
                     input_cids: vec![],
                     authoring: Authoring::Lift {
-                        lifter: "provekit-lift".into(),
+                        lifter: "sugar-lift".into(),
                         evidence: String::new(),
                         source_cid: None,
                     },
@@ -332,11 +332,11 @@ pub extern "C" fn foo(n: i32) -> i32 {
         post: foo_contract.post.as_deref().map(formula_to_value),
         inv: foo_contract.inv.as_deref().map(formula_to_value),
         out_binding: foo_contract.out_binding.clone(),
-        produced_by: "provekit-lift".into(),
+        produced_by: "sugar-lift".into(),
         produced_at: "2026-01-01T00:00:00.000Z".into(),
         input_cids: vec![],
         authoring: Authoring::Lift {
-            lifter: "provekit-lift".into(),
+            lifter: "sugar-lift".into(),
             evidence: String::new(),
             source_cid: None,
         },

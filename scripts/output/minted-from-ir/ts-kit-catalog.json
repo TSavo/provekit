@@ -13,7 +13,7 @@
   "evidence": {
     "kind": "legacy-witness",
     "body": {
-      "rawWitness": "{\"kind\":\"kit-catalog-root\",\"kitName\":\"@provekit/proofs/ts-types\",\"kitVersion\":\"1.0.0\",\"memberCount\":3,\"sourceFile\":\"scripts/cross-language-demo/runtime-eval/native-source.ts\",\"construction\":\"lift-from-native-source\"}",
+      "rawWitness": "{\"kind\":\"kit-catalog-root\",\"kitName\":\"@sugar/proofs/ts-types\",\"kitVersion\":\"1.0.0\",\"memberCount\":3,\"sourceFile\":\"scripts/cross-language-demo/runtime-eval/native-source.ts\",\"construction\":\"lift-from-native-source\"}",
       "legacyProducerId": "ts-kit@1.0"
     }
   },

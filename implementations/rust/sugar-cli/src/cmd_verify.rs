@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit verify <kit>`: the keystone GATE verb (PR-9, issue #1405).
+// `sugar verify <kit>`: the keystone GATE verb (PR-9, issue #1405).
 //
 // This is the real `verify` verb. It is distinct from the old `verify`
 // alias (which routed to `cmd_prove`, the six-stage prover / `--kit`
@@ -9,7 +9,7 @@
 //
 //   1. Lift the kit's contract claims. The lifter writes each
 //      @sugar/@boundary annotation as a contract memento (referencing
-//      its concept) into the kit's `.proof` catalog under `.provekit/`.
+//      its concept) into the kit's `.proof` catalog under `.sugar/`.
 //      We load that catalog with `load_all_proofs` and enumerate the
 //      contract claims via `enumerate_callsites` (the bridge/callsite
 //      enumeration is exactly "function Y claims to satisfy concept X").
@@ -42,7 +42,7 @@
 //
 // SCOPE: This verb is a conductor. catalog lookup, wp/obligation
 // construction, the solver-dispatch table, and signing all already
-// exist in `provekit-verifier` / `provekit-proof-envelope`. PR-9 wires
+// exist in `sugar-verifier` / `sugar-proof-envelope`. PR-9 wires
 // them into one verb; it reimplements none of them.
 
 use std::path::PathBuf;
@@ -75,22 +75,22 @@ use crate::{EXIT_OK, EXIT_SOLVER_FAIL, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 // distinguishable from run signers.
 //
 // A real signer is honored when configured (see [`resolve_signer_seed`]):
-//   - env `PROVEKIT_VERIFY_SIGNER_KEY` = hex-encoded 32-byte seed, or
-//   - env `PROVEKIT_VERIFY_SIGNER_KEY_FILE` = path to a file whose first
+//   - env `SUGAR_VERIFY_SIGNER_KEY` = hex-encoded 32-byte seed, or
+//   - env `SUGAR_VERIFY_SIGNER_KEY_FILE` = path to a file whose first
 //     non-whitespace token is the hex-encoded 32-byte seed.
 // Only then does the signature carry authority.
 const VERIFY_SIGNER_SEED_DEV: [u8; 32] = [0x76; 32];
 
 /// The env var carrying a hex-encoded 32-byte Ed25519 signer seed.
-const SIGNER_KEY_ENV: &str = "PROVEKIT_VERIFY_SIGNER_KEY";
+const SIGNER_KEY_ENV: &str = "SUGAR_VERIFY_SIGNER_KEY";
 /// The env var carrying a path to a file holding the hex-encoded seed.
-const SIGNER_KEY_FILE_ENV: &str = "PROVEKIT_VERIFY_SIGNER_KEY_FILE";
+const SIGNER_KEY_FILE_ENV: &str = "SUGAR_VERIFY_SIGNER_KEY_FILE";
 
 /// Resolve the Ed25519 signer seed for minted witnesses.
 ///
 /// Precedence:
-///   1. `PROVEKIT_VERIFY_SIGNER_KEY`      — hex(32 bytes) inline,
-///   2. `PROVEKIT_VERIFY_SIGNER_KEY_FILE` — path to a file whose first
+///   1. `SUGAR_VERIFY_SIGNER_KEY`      — hex(32 bytes) inline,
+///   2. `SUGAR_VERIFY_SIGNER_KEY_FILE` — path to a file whose first
 ///      whitespace-delimited token is hex(32 bytes),
 ///   3. the dev seed [`VERIFY_SIGNER_SEED_DEV`] (integrity tag only).
 ///
@@ -138,7 +138,7 @@ fn decode_seed_hex(hex: &str) -> Result<[u8; 32], String> {
 #[derive(Parser, Debug, Clone)]
 pub struct VerifyArgs {
     /// Configured kit alias to verify. Resolves through project/user
-    /// `[[kits]]` config to the kit's project root; its `.provekit/`
+    /// `[[kits]]` config to the kit's project root; its `.sugar/`
     /// catalog carries the lifted contract claims. Conflicts with
     /// `--project`. May also be an explicit path when the value contains
     /// a path separator.
@@ -157,7 +157,7 @@ pub struct VerifyArgs {
     pub z3: String,
 
     /// Directory to write signed witness mementos into. Defaults to
-    /// `<project>/.provekit/witnesses`.
+    /// `<project>/.sugar/witnesses`.
     #[arg(long = "emit-witnesses")]
     pub emit_witnesses: Option<PathBuf>,
 
@@ -214,7 +214,7 @@ pub struct VerifyArgs {
 ///     punt on) -> Z3, with Vampire as the configured first-order seat
 ///     when the kit config registers it.
 ///
-/// When the kit's `.provekit/config.toml` already declares a
+/// When the kit's `.sugar/config.toml` already declares a
 /// `[solvers.dispatch]` table we honor it (the kit author's table wins);
 /// otherwise this default table is used. Either way the routing is a
 /// table, not a hardcoded single backend.
@@ -357,7 +357,7 @@ pub fn run(args: VerifyArgs) -> u8 {
                 kit_label
             );
             println!(
-                "  (lift the kit first: `provekit mint --kit={}` or run the kit's lifter)",
+                "  (lift the kit first: `sugar mint --kit={}` or run the kit's lifter)",
                 args.kit.as_deref().unwrap_or("<kit>")
             );
         }
@@ -389,7 +389,7 @@ pub fn run(args: VerifyArgs) -> u8 {
     let witness_dir = args
         .emit_witnesses
         .clone()
-        .unwrap_or_else(|| project_root.join(".provekit").join("witnesses"));
+        .unwrap_or_else(|| project_root.join(".sugar").join("witnesses"));
 
     // Resolve the signer seed once. A malformed override fails the whole
     // run (fail closed) rather than silently signing with the dev seed.
@@ -472,7 +472,7 @@ pub fn run(args: VerifyArgs) -> u8 {
 /// Build the solver plan + registry for verification.
 ///
 /// Precedence:
-///   1. If the kit's `.provekit/config.toml` declares a `[solvers]`
+///   1. If the kit's `.sugar/config.toml` declares a `[solvers]`
 ///      config, the KIT AUTHOR'S PLAN WINS: build the registry from it
 ///      and derive the plan via `SolverPlan::from_config` (whatever the
 ///      kit declared — `Dispatch`, `Chain`, `Portfolio`, or `Single`).
@@ -1147,7 +1147,7 @@ fn emit_human_receipt(
         return;
     }
     println!();
-    println!("{}", "ProvekIt verification receipt".bold());
+    println!("{}", "Sugar verification receipt".bold());
     for r in results {
         let status = match r.verdict {
             ObligationVerdict::Discharged => "pass".green().to_string(),
@@ -1271,7 +1271,7 @@ mod tests {
         // A minted witness must canonicalize (JCS) and produce a verifiable
         // CID + signature. This exercises the signing path without needing
         // a real solver or catalog.
-        let tmp = std::env::temp_dir().join(format!("provekit-verify-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sugar-verify-test-{}", std::process::id()));
         let cs = sugar_verifier::CallSite {
             bridge_ir_name: "demo_bridge".into(),
             bridge_target_cid: "blake3-512:target".into(),
@@ -1464,7 +1464,7 @@ mod tests {
         let no_kit = std::path::Path::new("/nonexistent-panic-test-kit");
         let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
         let witness_dir =
-            std::env::temp_dir().join(format!("provekit-panic-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("sugar-panic-test-{}", std::process::id()));
         std::fs::create_dir_all(&witness_dir).ok();
 
         // GUARDED: `if opt.is_some() { opt.unwrap() }`. The guard establishes
@@ -1830,7 +1830,7 @@ mod tests {
         let no_kit = std::path::Path::new("/nonexistent-dlib-test-kit");
         let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
         let witness_dir =
-            std::env::temp_dir().join(format!("provekit-dlib-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("sugar-dlib-test-{}", std::process::id()));
         std::fs::create_dir_all(&witness_dir).ok();
 
         // POSITIVE: Value-totality ctor arg. The callee_post_guard_fact wiring
@@ -1900,7 +1900,7 @@ mod tests {
         let no_kit = std::path::Path::new("/nonexistent-dlib-option-test-kit");
         let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
         let witness_dir =
-            std::env::temp_dir().join(format!("provekit-dlib-option-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("sugar-dlib-option-test-{}", std::process::id()));
         std::fs::create_dir_all(&witness_dir).ok();
 
         let positive = verify_one_claim(
@@ -1934,7 +1934,7 @@ mod tests {
         let no_kit = std::path::Path::new("/nonexistent-dlib-option-negative-test-kit");
         let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
         let witness_dir = std::env::temp_dir().join(format!(
-            "provekit-dlib-option-neg-test-{}",
+            "sugar-dlib-option-neg-test-{}",
             std::process::id()
         ));
         std::fs::create_dir_all(&witness_dir).ok();

@@ -96,7 +96,7 @@ impl Solver for CoqSubprocessSolver {
 
         // Write to temp file
         let tmp_dir = std::env::temp_dir().join(format!(
-            "provekit-coq-{}-{}",
+            "sugar-coq-{}-{}",
             std::process::id(),
             started.elapsed().as_nanos()
         ));

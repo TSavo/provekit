@@ -11,11 +11,11 @@
 - `2026-05-13-promotion-decision-memento.md`
 - `2026-05-13-proof-run-memento.md`
 - `2026-05-13-sort-morphism-memento.md`
-- TSavo/provekit#791
-- TSavo/provekit#792
-- TSavo/provekit#794
-- TSavo/provekit#796
-- TSavo/provekit#799
+- TSavo/sugar#791
+- TSavo/sugar#792
+- TSavo/sugar#794
+- TSavo/sugar#796
+- TSavo/sugar#799
 
 ## §0. Purpose
 
@@ -155,7 +155,7 @@ A minting run that applies a canonicalization profile MUST make the profile repl
 
 The sealed `PluginRegistryMemento` plus the relevant `RunMemento` (#799) MUST cite the `CanonicalizationProfileMemento` CID applied by each plugin stage that emits canonicalized substrate objects. The citation may be in a profile slot defined by the stage, in the plugin content payload, or in a run receipt, but it must be content-addressed and stage-specific.
 
-`RunMemento` (TSavo/provekit#799) and the stage receipts of a run cite the `profile_cid` used to produce the run's outputs. Future provenance profiles MAY also reference `profile_cid`, but the existing `2026-05-06-provenance-memento.md` records raw-pointer source provenance and is NOT the citation site for canonicalization-profile selection. Keeping these distinct lets a verifier replay the same plugin version, same profile, same inputs, and same canonicalization rules before comparing output CIDs without conflating raw-pointer provenance with run/build provenance.
+`RunMemento` (TSavo/sugar#799) and the stage receipts of a run cite the `profile_cid` used to produce the run's outputs. Future provenance profiles MAY also reference `profile_cid`, but the existing `2026-05-06-provenance-memento.md` records raw-pointer source provenance and is NOT the citation site for canonicalization-profile selection. Keeping these distinct lets a verifier replay the same plugin version, same profile, same inputs, and same canonicalization rules before comparing output CIDs without conflating raw-pointer provenance with run/build provenance.
 
 If a plugin emits objects under more than one profile in the same run, each output object or receipt MUST identify which `profile_cid` applied. A run-level default is only valid for outputs that do not override it.
 
@@ -197,11 +197,11 @@ Changing any rule descriptor, profile kind, profile version, provenance CID, or 
 
 ## §8. Cross-references
 
-- Promotion decisions: `2026-05-13-promotion-decision-memento.md`, TSavo/provekit#791.
-- Discharge receipts: TSavo/provekit#792.
-- Sort morphisms: `2026-05-13-sort-morphism-memento.md`, TSavo/provekit#794.
-- Run and pipeline mementos: `2026-05-13-proof-run-memento.md`, TSavo/provekit#799.
-- Admissibility spine: TSavo/provekit#796.
+- Promotion decisions: `2026-05-13-promotion-decision-memento.md`, TSavo/sugar#791.
+- Discharge receipts: TSavo/sugar#792.
+- Sort morphisms: `2026-05-13-sort-morphism-memento.md`, TSavo/sugar#794.
+- Run and pipeline mementos: `2026-05-13-proof-run-memento.md`, TSavo/sugar#799.
+- Admissibility spine: TSavo/sugar#796.
 - Plugin protocol and `PluginRegistryMemento`: `2026-05-12-plugin-protocol.md`.
 - Language signatures: `2026-05-09-language-signature-protocol.md`.
 - JCS canonicalization: `2026-04-30-canonicalization-grammar.md`.

@@ -4,22 +4,22 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt walk: backward WP propagation from callsites to allocations over Rust source. Issue #368 launch demo."
+description = "Sugar walk: backward WP propagation from callsites to allocations over Rust source. Issue #368 launch demo."
 
 [lib]
 name = "sugar_walk"
 path = "src/lib.rs"
 
 [[bin]]
-name = "provekit-walk-demo"
+name = "sugar-walk-demo"
 path = "src/bin/walk_demo.rs"
 
 [[bin]]
-name = "provekit-walk-emit"
+name = "sugar-walk-emit"
 path = "src/bin/walk_emit.rs"
 
 [[bin]]
-name = "provekit-walk-rpc"
+name = "sugar-walk-rpc"
 path = "src/bin/walk_rpc.rs"
 required-features = ["rpc"]
 

@@ -16,9 +16,9 @@ baseline and sign your own; see
 
 The canonical publication surface is content-addressed:
 
-- Baseline proof files live at `.provekit/baselines/<proof_cid>.proof`.
+- Baseline proof files live at `.sugar/baselines/<proof_cid>.proof`.
 - The active publication index lives at
-  [`.provekit/baselines/blake3-512:2dd7d05a74fb96dc9d1b06aa6e261d2466b31fee927927456075d6d48adb2d43aed0cd0125c71d564cf01788f360bf0465342d97f5060ddc3c23379ac3383216.baseline-index.json`](../../.provekit/baselines/blake3-512:2dd7d05a74fb96dc9d1b06aa6e261d2466b31fee927927456075d6d48adb2d43aed0cd0125c71d564cf01788f360bf0465342d97f5060ddc3c23379ac3383216.baseline-index.json).
+  [`.sugar/baselines/blake3-512:2dd7d05a74fb96dc9d1b06aa6e261d2466b31fee927927456075d6d48adb2d43aed0cd0125c71d564cf01788f360bf0465342d97f5060ddc3c23379ac3383216.baseline-index.json`](../../.sugar/baselines/blake3-512:2dd7d05a74fb96dc9d1b06aa6e261d2466b31fee927927456075d6d48adb2d43aed0cd0125c71d564cf01788f360bf0465342d97f5060ddc3c23379ac3383216.baseline-index.json).
 - The index CID is `blake3-512:2dd7d05a74fb96dc9d1b06aa6e261d2466b31fee927927456075d6d48adb2d43aed0cd0125c71d564cf01788f360bf0465342d97f5060ddc3c23379ac3383216`, computed as `BLAKE3-512(JCS(index-json))`.
 
 Friendly named proof aliases such as `<lang>-baseline-v1.proof` are not a

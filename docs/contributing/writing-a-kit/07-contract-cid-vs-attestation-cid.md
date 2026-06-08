@@ -140,7 +140,7 @@ A kit that returns only one of these three forces the caller to recover the othe
 
 ## Migration: on-disk attestation files
 
-Existing kits write self-contracts attestations to `.provekit/self-contracts-attestations/<lang>.json`. Pre-v1.4 files surface only an envelope hash. v1.4 requires both CIDs:
+Existing kits write self-contracts attestations to `.sugar/self-contracts-attestations/<lang>.json`. Pre-v1.4 files surface only an envelope hash. v1.4 requires both CIDs:
 
 ```json
 {

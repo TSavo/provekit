@@ -10,7 +10,7 @@ use std::process::Command;
 use libsugar::core::{address, Input, Path as CorePath, PathAlgebra, PathDocument, Verb};
 use serde_json::json;
 
-fn provekit_bin() -> PathBuf {
+fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
 }
 
@@ -76,7 +76,7 @@ fn write_executable(path: &Path, text: &str) {
 fn output_retrying_etxtbsy(cmd: &mut Command) -> std::process::Output {
     const MAX_ATTEMPTS: u32 = 5;
     for attempt in 0..MAX_ATTEMPTS {
-        let out = cmd.output().expect("spawn provekit");
+        let out = cmd.output().expect("spawn sugar");
         let stderr = String::from_utf8_lossy(&out.stderr);
         let is_etxtbsy = !out.status.success()
             && (stderr.contains("Text file busy") || stderr.contains("os error 26"));
@@ -87,40 +87,40 @@ fn output_retrying_etxtbsy(cmd: &mut Command) -> std::process::Output {
             20 * u64::from(attempt + 1),
         ));
     }
-    cmd.output().expect("spawn provekit (final attempt)")
+    cmd.output().expect("spawn sugar (final attempt)")
 }
 
 #[test]
-fn provekit_cli_does_not_expose_zoo_subcommand() {
-    let output = Command::new(provekit_bin())
+fn sugar_cli_does_not_expose_zoo_subcommand() {
+    let output = Command::new(sugar_bin())
         .arg("--help")
         .output()
-        .expect("spawn provekit --help");
+        .expect("spawn sugar --help");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         !stdout.contains("zoo"),
-        "`provekit zoo` must remain a repo harness, not a public CLI subcommand\nstdout:\n{stdout}"
+        "`sugar zoo` must remain a repo harness, not a public CLI subcommand\nstdout:\n{stdout}"
     );
 }
 
 #[test]
 fn prove_cli_does_not_expose_manual_proofir_or_solver_text_flags() {
-    let help = Command::new(provekit_bin())
+    let help = Command::new(sugar_bin())
         .arg("prove")
         .arg("--help")
         .output()
-        .expect("spawn provekit prove --help");
+        .expect("spawn sugar prove --help");
     let stdout = String::from_utf8_lossy(&help.stdout);
     let stderr = String::from_utf8_lossy(&help.stderr);
     assert!(
         help.status.success(),
-        "provekit prove --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar prove --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     for forbidden in ["--formula", "--target", "--output"] {
         assert!(
@@ -129,13 +129,13 @@ fn prove_cli_does_not_expose_manual_proofir_or_solver_text_flags() {
         );
     }
 
-    let rejected = Command::new(provekit_bin())
+    let rejected = Command::new(sugar_bin())
         .arg("prove")
         .arg("--formula")
         .arg("formula.json")
         .arg("--json")
         .output()
-        .expect("spawn provekit prove --formula");
+        .expect("spawn sugar prove --formula");
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert!(
         !rejected.status.success(),
@@ -152,12 +152,12 @@ fn prove_cli_does_not_expose_manual_proofir_or_solver_text_flags() {
 #[test]
 fn prove_empty_project_is_not_a_successful_proof() {
     let project = tempfile::tempdir().expect("create tempdir");
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("prove")
         .arg(project.path())
         .arg("--json")
         .output()
-        .expect("spawn provekit prove empty project");
+        .expect("spawn sugar prove empty project");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let report: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("prove JSON parse failed: {e}\nstdout: {stdout}"));
@@ -171,34 +171,34 @@ fn prove_empty_project_is_not_a_successful_proof() {
 }
 
 #[test]
-fn provekit_cli_does_not_expose_legacy_witness_subcommand() {
-    let help = Command::new(provekit_bin())
+fn sugar_cli_does_not_expose_legacy_witness_subcommand() {
+    let help = Command::new(sugar_bin())
         .arg("--help")
         .output()
-        .expect("spawn provekit --help");
+        .expect("spawn sugar --help");
     let stdout = String::from_utf8_lossy(&help.stdout);
     let stderr = String::from_utf8_lossy(&help.stderr);
     assert!(
         help.status.success(),
-        "provekit --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         !stdout
             .lines()
             .any(|line| line.trim_start().starts_with("witness ")),
-        "`provekit witness` is the legacy manual ProofIR property route and must stay retired\nstdout:\n{stdout}"
+        "`sugar witness` is the legacy manual ProofIR property route and must stay retired\nstdout:\n{stdout}"
     );
 
-    let rejected = Command::new(provekit_bin())
+    let rejected = Command::new(sugar_bin())
         .arg("witness")
         .arg("blake3-512:deadbeef")
         .arg("property.ir.json")
         .output()
-        .expect("spawn provekit witness");
+        .expect("spawn sugar witness");
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert!(
         !rejected.status.success(),
-        "`provekit witness <contract> <property.ir.json>` must be rejected at the CLI boundary"
+        "`sugar witness <contract> <property.ir.json>` must be rejected at the CLI boundary"
     );
     assert!(
         stderr.contains("unrecognized subcommand")
@@ -209,40 +209,40 @@ fn provekit_cli_does_not_expose_legacy_witness_subcommand() {
 }
 
 #[test]
-fn provekit_cli_does_not_expose_legacy_proof_artifact_subcommand() {
-    let help = Command::new(provekit_bin())
+fn sugar_cli_does_not_expose_legacy_proof_artifact_subcommand() {
+    let help = Command::new(sugar_bin())
         .arg("--help")
         .output()
-        .expect("spawn provekit --help");
+        .expect("spawn sugar --help");
     let stdout = String::from_utf8_lossy(&help.stdout);
     let stderr = String::from_utf8_lossy(&help.stderr);
     assert!(
         help.status.success(),
-        "provekit --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         stdout
             .lines()
             .any(|line| line.trim_start().starts_with("dump ")),
-        "`provekit dump` is the supported diagnostic .proof inspection surface\nstdout:\n{stdout}"
+        "`sugar dump` is the supported diagnostic .proof inspection surface\nstdout:\n{stdout}"
     );
     assert!(
         !stdout
             .lines()
             .any(|line| line.trim_start().starts_with("proof ")),
-        "`provekit proof` is a legacy .proof conformance command family and must stay retired\nstdout:\n{stdout}"
+        "`sugar proof` is a legacy .proof conformance command family and must stay retired\nstdout:\n{stdout}"
     );
 
-    let rejected = Command::new(provekit_bin())
+    let rejected = Command::new(sugar_bin())
         .arg("proof")
         .arg("inspect")
         .arg("artifact.proof")
         .output()
-        .expect("spawn provekit proof inspect");
+        .expect("spawn sugar proof inspect");
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert!(
         !rejected.status.success(),
-        "`provekit proof inspect` must be rejected at the CLI boundary"
+        "`sugar proof inspect` must be rejected at the CLI boundary"
     );
     assert!(
         stderr.contains("unrecognized subcommand")
@@ -253,33 +253,33 @@ fn provekit_cli_does_not_expose_legacy_proof_artifact_subcommand() {
 }
 
 #[test]
-fn provekit_cli_does_not_expose_legacy_link_subcommand() {
-    let help = Command::new(provekit_bin())
+fn sugar_cli_does_not_expose_legacy_link_subcommand() {
+    let help = Command::new(sugar_bin())
         .arg("--help")
         .output()
-        .expect("spawn provekit --help");
+        .expect("spawn sugar --help");
     let stdout = String::from_utf8_lossy(&help.stdout);
     let stderr = String::from_utf8_lossy(&help.stderr);
     assert!(
         help.status.success(),
-        "provekit --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         !stdout
             .lines()
             .any(|line| line.trim_start().starts_with("link ")),
-        "`provekit link` is the legacy Rust/Go-specific implication linker and must stay retired; implications now lift through project-registered kits and compose in mint/prove\nstdout:\n{stdout}"
+        "`sugar link` is the legacy Rust/Go-specific implication linker and must stay retired; implications now lift through project-registered kits and compose in mint/prove\nstdout:\n{stdout}"
     );
 
-    let rejected = Command::new(provekit_bin())
+    let rejected = Command::new(sugar_bin())
         .arg("link")
         .arg("project")
         .output()
-        .expect("spawn provekit link");
+        .expect("spawn sugar link");
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert!(
         !rejected.status.success(),
-        "`provekit link` must be rejected at the CLI boundary"
+        "`sugar link` must be rejected at the CLI boundary"
     );
     assert!(
         stderr.contains("unrecognized subcommand")
@@ -291,23 +291,23 @@ fn provekit_cli_does_not_expose_legacy_link_subcommand() {
 
 #[test]
 fn materialize_does_not_expose_source_lang_discovery_mode() {
-    let help = Command::new(provekit_bin())
+    let help = Command::new(sugar_bin())
         .arg("materialize")
         .arg("--help")
         .output()
-        .expect("spawn provekit materialize --help");
+        .expect("spawn sugar materialize --help");
     let stdout = String::from_utf8_lossy(&help.stdout);
     let stderr = String::from_utf8_lossy(&help.stderr);
     assert!(
         help.status.success(),
-        "provekit materialize --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar materialize --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         !stdout.contains("--source-lang"),
         "`materialize --source-lang` is the legacy CLI-side cross-language discovery mode; source language discovery must be kit-owned over RPC\nstdout:\n{stdout}"
     );
 
-    let rejected = Command::new(provekit_bin())
+    let rejected = Command::new(sugar_bin())
         .arg("materialize")
         .arg("--library")
         .arg("python-requests")
@@ -318,11 +318,11 @@ fn materialize_does_not_expose_source_lang_discovery_mode() {
         .arg("--source-lang")
         .arg("rust")
         .output()
-        .expect("spawn provekit materialize --source-lang");
+        .expect("spawn sugar materialize --source-lang");
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert!(
         !rejected.status.success(),
-        "`provekit materialize --source-lang` must be rejected at the CLI boundary"
+        "`sugar materialize --source-lang` must be rejected at the CLI boundary"
     );
     assert!(
         stderr.contains("unexpected argument")
@@ -336,10 +336,10 @@ fn materialize_does_not_expose_source_lang_discovery_mode() {
 fn lift_identify_only_delegates_from_project_config() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let manifest_dir = project.join(".provekit/lift/identify");
+    let manifest_dir = project.join(".sugar/lift/identify");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         "[authoring.lift]\nsurface = \"identify\"\n",
     )
     .expect("write config");
@@ -370,7 +370,7 @@ done
     .expect("write manifest");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("lift")
             .arg(&project)
             .arg("--identify-only")
@@ -382,7 +382,7 @@ done
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit lift --identify-only failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar lift --identify-only failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let report: serde_json::Value =
         serde_json::from_str(&stdout).expect("identify-only lift JSON parses");
@@ -398,10 +398,10 @@ done
 fn lift_library_bindings_delegates_layer_to_lifter() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let manifest_dir = project.join(".provekit/lift/library-bindings");
+    let manifest_dir = project.join(".sugar/lift/library-bindings");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         "[authoring.lift]\nsurface = \"library-bindings\"\n",
     )
     .expect("write config");
@@ -436,7 +436,7 @@ done
     .expect("write manifest");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("lift")
             .arg(&project)
             .arg("--library-bindings")
@@ -448,7 +448,7 @@ done
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit lift --library-bindings failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar lift --library-bindings failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let report: serde_json::Value =
         serde_json::from_str(&stdout).expect("library-bindings lift JSON parses");
@@ -461,10 +461,10 @@ done
 fn lift_identify_only_rejects_non_identity_response() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let manifest_dir = project.join(".provekit/lift/bad-identify");
+    let manifest_dir = project.join(".sugar/lift/bad-identify");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         "[authoring.lift]\nsurface = \"bad-identify\"\n",
     )
     .expect("write config");
@@ -495,7 +495,7 @@ done
     .expect("write manifest");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("lift")
             .arg(&project)
             .arg("--identify-only")
@@ -519,11 +519,11 @@ done
 fn mint_uses_lift_surface_from_project_config() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let manifest_dir = project.join(".provekit/lift/mint-lift");
+    let manifest_dir = project.join(".sugar/lift/mint-lift");
     let out_dir = dir.path().join("out");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         "[authoring.lift]\nsurface = \"mint-lift\"\n",
     )
     .expect("write config");
@@ -554,7 +554,7 @@ done
     .expect("write manifest");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("mint")
             .arg("--project")
             .arg(&project)
@@ -583,13 +583,13 @@ done
 fn mint_conjoins_producer_contracts_and_consumer_bridges_in_one_proof() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let producer_manifest = project.join(".provekit/lift/producer");
-    let consumer_manifest = project.join(".provekit/lift/consumer");
+    let producer_manifest = project.join(".sugar/lift/producer");
+    let consumer_manifest = project.join(".sugar/lift/consumer");
     let out_dir = dir.path().join("out");
     fs::create_dir_all(&producer_manifest).expect("create producer manifest dir");
     fs::create_dir_all(&consumer_manifest).expect("create consumer manifest dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         r#"[[plugins]]
 name = "producer"
 surface = "producer"
@@ -631,7 +631,7 @@ while IFS= read -r line; do
   elif [[ "$line" == *'"method":"lift"'* ]]; then
     printf 'consumer must be dispatched via lift_implications, not lift: %s\n' "$line" >&2
     exit 44
-  elif [[ "$line" == *'"method":"provekit.plugin.lift_implications"'* ]]; then
+  elif [[ "$line" == *'"method":"sugar.plugin.lift_implications"'* ]]; then
     if [[ "$line" != *'"contract_bindings"'* || "$line" != *'"name":"callee@src/lib.rs:1:1"'* ]]; then
       printf 'consumer did not receive producer contract_bindings: %s\n' "$line" >&2
       exit 45
@@ -662,14 +662,14 @@ done
     fs::write(
         consumer_manifest.join("manifest.toml"),
         format!(
-            "name = \"consumer\"\ncommand = [\"{}\"]\nmethod = \"provekit.plugin.lift_implications\"\nphase = \"consumer\"\n",
+            "name = \"consumer\"\ncommand = [\"{}\"]\nmethod = \"sugar.plugin.lift_implications\"\nphase = \"consumer\"\n",
             consumer.display()
         ),
     )
     .expect("write consumer manifest");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("mint")
             .arg("--project")
             .arg(&project)
@@ -731,11 +731,11 @@ done
 fn mint_ignores_emit_only_plugin_registrations() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let lift_manifest = project.join(".provekit/lift/test-lift");
+    let lift_manifest = project.join(".sugar/lift/test-lift");
     let out_dir = dir.path().join("out");
     fs::create_dir_all(&lift_manifest).expect("create lift manifest dir");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         r#"[[plugins]]
 name = "java-testng-emitter"
 kind = "emit"
@@ -778,7 +778,7 @@ done
     .expect("write lift manifest");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("mint")
             .arg("--project")
             .arg(&project)
@@ -792,7 +792,7 @@ done
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "mint should ignore kind=emit registrations instead of resolving .provekit/lift/java-testng\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "mint should ignore kind=emit registrations instead of resolving .sugar/lift/java-testng\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let report: serde_json::Value = serde_json::from_str(&stdout).expect("mint JSON parses");
     assert_eq!(report["surface"], "test-lift");
@@ -803,8 +803,8 @@ done
 fn mint_surfaces_structured_lift_gap_diagnostics_from_consumer_surfaces() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let producer_manifest = project.join(".provekit/lift/producer");
-    let consumer_manifest = project.join(".provekit/lift/consumer");
+    let producer_manifest = project.join(".sugar/lift/producer");
+    let consumer_manifest = project.join(".sugar/lift/consumer");
     let out_dir = dir.path().join("out");
     fs::create_dir_all(&producer_manifest).expect("create producer manifest dir");
     fs::create_dir_all(&consumer_manifest).expect("create consumer manifest dir");
@@ -815,7 +815,7 @@ fn mint_surfaces_structured_lift_gap_diagnostics_from_consumer_surfaces() {
     )
     .expect("write source");
     fs::write(
-        project.join(".provekit/config.toml"),
+        project.join(".sugar/config.toml"),
         r#"[[plugins]]
 name = "producer"
 surface = "producer"
@@ -854,7 +854,7 @@ set -euo pipefail
 while IFS= read -r line; do
   if [[ "$line" == *'"method":"initialize"'* ]]; then
     printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"consumer","protocol_version":"pep/1.7.0","capabilities":{}}}'
-  elif [[ "$line" == *'"method":"provekit.plugin.lift_implications"'* ]]; then
+  elif [[ "$line" == *'"method":"sugar.plugin.lift_implications"'* ]]; then
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[],"diagnostics":[{"kind":"lift-gap","reason":"no-contract-for-callee","callee":"Some","file":"src/lib.rs","line":1,"col":34}]}}'
   elif [[ "$line" == *'"method":"shutdown"'* ]]; then
     printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
@@ -875,14 +875,14 @@ done
     fs::write(
         consumer_manifest.join("manifest.toml"),
         format!(
-            "name = \"consumer\"\ncommand = [\"{}\"]\nmethod = \"provekit.plugin.lift_implications\"\nphase = \"consumer\"\n",
+            "name = \"consumer\"\ncommand = [\"{}\"]\nmethod = \"sugar.plugin.lift_implications\"\nphase = \"consumer\"\n",
             consumer.display()
         ),
     )
     .expect("write consumer manifest");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("mint")
             .arg("--project")
             .arg(&project)
@@ -910,8 +910,8 @@ done
 fn mint_uses_path_document_from_project_config() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
-    let manifest_dir = project.join(".provekit/lift/path-lift");
-    let path_dir = project.join(".provekit/paths");
+    let manifest_dir = project.join(".sugar/lift/path-lift");
+    let path_dir = project.join(".sugar/paths");
     let out_dir = dir.path().join("path-out");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     fs::create_dir_all(&path_dir).expect("create path dir");
@@ -945,7 +945,7 @@ done
     let lift_input = Input::Spec(json!({
         "surface": "path-lift",
         "workspace_root": project.canonicalize().unwrap_or_else(|_| project.clone()),
-        "config_path": ".provekit/config.toml",
+        "config_path": ".sugar/config.toml",
         "source_paths": ["."],
         "options": {
             "layer": "all",
@@ -973,7 +973,7 @@ done
             },
             PathAlgebra {
                 name: "mint".to_string(),
-                kit: "provekit-mint".to_string(),
+                kit: "sugar-mint".to_string(),
                 inputs: vec![mint_input_cid],
                 depends_on: vec!["lift".to_string()],
                 verb: Verb::Transform,
@@ -988,13 +988,13 @@ done
     )
     .expect("write path document");
     fs::write(
-        project.join(".provekit/config.toml"),
-        "[paths.mint]\nfile = \".provekit/paths/mint.json\"\n",
+        project.join(".sugar/config.toml"),
+        "[paths.mint]\nfile = \".sugar/paths/mint.json\"\n",
     )
     .expect("write config");
 
     let output = output_retrying_etxtbsy(
-        Command::new(provekit_bin())
+        Command::new(sugar_bin())
             .arg("mint")
             .arg("--project")
             .arg(&project)
@@ -1045,40 +1045,40 @@ def test_two_callsites():
 "#,
     )
     .expect("write python fixture");
-    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::create_dir_all(project.path().join(".sugar")).expect("create config dir");
     fs::write(
-        project.path().join(".provekit/config.toml"),
+        project.path().join(".sugar/config.toml"),
         r#"[authoring.lift]
 surface = "python"
 "#,
     )
     .expect("write config");
-    let manifest_dir = project.path().join(".provekit/lift/python");
+    let manifest_dir = project.path().join(".sugar/lift/python");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
-    let python_src = root.join("implementations/python/provekit-lift-py-tests/src");
+    let python_src = root.join("implementations/python/sugar-lift-py-tests/src");
     fs::write(
         manifest_dir.join("manifest.toml"),
         format!(
-            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"provekit_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
+            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"sugar_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
             python_src.display()
         ),
     )
     .expect("write manifest");
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("lift")
         .arg(project.path())
         .arg("--json")
         .arg("--quiet")
         .current_dir(&root)
         .output()
-        .expect("spawn provekit lift python");
+        .expect("spawn sugar lift python");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
     assert_eq!(report["kind"], "ir-document");
@@ -1176,40 +1176,40 @@ def caller():
 "#,
     )
     .expect("write python fixture");
-    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::create_dir_all(project.path().join(".sugar")).expect("create config dir");
     fs::write(
-        project.path().join(".provekit/config.toml"),
+        project.path().join(".sugar/config.toml"),
         r#"[authoring.lift]
 surface = "python"
 "#,
     )
     .expect("write config");
-    let manifest_dir = project.path().join(".provekit/lift/python");
+    let manifest_dir = project.path().join(".sugar/lift/python");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
-    let python_src = root.join("implementations/python/provekit-lift-py-tests/src");
+    let python_src = root.join("implementations/python/sugar-lift-py-tests/src");
     fs::write(
         manifest_dir.join("manifest.toml"),
         format!(
-            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"provekit_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
+            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"sugar_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
             python_src.display()
         ),
     )
     .expect("write manifest");
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("lift")
         .arg(project.path())
         .arg("--json")
         .arg("--quiet")
         .current_dir(&root)
         .output()
-        .expect("spawn provekit lift python");
+        .expect("spawn sugar lift python");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
     assert_eq!(report["kind"], "ir-document");
@@ -1295,40 +1295,40 @@ class CheckedContracts(unittest.TestCase):
 "#,
     )
     .expect("write python fixture");
-    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::create_dir_all(project.path().join(".sugar")).expect("create config dir");
     fs::write(
-        project.path().join(".provekit/config.toml"),
+        project.path().join(".sugar/config.toml"),
         r#"[authoring.lift]
 surface = "python"
 "#,
     )
     .expect("write config");
-    let manifest_dir = project.path().join(".provekit/lift/python");
+    let manifest_dir = project.path().join(".sugar/lift/python");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
-    let python_src = root.join("implementations/python/provekit-lift-py-tests/src");
+    let python_src = root.join("implementations/python/sugar-lift-py-tests/src");
     fs::write(
         manifest_dir.join("manifest.toml"),
         format!(
-            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"provekit_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
+            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"sugar_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
             python_src.display()
         ),
     )
     .expect("write manifest");
 
-    let output = Command::new(provekit_bin())
+    let output = Command::new(sugar_bin())
         .arg("lift")
         .arg(project.path())
         .arg("--json")
         .arg("--quiet")
         .current_dir(&root)
         .output()
-        .expect("spawn provekit lift python");
+        .expect("spawn sugar lift python");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "provekit lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "sugar lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
     let ir = report["ir"].as_array().expect("ir array");

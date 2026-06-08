@@ -79,7 +79,7 @@ A function's effect set is the disjoint union of effects observable in its body.
 
 **Per-language extraction notes:**
 
-- **Rust** (`provekit-walk/src/contract.rs`): already implemented. Reads/writes from MIR borrow analysis; Io from std::io and similar trait impls; Unsafe from unsafe blocks; Panics from `panic!` / `unwrap`; UnresolvedCall from dyn-trait dispatch and function pointers.
+- **Rust** (`sugar-walk/src/contract.rs`): already implemented. Reads/writes from MIR borrow analysis; Io from std::io and similar trait impls; Unsafe from unsafe blocks; Panics from `panic!` / `unwrap`; UnresolvedCall from dyn-trait dispatch and function pointers.
 - **C** (planned): Reads/writes from libclang AST `MemberExpr` and `ArraySubscriptExpr` walks; Io from sysfs/debugfs/netlink/ioctl entry signatures; Unsafe from raw bitops, MMIO accesses, type punning; Panics from BUG_ON / WARN_ON / panic chains (already in c-assertions lifter); UnresolvedCall from indirect dispatch through ops tables (the rxkad ops-table case demonstrated in 2026-05-09's experimental record).
 - **Java**: Reads/writes from field-access AST; Io from `java.io` / `java.net` references; Unsafe from `sun.misc.Unsafe`; Panics from `throw` of unchecked exceptions; UnresolvedCall from interface dispatch and reflection.
 - Other languages: per-lifter responsibility.
@@ -100,7 +100,7 @@ A consumer MUST NOT trust a lifter-produced composed contract over its own re-de
 
 ## Section 5. Canonical implementation
 
-The compose function lives in **libprovekit** (the workspace-internal Rust library at `implementations/rust/libprovekit/`). The function signature:
+The compose function lives in **libsugar** (the workspace-internal Rust library at `implementations/rust/libsugar/`). The function signature:
 
 ```rust
 pub fn compose_chain_contracts(
@@ -124,11 +124,11 @@ The canonical compose function is exposed via three binding modes. The choice of
 
 ### 6.1 Direct Rust linking
 
-Rust consumers (provekit-walk, provekit-verifier, provekit-cli, future Rust-side lifters) link to libprovekit and call `compose_chain_contracts` directly. Zero-copy where possible. No process boundary.
+Rust consumers (sugar-walk, sugar-verifier, sugar-cli, future Rust-side lifters) link to libsugar and call `compose_chain_contracts` directly. Zero-copy where possible. No process boundary.
 
 ### 6.2 C ABI FFI
 
-A `provekit-compose.h` header exposes a C-callable wrapper:
+A `sugar-compose.h` header exposes a C-callable wrapper:
 
 ```c
 typedef struct pk_composition_result pk_composition_result;
@@ -146,15 +146,15 @@ const char *pk_composition_result_error(const pk_composition_result *r);
 void pk_composition_result_free(pk_composition_result *r);
 ```
 
-The C lifter family (provekit-lift-c-kernel-doc, provekit-lift-c-sparse, provekit-lift-c-assertions) and any other native consumer links to libprovekit's static library and uses this header. Marshaling is JCS-encoded JSON across the boundary; libprovekit owns the canonical encoding.
+The C lifter family (sugar-lift-c-kernel-doc, sugar-lift-c-sparse, sugar-lift-c-assertions) and any other native consumer links to libsugar's static library and uses this header. Marshaling is JCS-encoded JSON across the boundary; libsugar owns the canonical encoding.
 
 ### 6.3 JSON-RPC subprocess
 
-For consumers that cannot link Rust (TypeScript / Python / Ruby / PHP lifters running in their own runtime), the canonical compose is accessible via a `provekit compose` CLI subprocess speaking JSON-RPC over stdin/stdout. The protocol mirrors the lift-plugin-protocol shape:
+For consumers that cannot link Rust (TypeScript / Python / Ruby / PHP lifters running in their own runtime), the canonical compose is accessible via a `sugar compose` CLI subprocess speaking JSON-RPC over stdin/stdout. The protocol mirrors the lift-plugin-protocol shape:
 
 ```text
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocol_version":"provekit-compose/1","ccp_version":"1.0.0"}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocol_version":"sugar-compose/1","ccp_version":"1.0.0"}}
 
 → {"jsonrpc":"2.0","id":2,"method":"compose","params":{
     "atoms": [...],
@@ -168,7 +168,7 @@ For consumers that cannot link Rust (TypeScript / Python / Ruby / PHP lifters ru
 ← {"jsonrpc":"2.0","id":3,"result":null}
 ```
 
-The CLI subprocess is itself a thin wrapper over libprovekit. Same canonical implementation; just a different transport.
+The CLI subprocess is itself a thin wrapper over libsugar. Same canonical implementation; just a different transport.
 
 ## Section 7. Cross-language equivalence
 
@@ -204,7 +204,7 @@ Reserved for future effect-kind extensions where two effect kinds CONFLICT rathe
 
 ### 8.4 Determinism violation
 
-If a third-party implementation of `compose_chain_contracts` produces different CIDs for the same canonical inputs as libprovekit, the third-party implementation is non-conformant. Verifiers SHOULD refuse to admit composed contracts produced by non-conformant implementations. The conformance check is empirical: run the bug-zoo cross-language equivalence specimen.
+If a third-party implementation of `compose_chain_contracts` produces different CIDs for the same canonical inputs as libsugar, the third-party implementation is non-conformant. Verifiers SHOULD refuse to admit composed contracts produced by non-conformant implementations. The conformance check is empirical: run the bug-zoo cross-language equivalence specimen.
 
 ### 8.5 Lifter effects-tracking gap
 
@@ -234,7 +234,7 @@ The composition algebra implemented by `compose_chain_contracts` is defined by t
 
 **Rule 8. Composed schemaVersion.** The composed schemaVersion is the maximum schemaVersion across all inputs (semver max). If any input is at v2 and others at v1, the composed contract is at v2.
 
-These rules are the formal specification. The libprovekit implementation MUST implement them; the bug-zoo specimen MUST verify them.
+These rules are the formal specification. The libsugar implementation MUST implement them; the bug-zoo specimen MUST verify them.
 
 ## Section 10. Worked example: kernel C function chain
 
@@ -278,7 +278,7 @@ CCP itself versions. v1.0.0 is described in this document. Future versions (v1.1
 
 A consumer MAY admit composed contracts produced under multiple CCP versions if the consumer's verifier knows how to validate each. Contracts produced under a CCP version the consumer doesn't know are treated as opaque (consumer cannot recompute the CID, so cannot verify).
 
-Revocation: if a flaw is discovered in a CCP version's algebra that produces unsound composed contracts, the version is withdrawn via a signed revocation memento under libprovekit's maintainer key. Consumers SHOULD honor revocation; verifiers MUST refuse to admit composed contracts under withdrawn versions.
+Revocation: if a flaw is discovered in a CCP version's algebra that produces unsound composed contracts, the version is withdrawn via a signed revocation memento under libsugar's maintainer key. Consumers SHOULD honor revocation; verifiers MUST refuse to admit composed contracts under withdrawn versions.
 
 ## Section 12. Pipeline
 
@@ -288,7 +288,7 @@ Source code (any language)
   ▼ (per-language lifter)
 Atomic FunctionContractMementos + EffectSets
   │
-  ▼ (compose_chain_contracts in libprovekit, called via FFI / CLI / direct-link)
+  ▼ (compose_chain_contracts in libsugar, called via FFI / CLI / direct-link)
 ComposedFunctionContract mementos (CID-addressed, content-derived)
   │
   ▼ (emitted into .proof bundle alongside atomics, eager)
@@ -320,7 +320,7 @@ Consumers writing wrappers (FFI, CLI) MUST canonicalize inputs before calling. C
 
 ## Appendix B. Reference implementation surface
 
-The v1 reference implementation lives at `implementations/rust/libprovekit/src/compose.rs` (planned). It exposes:
+The v1 reference implementation lives at `implementations/rust/libsugar/src/compose.rs` (planned). It exposes:
 
 - `pub fn compose_chain_contracts(...)`, the canonical primitive
 - `pub struct EffectSet`, opaque type
@@ -329,10 +329,10 @@ The v1 reference implementation lives at `implementations/rust/libprovekit/src/c
 - `pub struct ComposedFunctionContract`, the output type
 - `pub const CCP_VERSION: &str = "1.0.0"`
 
-The C ABI FFI lives at `implementations/rust/libprovekit/include/provekit-compose.h` (planned). It exposes the C-callable wrappers per Section 6.2.
+The C ABI FFI lives at `implementations/rust/libsugar/include/sugar-compose.h` (planned). It exposes the C-callable wrappers per Section 6.2.
 
-The CLI subcommand `provekit compose` lives in provekit-cli (planned). It speaks JSON-RPC per Section 6.3.
+The CLI subcommand `sugar compose` lives in sugar-cli (planned). It speaks JSON-RPC per Section 6.3.
 
-A test corpus at `implementations/rust/libprovekit/tests/compose_corpus/` pins composed CIDs to expected hex values across a representative set of input shapes. CCP version bumps invalidate this corpus; the corpus is regenerated and committed under the new version's signature.
+A test corpus at `implementations/rust/libsugar/tests/compose_corpus/` pins composed CIDs to expected hex values across a representative set of input shapes. CCP version bumps invalidate this corpus; the corpus is regenerated and committed under the new version's signature.
 
 The bug-zoo cross-language equivalence specimen at `menagerie/bug-zoo/specimens/BZ-COMPOSITION-001-cross-language-equivalence/` (planned) ships the Rust + C structurally-equivalent sources and the test runner that asserts byte-identical composed CIDs. This specimen IS the federation guarantee, in executable form.

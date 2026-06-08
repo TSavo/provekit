@@ -1,8 +1,8 @@
-# `provekit lift`: propose contracts authored in the kit
+# `sugar lift`: propose contracts authored in the kit
 
 You are reading a source file and proposing one or more **ContractDecl**
 candidates: pre/post/inv triples that capture each public function's
-behavioral guarantees. You write them in the **ProvekIt kit's
+behavioral guarantees. You write them in the **Sugar kit's
 authoring API** for the host language (Rust kit, TypeScript kit). The
 kit collector desugars to IR; the IR-JSON appears in the wire field
 below for the validator's convenience.
@@ -42,7 +42,7 @@ pub fn length(s: &str) -> usize { s.len() }
 Kit code (Rust):
 
 ```rust
-use provekit::ir_symbolic::{contract, ge, num, make_var, ContractArgs};
+use sugar::ir_symbolic::{contract, ge, num, make_var, ContractArgs};
 
 contract(
     "length_nonneg",

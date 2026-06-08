@@ -16,7 +16,7 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PYTHON_ROOT = os.path.dirname(_HERE)
-_ORCH = os.path.join(_PYTHON_ROOT, "provekit-self-contracts.py")
+_ORCH = os.path.join(_PYTHON_ROOT, "sugar-self-contracts.py")
 
 # Load the orchestrator module without depending on its filename being a
 # valid Python identifier (the hyphen makes it un-importable as a normal
@@ -26,7 +26,7 @@ import runpy
 
 # Ensure the orchestrator can locate its sibling lib via sys.path; it
 # also self-injects, so this is belt-and-suspenders.
-_LIB_SRC = os.path.join(_PYTHON_ROOT, "provekit-lift-py-tests", "src")
+_LIB_SRC = os.path.join(_PYTHON_ROOT, "sugar-lift-py-tests", "src")
 if _LIB_SRC not in sys.path:
     sys.path.insert(0, _LIB_SRC)
 

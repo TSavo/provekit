@@ -5,7 +5,7 @@
 
 ## §0. The protocol is the bytes
 
-The ProvekIt protocol is not this document. The ProvekIt protocol is not the Rust implementation, or the C++ implementation, or the Go implementation. The protocol is the **set of byte sequences** that all conformant implementations produce for any given input.
+The Sugar protocol is not this document. The Sugar protocol is not the Rust implementation, or the C++ implementation, or the Go implementation. The protocol is the **set of byte sequences** that all conformant implementations produce for any given input.
 
 This document describes those byte sequences in English. The Rust crates implement them. Both are descriptions of the protocol, not the protocol itself. They are caches. Caches can drift. The bytes cannot.
 
@@ -20,7 +20,7 @@ A protocol catalog is a JSON document with the following required top-level prop
 | Property      | Type     | Description |
 |---------------|----------|-------------|
 | `kind`        | string   | MUST be the literal `"catalog"` |
-| `name`        | string   | Protocol identifier; for ProvekIt, `"provekit-protocol"` |
+| `name`        | string   | Protocol identifier; for Sugar, `"sugar-protocol"` |
 | `version`     | string   | Human-facing version label (e.g. `"v1.1.0-2026-04-30"`). Informational only. The version that matters cryptographically is the CID. |
 | `algorithms`  | object   | Permitted cryptographic primitives. Each entry maps a role (`hash`, `signature`, `pubkey`) to an array of self-identifying tags (e.g. `"blake3-512"`, `"ed25519"`). |
 | `properties`  | object   | Map from spec-key (string) to spec-CID (`<algorithm>:<digest>` self-identifying form). |
@@ -80,7 +80,7 @@ The reference tool at `tools/recompute-spec-cids/` exits with status 0 when run 
 2. Every spec file's raw-byte BLAKE3-512 matches the value in `properties[key]`.
 3. The catalog's own JCS-canonical-byte BLAKE3-512 matches the value the tool computes from the on-disk catalog after substitution.
 
-Other conformant tools (in any language) must produce byte-identical JCS canonicalization and byte-identical BLAKE3-512 digests when given the same inputs. The Rust JCS encoder at `implementations/rust/provekit-canonicalizer/src/jcs.rs` is the reference; the C++ encoder at `implementations/cpp/provekit/canonicalizer/jcs.cpp` is conformant. New language ports MUST include the `unicode_atomic_predicates_round_trip_verbatim` test fixture (or equivalent) to catch the UTF-8 byte-iteration bug class.
+Other conformant tools (in any language) must produce byte-identical JCS canonicalization and byte-identical BLAKE3-512 digests when given the same inputs. The Rust JCS encoder at `implementations/rust/sugar-canonicalizer/src/jcs.rs` is the reference; the C++ encoder at `implementations/cpp/sugar/canonicalizer/jcs.cpp` is conformant. New language ports MUST include the `unicode_atomic_predicates_round_trip_verbatim` test fixture (or equivalent) to catch the UTF-8 byte-iteration bug class.
 
 ## §6. Forbidden patterns
 

@@ -1,7 +1,7 @@
 {
   "kind": "ProtocolEvolutionPolicy",
   "schemaVersion": "1",
-  "name": "provekit-pep-bootstrap-v0",
+  "name": "sugar-pep-bootstrap-v0",
   "acceptedSigner": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
   "acceptedChangeClass": "extension-only",
   "versionLabelRule": {

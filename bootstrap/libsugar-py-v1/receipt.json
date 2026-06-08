@@ -1,0 +1,49 @@
+{
+  "artifact": "libsugar-py",
+  "status": "refusal",
+  "version": "v0",
+  "function_under_test": "blake3_512_of",
+  "rust_source": "implementations/rust/sugar-canonicalizer/src/hash.rs",
+  "rust_term_cid": "blake3-512:63306c27eb2d5433a87a48e82bdf2cec1d48b155e5a47f9f4ab48a32d32de9dca7184fbba14fe86f82d6fa3e06f123057fcc9404ea9de9376ae7f432a7567723",
+  "rust_signature_cid": "blake3-512:6e96976ee181cc32de6dfb326b9b9a96e5f47b7ba8afef9606d93cee15984fc1c81de78491da094a788bf50725b26824e22b16d79a5b80dc76cd169c59aa844c",
+  "pipeline": {
+    "lift": {
+      "binary": "sugar-walk-emit",
+      "invocation": "sugar-walk-emit term implementations/rust/sugar-canonicalizer/src/hash.rs blake3_512_of /tmp/blake3_512_of.term.json",
+      "handling": "handles-partially-with-loss-record",
+      "loss_classes": [
+        "procedural-macro: test",
+        "return-type-user-defined: String",
+        "let-binding-mutability: hasher",
+        "ffi-call-unresolved-effect: blake3::Hasher::new",
+        "ffi-call-unresolved-effect: update",
+        "let-binding-mutability: out",
+        "ffi-call-unresolved-effect: fill",
+        "ffi-call-unresolved-effect: finalize_xof",
+        "ffi-call-unresolved-effect: hex::encode",
+        "let-binding-mutability: s",
+        "ffi-call-unresolved-effect: String::with_capacity",
+        "type-inference-assumed-int: Expr::MethodCall",
+        "ffi-call-unresolved-effect: len",
+        "ffi-call-unresolved-effect: push_str"
+      ]
+    },
+    "realize": {
+      "binary": "sugar-realize-python-core",
+      "method": "sugar.plugin.invoke",
+      "is_stub": true,
+      "stub_reason": "unsupported canonical call `blake3::Hasher::new`; no Python shim matched `call:new(blake3::Hasher::new, [])`",
+      "refusal_class": "no-python-shim-for-ffi-call:blake3::Hasher::new"
+    }
+  },
+  "claim": "v0 establishes the end-to-end pipeline (sugar-walk-emit -> sugar-realize-python-core) for libsugar's first function. The Python output is the literal stdout of the realize-kit. The realize-kit emits an honest NotImplementedError stub because the term's first operation (call:new on blake3::Hasher::new) has no body-template entry in python-canonical-bodies-libsugar.json. This is a vendor-shim gap, not a realizer term-shape gap.",
+  "what_v1_needs": "Either (a) author body-template entries for blake3, hex, and String FFI ops in python-canonical-bodies-libsugar.json (per-library shim work, no substrate), OR (b) run the vendor-absorption flow (issue #985) to auto-mint concept hubs + body-template entries for the blake3 vendor library at its API edge.",
+  "out_of_scope_tonight": "Substrate changes: new concept hubs, lifter effect-tracking for statement-level method calls, RefusalMemento variants. Per the bootstrap arc rules, per-language kit work cannot mint new concept-shape specs.",
+  "gates": {
+    "no_substrate_changes": true,
+    "no_new_memento_types": true,
+    "no_new_specs": true,
+    "no_hand_authored_fallback_in_canonical_py": true,
+    "canonical_py_is_verbatim_realize_kit_output": true
+  }
+}

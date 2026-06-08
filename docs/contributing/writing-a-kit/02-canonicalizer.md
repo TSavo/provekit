@@ -6,7 +6,7 @@ This step is dense. Read it twice.
 
 ## What the canonicalizer does
 
-Input: an `IrFormula` (or `IrTerm`, `Sort`, `Declaration`, etc.), a structured value matching the CDDL grammar at [`protocol/provekit-ir.cddl`](../../../protocol/provekit-ir.cddl).
+Input: an `IrFormula` (or `IrTerm`, `Sort`, `Declaration`, etc.), a structured value matching the CDDL grammar at [`protocol/sugar-ir.cddl`](../../../protocol/sugar-ir.cddl).
 
 Output: the BLAKE3-512 of the JCS-canonicalized JSON serialization of that value.
 

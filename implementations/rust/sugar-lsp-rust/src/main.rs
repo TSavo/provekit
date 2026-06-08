@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lsp-rust: NDJSON LSP plugin for Rust.
+// sugar-lsp-rust: NDJSON LSP plugin for Rust.
 //
 // ## Operating modes
 //
@@ -24,7 +24,7 @@
 //
 // ### Daemon-client mode (`--daemon-socket <path>`)
 //
-// Forwards every `parse` request to the `provekit-linkerd` daemon as a
+// Forwards every `parse` request to the `sugar-linkerd` daemon as a
 // `parseFile` JSON-RPC (spec `2026-05-04-linker-daemon-protocol.md` R5).
 // The daemon runs the lifter in a dedicated long-running process, maintains
 // the cross-language contract and call-edge union in memory, and returns
@@ -37,12 +37,12 @@
 // where each element is a `LinterError` memento returned by the daemon.
 //
 // This mode is used by editor-facing components: in particular the real LSP
-// server (`provekit-lsp-server`, step 3b of the LSP+linker path) that handles
+// server (`sugar-lsp-server`, step 3b of the LSP+linker path) that handles
 // `textDocument/didOpen` and emits `publishDiagnostics` to the editor.
 //
 // Usage:
-//   provekit-lsp-rust                          # default mode
-//   provekit-lsp-rust --daemon-socket <path>   # daemon-client mode
+//   sugar-lsp-rust                          # default mode
+//   sugar-lsp-rust --daemon-socket <path>   # daemon-client mode
 
 mod daemon_client;
 
@@ -54,8 +54,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use sugar_lsp_rust::forward_propagator::ForwardPropagator;
 
 const KIT_ID: &str = "rust";
-const SHARED_LSP_PROTOCOL_VERSION: &str = "provekit-lsp-shared/1";
-const SHARED_LSP_PROTOCOL_CATALOG_CID: &str = "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c";
+const SHARED_LSP_PROTOCOL_VERSION: &str = "sugar-lsp-shared/1";
 
 fn main() {
     // Parse CLI.
@@ -113,17 +112,16 @@ fn main() {
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": {
-                        "name": "provekit-lsp-rust",
+                        "name": "sugar-lsp-rust",
                         "version": "0.1.0",
                         "protocol_version": SHARED_LSP_PROTOCOL_VERSION,
                         "kit_id": KIT_ID,
-                        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
                         "capabilities": {
                             "source_surfaces": ["rust-source"],
                             "entry_kinds": ["bind-lift-entry"],
                             "diagnostic_codes": [
-                                "provekit.lsp.parse_error",
-                                "provekit.lsp.implication_failed"
+                                "sugar.lsp.parse_error",
+                                "sugar.lsp.implication_failed"
                             ],
                             "status_kinds": ["materialize", "emit", "check", "prove"]
                         }
@@ -188,7 +186,7 @@ fn main() {
     }
 }
 
-/// Daemon-client mode: forward `parse` to the `provekit-linkerd` daemon as a
+/// Daemon-client mode: forward `parse` to the `sugar-linkerd` daemon as a
 /// `parseFile` RPC and return `{diagnostics: [...]}`.
 ///
 /// The daemon connection is established lazily on the first `parse` call and
@@ -352,7 +350,6 @@ fn analyze_document_response(
             "uri": uri,
             "file": file,
             "document_cid": blake3_512_cid(source.as_bytes()),
-            "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
             "entries": entries,
             "diagnostics": diagnostics,
             "statuses": statuses,
@@ -363,13 +360,12 @@ fn analyze_document_response(
 
 fn parse_error_diagnostic(message: &str) -> serde_json::Value {
     serde_json::json!({
-        "code": "provekit.lsp.parse_error",
+        "code": "sugar.lsp.parse_error",
         "message": message,
         "severity": "error",
         "range": first_byte_range(),
         "producer": "kit",
         "kit_id": KIT_ID,
-        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID
     })
 }
 
@@ -379,11 +375,11 @@ fn shared_diagnostic_from_lsp_diagnostic(diagnostic: &serde_json::Value) -> serd
         .and_then(|data| data.get("kind"))
         .and_then(|kind| kind.as_str())
         .or_else(|| diagnostic.get("code").and_then(|code| code.as_str()))
-        .unwrap_or("provekit.lsp.lift_gap");
+        .unwrap_or("sugar.lsp.lift_gap");
     let message = diagnostic
         .get("message")
         .and_then(|message| message.as_str())
-        .unwrap_or("ProvekIt diagnostic");
+        .unwrap_or("Sugar diagnostic");
     let severity = diagnostic
         .get("severity")
         .and_then(|severity| severity.as_u64())
@@ -401,7 +397,6 @@ fn shared_diagnostic_from_lsp_diagnostic(diagnostic: &serde_json::Value) -> serd
         "range": range,
         "producer": "forward-propagation",
         "kit_id": KIT_ID,
-        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID
     });
     if let Some(data) = diagnostic.get("data") {
         shared["data"] = data.clone();
@@ -548,12 +543,12 @@ fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::
 }
 
 /// THE SEVER: lift `source`'s `#[requires]`/`#[ensures]` contracts by
-/// spawning the `contracts_rpc` kit (via `provekit-lift-rpc-client`),
+/// spawning the `contracts_rpc` kit (via `sugar-lift-rpc-client`),
 /// instead of statically calling the static contracts-adapter lift_file.
 ///
 /// The editor supplies in-memory source. The kit reads from disk, so we
 /// write the source to a fresh temp file under a temp workspace (mirroring
-/// `provekit-linkerd::lift_rust_source`), invoke the kit against that one
+/// `sugar-linkerd::lift_rust_source`), invoke the kit against that one
 /// file, and return `(ir_array, lift_gap_warnings)`. The `ir` array is the
 /// marshalled `kind:"contract"` shape the static path produced verbatim.
 fn rpc_lift_source(
@@ -570,7 +565,7 @@ fn rpc_lift_source(
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let tmp_dir = std::env::temp_dir().join(format!(
-        "provekit-lsp-rust-lift-{}-{nanos}",
+        "sugar-lsp-rust-lift-{}-{nanos}",
         std::process::id()
     ));
     std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("create temp dir: {e}"))?;

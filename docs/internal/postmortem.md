@@ -1,4 +1,4 @@
-# provekit: Session Postmortem
+# sugar: Session Postmortem
 
 **Date:** 2026-04-13 to 2026-04-14
 **Duration:** Single continuous session
@@ -9,7 +9,7 @@
 
 "Logging is assertions made by eyeballs after the fact."
 
-Every `console.log` and `logger.info` a programmer writes is an implicit assertion: an `assert()` the programmer was too busy to formalize. provekit reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
+Every `console.log` and `logger.info` a programmer writes is an implicit assertion: an `assert()` the programmer was too busy to formalize. sugar reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
 
 The insight came in layers:
 
@@ -27,7 +27,7 @@ The pipeline evolved from a monolithic script to five phases with immutable outp
 
 ### Phase 1: Dependency Graph
 **Input:** source file path
-**Output:** `.provekit/graph.json`
+**Output:** `.sugar/graph.json`
 
 Tree-sitter parses the entry file. Import statements are resolved to source files (relative imports only, depth-1). A topological sort determines the derivation order: leaves first (files with no imports), root last (the file that imports everything). This ensures each file's contracts are derived with its dependencies' contracts already available.
 
@@ -35,7 +35,7 @@ Tree-sitter parses the entry file. Import statements are resolved to source file
 
 ### Phase 2: Context Assembly
 **Input:** `graph.json`
-**Output:** `.provekit/contexts/bundles.json`
+**Output:** `.sugar/contexts/bundles.json`
 
 For each file in topological order, assembles a context bundle per log statement: the file source, import sources, existing contracts from dependencies, calling context. Each bundle is everything the LLM needs for one derivation call.
 
@@ -43,7 +43,7 @@ For each file in topological order, assembles a context bundle per log statement
 
 ### Phase 3: Contract Derivation
 **Input:** `bundles.json`
-**Output:** `.provekit/contracts/*.json`, `.provekit/derivation.json`
+**Output:** `.sugar/contracts/*.json`, `.sugar/derivation.json`
 
 For each call site in each bundle, sends the prompt to the LLM via Claude Agent SDK. Gets back SMT-LIB blocks. Feeds each to Z3. Writes contracts to disk. Contracts accumulate sequentially: derivation #N sees contracts #1 through #N-1.
 
@@ -54,7 +54,7 @@ For each call site in each bundle, sends the prompt to the LLM via Claude Agent 
 
 ### Phase 4: Principle Classification
 **Input:** `derivation.json` (specifically, `[NEW]`-tagged violations)
-**Output:** `.provekit/principles/*.json`, `.provekit/classification.json`
+**Output:** `.sugar/principles/*.json`, `.sugar/classification.json`
 
 Violations tagged `[NEW]` by the LLM go through a four-stage validation pipeline:
 1. **Two-stage semantic classifier.** Stage 1: full principle descriptions + teaching examples. Stage 2: reverse framing ("could any existing principle have caught this?"). Both must say NEW.
@@ -66,7 +66,7 @@ Violations tagged `[NEW]` by the LLM go through a four-stage validation pipeline
 
 ### Phase 5: Axiom Application
 **Input:** `contracts/*.json`, `principles/*.json`
-**Output:** `.provekit/report.json`
+**Output:** `.sugar/report.json`
 
 Mechanical axiom application. No LLM. No network. Pure Z3 against cached contracts. Applies P1-P7 templates, checks cross-contract consistency, detects stale dependencies. Runs in seconds.
 
@@ -92,7 +92,7 @@ The prompt template lives at `prompts/invariant_derivation.md` and is assembled 
 
 ### inventory.ts (verified, on disk)
 
-`.provekit/contracts/examples/inventory.ts.json`
+`.sugar/contracts/examples/inventory.ts.json`
 
 | Metric | Count | Breakdown |
 |---|---|---|
@@ -215,7 +215,7 @@ a989d7f New CLI with five-phase pipeline and cross-file analysis
 
 ## The Thesis Revisited
 
-Logging is assertions made by eyeballs after the fact. provekit gives the eyeballs to a theorem prover.
+Logging is assertions made by eyeballs after the fact. sugar gives the eyeballs to a theorem prover.
 
 A programmer writes `console.log`. The system derives what they meant. Z3 proves whether it's true. The proof log records the evidence. The axioms grow. The system gets smarter.
 
@@ -236,7 +236,7 @@ The original system (above) ANALYZED. The next iteration FIXES. Same week.
 Eight sections, ~50 commits, ~580 tests. From the bug-loop plan at `docs/plans/2026-04-23-fix-loop.md`:
 
 - **Section A (substrate):** SAST tables (nodes, children, kind, 16 capability tables), data-flow edges with closed slot vocabulary, dominance + post-dominance, incremental re-index, DSL parser/compiler/evaluator with capability + relation registries, 14 of 23 seed principles migrated.
-- **Section B (intake + orchestration):** intake adapter registry (`BugSignal.source` is data, not enum), SAST-backed locator, remediation layer registry (`primaryLayer` is data, not enum), `provekit fix <ref>` CLI, orchestrator scaffold.
+- **Section B (intake + orchestration):** intake adapter registry (`BugSignal.source` is data, not enum), SAST-backed locator, remediation layer registry (`primaryLayer` is data, not enum), `sugar fix <ref>` CLI, orchestrator scaffold.
 - **Section C (generation + verification):** invariant formulator (oracle #1), scratch overlay, fix candidate generator (oracle #2), complementary changes (oracle #3), mutation-verified regression test (oracle #9), principle/capability candidate (oracles #6/#14/#16/#17/#18). Each is a stage; each is gated by Z3 or runtime verifiers, not LLM self-confidence.
 - **Section D (bundle + apply + learn):** artifact-kind registry (4th primitive; each kind names which oracles its verification requires), bundle coherence runner, transactional apply with substrate-rollback, learning layer that promotes principles into the library.
 
@@ -282,7 +282,7 @@ The regression test encoded the Z3 witness directly (`const b = 0; const a = 1`)
 
 Every real-LLM run paid rent by exposing one integration gap that the stub-LLM tests literally could not. In order:
 
-1. **`provekit analyze` never populated the SAST tables.** The fix-loop queries against `files`/`nodes`/`capabilities`/`data_flow`/`dominance`. Analyze populated `clauses`/`gap_reports` only. Two sibling pipelines that diverged when the fix-loop's substrate landed. Closed by wiring `buildSASTForFile` into analyze's per-file walk.
+1. **`sugar analyze` never populated the SAST tables.** The fix-loop queries against `files`/`nodes`/`capabilities`/`data_flow`/`dominance`. Analyze populated `clauses`/`gap_reports` only. Two sibling pipelines that diverged when the fix-loop's substrate landed. Closed by wiring `buildSASTForFile` into analyze's per-file walk.
 
 2. **LLM JSON responses are wrapped in markdown code-fences.** Every parse site that called `JSON.parse(rawResponse)` failed. Closed by a shared `parseJsonFromLlm()` helper that strips fences. Ten call sites updated.
 
@@ -304,7 +304,7 @@ Initial logging was terse ("Locate failed: cannot continue"). After the second d
 - Tool-use events captured per turn (Edit/Write/Read/Bash with full inputs)
 - Thinking blocks captured when the SDK exposes them
 - Pino with dual streams: file = full NDJSON transcript, stdout = pretty-printed summary
-- Persisted to `.provekit/fix-loop-<ts>.log` for post-hoc replay
+- Persisted to `.sugar/fix-loop-<ts>.log` for post-hoc replay
 
 The logging convention got committed as `docs/LOGGING.md`: **truncation in log files is forbidden.** Disk pressure is solved by rotation, sensitive data by field-level redaction, readability by tools at read time. Truncation at write time is a permanent loss of information at exactly the moment debugging needs it most. The overlay-bypass took an afternoon to catch only because tool-use parameters were elided in the SDK's default summary.
 

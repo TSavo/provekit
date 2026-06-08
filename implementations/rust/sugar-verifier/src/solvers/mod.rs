@@ -13,7 +13,7 @@
 //                         installed.
 //
 // Composition over solvers is expressed by `SolverPlan`, derived from
-// `.provekit/config.toml` (see `config.rs`). The plan is one of:
+// `.sugar/config.toml` (see `config.rs`). The plan is one of:
 //
 //   * Single (default)            - invoke one solver.
 //   * Chain                       - sequential fall-through; first

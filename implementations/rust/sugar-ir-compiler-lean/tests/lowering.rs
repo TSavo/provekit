@@ -52,21 +52,21 @@ fn false_obligation_gets_checked_by_automation_without_sorry() {
     let ir = json!({"kind": "atomic", "name": "false", "args": []});
     let out = compiler.compile(&ir, DIALECT).expect("compile");
     let source = format!("{}{}", out.preamble, out.body);
-    assert!(source.contains("theorem provekit_obligation : False := by"));
+    assert!(source.contains("theorem sugar_obligation : False := by"));
     assert!(!source.contains("sorry"));
 }
 
 #[test]
 fn binary_emits_lean_source_from_stdin() {
-    let Some(bin) = option_env!("CARGO_BIN_EXE_provekit-ir-lean") else {
-        eprintln!("skip: provekit-ir-lean binary path not supplied by cargo");
+    let Some(bin) = option_env!("CARGO_BIN_EXE_sugar-ir-lean") else {
+        eprintln!("skip: sugar-ir-lean binary path not supplied by cargo");
         return;
     };
     let mut child = std::process::Command::new(bin)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .expect("spawn provekit-ir-lean");
+        .expect("spawn sugar-ir-lean");
     {
         use std::io::Write;
         let stdin = child.stdin.as_mut().expect("stdin");

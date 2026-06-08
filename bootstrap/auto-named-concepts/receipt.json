@@ -25,11 +25,11 @@
       "anonymous_name": "UNNAMED-CONCEPT-1",
       "edit_succeeded": true,
       "line": 2,
-      "new_tag": "// provekit:concept[blake3-512:0123456789abcdef](deposit-then-balance)",
-      "original_tag": "// provekit:concept[blake3-512:0123456789abcdef](UNNAMED-CONCEPT-1)",
+      "new_tag": "// sugar:concept[blake3-512:0123456789abcdef](deposit-then-balance)",
+      "original_tag": "// sugar:concept[blake3-512:0123456789abcdef](UNNAMED-CONCEPT-1)",
       "proposed_name": "deposit-then-balance",
       "source_file": "sample.rs",
-      "tag_kind": "provekit_concept_tag"
+      "tag_kind": "sugar_concept_tag"
     },
     {
       "anchor_function": "checked_withdraw",

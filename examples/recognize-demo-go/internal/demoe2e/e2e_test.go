@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/provekit/recognize-demo-go/pkg/ingest"
-	"github.com/provekit/recognize-demo-go/pkg/persist"
+	"github.com/sugar/recognize-demo-go/pkg/ingest"
+	"github.com/sugar/recognize-demo-go/pkg/persist"
 )
 
 func TestRecognizeDemoRoundTrip(t *testing.T) {

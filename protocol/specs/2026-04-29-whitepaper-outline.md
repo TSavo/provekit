@@ -1,4 +1,4 @@
-# ProvekIt: whitepaper outline
+# Sugar: whitepaper outline
 
 > Author: shared session 2026-04-29 (T + Claude). The structural plan
 > for the canonical external whitepaper. Not the whitepaper itself.
@@ -17,7 +17,7 @@ mapping; the writing itself sources from the canonical specs.
 
 The whitepaper draws from:
 
-- `2026-04-23-provekit-v2-design.md` — v2 architecture (the engine).
+- `2026-04-23-sugar-v2-design.md` — v2 architecture (the engine).
 - `2026-04-27-constraint-driven-development.md` — the thesis behind
   ages-backwards software.
 - `2026-04-27-standing-invariant-runtime.md` — the runtime story.
@@ -54,7 +54,7 @@ into the sequence the external reader needs.
 The framework's acceptance criterion: **point it at a Rust codebase or
 a COBOL codebase, and it should just work.** The whitepaper, the specs,
 and the implementation are all complete only when this is true. If a
-mainframe COBOL shop and a modern Rust shop can both run `provekit
+mainframe COBOL shop and a modern Rust shop can both run `sugar
 prove` against their repo and get a working proof DAG, the design has
 landed. Anything short of that is incomplete.
 
@@ -63,7 +63,7 @@ landed. Anything short of that is incomplete.
 ### Executive summary (~2 pages)
 
 - Three-sentence pitch (page 1).
-- Thesis paragraph: ProvekIt is the proof substrate for the global
+- Thesis paragraph: Sugar is the proof substrate for the global
   software ecosystem.
 - Cost table: six-orders-of-magnitude verification asymmetry.
 - One-paragraph career-arc lineage.
@@ -97,7 +97,7 @@ landed. Anything short of that is incomplete.
    1995) → file-block swarms (Digital Confetti, 1998 → BitTorrent,
    2001) → money (Bitcoin, 2008) → general content (IPFS, Git). Each a
    successive operationalization of the same primitive at a higher
-   abstraction level. ProvekIt is the sixth domain.
+   abstraction level. Sugar is the sixth domain.
 
 5. **The memento as unit of work.** Content-addressed signed claim.
    Composes by reference into a Merkle DAG. The unit-of-work principle:
@@ -143,7 +143,7 @@ landed. Anything short of that is incomplete.
 14. **The mainframe-first market.** Tier-1 banks, insurance carriers,
     healthcare processors, government agencies. Richest mineable
     corpora. Highest per-bug cost. Largest budgets. Acute staff-
-    replacement pain. Failing-migration pattern that ProvekIt directly
+    replacement pain. Failing-migration pattern that Sugar directly
     solves.
 
 15. **Per-language kits.** Universal core + per-host-language kit. LSP
@@ -191,7 +191,7 @@ landed. Anything short of that is incomplete.
     land in 2026 specifically.
 
 27. **Comparison to DNS, CA, Git, Bitcoin.** Each is invisible
-    infrastructure on civilizational scale. ProvekIt is positioned
+    infrastructure on civilizational scale. Sugar is positioned
     identically.
 
 28. **The team and the lineage.** The architectural primitive has been

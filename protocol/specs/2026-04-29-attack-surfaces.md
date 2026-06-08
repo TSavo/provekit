@@ -1,6 +1,6 @@
-# ProvekIt: attack surfaces and adversarial analysis
+# Sugar: attack surfaces and adversarial analysis
 
-**Scope.** This document enumerates the ways ProvekIt could be defeated,
+**Scope.** This document enumerates the ways Sugar could be defeated,
 gamed, or fooled — and what the architecture does about each. It's the
 adversarial counterpart to the constraint-driven-development spec
 (`2026-04-27-constraint-driven-development.md`), which describes how the
@@ -15,7 +15,7 @@ positions:
 - A package-supply-chain attacker who can taint a dependency the
   framework reads.
 - A reader of the on-disk corpus (read-only filesystem access to
-  `.provekit/`).
+  `.sugar/`).
 
 Out of scope: attackers with full root on the developer's machine
 (they win unconditionally) and cryptographic attacks on SHA-256
@@ -89,15 +89,15 @@ each new one becomes a permanent structural improvement.
 `narrows` SAST table).
 
 **Mechanism.** The substrate's Drizzle migrations are open. If an
-adversary could write directly to `.provekit/provekit.db`, they could
+adversary could write directly to `.sugar/sugar.db`, they could
 populate any capability table.
 
 **Mitigation.** The DB is never written by user code at runtime — only
-by `provekit analyze` / the SAST builder, which extract capabilities
+by `sugar analyze` / the SAST builder, which extract capabilities
 from AST nodes via parameterized inserts. User code can't inject rows
 without filesystem-level access (out of scope per threat model).
 
-**Residual risk.** Low. The DB lives under `.provekit/` and is
+**Residual risk.** Low. The DB lives under `.sugar/` and is
 rebuildable from source; any real attack would leave the rebuilt DB
 unchanged.
 
@@ -167,7 +167,7 @@ LLM code at `lib/llm/`).
 attacker's job is to find a path the glob misses.
 
 **Mitigation.** Principle authors choose globs broad enough to cover
-the intent. For ProvekIt's product constraint #1 ("no LLM in
+the intent. For Sugar's product constraint #1 ("no LLM in
 verification path"), the binding's glob would be a multi-pattern
 union covering all the locations LLM code legitimately lives.
 
@@ -209,7 +209,7 @@ is source-controlled, diffs are reviewable).
 
 ### 3.2 Constraint exfiltration
 
-**Vector.** An adversary with read-only access to `.provekit/` reads
+**Vector.** An adversary with read-only access to `.sugar/` reads
 the corpus and learns properties of the codebase that help craft
 attacks elsewhere.
 
@@ -218,14 +218,14 @@ attacks elsewhere.
 attacker scanning the corpus learns where the code's load-bearing
 properties live.
 
-**Mitigation.** The corpus is local-first; ProvekIt does not sync
+**Mitigation.** The corpus is local-first; Sugar does not sync
 remotely by default. For shared deployments (the GitHub Action), the
 corpus becomes a source-controlled artifact in the repo — same
 visibility as the code itself. If the code is private, the corpus
 inherits that.
 
 **Residual risk.** Open repos are open. An attacker reading a public
-ProvekIt-using repo can learn its invariants. But they can also read
+Sugar-using repo can learn its invariants. But they can also read
 the source — the corpus reveals nothing the source doesn't already
 say more directly.
 
@@ -249,7 +249,7 @@ review the same as any code change.
 
 ### 3.4 Silent invariant retirement
 
-**Vector.** An adversary deletes invariants from `.provekit/`
+**Vector.** An adversary deletes invariants from `.sugar/`
 expecting that the framework won't notice the gap.
 
 **Mechanism.** `readInvariants()` enumerates files in the directory.
@@ -363,7 +363,7 @@ the artifact directly.
 ## 5. Attacks on the standing runtime
 
 The standing runtime is the long-running component: it watches the
-corpus, fires on drift, runs at every `provekit verify`. Attacks here
+corpus, fires on drift, runs at every `sugar verify`. Attacks here
 target its operational properties.
 
 ### 5.1 Resource exhaustion
@@ -379,7 +379,7 @@ indefinitely.
 and `--max-paths` (per invariant). Runs that exceed budget surface
 as `undecidable` rather than blocking forever.
 
-**Residual risk.** The SLA for `provekit verify` becomes operational:
+**Residual risk.** The SLA for `sugar verify` becomes operational:
 defenders configure timeouts that match their CI window. A
 pathological corpus is detectable (the ratio of `undecidable` to
 total verdicts spikes).
@@ -440,7 +440,7 @@ This violates product constraint \#1.
 
 **Mitigation.** Constraint \#1 itself becomes a self-applied
 graph-binding invariant once the corpus seeds it: "no path from
-`provekit verify`'s entry reaches a symbol under `src/llm/`."
+`sugar verify`'s entry reaches a symbol under `src/llm/`."
 Detected at every verify run. The framework guards its own
 constraint mechanically.
 
@@ -450,12 +450,12 @@ self-applied invariant could bypass it. The audit trail catches it.
 
 ### 6.3 Recursive depth attack
 
-**Vector.** An attacker uses ProvekIt to fix ProvekIt itself in a way
+**Vector.** An attacker uses Sugar to fix Sugar itself in a way
 that introduces a vulnerability. The framework's "ages backwards"
 property is supposed to make this harder; an attack would target the
 recursion's terminal case.
 
-**Mechanism.** A ProvekIt change that weakens a downstream gate while
+**Mechanism.** A Sugar change that weakens a downstream gate while
 strengthening an upstream one (which "passes" the upstream gate the
 framework checks but actually broadens the downstream blast radius).
 
@@ -476,7 +476,7 @@ graph-bindings is the next step).
 
 Out of scope. SHA-256 is treated as collision-resistant. If SHA-256
 is broken, every content-addressable system in the world breaks
-simultaneously and ProvekIt's corpus is a small concern.
+simultaneously and Sugar's corpus is a small concern.
 
 ### 7.2 Hardware attacks
 
@@ -533,7 +533,7 @@ runs without trust in the LLM's output.
 The framework's correctness story is therefore not "the LLM is
 trustworthy" but "the framework refuses to ship anything the LLM
 couldn't justify mechanically." That property is empirically real
-(see `project_provekit_first_self_application.md`: 2026-04-29's first
+(see `project_sugar_first_self_application.md`: 2026-04-29's first
 prospective self-application produced an agent fix that Oracle \#9a
 rejected; the framework refused to ship).
 

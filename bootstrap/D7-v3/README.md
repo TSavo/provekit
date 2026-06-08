@@ -1,11 +1,11 @@
 # D7-v3 Value::null source round-trip receipt
 
 Scope: one production function only.
-Target crate: provekit-canonicalizer.
+Target crate: sugar-canonicalizer.
 Target function: impl Value::null.
-Source path: implementations/rust/provekit-canonicalizer/src/value.rs.
+Source path: implementations/rust/sugar-canonicalizer/src/value.rs.
 
-D7-v3 extends provekit-walk for the existing call:new op family.
+D7-v3 extends sugar-walk for the existing call:new op family.
 The lifter keeps the op name as call:new.
 It now threads the receiver-prefixed callee spelling through the first term argument.
 For Value::null, that argument changed from new to Arc::new.
@@ -13,7 +13,7 @@ No substrate concept was minted.
 No concept:fully-qualified-path shape was introduced.
 
 The regenerated fixture is:
-implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json.
+implementations/rust/libsugar/tests/fixtures/proofir/d7_v0_value_null.json.
 Its term surface is:
 return(call:new(Arc::new, [Null])).
 The fixture CID is:
@@ -31,7 +31,7 @@ It still records trait-path-truncated detail Value :: Null.
 That remaining enum path loss is outside this chunk.
 The fixture still records ffi-call-unresolved-effect detail Arc::new.
 
-provekit-realize-rust-core now consumes the new resolved shape.
+sugar-realize-rust-core now consumes the new resolved shape.
 It accepts call:new(literal("Arc::new"), literal(["Null"])).
 It emits Arc::new(Value::Null).
 It also keeps the old bare literal("new") path valid for older fixtures.

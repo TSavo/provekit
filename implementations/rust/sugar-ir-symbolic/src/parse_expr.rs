@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Expression-string parser for `provekit-ir-symbolic`.
+// Expression-string parser for `sugar-ir-symbolic`.
 //
 // Accepts a subset of Rust expression syntax and produces typed
 // `Formula` / `Term` values that are structurally identical to those

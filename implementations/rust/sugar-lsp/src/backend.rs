@@ -1,6 +1,6 @@
-// JSON-RPC backend communication for the ProvekIt LSP server.
+// JSON-RPC backend communication for the Sugar LSP server.
 //
-// Spawns a configurable backend binary (default: "provekit") and speaks
+// Spawns a configurable backend binary (default: "sugar") and speaks
 // NDJSON-over-stdio. All verification is delegated; this module is just
 // the transport layer.
 
@@ -77,7 +77,7 @@ impl JsonRpcBackend {
         let req = json!({
             "jsonrpc": "2.0",
             "id": self.next_id(),
-            "method": "provekit.lsp.verify",
+            "method": "sugar.lsp.verify",
             "params": {
                 "function": function,
                 "target_cid": target_cid,
@@ -107,9 +107,9 @@ impl JsonRpcBackend {
         let req = json!({
             "jsonrpc": "2.0",
             "id": self.next_id(),
-            "method": "provekit.lsp.handshake",
+            "method": "sugar.lsp.handshake",
             "params": {
-                "provekit_version": env!("CARGO_PKG_VERSION"),
+                "sugar_version": env!("CARGO_PKG_VERSION"),
                 "protocol_version": "lsp-1.0"
             }
         });

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit recognize`: kit-owned source-level recognition per protocol §4.2.5.
+// `sugar recognize`: kit-owned source-level recognition per protocol §4.2.5.
 //
 // Walks user source files, asks the language kit (via the lift plugin manifest
 // for the requested surface) to recognize native source against kit-owned sugar
@@ -40,10 +40,10 @@ use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 const RECOGNIZE_BRIDGE_SIGNER_SEED: Ed25519Seed = [0x72; 32]; // 'r' for recognize
 const RECOGNIZE_BRIDGE_DECLARED_AT: &str = "2026-05-28T00:00:00.000Z";
 
-/// Arguments accepted by `provekit recognize`.
+/// Arguments accepted by `sugar recognize`.
 #[derive(Parser, Debug, Clone, Default)]
 pub struct RecognizeArgs {
-    /// Project root containing `.provekit/lift/<surface>/manifest.toml`.
+    /// Project root containing `.sugar/lift/<surface>/manifest.toml`.
     /// Defaults to current directory.
     #[arg(long)]
     pub project: Option<PathBuf>,
@@ -55,9 +55,9 @@ pub struct RecognizeArgs {
     #[arg(long)]
     pub surface: Option<String>,
     /// Mint bridge mementos from recognize tags into the project's
-    /// `.provekit/recognize/<cid>.proof`. Without this flag, the verb
+    /// `.sugar/recognize/<cid>.proof`. Without this flag, the verb
     /// is a dry-run that only prints tags. With it, the bridges land
-    /// in the proof pool and become first-class citizens in `provekit
+    /// in the proof pool and become first-class citizens in `sugar
     /// prove` — same shape as materialize-authored bridges.
     #[arg(long)]
     pub write: bool,
@@ -112,7 +112,7 @@ pub fn run(args: RecognizeArgs) -> u8 {
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.recognize",
+        "method": "sugar.plugin.recognize",
         "params": {
             "project_root": project_root.to_string_lossy(),
             "source_paths": args.source_paths,
@@ -137,8 +137,8 @@ pub fn run(args: RecognizeArgs) -> u8 {
     };
 
     // Mint bridge mementos from tags when --write is set. Same shape as
-    // cmd_materialize's bridge emission, written under .provekit/recognize/
-    // (sibling to .provekit/materialize/ so the lanes are distinguishable
+    // cmd_materialize's bridge emission, written under .sugar/recognize/
+    // (sibling to .sugar/materialize/ so the lanes are distinguishable
     // but the verifier picks both up via load_all_proofs).
     let mut written_proof: Option<std::path::PathBuf> = None;
     if args.write {
@@ -341,7 +341,7 @@ fn recognize_implication_body(tag: &Value) -> Option<Value> {
 
 /// Mint a `.proof` envelope containing one bridge memento + one
 /// implication contract memento per recognize tag. Written under
-/// `<project>/.provekit/recognize/<cid>.proof`.
+/// `<project>/.sugar/recognize/<cid>.proof`.
 ///
 /// Two members per tag (bridge + contract):
 ///   - The contract memento is the ENUMERATE half: its post atomic
@@ -372,7 +372,7 @@ fn emit_bridge_envelope(
     tags: &[Value],
     target_language: &str,
 ) -> Result<Option<std::path::PathBuf>, String> {
-    let proof_dir = project_root.join(".provekit").join("recognize");
+    let proof_dir = project_root.join(".sugar").join("recognize");
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     // First pass: mint each tag's implication contract so we know its
     // CID. Build a map from function_name -> recognize-contract CID for
@@ -431,7 +431,7 @@ fn emit_bridge_envelope(
         .map_err(|e| format!("create {}: {e}", proof_dir.display()))?;
     let signer = ed25519_pubkey_string(&RECOGNIZE_BRIDGE_SIGNER_SEED);
     let proof = build_proof_envelope(&ProofEnvelopeInput {
-        name: "@provekit/recognize-bridges".to_string(),
+        name: "@sugar/recognize-bridges".to_string(),
         version: "0.1.0".to_string(),
         binary_cid: None,
         metadata: None,
@@ -495,7 +495,7 @@ struct PluginManifest {
 
 fn find_plugin_manifest(project_root: &Path, surface: &str) -> Result<PluginManifest, String> {
     let project_local = project_root
-        .join(".provekit")
+        .join(".sugar")
         .join("lift")
         .join(surface)
         .join("manifest.toml");
@@ -505,7 +505,7 @@ fn find_plugin_manifest(project_root: &Path, surface: &str) -> Result<PluginMani
     if let Some(home) = std::env::var_os("HOME") {
         let user_global = PathBuf::from(home)
             .join(".config")
-            .join("provekit")
+            .join("sugar")
             .join("lift")
             .join(surface)
             .join("manifest.toml");
@@ -514,7 +514,7 @@ fn find_plugin_manifest(project_root: &Path, surface: &str) -> Result<PluginMani
         }
     }
     Err(format!(
-        "no plugin manifest for surface `{surface}` (looked in .provekit/lift/{surface}/manifest.toml and ~/.config/provekit/lift/{surface}/manifest.toml)"
+        "no plugin manifest for surface `{surface}` (looked in .sugar/lift/{surface}/manifest.toml and ~/.config/sugar/lift/{surface}/manifest.toml)"
     ))
 }
 
@@ -567,7 +567,7 @@ fn strip_quotes(s: &str) -> Option<&str> {
 
 /// Spawn the plugin binary with the manifest's command + working_dir, send
 /// the JSON-RPC request, read one JSON line response, shutdown. The lift
-/// binary's dispatch (initialize / lift / shutdown / provekit.plugin.recognize)
+/// binary's dispatch (initialize / lift / shutdown / sugar.plugin.recognize)
 /// accepts the recognize method directly; no preceding initialize required.
 fn invoke_plugin(
     manifest: &PluginManifest,
@@ -631,7 +631,7 @@ mod tests {
     #[test]
     fn parse_manifest_extracts_command_and_working_dir() {
         let tmp = std::env::temp_dir().join(format!(
-            "provekit-recognize-test-manifest-{}",
+            "sugar-recognize-test-manifest-{}",
             std::process::id()
         ));
         std::fs::create_dir_all(&tmp).unwrap();
@@ -639,7 +639,7 @@ mod tests {
         std::fs::write(
             &manifest_path,
             r#"name = "rust-bind-lift"
-command = ["../../implementations/rust/target/debug/provekit-walk-rpc", "--rpc"]
+command = ["../../implementations/rust/target/debug/sugar-walk-rpc", "--rpc"]
 working_dir = "."
 "#,
         )
@@ -648,7 +648,7 @@ working_dir = "."
         assert_eq!(m.command.len(), 2);
         assert!(m.command[0]
             .to_string_lossy()
-            .ends_with("provekit-walk-rpc"));
+            .ends_with("sugar-walk-rpc"));
         assert_eq!(m.command[1].to_string_lossy(), "--rpc");
         assert_eq!(m.working_dir, Some(PathBuf::from(".")));
         std::fs::remove_dir_all(&tmp).ok();

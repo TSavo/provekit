@@ -8,7 +8,7 @@
 //
 //   1. SIGNATURE -- rust verifies the ed25519 mark over the witness CID with the
 //      substrate's own primitive (`ed25519_verify_string`), not the oracle's word.
-//   2. RESOLVE + RECOMPUTE -- rust calls `provekit.plugin.resolve_witness` on the
+//   2. RESOLVE + RECOMPUTE -- rust calls `sugar.plugin.resolve_witness` on the
 //      kit oracle to fetch the body bytes (from the witness package, or by
 //      re-running), then blake3's those bytes ITSELF and compares to the pinned
 //      `witness_cid`.
@@ -172,7 +172,7 @@ pub fn has_witnesses(pool: &MementoPool) -> bool {
         .any(|e| e.pointer("/header/kind").and_then(|v| v.as_str()) == Some("witness-memento"))
 }
 
-/// Scan `.provekit/lift/*/manifest.toml` for EVERY kit that declares a
+/// Scan `.sugar/lift/*/manifest.toml` for EVERY kit that declares a
 /// `resolve_witness_command`, returning each as (argv, working_dir, method). We
 /// return all of them, not the first found, because the resolver is not chosen
 /// blindly by directory order: each witness picks the resolver whose body BLAKE3's
@@ -180,7 +180,7 @@ pub fn has_witnesses(pool: &MementoPool) -> bool {
 /// body, so trying each is sound and removes the order-dependence a single
 /// first-found scan would have in a multi-kit project.
 fn find_resolvers(project_root: &Path) -> Vec<(Vec<String>, Option<PathBuf>, String)> {
-    let lift_dir = project_root.join(".provekit").join("lift");
+    let lift_dir = project_root.join(".sugar").join("lift");
     let mut found = Vec::new();
     let Ok(entries) = std::fs::read_dir(&lift_dir) else {
         return found;
@@ -261,7 +261,7 @@ fn parse_resolve_command(
         argv,
         working_dir.or_else(|| Some(project_root.to_path_buf())),
         // Honor the manifest's declared method; default to the canonical one.
-        method.unwrap_or_else(|| "provekit.plugin.resolve_witness".to_string()),
+        method.unwrap_or_else(|| "sugar.plugin.resolve_witness".to_string()),
     ))
 }
 
@@ -326,7 +326,7 @@ fn resolve_over_resolvers(
     }
 }
 
-/// Spawn the kit oracle and call `provekit.plugin.resolve_witness`, returning
+/// Spawn the kit oracle and call `sugar.plugin.resolve_witness`, returning
 /// (resolved_by, body_bytes). The oracle returns CONTENT, not a verdict; the
 /// caller recomputes the CID.
 fn resolve_body(
@@ -343,7 +343,7 @@ fn resolve_body(
         .unwrap_or_else(|_| project_root.to_path_buf())
         .display()
         .to_string();
-    let package_dir = project_root.join(".provekit").join("witnesses");
+    let package_dir = project_root.join(".sugar").join("witnesses");
     let mut params = json!({
         "memento": memento_body,
         "workspace_root": abs_root,
@@ -454,7 +454,7 @@ mod tests {
         (
             vec!["sh".to_string(), "-c".to_string(), script],
             None,
-            "provekit.plugin.resolve_witness".to_string(),
+            "sugar.plugin.resolve_witness".to_string(),
         )
     }
 

@@ -4,14 +4,14 @@ The adapter compiles, fixtures are green, cross-adapter parity holds. This step 
 
 ## Naming
 
-The canonical naming convention is `provekit-lift-<library-name>` per host language. Examples:
+The canonical naming convention is `sugar-lift-<library-name>` per host language. Examples:
 
-- Rust: `provekit-lift-proptest`, `provekit-lift-contracts`, `provekit-lift-kani`.
-- TypeScript: `@provekit/lift-zod`, `@provekit/lift-class-validator`, `@provekit/lift-fast-check`.
-- Python: `provekit.lift.pydantic`, `provekit.lift.deal`.
-- Java: `provekit-lift-java-bean-validation`, `provekit-lift-java-jml`, `provekit-lift-java-spring-web`.
-- C#: `Provekit.Lift.DataAnnotations`, `Provekit.Lift.Linq`.
-- Ruby: `provekit-lift-active_model`, `provekit-lift-dry_validation`.
+- Rust: `sugar-lift-proptest`, `sugar-lift-contracts`, `sugar-lift-kani`.
+- TypeScript: `@sugar/lift-zod`, `@sugar/lift-class-validator`, `@sugar/lift-fast-check`.
+- Python: `sugar.lift.pydantic`, `sugar.lift.deal`.
+- Java: `sugar-lift-java-bean-validation`, `sugar-lift-java-jml`, `sugar-lift-java-spring-web`.
+- C#: `Sugar.Lift.DataAnnotations`, `Sugar.Lift.Linq`.
+- Ruby: `sugar-lift-active_model`, `sugar-lift-dry_validation`.
 
 The host language's package idiom takes precedence over a strict naming rule: pick what looks normal in the ecosystem.
 
@@ -28,7 +28,7 @@ A typical adapter package's `Cargo.toml` (or equivalent) declares:
 
 ```toml
 [package]
-name = "provekit-lift-zod"
+name = "sugar-lift-zod"
 version = "0.3.1"
 
 [dependencies]
@@ -42,7 +42,7 @@ If the source library makes a breaking change, the adapter must adapt or pin to 
 Each adapter ships a `COVERAGE.md` (or includes a section in the README) listing exactly what the adapter handles:
 
 ```markdown
-# Coverage: provekit-lift-zod
+# Coverage: sugar-lift-zod
 
 ## Handled
 
@@ -73,7 +73,7 @@ This manifest is the contract: users know exactly what the adapter sees. The `do
 Per host language idiom:
 
 - Rust: `crates.io` via `cargo publish`. Yanking is rare; prefer a new version.
-- TypeScript: `npm` via `npm publish` (or `pnpm publish`). Use the `@provekit/` org scope.
+- TypeScript: `npm` via `npm publish` (or `pnpm publish`). Use the `@sugar/` org scope.
 - Python: PyPI via `python -m build && twine upload`.
 - Java: Maven Central via the standard publish flow.
 - C#: NuGet via `dotnet pack && dotnet nuget push`.

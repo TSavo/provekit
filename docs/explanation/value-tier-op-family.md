@@ -371,10 +371,10 @@ When filing a new kit for a new platform:
 - Naming conventions: `docs/plans/2026-05-18-dimension-naming-conventions.md`.
 - Trichotomy ruling: `docs/plans/2026-05-18-op-coverage-verdict-trichotomy-ruling.md`.
 - Refuse-leg ruling: `docs/plans/2026-05-18-refuse-leg-short-circuit-ruling.md`.
-- Cycle invariance theorem: project memory `provekit_cycle_invariance`.
+- Cycle invariance theorem: project memory `sugar_cycle_invariance`.
 - Sort catalog: `deleted concept-shapes catalog/sorts/`.
 - Concept definitions: kit-local content-addressed mementos.
-- Term IR: `implementations/rust/provekit-ir-types/src/lib.rs`.
-- Composition primitive: `implementations/rust/libprovekit/src/core/platform_semantics.rs:124`.
-- Comparison primitive: `implementations/rust/libprovekit/src/core/types.rs:874`.
-- Effect propagation: `implementations/rust/libprovekit/src/effect_propagation.rs:111`.
+- Term IR: `implementations/rust/sugar-ir-types/src/lib.rs`.
+- Composition primitive: `implementations/rust/libsugar/src/core/platform_semantics.rs:124`.
+- Comparison primitive: `implementations/rust/libsugar/src/core/types.rs:874`.
+- Effect propagation: `implementations/rust/libsugar/src/effect_propagation.rs:111`.

@@ -22,7 +22,7 @@ class AutoNameAnonymousConceptsTest(unittest.TestCase):
                 "\n".join(
                     [
                         "// concept: UNNAMED-CONCEPT-1",
-                        "// provekit:concept[blake3-512:0123456789abcdef](UNNAMED-CONCEPT-1)",
+                        "// sugar:concept[blake3-512:0123456789abcdef](UNNAMED-CONCEPT-1)",
                         "pub fn deposit_then_balance(balance: i64, amount: i64) -> i64 {",
                         "    let next = balance + amount;",
                         "    next",
@@ -64,7 +64,7 @@ class AutoNameAnonymousConceptsTest(unittest.TestCase):
             edited = source.read_text(encoding="utf-8")
             self.assertIn("// concept: deposit-then-balance", edited)
             self.assertIn(
-                "// provekit:concept[blake3-512:0123456789abcdef](deposit-then-balance)",
+                "// sugar:concept[blake3-512:0123456789abcdef](deposit-then-balance)",
                 edited,
             )
             self.assertIn("// concept: checked-withdraw", edited)

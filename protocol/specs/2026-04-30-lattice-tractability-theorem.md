@@ -1,4 +1,4 @@
-# ProvekIt: Lattice Tractability Theorem
+# Sugar: Lattice Tractability Theorem
 
 **Date:** 2026-04-30
 **Status:** Specification (formal). Companion to the IR formal grammar, the memento envelope grammar, and the handshake algorithm.
@@ -6,7 +6,7 @@
 
 ## Abstract
 
-We give a formal account of why ProvekIt's verification problem is tractable for honest participants despite operating over a cryptographic-hash address space of cardinality 2^512. The protocol's address space is content-derived: addresses arise only by hashing IR formulas the grammar admits. The IR grammar is a deterministic context-free language, parameterized in practice by AST depth D and symbol count S, with a finite (and at small bounds enumerable) population. The verification lattice is the directed graph whose vertices are the populated addresses and whose edges are signed implication mementos. We prove four mechanical claims: finite population at any (D, S) bound, linear-time addressing, constant-time edge verification, and adversarial-cost confinement to cryptographic preimage attack. We sketch two subtler claims: a parameterized population bound and the reduction of edge production to theorem-prover decision complexity. The consequence is that honest verification cost is a function of grammar parameters and proof-system decision complexity, not of the cryptographic security parameter.
+We give a formal account of why Sugar's verification problem is tractable for honest participants despite operating over a cryptographic-hash address space of cardinality 2^512. The protocol's address space is content-derived: addresses arise only by hashing IR formulas the grammar admits. The IR grammar is a deterministic context-free language, parameterized in practice by AST depth D and symbol count S, with a finite (and at small bounds enumerable) population. The verification lattice is the directed graph whose vertices are the populated addresses and whose edges are signed implication mementos. We prove four mechanical claims: finite population at any (D, S) bound, linear-time addressing, constant-time edge verification, and adversarial-cost confinement to cryptographic preimage attack. We sketch two subtler claims: a parameterized population bound and the reduction of edge production to theorem-prover decision complexity. The consequence is that honest verification cost is a function of grammar parameters and proof-system decision complexity, not of the cryptographic security parameter.
 
 ## 1. Notation
 
@@ -183,4 +183,4 @@ A clean diagram comparing the asymptotic curves of (a) honest verifier cost in `
 
 The verification lattice is a finite content-addressed graph at any practical complexity bound. Honest verification cost is a function of grammar parameters and decision-procedure complexity; it is independent of the cryptographic security parameter and independent of the populated cardinality of the address space. Adversarial cost is confined to cryptographic attack on the underlying primitives, which is by assumption infeasible. The lattice grows incrementally by independent local edge production. Coverage is empirically measurable via the implication server's index. Composition of edges is the subject of future protocol work.
 
-The 2^512 cardinality of the BLAKE3-512 address space is a property of the address space, not of the search space. The search space is `L_C(G, D, S)`, which is finite, computable, and at small bounds enumerable. ProvekIt's verification problem lives in the search space. The cryptographic parameter governs only what an adversary cannot do.
+The 2^512 cardinality of the BLAKE3-512 address space is a property of the address space, not of the search space. The search space is `L_C(G, D, S)`, which is finite, computable, and at small bounds enumerable. Sugar's verification problem lives in the search space. The cryptographic parameter governs only what an adversary cannot do.

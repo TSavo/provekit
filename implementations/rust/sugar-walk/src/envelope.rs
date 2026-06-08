@@ -3,7 +3,7 @@
 // Wrap a `FunctionContractMemento` as a signed layered MintedEnvelope.
 // Per #372 part 2.
 //
-// `provekit-claim-envelope::mint_contract` is the substrate's canonical
+// `sugar-claim-envelope::mint_contract` is the substrate's canonical
 // path for emitting contract mementos: it produces the v1.2 layered
 // shape `{envelope, header, metadata}` with an Ed25519 attestation
 // signature embedded in the envelope. The minted CID is the
@@ -166,11 +166,11 @@ pub fn mint_args(
         inv: None,
         evidence_term: None,
         out_binding,
-        produced_by: "provekit-walk".to_string(),
+        produced_by: "sugar-walk".to_string(),
         produced_at: produced_at.to_string(),
         input_cids,
         authoring: Authoring::Lift {
-            lifter: "provekit-walk".to_string(),
+            lifter: "sugar-walk".to_string(),
             evidence: "syn-walk-v1".to_string(),
             source_cid: contract.body_cid.clone(),
         },

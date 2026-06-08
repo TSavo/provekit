@@ -64,7 +64,7 @@ CycloneDX has an extension for cryptographic attestations (`vulnerabilityDisclos
   "attestations": [
     {
       "type": "behavioral-contract",
-      "format": "provekit-proof",
+      "format": "sugar-proof",
       "uri": "https://registry.example.com/blake3-512:9d57c5e4....proof"
     }
   ]

@@ -144,10 +144,10 @@ The object keys in the root preimage are already alphabetical. `promotion_decisi
 
 ## §8 Cross References
 
-- TSavo/provekit#791: `PromotionDecisionMemento`.
-- TSavo/provekit#798: policy mementos and active promotion policies.
-- TSavo/provekit#799: proof run and receipt evidence used by replay.
-- TSavo/provekit#796: admissibility-spine umbrella.
+- TSavo/sugar#791: `PromotionDecisionMemento`.
+- TSavo/sugar#798: policy mementos and active promotion policies.
+- TSavo/sugar#799: proof run and receipt evidence used by replay.
+- TSavo/sugar#796: admissibility-spine umbrella.
 - `protocol/specs/2026-04-30-proof-file-format.md`: `.proof` bundle format and proof envelope context.
 - `menagerie/concept-shapes/README.md`: concept shape catalog and CID-addressed catalog members.
 

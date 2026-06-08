@@ -56,8 +56,8 @@ the name.
 | Surface | Liftable | Loss expectation | Purpose | `artifact_kind` |
 |---|---:|---|---|---|
 | prose comment floor (#965) | no | non-empty `machine_uncheckable_prose` | Human breadcrumb when no rigorous surface is selected. Never substrate. | n/a |
-| contract-comment sugar | yes | empty only when the canonical formula payload relifts byte-identically | Machine-readable FOL/contract clause evidence embedded in host comments. | `provekit-contract-comment-sugar` |
-| concept-citation sugar | yes | empty only when concept/shape/args CIDs and payload CID all relift byte-identically | Machine-readable **operation identity** embedded in host comments when no native target surface exists. | `provekit-concept-citation-comment-sugar` |
+| contract-comment sugar | yes | empty only when the canonical formula payload relifts byte-identically | Machine-readable FOL/contract clause evidence embedded in host comments. | `sugar-contract-comment-sugar` |
+| concept-citation sugar | yes | empty only when concept/shape/args CIDs and payload CID all relift byte-identically | Machine-readable **operation identity** embedded in host comments when no native target surface exists. | `sugar-concept-citation-comment-sugar` |
 
 A realizer MUST NOT claim the prose floor is exact. A contract-comment payload
 identifies a clause, not an operation. A concept-citation payload identifies an
@@ -108,7 +108,7 @@ operation-kind = "drop" / "free" / "call" / "method" / "ctor" / "dtor" /
 concept-citation-payload = {
   ? args_jcs:           [* any],
   args_jcs_cid:         cid,
-  artifact_kind:        "provekit-concept-citation-comment-sugar",
+  artifact_kind:        "sugar-concept-citation-comment-sugar",
   ? callsite_cid:       cid,
   concept_cid:          cid,
   ? concept_name:       tstr,
@@ -141,7 +141,7 @@ For each field below, the column **CCS parallel** cites the analogous field in
 
 | Field | Required | Type | CCS parallel | Meaning and absence rule |
 |---|---:|---|---|---|
-| `artifact_kind` | yes | const string | `artifact_kind` | MUST be `"provekit-concept-citation-comment-sugar"`. Any other value MUST fail closed per §6. |
+| `artifact_kind` | yes | const string | `artifact_kind` | MUST be `"sugar-concept-citation-comment-sugar"`. Any other value MUST fail closed per §6. |
 | `schema_version` | yes | const string | `schema_version` | MUST be `"1"`. Unknown versions MUST fail closed. |
 | `concept_cid` | yes | cid | (no exact parallel; closest is `contract_cid` as identity anchor) | BLAKE3-512 CID of the concept-shape memento this comment cites. Authoritative identity of the transported operation. Missing or malformed: fail closed (§6.3, §6.6). |
 | `concept_name` | no | tstr | `fol_text` (diagnostic only) | Optional learned binding (e.g. `"concept:drop"`). Presentation sugar only, never authoritative. Wrong or missing: still relift on `concept_cid` (§5). |
@@ -166,12 +166,12 @@ payload_cid = blake3-512(JCS(concept-citation-payload))
 ```
 
 The payload CID MUST be emitted next to the payload as a sibling host-language
-comment line carrying the marker `provekit-concept-payload-cid` (§3). The
+comment line carrying the marker `sugar-concept-payload-cid` (§3). The
 lifter MUST recompute and compare it. The sibling line MUST appear on the line
 immediately following the payload line, with no intervening comment or code.
 No whitespace tolerance beyond what `2026-05-14-contract-comment-sugar.md` §3
 already permits per host language. An orphan
-`provekit-concept-payload-cid:` line with no preceding `provekit-concept:`
+`sugar-concept-payload-cid:` line with no preceding `sugar-concept:`
 payload line MUST be rejected per §6.9.
 
 ### §1.3 Exactness condition
@@ -215,14 +215,14 @@ The rule and ordering mirror `2026-05-14-contract-comment-sugar.md` §1.2 and
 ## §3. Source-syntax families
 
 Concept-citation comments live in two host comment families. The marker bytes
-are **`provekit-concept:`** and **`provekit-concept-payload-cid:`**. These
-markers MUST NOT be conflated with `provekit-contract:` /
-`provekit-contract-payload-cid:` (§7). A lifter MUST do a full-marker prefix
-match (the full literal string `provekit-concept:` or
-`provekit-concept-payload-cid:` followed by exactly one space), not a partial
-match on `provekit-c`. This parallels the marker prefix check in
-`implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/bind_lifter.py`
-around line 386 (`content.startswith("provekit-contract:")`) and MUST be
+are **`sugar-concept:`** and **`sugar-concept-payload-cid:`**. These
+markers MUST NOT be conflated with `sugar-contract:` /
+`sugar-contract-payload-cid:` (§7). A lifter MUST do a full-marker prefix
+match (the full literal string `sugar-concept:` or
+`sugar-concept-payload-cid:` followed by exactly one space), not a partial
+match on `sugar-c`. This parallels the marker prefix check in
+`implementations/python/sugar-lift-python-source/src/sugar_lift_python_source/bind_lifter.py`
+around line 386 (`content.startswith("sugar-contract:")`) and MUST be
 applied with identical rigor for the new markers.
 
 ### §3.1 Hash-comment family (Python, Ruby, shell)
@@ -230,8 +230,8 @@ applied with identical rigor for the new markers.
 Recommended embedding:
 
 ```text
-# provekit-concept: {jcs-payload}
-# provekit-concept-payload-cid: blake3-512:...
+# sugar-concept: {jcs-payload}
+# sugar-concept-payload-cid: blake3-512:...
 ```
 
 Line ordering rule: the CID line immediately follows the payload line.
@@ -246,8 +246,8 @@ adjacent comment lines is NOT permitted under this spec.
 Recommended embedding:
 
 ```text
-// provekit-concept: {jcs-payload}
-// provekit-concept-payload-cid: blake3-512:...
+// sugar-concept: {jcs-payload}
+// sugar-concept-payload-cid: blake3-512:...
 ```
 
 Line ordering rule: identical to §3.1. Block comments (`/* ... */`) MAY carry
@@ -259,11 +259,11 @@ remain the authoritative carrier in line and block comments.
 
 ### §3.3 Marker non-overlap
 
-A lifter MUST NOT consume `provekit-contract:` as concept-citation evidence,
-and MUST NOT consume `provekit-concept:` as contract-comment evidence. A line
-beginning with `provekit-concept-payload-cid:` MUST NOT be matched by a partial
-prefix scan for `provekit-contract:`. Implementations SHOULD reject any line
-beginning with `provekit-` that is not one of the four defined markers as
+A lifter MUST NOT consume `sugar-contract:` as concept-citation evidence,
+and MUST NOT consume `sugar-concept:` as contract-comment evidence. A line
+beginning with `sugar-concept-payload-cid:` MUST NOT be matched by a partial
+prefix scan for `sugar-contract:`. Implementations SHOULD reject any line
+beginning with `sugar-` that is not one of the four defined markers as
 an unrecognized future-extension marker; the rejection MUST emit a diagnostic
 but MUST NOT itself fail the surrounding relift.
 
@@ -279,7 +279,7 @@ authoritative.
 Concretely:
 
 1. A lifter MUST NOT emit substrate evidence from a `concept:` shorthand line
-   that lacks an accompanying `provekit-concept:` payload + CID block.
+   that lacks an accompanying `sugar-concept:` payload + CID block.
 2. A lifter MAY use the shorthand line as a low-confidence presentation hint
    when reconstructing diagnostics, the same way `concept_name` is used in
    §0.2.
@@ -311,7 +311,7 @@ following holds. Each refusal mode names whether the failure drops the single
 evidence entry or refuses the surrounding relift, and gives the diagnostic
 category that the receipt records. The rigor here matches the existing
 contract-comment validation at
-`implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/bind_lifter.py`
+`implementations/python/sugar-lift-python-source/src/sugar_lift_python_source/bind_lifter.py`
 lines 380 to 420.
 
 | # | Condition | Refusal mode | Receipt category |
@@ -324,7 +324,7 @@ lines 380 to 420.
 | 6 | `concept_cid` is not present in the local concept-shape catalog. | Drop this entry; refuse the surrounding relift only when a policy memento marks `concept_cid` as a required local fact. | `concept-citation:unknown-concept` |
 | 7 | Catalog `shape_cid` for `concept_cid` does not equal payload `shape_cid`. | Refuse the surrounding relift; this is a substrate-identity contradiction, not a transport hiccup. | `concept-citation:shape-mismatch` |
 | 8 | Catalog `operation_kind` for `concept_cid` does not equal payload `operation_kind`. | Refuse the surrounding relift; same reason as #7. | `concept-citation:operation-kind-mismatch` |
-| 9 | Orphan `provekit-concept-payload-cid:` line with no preceding `provekit-concept:` payload line. | Drop the orphan; emit a diagnostic. The surrounding relift continues. | `concept-citation:orphan-cid-line` |
+| 9 | Orphan `sugar-concept-payload-cid:` line with no preceding `sugar-concept:` payload line. | Drop the orphan; emit a diagnostic. The surrounding relift continues. | `concept-citation:orphan-cid-line` |
 
 Failing closed means no trusted substrate operation is emitted for that
 payload. A kit MAY emit a diagnostic. It MAY also emit low-confidence
@@ -342,15 +342,15 @@ operation.
 
 | Marker | Lifter consumes as | `artifact_kind` | What it identifies |
 |---|---|---|---|
-| `provekit-concept:` + `provekit-concept-payload-cid:` | concept-citation evidence | `provekit-concept-citation-comment-sugar` | the substrate **operation** at `term_position` |
-| `provekit-contract:` + `provekit-contract-payload-cid:` | contract-comment evidence | `provekit-contract-comment-sugar` | a substrate **clause** (pre/post/invariant/throws/observation) attached to a concept site |
+| `sugar-concept:` + `sugar-concept-payload-cid:` | concept-citation evidence | `sugar-concept-citation-comment-sugar` | the substrate **operation** at `term_position` |
+| `sugar-contract:` + `sugar-contract-payload-cid:` | contract-comment evidence | `sugar-contract-comment-sugar` | a substrate **clause** (pre/post/invariant/throws/observation) attached to a concept site |
 | any other comment | prose / programmer trivia (#965) | n/a | not substrate; never authoritative |
 
 Forbidden combinations:
 
 1. Two payload lines of different marker families on the same logical comment
    block. A lifter MUST treat any block containing both
-   `provekit-concept:` and `provekit-contract:` markers as ambiguous and
+   `sugar-concept:` and `sugar-contract:` markers as ambiguous and
    refuse both entries with the receipt category
    `concept-citation:mixed-carriers`.
 2. A concept-citation payload whose `term_position` resolves to a syntactic
@@ -390,8 +390,8 @@ concept-citation block above a Python `pass` statement at the term position
 the operation would have occupied:
 
 ```python
-# provekit-concept: {"args_jcs":[{"kind":"var","name":"x"}],"args_jcs_cid":"blake3-512:3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c","artifact_kind":"provekit-concept-citation-comment-sugar","concept_cid":"blake3-512:1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a","concept_name":"concept:drop","concept_site_cid":"blake3-512:4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d","emitted_by":{"kit_cid":"blake3-512:81818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181","kit_id":"provekit-realize-python-core@1.8.0","kit_kind":"realize","target_language":"python"},"loss_record_cid":"blake3-512:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e","operation_kind":"drop","policy_cid":"blake3-512:70707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070","schema_version":"1","shape_cid":"blake3-512:2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b","sugar_dict_cid":"blake3-512:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f","term_position":[3,0]}
-# provekit-concept-payload-cid: blake3-512:92929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292
+# sugar-concept: {"args_jcs":[{"kind":"var","name":"x"}],"args_jcs_cid":"blake3-512:3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c","artifact_kind":"sugar-concept-citation-comment-sugar","concept_cid":"blake3-512:1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a","concept_name":"concept:drop","concept_site_cid":"blake3-512:4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d","emitted_by":{"kit_cid":"blake3-512:81818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181","kit_id":"sugar-realize-python-core@1.8.0","kit_kind":"realize","target_language":"python"},"loss_record_cid":"blake3-512:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e","operation_kind":"drop","policy_cid":"blake3-512:70707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070","schema_version":"1","shape_cid":"blake3-512:2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b","sugar_dict_cid":"blake3-512:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f","term_position":[3,0]}
+# sugar-concept-payload-cid: blake3-512:92929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292929292
 pass
 ```
 
@@ -422,8 +422,8 @@ The Java realizer emits a slash-comment block above a Java statement that the
 JVM discards (Java has no `free`; the GC owns reclamation):
 
 ```java
-// provekit-concept: {"args_jcs":[{"kind":"var","name":"ptr"}],"args_jcs_cid":"blake3-512:c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7","artifact_kind":"provekit-concept-citation-comment-sugar","callsite_cid":"blake3-512:e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5","concept_cid":"blake3-512:a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9","concept_name":"concept:free","concept_site_cid":"blake3-512:d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6","emitted_by":{"kit_cid":"blake3-512:21212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121","kit_id":"provekit-realize-java-core@1.8.0","kit_kind":"realize","target_language":"java"},"loss_record_cid":"blake3-512:f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4","operation_kind":"free","policy_cid":"blake3-512:12121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212","schema_version":"1","shape_cid":"blake3-512:b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8","sugar_dict_cid":"blake3-512:03030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303","term_position":[1,2,0]}
-// provekit-concept-payload-cid: blake3-512:34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434
+// sugar-concept: {"args_jcs":[{"kind":"var","name":"ptr"}],"args_jcs_cid":"blake3-512:c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7","artifact_kind":"sugar-concept-citation-comment-sugar","callsite_cid":"blake3-512:e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5","concept_cid":"blake3-512:a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9","concept_name":"concept:free","concept_site_cid":"blake3-512:d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6","emitted_by":{"kit_cid":"blake3-512:21212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121","kit_id":"sugar-realize-java-core@1.8.0","kit_kind":"realize","target_language":"java"},"loss_record_cid":"blake3-512:f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4","operation_kind":"free","policy_cid":"blake3-512:12121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212121212","schema_version":"1","shape_cid":"blake3-512:b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8","sugar_dict_cid":"blake3-512:03030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303","term_position":[1,2,0]}
+// sugar-concept-payload-cid: blake3-512:34343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434
 ;
 ```
 
@@ -463,7 +463,7 @@ A conforming kit MUST satisfy the following at emit:
    (when applicable) `policy_cid`; refuse to emit if neither selection
    authority is recordable.
 2. Emit the payload line followed immediately by the
-   `provekit-concept-payload-cid:` line on the next host comment line, with
+   `sugar-concept-payload-cid:` line on the next host comment line, with
    no intervening host content; emit the JCS-canonical payload bytes with
    the §1 locked key order and no whitespace inside the JSON.
 3. Compute every CID by the canonical rule
@@ -474,7 +474,7 @@ A conforming kit MUST satisfy the following at emit:
 A conforming kit MUST satisfy the following at relift:
 
 1. Apply the full-marker prefix match described in §3.3; never consume
-   `provekit-contract:` as concept-citation or vice versa.
+   `sugar-contract:` as concept-citation or vice versa.
 2. Apply every fail-closed rule in §6 with the receipt categories listed
    there, and never emit a trusted substrate operation when any condition
    fails.

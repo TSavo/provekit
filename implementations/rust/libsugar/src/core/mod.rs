@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Core ProvekIt interface.
+//! Core Sugar interface.
 //!
 //! This module lays down the eight primitive operations as Rust traits,
 //! structs, and functions. The familiar verbs are intentionally thin

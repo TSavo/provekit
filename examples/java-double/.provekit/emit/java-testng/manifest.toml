@@ -1,4 +1,0 @@
-name = "java-testng"
-command = ["java", "-jar", "../../implementations/java/provekit-emit-java-testng/target/provekit-emit-java-testng.jar", "--rpc"]
-working_dir = "."
-protocol_versions = ["pep/1.7.0"]

@@ -40,7 +40,7 @@ is meant to demonstrate.
 
 ## Non-Goals
 
-- Do not make Menagerie a public `provekit` CLI subcommand in this change.
+- Do not make Menagerie a public `sugar` CLI subcommand in this change.
 - Do not claim real quantum-to-silicon-to-software formal verification exists
   in-tree yet.
 - Do not fake proofs for the aspirational vertical stack. Use explicit trusted
@@ -66,7 +66,7 @@ menagerie/
 ```
 
 `menagerie/bug-zoo/` is the moved existing Bug Zoo crate and species tree. Its
-crate name can remain `provekit-bug-zoo`; the path changes, not the package
+crate name can remain `sugar-bug-zoo`; the path changes, not the package
 identity.
 
 The top-level `menagerie/manifest.yaml` is an index, not a protocol artifact.
@@ -126,7 +126,7 @@ The migration updates:
 - docs under `docs/how-to/`, `docs/explanation/`, `docs/reference/`, and
   `docs/contributing/`;
 - test paths in the Bug Zoo smoke tests;
-- self-contract includes such as `provekit-self-contracts` references to
+- self-contract includes such as `sugar-self-contracts` references to
   `bug-zoo/src/lib.invariant.rs`;
 - command examples from `cargo run --manifest-path bug-zoo/Cargo.toml` to
   `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml`;

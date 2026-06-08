@@ -15,7 +15,7 @@ Without the lifter:
 - The retired catalog seed examples under `protocol/specs/builtins-catalog/`
   cannot stand in for native-source proof bundles
 - User invariants cannot be verified
-- `provekit prove` and `provekit generate` cannot be built
+- `sugar prove` and `sugar generate` cannot be built
 - The framework remains theoretical
 
 With the lifter, the spec becomes operational. The catalog files become real
@@ -36,7 +36,7 @@ In order. One-line rationale per file:
    syntax, sort marking, the IN/OUT subset, the lifter's per-AST-node dispatch
    table).
 
-2. **`src/ir/index.ts`** — what `provekit/ir` currently exports. The lifter
+2. **`src/ir/index.ts`** — what `sugar/ir` currently exports. The lifter
    produces values that match these exports. The `IrFormula` type is from
    `formulas.ts`; the canonicalizer (already shipped) consumes that exact shape.
 
@@ -138,12 +138,12 @@ In `src/ir/lift/anchoring.ts`, implement:
 export function checkAnchoring(file: SourceFile): Diagnostic[];
 ```
 
-Returns a diagnostic for every `provekit.property` (or destructured `property`,
-or `provekit/ir` import's `property`) call site found in a file whose path
+Returns a diagnostic for every `sugar.property` (or destructured `property`,
+or `sugar/ir` import's `property`) call site found in a file whose path
 does NOT match `*.invariant.ts`. The diagnostic reads:
 
 ```
-provekit.property may only appear in .invariant.ts files. 
+sugar.property may only appear in .invariant.ts files. 
 Move this declaration to <co-located-name>.invariant.ts.
 ```
 
@@ -295,7 +295,7 @@ Add tests for each major rejection case:
 - `try/catch` in invariant body → diagnostic
 - Closure over reassigned `let` → diagnostic
 - Call to unregistered function → diagnostic
-- `provekit.property` in non-`.invariant.ts` file → anchoring diagnostic
+- `sugar.property` in non-`.invariant.ts` file → anchoring diagnostic
 
 Each test asserts the specific diagnostic message and the source location.
 
@@ -479,7 +479,7 @@ Out of scope for v1:
 - Generic function calls (the registry's per-instantiation contract).
 - Performance optimization. Correctness over speed.
 - Watch-mode incremental lifting.
-- The `provekit/ir` SURFACE API as an actually-runtime library. The lifter's
+- The `sugar/ir` SURFACE API as an actually-runtime library. The lifter's
   output replaces it; we don't need a runtime `property()` that takes
   `(name, formula)` arguments.
 - IDE / LSP integration.
@@ -488,7 +488,7 @@ Out of scope for v1:
 ## Verify
 
 ```
-cd /Users/tsavo/provekit
+cd /Users/tsavo/sugar
 npx vitest run src/ir/lift
 ```
 

@@ -32,7 +32,7 @@
 //   arbitrary T.
 //
 // The deterministic tests for both verdicts live in
-// provekit-cli/src/cmd_verify.rs (where verify_one_claim is accessible),
+// sugar-cli/src/cmd_verify.rs (where verify_one_claim is accessible),
 // mirroring the panic-freedom-fixture test pattern.
 
 /// The positive site: `serde_json::to_string(&v).unwrap()` with `v: Value`.

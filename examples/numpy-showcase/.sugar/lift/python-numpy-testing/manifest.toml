@@ -1,0 +1,25 @@
+name = "python-numpy-testing-lift"
+version = "0.1.0-draft"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+# The ONE assertion lifter. It learns numpy's vocabulary from each test file's
+# imports plus this workspace's .sugar/vocab-exceptions/numpy.testing.json
+# (the externalized structurally-opaque remainder). It introspects the imported
+# numpy.testing module to classify the assertion vocabulary, so the interpreter
+# must be a numpy-bearing python -- the SAME witness venv (mirrors the
+# pandas-showcase pandas.testing manifest, which points at its pandas venv).
+# PYTHONPATH at the one lifter (sugar-lift-py-tests) + the python-source
+# helper. Resolved from working_dir.
+command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/sugar-lift-py-tests/src:../../implementations/python/sugar-lift-python-source/src",
+    "/tmp/numpy-witness-venv/bin/python",
+    "-m",
+    "sugar_lift_py_tests.assertion_lsp",
+]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-numpy-testing"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

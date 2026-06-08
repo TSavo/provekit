@@ -12,7 +12,7 @@ memento/attestation under policy.
 Regenerate:
 
 ```sh
-cargo run -p provekit-cli --manifest-path implementations/rust/Cargo.toml -- \
+cargo run -p sugar-cli --manifest-path implementations/rust/Cargo.toml -- \
   proof mint-protocol --out-dir protocol/conformance/proof-protocol --json
 ```
 
@@ -22,6 +22,6 @@ Current corpus:
 - `invalid-filename-cid`: expected `false`
 
 The protocol `.proof` carries the fixture manifest in signed metadata under
-`provekit.proofProtocol.fixtures.v0`. Core verification treats metadata as
+`sugar.proofProtocol.fixtures.v0`. Core verification treats metadata as
 signed bytes, not normative execution logic. A current proof-verification gate
 interprets this manifest under policy.

@@ -3,7 +3,7 @@
 // snapshot.rs: warm-start snapshot persistence (R14).
 //
 // On shutdown the daemon writes its state to
-//   ${XDG_CACHE_HOME}/provekit/linkerd/<projectCid>/snapshot.bin
+//   ${XDG_CACHE_HOME}/sugar/linkerd/<projectCid>/snapshot.bin
 // with a `snapshot.bin.checksum` file containing the blake3-512 of the
 // snapshot bytes.
 //
@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn test_save_load_roundtrip() {
         let dir = std::env::temp_dir().join(format!(
-            "provekit-linkerd-snap-test-{}",
+            "sugar-linkerd-snap-test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.subsec_nanos())
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_load_missing_returns_none() {
-        let path = std::env::temp_dir().join("provekit-linkerd-nonexistent-snap.bin");
+        let path = std::env::temp_dir().join("sugar-linkerd-nonexistent-snap.bin");
         let result = load(&path).expect("load");
         assert!(result.is_none());
     }
@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_checksum_mismatch_returns_err() {
         let dir = std::env::temp_dir().join(format!(
-            "provekit-linkerd-snap-corrupt-{}",
+            "sugar-linkerd-snap-corrupt-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.subsec_nanos())

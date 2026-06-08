@@ -19,7 +19,7 @@ use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 #[derive(Parser, Debug, Clone, Default)]
 pub struct MaterializeArgs {
-    /// Project root containing `.provekit/lift/<surface>/manifest.toml`.
+    /// Project root containing `.sugar/lift/<surface>/manifest.toml`.
     /// Defaults to current directory.
     #[arg(long)]
     pub project: Option<PathBuf>,
@@ -29,7 +29,7 @@ pub struct MaterializeArgs {
     /// Source directory to scan for by-reference source stubs.
     #[arg(long = "source-dir")]
     pub source_dir: Option<PathBuf>,
-    /// Lift surface name serving `provekit.plugin.materialize`. If omitted,
+    /// Lift surface name serving `sugar.plugin.materialize`. If omitted,
     /// resolves from the single configured lift manifest.
     #[arg(long)]
     pub surface: Option<String>,
@@ -138,7 +138,7 @@ pub fn run(args: MaterializeArgs) -> u8 {
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "provekit.plugin.materialize",
+        "method": "sugar.plugin.materialize",
         "params": {
             "project_root": project_root.to_string_lossy(),
             "source_paths": source_paths,
@@ -311,7 +311,7 @@ fn resolve_surface(explicit: Option<&str>, project_root: &Path) -> Result<String
     if let Some(surface) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
         return Ok(surface.to_string());
     }
-    let lift_dir = project_root.join(".provekit").join("lift");
+    let lift_dir = project_root.join(".sugar").join("lift");
     let mut surfaces: Vec<String> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&lift_dir) {
         for entry in entries.flatten() {
@@ -343,7 +343,7 @@ struct PluginManifest {
 
 fn find_plugin_manifest(project_root: &Path, surface: &str) -> Result<PluginManifest, String> {
     let project_local = project_root
-        .join(".provekit")
+        .join(".sugar")
         .join("lift")
         .join(surface)
         .join("manifest.toml");
@@ -353,7 +353,7 @@ fn find_plugin_manifest(project_root: &Path, surface: &str) -> Result<PluginMani
     if let Some(home) = std::env::var_os("HOME") {
         let user_global = PathBuf::from(home)
             .join(".config")
-            .join("provekit")
+            .join("sugar")
             .join("lift")
             .join(surface)
             .join("manifest.toml");
@@ -362,7 +362,7 @@ fn find_plugin_manifest(project_root: &Path, surface: &str) -> Result<PluginMani
         }
     }
     Err(format!(
-        "no plugin manifest for surface `{surface}` (looked in .provekit/lift/{surface}/manifest.toml)"
+        "no plugin manifest for surface `{surface}` (looked in .sugar/lift/{surface}/manifest.toml)"
     ))
 }
 

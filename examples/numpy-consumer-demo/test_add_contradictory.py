@@ -1,7 +1,7 @@
 # The DEGENERATE case: inconsistent contracts on a numpy operation.
 #
 # `numpy.add` is under contract here via the numpy sugar `.proof` in
-# .provekit/imports/. This test binds ONE `np.add(2, 3)` result and asserts two
+# .sugar/imports/. This test binds ONE `np.add(2, 3)` result and asserts two
 # disagreeing values about it. The pytest lifter conjoins the two assertions
 # (same SSA-bound result) into one inv:
 #

@@ -1,8 +1,0 @@
-[authoring]
-surface = "java-bind"
-
-[platform_profile]
-language = "java"
-family = "concept:family:hash"
-library = "bouncycastle"
-version = "1.78"

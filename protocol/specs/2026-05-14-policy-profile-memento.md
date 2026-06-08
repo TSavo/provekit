@@ -2,7 +2,7 @@
 
 **Status:** v1.0.0 normative draft.
 **Date:** 2026-05-14
-**Related:** `2026-05-14-witness-consensus-promotion-v1.1-consensus-vector.md`, `2026-05-13-policy-memento.md`, `2026-05-12-sugar-dict-memento.md`, `2026-05-18-sugar-selection-policy-memento.md`, `2026-05-14-contract-comment-sugar.md`, `project_provekit_honesty_gradient.md` (#856).
+**Related:** `2026-05-14-witness-consensus-promotion-v1.1-consensus-vector.md`, `2026-05-13-policy-memento.md`, `2026-05-12-sugar-dict-memento.md`, `2026-05-18-sugar-selection-policy-memento.md`, `2026-05-14-contract-comment-sugar.md`, `project_sugar_honesty_gradient.md` (#856).
 
 ## Motivation
 

@@ -32,7 +32,7 @@ fn make_unique_dir(suffix: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = base.join(format!("provekit-rust-test-{stamp}-{suffix}"));
+    let p = base.join(format!("sugar-rust-test-{stamp}-{suffix}"));
     fs::create_dir_all(&p).expect("mkdir");
     p
 }
@@ -118,7 +118,7 @@ fn publish_parseint_proof(dir: &Path) -> String {
 #[test]
 fn nonexistent_project_root_returns_empty_pool() {
     let dir = std::env::temp_dir().join(format!(
-        "provekit-rust-test-nonexistent-{}",
+        "sugar-rust-test-nonexistent-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

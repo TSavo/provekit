@@ -187,7 +187,7 @@ Each component is independently replaceable. An ecosystem can build their prefer
 
 A library currently published on npm can publish a parallel attestation chain on the substrate without leaving npm. The maintainer:
 
-1. For each existing release, computes `contractSetCid` from the IR contracts derivable by ProvekIt's lift adapters.
+1. For each existing release, computes `contractSetCid` from the IR contracts derivable by Sugar's lift adapters.
 2. Backfills attestation chain via `previousContractSetCid` references reflecting the existing version history.
 3. Publishes the attestation chain (anywhere CIDs are resolvable).
 

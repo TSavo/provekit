@@ -53,10 +53,10 @@ hash = "blake3-512:e3ace4fc4fd49561bc29d1739d8256c6d573642e4bfd5f4eb2994bb2ba544
 # Source of truth:
 #   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
 #   protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §1, §2
-#   protocol/provekit-ir.cddl  BridgeDeclarationV14
+#   protocol/sugar-ir.cddl  BridgeDeclarationV14
 #
-# Canonical reference: `provekit-claim-envelope::mint_bridge_v14` with the
-# pinned inputs in `provekit-claim-envelope/tests/bridge_v14_roundtrip.rs`
+# Canonical reference: `sugar-claim-envelope::mint_bridge_v14` with the
+# pinned inputs in `sugar-claim-envelope/tests/bridge_v14_roundtrip.rs`
 # (signer seed 0x42*32; declared_at 2026-05-03T00:00:00.000Z; source/target
 # CIDs are stable test patterns; targetWitnessCid / targetBinaryCid /
 # targetContractSetCid OMITTED per spec §1.R2).
@@ -71,5 +71,5 @@ hash = "blake3-512:e3ace4fc4fd49561bc29d1739d8256c6d573642e4bfd5f4eb2994bb2ba544
 name = "bridge_decl_v1_4"
 capability = "claim.bridge.v1_4.jcs"
 description = "v1.4 layered BridgeDeclaration with tagged-union target {kind:contract, cid:...}"
-jcs = '{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}'
+jcs = '{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"sugar-canonical-reference@v1.4","targetLayer":"rust-kit"}}'
 hash = "blake3-512:660ce98742d1f7ff326c994e4f6aba4d396d7fba0914db91a142c489e6d0901a7eff0ca206ce49bfa5b71eda289a138049fa8cf6461c5ef353703a78c0966cf2"

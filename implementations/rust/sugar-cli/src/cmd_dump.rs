@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit dump <PROOF-FILE>`: pretty-print catalog members + bodies.
+// `sugar dump <PROOF-FILE>`: pretty-print catalog members + bodies.
 //
 // Uses `sugar_verifier::cbor_decode` to parse the CBOR catalog, then
 // re-decodes each member's JCS-JSON body via serde_json. We surface the
@@ -65,7 +65,7 @@ fn dump(path: &PathBuf, as_json: bool, quiet: bool) -> Result<()> {
     }
 
     if !quiet {
-        println!("{}", "ProvekIt proof envelope".bold());
+        println!("{}", "Sugar proof envelope".bold());
         println!("  file        : {}", path.display());
         println!("  cid         : {}", derived_cid.cyan());
         println!("  name        : {name}");

@@ -1,6 +1,6 @@
 # Tutorial: C#
 
-> **Status:** kit + canonicalizer + verifier shipping in the current v1.6.3 tree. Lift adapters shipping: `DataAnnotations`, `LINQ`. LSP plugin shipping. Verification via the Rust CLI today; `Provekit.Verifier` in-process verifier planned.
+> **Status:** kit + canonicalizer + verifier shipping in the current v1.6.3 tree. Lift adapters shipping: `DataAnnotations`, `LINQ`. LSP plugin shipping. Verification via the Rust CLI today; `Sugar.Verifier` in-process verifier planned.
 
 A walkthrough for C# developers. By the end you have a `.proof` catalog lifted from `[Required]`, `[Range]`, `[StringLength]` data annotations and LINQ predicate quantifiers (`All`, `Any`).
 
@@ -19,13 +19,13 @@ A walkthrough for C# developers. By the end you have a `.proof` catalog lifted f
 ## 3. Install
 
 ```bash
-cargo install --path implementations/rust/provekit-cli
-provekit verify-protocol
+cargo install --path implementations/rust/sugar-cli
+sugar verify-protocol
 
 cd implementations/csharp && dotnet build
 ```
 
-The C# kit ships as `Provekit.IR`, `Provekit.Canonicalizer`, `Provekit.SelfContracts`, `Provekit.ClaimEnvelope`, `Provekit.ProofEnvelope`, `Provekit.Verifier`.
+The C# kit ships as `Sugar.IR`, `Sugar.Canonicalizer`, `Sugar.SelfContracts`, `Sugar.ClaimEnvelope`, `Sugar.ProofEnvelope`, `Sugar.Verifier`.
 
 ## 4. Lift your first contract
 
@@ -50,20 +50,20 @@ var allAdults = users.All(u => u.Age >= 18);
 Run the lifter:
 
 ```bash
-provekit-lift-cs
+sugar-lift-cs
 ```
 
-`Provekit.Lift.DataAnnotations` walks `[Required]`, `[StringLength]`, `[Range]`, `[RegularExpression]`, `[EmailAddress]`. `Provekit.Lift.Linq` walks LINQ expression trees and lifts `All` / `Any` to `forall` / `exists` IR.
+`Sugar.Lift.DataAnnotations` walks `[Required]`, `[StringLength]`, `[Range]`, `[RegularExpression]`, `[EmailAddress]`. `Sugar.Lift.Linq` walks LINQ expression trees and lifts `All` / `Any` to `forall` / `exists` IR.
 
 ## 5. Verify
 
 ```bash
-provekit prove
+sugar prove
 ```
 
 ## 6. Wire your IDE
 
-- **IDE:** install the LSP plugin (`Provekit.Lsp.Plugin`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
+- **IDE:** install the LSP plugin (`Sugar.Lsp.Plugin`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
 
 ## What's next
 

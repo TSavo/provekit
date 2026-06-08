@@ -64,9 +64,9 @@ Response:
     {
       "range": {"start": {"line": 0, "character": 12}, "end": {"line": 0, "character": 14}},
       "severity": "error",
-      "code": "PROVEKIT_E001",
+      "code": "SUGAR_E001",
       "message": "contract precondition unmet: x must be >= 0",
-      "source": "provekit"
+      "source": "sugar"
     }
   ],
   "lifted_contracts": 0,
@@ -127,7 +127,7 @@ What the plugin actually does on `parse`:
 5. **For each call site**, run the three-tier handshake (most call sites discharge at Tier 1 against cached mementos).
 6. **Collect violations** as LSP diagnostics.
 
-This is essentially `provekit prove --file` per file, scoped to in-flight edits.
+This is essentially `sugar prove --file` per file, scoped to in-flight edits.
 
 ## Cache hygiene
 
@@ -144,8 +144,8 @@ The plugin's responsiveness is what users perceive. A 50ms response is fine; a 5
 LSP diagnostics carry severity, source, code, message, and range. Sugar diagnostics use:
 
 - **Severity**: `error` (contract violated), `warning` (contract requires Tier 3 fallback), `information` (lifted contract), `hint` (suggestion).
-- **Source**: always `"provekit"`. Editors filter by source for "show only Sugar issues."
-- **Code**: stable error code, e.g., `PROVEKIT_E001`. See [`docs/reference/error-codes.md`](../reference/error-codes.md).
+- **Source**: always `"sugar"`. Editors filter by source for "show only Sugar issues."
+- **Code**: stable error code, e.g., `SUGAR_E001`. See [`docs/reference/error-codes.md`](../reference/error-codes.md).
 - **Message**: human-readable, includes the contract that was violated. Include the source-library annotation that gave rise to the contract, so users see "your `@Min(0)` is violated" rather than "atomic ge violated."
 - **Range**: the source range the violation applies to.
 
@@ -153,7 +153,7 @@ Quick fixes (LSP `codeAction`) are valuable for common patterns:
 
 - "Add `@NotNull` to align with caller's contract."
 - "Bridge `my_fn` to `ref-parseInt-v1`."
-- "Lift this annotation library by adding `provekit-lift-bean-validation`."
+- "Lift this annotation library by adding `sugar-lift-bean-validation`."
 
 Quick fix protocol is more involved than `parse`; ship `parse` first, add code actions later.
 

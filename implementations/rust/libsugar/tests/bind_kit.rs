@@ -17,7 +17,7 @@ fn bind_input_value() -> Value {
     json!({
         "kind": "ir-document",
         "sourceLanguage": "rust",
-        "workspaceRoot": "/tmp/provekit-bind-kit-test",
+        "workspaceRoot": "/tmp/sugar-bind-kit-test",
         "ir": [{
             "kind": "bind-lift-entry",
             "file": "src/lib.rs",
@@ -58,7 +58,7 @@ fn cluster_input(entries: Vec<Value>) -> Value {
     json!({
         "kind": "ir-document",
         "sourceLanguage": "rust",
-        "workspaceRoot": "/tmp/provekit-bind-kit-test",
+        "workspaceRoot": "/tmp/sugar-bind-kit-test",
         "ir": entries
     })
 }

@@ -1,8 +1,8 @@
 {
-  "name": "provekit",
+  "name": "sugar",
   "version": "0.4.0",
-  "description": "ProvekIt: the fourth horseman of the git commit. tsc, lint, test, prove.",
-  "provekit": {
+  "description": "Sugar: the fourth horseman of the git commit. tsc, lint, test, prove.",
+  "sugar": {
     "proofHash": "sha256:da2514f383e5ac82",
     "proofHashKind": "protocol-catalog",
     "proofHashCatalog": "protocol/specs/2026-04-30-protocol-catalog.json",
@@ -26,10 +26,10 @@
     "pre-commit",
     "invariants"
   ],
-  "homepage": "https://github.com/provekit/provekit",
+  "homepage": "https://github.com/sugar/sugar",
   "repository": {
     "type": "git",
-    "url": "https://github.com/provekit/provekit.git"
+    "url": "https://github.com/sugar/sugar.git"
   },
   "author": "",
   "license": "ISC",

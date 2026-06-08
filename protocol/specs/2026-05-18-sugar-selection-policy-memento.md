@@ -2,7 +2,7 @@
 
 **Status:** v1.0.0 normative draft.
 **Date:** 2026-05-18
-**Related:** `2026-05-12-sugar-dict-memento.md`, `2026-05-12-loss-function-memento.md`, `2026-05-14-policy-profile-memento.md`, `2026-05-13-promotion-decision-memento.md`, `2026-04-30-canonicalization-grammar.md`, `TSavo/provekit#889`.
+**Related:** `2026-05-12-sugar-dict-memento.md`, `2026-05-12-loss-function-memento.md`, `2026-05-14-policy-profile-memento.md`, `2026-05-13-promotion-decision-memento.md`, `2026-04-30-canonicalization-grammar.md`, `TSavo/sugar#889`.
 
 ## Purpose
 

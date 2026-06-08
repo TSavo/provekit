@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Binary entry point for provekit-ir-compiler-lean.
+// Binary entry point for sugar-ir-compiler-lean.
 
 use serde_json::Value as Json;
 use std::io::{self, Read};

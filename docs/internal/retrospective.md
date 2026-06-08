@@ -4,7 +4,7 @@ Honest account of what the dogfood sprint built, what it proved, and what is lef
 
 ## What landed
 
-The 23-task plan (`docs/plans/2026-04-23-fix-loop.md`) ran through D4 plus follow-ups, closing with the rename commit (`eff60b0`: neurallog to provekit, tagline finalized).
+The 23-task plan (`docs/plans/2026-04-23-fix-loop.md`) ran through D4 plus follow-ups, closing with the rename commit (`eff60b0`: neurallog to sugar, tagline finalized).
 
 Key milestones in commit order:
 
@@ -61,7 +61,7 @@ The patch was a clean guard. The regression test encoded the Z3 witness directly
 
 The dogfood surfaced five integration gaps that stub-LLM tests could not reach. All five were closed:
 
-1. `provekit analyze` was not populating the SAST tables the fix loop queries. Closed by wiring `buildSASTForFile` into the analyze per-file walk.
+1. `sugar analyze` was not populating the SAST tables the fix loop queries. Closed by wiring `buildSASTForFile` into the analyze per-file walk.
 2. LLM JSON responses were wrapped in markdown code-fences; `JSON.parse` failed at every call site. Closed by a shared `parseJsonFromLlm()` helper that strips fences. Ten call sites updated.
 3. The CLI bridge (`cli.fix.ts`) forwarded `complete()` but not `agent()`. Every C-stage's `if (llm.agent)` dispatch fell back to JSON even though the Claude Agent SDK's `agent()` was wired. Closed by adding the conditional `agent()` forward.
 4. Oracle #2 was a proxy (re-evaluate principle, reject if matches remain). Guard-based fixes still match the division pattern after the guard lands; the proxy rejected correct fixes. Closed by path-condition extraction + augmented Z3 (see ARCHITECTURE.md).

@@ -1,5 +1,5 @@
 out/
-.provekit/
+.sugar/
 numpy_consumer.py
 test_numpy_consumer.py
 blake3-512*.proof

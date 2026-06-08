@@ -2,7 +2,7 @@
 
 Status: implementation complete, verification passed, local commit blocked by sandbox permission on shared Git worktree metadata.
 
-Worktree: `/Users/tsavo/provekit-worktrees/pk-964-ffi-call`
+Worktree: `/Users/tsavo/sugar-worktrees/pk-964-ffi-call`
 Branch: `kit/pk-964-ffi-call`
 
 ## Implemented
@@ -16,9 +16,9 @@ Branch: `kit/pk-964-ffi-call`
 
 ## Verification
 
-- `cargo test -p provekit-walk --test ffi_effect_occurrence`
-- `cargo test -p provekit-walk`
-- `rg -n "ffi-call-unresolved-effect" implementations/rust/provekit-walk/src implementations/rust/provekit-walk/tests` found no active source/test references.
+- `cargo test -p sugar-walk --test ffi_effect_occurrence`
+- `cargo test -p sugar-walk`
+- `rg -n "ffi-call-unresolved-effect" implementations/rust/sugar-walk/src implementations/rust/sugar-walk/tests` found no active source/test references.
 - Forbidden dash scan over the changed Rust files found no em dash or en dash characters.
 - `git diff --check`
 
@@ -27,7 +27,7 @@ Branch: `kit/pk-964-ffi-call`
 `git add` and commit could not run because Git cannot create the worktree index lock:
 
 ```text
-fatal: Unable to create '/Users/tsavo/provekit/.git/worktrees/pk-964-ffi-call/index.lock': Operation not permitted
+fatal: Unable to create '/Users/tsavo/sugar/.git/worktrees/pk-964-ffi-call/index.lock': Operation not permitted
 ```
 
-A direct write test in `/Users/tsavo/provekit/.git/worktrees/pk-964-ffi-call` also fails with `Operation not permitted`, so this runner cannot update the Git index or refs for the linked worktree.
+A direct write test in `/Users/tsavo/sugar/.git/worktrees/pk-964-ffi-call` also fails with `Operation not permitted`, so this runner cannot update the Git index or refs for the linked worktree.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """
-Echo agent: reference ProvekIt agent plugin.
+Echo agent: reference Sugar agent plugin.
 
 Demonstrates the JSON-RPC over stdio protocol defined by
 protocol/specs/2026-04-30-agent-plugin-protocol.md.
@@ -11,7 +11,7 @@ stdout line. Covers handshake / lift / must / fix with canned responses
 matching the kit's IR-JSON shape.
 
 Conformance test:
-    echo '{"jsonrpc":"2.0","id":1,"method":"provekit.agent.handshake","params":{}}' \
+    echo '{"jsonrpc":"2.0","id":1,"method":"sugar.agent.handshake","params":{}}' \
       | python3 echo_agent.py
 """
 import json
@@ -102,10 +102,10 @@ def handle_fix(params):
 
 
 METHODS = {
-    "provekit.agent.handshake": handle_handshake,
-    "provekit.must.translate":  handle_must,
-    "provekit.lift.propose":    handle_lift,
-    "provekit.fix.patch":       handle_fix,
+    "sugar.agent.handshake": handle_handshake,
+    "sugar.must.translate":  handle_must,
+    "sugar.lift.propose":    handle_lift,
+    "sugar.fix.patch":       handle_fix,
 }
 
 
@@ -134,7 +134,7 @@ def main():
 
         rid = req.get("id")
         method = req.get("method", "")
-        if method == "provekit.shutdown":
+        if method == "sugar.shutdown":
             sys.stdout.write(json.dumps(make_response(rid, result={"ok": True})) + "\n")
             sys.stdout.flush()
             return

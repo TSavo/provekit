@@ -6,34 +6,34 @@
 
 **Architecture:** Keep language analysis inside the owning kit. The Rust CLI/LSP/linkerd path remains language-agnostic infrastructure that routes kit facts, runs solver obligations, and projects verifier results into editor diagnostics. The vertical slice preserves `callSiteLocus` from Rust kit call edges through `LinkerError`, linkerd JSON, and LSP range conversion.
 
-**Tech Stack:** Rust workspace crates `provekit-linker`, `provekit-linkerd`, `provekit-lsp`; `serde_json`; `tower_lsp`; existing verifier `StubSolver` test utilities.
+**Tech Stack:** Rust workspace crates `sugar-linker`, `sugar-linkerd`, `sugar-lsp`; `serde_json`; `tower_lsp`; existing verifier `StubSolver` test utilities.
 
 ---
 
 ## File Structure
 
-- Modify `implementations/rust/provekit-linker/src/lib.rs`
+- Modify `implementations/rust/sugar-linker/src/lib.rs`
   - Add `call_site_locus_json: Option<Json>` to `LinkerError`.
   - Populate it from `LinkerCallEdge.call_site_locus_json` for unresolved symbols and solver failures.
-- Modify `implementations/rust/provekit-linker/tests/discharge_obligation.rs`
+- Modify `implementations/rust/sugar-linker/tests/discharge_obligation.rs`
   - Prove unsatisfied solver obligations preserve the original callsite locus.
-- Modify `implementations/rust/provekit-linkerd/src/methods.rs`
+- Modify `implementations/rust/sugar-linkerd/src/methods.rs`
   - Include `callSiteLocus` in `parseFile` diagnostic JSON.
-- Modify `implementations/rust/provekit-linkerd/src/state.rs`
+- Modify `implementations/rust/sugar-linkerd/src/state.rs`
   - Include `callSiteLocus` in cached `getDiagnostics` JSON.
   - Add a focused state test using an unresolved call edge to prove cached diagnostics preserve the locus.
-- Modify `implementations/rust/provekit-lsp/src/main.rs`
+- Modify `implementations/rust/sugar-lsp/src/main.rs`
   - Accept `callSiteLocus` on daemon diagnostics.
   - Convert 1-based line / 0-based column source loci to 0-based LSP ranges.
-  - Map solver failure kinds to stable `provekit.lsp.*` diagnostic codes.
-- Modify `implementations/rust/provekit-lsp/tests/daemon_routed.rs`
+  - Map solver failure kinds to stable `sugar.lsp.*` diagnostic codes.
+- Modify `implementations/rust/sugar-lsp/tests/daemon_routed.rs`
   - Add or extend coverage proving published daemon diagnostics use the daemon-provided callsite range.
 
 ### Task 1: Preserve Callsite Locus In Linker Errors
 
 **Files:**
-- Modify: `implementations/rust/provekit-linker/src/lib.rs`
-- Test: `implementations/rust/provekit-linker/tests/discharge_obligation.rs`
+- Modify: `implementations/rust/sugar-linker/src/lib.rs`
+- Test: `implementations/rust/sugar-linker/tests/discharge_obligation.rs`
 
 - [ ] **Step 1: Write the failing linker test**
 
@@ -56,14 +56,14 @@ Add this assertion to `logically_incompatible_emits_implication_unprovable` afte
 Run:
 
 ```bash
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-linker --test discharge_obligation logically_incompatible_emits_implication_unprovable
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-linker --test discharge_obligation logically_incompatible_emits_implication_unprovable
 ```
 
 Expected: FAIL to compile because `LinkerError` has no `call_site_locus_json` field.
 
 - [ ] **Step 3: Add the minimal linker field and propagation**
 
-In `implementations/rust/provekit-linker/src/lib.rs`, change `LinkerError`:
+In `implementations/rust/sugar-linker/src/lib.rs`, change `LinkerError`:
 
 ```rust
 pub struct LinkerError {
@@ -96,7 +96,7 @@ Inside `discharge_obligation`, add `call_site_locus_json: None` to every `Linker
 Run:
 
 ```bash
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-linker --test discharge_obligation logically_incompatible_emits_implication_unprovable
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-linker --test discharge_obligation logically_incompatible_emits_implication_unprovable
 ```
 
 Expected: PASS.
@@ -104,25 +104,25 @@ Expected: PASS.
 - [ ] **Step 5: Commit the linker slice**
 
 ```bash
-git add implementations/rust/provekit-linker/src/lib.rs implementations/rust/provekit-linker/tests/discharge_obligation.rs
+git add implementations/rust/sugar-linker/src/lib.rs implementations/rust/sugar-linker/tests/discharge_obligation.rs
 git commit -m "Propagate linker callsite loci"
 ```
 
 ### Task 2: Include Callsite Locus In Linkerd Diagnostics
 
 **Files:**
-- Modify: `implementations/rust/provekit-linkerd/src/methods.rs`
-- Modify: `implementations/rust/provekit-linkerd/src/state.rs`
+- Modify: `implementations/rust/sugar-linkerd/src/methods.rs`
+- Modify: `implementations/rust/sugar-linkerd/src/state.rs`
 
 - [ ] **Step 1: Write the failing state test**
 
-Append this test module to `implementations/rust/provekit-linkerd/src/state.rs`:
+Append this test module to `implementations/rust/sugar-linkerd/src/state.rs`:
 
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
-    use provekit_linker::{LinkerCallEdge, LinkerContract};
+    use sugar_linker::{LinkerCallEdge, LinkerContract};
     use serde_json::json;
 
     const SOURCE_CID: &str = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -167,7 +167,7 @@ mod tests {
 Run:
 
 ```bash
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-linkerd diagnostics_for_file_preserve_callsite_locus
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-linkerd diagnostics_for_file_preserve_callsite_locus
 ```
 
 Expected: FAIL because diagnostic JSON omits `callSiteLocus`.
@@ -191,7 +191,7 @@ In `ProjectState::diagnostics_for_file`, update the diagnostic JSON:
 Run:
 
 ```bash
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-linkerd diagnostics_for_file_preserve_callsite_locus
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-linkerd diagnostics_for_file_preserve_callsite_locus
 ```
 
 Expected: PASS.
@@ -199,18 +199,18 @@ Expected: PASS.
 - [ ] **Step 5: Commit the daemon JSON slice**
 
 ```bash
-git add implementations/rust/provekit-linkerd/src/methods.rs implementations/rust/provekit-linkerd/src/state.rs
+git add implementations/rust/sugar-linkerd/src/methods.rs implementations/rust/sugar-linkerd/src/state.rs
 git commit -m "Return callsite loci from linkerd diagnostics"
 ```
 
 ### Task 3: Convert Daemon Callsite Loci To LSP Ranges
 
 **Files:**
-- Modify: `implementations/rust/provekit-lsp/src/main.rs`
+- Modify: `implementations/rust/sugar-lsp/src/main.rs`
 
 - [ ] **Step 1: Write failing LSP conversion tests**
 
-In `implementations/rust/provekit-lsp/src/main.rs`, update the test helper:
+In `implementations/rust/sugar-lsp/src/main.rs`, update the test helper:
 
 ```rust
 fn make_diag_with_locus(error_kind: &str, target_symbol: &str, reason: &str, locus: serde_json::Value) -> DaemonDiagnostic {
@@ -242,7 +242,7 @@ fn callsite_locus_maps_to_lsp_range() {
     assert_eq!(lsp.range.end.character, 18);
     assert_eq!(
         lsp.code,
-        Some(NumberOrString::String("provekit.lsp.implication_failed".to_string()))
+        Some(NumberOrString::String("sugar.lsp.implication_failed".to_string()))
     );
 }
 ```
@@ -252,7 +252,7 @@ fn callsite_locus_maps_to_lsp_range() {
 Run:
 
 ```bash
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-lsp callsite_locus_maps_to_lsp_range
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-lsp callsite_locus_maps_to_lsp_range
 ```
 
 Expected: FAIL to compile because `DaemonDiagnostic` has no `call_site_locus` field.
@@ -318,11 +318,11 @@ Map codes:
 
 ```rust
 let code = match d.error_kind.as_str() {
-    "implication-unprovable" => "provekit.lsp.implication_failed",
-    "unprovable-obligation" => "provekit.lsp.implication_failed",
-    "unresolved-symbol" => "provekit.lsp.unresolved_symbol",
-    "implication-undecidable" => "provekit.lsp.unprovable_obligation",
-    _ => "provekit.lsp.unprovable_obligation",
+    "implication-unprovable" => "sugar.lsp.implication_failed",
+    "unprovable-obligation" => "sugar.lsp.implication_failed",
+    "unresolved-symbol" => "sugar.lsp.unresolved_symbol",
+    "implication-undecidable" => "sugar.lsp.unprovable_obligation",
+    _ => "sugar.lsp.unprovable_obligation",
 };
 ```
 
@@ -333,8 +333,8 @@ Use `code` in the diagnostic.
 Run:
 
 ```bash
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-lsp callsite_locus_maps_to_lsp_range
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-lsp range_is_file_start_marker
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-lsp callsite_locus_maps_to_lsp_range
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-lsp range_is_file_start_marker
 ```
 
 Expected: PASS. The fallback test should still prove missing loci use `(0,0)..(0,1)`.
@@ -342,7 +342,7 @@ Expected: PASS. The fallback test should still prove missing loci use `(0,0)..(0
 - [ ] **Step 5: Commit the LSP conversion slice**
 
 ```bash
-git add implementations/rust/provekit-lsp/src/main.rs
+git add implementations/rust/sugar-lsp/src/main.rs
 git commit -m "Map solver diagnostics to callsite ranges"
 ```
 
@@ -356,9 +356,9 @@ git commit -m "Map solver diagnostics to callsite ranges"
 Run:
 
 ```bash
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-linker --test discharge_obligation
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-linkerd diagnostics_for_file_preserve_callsite_locus
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-lsp callsite_locus_maps_to_lsp_range
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-linker --test discharge_obligation
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-linkerd diagnostics_for_file_preserve_callsite_locus
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-lsp callsite_locus_maps_to_lsp_range
 ```
 
 Expected: PASS.
@@ -369,7 +369,7 @@ Run:
 
 ```bash
 cargo fmt --manifest-path implementations/rust/Cargo.toml --check
-cargo check --manifest-path implementations/rust/Cargo.toml -p provekit-linker -p provekit-linkerd -p provekit-lsp
+cargo check --manifest-path implementations/rust/Cargo.toml -p sugar-linker -p sugar-linkerd -p sugar-lsp
 ```
 
 Expected: PASS.

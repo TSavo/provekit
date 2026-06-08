@@ -3,7 +3,7 @@
 // C ABI FFI for the canonical compose primitive, per CCP §6.2.
 //
 // Spec: protocol/specs/2026-05-09-contract-composition-protocol.md §6.2.
-// Header: implementations/rust/libsugar/include/provekit-compose.h.
+// Header: implementations/rust/libsugar/include/sugar-compose.h.
 //
 // CCP §6.2 mandates the surface:
 //

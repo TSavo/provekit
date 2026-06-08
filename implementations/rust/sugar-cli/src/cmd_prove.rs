@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit prove` / `provekit verify`: runs the six-stage pipeline.
+// `sugar prove` / `sugar verify`: runs the six-stage pipeline.
 //
 // The witness-discharge path resolves each lift surface's manifest (the SAME
-// dispatch lift uses) to export PROVEKIT_WITNESS_DISCHARGE_<TOOL> per tool, so
+// dispatch lift uses) to export SUGAR_WITNESS_DISCHARGE_<TOOL> per tool, so
 // witness recompute rides the manifest with no bespoke config.
 
 use std::path::{Path, PathBuf};
@@ -19,8 +19,8 @@ use crate::report_fmt;
 use crate::ProveArgs;
 
 // The witness-discharge path loads the lift surface manifest at
-// `<project>/.provekit/lift/<surface>/manifest.toml` to read its
-// `discharge_command` + `witness_tool`. No hardcoded `provekit-lift-<kit>`.
+// `<project>/.sugar/lift/<surface>/manifest.toml` to read its
+// `discharge_command` + `witness_tool`. No hardcoded `sugar-lift-<kit>`.
 
 // ---------------------------------------------------------------------------
 // Plugin manifest (mirrors cmd_mint: kept local to avoid coupling)
@@ -34,7 +34,7 @@ struct PluginManifest {
     /// Execution-witness discharge command the kit ships (recompute entry).
     /// Declared alongside `command` so witness discharge rides the SAME manifest
     /// dispatch as lift -- no bespoke config. `prove` exports it as
-    /// `PROVEKIT_WITNESS_DISCHARGE_<witness_tool>` for the verifier's witness arm.
+    /// `SUGAR_WITNESS_DISCHARGE_<witness_tool>` for the verifier's witness arm.
     discharge_command: Vec<String>,
     /// The `tool` value this surface stamps on its witness certificates (e.g.
     /// `pytest`). Keys the per-tool discharge registry so a proof carrying
@@ -102,7 +102,7 @@ fn parse_manifest(path: &std::path::Path) -> Result<PluginManifest, String> {
 
 fn find_manifest(project_root: &std::path::Path, surface: &str) -> Result<PluginManifest, String> {
     let project_local = project_root
-        .join(".provekit")
+        .join(".sugar")
         .join("lift")
         .join(surface)
         .join("manifest.toml");
@@ -112,7 +112,7 @@ fn find_manifest(project_root: &std::path::Path, surface: &str) -> Result<Plugin
     if let Some(home) = std::env::var_os("HOME") {
         let user_global = PathBuf::from(home)
             .join(".config")
-            .join("provekit")
+            .join("sugar")
             .join("lift")
             .join(surface)
             .join("manifest.toml");
@@ -121,7 +121,7 @@ fn find_manifest(project_root: &std::path::Path, surface: &str) -> Result<Plugin
         }
     }
     Err(format!(
-        "no plugin manifest for surface `{surface}` (looked in .provekit/lift/{surface}/manifest.toml and ~/.config/provekit/lift/{surface}/manifest.toml)"
+        "no plugin manifest for surface `{surface}` (looked in .sugar/lift/{surface}/manifest.toml and ~/.config/sugar/lift/{surface}/manifest.toml)"
     ))
 }
 
@@ -147,20 +147,20 @@ pub fn run(args: ProveArgs) -> u8 {
 
     let cfg_doc = read_project_config(&project_root);
 
-    // WITNESS DISCHARGE defaults: so `provekit prove <project>` settles execution
+    // WITNESS DISCHARGE defaults: so `sugar prove <project>` settles execution
     // witnesses by recompute WITHOUT the caller exporting env vars. The discharge
     // command is declared in the KIT'S MANIFEST (alongside its lift `command`) and
     // resolved here through the SAME `find_manifest` dispatch lift uses -- no
     // bespoke config. Each lift surface's manifest may declare `discharge_command`
-    // + `witness_tool`; we export PROVEKIT_WITNESS_DISCHARGE_<TOOL> per tool so a
+    // + `witness_tool`; we export SUGAR_WITNESS_DISCHARGE_<TOOL> per tool so a
     // proof carrying witnesses from multiple kits routes each to its own recompute.
     // Project dir defaults to the project being proven (the source the witness's
     // relative code paths resolve against). Explicit env vars still win.
-    if std::env::var_os("PROVEKIT_WITNESS_PROJECT_DIR").is_none() {
+    if std::env::var_os("SUGAR_WITNESS_PROJECT_DIR").is_none() {
         let p = project_root
             .canonicalize()
             .unwrap_or_else(|_| project_root.clone());
-        std::env::set_var("PROVEKIT_WITNESS_PROJECT_DIR", &p);
+        std::env::set_var("SUGAR_WITNESS_PROJECT_DIR", &p);
     }
     for plugin in cfg_doc.plugins.iter().filter(|p| p.is_lift_plugin()) {
         let manifest = match find_manifest(&project_root, &plugin.surface) {
@@ -174,7 +174,7 @@ pub fn run(args: ProveArgs) -> u8 {
             continue;
         };
         let key = format!(
-            "PROVEKIT_WITNESS_DISCHARGE_{}",
+            "SUGAR_WITNESS_DISCHARGE_{}",
             tool.to_uppercase()
                 .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
         );

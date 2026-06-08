@@ -8,7 +8,7 @@
 // Pairs with `serialize::formula_to_value` / `marshal_declarations`.
 // The round-trip property `parse(serialize(f)) == f` is enforced by
 // the property tests in this module's `tests` block and (more
-// thoroughly) in `provekit-self-contracts`.
+// thoroughly) in `sugar-self-contracts`.
 //
 // Closed-object policy: nodes carry exactly the keys their grammar
 // production names. Extra fields are rejected loud (RuleViolation::ExtraKey).

@@ -10,7 +10,7 @@
 - `2026-05-12-concept-site-memento.md` (`ConceptSiteMemento`)
 - `2026-04-30-canonicalization-grammar.md` (JCS canonicalization, normative)
 - `2026-05-03-contract-cid-vs-attestation-cid.md` (CID semantics for inter-memento references)
-- `TSavo/provekit#796` (admissibility-spine umbrella)
+- `TSavo/sugar#796` (admissibility-spine umbrella)
 
 ## §0. Purpose
 
@@ -30,11 +30,11 @@ Without this memento, promotion is implicit. A verifier can see the promoted art
 
 ### §0.1 Discharge is not promotion
 
-Discharge proves an implication; promotion admits a claim. A `DischargeReceipt` (see TSavo/provekit#792, #800) records that a solver, equational rewriter, or other backend closed an obligation. A `DischargeReceipt` CAN be EVIDENCE for the `proof` gate of a promotion, but is not itself promotion: the catalog does not grow until a `PromotionDecisionMemento` cites the discharge receipt under an applicable policy and records the admission. This distinction is load-bearing. Discharge is a closed implication; promotion is an admission decision against a policy.
+Discharge proves an implication; promotion admits a claim. A `DischargeReceipt` (see TSavo/sugar#792, #800) records that a solver, equational rewriter, or other backend closed an obligation. A `DischargeReceipt` CAN be EVIDENCE for the `proof` gate of a promotion, but is not itself promotion: the catalog does not grow until a `PromotionDecisionMemento` cites the discharge receipt under an applicable policy and records the admission. This distinction is load-bearing. Discharge is a closed implication; promotion is an admission decision against a policy.
 
 ### §0.2 The substrate does not encode policy
 
-This spec defines the SHAPE of a promotion decision. It does NOT define what counts as enough evidence, how many trials a property gate requires, what threshold a count-based gate sets, or which signers a human gate accepts. Those are policy decisions. Each is captured in a `PromotionPolicyMemento` (TSavo/provekit#798) cited by `policy_cid`, with `decision_payload` carrying the gate's structured evaluation against that policy. Substrate-level constants do not appear here. The same evidence + same gate + a different `policy_cid` MUST produce a different promotion CID by federation; that asymmetry is the federation guarantee on admissibility.
+This spec defines the SHAPE of a promotion decision. It does NOT define what counts as enough evidence, how many trials a property gate requires, what threshold a count-based gate sets, or which signers a human gate accepts. Those are policy decisions. Each is captured in a `PromotionPolicyMemento` (TSavo/sugar#798) cited by `policy_cid`, with `decision_payload` carrying the gate's structured evaluation against that policy. Substrate-level constants do not appear here. The same evidence + same gate + a different `policy_cid` MUST produce a different promotion CID by federation; that asymmetry is the federation guarantee on admissibility.
 
 ## §1. Wire shape (CDDL)
 
@@ -96,7 +96,7 @@ promotion-decision-memento = {
 | header | `evidence_cids` | yes | Non-empty list of `EvidenceMemento` CIDs supporting the candidate. The list MUST be sorted ascending by CID string before CID construction. |
 | header | `gate` | yes | Promotion gate used for this decision. MUST be one of §3's labels. |
 | header | `kind` | yes | MUST be `"promotion-decision"`. |
-| header | `policy_cid` | yes | CID of the `PromotionPolicyMemento` (see TSavo/provekit#798) that defines the gate predicate AND the `decision_payload` schema. This memento cites the policy by CID; the policy's content is governed by a separate spec. The same gate + same evidence + different `policy_cid` yields a DIFFERENT promotion CID by federation. |
+| header | `policy_cid` | yes | CID of the `PromotionPolicyMemento` (see TSavo/sugar#798) that defines the gate predicate AND the `decision_payload` schema. This memento cites the policy by CID; the policy's content is governed by a separate spec. The same gate + same evidence + different `policy_cid` yields a DIFFERENT promotion CID by federation. |
 | header | `promoted_cid` | yes | CID of the artifact created or admitted by the promotion, such as a `FunctionContractMemento`, `CompoundContractMemento`, `ConceptAbstractionMemento`, catalog equation, or catalog member. |
 | header | `result` | yes | Promotion result: `admitted` (claim is now substrate truth), `rejected` (gate evaluated to fail), or `deferred` (gate insufficient, more evidence needed). A `rejected` or `deferred` promotion is still a durable receipt: it records that the policy was applied and what it returned. Only `admitted` causes the catalog to grow. |
 | header | `schemaVersion` | yes | MUST be `"1"` for v1.0.0. |
@@ -114,7 +114,7 @@ The decider is a person or a delegated human-review identity. `decider_cid` MUST
 
 ### §3.2 `proof`
 
-The decider is a mechanical discharge backend. `decider_cid` MUST resolve to a discharge receipt, such as the `DischargeReceipt` being specified under `TSavo/provekit#792`, whose bytes identify the backend, inputs, obligations, verdict, and replay material.
+The decider is a mechanical discharge backend. `decider_cid` MUST resolve to a discharge receipt, such as the `DischargeReceipt` being specified under `TSavo/sugar#792`, whose bytes identify the backend, inputs, obligations, verdict, and replay material.
 
 A verifier replays this gate by validating the receipt, checking that the receipt consumes `candidate_cid` and the listed `evidence_cids`, and confirming that `policy_cid` accepts the receipt verdict as sufficient for promotion.
 
@@ -196,8 +196,8 @@ Federation relies on references, not transport. A peer may receive the promotion
 - `ConceptSiteMemento`: `2026-05-12-concept-site-memento.md`.
 - JCS canonicalization: `2026-04-30-canonicalization-grammar.md`.
 - CID semantics for inter-memento references: `2026-05-03-contract-cid-vs-attestation-cid.md`.
-- Admissibility-spine umbrella: `TSavo/provekit#796`.
-- Discharge receipt follow-up for the `proof` gate: `TSavo/provekit#792`.
+- Admissibility-spine umbrella: `TSavo/sugar#796`.
+- Discharge receipt follow-up for the `proof` gate: `TSavo/sugar#792`.
 
 ## §8. Out of scope for v1.0
 

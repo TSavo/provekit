@@ -67,7 +67,7 @@ The output is a CBOR-encoded `.proof` envelope whose filename CID is BLAKE3-512 
 ### 4. Verify locally before publishing
 
 ```sh
-provekit verify --catalog mycatalog-v1.proof --expected-cid blake3-512:...
+sugar verify --catalog mycatalog-v1.proof --expected-cid blake3-512:...
 ```
 
 Confirms:
@@ -142,7 +142,7 @@ Variations: pin multiple signers per scope and require any-of (lower bar) or all
 The protocol's pressure mechanism is making missing signatures visible. When a consumer queries the federated index for "language:rust" and there is no `language-steward` entry, the CLI surfaces it explicitly:
 
 ```
-$ provekit baselines list --language=rust
+$ sugar baselines list --language=rust
 
   rust-baseline-v1                  authoritative: foundation-baseline (advisory)
                                     no language-steward signature for rust 1.81
@@ -154,7 +154,7 @@ To use the advisory baseline, pin:
 If the steward later signs and lists in the index, the same query becomes:
 
 ```
-$ provekit baselines list --language=rust
+$ sugar baselines list --language=rust
 
   rust-baseline-v1                  authoritative: language-steward
                                     signed by: ed25519:<rust-lang-team>

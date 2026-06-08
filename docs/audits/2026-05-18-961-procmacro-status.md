@@ -23,13 +23,13 @@ procedural_macro_partial_rows=0
 
 - Minted `concept:proc-macro-invocation` and `concept:derive-attribute` concept
   shapes under `menagerie/concept-shapes/`.
-- Extended `provekit-walk` term emission to carry derive and attribute macro
+- Extended `sugar-walk` term emission to carry derive and attribute macro
   syntax as `concept:op-application` entries in `proc_macro_invocations`.
 - Extended `walk_rpc` term mode to parse full source files so file-level
   derive and attribute macro context is preserved.
-- Extended `provekit-realize-rust-core` to emit carried attribute token streams
+- Extended `sugar-realize-rust-core` to emit carried attribute token streams
   before realized Rust functions.
-- Preserved proc macro invocation sidecars through libprovekit bind and lower
+- Preserved proc macro invocation sidecars through libsugar bind and lower
   request reconstruction.
 - Removed `procedural-macro` from accepted surface-audit loss classification
   and generated v3 audit artifacts.
@@ -39,12 +39,12 @@ procedural_macro_partial_rows=0
 ## Verification
 
 ```text
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-walk --test term_emit_proc_macro_invocation
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-walk --test term_emit_d3
-cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-realize-rust-core rpc_emits_proc_macro_invocations_before_realized_function
-cargo test --manifest-path implementations/rust/Cargo.toml -p libprovekit --test lower_claim_bind_result
-python3 -m py_compile bootstrap/scripts/libprovekit_audit_receipt.py bootstrap/scripts/libprovekit_surface_audit.py menagerie/concept-shapes/scripts/mint_proc_macro_invocation.py
-python3 bootstrap/scripts/libprovekit_audit_receipt.py --skip-build --v1-csv bootstrap/libprovekit-surface-audit.v2.csv --csv bootstrap/libprovekit-surface-audit.v3.csv --gap-report bootstrap/libprovekit-gap-report.v3.md --delta bootstrap/audit-delta-v2-to-v3.md --baseline-label v2 --current-label v3 --phase-label post-961
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-walk --test term_emit_proc_macro_invocation
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-walk --test term_emit_d3
+cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-realize-rust-core rpc_emits_proc_macro_invocations_before_realized_function
+cargo test --manifest-path implementations/rust/Cargo.toml -p libsugar --test lower_claim_bind_result
+python3 -m py_compile bootstrap/scripts/libsugar_audit_receipt.py bootstrap/scripts/libsugar_surface_audit.py menagerie/concept-shapes/scripts/mint_proc_macro_invocation.py
+python3 bootstrap/scripts/libsugar_audit_receipt.py --skip-build --v1-csv bootstrap/libsugar-surface-audit.v2.csv --csv bootstrap/libsugar-surface-audit.v3.csv --gap-report bootstrap/libsugar-gap-report.v3.md --delta bootstrap/audit-delta-v2-to-v3.md --baseline-label v2 --current-label v3 --phase-label post-961
 git diff --check
 ```
 
@@ -54,7 +54,7 @@ All listed verification passed.
 
 - No `gh` commands were run.
 - No push or PR was attempted.
-- Burned-five provekit-cli test files were not modified.
+- Burned-five sugar-cli test files were not modified.
 - No en dash or em dash characters were introduced in the diff or untracked
   files.
 
@@ -64,7 +64,7 @@ Local commit could not be completed because this worktree cannot write Git
 metadata:
 
 ```text
-error: could not lock config file /Users/tsavo/provekit/.git/config: Operation not permitted
-fatal: Unable to create '/Users/tsavo/provekit/.git/worktrees/pk-961-procmacro/index.lock': Operation not permitted
+error: could not lock config file /Users/tsavo/sugar/.git/config: Operation not permitted
+fatal: Unable to create '/Users/tsavo/sugar/.git/worktrees/pk-961-procmacro/index.lock': Operation not permitted
 ```
 

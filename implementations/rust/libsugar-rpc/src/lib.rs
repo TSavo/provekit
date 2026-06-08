@@ -2,9 +2,9 @@
 //
 //! # libsugar-rpc
 //!
-//! JSON-RPC 2.0 / NDJSON-over-stdio server for ProvekIt's lift-plugin
+//! JSON-RPC 2.0 / NDJSON-over-stdio server for Sugar's lift-plugin
 //! protocol (`pep/1.7.0`). **Cleanroom implementation**: this crate
-//! has zero `provekit-*` dependencies. The only external crates it
+//! has zero `sugar-*` dependencies. The only external crates it
 //! pulls in are [`blake3`] (for the BLAKE3-512 content-address hash)
 //! and [`serde_json`] (for the on-wire JSON values). The JSON
 //! Canonicalization Scheme (RFC 8785) used to canonicalize mementos
@@ -42,7 +42,7 @@
 //! * dedup by content-addressed name,
 //! * the `kind: "ir-document"` response envelope.
 //!
-//! This split makes the library vendorable -- any future ProvekIt
+//! This split makes the library vendorable -- any future Sugar
 //! library that wants the same JSON-RPC contract can depend on this
 //! crate alone and still talk to the rest of the substrate, because
 //! every byte that crosses the wire is hashable, byte-deterministic
@@ -142,7 +142,7 @@ pub trait AdapterLifter {
     /// Human-readable authoring-surface name advertised in
     /// `initialize.result.capabilities.authoring_surfaces`. The client
     /// selects a plugin by matching `[authoring] surface = ...` from
-    /// `.provekit/config.toml` against this string.
+    /// `.sugar/config.toml` against this string.
     fn surface(&self) -> &str;
 
     /// Plugin name advertised in `initialize.result.name`.
@@ -355,7 +355,7 @@ fn slot_cid(memento: &Value, key: &str) -> String {
 }
 
 // ---------------------------------------------------------------------
-// BLAKE3-512 helper (inline; no provekit-* dep)
+// BLAKE3-512 helper (inline; no sugar-* dep)
 // ---------------------------------------------------------------------
 
 /// Hash arbitrary bytes into the self-identifying BLAKE3-512 string
@@ -751,7 +751,7 @@ mod tests {
 
     // ----- JCS encoder: byte-equal to reference impl on representative inputs -----
     //
-    // The reference is in `provekit-canonicalizer/src/jcs.rs`. We
+    // The reference is in `sugar-canonicalizer/src/jcs.rs`. We
     // avoid a dev-dep on it (acceptance criterion 1: external crates
     // only) and instead hardcode the expected byte sequences that
     // the reference produces for these same inputs. Each expected
@@ -827,7 +827,7 @@ mod tests {
         let encoded = encode_jcs(&v);
         assert_eq!(encoded, "{\"name\":\"\u{2265}\"}");
         // The byte sequence below is what the C++ peer (and the
-        // provekit-canonicalizer Rust peer) produce for this input.
+        // sugar-canonicalizer Rust peer) produce for this input.
         assert_eq!(encoded.as_bytes(), b"{\"name\":\"\xe2\x89\xa5\"}");
     }
 

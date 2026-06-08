@@ -18,14 +18,14 @@
 // using the same types and algorithms the CLI uses.  This keeps the test
 // fast and hermetic; the subprocess integration is exercised manually.
 //
-// Architecture: ProvekIt provides cross-language predicate-level
+// Architecture: Sugar provides cross-language predicate-level
 // correctness verification at compile time, content-addressed for
 // byte-identical reproduction, derived by a single linker pass over
 // (contracts ∪ call-edges).  The smoke test passing is the empirical
 // confirmation of that claim.
 
-// Use provekit-linker directly: the extracted library the CLI now delegates
-// to.  No more provekit_cli_test_support shim needed.
+// Use sugar-linker directly: the extracted library the CLI now delegates
+// to.  No more sugar_cli_test_support shim needed.
 
 use sugar_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs};
 
@@ -50,7 +50,7 @@ fn daemon_bin() -> PathBuf {
     } else {
         deps_dir
     };
-    let daemon = profile_dir.join(format!("provekit-linkerd{}", std::env::consts::EXE_SUFFIX));
+    let daemon = profile_dir.join(format!("sugar-linkerd{}", std::env::consts::EXE_SUFFIX));
     if daemon.exists() {
         return daemon;
     }
@@ -64,24 +64,24 @@ fn daemon_bin() -> PathBuf {
         .arg("--manifest-path")
         .arg(workspace.join("Cargo.toml"))
         .arg("-p")
-        .arg("provekit-linkerd")
+        .arg("sugar-linkerd")
         .arg("--bin")
-        .arg("provekit-linkerd");
+        .arg("sugar-linkerd");
     if profile_dir.file_name().and_then(|name| name.to_str()) == Some("release") {
         cmd.arg("--release");
     }
     let output = cmd
         .output()
-        .expect("spawn cargo build for provekit-linkerd");
+        .expect("spawn cargo build for sugar-linkerd");
     assert!(
         output.status.success(),
-        "cargo build failed for provekit-linkerd\nstdout:\n{}\nstderr:\n{}",
+        "cargo build failed for sugar-linkerd\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
         daemon.exists(),
-        "provekit-linkerd missing after cargo build at {}",
+        "sugar-linkerd missing after cargo build at {}",
         daemon.display()
     );
     daemon
@@ -89,7 +89,7 @@ fn daemon_bin() -> PathBuf {
 
 fn polyglot_sock() -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-linkerd-polyglot-{}.sock",
+        "sugar-linkerd-polyglot-{}.sock",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.subsec_nanos())
@@ -108,7 +108,7 @@ fn unix_socket_bind_available() -> bool {
         }
         Err(err) => {
             eprintln!(
-                "provekit-linkerd daemon smoke skipped: Unix socket bind unavailable ({err})"
+                "sugar-linkerd daemon smoke skipped: Unix socket bind unavailable ({err})"
             );
             false
         }
@@ -127,7 +127,7 @@ fn spawn_linkerd(sock: &PathBuf, idle_ms: u64) -> Child {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn provekit-linkerd")
+        .expect("spawn sugar-linkerd")
 }
 
 fn wait_ready(sock: &PathBuf, timeout: Duration) -> bool {
@@ -171,7 +171,7 @@ fn make_process_contract() -> LinkerContract {
         name: "process".into(),
         kit: "rust-kit".into(),
         // Stable fixture CID computed from {name, outBinding, pre=(n>0)}.
-        // In production this is computed by provekit-lift from the source file.
+        // In production this is computed by sugar-lift from the source file.
         contract_cid: "blake3-512:aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001".into(),
         pre_json: Some(serde_json::json!({
             "kind": "Gt",
@@ -188,7 +188,7 @@ fn make_process_contract() -> LinkerContract {
 // Fixture: go-caller contract for the failing case
 // -------------------------------------------------------------------
 //
-// GoCallerFail has a //provekit:contract annotation but no post-condition.
+// GoCallerFail has a //sugar:contract annotation but no post-condition.
 // (The go lifter emits `post: true` as a trivial placeholder, but the
 // linker sees it as effectively unconstrained: any caller without a
 // meaningful post cannot discharge the callee's pre.)
@@ -431,7 +431,7 @@ fn test_failure_and_success_cids_differ() {
 // -------------------------------------------------------------------
 // Test 5: Daemon-level polyglot smoke
 //
-// Spawns `provekit-linkerd` and simulates an LSP plugin:
+// Spawns `sugar-linkerd` and simulates an LSP plugin:
 //   a. parseFile (success case: no call edges) → clean diagnostics
 //   b. parseFile again same source → projectStatus CID is byte-identical
 //      (daemon-level byte-identity; note: the CID values differ from the
@@ -458,11 +458,11 @@ fn test_daemon_polyglot_smoke() {
 
     assert!(
         wait_ready(&sock, Duration::from_secs(5)),
-        "provekit-linkerd socket did not appear within 5 s"
+        "sugar-linkerd socket did not appear within 5 s"
     );
 
     // --- (a) parseFile success case: synthetic Rust source with no predicates.
-    //         The daemon lifts this via provekit-lift and links it.
+    //         The daemon lifts this via sugar-lift and links it.
     //         We assert the response has a diagnostics array (may be empty for clean source).
     let parse_success = serde_json::json!({
         "jsonrpc": "2.0", "id": 1,

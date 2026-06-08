@@ -72,7 +72,7 @@ Each service's `.proof` is built independently. The verifier walks the union and
 ## 4. Expected output
 
 ```
-provekit prove --polyglot
+sugar prove --polyglot
 
 per-service breakdown:
   frontend-ts:   18 contracts, 14 bridges, 16/18 discharged at Tier 1 (89%)

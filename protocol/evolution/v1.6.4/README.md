@@ -49,12 +49,12 @@ The already-built PEP body can be re-checked without regenerating the
 witness:
 
 ```bash
-provekit protocol check-evolution \
+sugar protocol check-evolution \
   --body protocol/evolution/v1.6.4/protocol-evolution.body.json \
   --from protocol/evolution/v1.6.4/from-catalog-v1.6.3.json \
   --to protocol/evolution/v1.6.4/to-catalog-v1.6.4.json \
   --policy protocol/evolution/v1.6.4/bootstrap-policy.json \
   --verifier protocol/evolution/v1.6.4/bootstrap-verifier.json \
   --catalog-diff protocol/evolution/v1.6.4/catalog-diff.json \
-  --attestation .provekit/catalog-signatures/v1.6.4.json
+  --attestation .sugar/catalog-signatures/v1.6.4.json
 ```

@@ -1,4 +1,4 @@
-# ProvekIt: IR Extension Protocol
+# Sugar: IR Extension Protocol
 
 > Author: shared session 2026-04-30 (T + Claude). The protocol piece
 > that makes the IR total: every meaningful invariant about code can
@@ -39,7 +39,7 @@ the signatures; respect the compatibility metadata; **fail closed** on
 anything they cannot resolve.
 
 Architectural commitment captured here: **the IR is total via this
-protocol.** No code-level invariant is "out of scope for ProvekIt"
+protocol.** No code-level invariant is "out of scope for Sugar"
 because the framework's response to "we need a new sort" is "publish an
 extension declaration," not "edit the framework."
 
@@ -123,7 +123,7 @@ extension-declaration = {
   ; declarations are insufficient for its compiler/solver target.
   semantics: [+ semantic-declaration],
 
-  ; Compatibility metadata: which IR-compiler names (per provekit.config.yaml's
+  ; Compatibility metadata: which IR-compiler names (per sugar.config.yaml's
   ; SolverEntry.compiler field) can handle this extension. A verifier
   ; whose active compiler is not in this list MUST refuse to resolve
   ; this extension (see §5.4).
@@ -595,7 +595,7 @@ fail-closed rules in §5.2 are non-negotiable.
 
 If a domain cannot be expressed within bootstrapping core + extension
 declarations, that's a sign the domain isn't a code-level invariant
-in the sense ProvekIt cares about (probabilistic correctness, certain
+in the sense Sugar cares about (probabilistic correctness, certain
 termination claims that need well-founded relations beyond first
 order). Those cases are explicitly out of scope by design; not gaps
 in the protocol.

@@ -1,5 +1,5 @@
 // Inline IR-JSON parser, derived from protocol/specs/2026-04-30-ir-formal-grammar.md.
-// No provekit dependency. The grammar is what we follow.
+// No sugar dependency. The grammar is what we follow.
 //
 // This implements the EBNF productions in §"Top-level production" through
 // §"Sorts" of the IR formal grammar spec. It is non-strict by default

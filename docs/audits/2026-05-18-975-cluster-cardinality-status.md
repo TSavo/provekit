@@ -12,10 +12,10 @@ Status: implementation complete, local commit blocked by sandbox gitdir writes.
 
 ## Verification
 
-- `cargo test --manifest-path implementations/rust/Cargo.toml -p libprovekit --test bind_kit -- --nocapture`
-- `cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-cli --test cmd_bind_integration -- --nocapture`
-- `cargo test --manifest-path implementations/rust/Cargo.toml -p libprovekit --test lower_claim_bind_result -- --nocapture`
-- `cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-cli --test bind_kit_path_integration -- --nocapture`
+- `cargo test --manifest-path implementations/rust/Cargo.toml -p libsugar --test bind_kit -- --nocapture`
+- `cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-cli --test cmd_bind_integration -- --nocapture`
+- `cargo test --manifest-path implementations/rust/Cargo.toml -p libsugar --test lower_claim_bind_result -- --nocapture`
+- `cargo test --manifest-path implementations/rust/Cargo.toml -p sugar-cli --test bind_kit_path_integration -- --nocapture`
 - `git diff --check`
 - added-line unicode dash check
 
@@ -24,11 +24,11 @@ Status: implementation complete, local commit blocked by sandbox gitdir writes.
 Local commit is blocked because git cannot write the linked worktree index lock:
 
 ```text
-fatal: Unable to create '/Users/tsavo/provekit/.git/worktrees/pk-975-cluster-cardinality/index.lock': Operation not permitted
+fatal: Unable to create '/Users/tsavo/sugar/.git/worktrees/pk-975-cluster-cardinality/index.lock': Operation not permitted
 ```
 
 Direct write probe to the same gitdir also fails:
 
 ```text
-touch: /Users/tsavo/provekit/.git/worktrees/pk-975-cluster-cardinality/codex-write-test: Operation not permitted
+touch: /Users/tsavo/sugar/.git/worktrees/pk-975-cluster-cardinality/codex-write-test: Operation not permitted
 ```

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // GENERATED FILE: DO NOT EDIT
-// Source: protocol/provekit-ir.cddl
-// Generator: provekit-ir-codegen
+// Source: protocol/sugar-ir.cddl
+// Generator: sugar-ir-codegen
 
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-claim-envelope
+// sugar-claim-envelope
 //
 // `mint_contract` / `mint_bridge` / `mint_implication` build a signed
 // memento in the v1.2 LAYERED shape introduced by
@@ -73,7 +73,7 @@ pub const LAYERED_SCHEMA_VERSION: &str = "2";
 ///
 /// The declaration is semantic content, not startup negotiation, so it is
 /// fetched on demand instead of being embedded in `initialize.capabilities`.
-pub const KIT_DECLARATION_RPC_METHOD: &str = "provekit.plugin.kit_declaration";
+pub const KIT_DECLARATION_RPC_METHOD: &str = "sugar.plugin.kit_declaration";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KitDeclaration {
@@ -246,19 +246,19 @@ mod kit_declaration_schema_tests {
     fn valid_declaration() -> KitDeclaration {
         KitDeclaration {
             kit: KitIdentity {
-                id: "provekit-walk-rpc".to_string(),
+                id: "sugar-walk-rpc".to_string(),
                 language: "rust".to_string(),
                 version: "0.1.0".to_string(),
             },
             rpc: KitDeclarationRpc {
                 methods: vec![KitDeclarationRpcMethod {
-                    name: "provekit.plugin.kit_declaration".to_string(),
+                    name: "sugar.plugin.kit_declaration".to_string(),
                     required: true,
                 }],
             },
             proof_resolution: KitProofResolution {
                 strategy: "rpc-proof-bytes".to_string(),
-                rpc_method: Some("provekit.plugin.resolve_dependency_proofs".to_string()),
+                rpc_method: Some("sugar.plugin.resolve_dependency_proofs".to_string()),
             },
             effect_kinds: vec!["concept:panic-freedom".to_string()],
             effect_leaves: vec![KitDeclarationMapping {
@@ -288,8 +288,8 @@ mod kit_declaration_schema_tests {
     #[test]
     fn kit_declaration_rejects_missing_required_fields() {
         let missing_effect_kinds = serde_json::json!({
-            "kit": {"id": "provekit-walk-rpc", "language": "rust", "version": "0.1.0"},
-            "rpc": {"methods": [{"name": "provekit.plugin.kit_declaration", "required": true}]},
+            "kit": {"id": "sugar-walk-rpc", "language": "rust", "version": "0.1.0"},
+            "rpc": {"methods": [{"name": "sugar.plugin.kit_declaration", "required": true}]},
             "proofResolution": {"strategy": "rpc-proof-bytes"}
         });
 

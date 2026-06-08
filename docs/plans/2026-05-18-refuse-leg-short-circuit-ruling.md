@@ -1,7 +1,7 @@
 # Refuse-Leg Short-Circuit Ruling
 
 Date: 2026-05-18
-Status: Active. Implemented in provekit-cli/src/cmd_bind_migrate.rs via PR #1204.
+Status: Active. Implemented in sugar-cli/src/cmd_bind_migrate.rs via PR #1204.
 
 ## Ruling
 
@@ -44,4 +44,4 @@ PR #1204 fixed by wiring uncharacterizable_callsites into refusal_mementos AND a
 - PR #1204: implementation + Stage 5 CI gate (fixture 5 specifically pins the short-circuit invariant)
 - [[2026-05-18-op-coverage-verdict-trichotomy-ruling]] (the verdict that triggers this short-circuit)
 - Sugar first principle: "Supra omnia, rectum, never claim more than you can prove"
-- `project_provekit_first_principle` memory (trichotomy: exact / loudly-bounded-lossy / refuse)
+- `project_sugar_first_principle` memory (trichotomy: exact / loudly-bounded-lossy / refuse)

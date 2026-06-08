@@ -4,7 +4,7 @@
 // a contract memento (parseInt's pre) + a bridge memento (TS-layer
 // parseInt -> that contract). All signed, all in pure Rust.
 //
-// Mirrors implementations/cpp/provekit-ir-symbolic/example/parseInt_kit_proof.cpp.
+// Mirrors implementations/cpp/sugar-ir-symbolic/example/parseInt_kit_proof.cpp.
 //
 // Pipeline:
 //   1. Author the contract via kit primitives.

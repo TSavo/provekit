@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Value tree for the JCS canonical-encoder input. Mirrors the C++
-// `provekit::canonicalizer::Value` shape: scalars + array + object
+// `sugar::canonicalizer::Value` shape: scalars + array + object
 // (object preserves insertion order; JCS sorts at emit time).
 
 use std::sync::Arc;

@@ -50,7 +50,7 @@
 ### investigate.ts
 **Classification:** BORDERLINE  
 **Evidence:**
-- Header clearly documents the side effect: "writes a JSON report to `<projectRoot>/.provekit/contexts/` as a side effect."
+- Header clearly documents the side effect: "writes a JSON report to `<projectRoot>/.sugar/contexts/` as a side effect."
 - **Critically:** "On cache hit the file is NOT re-created — consumers should read the `report` / `codeReferences` fields from the Stage's output, not re-read the file."
 - The file write is incidental; downstream consumers depend on the in-memory `InvestigateResult` output, not the on-disk file.
 - The `reportPath` is preserved in the cached output for audit-trail purposes only.

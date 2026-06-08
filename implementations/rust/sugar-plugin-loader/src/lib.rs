@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-plugin-loader — PEP 1.7.0 runtime engine.
+// sugar-plugin-loader — PEP 1.7.0 runtime engine.
 //
 // Implements:
 //   §3  File interface

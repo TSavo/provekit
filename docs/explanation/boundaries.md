@@ -26,7 +26,7 @@ Use both. Reject any framing that pits them against each other.
 
 ## Sugar is not soundness-certified
 
-A `provekit prove` "discharged" result is not a Coq-style certificate. The protocol's correctness rests on:
+A `sugar prove` "discharged" result is not a Coq-style certificate. The protocol's correctness rests on:
 
 1. **Cryptographic assumptions.** BLAKE3-512 is collision-resistant, Ed25519 is unforgeable. Both are widely-deployed primitives but neither is unconditionally proven secure.
 2. **Solver correctness.** Tier 3 invokes Z3 (or another configured backend). Z3 has had bugs. A `unsat` from Z3 is trusted to be sound; if Z3 is wrong, Sugar's discharge is wrong.
@@ -57,7 +57,7 @@ Sugar provides the substrate for these decisions. The decisions remain human.
 
 The `.proof` is checked at build time (or when the verifier explicitly runs). The protocol does not run in the user's program at runtime, does not intercept calls, does not wrap functions, does not produce runtime checks.
 
-Adapters that implement runtime checking (e.g., the `@provekit.contract` decorator in Python optionally wraps functions with runtime predicate evaluation) do that as a separate, opt-in layer. The protocol layer is purely static.
+Adapters that implement runtime checking (e.g., the `@sugar.contract` decorator in Python optionally wraps functions with runtime predicate evaluation) do that as a separate, opt-in layer. The protocol layer is purely static.
 
 This is a feature: Sugar's overhead at runtime is zero. The cost is paid at build time, once per `(post, pre)` pair, amortized across every consumer who hits the same pair via cached implications.
 
@@ -91,7 +91,7 @@ Real adoption costs:
 - **Reference contracts curation.** The bridge anchors that make cross-domain transfer work. Today: a small set; growing.
 - **CI / IDE / build-script integration.** Per-toolchain glue.
 
-For a single team adopting Sugar in a single Rust workspace, adoption is one `cargo install` and a few `cargo provekit-lift` invocations. For a polyglot company adopting across all their codebases, adoption is months of engineering plus standing up internal reference contracts.
+For a single team adopting Sugar in a single Rust workspace, adoption is one `cargo install` and a few `cargo sugar-lift` invocations. For a polyglot company adopting across all their codebases, adoption is months of engineering plus standing up internal reference contracts.
 
 ## Sugar does not eliminate the need for Z3 (or any solver)
 

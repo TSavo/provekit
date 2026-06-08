@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// daemon_routed.rs: integration tests for the provekit-lsp daemon-client mode.
+// daemon_routed.rs: integration tests for the sugar-lsp daemon-client mode.
 //
-// Tests 1-3 exercise the new daemon-client path: spawn provekit-linkerd, then
-// spawn provekit-lsp with --daemon-socket, drive it via hand-rolled LSP
+// Tests 1-3 exercise the new daemon-client path: spawn sugar-linkerd, then
+// spawn sugar-lsp with --daemon-socket, drive it via hand-rolled LSP
 // JSON-RPC (Content-Length framing), assert publishDiagnostics behaviour.
 //
 // Test 4 verifies the per-plugin path still works (no daemon-socket flag).
@@ -29,22 +29,22 @@ use serde_json::{json, Value};
 // ---------------------------------------------------------------------------
 
 fn lsp_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_provekit-lsp"))
+    PathBuf::from(env!("CARGO_BIN_EXE_sugar-lsp"))
 }
 
 fn daemon_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    // provekit-lsp is at implementations/rust/sugar-lsp/
+    // sugar-lsp is at implementations/rust/sugar-lsp/
     // workspace root is implementations/rust/
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
     let release = workspace
         .join("target")
         .join("release")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     let debug = workspace
         .join("target")
         .join("debug")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     if release.exists() {
         release
     } else {
@@ -54,7 +54,7 @@ fn daemon_bin() -> PathBuf {
 
 fn unique_sock(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-lsp-test-{}-{}.sock",
+        "sugar-lsp-test-{}-{}.sock",
         label,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -65,7 +65,7 @@ fn unique_sock(label: &str) -> PathBuf {
 
 fn unique_snap(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-lsp-snap-{}-{}.bin",
+        "sugar-lsp-snap-{}-{}.bin",
         label,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -76,7 +76,7 @@ fn unique_snap(label: &str) -> PathBuf {
 
 fn unique_config(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-lsp-config-{}-{}.toml",
+        "sugar-lsp-config-{}-{}.toml",
         label,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -107,7 +107,7 @@ fn spawn_daemon(sock: &PathBuf, snap: &PathBuf, idle_ms: u64) -> Child {
     let bin = daemon_bin();
     assert!(
         bin.exists(),
-        "provekit-linkerd not found at {}; run `cargo build -p sugar-linkerd` first",
+        "sugar-linkerd not found at {}; run `cargo build -p sugar-linkerd` first",
         bin.display()
     );
     Command::new(&bin)
@@ -122,7 +122,7 @@ fn spawn_daemon(sock: &PathBuf, snap: &PathBuf, idle_ms: u64) -> Child {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn provekit-linkerd")
+        .expect("spawn sugar-linkerd")
 }
 
 fn wait_for_socket(sock: &PathBuf, timeout: Duration) -> bool {
@@ -171,7 +171,7 @@ impl LspServer {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        let mut child = cmd.spawn().expect("spawn provekit-lsp --daemon-socket");
+        let mut child = cmd.spawn().expect("spawn sugar-lsp --daemon-socket");
         let stdin = child.stdin.take().expect("lsp stdin");
         let stdout = BufReader::new(child.stdout.take().expect("lsp stdout"));
         Self {
@@ -316,7 +316,7 @@ fn daemon_mode_did_open_publishes_diagnostics() {
     let bin = daemon_bin();
     if !bin.exists() {
         eprintln!(
-            "SKIP: provekit-linkerd not found at {}; build it first",
+            "SKIP: sugar-linkerd not found at {}; build it first",
             bin.display()
         );
         return;
@@ -391,7 +391,7 @@ fn daemon_mode_did_open_publishes_diagnostics() {
 fn daemon_mode_did_change_clears_stale_diagnostics() {
     let bin = daemon_bin();
     if !bin.exists() {
-        eprintln!("SKIP: provekit-linkerd not found");
+        eprintln!("SKIP: sugar-linkerd not found");
         return;
     }
 
@@ -467,7 +467,7 @@ fn daemon_mode_did_change_clears_stale_diagnostics() {
 fn daemon_mode_did_close_clears_diagnostics() {
     let bin = daemon_bin();
     if !bin.exists() {
-        eprintln!("SKIP: provekit-linkerd not found");
+        eprintln!("SKIP: sugar-linkerd not found");
         return;
     }
 
@@ -542,7 +542,7 @@ fn daemon_mode_did_close_clears_diagnostics() {
 #[test]
 fn default_mode_initialize_responds() {
     // Spawn without --daemon-socket; the backend binary will fail to spawn
-    // (provekit not on PATH in CI), but we should still get a process that
+    // (sugar not on PATH in CI), but we should still get a process that
     // exits promptly when we kill it.  We just verify the binary runs at all.
     //
     // In a real workspace, this would initialize normally.  For a minimal test,
@@ -553,7 +553,7 @@ fn default_mode_initialize_responds() {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn provekit-lsp in default mode");
+        .expect("spawn sugar-lsp in default mode");
 
     // The process should start.  Kill it promptly (the backend may fail
     // immediately, but the binary at least loads).

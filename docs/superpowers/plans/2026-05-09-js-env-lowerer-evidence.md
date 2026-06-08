@@ -178,7 +178,7 @@ assert_eq!(
 
 - [ ] **Step 2: Run the smoke test and verify it fails**
 
-Run: `cargo test --release --manifest-path implementations/rust/Cargo.toml -p provekit-supply-chain-rails --test smoke all_exhibits_show_conventional_green_then_provekit_red -- --nocapture`
+Run: `cargo test --release --manifest-path implementations/rust/Cargo.toml -p sugar-supply-chain-rails --test smoke all_exhibits_show_conventional_green_then_sugar_red -- --nocapture`
 
 Expected: failure because `redRails.witness.evidenceCid` or `unsupportedSemantics` is not surfaced yet.
 
@@ -209,7 +209,7 @@ Run:
 
 ```bash
 cargo test --manifest-path menagerie/supply-chain-rails/authenticated-betrayal/kit-rpc/Cargo.toml runtime_no_env -- --nocapture
-cargo test --release --manifest-path implementations/rust/Cargo.toml -p provekit-supply-chain-rails --test smoke all_exhibits_show_conventional_green_then_provekit_red -- --nocapture
+cargo test --release --manifest-path implementations/rust/Cargo.toml -p sugar-supply-chain-rails --test smoke all_exhibits_show_conventional_green_then_sugar_red -- --nocapture
 ```
 
 Expected: both pass.
@@ -244,7 +244,7 @@ Expected: exit 0.
 ### Task 5: Final Verification And PR
 
 **Files:**
-- Modify: `.provekit/ci/accepted/**` only if `provekit ci accept --check` reports a stale checked-in witness.
+- Modify: `.sugar/ci/accepted/**` only if `sugar ci accept --check` reports a stale checked-in witness.
 
 - [ ] **Step 1: Run formatting**
 
@@ -252,7 +252,7 @@ Run:
 
 ```bash
 cargo fmt --manifest-path menagerie/supply-chain-rails/authenticated-betrayal/kit-rpc/Cargo.toml --check
-cargo fmt --manifest-path implementations/rust/Cargo.toml --package provekit-supply-chain-rails --check
+cargo fmt --manifest-path implementations/rust/Cargo.toml --package sugar-supply-chain-rails --check
 ```
 
 - [ ] **Step 2: Run targeted tests**
@@ -261,12 +261,12 @@ Run:
 
 ```bash
 cargo test --manifest-path menagerie/supply-chain-rails/authenticated-betrayal/kit-rpc/Cargo.toml runtime_no_env -- --nocapture
-cargo test --release --manifest-path implementations/rust/Cargo.toml -p provekit-supply-chain-rails --test smoke -- --nocapture
+cargo test --release --manifest-path implementations/rust/Cargo.toml -p sugar-supply-chain-rails --test smoke -- --nocapture
 ```
 
 - [ ] **Step 3: Run checked-in CICP gate**
 
-Run: `implementations/rust/target/release/provekit ci accept --all-kits --clean --check --out .provekit/ci/accepted`
+Run: `implementations/rust/target/release/sugar ci accept --all-kits --clean --check --out .sugar/ci/accepted`
 
 Expected: verifies existing accepted witnesses, or reports the exact missing witness to refresh.
 

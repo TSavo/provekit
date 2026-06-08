@@ -125,5 +125,5 @@ let pinned = unsafe { Pin::new_unchecked(&x) };
 
 - `2026-05-06-atomic-ordering-memento.md` — sibling memento, same layered shape
 - `2026-05-06-aliasing-memento.md` — companion memento for reference aliasing
-- `provekit-walk/src/contract.rs` — `Effect::PinnedReference`
-- `provekit-walk/src/llbc_lift.rs` — `is_pin_adt`, formal opacity detection
+- `sugar-walk/src/contract.rs` — `Effect::PinnedReference`
+- `sugar-walk/src/llbc_lift.rs` — `is_pin_adt`, formal opacity detection

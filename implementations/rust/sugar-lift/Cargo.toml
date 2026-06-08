@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt lift toolchain: walk a Rust workspace, run all registered adapters, mint signed contract mementos, bundle into a single .proof catalog."
+description = "Sugar lift toolchain: walk a Rust workspace, run all registered adapters, mint signed contract mementos, bundle into a single .proof catalog."
 
 [lib]
 name = "sugar_lift"
@@ -18,12 +18,12 @@ doctest = false
 # entrypoint for direct invocation. Both binaries dispatch into the
 # same `run_cli` library function.
 [[bin]]
-name = "cargo-provekit-lift"
-path = "src/bin/cargo-provekit-lift.rs"
+name = "cargo-sugar-lift"
+path = "src/bin/cargo-sugar-lift.rs"
 
 [[bin]]
-name = "provekit-lift"
-path = "src/bin/provekit-lift.rs"
+name = "sugar-lift"
+path = "src/bin/sugar-lift.rs"
 
 [dependencies]
 # Workspace-internal libs.

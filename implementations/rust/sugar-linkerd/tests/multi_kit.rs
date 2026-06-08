@@ -3,38 +3,38 @@
 // multi_kit.rs: tests for polyglot kit dispatch in the linkerd daemon.
 //
 // Test 1: parseFile(kit="go", ...) invokes the go lifter and returns a
-//         LinkerOutput with non-empty contracts when provekit-lsp-go is on PATH.
-//         Skipped if provekit-lsp-go is not installed (clearly marked).
+//         LinkerOutput with non-empty contracts when sugar-lsp-go is on PATH.
+//         Skipped if sugar-lsp-go is not installed (clearly marked).
 //
 // Test 2: parseFile(kit="unknown-kit", ...) returns an UnknownKit (-33001) error.
 //
 // Test 3: kit dispatch is content-deterministic: same source => same linkBundleCid.
 //
 // Test 4: parseFile(kit="java", ...) dispatches to the java lifter and returns
-//         a result with declarations and callEdges arrays when provekit-lsp-java
-//         is on PATH. Skipped if provekit-lsp-java is not installed.
+//         a result with declarations and callEdges arrays when sugar-lsp-java
+//         is on PATH. Skipped if sugar-lsp-java is not installed.
 //
 // Test 5: parseFile(kit="cpp", ...) dispatches to the cpp lifter.
-//         Skipped if provekit-lsp-cpp is not installed.
+//         Skipped if sugar-lsp-cpp is not installed.
 //
 // Test 6: parseFile(kit="swift", ...) dispatches to the swift lifter.
-//         Skipped if provekit-lsp-swift is not installed.
+//         Skipped if sugar-lsp-swift is not installed.
 //
 // Test 7: parseFile(kit="c", ...) dispatches to the c lifter.
-//         Skipped if provekit-lsp-c is not installed.
+//         Skipped if sugar-lsp-c is not installed.
 //
 // Test 8: parseFile(kit="zig", ...) dispatches to the zig lifter.
-//         Skipped if provekit-lsp-zig is not installed.
+//         Skipped if sugar-lsp-zig is not installed.
 //
 // Test 9: parseFile(kit="python", ...) dispatches to the python lifter.
 //          Uses a fixture binary on PATH so the test is not coupled to the
 //          developer machine's Python package installation state.
 //
 // Test 10: parseFile(kit="php", ...) dispatches to the php lifter and returns
-//          a result with a diagnostics array when provekit-lsp-php is on PATH.
+//          a result with a diagnostics array when sugar-lsp-php is on PATH.
 //
 // Test 11: parseFile(kit="scala", ...) is registered in linkerd dispatch.
-//          If provekit-lsp-scala is absent, it must return LifterUnavailable,
+//          If sugar-lsp-scala is absent, it must return LifterUnavailable,
 //          not UnknownKit.
 //
 // These tests communicate with the daemon over its Unix socket.
@@ -53,11 +53,11 @@ fn daemon_bin() -> PathBuf {
     let release = workspace
         .join("target")
         .join("release")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     let debug = workspace
         .join("target")
         .join("debug")
-        .join("provekit-linkerd");
+        .join("sugar-linkerd");
     if release.exists() {
         release
     } else {
@@ -67,7 +67,7 @@ fn daemon_bin() -> PathBuf {
 
 fn unique_sock_path(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "provekit-linkerd-mk-{}-{}.sock",
+        "sugar-linkerd-mk-{}-{}.sock",
         prefix,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -229,14 +229,14 @@ fn rpc_binary_accepts_initialize(name: &str, args: &[&str]) -> Result<PathBuf, S
 
 fn install_fixture_python_lsp() -> PathBuf {
     let bin_dir = std::env::temp_dir().join(format!(
-        "provekit-linkerd-python-bin-{}",
+        "sugar-linkerd-python-bin-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.subsec_nanos())
             .unwrap_or(0)
     ));
     std::fs::create_dir_all(&bin_dir).expect("create python fixture bin dir");
-    let binary = bin_dir.join("provekit-lsp-python");
+    let binary = bin_dir.join("sugar-lsp-python");
     std::fs::write(
         &binary,
         r#"#!/usr/bin/env python3
@@ -254,7 +254,7 @@ for line in sys.stdin:
             "jsonrpc": "2.0",
             "id": msg_id,
             "result": {
-                "name": "provekit-lsp-python",
+                "name": "sugar-lsp-python",
                 "version": "fixture",
                 "capabilities": ["parse"],
             },
@@ -300,24 +300,24 @@ for line in sys.stdin:
 }
 
 // -------------------------------------------------------------------
-// Test 1: go kit dispatch returns diagnostics when provekit-lsp-go is on PATH.
+// Test 1: go kit dispatch returns diagnostics when sugar-lsp-go is on PATH.
 // -------------------------------------------------------------------
 
 /// Test 1: parseFile with kit="go" dispatches to the go lifter.
 ///
-/// Skipped if `provekit-lsp-go` is not on PATH. The skip is printed to stdout
+/// Skipped if `sugar-lsp-go` is not on PATH. The skip is printed to stdout
 /// so CI can see why the test was skipped, not silently ignored.
 ///
-/// When provekit-lsp-go is available, sends a tiny go source with a
-/// `//provekit:contract` annotation and asserts:
+/// When sugar-lsp-go is available, sends a tiny go source with a
+/// `//sugar:contract` annotation and asserts:
 ///   - The response has a `result.diagnostics` array (may be empty or non-empty).
 ///   - No JSON-RPC error is returned.
 #[test]
 fn test1_go_kit_dispatch() {
-    if !binary_on_path("provekit-lsp-go") {
+    if !binary_on_path("sugar-lsp-go") {
         println!(
-            "SKIP test1_go_kit_dispatch: provekit-lsp-go not on PATH. \
-             Install via: cd implementations/go && go install ./cmd/provekit-lsp-go"
+            "SKIP test1_go_kit_dispatch: sugar-lsp-go not on PATH. \
+             Install via: cd implementations/go && go install ./cmd/sugar-lsp-go"
         );
         return;
     }
@@ -334,7 +334,7 @@ fn test1_go_kit_dispatch() {
 
     let go_source = r#"package main
 
-//provekit:contract
+//sugar:contract
 func Add(a, b int) int {
     return a + b
 }
@@ -438,7 +438,7 @@ fn test3_kit_dispatch_content_deterministic() {
     );
 
     let rust_source = r#"
-/// #[provekit::contract(post = "result >= 0")]
+/// #[sugar::contract(post = "result >= 0")]
 pub fn abs_value(x: i64) -> i64 {
     if x < 0 { -x } else { x }
 }
@@ -493,32 +493,32 @@ pub fn abs_value(x: i64) -> i64 {
 }
 
 // -------------------------------------------------------------------
-// Test 4: java kit dispatch returns diagnostics when provekit-lsp-java is on PATH.
+// Test 4: java kit dispatch returns diagnostics when sugar-lsp-java is on PATH.
 // -------------------------------------------------------------------
 
 /// Test 4: parseFile with kit="java" dispatches to the java lifter.
 ///
-/// Skipped if `provekit-lsp-java` is not on PATH. The skip is printed to stdout
+/// Skipped if `sugar-lsp-java` is not on PATH. The skip is printed to stdout
 /// so CI can see why the test was skipped, not silently ignored.
 ///
 /// Install via:
-///   cd implementations/java/provekit-lift-java-core && \
+///   cd implementations/java/sugar-lift-java-core && \
 ///   mvn package -q && \
-///   cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/
+///   cp target/appassembler/bin/sugar-lsp-java ~/.local/bin/
 ///
-/// When provekit-lsp-java is available, sends a tiny Java source and asserts:
+/// When sugar-lsp-java is available, sends a tiny Java source and asserts:
 ///   - The response has a `result.diagnostics` array.
 ///   - `result.diagnostics` is an array (shape contract).
 ///   - No JSON-RPC error is returned.
 #[test]
 fn test4_java_kit_dispatch() {
-    match rpc_binary_accepts_initialize("provekit-lsp-java", &["--rpc"]) {
+    match rpc_binary_accepts_initialize("sugar-lsp-java", &["--rpc"]) {
         Ok(_) => {}
         Err(reason) => {
             println!(
-                "SKIP test4_java_kit_dispatch: provekit-lsp-java is not usable ({reason}). \
-                 Install via: cd implementations/java/provekit-lift-java-core && \
-                 mvn package -q && cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/"
+                "SKIP test4_java_kit_dispatch: sugar-lsp-java is not usable ({reason}). \
+                 Install via: cd implementations/java/sugar-lift-java-core && \
+                 mvn package -q && cp target/appassembler/bin/sugar-lsp-java ~/.local/bin/"
             );
             return;
         }
@@ -537,7 +537,7 @@ fn test4_java_kit_dispatch() {
     let java_source = r#"package com.example;
 
 public class Calculator {
-    /** @provekit.contract post="result >= 0" */
+    /** @sugar.contract post="result >= 0" */
     public int abs(int x) {
         return x < 0 ? -x : x;
     }
@@ -574,30 +574,30 @@ public class Calculator {
 }
 
 // -------------------------------------------------------------------
-// Test 6: cpp kit dispatch returns diagnostics when provekit-lsp-cpp is on PATH.
+// Test 6: cpp kit dispatch returns diagnostics when sugar-lsp-cpp is on PATH.
 // -------------------------------------------------------------------
 
 /// Test 6: parseFile with kit="cpp" dispatches to the cpp lifter.
 ///
-/// Skipped if `provekit-lsp-cpp` is not on PATH. The skip is printed to stdout
+/// Skipped if `sugar-lsp-cpp` is not on PATH. The skip is printed to stdout
 /// so CI can see why the test was skipped, not silently ignored.
 ///
 /// Install via:
-///   cd implementations/cpp/provekit-lsp-cpp && \
-///   g++ -std=c++17 -O2 -o provekit-lsp-cpp main.cpp && \
-///   cp provekit-lsp-cpp ~/.local/bin/
+///   cd implementations/cpp/sugar-lsp-cpp && \
+///   g++ -std=c++17 -O2 -o sugar-lsp-cpp main.cpp && \
+///   cp sugar-lsp-cpp ~/.local/bin/
 ///
-/// When provekit-lsp-cpp is available, sends a tiny C++ source and asserts:
+/// When sugar-lsp-cpp is available, sends a tiny C++ source and asserts:
 ///   - The response has a `result.diagnostics` array.
 ///   - No JSON-RPC error is returned.
 #[test]
 fn test6_cpp_kit_dispatch() {
-    if !binary_on_path("provekit-lsp-cpp") {
+    if !binary_on_path("sugar-lsp-cpp") {
         println!(
-            "SKIP test6_cpp_kit_dispatch: provekit-lsp-cpp not on PATH. \
-             Install via: cd implementations/cpp/provekit-lsp-cpp && \
-             g++ -std=c++17 -O2 -o provekit-lsp-cpp main.cpp && \
-             cp provekit-lsp-cpp ~/.local/bin/"
+            "SKIP test6_cpp_kit_dispatch: sugar-lsp-cpp not on PATH. \
+             Install via: cd implementations/cpp/sugar-lsp-cpp && \
+             g++ -std=c++17 -O2 -o sugar-lsp-cpp main.cpp && \
+             cp sugar-lsp-cpp ~/.local/bin/"
         );
         return;
     }
@@ -613,7 +613,7 @@ fn test6_cpp_kit_dispatch() {
     );
 
     let cpp_source = r#"
-// provekit:contract post="result >= 0"
+// sugar:contract post="result >= 0"
 int abs_value(int x) {
     return x < 0 ? -x : x;
 }
@@ -649,28 +649,28 @@ int abs_value(int x) {
 }
 
 // -------------------------------------------------------------------
-// Test 7: swift kit dispatch returns diagnostics when provekit-lsp-swift is on PATH.
+// Test 7: swift kit dispatch returns diagnostics when sugar-lsp-swift is on PATH.
 // -------------------------------------------------------------------
 
 /// Test 7: parseFile with kit="swift" dispatches to the swift lifter.
 ///
-/// Skipped if `provekit-lsp-swift` is not on PATH. The skip is printed to stdout
+/// Skipped if `sugar-lsp-swift` is not on PATH. The skip is printed to stdout
 /// so CI can see why the test was skipped, not silently ignored.
 ///
 /// Install via:
 ///   cd implementations/swift && swift build -c release && \
-///   cp .build/release/provekit-lsp-swift ~/.local/bin/
+///   cp .build/release/sugar-lsp-swift ~/.local/bin/
 ///
-/// When provekit-lsp-swift is available, sends a tiny Swift source and asserts:
+/// When sugar-lsp-swift is available, sends a tiny Swift source and asserts:
 ///   - The response has a `result.diagnostics` array.
 ///   - No JSON-RPC error is returned.
 #[test]
 fn test7_swift_kit_dispatch() {
-    if !binary_on_path("provekit-lsp-swift") {
+    if !binary_on_path("sugar-lsp-swift") {
         println!(
-            "SKIP test7_swift_kit_dispatch: provekit-lsp-swift not on PATH. \
+            "SKIP test7_swift_kit_dispatch: sugar-lsp-swift not on PATH. \
              Install via: cd implementations/swift && swift build -c release && \
-             cp .build/release/provekit-lsp-swift ~/.local/bin/"
+             cp .build/release/sugar-lsp-swift ~/.local/bin/"
         );
         return;
     }
@@ -686,7 +686,7 @@ fn test7_swift_kit_dispatch() {
     );
 
     let swift_source = r#"
-/// @provekit:contract post="result >= 0"
+/// @sugar:contract post="result >= 0"
 func absValue(_ x: Int) -> Int {
     return x < 0 ? -x : x
 }
@@ -722,30 +722,30 @@ func absValue(_ x: Int) -> Int {
 }
 
 // -------------------------------------------------------------------
-// Test 8: c kit dispatch returns diagnostics when provekit-lsp-c is on PATH.
+// Test 8: c kit dispatch returns diagnostics when sugar-lsp-c is on PATH.
 // -------------------------------------------------------------------
 
 /// Test 8: parseFile with kit="c" dispatches to the c lifter.
 ///
-/// Skipped if `provekit-lsp-c` is not on PATH. The skip is printed to stdout
+/// Skipped if `sugar-lsp-c` is not on PATH. The skip is printed to stdout
 /// so CI can see why the test was skipped, not silently ignored.
 ///
 /// Install via:
-///   cd implementations/c/provekit-lsp-c && \
-///   cc -std=c11 -Wall -o provekit-lsp-c main.c && \
-///   cp provekit-lsp-c ~/.local/bin/
+///   cd implementations/c/sugar-lsp-c && \
+///   cc -std=c11 -Wall -o sugar-lsp-c main.c && \
+///   cp sugar-lsp-c ~/.local/bin/
 ///
-/// When provekit-lsp-c is available, sends a tiny C source and asserts:
+/// When sugar-lsp-c is available, sends a tiny C source and asserts:
 ///   - The response has a `result.diagnostics` array.
 ///   - No JSON-RPC error is returned.
 #[test]
 fn test8_c_kit_dispatch() {
-    if !binary_on_path("provekit-lsp-c") {
+    if !binary_on_path("sugar-lsp-c") {
         println!(
-            "SKIP test8_c_kit_dispatch: provekit-lsp-c not on PATH. \
-             Install via: cd implementations/c/provekit-lsp-c && \
-             cc -std=c11 -Wall -o provekit-lsp-c main.c && \
-             cp provekit-lsp-c ~/.local/bin/"
+            "SKIP test8_c_kit_dispatch: sugar-lsp-c not on PATH. \
+             Install via: cd implementations/c/sugar-lsp-c && \
+             cc -std=c11 -Wall -o sugar-lsp-c main.c && \
+             cp sugar-lsp-c ~/.local/bin/"
         );
         return;
     }
@@ -761,7 +761,7 @@ fn test8_c_kit_dispatch() {
     );
 
     let c_source = r#"
-/* provekit:contract post="result >= 0" */
+/* sugar:contract post="result >= 0" */
 int abs_value(int x) {
     return x < 0 ? -x : x;
 }
@@ -797,30 +797,30 @@ int abs_value(int x) {
 }
 
 // -------------------------------------------------------------------
-// Test 9: zig kit dispatch returns diagnostics when provekit-lsp-zig is on PATH.
+// Test 9: zig kit dispatch returns diagnostics when sugar-lsp-zig is on PATH.
 // -------------------------------------------------------------------
 
 /// Test 9: parseFile with kit="zig" dispatches to the zig lifter.
 ///
-/// Skipped if `provekit-lsp-zig` is not on PATH. The skip is printed to stdout
+/// Skipped if `sugar-lsp-zig` is not on PATH. The skip is printed to stdout
 /// so CI can see why the test was skipped, not silently ignored.
 ///
 /// Install via:
-///   cd implementations/zig/provekit-lsp-zig && \
+///   cd implementations/zig/sugar-lsp-zig && \
 ///   zig build -Doptimize=ReleaseSafe && \
-///   cp zig-out/bin/provekit-lsp-zig ~/.local/bin/
+///   cp zig-out/bin/sugar-lsp-zig ~/.local/bin/
 ///
-/// When provekit-lsp-zig is available, sends a tiny Zig source and asserts:
+/// When sugar-lsp-zig is available, sends a tiny Zig source and asserts:
 ///   - The response has a `result.diagnostics` array.
 ///   - No JSON-RPC error is returned.
 #[test]
 fn test9_zig_kit_dispatch() {
-    if !binary_on_path("provekit-lsp-zig") {
+    if !binary_on_path("sugar-lsp-zig") {
         println!(
-            "SKIP test9_zig_kit_dispatch: provekit-lsp-zig not on PATH. \
-             Install via: cd implementations/zig/provekit-lsp-zig && \
+            "SKIP test9_zig_kit_dispatch: sugar-lsp-zig not on PATH. \
+             Install via: cd implementations/zig/sugar-lsp-zig && \
              zig build -Doptimize=ReleaseSafe && \
-             cp zig-out/bin/provekit-lsp-zig ~/.local/bin/"
+             cp zig-out/bin/sugar-lsp-zig ~/.local/bin/"
         );
         return;
     }
@@ -836,7 +836,7 @@ fn test9_zig_kit_dispatch() {
     );
 
     let zig_source = r#"
-//provekit:contract post="result >= 0"
+//sugar:contract post="result >= 0"
 fn absValue(x: i64) i64 {
     return if (x < 0) -x else x;
 }
@@ -872,13 +872,13 @@ fn absValue(x: i64) i64 {
 }
 
 // -------------------------------------------------------------------
-// Test 10: python kit dispatch returns diagnostics when provekit-lsp-python is on PATH.
+// Test 10: python kit dispatch returns diagnostics when sugar-lsp-python is on PATH.
 // -------------------------------------------------------------------
 
 /// Test 10: parseFile with kit="python" dispatches to the Python lifter.
 ///
 /// Unlike the other optional kit-dispatch tests, this test installs a tiny
-/// fixture `provekit-lsp-python` binary on PATH. The regression it pins is
+/// fixture `sugar-lsp-python` binary on PATH. The regression it pins is
 /// linkerd's dispatch arm: Python must be routed like any other per-language
 /// kit, not rejected inside Rust as unavailable.
 #[test]
@@ -936,7 +936,7 @@ def test_positive():
 
 /// Test 12: parseFile with kit="scala" must route to the Scala LSP lifter.
 ///
-/// This does not require provekit-lsp-scala to be installed. In environments
+/// This does not require sugar-lsp-scala to be installed. In environments
 /// without the binary, the correct behavior is LifterUnavailable (-33002) with
 /// an install hint. UnknownKit (-33001) means linkerd cannot route Scala at all.
 #[test]
@@ -978,7 +978,7 @@ def callAddOne(x: Int): Int = addOne(x)
             resp
         );
         assert!(
-            message.contains("provekit-lsp-scala"),
+            message.contains("sugar-lsp-scala"),
             "scala LifterUnavailable message should name the expected binary: {message}"
         );
     } else {

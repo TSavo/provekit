@@ -147,7 +147,7 @@ Each is a per-kit code addition to the formula DSL. The shape across kits should
 
 1. **Spec the new constructors** in `protocol/specs/`: JCS Value tree shape for `lt`, `lte`, `between`, `member_of`, `or`, `or_n`, `not`. Land as a contract memento in the catalog format spec. (~1 PR)
 
-2. **Reference impl in rust**: extend `provekit-self-contracts/src/lib.rs` slab DSL helpers. Mint a test catalog using each new constructor. Validate byte-equivalence stays clean. (~1 PR)
+2. **Reference impl in rust**: extend `sugar-self-contracts/src/lib.rs` slab DSL helpers. Mint a test catalog using each new constructor. Validate byte-equivalence stays clean. (~1 PR)
 
 3. **Mirror across the other 11 kits**: go, cpp, ts, csharp, swift, java, python, ruby, zig, c, php each get their slab DSL extended with the same 4 helpers. Each kit's `mint-X-self-contracts` orchestrator gets a regression test. (~12 PRs, parallelizable per the per-kit agent pattern.)
 

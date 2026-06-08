@@ -513,7 +513,7 @@ The substrate's specification was authored by an architect (or a small architect
 
 Once committed, the spec is content-addressed and immutable. Future versions are new bytes producing new CIDs. The architect's authorship is identifiable in commit history, in attestations the architect signs (provenance attestations committing to "I authored these spec bytes"), and in the manifesto's voice. But once published, the spec is everyone's: anyone can read it, implement against it, audit it, propose changes via whatever standardization process subsequently governs evolution.
 
-The reference implementation in this repository (the Rust kit, the per-language conformance harness, the `provekit prove` CLI) bootstraps adoption. It is the equivalent of cURL: a high-quality, well-maintained client that demonstrates the spec is implementable and provides early adopters with a working tool. It is not the spec's authority. The spec is its own authority because the spec is content-addressed.
+The reference implementation in this repository (the Rust kit, the per-language conformance harness, the `sugar prove` CLI) bootstraps adoption. It is the equivalent of cURL: a high-quality, well-maintained client that demonstrates the spec is implementable and provides early adopters with a working tool. It is not the spec's authority. The spec is its own authority because the spec is content-addressed.
 
 ### §9.3 Implementations are forkable
 

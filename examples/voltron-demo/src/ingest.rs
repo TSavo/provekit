@@ -9,14 +9,14 @@
 use serde_json::Value;
 
 // =============================================================================
-// Boundary: concept:json-parse  →  provekit-shim-serde-json-rust
+// Boundary: concept:json-parse  →  sugar-shim-serde-json-rust
 // =============================================================================
 pub fn json_parse(s: &str) -> Result<Value, String> {
     serde_json::from_str(s).map_err(|e| e.to_string())
 }
 
 // =============================================================================
-// Boundary: concept:json-serialize  →  provekit-shim-serde-json-rust
+// Boundary: concept:json-serialize  →  sugar-shim-serde-json-rust
 // =============================================================================
 pub fn json_serialize(v: &Value) -> Result<String, String> {
     serde_json::to_string(v).map_err(|e| e.to_string())
