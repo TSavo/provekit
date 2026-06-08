@@ -2720,10 +2720,11 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
             Some(term)
         }
         Expr::Await(a) => {
-            // `expr.await` desugars to a state machine that yields and
-            // resumes; for substrate purposes it produces the awaited
-            // value, so we lift as the inner expr.
-            lift_expr_to_term_inner(&a.base, ctx)
+            let base = lift_expr_to_term_inner(&a.base, ctx)?;
+            Some(IrTerm::Ctor {
+                name: "await".to_string(),
+                args: vec![base],
+            })
         }
         Expr::Async(a) => {
             // `async { body }` produces a Future. The substrate sees
