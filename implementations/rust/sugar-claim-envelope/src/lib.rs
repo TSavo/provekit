@@ -1003,6 +1003,9 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     if args.out_binding.is_empty() {
         return Err(ClaimEnvelopeError::EmptyOutBinding);
     }
+    let canonical_pre = args.pre.as_ref().map(canon_formula_value);
+    let canonical_post = args.post.as_ref().map(canon_formula_value);
+    let canonical_inv = args.inv.as_ref().map(canon_formula_value);
 
     // DERIVED:
     //   propertyHash = hash(JCS({pre?, post?, inv?, outBinding}))
@@ -1027,13 +1030,13 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
         ("name".into(), Value::string(args.contract_name.clone())),
         ("outBinding".into(), Value::string(args.out_binding.clone())),
     ];
-    if let Some(pre) = &args.pre {
+    if let Some(pre) = &canonical_pre {
         kind_specific.push(("pre".into(), pre.clone()));
     }
-    if let Some(post) = &args.post {
+    if let Some(post) = &canonical_post {
         kind_specific.push(("post".into(), post.clone()));
     }
-    if let Some(inv) = &args.inv {
+    if let Some(inv) = &canonical_inv {
         kind_specific.push(("inv".into(), inv.clone()));
     }
     // Body-derived op-contract slots: `formals` (+ `formalSorts`) ride in
@@ -1097,13 +1100,13 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
         ("producedBy".into(), Value::string(args.produced_by.clone())),
         ("producedAt".into(), Value::string(args.produced_at.clone())),
     ];
-    if let Some(pre) = &args.pre {
+    if let Some(pre) = &canonical_pre {
         metadata_kvs.push(("preHash".into(), Value::string(hash_value(pre))));
     }
-    if let Some(post) = &args.post {
+    if let Some(post) = &canonical_post {
         metadata_kvs.push(("postHash".into(), Value::string(hash_value(post))));
     }
-    if let Some(inv) = &args.inv {
+    if let Some(inv) = &canonical_inv {
         metadata_kvs.push(("invHash".into(), Value::string(hash_value(inv))));
     }
     if let Some(library) = &args.library {
@@ -2186,6 +2189,44 @@ mod tests {
         assert_ne!(
             cid_inline, cid_changed,
             "a real behavior change must move the contract CID"
+        );
+    }
+
+    #[test]
+    fn minted_contract_header_uses_canonical_formula_slots() {
+        use sugar_ir_types::{IrFormula, IrTerm, LetBinding};
+
+        let var = |n: &str| IrTerm::Var { name: n.into() };
+        let call = |name: &str, args: Vec<IrTerm>| IrTerm::Ctor {
+            name: name.into(),
+            args,
+        };
+        let eq_result = |t: IrTerm| IrFormula::Atomic {
+            name: "=".into(),
+            args: vec![var("result"), t],
+        };
+
+        let raw_with_let = eq_result(IrTerm::Let {
+            bindings: vec![LetBinding {
+                name: "m".into(),
+                bound_term: call("new", vec![call("producer", vec![])]),
+            }],
+            body: Box::new(call("consumer", vec![var("m")])),
+        });
+        let expected_canonical = eq_result(call(
+            "consumer",
+            vec![call("new", vec![call("producer", vec![])])],
+        ));
+
+        let args = contract_args_for_post("edge", post_value(&raw_with_let), &[]);
+        let minted = mint_contract(&args).expect("mint");
+        let env: serde_json::Value =
+            serde_json::from_slice(&minted.canonical_bytes).expect("parse memento");
+
+        assert_eq!(
+            env.pointer("/header/post"),
+            Some(&serde_json::to_value(expected_canonical).expect("canonical formula serializes")),
+            "the verifier reads header.post, so the stored formula must match the canonicalized CID/propertyHash form"
         );
     }
 

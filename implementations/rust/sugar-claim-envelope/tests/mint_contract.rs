@@ -5,9 +5,9 @@
 //   - error when out_binding is empty (EmptyOutBinding)
 //   - every (pre, post, inv) combination accepted; produces stable
 //     bindingHash + propertyHash for the same input
-//   - preHash / postHash / invHash are DERIVED from the formula bytes
+//   - preHash / postHash / invHash are DERIVED from the stored canonical formula bytes
 //     (caller can't supply them; recomputation catches forgery)
-//   - propertyHash = BLAKE3-512(JCS({pre?, post?, inv?, outBinding}))
+//   - propertyHash = BLAKE3-512(JCS({canonical pre?, post?, inv?, outBinding}))
 //   - bindingHash  = BLAKE3-512(JCS({producerId, contractName, propertyHash}))
 //   - CID is "blake3-512:" + 128 hex chars
 
@@ -342,7 +342,7 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
 }
 
 // ---------------------------------------------------------------------------
-// preHash / postHash / invHash are DERIVED from formula bytes
+// preHash / postHash / invHash are DERIVED from stored canonical formula bytes
 // ---------------------------------------------------------------------------
 
 fn parse_envelope(m: &MintedEnvelope) -> serde_json::Value {
@@ -350,7 +350,7 @@ fn parse_envelope(m: &MintedEnvelope) -> serde_json::Value {
 }
 
 // preHash / postHash / invHash are pure tooling-convenience derivations
-// from the formula bytes (the verifier doesn't read them; consumers
+// from the stored canonical formula bytes (the verifier doesn't read them; consumers
 // can reconstruct them locally). Layered shape places them in
 // `metadata`, where opaque-to-substrate body fields live.
 
@@ -363,7 +363,12 @@ fn pre_hash_is_blake3_of_jcs_encoded_pre() {
         .get("preHash")
         .and_then(|v| v.as_str())
         .expect("preHash present");
-    let expected = blake3_512_of(encode_jcs(&pre_n_gt_0()).as_bytes());
+    let expected = blake3_512_of(
+        encode_jcs(&json_to_value(
+            env.pointer("/header/pre").expect("canonical header pre"),
+        ))
+        .as_bytes(),
+    );
     assert_eq!(pre_hash, expected);
 }
 

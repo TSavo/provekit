@@ -3,7 +3,7 @@
 Foundation v1 advisory catalog of hidden predicates about Rust's
 `std::*` builtins. Authored against `rustc 1.81.0`.
 
-Catalog file: [`.sugar/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof`](../../.sugar/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof).
+Catalog file: [`.sugar/baselines/blake3-512:a9dd90b55fbb89531d8aee8e443b805c53b910cb2dbceb1c8854ac71074fc89a485c38896838e94406f7fe5519903998d0f246b1c780127a7eaf38af7e621ce9.proof`](../../.sugar/baselines/blake3-512:a9dd90b55fbb89531d8aee8e443b805c53b910cb2dbceb1c8854ac71074fc89a485c38896838e94406f7fe5519903998d0f246b1c780127a7eaf38af7e621ce9.proof).
 
 ## Disclaimer
 
@@ -126,7 +126,7 @@ disclaimer addendum for the per-language gap notes).
 - Disclaimer text matches the rubric §4 base verbatim; per-language
   addendum names the rust-lang team as the steward and explicitly notes
   G6 (effect tracking) and G7 (aliasing) as deferred predicate gaps.
-- Catalog CID: `blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec`
+- Catalog CID: `blake3-512:a9dd90b55fbb89531d8aee8e443b805c53b910cb2dbceb1c8854ac71074fc89a485c38896838e94406f7fe5519903998d0f246b1c780127a7eaf38af7e621ce9`
 - contractSetCid: `blake3-512:76c278afe2f60f5b58ebaf53df1078143204cddbbf47d23119fb9778e17b6488004b3f8d8ca471720c1774483ea0fc7cb6dba0a097c638cc7e8231edb566d5e4`
 - disclaimer_cid: `blake3-512:dae426aaf69da3fb28d1b45bc61dd700e3b3e1f0637814d24ec9071071d2fe9f32befb5b4211cd4ae8d6596e67e7a12eecff849ffdbf8a832b376fc7db19bca1`
 - Signed at: `2026-05-03T18:00:00Z` (foundation v0 ed25519).
