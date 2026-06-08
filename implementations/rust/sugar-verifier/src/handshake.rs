@@ -157,13 +157,29 @@ fn producer_lookup_term(arg: &Json) -> &Json {
     let Some("ctor") = arg.get("kind").and_then(|v| v.as_str()) else {
         return arg;
     };
-    if arg.get("name").and_then(|v| v.as_str()) != Some("await") {
-        return arg;
+    match arg.get("name").and_then(|v| v.as_str()) {
+        Some("await") => arg
+            .get("args")
+            .and_then(|v| v.as_array())
+            .and_then(|args| args.first())
+            .unwrap_or(arg),
+        Some("method:unwrap" | "method:expect") => arg
+            .get("args")
+            .and_then(|v| v.as_array())
+            .and_then(|args| args.first())
+            .map(producer_lookup_term)
+            .filter(is_channel_recv_lookup_term)
+            .unwrap_or(arg),
+        _ => arg,
     }
-    arg.get("args")
-        .and_then(|v| v.as_array())
-        .and_then(|args| args.first())
-        .unwrap_or(arg)
+}
+
+fn is_channel_recv_lookup_term(term: &&Json) -> bool {
+    term.get("kind").and_then(|v| v.as_str()) == Some("ctor")
+        && term
+            .get("name")
+            .and_then(|v| v.as_str())
+            .is_some_and(|name| name.starts_with("channel:recv:"))
 }
 
 /// Wrap a bare producer post in `forall result. post`, binding the output
@@ -349,6 +365,60 @@ mod tests {
         assert!(
             locate_producer_post(&arg_term, &pool_mementos, &bridges_by_symbol).is_none(),
             "await over a non-call term must not invent a producer post"
+        );
+    }
+
+    #[test]
+    fn locate_producer_post_resolves_channel_recv_through_await_unwrap_or_expect_seam() {
+        let producer_cid = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let mut pool_mementos = BTreeMap::new();
+        pool_mementos.insert(producer_cid.to_string(), contract_with_post(6));
+        let mut bridges_by_symbol = BTreeMap::new();
+        bridges_by_symbol.insert("channel:recv:rx".to_string(), bridge_to(producer_cid));
+
+        for wrapper in ["method:unwrap", "method:expect"] {
+            let arg_term = Some(json!({
+                "kind": "ctor",
+                "name": wrapper,
+                "args": [
+                    {
+                        "kind": "ctor",
+                        "name": "await",
+                        "args": [
+                            {"kind": "ctor", "name": "channel:recv:rx", "args": [
+                                {"kind": "var", "name": "rx"}
+                            ]}
+                        ]
+                    }
+                ]
+            }));
+
+            let (post, _) = locate_producer_post(&arg_term, &pool_mementos, &bridges_by_symbol)
+                .unwrap_or_else(|| panic!("{wrapper} channel recv seam should resolve"));
+            assert_eq!(post["kind"], "forall");
+            assert_eq!(post["name"], "result");
+        }
+    }
+
+    #[test]
+    fn locate_producer_post_does_not_treat_plain_unwrap_as_channel_edge() {
+        let producer_cid = "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let mut pool_mementos = BTreeMap::new();
+        pool_mementos.insert(producer_cid.to_string(), contract_with_post(6));
+        let mut bridges_by_symbol = BTreeMap::new();
+        bridges_by_symbol.insert("producer".to_string(), bridge_to(producer_cid));
+
+        let arg_term = Some(json!({
+            "kind": "ctor",
+            "name": "method:unwrap",
+            "args": [
+                {"kind": "ctor", "name": "producer", "args": []}
+            ]
+        }));
+
+        assert!(
+            locate_producer_post(&arg_term, &pool_mementos, &bridges_by_symbol).is_none(),
+            "plain unwrap must remain outside the channel implication seam"
         );
     }
 }
