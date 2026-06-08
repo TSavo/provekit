@@ -681,6 +681,305 @@ struct CallSite {
     col: usize,
 }
 
+#[derive(Debug, Clone)]
+struct TrackedChannelConduit {
+    tx: String,
+    rx: String,
+    producer: Option<String>,
+    ambiguous: bool,
+    escaped: bool,
+    recv_sites: Vec<(usize, usize)>,
+}
+
+fn channel_recv_source_symbol(rx: &str) -> String {
+    format!("channel:recv:{rx}")
+}
+
+fn collect_tokio_mpsc_channel_conduit_callsites(file: &syn::File, rel_path: &str) -> Vec<CallSite> {
+    use syn::visit::Visit;
+
+    struct V<'a> {
+        rel_path: &'a str,
+        channels: Vec<TrackedChannelConduit>,
+    }
+
+    impl<'a> V<'a> {
+        fn channel_by_tx_mut(&mut self, tx: &str) -> Option<&mut TrackedChannelConduit> {
+            self.channels.iter_mut().find(|channel| channel.tx == tx)
+        }
+
+        fn channel_by_rx_mut(&mut self, rx: &str) -> Option<&mut TrackedChannelConduit> {
+            self.channels.iter_mut().find(|channel| channel.rx == rx)
+        }
+
+        fn endpoint_names(&self) -> BTreeSet<String> {
+            self.channels
+                .iter()
+                .flat_map(|channel| [channel.tx.clone(), channel.rx.clone()])
+                .collect()
+        }
+
+        fn mark_escaped_if_endpoint_is_used_opaquely(&mut self, expr: &syn::Expr) {
+            let endpoints = self.endpoint_names();
+            if endpoints.is_empty() {
+                return;
+            }
+            for name in expr_ident_roots(expr) {
+                if endpoints.contains(&name) {
+                    for channel in &mut self.channels {
+                        if channel.tx == name || channel.rx == name {
+                            channel.escaped = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        fn into_callsites(self) -> Vec<CallSite> {
+            let mut out = Vec::new();
+            for channel in self.channels {
+                if channel.escaped || channel.ambiguous {
+                    continue;
+                }
+                let Some(producer) = channel.producer else {
+                    continue;
+                };
+                for (line, col) in channel.recv_sites {
+                    out.push(CallSite {
+                        callee: channel_recv_source_symbol(&channel.rx),
+                        contract_callee: producer.clone(),
+                        callee_crate: None,
+                        is_method: false,
+                        disambiguated_callee: None,
+                        disambiguated_crate: None,
+                        unsupported_reason: None,
+                        file: self.rel_path.to_string(),
+                        line,
+                        col,
+                    });
+                }
+            }
+            out
+        }
+    }
+
+    impl<'ast, 'a> Visit<'ast> for V<'a> {
+        fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+            let saved = std::mem::take(&mut self.channels);
+            syn::visit::visit_item_fn(self, node);
+            let current = std::mem::take(&mut self.channels);
+            self.channels = saved;
+            self.channels.extend(current);
+        }
+
+        fn visit_local(&mut self, node: &'ast syn::Local) {
+            if let Some((tx, rx)) = tokio_mpsc_channel_binding(node) {
+                self.channels.push(TrackedChannelConduit {
+                    tx,
+                    rx,
+                    producer: None,
+                    ambiguous: false,
+                    escaped: false,
+                    recv_sites: Vec::new(),
+                });
+                syn::visit::visit_local(self, node);
+                return;
+            }
+
+            let endpoints = self.endpoint_names();
+            for bound in pat_bound_idents(&node.pat) {
+                if endpoints.contains(&bound) {
+                    for channel in &mut self.channels {
+                        if channel.tx == bound || channel.rx == bound {
+                            channel.escaped = true;
+                        }
+                    }
+                }
+            }
+            if let Some(init) = &node.init {
+                let uses_endpoint = expr_ident_roots(&init.expr)
+                    .iter()
+                    .any(|name| endpoints.contains(name));
+                let allowed_recv = self
+                    .channels
+                    .iter()
+                    .any(|channel| expr_is_channel_recv_chain(&init.expr, &channel.rx));
+                if uses_endpoint && !allowed_recv {
+                    self.mark_escaped_if_endpoint_is_used_opaquely(&init.expr);
+                }
+            }
+            syn::visit::visit_local(self, node);
+        }
+
+        fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+            for arg in &node.args {
+                let allowed_recv = self
+                    .channels
+                    .iter()
+                    .any(|channel| expr_is_channel_recv_chain(arg, &channel.rx));
+                if !allowed_recv {
+                    self.mark_escaped_if_endpoint_is_used_opaquely(arg);
+                }
+            }
+            syn::visit::visit_expr_call(self, node);
+        }
+
+        fn visit_expr_assign(&mut self, node: &'ast syn::ExprAssign) {
+            let roots = expr_assignment_roots(&node.left);
+            for channel in &mut self.channels {
+                if roots.contains(&channel.tx) || roots.contains(&channel.rx) {
+                    channel.escaped = true;
+                }
+            }
+            syn::visit::visit_expr_assign(self, node);
+        }
+
+        fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
+            if binop_is_assignment(&node.op) {
+                let roots = expr_assignment_roots(&node.left);
+                for channel in &mut self.channels {
+                    if roots.contains(&channel.tx) || roots.contains(&channel.rx) {
+                        channel.escaped = true;
+                    }
+                }
+            }
+            syn::visit::visit_expr_binary(self, node);
+        }
+
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            if let Some(tx) = expr_bare_ident_name(&node.receiver) {
+                if let Some(channel) = self.channel_by_tx_mut(&tx) {
+                    if node.method == "send" && node.args.len() == 1 {
+                        let producer = node
+                            .args
+                            .first()
+                            .and_then(channel_send_payload_zero_arg_producer);
+                        match (&channel.producer, producer) {
+                            (None, Some(producer)) => channel.producer = Some(producer),
+                            (Some(existing), Some(producer)) if existing == &producer => {}
+                            _ => channel.ambiguous = true,
+                        }
+                    } else {
+                        channel.escaped = true;
+                    }
+                }
+            }
+            if let Some(rx) = expr_bare_ident_name(&node.receiver) {
+                if let Some(channel) = self.channel_by_rx_mut(&rx) {
+                    if node.method == "recv" && node.args.is_empty() {
+                        let start = node.method.span().start();
+                        channel.recv_sites.push((start.line, start.column));
+                    } else {
+                        channel.escaped = true;
+                    }
+                }
+            }
+            syn::visit::visit_expr_method_call(self, node);
+        }
+    }
+
+    let mut visitor = V {
+        rel_path,
+        channels: Vec::new(),
+    };
+    visitor.visit_file(file);
+    visitor.into_callsites()
+}
+
+fn tokio_mpsc_channel_binding(local: &syn::Local) -> Option<(String, String)> {
+    let init = local.init.as_ref()?;
+    if !expr_is_tokio_mpsc_channel_call(&init.expr) {
+        return None;
+    }
+    let syn::Pat::Tuple(tuple) = &local.pat else {
+        return None;
+    };
+    if tuple.elems.len() != 2 {
+        return None;
+    }
+    let tx = pat_single_ident(tuple.elems.first()?)?;
+    let rx = pat_single_ident(tuple.elems.iter().nth(1)?)?;
+    Some((tx, rx))
+}
+
+fn pat_single_ident(pat: &syn::Pat) -> Option<String> {
+    match pat {
+        syn::Pat::Ident(ident) => Some(ident.ident.to_string()),
+        syn::Pat::Type(typed) => pat_single_ident(&typed.pat),
+        _ => None,
+    }
+}
+
+fn expr_is_tokio_mpsc_channel_call(expr: &syn::Expr) -> bool {
+    let syn::Expr::Call(call) = expr else {
+        return false;
+    };
+    let syn::Expr::Path(path) = &*call.func else {
+        return false;
+    };
+    let segments = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    segments.last().is_some_and(|leaf| leaf == "channel")
+        && segments.iter().any(|segment| segment == "mpsc")
+}
+
+fn channel_send_payload_zero_arg_producer(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        syn::Expr::Await(await_expr) => channel_send_payload_zero_arg_producer(&await_expr.base),
+        syn::Expr::Paren(paren) => channel_send_payload_zero_arg_producer(&paren.expr),
+        syn::Expr::Group(group) => channel_send_payload_zero_arg_producer(&group.expr),
+        syn::Expr::Reference(reference) => {
+            channel_send_payload_zero_arg_producer(&reference.expr)
+        }
+        syn::Expr::Call(call) if call.args.is_empty() => {
+            let syn::Expr::Path(path) = &*call.func else {
+                return None;
+            };
+            path.path.segments.last().map(|segment| segment.ident.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn expr_is_channel_recv_chain(expr: &syn::Expr, rx: &str) -> bool {
+    match expr {
+        syn::Expr::MethodCall(method)
+            if (method.method == "unwrap" || method.method == "expect") =>
+        {
+            expr_is_channel_recv_chain(&method.receiver, rx)
+        }
+        syn::Expr::Await(await_expr) => expr_is_channel_recv_chain(&await_expr.base, rx),
+        syn::Expr::Paren(paren) => expr_is_channel_recv_chain(&paren.expr, rx),
+        syn::Expr::Group(group) => expr_is_channel_recv_chain(&group.expr, rx),
+        syn::Expr::Reference(reference) => expr_is_channel_recv_chain(&reference.expr, rx),
+        syn::Expr::MethodCall(method) if method.method == "recv" && method.args.is_empty() => {
+            expr_bare_ident_name(&method.receiver).as_deref() == Some(rx)
+        }
+        _ => false,
+    }
+}
+
+fn expr_ident_roots(expr: &syn::Expr) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    struct V<'a> {
+        roots: &'a mut BTreeSet<String>,
+    }
+    impl<'ast, 'a> syn::visit::Visit<'ast> for V<'a> {
+        fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
+            if node.path.segments.len() == 1 {
+                self.roots.insert(node.path.segments[0].ident.to_string());
+            }
+            syn::visit::visit_expr_path(self, node);
+        }
+    }
+    syn::visit::Visit::visit_expr(&mut V { roots: &mut roots }, expr);
+    roots
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct OracleObservation {
     requested: bool,
@@ -4757,6 +5056,9 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &function_postconditions,
             &mut callsites,
         );
+        callsites.extend(collect_tokio_mpsc_channel_conduit_callsites(
+            &file, &rel_path,
+        ));
         let file_callsite_count = callsites.len();
         if file_callsite_count > 0 {
             debug!(
@@ -12611,6 +12913,165 @@ pub async fn caller() -> i64 {
         assert_eq!(
             producer["targetContractCid"],
             "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_emits_channel_conduit_bridge_from_send_to_recv() {
+        let src = r##"
+pub async fn producer() -> i64 {
+    6
+}
+
+pub fn consumer(x: i64) -> i64 {
+    assert!(x == 6);
+    6
+}
+
+pub async fn edge() -> i64 {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<i64>(1);
+    tx.send(producer().await).await.unwrap();
+    let value = rx.recv().await.unwrap();
+    consumer(value)
+}
+"##;
+        let root = temp_workspace("lift_implications_channel_conduit");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "producer@src/lib.rs:2:4",
+              "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+            { "name": "consumer@src/lib.rs:6:4",
+              "contract_cid": "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let channel = ir
+            .iter()
+            .find(|e| e["sourceSymbol"] == "channel:recv:rx")
+            .expect("channel recv conduit bridge");
+        assert_eq!(channel["kind"], "bridge");
+        assert_eq!(
+            channel["targetContractCid"],
+            "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_emits_channel_conduit_bridge_for_direct_recv_consumer_arg() {
+        let src = r##"
+pub async fn producer() -> i64 {
+    6
+}
+
+pub fn consumer(x: i64) -> i64 {
+    assert!(x == 6);
+    6
+}
+
+pub async fn edge() -> i64 {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<i64>(1);
+    tx.send(producer().await).await.expect("send");
+    consumer(rx.recv().await.expect("recv"))
+}
+"##;
+        let root = temp_workspace("lift_implications_channel_direct_recv_arg");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                { "name": "producer@src/lib.rs:2:4",
+                  "contract_cid": "blake3-512:444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444" },
+                { "name": "consumer@src/lib.rs:6:4",
+                  "contract_cid": "blake3-512:555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555" }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let channel = ir
+            .iter()
+            .find(|e| e["sourceSymbol"] == "channel:recv:rx")
+            .expect("channel recv conduit bridge");
+        assert_eq!(
+            channel["targetContractCid"],
+            "blake3-512:444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_channel_conduit_when_sends_have_multiple_producers() {
+        let src = r##"
+pub async fn producer_six() -> i64 {
+    6
+}
+
+pub async fn producer_five() -> i64 {
+    5
+}
+
+pub fn consumer(x: i64) -> i64 {
+    assert!(x == 6);
+    6
+}
+
+pub async fn edge(flag: bool) -> i64 {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<i64>(2);
+    if flag {
+        tx.send(producer_six().await).await.unwrap();
+    } else {
+        tx.send(producer_five().await).await.unwrap();
+    }
+    let value = rx.recv().await.unwrap();
+    consumer(value)
+}
+"##;
+        let root = temp_workspace("lift_implications_channel_ambiguous_sends");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                { "name": "producer_six@src/lib.rs:2:4",
+                  "contract_cid": "blake3-512:111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111" },
+                { "name": "producer_five@src/lib.rs:6:4",
+                  "contract_cid": "blake3-512:222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222" },
+                { "name": "consumer@src/lib.rs:10:4",
+                  "contract_cid": "blake3-512:333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333" }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "channel:recv:rx"),
+            "ambiguous sends must not produce a channel conduit bridge"
         );
 
         let _ = fs::remove_dir_all(root);

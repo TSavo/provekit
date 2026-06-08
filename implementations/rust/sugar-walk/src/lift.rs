@@ -2611,8 +2611,15 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                 let lifted = lift_expr_to_term_inner(a, ctx)?;
                 args.push(lifted);
             }
+            let method_name = if m.method == "recv" && m.args.is_empty() {
+                expr_root_ident(&m.receiver)
+                    .map(|rx| format!("channel:recv:{rx}"))
+                    .unwrap_or_else(|| format!("method:{}", m.method))
+            } else {
+                format!("method:{}", m.method)
+            };
             let value = IrTerm::Ctor {
-                name: format!("method:{}", m.method),
+                name: method_name,
                 args,
             };
             if let Some(guard) = assertion_guard_for_partial(&m.method, &receiver, ctx) {
@@ -3137,6 +3144,29 @@ mod tests {
             json
         );
         assert!(json.contains("\"x\""));
+    }
+
+    #[test]
+    fn tokio_mpsc_recv_lifts_as_receiver_specific_channel_conduit() {
+        let expr: Expr = syn::parse_str("rx.recv().await.unwrap()").unwrap();
+        let term = lift_expr_to_term(&expr).unwrap();
+        let json = serde_json::to_value(&term).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "kind": "ctor",
+                "name": "method:unwrap",
+                "args": [{
+                    "kind": "ctor",
+                    "name": "await",
+                    "args": [{
+                        "kind": "ctor",
+                        "name": "channel:recv:rx",
+                        "args": [{"kind": "var", "name": "rx"}]
+                    }]
+                }]
+            })
+        );
     }
 
     #[test]

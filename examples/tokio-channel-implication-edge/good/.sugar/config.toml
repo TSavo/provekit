@@ -1,0 +1,29 @@
+[[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
+[[plugins]]
+name = "rust-cargo-test-witness"
+surface = "rust-cargo-test-witness"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:sugar"
+library = "tokio-channel-implication-edge-good"
+version = "0.1.0"
+
+[solvers]
+mode = "first-wins"
+portfolio = ["z3"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
