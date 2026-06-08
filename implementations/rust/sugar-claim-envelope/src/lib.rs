@@ -850,19 +850,83 @@ pub fn mint_authority(args: &MintAuthorityArgs) -> Result<MintedEnvelope, ClaimE
 /// also available directly without minting via this public function.
 ///
 /// Per spec naming convention (`contract_cid(decl)` for Rust).
+/// JSON -> canonical `Value` (mirror of the verifier's `serde_to_canonical`).
+fn json_to_cvalue(v: &JsonValue) -> Arc<Value> {
+    match v {
+        JsonValue::Null => Value::null(),
+        JsonValue::Bool(b) => Value::boolean(*b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::integer(i)
+            } else if let Some(u) = n.as_u64() {
+                Value::integer(u as i64)
+            } else if let Some(f) = n.as_f64() {
+                if f == (f as i64 as f64) {
+                    Value::integer(f as i64)
+                } else {
+                    Value::string(f.to_string())
+                }
+            } else {
+                Value::null()
+            }
+        }
+        JsonValue::String(s) => Value::string(s.clone()),
+        JsonValue::Array(arr) => Value::array(arr.iter().map(json_to_cvalue).collect()),
+        JsonValue::Object(map) => Value::object(
+            map.iter()
+                .map(|(k, val)| (k.as_str(), json_to_cvalue(val)))
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+/// Canonicalize a contract formula slot (pre/post/inv) to the alpha + pure-let
+/// normal form BEFORE it enters a content hash. The kits emit ProofIR; the
+/// substrate computes over it, so two surface formulations of the same behavior
+/// (a leaked `let` binding, a renamed bound variable) must hash to the same
+/// contract identity. If the value is not a parseable `IrFormula`, it is hashed
+/// unchanged.
+///
+/// BLAST-RADIUS BOUND: when canonicalization is a no-op (the formula has no
+/// `let` and no binder to normalize), the ORIGINAL `Arc<Value>` is returned
+/// byte-for-byte. Only formulas the canonicalizer actually rewrites get the
+/// re-serialized value. So introducing this step cannot move the content
+/// address of any contract that does not contain a `let`/binder -- the regime
+/// change is confined to exactly the contracts whose identity it must fix, and
+/// no CID drifts on a serde round-trip artifact.
+fn canon_formula_value(v: &Arc<Value>) -> Arc<Value> {
+    let json: JsonValue = match serde_json::from_str(&encode_jcs(v)) {
+        Ok(j) => j,
+        Err(_) => return v.clone(),
+    };
+    let formula: sugar_ir_types::IrFormula = match serde_json::from_value(json) {
+        Ok(f) => f,
+        Err(_) => return v.clone(),
+    };
+    let canon = sugar_ir_types::canonicalize_formula(&formula);
+    // No-op canonicalization -> preserve the original bytes exactly.
+    if canon == formula {
+        return v.clone();
+    }
+    match serde_json::to_value(&canon) {
+        Ok(j) => json_to_cvalue(&j),
+        Err(_) => v.clone(),
+    }
+}
+
 pub fn contract_cid(args: &MintContractArgs) -> String {
     let mut kvs: Vec<(String, Arc<Value>)> = vec![
         ("name".into(), Value::string(args.contract_name.clone())),
         ("outBinding".into(), Value::string(args.out_binding.clone())),
     ];
     if let Some(pre) = &args.pre {
-        kvs.push(("pre".into(), pre.clone()));
+        kvs.push(("pre".into(), canon_formula_value(pre)));
     }
     if let Some(post) = &args.post {
-        kvs.push(("post".into(), post.clone()));
+        kvs.push(("post".into(), canon_formula_value(post)));
     }
     if let Some(inv) = &args.inv {
-        kvs.push(("inv".into(), inv.clone()));
+        kvs.push(("inv".into(), canon_formula_value(inv)));
     }
     // Body-derived op-contracts carry their formals as part of contract
     // identity: two functions with the same `post` but different formal
@@ -902,13 +966,13 @@ fn contract_content_cid(args: &MintContractArgs) -> String {
 pub fn contract_property_hash(args: &MintContractArgs) -> String {
     let mut ph_kvs: Vec<(String, Arc<Value>)> = Vec::new();
     if let Some(pre) = &args.pre {
-        ph_kvs.push(("pre".into(), pre.clone()));
+        ph_kvs.push(("pre".into(), canon_formula_value(pre)));
     }
     if let Some(post) = &args.post {
-        ph_kvs.push(("post".into(), post.clone()));
+        ph_kvs.push(("post".into(), canon_formula_value(post)));
     }
     if let Some(inv) = &args.inv {
-        ph_kvs.push(("inv".into(), inv.clone()));
+        ph_kvs.push(("inv".into(), canon_formula_value(inv)));
     }
     ph_kvs.push(("outBinding".into(), Value::string(args.out_binding.clone())));
     hash_value(&Arc::new(Value::Object(ph_kvs)))
@@ -2030,5 +2094,129 @@ mod tests {
             err.to_string().contains("effectKind"),
             "error should name missing effectKind: {err}"
         );
+    }
+
+    // --- Reformat-invariant contract identity (the behavior-versioning keystone) ---
+
+    /// Build a `post` slot `Arc<Value>` from an `IrFormula` by the SAME path
+    /// the kits use: serialize to JSON, then into the canonical `Value`.
+    fn post_value(f: &sugar_ir_types::IrFormula) -> Arc<Value> {
+        json_to_cvalue(&serde_json::to_value(f).expect("formula serializes"))
+    }
+
+    fn contract_args_for_post(
+        name: &str,
+        post: Arc<Value>,
+        formals: &[&str],
+    ) -> MintContractArgs {
+        MintContractArgs {
+            evidence_term: None,
+            formals: formals.iter().map(|s| s.to_string()).collect(),
+            emit_empty_formals: false,
+            formal_sorts: Vec::new(),
+            library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
+            panic_loci: Vec::new(),
+            class_shapes: Vec::new(),
+            contract_name: name.into(),
+            pre: None,
+            post: Some(post),
+            inv: None,
+            out_binding: "result".into(),
+            produced_by: "test".into(),
+            produced_at: "2026-06-08T00:00:00.000Z".into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: "test".into(),
+                note: None,
+            },
+            signer_seed: dummy_seed(),
+        }
+    }
+
+    /// THE behavior-versioning keystone, at the layer `sugar diff` reads: a
+    /// reformat that introduces a local (`let n = x; n*2`) must hash to the
+    /// SAME `contract_cid` as the inline form (`x*2`), while a real behavior
+    /// change (`x*3`) must NOT. The lifter emits a faithful `let`; the envelope
+    /// canonicalizes it away before hashing. End-to-end, deterministic, no
+    /// external lifter or solver.
+    #[test]
+    fn reformat_with_local_shares_contract_cid_real_change_does_not() {
+        use sugar_ir_types::{IrFormula, IrTerm, LetBinding, Sort};
+
+        let var = |n: &str| IrTerm::Var { name: n.into() };
+        let int = |v: i64| IrTerm::Const {
+            value: serde_json::json!(v),
+            sort: Sort::Primitive { name: "Int".into() },
+        };
+        let mul = |a: IrTerm, b: IrTerm| IrTerm::Ctor {
+            name: "*".into(),
+            args: vec![a, b],
+        };
+        let eq_result = |t: IrTerm| IrFormula::Atomic {
+            name: "=".into(),
+            args: vec![var("result"), t],
+        };
+
+        // double(x) = x*2
+        let inline = eq_result(mul(var("x"), int(2)));
+        // double(x) = { let n = x; n*2 } -- faithful let the rust lifter now emits
+        let with_let = eq_result(IrTerm::Let {
+            bindings: vec![LetBinding {
+                name: "n".into(),
+                bound_term: var("x"),
+            }],
+            body: Box::new(mul(var("n"), int(2))),
+        });
+        // double(x) = x*3 -- a real behavior change
+        let changed = eq_result(mul(var("x"), int(3)));
+
+        let cid_inline =
+            contract_cid(&contract_args_for_post("double", post_value(&inline), &["x"]));
+        let cid_let =
+            contract_cid(&contract_args_for_post("double", post_value(&with_let), &["x"]));
+        let cid_changed =
+            contract_cid(&contract_args_for_post("double", post_value(&changed), &["x"]));
+
+        assert_eq!(
+            cid_inline, cid_let,
+            "let-reformat must share the inline form's contract CID"
+        );
+        assert_ne!(
+            cid_inline, cid_changed,
+            "a real behavior change must move the contract CID"
+        );
+    }
+
+    /// BLAST-RADIUS BOUND: a `post` with no `let`/binder hashes to EXACTLY the
+    /// same `contract_cid` whether or not the canonicalization step runs --
+    /// `canon_formula_value` returns the original bytes when canonicalization is
+    /// a no-op, so introducing the step cannot move any let-free contract.
+    #[test]
+    fn let_free_formula_is_byte_transparent() {
+        let pre = Value::object([
+            ("kind", Value::string("atomic")),
+            ("name", Value::string(">")),
+            (
+                "args",
+                Value::array(vec![
+                    Value::object([("kind", Value::string("var")), ("name", Value::string("n"))]),
+                    Value::object([
+                        ("kind", Value::string("const")),
+                        ("value", Value::integer(0)),
+                        (
+                            "sort",
+                            Value::object([
+                                ("kind", Value::string("primitive")),
+                                ("name", Value::string("Int")),
+                            ]),
+                        ),
+                    ]),
+                ]),
+            ),
+        ]);
+        // canon_formula_value must hand back the very same bytes.
+        assert_eq!(encode_jcs(&canon_formula_value(&pre)), encode_jcs(&pre));
     }
 }

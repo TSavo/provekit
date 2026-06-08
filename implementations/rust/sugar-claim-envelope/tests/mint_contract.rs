@@ -100,6 +100,76 @@ fn inv_true() -> Arc<Value> {
     ])
 }
 
+/// A binder-free pre `n > 0` (the body of `pre_n_gt_0` without the `forall`).
+/// Canonicalization is the identity on this (no binder, no let), so its bytes
+/// survive the propertyHash derivation unchanged.
+fn pre_n_gt_0_unquantified() -> Arc<Value> {
+    Value::object([
+        ("kind", Value::string("atomic")),
+        ("name", Value::string(">")),
+        (
+            "args",
+            Value::array(vec![
+                Value::object([("kind", Value::string("var")), ("name", Value::string("n"))]),
+                Value::object([
+                    ("kind", Value::string("const")),
+                    ("value", Value::integer(0)),
+                    (
+                        "sort",
+                        Value::object([
+                            ("kind", Value::string("primitive")),
+                            ("name", Value::string("Int")),
+                        ]),
+                    ),
+                ]),
+            ]),
+        ),
+    ])
+}
+
+/// `forall <var>: Int. (<var> > 0)` -- a quantified pre with a configurable
+/// bound-variable name, for alpha-invariance checks.
+fn forall_gt_0(var: &str) -> Arc<Value> {
+    Value::object([
+        ("kind", Value::string("forall")),
+        ("name", Value::string(var)),
+        (
+            "sort",
+            Value::object([
+                ("kind", Value::string("primitive")),
+                ("name", Value::string("Int")),
+            ]),
+        ),
+        (
+            "body",
+            Value::object([
+                ("kind", Value::string("atomic")),
+                ("name", Value::string(">")),
+                (
+                    "args",
+                    Value::array(vec![
+                        Value::object([
+                            ("kind", Value::string("var")),
+                            ("name", Value::string(var)),
+                        ]),
+                        Value::object([
+                            ("kind", Value::string("const")),
+                            ("value", Value::integer(0)),
+                            (
+                                "sort",
+                                Value::object([
+                                    ("kind", Value::string("primitive")),
+                                    ("name", Value::string("Int")),
+                                ]),
+                            ),
+                        ]),
+                    ]),
+                ),
+            ]),
+        ),
+    ])
+}
+
 fn args_with(
     pre: Option<Arc<Value>>,
     post: Option<Arc<Value>>,
@@ -348,8 +418,14 @@ fn omitted_clauses_omit_their_hash_fields() {
 
 #[test]
 fn property_hash_is_blake3_of_jcs_pre_post_inv_outbinding() {
+    // Binder-free, let-free slots: canonicalization is the identity on every
+    // slot, so the propertyHash is still exactly BLAKE3-512(JCS of the raw
+    // slots) -- the derivation shape this test pins (slots, insertion order,
+    // JCS, blake3). (A quantified/let-bearing slot is alpha-normalized first;
+    // that path is pinned by `property_hash_alpha_invariant_under_pre_rename`.)
+    let pre = pre_n_gt_0_unquantified();
     let m = mint_contract(&args_with(
-        Some(pre_n_gt_0()),
+        Some(pre.clone()),
         Some(post_out_eq_0()),
         Some(inv_true()),
     ))
@@ -363,13 +439,51 @@ fn property_hash_is_blake3_of_jcs_pre_post_inv_outbinding() {
     // Recompute: hash(JCS({pre, post, inv, outBinding})) with insertion
     // order pre, post, inv, outBinding (matches mint.rs).
     let v = Arc::new(Value::Object(vec![
-        ("pre".into(), pre_n_gt_0()),
+        ("pre".into(), pre),
         ("post".into(), post_out_eq_0()),
         ("inv".into(), inv_true()),
         ("outBinding".into(), Value::string("out")),
     ]));
     let expected = blake3_512_of(encode_jcs(&v).as_bytes());
     assert_eq!(claimed, expected);
+}
+
+/// The propertyHash IS the behavior identity, so it must be invariant under
+/// renaming a bound variable: `forall n. n>0` and `forall m. m>0` are the same
+/// proposition and MUST share a propertyHash. Canonicalization (binder ->
+/// `$b<depth>`) makes this hold; without it the surface name would leak into
+/// the content address. This is WHY pre/post/inv are canonicalized before
+/// hashing.
+#[test]
+fn property_hash_alpha_invariant_under_pre_rename() {
+    let m_n = mint_contract(&args_with(Some(forall_gt_0("n")), None, None)).expect("mint n");
+    let m_m = mint_contract(&args_with(Some(forall_gt_0("m")), None, None)).expect("mint m");
+
+    let ph = |m: &MintedEnvelope| {
+        parse_envelope(m)
+            .pointer("/header/propertyHash")
+            .and_then(|v| v.as_str())
+            .expect("propertyHash")
+            .to_string()
+    };
+    assert_eq!(
+        ph(&m_n),
+        ph(&m_m),
+        "alpha-equivalent quantified pres must share a propertyHash"
+    );
+
+    // And the whole contract identity (header.cid) is alpha-invariant too.
+    assert_eq!(
+        parse_envelope(&m_n)
+            .pointer("/header/cid")
+            .and_then(|v| v.as_str())
+            .unwrap(),
+        parse_envelope(&m_m)
+            .pointer("/header/cid")
+            .and_then(|v| v.as_str())
+            .unwrap(),
+        "alpha-equivalent contracts must share a header CID"
+    );
 }
 
 #[test]

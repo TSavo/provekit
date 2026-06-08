@@ -42,6 +42,28 @@ public final class LearnedAssertions {
 static JUNIT_JAR_FETCH_LOCK: Mutex<()> = Mutex::new(());
 static TESTNG_JAR_FETCH_LOCK: Mutex<()> = Mutex::new(());
 
+/// The `real_*_javap_*` tests shell out to `javap` (a JDK tool) to derive the
+/// assertion vocab from the actual jar. CI runners without a JDK on PATH have no
+/// `javap`, so these tests skip there rather than hard-fail on a missing
+/// external tool -- they still run wherever a JDK is installed. (`macro_rules!`
+/// `return`s from the calling test fn.)
+fn javap_available() -> bool {
+    Command::new("javap")
+        .arg("-version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+macro_rules! require_javap {
+    () => {
+        if !javap_available() {
+            eprintln!("SKIP: `javap` not on PATH (no JDK); javap-derived vocab test skipped");
+            return;
+        }
+    };
+}
+
 fn real_junit_console_jar() -> String {
     if let Ok(path) = std::env::var("SUGAR_JUNIT_CONSOLE_JAR") {
         let path = PathBuf::from(path);
@@ -235,6 +257,7 @@ fn derive_vocab_splits_exact_approx_and_other_from_signatures() {
 
 #[test]
 fn real_junit_javap_derives_delta_overload_as_approx_from_signature() {
+    require_javap!();
     let jar = real_junit_console_jar();
     let vocab = derive_vocab_from_javap("org.junit.jupiter.api.Assertions", &jar, &[]).unwrap();
     let dump = vocab
@@ -261,6 +284,7 @@ fn real_junit_javap_derives_delta_overload_as_approx_from_signature() {
 
 #[test]
 fn real_junit_external_override_supplies_body_gap_without_changing_approx_split() {
+    require_javap!();
     let jar = real_junit_console_jar();
     let tmp = tempfile::tempdir().unwrap();
     let exc_dir = tmp.path().join(".sugar").join("vocab-exceptions");
@@ -357,6 +381,7 @@ fn real_junit_external_override_supplies_body_gap_without_changing_approx_split(
 
 #[test]
 fn real_testng_javap_derives_delta_overload_as_approx_from_signature_without_classifier_changes() {
+    require_javap!();
     let jar = real_testng_jar();
     let vocab = derive_vocab_from_javap("org.testng.Assert", &jar, &[]).unwrap();
     let dump = vocab
@@ -383,6 +408,7 @@ fn real_testng_javap_derives_delta_overload_as_approx_from_signature_without_cla
 
 #[test]
 fn real_testng_external_override_supplies_body_gap_without_changing_approx_split() {
+    require_javap!();
     let jar = real_testng_jar();
     let tmp = tempfile::tempdir().unwrap();
     let exc_dir = tmp.path().join(".sugar").join("vocab-exceptions");
