@@ -7,9 +7,9 @@
 
 use std::sync::Arc;
 
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_ir_types::{PipelineKind, PipelineMemento, RunMemento, RunVerdict, ValidationError};
-use serde_json::{json, Value as Json};
 
 fn json_to_cvalue(j: &Json) -> Arc<CValue> {
     match j {

@@ -6,8 +6,8 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use owo_colors::OwoColorize;
-use sugar_canonicalizer::blake3_512_of;
 use serde_json::json;
+use sugar_canonicalizer::blake3_512_of;
 
 use crate::HashArgs;
 

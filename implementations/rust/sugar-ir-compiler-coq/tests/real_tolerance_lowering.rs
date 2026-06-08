@@ -11,9 +11,9 @@
 // (`(c - c) < eps`, discharged by lra); these string assertions are the portable
 // guard.
 
+use serde_json::json;
 use sugar_ir_compiler::IrCompiler;
 use sugar_ir_compiler_coq::CoqCompiler;
-use serde_json::json;
 
 fn compile(f: &serde_json::Value) -> String {
     let r = CoqCompiler.compile(f, "coq").expect("compile");

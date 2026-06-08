@@ -32,8 +32,8 @@
 
 use std::sync::Arc;
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use serde_json::Value as Json;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 
 fn json_to_value(j: &Json) -> Arc<Value> {
     match j {

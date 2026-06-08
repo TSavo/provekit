@@ -24,8 +24,8 @@
 //! Exit: 0 = PASS (hover fired), 3 = NO-GO (hover inert / refused),
 //!       2 = could not run (oracle/RA unavailable).
 
-use sugar_walk::ra_oracle::{type_stem_from_hover_markdown, RaOracle, ResolveQuery};
 use std::path::PathBuf;
+use sugar_walk::ra_oracle::{type_stem_from_hover_markdown, RaOracle, ResolveQuery};
 
 /// Locate the method-ident position of the first `.<method>(` in `src` and
 /// return (lsp_line, lsp_col), both 0-based (LSP). proc-macro2 columns are

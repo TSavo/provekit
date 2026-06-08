@@ -22,8 +22,8 @@
 
 use std::rc::Rc;
 
-use sugar_canonicalizer::Value as CValue;
 use serde_json::Value as Json;
+use sugar_canonicalizer::Value as CValue;
 
 use crate::{
     and_, atomic_, contract, exists, finish, forall, implies, make_var, not_, num, or_,

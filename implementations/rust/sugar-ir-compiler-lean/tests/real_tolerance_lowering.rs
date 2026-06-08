@@ -9,8 +9,8 @@
 // string literal -- a malformed theorem. It must now produce a sort-correct
 // `Real` theorem: operands `Real`, `-` infix, the bound an ascribed real literal.
 
-use sugar_ir_compiler_lean::emit;
 use serde_json::json;
+use sugar_ir_compiler_lean::emit;
 
 fn tolerance_bound() -> serde_json::Value {
     let diff = json!({

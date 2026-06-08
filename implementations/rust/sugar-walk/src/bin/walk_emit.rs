@@ -190,17 +190,15 @@ fn emit_term_mode(args: &[String]) -> ExitCode {
             return ExitCode::from(3);
         }
     };
-    let bytes = match sugar_walk::emit::rust_function_term_json_for_file(
-        &file,
-        function_name,
-        source_path,
-    ) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            eprintln!("term-emit skipped fn={}: {}", function_name, e);
-            return ExitCode::from(5);
-        }
-    };
+    let bytes =
+        match sugar_walk::emit::rust_function_term_json_for_file(&file, function_name, source_path)
+        {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("term-emit skipped fn={}: {}", function_name, e);
+                return ExitCode::from(5);
+            }
+        };
     let cid = match sugar_walk::emit::rust_function_term_json_cid_for_file(
         &file,
         function_name,

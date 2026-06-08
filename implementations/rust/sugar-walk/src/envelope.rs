@@ -217,8 +217,8 @@ mod tests {
     use super::*;
     use crate::contract::build_function_contract;
     use libsugar::concept::panic_freedom;
-    use sugar_claim_envelope::contract_cid as kit_contract_cid;
     use serde_json::Value as JsonValue;
+    use sugar_claim_envelope::contract_cid as kit_contract_cid;
 
     fn fixture_contract(src: &str) -> FunctionContractMemento {
         let file: syn::File = syn::parse_str(src).unwrap();

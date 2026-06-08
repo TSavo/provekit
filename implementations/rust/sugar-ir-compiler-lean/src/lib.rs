@@ -5,13 +5,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use serde_json::Value as Json;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_ir_compiler::{
     Capabilities, CompileError, CompiledFormula, FreeVar, IrCompiler, OpacityEntry,
     OpacityManifest, PROTOCOL_VERSION,
 };
 use sugar_ir_types::{Formula, Sort, Term};
-use serde_json::Value as Json;
 
 pub const DIALECT: &str = "lean";
 pub const COMPILER_NAME: &str = "lean4-mathlib-reference";

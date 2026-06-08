@@ -24,12 +24,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde_json::json;
 use sugar_verifier::solvers::{
     plan::{run_plan, Registry},
     CoqSubprocessSolver, PortfolioMode, SolverHandle, SolverPlan, StubSolver, SubprocessSolver,
 };
 use sugar_verifier::types::ObligationVerdict;
-use serde_json::json;
 
 // ---------------------------------------------------------------------------
 // Helpers.

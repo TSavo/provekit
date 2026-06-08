@@ -40,6 +40,13 @@ fn arg_names(invocation: &serde_json::Value) -> Vec<String> {
         .collect()
 }
 
+fn assert_op_cid(invocation: &serde_json::Value) {
+    assert!(invocation["op_cid"]
+        .as_str()
+        .expect("op_cid")
+        .starts_with("blake3-512:"));
+}
+
 #[test]
 fn derive_struct_lifts_to_typed_subcase() {
     let parsed = term_json(
@@ -59,17 +66,13 @@ fn derive_struct_lifts_to_typed_subcase() {
     assert_no_procedural_macro_loss(&parsed);
     let invocation = only_invocation(&parsed);
     assert_eq!(invocation["kind"], "concept:op-application");
-    assert_eq!(invocation["concept_name"], "concept:derive-attribute");
+    assert_op_cid(invocation);
     assert_eq!(invocation["macro_path"], "derive");
     assert_eq!(invocation["token_stream"], "#[derive(Clone, Debug)]");
     assert_eq!(arg_names(invocation), vec!["Clone", "Debug"]);
     assert!(invocation["macro_cid"]
         .as_str()
         .expect("macro_cid")
-        .starts_with("blake3-512:"));
-    assert!(invocation["op_definition_cid"]
-        .as_str()
-        .expect("op_definition_cid")
         .starts_with("blake3-512:"));
 }
 
@@ -92,7 +95,7 @@ fn derive_enum_lifts_without_general_attribute_variant() {
 
     assert_no_procedural_macro_loss(&parsed);
     let invocation = only_invocation(&parsed);
-    assert_eq!(invocation["concept_name"], "concept:derive-attribute");
+    assert_op_cid(invocation);
     assert_eq!(arg_names(invocation), vec!["PartialEq", "Eq"]);
 }
 
@@ -114,7 +117,7 @@ fn derive_preserves_qualified_trait_path() {
 
     assert_no_procedural_macro_loss(&parsed);
     let invocation = only_invocation(&parsed);
-    assert_eq!(invocation["concept_name"], "concept:derive-attribute");
+    assert_op_cid(invocation);
     assert_eq!(arg_names(invocation), vec!["serde::Serialize"]);
 }
 
@@ -133,7 +136,7 @@ fn function_attribute_macro_lifts_to_proc_macro_invocation() {
     assert_no_procedural_macro_loss(&parsed);
     let invocation = only_invocation(&parsed);
     assert_eq!(invocation["kind"], "concept:op-application");
-    assert_eq!(invocation["concept_name"], "concept:proc-macro-invocation");
+    assert_op_cid(invocation);
     assert_eq!(invocation["macro_path"], "instrument");
     assert_eq!(invocation["token_stream"], "#[instrument]");
 }
@@ -152,7 +155,7 @@ fn attribute_macro_args_preserve_term_list() {
 
     assert_no_procedural_macro_loss(&parsed);
     let invocation = only_invocation(&parsed);
-    assert_eq!(invocation["concept_name"], "concept:proc-macro-invocation");
+    assert_op_cid(invocation);
     assert_eq!(invocation["macro_path"], "route");
     assert_eq!(invocation["token_stream"], "#[route(GET, \"/v1\")]");
     let args = invocation["args"].as_array().expect("args array");
@@ -180,7 +183,7 @@ fn method_attribute_macro_lifts_from_impl_context() {
 
     assert_no_procedural_macro_loss(&parsed);
     let invocation = only_invocation(&parsed);
-    assert_eq!(invocation["concept_name"], "concept:proc-macro-invocation");
+    assert_op_cid(invocation);
     assert_eq!(invocation["macro_path"], "tracing::instrument");
     assert_eq!(
         invocation["token_stream"],

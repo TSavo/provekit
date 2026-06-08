@@ -58,7 +58,7 @@ RS
 
 cat > "$CONSUMER/src/lib.rs" <<'RS'
 // The consumer. `rev` is a `#[provekit::boundary]` stub: its body is a
-// placeholder until `materialize-boundary` fills it from the vendor's REAL
+// placeholder until `materialize` fills it from the vendor's REAL
 // `reverse_chars` source (CID-verified against the frozen vendor .proof).
 #[provekit::boundary(concept = "concept:reverse-string", library = "rust-boundary-vendor", call = "reverse_chars")]
 pub fn rev(s: &str) -> String {
@@ -113,7 +113,7 @@ fail=0
 
 echo ""
 echo "== materialize @boundary(rust-boundary-vendor.reverse_chars) (body resolved by the oracle) =="
-FILL_JSON="$("$BIN" materialize-boundary --project "$CONSUMER" --source src/lib.rs --vendor-root "$VENDOR" --json 2>/dev/null)"
+FILL_JSON="$("$BIN" materialize --project "$CONSUMER" --source src/lib.rs --vendor-root "$VENDOR" --json 2>/dev/null)"
 FILL_CODE=$?
 echo "$FILL_JSON" | sed 's/^/  /'
 
@@ -121,9 +121,9 @@ echo ""
 echo "== self-check 1: the FILL succeeded and the stub body == reverse_chars's REAL body =="
 # verb exit 0 (no refusal) AND outcome materialized AND the rewritten file holds
 # the vendor body.
-"$BIN" materialize-boundary --project "$CONSUMER" --source src/lib.rs --vendor-root "$VENDOR" --write >/dev/null 2>&1
+"$BIN" materialize --project "$CONSUMER" --source src/lib.rs --vendor-root "$VENDOR" --write >/dev/null 2>&1
 fill_status=$?
-if [ "$fill_status" -eq 0 ]; then echo "  ok: materialize-boundary exited 0 (filled, no refusal)"; else echo "  FAIL: materialize-boundary exited $fill_status on the clean fill"; fail=1; fi
+if [ "$fill_status" -eq 0 ]; then echo "  ok: materialize exited 0 (filled, no refusal)"; else echo "  FAIL: materialize exited $fill_status on the clean fill"; fail=1; fi
 if grep -qF "$EXPECTED_BODY" "$CONSUMER/src/lib.rs"; then
   echo "  ok: consumer stub body now contains the vendor body \`$EXPECTED_BODY\`"
 else
@@ -155,13 +155,13 @@ pub fn reverse_chars(s: &str) -> String {
     collected.into_iter().collect()
 }
 RS
-DRIFT_JSON="$("$BIN" materialize-boundary --project "$CONSUMER" --source src/lib.rs --vendor-root "$VENDOR" --write --json 2>/dev/null)"
+DRIFT_JSON="$("$BIN" materialize --project "$CONSUMER" --source src/lib.rs --vendor-root "$VENDOR" --write --json 2>/dev/null)"
 drift_status=$?
 echo "$DRIFT_JSON" | sed 's/^/  /'
 
 echo ""
 echo "== self-check 2: the DRIFT was REFUSED (non-zero verb exit, outcome refused, no write) =="
-if [ "$drift_status" -ne 0 ]; then echo "  ok: materialize-boundary exited non-zero on drift ($drift_status)"; else echo "  FAIL: drift returned exit 0 (should refuse)"; fail=1; fi
+if [ "$drift_status" -ne 0 ]; then echo "  ok: materialize exited non-zero on drift ($drift_status)"; else echo "  FAIL: drift returned exit 0 (should refuse)"; fail=1; fi
 if echo "$DRIFT_JSON" | grep -q '"outcome": *"refused"'; then
   echo "  ok: outcome is refused"
 else

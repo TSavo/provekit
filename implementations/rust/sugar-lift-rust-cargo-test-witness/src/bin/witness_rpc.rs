@@ -13,8 +13,8 @@
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
-use sugar_lift_rust_cargo_test_witness as kit;
 use serde_json::{json, Value};
+use sugar_lift_rust_cargo_test_witness as kit;
 
 const KIT_ID: &str = "rust-cargo-test-witness";
 const KIT_VERSION: &str = "0.1.0";

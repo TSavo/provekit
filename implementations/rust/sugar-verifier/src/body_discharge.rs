@@ -1290,7 +1290,7 @@ mod discharge_method_tests {
     }
 
     #[test]
-    fn concept_namespace_is_substrate_not_opaque() {
+    fn namespaced_substrate_symbol_is_not_opaque() {
         let ob = json!({"kind": "atomic", "name": "=", "args": [
             {"kind": "ctor", "name": panic_freedom::IS_OK_CONCEPT, "args": [
                 {"kind": "var", "name": "result"}

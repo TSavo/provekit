@@ -1141,8 +1141,7 @@ fn verify_contract_self_posts(
             // without `post` (or without a result equation) has no
             // self-post to verify here.
             let post_json = body.get("post")?;
-            let post: sugar_ir_types::IrFormula =
-                serde_json::from_value(post_json.clone()).ok()?;
+            let post: sugar_ir_types::IrFormula = serde_json::from_value(post_json.clone()).ok()?;
             let value_expr = libsugar::wp::find_result_equation(&post, "result")?;
 
             // Self-post obligation: post[result := <body value term>].

@@ -7,9 +7,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use serde::Serialize;
 use sugar_canonicalizer::blake3_512_of;
 use sugar_ir_compiler_maude::TrsSpec;
-use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CetaDecision {

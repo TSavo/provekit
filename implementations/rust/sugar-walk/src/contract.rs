@@ -1126,8 +1126,8 @@ mod tests {
         // The real z3 discrimination test runs as a full prove on battleaxe.
         use libsugar::core::types::{Cid, Term};
         use libsugar::wp::{OpContractInfo, OpContractResolver, SlotInfo};
-        use sugar_ir_types::{IrFormula, IrTerm};
         use std::collections::HashMap;
+        use sugar_ir_types::{IrFormula, IrTerm};
 
         struct TestResolver(HashMap<String, OpContractInfo>);
         impl OpContractResolver for TestResolver {
@@ -1242,8 +1242,8 @@ mod tests {
         // reduced formula be non-trivial with differing sides).
         use libsugar::core::types::{Cid, Term};
         use libsugar::wp::{OpContractInfo, OpContractResolver, SlotInfo};
-        use sugar_ir_types::{IrFormula, IrTerm};
         use std::collections::HashMap;
+        use sugar_ir_types::{IrFormula, IrTerm};
 
         struct TestResolver(HashMap<String, OpContractInfo>);
         impl OpContractResolver for TestResolver {

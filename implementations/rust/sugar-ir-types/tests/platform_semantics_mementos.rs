@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 
+use serde_json::json;
 use sugar_ir_types::{
     DimensionValueMemento, IrFormula, LiteralEncodingMemento, PlatformSemanticTag,
 };
-use serde_json::json;
 
 const KIT_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
 const OP_CID: &str = "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
@@ -109,10 +109,10 @@ fn literal_encoding_memento_round_trips_and_recomputes_cid() {
         decoded.schema_version,
         LiteralEncodingMemento::SCHEMA_VERSION
     );
-    assert_eq!(
-        decoded.expected_term_shape_node.concept_name,
-        LiteralEncodingMemento::CONCEPT_LITERAL_NAME
-    );
+    assert!(decoded
+        .expected_term_shape_node
+        .op_cid
+        .starts_with("blake3-512:"));
     assert_eq!(decoded.expected_term_shape_node.sort, SORT_INT_CID);
     assert_eq!(decoded.expected_term_shape_node.value, json!(42));
 }

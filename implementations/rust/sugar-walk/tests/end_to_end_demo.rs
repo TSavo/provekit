@@ -10,9 +10,9 @@
 // pair of Rust functions. Every step is mechanical: parse → lift → walk
 // → shadow → CID. No model in any of it.
 
+use serde_json::Value as JsonValue;
 use sugar_ir_types::{IrFormula, IrTerm};
 use sugar_walk::{build_shadow_source, lift_function_precondition, CalleeContract};
-use serde_json::Value as JsonValue;
 
 const BARE_DEMO_SRC: &str = r#"
 fn f(x: u32) -> u32 {

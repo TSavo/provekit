@@ -20,8 +20,8 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use sugar_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs, LinkerOutput};
 use serde_json::Value as Json;
+use sugar_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs, LinkerOutput};
 
 /// Key type for the LRU cache.
 type CacheKey = (String, String);

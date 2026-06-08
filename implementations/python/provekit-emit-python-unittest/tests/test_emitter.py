@@ -58,7 +58,7 @@ def test_unsupported_predicate_recorded_as_gap_not_emitted() -> None:
 def test_from_params_accepts_rpc_shape_and_aliases() -> None:
     plan = EmitPlan.from_params(
         {
-            "concept_name": "concept:eq",
+            "contract_id": "concept:eq",
             "function_name": "f",
             "params": ["a", "b"],
             "param_types": ["int", "int"],
@@ -70,4 +70,3 @@ def test_from_params_accepts_rpc_shape_and_aliases() -> None:
     assert plan.function == "f"
     assert plan.params == ["a", "b"]
     assert len(plan.predicates) == 1
-

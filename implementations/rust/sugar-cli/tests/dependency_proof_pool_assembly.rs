@@ -10,12 +10,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs};
 use sugar_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 use sugar_verifier::{Runner, RunnerConfig};
-use serde_json::{json, Value as Json};
 
 fn unique_dir(suffix: &str) -> PathBuf {
     let stamp = std::time::SystemTime::now()
@@ -267,7 +267,7 @@ fn install_dependency_proof_stub(project_dir: &Path, proof_cid: &str, proof_byte
         ),
     )
     .expect("write stub");
-    let manifest_dir = project_dir.join(".provekit").join("realize").join("rust");
+    let manifest_dir = project_dir.join(".provekit").join("lift").join("rust");
     fs::create_dir_all(&manifest_dir).expect("mkdir manifest");
     fs::write(
         manifest_dir.join("manifest.toml"),
@@ -279,7 +279,7 @@ fn install_dependency_proof_stub(project_dir: &Path, proof_cid: &str, proof_byte
     .expect("write manifest");
     fs::write(
         project_dir.join(".provekit").join("config.toml"),
-        "[[plugins]]\nname = \"rust-dependency-proof-stub\"\nkind = \"realize\"\nsurface = \"rust\"\n",
+        "[[plugins]]\nname = \"rust-dependency-proof-stub\"\nkind = \"lift\"\nsurface = \"rust\"\n",
     )
     .expect("write config");
     sugar_cli::kit_dispatch::reset_kit_dispatch_registry_cache_for_tests();

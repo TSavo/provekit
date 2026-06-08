@@ -4,13 +4,13 @@
 
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
+use serde_json::Value as Json;
 use sugar_ir_compiler::{
     Capabilities, CompileError, CompiledFormula, FreeVar, IrCompiler, OpacityManifest,
     PROTOCOL_VERSION,
 };
 use sugar_ir_types::{IrTerm, Sort};
-use serde::Deserialize;
-use serde_json::Value as Json;
 
 pub const DIALECT: &str = "maude";
 pub const COMPILER_NAME: &str = "maude-equational-reference";

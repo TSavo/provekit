@@ -1,6 +1,6 @@
+use serde_json::json;
 use sugar_ir_compiler::IrCompiler;
 use sugar_ir_compiler_coq::CoqCompiler;
-use serde_json::json;
 
 fn main() {
     let compiler = CoqCompiler::new();

@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::blake3_512_of;
 use sugar_ir_compiler::IrCompiler;
 use sugar_ir_compiler_lean::{LeanCompiler, DIALECT, THEOREM_NAME};
-use serde_json::{json, Value as Json};
 
 use crate::solvers::{SolveResult, Solver};
 use crate::types::ObligationVerdict;

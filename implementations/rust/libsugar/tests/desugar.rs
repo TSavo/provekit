@@ -6,8 +6,8 @@ use std::path::Path;
 use libsugar::desugar::{
     desugar, load_desugaring_rules_from_dir, DesugarRule, DesugaringSet, RefusalKind,
 };
-use sugar_ir_types::{IrTerm, Sort};
 use serde_json::json;
+use sugar_ir_types::{IrTerm, Sort};
 
 fn any_sort() -> Sort {
     Sort::Primitive {

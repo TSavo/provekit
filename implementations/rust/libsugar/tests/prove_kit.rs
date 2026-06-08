@@ -11,11 +11,11 @@ use libsugar::core::{
     ConformanceDeclaration, Dialect, DomainClaim, DomainKind, HashMapCatalog, HashMapInputCatalog,
     Input, Kit, KitError, KitRegistry, Path, PathAlgebra, ProveKit, Term, Verb, Verdict, Witness,
 };
-use sugar_canonicalizer::Value;
-use sugar_ir_types::{IrFormula, IrTerm, Sort};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::json;
+use sugar_canonicalizer::Value;
+use sugar_ir_types::{IrFormula, IrTerm, Sort};
 
 fn any_sort() -> Sort {
     Sort::Primitive {

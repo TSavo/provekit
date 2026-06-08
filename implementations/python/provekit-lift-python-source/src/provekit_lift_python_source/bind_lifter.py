@@ -18,7 +18,6 @@ from .canonical import cid_of_json, template_cid_of_json
 Json = Any
 CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")
 CONTRACT_COMMENT_KIND = "provekit-contract-comment-sugar"
-CONCEPT_CITATION_COMMENT_KIND = "provekit-concept-citation-comment-sugar"
 CONTRACT_COMMENT_ROLE_MAP = {
     "pre": "pre",
     "post": "post",
@@ -26,19 +25,6 @@ CONTRACT_COMMENT_ROLE_MAP = {
     "throws": "throws",
     "observation": "observation",
 }
-
-
-class _ConceptCitationRefusal(Exception):
-    """Raised on substrate-identity contradiction (spec section 6 rows 7-8).
-    The surrounding relift refuses entirely; no IR entry is emitted
-    for the function whose source contained the contradiction."""
-
-    def __init__(self, diag_kind: str, rel_path: str, line_no: int, message: str):
-        super().__init__(message)
-        self.diag_kind = diag_kind
-        self.rel_path = rel_path
-        self.line_no = line_no
-        self.message = message
 
 
 @dataclass
@@ -225,20 +211,9 @@ def _entry_for_function(
     witnesses = []
     witnesses.extend(_contract_comment_witnesses(lines, node, rel_path, diagnostics))
     witnesses.extend(_decorator_contract_witnesses(node, param_names, rel_path, diagnostics))
-    _concept_citation_comments(lines, node, rel_path, diagnostics)
 
-    # Source-language signature types travel as realize-sidecar-only fields
-    # (`realize_param_types` / `realize_return_type`), NOT as the CID-bearing
-    # `param_types` / `return_type` keys. A9 (#1075) deliberately erased types
-    # from the bind-lift-entry so that the same algebra lifted from untyped
-    # Python and typed Rust binds to a byte-identical CID (seam 4 federation).
-    # But the realizer needs the source types to match signature-keyed body
-    # templates (e.g. concept:mul requires ("int","int")); without them the
-    # recursive `factorial` body refuses. These sidecar keys are stripped from
-    # the canonical lift term by `strip_realize_sidecar_from_lift_term`
-    # (bind.rs) before the CID is taken, so federation byte-identity holds while
-    # the realizer still receives the types via `merge_realize_sidecar`.
-    # Unannotated params/returns emit the empty string (substrate-honest gap).
+    # Source-language signature types are diagnostic sidecar metadata only; they
+    # do not participate in the CID-bearing term shape.
     realize_param_types = [
         _annotation_surface(arg.annotation) or "" for arg in _ordered_signature_args(node.args)
     ]
@@ -373,6 +348,7 @@ def _library_binding_entry_for_function(
         if public is not None:
             library_tag, symbol = public
         binding = {
+            "op_cid": _local_op_cid(symbol),
             "symbol": symbol,
             "target_library_tag": library_tag,
             "binding_origin": "derived",
@@ -412,16 +388,12 @@ def _library_binding_entry_for_function(
         "term_shape": term_shape,
         "term_shape_cid": cid_of_json(term_shape),
     }
-    # Symbol-keyed identity supersedes concept; emit whichever the binding
-    # declared. `symbol` is the fully-qualified library symbol (`numpy.add`);
-    # `concept_name` is the legacy hub tag kept for unmigrated shims. Absent
-    # `symbol` -> `concept_name` present -> existing shims byte-identical.
+    # Symbol-keyed identity remains the public join key when a library symbol
+    # exists. Operator identity travels as op_cid, derived from the declared
+    # op shape when an authoring concept is the only local handle.
     symbol = binding.get("symbol")
     if symbol:
         entry["symbol"] = symbol
-    concept_name = binding.get("concept_name")
-    if concept_name:
-        entry["concept_name"] = concept_name
     op_cid = binding.get("op_cid")
     if op_cid:
         entry["op_cid"] = op_cid
@@ -458,19 +430,16 @@ def _sugar_bind_decorator(
         library = _keyword_str(decorator, "library")
         symbol = _keyword_str(decorator, "symbol")
         op_cid = _keyword_str(decorator, "op_cid")
-        # Symbol-keyed identity is the path forward (e.g. `numpy.add`): a sugar
-        # binding IS its fully-qualified library symbol — the join key the linker
-        # resolves against and the recognizer canonicalizes aliased calls to
-        # (`import numpy as np; np.add` -> `numpy.add`). `concept` is the legacy
-        # hub key, accepted only as a fallback so existing shims still lift.
-        if library and (symbol or concept):
+        # Symbol-keyed identity is the public library path (e.g. `numpy.add`).
+        # If an authoring concept is present, derive only the canonical op_cid;
+        # the concept string is not transported as identity.
+        if library and (symbol or op_cid or concept):
             result: dict = {"target_library_tag": library}
             if symbol:
                 result["symbol"] = symbol
-            if concept:
-                result["concept_name"] = concept
-            if op_cid:
-                result["op_cid"] = op_cid
+            result_op_cid = op_cid or (_local_op_cid(concept) if concept else None)
+            if result_op_cid:
+                result["op_cid"] = result_op_cid
             loss = _keyword_str_list(decorator, "loss")
             if loss is not None:
                 result["loss"] = loss
@@ -847,7 +816,7 @@ def _shape_expr_with_bindings(node: ast.expr) -> _ShapeResult:
 
 def _shape_has_operator_identity(value: Json) -> bool:
     if isinstance(value, dict):
-        if "concept_name" in value or "op_cid" in value:
+        if "op_cid" in value:
             return True
         return any(_shape_has_operator_identity(child) for child in value.values())
     if isinstance(value, list):
@@ -922,24 +891,22 @@ def _bool_literal(value: bool) -> _ShapeResult:
     return _ShapeResult({}, [{"position": [], "symbol": "True" if value else "False"}])
 
 
-def _operator_shape(concept_name: str, args: list[Json]) -> Json:
+def _operator_shape(operator: str, args: list[Json]) -> Json:
     return {
         "args": [_operand_slot(arg) for arg in args],
-        "concept_name": concept_name,
-        "op_cid": _local_op_cid(concept_name),
+        "op_cid": _local_op_cid(operator),
     }
 
 
 def _comment_shape(surface: str) -> Json:
     return {
         "args": [{"kind": "literal", "value": surface}],
-        "concept_name": "concept:comment",
         "op_cid": _local_op_cid("concept:comment"),
     }
 
 
-def _operator_shape_result(concept_name: str, args: list[_ShapeResult]) -> _ShapeResult:
-    shape = _operator_shape(concept_name, [arg.shape for arg in args])
+def _operator_shape_result(operator: str, args: list[_ShapeResult]) -> _ShapeResult:
+    shape = _operator_shape(operator, [arg.shape for arg in args])
     if not shape:
         return _empty_shape_result()
     bindings: list[Json] = []
@@ -986,7 +953,6 @@ def _operand_slot(value: Json) -> Json:
         isinstance(value, dict)
         and isinstance(value.get("op_cid"), str)
         and isinstance(value.get("args"), list)
-        and ("concept_name" not in value or isinstance(value.get("concept_name"), str))
     ):
         return value
     if isinstance(value, dict) and (
@@ -1009,9 +975,9 @@ def _bin_op(op: ast.operator) -> str | None:
         (ast.BitOr, "concept:bitor"),
         (ast.BitXor, "concept:bitxor"),
     )
-    for cls, concept_name in table:
+    for cls, operator in table:
         if isinstance(op, cls):
-            return concept_name
+            return operator
     return None
 
 
@@ -1042,9 +1008,9 @@ def _rel_op(op: ast.cmpop) -> str | None:
         (ast.Gt, "concept:gt"),
         (ast.GtE, "concept:ge"),
     )
-    for cls, concept_name in table:
+    for cls, operator in table:
         if isinstance(op, cls):
-            return concept_name
+            return operator
     return None
 
 
@@ -1241,31 +1207,6 @@ def _contract_comment_witness(
     }
 
 
-def _concept_citation_comments(
-    lines: list[str],
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    rel_path: str,
-    diagnostics: list[Json],
-) -> list[Json]:
-    """Return concept-citation artifacts separately from contract witnesses."""
-    citations: list[Json] = []
-    citations.extend(
-        _concept_citation_comments_from_surface_lines(
-            _leading_contract_comment_surface(lines, node.lineno),
-            rel_path,
-            diagnostics,
-        )
-    )
-    citations.extend(
-        _concept_citation_comments_from_surface_lines(
-            _function_body_comment_surface(lines, node),
-            rel_path,
-            diagnostics,
-        )
-    )
-    return citations
-
-
 def _function_body_comment_surface(
     lines: list[str],
     node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -1307,289 +1248,6 @@ def _is_provekit_comment_carrier(surface: str) -> bool:
         "provekit-contract-payload-cid:",
     )
     return any(normalized.startswith(prefix) for prefix in carrier_prefixes)
-
-
-def _concept_citation_comments_from_surface_lines(
-    surface_lines: list[tuple[int, str]],
-    rel_path: str,
-    diagnostics: list[Json],
-) -> list[Json]:
-    citations: list[Json] = []
-    idx = 0
-    while idx < len(surface_lines):
-        line_no, content = surface_lines[idx]
-        if content.startswith("provekit-concept-payload-cid:"):
-            _concept_citation_diag(
-                diagnostics,
-                rel_path,
-                line_no,
-                "concept-citation:orphan-cid-line",
-                "payload CID line has no preceding payload",
-            )
-            idx += 1
-            continue
-        if not content.startswith("provekit-concept: "):
-            idx += 1
-            continue
-        raw_payload = content[len("provekit-concept: ") :].strip()
-        payload_cid: str | None = None
-        if idx + 1 < len(surface_lines):
-            next_line_no, next_content = surface_lines[idx + 1]
-            if (
-                next_line_no == line_no + 1
-                and next_content.startswith("provekit-concept-payload-cid: ")
-            ):
-                payload_cid = next_content[
-                    len("provekit-concept-payload-cid: ") :
-                ].strip()
-                idx += 1
-        citation = _concept_citation_witness(
-            raw_payload,
-            payload_cid,
-            rel_path,
-            line_no,
-            diagnostics,
-        )
-        if citation is not None:
-            citations.append(citation)
-        idx += 1
-    return citations
-
-
-def _concept_citation_witness(
-    raw_payload: str,
-    emitted_payload_cid: str | None,
-    rel_path: str,
-    line_no: int,
-    diagnostics: list[Json],
-) -> Json | None:
-    try:
-        payload = json.loads(raw_payload)
-    except json.JSONDecodeError as exc:
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:malformed-json",
-            f"malformed JSON: {exc.msg}",
-        )
-        return None
-    if not isinstance(payload, dict):
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:malformed-json",
-            "payload is not an object",
-        )
-        return None
-
-    if payload.get("artifact_kind") != CONCEPT_CITATION_COMMENT_KIND:
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:unknown-schema-version",
-            "wrong artifact_kind",
-        )
-        return None
-    if payload.get("schema_version") != "1":
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:unknown-schema-version",
-            "unknown schema_version",
-        )
-        return None
-    if not _valid_concept_emitted_by(payload.get("emitted_by")):
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:malformed-cid",
-            "malformed emitted_by",
-        )
-        return None
-
-    operation_kind = payload.get("operation_kind")
-    if not isinstance(operation_kind, str) or not operation_kind:
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:malformed-json",
-            "missing operation_kind",
-        )
-        return None
-    term_position = payload.get("term_position")
-    if not _valid_term_position(term_position):
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:malformed-json",
-            "malformed term_position",
-        )
-        return None
-
-    cid_fields = [
-        "args_jcs_cid",
-        "concept_cid",
-        "concept_site_cid",
-        "loss_record_cid",
-        "shape_cid",
-        "sugar_dict_cid",
-    ]
-    for key in cid_fields:
-        value = payload.get(key)
-        if not isinstance(value, str) or CID_RE.fullmatch(value) is None:
-            _concept_citation_diag(
-                diagnostics,
-                rel_path,
-                line_no,
-                "concept-citation:malformed-cid",
-                f"malformed {key}",
-            )
-            return None
-    for key in ("callsite_cid", "policy_cid"):
-        value = payload.get(key)
-        if value is not None and (
-            not isinstance(value, str) or CID_RE.fullmatch(value) is None
-        ):
-            _concept_citation_diag(
-                diagnostics,
-                rel_path,
-                line_no,
-                "concept-citation:malformed-cid",
-                f"malformed {key}",
-            )
-            return None
-    if emitted_payload_cid is None:
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:payload-cid-mismatch",
-            "missing payload CID",
-        )
-        return None
-    if CID_RE.fullmatch(emitted_payload_cid) is None:
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:malformed-cid",
-            "malformed payload CID",
-        )
-        return None
-
-    payload_cid = cid_of_json(payload)
-    if emitted_payload_cid != payload_cid:
-        _concept_citation_diag(
-            diagnostics,
-            rel_path,
-            line_no,
-            "concept-citation:payload-cid-mismatch",
-            "payload CID mismatch",
-        )
-        return None
-
-    args_jcs = payload.get("args_jcs")
-    if args_jcs is not None:
-        if not isinstance(args_jcs, list):
-            _concept_citation_diag(
-                diagnostics,
-                rel_path,
-                line_no,
-                "concept-citation:malformed-json",
-                "malformed args_jcs",
-            )
-            return None
-        if cid_of_json(args_jcs) != payload["args_jcs_cid"]:
-            _concept_citation_diag(
-                diagnostics,
-                rel_path,
-                line_no,
-                "concept-citation:args-cid-mismatch",
-                "args CID mismatch",
-            )
-            return None
-
-    extension_fields = {
-        "args_jcs_cid": payload["args_jcs_cid"],
-        "concept_site_cid": payload["concept_site_cid"],
-        "loss_record_cid": payload["loss_record_cid"],
-        "payload_cid": payload_cid,
-        "shape_cid": payload["shape_cid"],
-        "sugar_dict_cid": payload["sugar_dict_cid"],
-        "surface": "concept-citation-comment-sugar",
-    }
-    for key in ("callsite_cid", "policy_cid"):
-        if isinstance(payload.get(key), str):
-            extension_fields[key] = payload[key]
-    if args_jcs is not None:
-        extension_fields["args_jcs"] = args_jcs
-    return {
-        "args_jcs_cid": payload["args_jcs_cid"],
-        "artifact_kind": CONCEPT_CITATION_COMMENT_KIND,
-        "col": 0,
-        "confidence_basis_points": 10000,
-        "concept_cid": payload["concept_cid"],
-        "extension_fields": extension_fields,
-        "line": line_no,
-        "operation_kind": operation_kind,
-        "shape_cid": payload["shape_cid"],
-        "source_kind": "native-surface",
-        "term_position": term_position,
-    }
-
-
-def _valid_concept_emitted_by(value: Json) -> bool:
-    if not isinstance(value, dict):
-        return False
-    kit_cid = value.get("kit_cid")
-    kit_id = value.get("kit_id")
-    kit_kind = value.get("kit_kind")
-    target_language = value.get("target_language")
-    target_library_tag = value.get("target_library_tag")
-    return (
-        isinstance(kit_cid, str)
-        and CID_RE.fullmatch(kit_cid) is not None
-        and isinstance(kit_id, str)
-        and bool(kit_id)
-        and isinstance(kit_kind, str)
-        and bool(kit_kind)
-        and isinstance(target_language, str)
-        and bool(target_language)
-        and (target_library_tag is None or isinstance(target_library_tag, str))
-    )
-
-
-def _valid_term_position(value: Json) -> bool:
-    if not isinstance(value, list):
-        return False
-    return all(
-        isinstance(item, int) and not isinstance(item, bool) and item >= 0
-        for item in value
-    )
-
-
-def _concept_citation_diag(
-    diagnostics: list[Json],
-    rel_path: str,
-    line_no: int,
-    category: str,
-    message: str,
-) -> None:
-    diagnostics.append(
-        {
-            "kind": category,
-            "message": message,
-            "path": rel_path,
-            "line": line_no,
-        }
-    )
 
 
 def _local_op_cid(name: str) -> str:

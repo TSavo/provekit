@@ -23,13 +23,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde_json::{json, Value as Json};
 use sugar_linker::solver_api::{
     registry, ObligationVerdict, SolverHandle, SolverPlan, SolversConfig, StubSolver,
 };
 use sugar_linker::{
     link, link_with_solvers, LinkerCallEdge, LinkerContract, LinkerInputs, Registry,
 };
-use serde_json::{json, Value as Json};
 
 // -------------------------------------------------------------------
 // Test-fixture helpers

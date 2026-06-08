@@ -50,9 +50,9 @@
 // constrained member emits nothing (a single `≠(x,None)` fact stays
 // byte-identical to the pre-fix output; receipt-1 contracts are untouched).
 
+use std::collections::BTreeSet;
 use sugar_canonicalizer::blake3_512_of;
 use sugar_ir_types::*;
-use std::collections::BTreeSet;
 
 /// Derive a deterministic, parse-safe SMT-LIB symbol name for a string
 /// literal: `strlit_<24-hex-chars-of-blake3-of-utf8-bytes>`.

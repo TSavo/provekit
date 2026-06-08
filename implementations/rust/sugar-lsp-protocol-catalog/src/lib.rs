@@ -11,8 +11,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use serde_json::Value as Json;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
 pub const LSP_PROTOCOL_CATALOG_REPO_PATH: &str =
     "protocol/catalogs/provekit-lsp-shared-1.catalog.json";

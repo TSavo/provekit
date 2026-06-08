@@ -49,6 +49,7 @@ fn witnessless_add_term_document() -> &'static [u8] {
     "fn_name": "add",
     "fn_line": 4,
     "concept_annotation": "add",
+    "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "param_names": ["x", "y"],
     "param_types": ["i64", "i64"],
     "return_type": "i64",
@@ -70,6 +71,7 @@ fn cluster_cardinality_term_document() -> &'static [u8] {
     "fn_name": "add_one",
     "fn_line": 4,
     "concept_annotation": "add",
+    "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "param_names": ["x"],
     "param_types": ["i64"],
     "return_type": "i64",
@@ -82,6 +84,7 @@ fn cluster_cardinality_term_document() -> &'static [u8] {
     "fn_name": "add_two",
     "fn_line": 8,
     "concept_annotation": "add",
+    "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "param_names": ["x"],
     "param_types": ["i64"],
     "return_type": "i64",
@@ -94,6 +97,7 @@ fn cluster_cardinality_term_document() -> &'static [u8] {
     "fn_name": "sub_one",
     "fn_line": 12,
     "concept_annotation": "sub",
+    "op_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "param_names": ["x"],
     "param_types": ["i64"],
     "return_type": "i64",
@@ -131,19 +135,18 @@ fn bind_from_stdin_emits_named_term_document_without_promotion() {
     let output = child.wait_with_output().expect("wait bind");
     assert_success("bind stdin", &output);
 
-    // cmd_bind's stdout is the bind-result Term::Op payload (post-citation
-    // wiring per #1126); recover the NamedTermDocument via the helper
-    // bind-result consumers use. fn_name is intentionally stripped from
-    // the payload (#1093), so the recovered term has empty `function`.
+    // cmd_bind's stdout is the NamedTermDocument payload. fn_name is
+    // intentionally stripped from the payload (#1093), so the recovered term
+    // has empty `function`.
     let payload: Term = serde_json::from_slice(&output.stdout).expect("bind payload parses");
     let named =
         named_term_document_from_bind_payload(&payload).expect("bind payload recovers named term");
     let named = serde_json::to_value(named).expect("named term serializes");
     assert_eq!(named["sourceLanguage"], "rust");
-    assert_eq!(
-        named["terms"][0]["conceptName"],
-        "concept:deposit-then-balance"
-    );
+    assert!(named["terms"][0]["opCid"]
+        .as_str()
+        .expect("op cid")
+        .starts_with("blake3-512:"));
     // fn_name was stripped per #1093 before encoding into the bind-result
     // payload; recovered NamedTermDocument has no function field.
     assert!(named["terms"][0]["function"].is_null() || named["terms"][0]["function"] == "");
@@ -190,9 +193,15 @@ fn bind_from_stdin_emits_candidate_cluster_manifest() {
     assert_eq!(manifest["kind"], "candidate-cluster-manifest");
     assert_eq!(manifest["schemaVersion"], "1");
     assert_eq!(manifest["totalCandidates"], 3);
-    assert_eq!(clusters[0]["conceptCluster"], "concept:add");
+    assert_eq!(
+        clusters[0]["opCluster"],
+        "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
     assert_eq!(clusters[0]["candidateCount"], 2);
-    assert_eq!(clusters[1]["conceptCluster"], "concept:sub");
+    assert_eq!(
+        clusters[1]["opCluster"],
+        "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    );
     assert_eq!(clusters[1]["candidateCount"], 1);
 }
 
@@ -234,27 +243,6 @@ fn bind_file_and_pipe_forms_are_byte_equivalent() {
 }
 
 #[test]
-fn bind_does_not_require_or_invoke_language_lower_plugins() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let root = temp.path();
-    fs::create_dir_all(root.join(".provekit/realize/python")).expect("create realize manifest");
-    fs::write(
-        root.join(".provekit/realize/python/manifest.toml"),
-        "name = \"exploding-python-lower\"\ncommand = [\"false\"]\nlibrary_tag = \"default\"\n",
-    )
-    .expect("write realize manifest");
-    let term = root.join("term.json");
-    fs::write(&term, term_document()).expect("write term");
-
-    let output = Command::new(provekit_bin())
-        .arg("bind")
-        .arg(&term)
-        .output()
-        .expect("spawn bind");
-    assert_success("bind ignores lower plugin", &output);
-}
-
-#[test]
 fn bind_cli_emits_wp_rule_refusal_gap() {
     let mut child = Command::new(provekit_bin())
         .arg("bind")
@@ -278,5 +266,12 @@ fn bind_cli_emits_wp_rule_refusal_gap() {
     let named = serde_json::to_value(named).expect("named term serializes");
     let gap = named["gapRecords"][0].as_object().expect("gap object");
 
-    assert_eq!(gap["target_op"], "concept:add");
+    assert_eq!(
+        gap["source_op_cid"],
+        "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert!(gap["target_op"]
+        .as_str()
+        .expect("target op")
+        .starts_with("op-"));
 }

@@ -85,12 +85,6 @@ def test_from_params_parses_rpc_object() -> None:
     assert len(plan.predicates) == 1
 
 
-def test_from_params_accepts_concept_name_alias() -> None:
-    plan = EmitPlan.from_params({"concept_name": "concept:eq", "function_name": "g"})
-    assert plan.contract_id == "concept:eq"
-    assert plan.function == "g"
-
-
 def test_empty_plan_defaults_to_test_function_name() -> None:
     plan = EmitPlan.from_params({})
     assert plan.function == "test"

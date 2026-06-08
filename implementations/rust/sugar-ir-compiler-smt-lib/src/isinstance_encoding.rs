@@ -39,8 +39,8 @@
 // in the formula, and ONLY for pairs that are both (a) recognized builtins
 // and (b) genuinely disjoint. Pure arithmetic formulas are unchanged.
 
-use sugar_ir_types::*;
 use std::collections::{BTreeMap, BTreeSet};
+use sugar_ir_types::*;
 
 /// The set of concrete builtin Python type names we emit disjointness for.
 /// This MUST match ``_ISINSTANCE_CONCRETE_BUILTINS`` in layer2.py exactly.

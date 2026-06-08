@@ -31,10 +31,10 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::ValueEnum;
 use libsugar::concept::panic_freedom;
+use serde_json::{json, Value};
 use sugar_canonicalizer::blake3_512_of;
 use sugar_claim_envelope::{KitDeclaration, KitDeclarationMapping, KIT_DECLARATION_RPC_METHOD};
 use sugar_verifier::load_all_proofs::ProofBytes;
-use serde_json::{json, Value};
 
 use crate::doctor_oracle::{
     OracleHostAdapter, OracleHostEngagement, OracleHostEnv, OracleHostLocatability,
@@ -2404,10 +2404,9 @@ fn capability_bool(capabilities: Option<&toml::Value>, key: &str) -> Option<bool
 /// NOTE: `is_lift_plugin()` and `is_emit_plugin()` both return `true` when
 /// `kind` is absent (legacy dual-use registration). Manifests for
 /// legacy/lift plugins live under `.provekit/lift/`. Only an EXPLICIT
-/// `kind = "emit"` or `kind = "realize"` should redirect to a different dir.
+/// `kind = "emit"` should redirect to a different dir.
 fn plugin_kind_dir(plugin: &PluginEntry) -> String {
     match plugin.kind.as_deref() {
-        Some(k) if k.eq_ignore_ascii_case("realize") => "realize".to_string(),
         Some(k) if k.eq_ignore_ascii_case("emit") => "emit".to_string(),
         // Explicit "lift" or absent (legacy dual-use) -> lift dir.
         _ => "lift".to_string(),
@@ -4868,8 +4867,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
             },
         ];
 
-        let consistency =
-            kit_declaration_cross_kit_consistency_check(DoctorMode::Strict, &loaded);
+        let consistency = kit_declaration_cross_kit_consistency_check(DoctorMode::Strict, &loaded);
         assert_eq!(consistency.status, CheckStatus::Fail);
         assert!(
             consistency.detail.contains("same-local"),

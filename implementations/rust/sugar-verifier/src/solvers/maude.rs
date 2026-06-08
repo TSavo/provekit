@@ -6,10 +6,10 @@ use std::fs;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use sugar_ir_compiler_maude::{compile_artifact, MaudeQueries, DIALECT};
 use serde::Serialize;
 use serde_json::Value as Json;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use sugar_ir_compiler_maude::{compile_artifact, MaudeQueries, DIALECT};
 
 use crate::solvers::ceta::{run_command_capture, CetaGate, CetaGateConfig, CetaGateReceipt};
 use crate::solvers::{SolveResult, Solver};

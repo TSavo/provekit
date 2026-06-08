@@ -105,9 +105,7 @@ fn validate_term(term: &sugar_ir_types::IrTerm) -> Result<(), String> {
 
 fn validate_formula(formula: &sugar_ir_types::IrFormula) -> Result<(), String> {
     match formula {
-        sugar_ir_types::IrFormula::Atomic { args, .. } => {
-            args.iter().try_for_each(validate_term)
-        }
+        sugar_ir_types::IrFormula::Atomic { args, .. } => args.iter().try_for_each(validate_term),
         sugar_ir_types::IrFormula::And { operands }
         | sugar_ir_types::IrFormula::Or { operands }
         | sugar_ir_types::IrFormula::Not { operands }
@@ -122,12 +120,13 @@ fn validate_formula(formula: &sugar_ir_types::IrFormula) -> Result<(), String> {
         // term; `libsugar::wp` eliminates them before any formula reaches
         // the SMT-LIB backend. Reaching this arm means a `wp_rule` schema was
         // handed to the solver without instantiation.
-        sugar_ir_types::IrFormula::Substitute { .. }
-        | sugar_ir_types::IrFormula::Apply { .. } => Err(
-            "wp-rule schema node (substitute/apply) reached the SMT-LIB validator; \
+        sugar_ir_types::IrFormula::Substitute { .. } | sugar_ir_types::IrFormula::Apply { .. } => {
+            Err(
+                "wp-rule schema node (substitute/apply) reached the SMT-LIB validator; \
              it must be reduced via libsugar::wp before solving"
-                .to_string(),
-        ),
+                    .to_string(),
+            )
+        }
         sugar_ir_types::IrFormula::DivergenceBetween { .. } => Err(
             "platform divergence formula reached the SMT-LIB validator; \
              stage 4 must lower it before solving"

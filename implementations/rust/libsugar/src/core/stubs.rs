@@ -74,8 +74,7 @@ impl Domain for FunctionContractDomain {
     ) -> Result<DomainClaim, DomainError> {
         match mode {
             DischargeMode::Search { portfolio } => {
-                let smt =
-                    "(set-logic ALL)\n; libsugar core initial-pass obligation\n(check-sat)\n";
+                let smt = "(set-logic ALL)\n; libsugar core initial-pass obligation\n(check-sat)\n";
                 match portfolio.solve(smt) {
                     SolverVerdict::Proved { transcript } => {
                         claim.verdict = Verdict::Proved;

@@ -5,9 +5,9 @@
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
+use serde_json::{json, Value};
 use sugar_ir_symbolic::serialize::marshal_declarations;
 use sugar_lift_rust_tests::lift_file;
-use serde_json::{json, Value};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SURFACE: &str = "rust-test-assertions";

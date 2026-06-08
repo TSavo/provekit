@@ -527,7 +527,7 @@ fn panic_loci_only_contract_becomes_panic_callsite() {
             "evidence": {
                 "kind": "contract",
                 "body": {
-                    "contractName": "dispatch_assemble",
+                    "contractName": "fixture_panic_site",
                     "panicLoci": [{
                         "argTerm": receiver,
                         "file": "src/kit_dispatch.rs",
@@ -685,7 +685,7 @@ fn effect_loci_only_contract_becomes_panic_callsite() {
             "evidence": {
                 "kind": "contract",
                 "body": {
-                    "contractName": "dispatch_assemble",
+                    "contractName": "fixture_panic_site",
                     "effectLoci": [{
                         "effectKind": PANIC_EFFECT_KIND,
                         "argTerm": receiver,

@@ -9,8 +9,8 @@
 use std::path::{Path, PathBuf};
 
 use owo_colors::OwoColorize;
-use sugar_canonicalizer::blake3_512_of;
 use serde_json::{json, Value};
+use sugar_canonicalizer::blake3_512_of;
 
 use sugar_verifier::{Runner, RunnerConfig};
 

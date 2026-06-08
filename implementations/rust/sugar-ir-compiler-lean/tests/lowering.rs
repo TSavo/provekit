@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use serde_json::json;
 use sugar_ir_compiler::IrCompiler;
 use sugar_ir_compiler_lean::{LeanCompiler, DIALECT};
-use serde_json::json;
 
 fn reflexivity_ir() -> serde_json::Value {
     json!({

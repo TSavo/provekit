@@ -25,10 +25,10 @@
 // need to discharge (and it discharges trivially because 42 ≥ 10 is
 // constant true).
 
+use serde_json::Value as JsonValue;
 use sugar_ir_types::{IrFormula, IrTerm, Sort, Value};
 use sugar_walk::walk::ArrivalKind;
 use sugar_walk::{atomic_ge, const_int, var, walk_callsites_to_entry};
-use serde_json::Value as JsonValue;
 use syn::ItemFn;
 
 const BARE_DEMO_SRC: &str = r#"

@@ -15,13 +15,13 @@ use libsugar::core::{
     KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
     PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
 };
+use serde_json::json;
 use sugar_canonicalizer::Value;
 use sugar_ir_types::{
     composition_refusal_compose_input_cid, composition_refusal_header_cid,
     composition_refusal_signature, CompositionRefusalEnvelope, CompositionRefusalHeader,
     CompositionRefusalMemento, CompositionRefusalMetadata, IrFormula, IrTerm, Sort,
 };
-use serde_json::json;
 
 fn any_sort() -> Sort {
     Sort::Primitive {

@@ -4,8 +4,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use sugar_ir_types::{IrFormula, IrTerm, Sort};
 use serde_json::{json, Value};
+use sugar_ir_types::{IrFormula, IrTerm, Sort};
 use thiserror::Error;
 
 use super::bind::strip_realize_sidecar_from_lift_term;

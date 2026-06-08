@@ -17,11 +17,11 @@
 
 #![allow(unused_imports, unused_mut, unreachable_patterns)]
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_ir_compiler::{CompiledFormula, FreeVar, OpacityEntry, OpacityManifest};
 use sugar_ir_types::*;
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 use crate::{COMPILER_NAME, COMPILER_VERSION, DIALECT};
 

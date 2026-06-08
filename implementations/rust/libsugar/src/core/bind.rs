@@ -156,8 +156,7 @@ pub struct BindLiftEntry {
     #[serde(default)]
     pub return_type: String,
     /// Source-language visibility ("pub", "pub(crate)", or empty for
-    /// private). Propagated from lift into NamedTerm so the realize
-    /// plugin reproduces it on emit.
+    /// private). Propagated from lift into NamedTerm for source metadata.
     #[serde(default)]
     pub visibility: String,
     /// Generic parameter declarations from source (e.g. `<A: AdapterLifter>`).
@@ -167,11 +166,9 @@ pub struct BindLiftEntry {
     /// substituted form; this is the byte-identical form.
     #[serde(default)]
     pub original_param_types: Vec<String>,
-    /// Concept-hub CIDs lifted from the source's type expressions via the
-    /// kit's source-alias catalog (#1370). These are the substrate-honest
-    /// cross-language type pins. Bind propagates them into NamedTerm so
-    /// lower's realize plugin can translate signatures via the target
-    /// kit's catalog instead of rust-string matching.
+    /// Sort CIDs lifted from the source's type expressions via the kit's
+    /// source-alias table (#1370). These are the substrate-honest
+    /// cross-language type pins.
     #[serde(default)]
     pub param_sort_cids: Vec<String>,
     #[serde(default)]
@@ -199,6 +196,8 @@ pub struct BindLiftEntry {
     pub realize_param_types: Vec<String>,
     #[serde(default, rename = "realize_return_type", alias = "realizeReturnType")]
     pub realize_return_type: String,
+    #[serde(default, rename = "op_cid", alias = "opCid")]
+    pub op_cid: String,
     #[serde(default)]
     pub term_shape: Json,
     #[serde(default)]
@@ -244,12 +243,7 @@ pub struct NamedTermDocument {
     #[serde(rename = "sourceLanguage")]
     pub source_language: String,
     pub terms: Vec<NamedTerm>,
-    /// @boundary entries carried alongside @sugar terms. The substrate's
-    /// lower side uses these to emit boundary primitive stubs in the
-    /// target compilation unit. Each entry mirrors a rust @boundary fn
-    /// declaration with full signature info (visibility, generics,
-    /// param types, return type) so the target plugin can emit a
-    /// byte-correct interface declaration.
+    /// @boundary entries carried alongside @sugar terms.
     #[serde(
         default,
         rename = "boundaryEntries",
@@ -298,14 +292,14 @@ pub struct CandidateCluster {
     pub candidate_cids: Vec<String>,
     #[serde(rename = "candidateCount")]
     pub candidate_count: u64,
-    #[serde(rename = "conceptCluster")]
-    pub concept_cluster: String,
+    #[serde(rename = "opCluster")]
+    pub op_cluster: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamedTerm {
-    #[serde(rename = "conceptName")]
-    pub concept_name: String,
+    #[serde(rename = "opCid", alias = "op_cid")]
+    pub op_cid: String,
     #[serde(rename = "dischargeVerdict")]
     pub discharge_verdict: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -319,25 +313,16 @@ pub struct NamedTerm {
     )]
     pub fn_name_sugar: Option<String>,
     pub name: String,
-    #[serde(
-        default,
-        rename = "namedTermTree",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub named_term_tree: Option<NamedTermTree>,
     #[serde(rename = "paramTypes")]
     pub param_types: Vec<String>,
     pub params: Vec<String>,
     #[serde(rename = "returnType")]
     pub return_type: String,
-    /// Source-language visibility ("pub", "pub(crate)", or empty for
-    /// private). Threaded through to RealizeRequest so realize plugins
-    /// reproduce the original visibility on emit.
+    /// Source-language visibility ("pub", "pub(crate)", or empty for private).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub visibility: String,
     /// Generic parameter declarations as a single string (e.g.
     /// `<A: AdapterLifter>`). Empty if the function has no generics.
-    /// Threaded so realize can emit the signature byte-identical with source.
     #[serde(
         default,
         rename = "genericParams",
@@ -354,10 +339,7 @@ pub struct NamedTerm {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub original_param_types: Vec<String>,
-    /// Substrate-honest cross-language type pins. When present, the lower
-    /// path uses concept-hub CIDs to translate signatures via the target
-    /// kit's catalog (same as cross-language materialize). When absent,
-    /// falls back to raw rust type strings (legacy behavior).
+    /// Substrate-honest cross-language type pins.
     #[serde(
         default,
         rename = "paramSortCids",
@@ -386,17 +368,6 @@ pub struct NamedTerm {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NamedTermTree {
-    pub args: Vec<NamedTermTree>,
-    #[serde(rename = "conceptName")]
-    pub concept_name: String,
-    #[serde(rename = "operationKind")]
-    pub operation_kind: String,
-    #[serde(rename = "shapeCid")]
-    pub shape_cid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamedWitness {
     pub predicate: Json,
     #[serde(rename = "predicateText")]
@@ -415,34 +386,31 @@ pub fn bind_term_document(
     let source_language = source_language(term_json, options);
     let workspace_root = workspace_root(term_json);
 
-    let catalog = seed_catalog();
     let mut seen_names: BTreeSet<String> = BTreeSet::new();
     let mut terms = Vec::with_capacity(entries.len());
     let mut gap_records = Vec::new();
-    let mut operation_namer = UnnamedConceptNamer::default();
     for (idx, entry) in entries.into_iter().enumerate() {
-        let concept_name = concept_name_for(&entry, idx + 1, &catalog);
-        let name = unique_name(&concept_name, &mut seen_names);
         let term_shape_cid = if entry.term_shape_cid.trim().is_empty() {
             crate::canonical::json_cid(&entry.term_shape)
                 .map_err(|e| format!("cid term shape for {}: {e}", entry.fn_name))?
         } else {
             entry.term_shape_cid.clone()
         };
+        let op_cid = entry_op_cid(&entry, &term_shape_cid)?;
+        let base_name = entry_display_name(&entry, idx + 1, &op_cid);
+        let name = unique_name(&base_name, &mut seen_names);
         let site_memento_cid = site_cid(&entry, &name, &term_shape_cid)?;
         let witnesses = named_witnesses(&entry);
-        let named_term_tree =
-            named_operation_tree(&entry.term_shape, &catalog, &mut operation_namer)?;
         if witnesses.is_empty() {
             gap_records.push(wp_rule_synthesis_gap_record(
                 &source_language,
-                &term_shape_cid,
-                &concept_name,
+                &op_cid,
+                &name,
             )?);
         }
         let fn_name = entry.fn_name;
         terms.push(NamedTerm {
-            concept_name,
+            op_cid,
             discharge_verdict: if witnesses.is_empty() {
                 "loudly-bounded-lossy".to_string()
             } else {
@@ -456,7 +424,6 @@ pub fn bind_term_document(
                 Some(fn_name)
             },
             name,
-            named_term_tree,
             param_types: entry.param_types,
             params: entry.param_names,
             return_type: if entry.return_type.is_empty() {
@@ -467,9 +434,6 @@ pub fn bind_term_document(
             visibility: entry.visibility,
             generic_params: entry.generic_params,
             original_param_types: entry.original_param_types,
-            // #1374-derived: thread concept-hub CIDs through bind so lower
-            // can use the substrate's catalog for signature translation
-            // (same path cross-lang materialize already uses).
             param_sort_cids: entry.param_sort_cids,
             return_sort_cid: entry.return_sort_cid,
             site_memento_cid,
@@ -526,22 +490,17 @@ fn bind_payload_wire_named_term_document(named: &NamedTermDocument) -> NamedTerm
         // — must NOT ride it, or typed-Rust (`pub fn add ...`) and untyped-Python
         // (`def add ...`) bind to different CIDs. These are NOT lost: the full
         // NamedTermDocument (with them intact) is addressed separately as the
-        // bind claim's `artifacts[0]` (named_cid) and is the canonical realize
-        // channel; cmd_lower's production path reconstructs from the ir-document,
-        // never from this wire op-tree. Parallel to the bind-lift-entry strip in
-        // strip_realize_sidecar_from_lift_term.
+        // bind claim's `artifacts[0]` (named_cid). Parallel to the
+        // bind-lift-entry strip in strip_realize_sidecar_from_lift_term.
         //
         // NOTE: the signature TYPES (param_types/return_type/original_param_types)
         // are deliberately NOT cleared here. After the layer-1 sidecar migration
         // the rust + python lifters both emit the bare types empty on
         // bind-lift-entry, so NamedTerm.param_types is already [] for the
         // federated `add` algebra — clearing it would be a CID no-op there. But
-        // the LEGACY bind-result lower path (named_term_document_from_bind_payload
-        // -> op-tree reconstruction, used by lower_plugin for Term inputs) reads
-        // the types back from this wire form to build the realize request; for a
-        // function that DID carry source types, clearing them here would degrade
-        // its emitted signature (i64 -> int int-inference fallback). Keeping them
-        // preserves that path's fidelity without affecting seam-4 byte-identity.
+        // some downstream bind payload readers consume these fields directly; for
+        // a function that DID carry source types, clearing them here would degrade
+        // its emitted signature (i64 -> int int-inference fallback).
         term.visibility.clear();
         term.generic_params.clear();
         term.doc_lines.clear();
@@ -567,59 +526,19 @@ pub fn grammar_op_cid(name: &str) -> Option<Cid> {
 }
 
 pub fn bind_result_payload(
-    original_term: Term,
+    _original_term: Term,
     named: &NamedTermDocument,
 ) -> Result<Term, BindError> {
-    let catalog = GrammarOpRegistry::load()?;
-    // Wire form: function cleared (preserving #1093) but fn_name_sugar kept for
-    // the lower pipeline to recover the source function name without affecting
-    // the named-term-document CID (see named_term_document_cid / bind_payload_named_term_document)
+    // Wire form: function cleared (preserving #1093) but fn_name_sugar kept as
+    // source metadata without affecting the named-term-document CID (see
+    // named_term_document_cid / bind_payload_named_term_document).
     let wire_named = bind_payload_wire_named_term_document(named);
-    let original_term = strip_realize_sidecar_from_lift_term(original_term);
-    let named_form_binding = named_term_document_op_tree(&wire_named, &catalog)?;
-    Ok(Term::Op {
-        op_cid: concept_bind_result_cid(),
-        name: CONCEPT_BIND_RESULT.to_string(),
-        args: vec![bind_payload_source_term(original_term), named_form_binding],
+    let value = serde_json::to_value(&wire_named)
+        .map_err(|error| BindError::Failed(format!("serialize bind result payload: {error}")))?;
+    Ok(Term::Const {
+        value,
+        sort: primitive_sort("NamedTermDocument"),
     })
-}
-
-fn bind_payload_source_term(mut term: Term) -> Term {
-    strip_bind_payload_source_function_from_term(&mut term);
-    term
-}
-
-fn strip_bind_payload_source_function_from_term(term: &mut Term) {
-    match term {
-        Term::Const { value, .. } => strip_bind_payload_source_function_from_value(value),
-        Term::Op { args, .. } => {
-            for arg in args {
-                strip_bind_payload_source_function_from_term(arg);
-            }
-        }
-        Term::Var { .. } | Term::Unit => {}
-    }
-}
-
-fn strip_bind_payload_source_function_from_value(value: &mut Json) {
-    match value {
-        Json::Array(values) => {
-            for value in values {
-                strip_bind_payload_source_function_from_value(value);
-            }
-        }
-        Json::Object(object) => {
-            if object.get("kind").and_then(Json::as_str) == Some("bind-lift-entry") {
-                object.remove("fn_name");
-                object.remove("fnName");
-                object.remove("function");
-            }
-            for value in object.values_mut() {
-                strip_bind_payload_source_function_from_value(value);
-            }
-        }
-        _ => {}
-    }
 }
 
 /// Strip realize-sidecar metadata (attr_pre, attr_post, concept_annotation,
@@ -681,14 +600,8 @@ pub fn named_term_document_from_bind_payload(
     match payload {
         Term::Const { value, .. } => serde_json::from_value(value.clone())
             .map_err(|error| BindError::Failed(format!("parse named term JSON: {error}"))),
-        Term::Op { name, args, .. } if name == CONCEPT_BIND_RESULT => {
-            let named_form_binding = args.get(1).ok_or_else(|| {
-                BindError::Failed("bind-result payload missing named form binding".to_string())
-            })?;
-            named_term_document_from_op_tree(named_form_binding)
-        }
         _ => Err(BindError::Failed(
-            "bind payload is neither named-term JSON nor bind-result op tree".to_string(),
+            "bind payload is not named-term JSON".to_string(),
         )),
     }
 }
@@ -721,7 +634,7 @@ fn bind_response_contract(payload: &Json, payload_cid: &Cid) -> Contract {
     };
 
     memento_from_parts(
-        "bind::default::bind-result-op-tree".to_string(),
+        "bind::default::bind-result-document".to_string(),
         vec!["term".to_string()],
         vec![primitive_sort("LiftPluginResponse")],
         primitive_sort("Term"),
@@ -981,208 +894,43 @@ fn workspace_root(term_json: &Json) -> Option<String> {
         .map(str::to_string)
 }
 
-fn concept_name_for(entry: &BindLiftEntry, ordinal: usize, catalog: &Catalog) -> String {
-    // Symbol-keyed identity wins: a sugar binding that declares its
-    // fully-qualified library symbol (e.g. `numpy.add`) IS that symbol. This is
-    // the join key the linker resolves call-edges against and the recognizer
-    // stamps as `target_symbol`; no concept, no catalog shape-match. Concept is
-    // the legacy hub key, retained below only as the fallback for shims that
-    // have not migrated (keeps their `.proof` byte-identical).
+fn entry_op_cid(entry: &BindLiftEntry, term_shape_cid: &str) -> Result<String, BindError> {
+    if !entry.op_cid.trim().is_empty() {
+        return Ok(entry.op_cid.clone());
+    }
+    if let Some(op_cid) = entry
+        .term_shape
+        .get("op_cid")
+        .and_then(Json::as_str)
+        .filter(|s| !s.trim().is_empty())
+    {
+        return Ok(op_cid.to_string());
+    }
+    if !term_shape_cid.trim().is_empty() {
+        return Ok(term_shape_cid.to_string());
+    }
+    Err(BindError::Failed(format!(
+        "bind entry `{}` lacks op_cid and term_shape_cid",
+        entry.fn_name
+    )))
+}
+
+fn entry_display_name(entry: &BindLiftEntry, ordinal: usize, op_cid: &str) -> String {
     if let Some(symbol) = entry.symbol.as_ref().filter(|s| !s.trim().is_empty()) {
         return symbol.clone();
     }
-    if let Some(annotation) = entry.concept_annotation.as_ref().map(|name| {
-        if name.starts_with("concept:") {
-            name.clone()
-        } else {
-            format!("concept:{name}")
-        }
-    }) {
-        return annotation;
-    }
-    let shape = TermShape::from_kit(entry.term_shape.clone(), entry.term_shape_cid.clone());
-    catalog
-        .match_shape(&shape.shape_cid(), &shape)
-        .map(|entry| entry.name.clone())
-        .unwrap_or_else(|| format!("UNNAMED-CONCEPT-{ordinal:x}"))
+    format!(
+        "op-{}-{ordinal}",
+        op_cid
+            .chars()
+            .skip("blake3-512:".len())
+            .take(12)
+            .collect::<String>()
+    )
 }
 
-#[derive(Debug, Default)]
-struct UnnamedConceptNamer {
-    next: usize,
-}
-
-impl UnnamedConceptNamer {
-    fn next(&mut self) -> String {
-        self.next += 1;
-        format!("UNNAMED-CONCEPT-{:x}", self.next)
-    }
-}
-
-fn named_operation_tree(
-    value: &Json,
-    catalog: &Catalog,
-    namer: &mut UnnamedConceptNamer,
-) -> Result<Option<NamedTermTree>, BindError> {
-    // Abstract term_shape format (concept-name-keyed): the Python lifter
-    // emits operations as {concept_name, op_cid, args} without a `kind` field.
-    // Short-circuit here so concept-named operations flow into a Shape A
-    // NamedTermTree directly instead of falling through to the Shape B wrapper.
-    if let Some(concept_name) = value.get("concept_name").and_then(Json::as_str) {
-        let arg_values = value
-            .get("args")
-            .and_then(Json::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let mut args = Vec::with_capacity(arg_values.len());
-        for arg in &arg_values {
-            if let Some(child) = named_operation_tree(arg, catalog, namer)? {
-                args.push(child);
-            }
-        }
-        let shape_cid = value
-            .get("op_cid")
-            .and_then(Json::as_str)
-            .map(str::to_string)
-            .filter(|s| !s.is_empty())
-            .map(Ok)
-            .unwrap_or_else(|| {
-                crate::canonical::json_cid(value)
-                    .map_err(|e| format!("cid concept_name shape `{concept_name}`: {e}"))
-            })?;
-        return Ok(Some(NamedTermTree {
-            args,
-            concept_name: concept_name.to_string(),
-            operation_kind: "op-application".to_string(),
-            shape_cid,
-        }));
-    }
-    let Some(operation_kind) = operation_kind(value) else {
-        return Ok(None);
-    };
-    let operation_shape = operation_lookup_shape(&operation_kind);
-    let shape_cid = crate::canonical::json_cid(&operation_shape)
-        .map_err(|e| format!("cid operation shape `{operation_kind}`: {e}"))?;
-    let shape = TermShape::from_kit(operation_shape, shape_cid.clone());
-    let concept_name = catalog
-        .match_shape(&shape.shape_cid(), &shape)
-        .map(|entry| entry.name.clone())
-        .unwrap_or_else(|| namer.next());
-    let args = child_operation_trees(value, catalog, namer)?;
-    Ok(Some(NamedTermTree {
-        args,
-        concept_name,
-        operation_kind,
-        shape_cid,
-    }))
-}
-
-fn child_operation_trees(
-    value: &Json,
-    catalog: &Catalog,
-    namer: &mut UnnamedConceptNamer,
-) -> Result<Vec<NamedTermTree>, BindError> {
-    let mut out = Vec::new();
-    collect_child_operation_trees(value, catalog, namer, &mut out)?;
-    Ok(out)
-}
-
-fn collect_child_operation_trees(
-    value: &Json,
-    catalog: &Catalog,
-    namer: &mut UnnamedConceptNamer,
-    out: &mut Vec<NamedTermTree>,
-) -> Result<(), BindError> {
-    match value {
-        Json::Array(values) => {
-            for child in values {
-                collect_operation_tree_or_descendants(child, catalog, namer, out)?;
-            }
-        }
-        Json::Object(object) => {
-            for (key, child) in object {
-                if key == "kind" || key == "op" {
-                    continue;
-                }
-                collect_operation_tree_or_descendants(child, catalog, namer, out)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn collect_operation_tree_or_descendants(
-    value: &Json,
-    catalog: &Catalog,
-    namer: &mut UnnamedConceptNamer,
-    out: &mut Vec<NamedTermTree>,
-) -> Result<(), BindError> {
-    if let Some(tree) = named_operation_tree(value, catalog, namer)? {
-        out.push(tree);
-        return Ok(());
-    }
-    collect_child_operation_trees(value, catalog, namer, out)
-}
-
-fn operation_kind(value: &Json) -> Option<String> {
-    let raw_kind = value.get("kind").and_then(Json::as_str)?.trim();
-    if raw_kind.is_empty() {
-        return None;
-    }
-    let raw_kind = raw_kind
-        .rsplit_once(':')
-        .map_or(raw_kind, |(_, suffix)| suffix);
-    let normalized = match raw_kind {
-        "body" | "block" => "seq",
-        "if" => "conditional",
-        "let" => "decl",
-        "bin" => value
-            .get("op")
-            .and_then(Json::as_str)
-            .and_then(binary_operator_kind)
-            .unwrap_or("bin"),
-        "rel" => value
-            .get("op")
-            .and_then(Json::as_str)
-            .and_then(binary_operator_kind)
-            .unwrap_or("rel"),
-        other => other,
-    };
-    Some(normalized.replace('_', "-"))
-}
-
-fn binary_operator_kind(op: &str) -> Option<&'static str> {
-    match op {
-        "+" => Some("add"),
-        "-" => Some("sub"),
-        "*" => Some("mul"),
-        "/" => Some("div"),
-        "%" => Some("mod"),
-        "==" => Some("eq"),
-        "!=" => Some("ne"),
-        "<" => Some("lt"),
-        "<=" => Some("le"),
-        ">" => Some("gt"),
-        ">=" => Some("ge"),
-        "&&" => Some("and"),
-        "||" => Some("or"),
-        _ => None,
-    }
-}
-
-fn operation_lookup_shape(operation_kind: &str) -> Json {
-    json!({
-        "kind": "operation-shape",
-        "operator": operation_kind,
-    })
-}
-
-fn unique_name(concept_name: &str, seen: &mut BTreeSet<String>) -> String {
-    let base = concept_name
-        .strip_prefix("concept:")
-        .unwrap_or(concept_name)
-        .to_string();
+fn unique_name(label: &str, seen: &mut BTreeSet<String>) -> String {
+    let base = label.strip_prefix("concept:").unwrap_or(label).to_string();
     if seen.insert(base.clone()) {
         return base;
     }
@@ -1250,38 +998,14 @@ fn named_witness(role: &str, predicate_text: &str, source_kind: &str) -> NamedWi
 // promoted concept -- and a thing is one or the other, never both. So its
 // identity is the `json_cid` of its pure, name-free, positional structural
 // shape, computed here from a shape compiled into the binary. There is no disk
-// load, no catalog, and no `required_cid` that can fail on an empty catalog:
-// the language is always present because it is the code.
+// load and no catalog: the language is always present because it is the code.
 struct GrammarOpRegistry;
 
 impl GrammarOpRegistry {
-    fn load() -> Result<Self, BindError> {
-        Ok(Self)
-    }
-
-    fn required_cid(&self, name: &str) -> Result<Cid, BindError> {
-        self.cid(name)
-            .ok_or_else(|| BindError::Failed(format!("`{name}` is not a language primitive")))
-    }
-
     fn cid(&self, name: &str) -> Option<Cid> {
         let shape = grammar_op_shape(name)?;
         let cid = crate::canonical::op_cid_from_shape(&shape).ok()?;
         Cid::try_from(cid.as_str()).ok()
-    }
-
-    fn resolved_name_and_cid(&self, name: &str) -> Result<(String, Cid), BindError> {
-        if let Some(cid) = self.cid(name) {
-            return Ok((name.to_string(), cid));
-        }
-        // Not a language primitive: an unwitnessed concept resolves to the
-        // grammar floor -- the generic op-application -- rather than fabricating
-        // a name. (Once promotion-by-witnessing lands, a witnessed concept
-        // carries its own address here.)
-        Ok((
-            CONCEPT_OP_APPLICATION.to_string(),
-            self.required_cid(CONCEPT_OP_APPLICATION)?,
-        ))
     }
 }
 
@@ -1356,248 +1080,22 @@ fn grammar_op_shape(name: &str) -> Option<Json> {
     Some(shape)
 }
 
-fn named_term_document_op_tree(
-    named: &NamedTermDocument,
-    catalog: &GrammarOpRegistry,
-) -> Result<Term, BindError> {
-    let mut terms = named
-        .terms
-        .iter()
-        .enumerate()
-        .map(|(idx, term)| named_term_op_tree(named, term, catalog, vec![idx]))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    match terms.len() {
-        0 => Ok(Term::Op {
-            op_cid: catalog.required_cid(CONCEPT_OP_APPLICATION)?,
-            name: CONCEPT_OP_APPLICATION.to_string(),
-            args: vec![document_metadata_term(named)?],
-        }),
-        1 => Ok(terms.remove(0)),
-        _ => {
-            let mut args = vec![document_metadata_term(named)?];
-            args.extend(terms);
-            Ok(Term::Op {
-                op_cid: catalog.required_cid(CONCEPT_SEQ)?,
-                name: CONCEPT_SEQ.to_string(),
-                args,
-            })
-        }
-    }
-}
-
-fn named_term_op_tree(
-    document: &NamedTermDocument,
-    term: &NamedTerm,
-    catalog: &GrammarOpRegistry,
-    term_position: Vec<usize>,
-) -> Result<Term, BindError> {
-    if let Some(tree) = &term.named_term_tree {
-        return named_tree_op_tree(document, term, tree, catalog, term_position);
-    }
-    let (resolved_name, op_cid) = catalog.resolved_name_and_cid(CONCEPT_OP_APPLICATION)?;
-    let args_cid = term_args_cid(&[])?;
-    let metadata = named_term_citation_term(
-        document,
-        term,
-        None,
-        &resolved_name,
-        &op_cid,
-        &term_position,
-        &args_cid,
-    )?;
-    Ok(Term::Op {
-        op_cid,
-        name: resolved_name,
-        args: vec![metadata],
-    })
-}
-
-fn named_tree_op_tree(
-    document: &NamedTermDocument,
-    term: &NamedTerm,
-    tree: &NamedTermTree,
-    catalog: &GrammarOpRegistry,
-    term_position: Vec<usize>,
-) -> Result<Term, BindError> {
-    // McCarthy desugar: concept:and / concept:or are demoted hub members
-    // (a && b = ite(a, b, false); a || b = ite(a, true, b)). Rewrite to
-    // concept:ite at the Term level so the substrate's op tree only contains
-    // cataloged primitives. Per-language eq_and_to_ite_desugar mementos
-    // record the equivalence as descriptive substrate history.
-    if tree.concept_name == "concept:and" || tree.concept_name == "concept:or" {
-        return mccarthy_desugar_to_ite(document, term, tree, catalog, term_position);
-    }
-    let (resolved_name, op_cid) = catalog.resolved_name_and_cid(&tree.concept_name)?;
-    let children = tree
-        .args
-        .iter()
-        .enumerate()
-        .map(|(idx, child)| {
-            let mut child_position = term_position.clone();
-            child_position.push(idx);
-            named_tree_op_tree(document, term, child, catalog, child_position)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let args_cid = term_args_cid(&children)?;
-    let metadata = named_term_citation_term(
-        document,
-        term,
-        Some(tree),
-        &resolved_name,
-        &op_cid,
-        &term_position,
-        &args_cid,
-    )?;
-    let mut args = Vec::with_capacity(children.len() + 1);
-    args.push(metadata);
-    args.extend(children);
-    Ok(Term::Op {
-        op_cid,
-        name: resolved_name,
-        args,
-    })
-}
-
-fn term_args_cid(args: &[Term]) -> Result<String, BindError> {
-    let value = serde_json::to_value(args)
-        .map_err(|error| BindError::Failed(format!("serialize term args: {error}")))?;
-    crate::canonical::json_cid(&value).map_err(|error| BindError::Failed(error.to_string()))
-}
-
-fn mccarthy_desugar_to_ite(
-    document: &NamedTermDocument,
-    term: &NamedTerm,
-    tree: &NamedTermTree,
-    catalog: &GrammarOpRegistry,
-    term_position: Vec<usize>,
-) -> Result<Term, BindError> {
-    if tree.args.len() != 2 {
-        return Err(BindError::Failed(format!(
-            "McCarthy desugar of {} requires 2 args; got {}",
-            tree.concept_name,
-            tree.args.len()
-        )));
-    }
-    let (ite_resolved_name, ite_op_cid) = catalog.resolved_name_and_cid("concept:ite")?;
-    let mut pos_left = term_position.clone();
-    pos_left.push(0);
-    let left = named_tree_op_tree(document, term, &tree.args[0], catalog, pos_left)?;
-    let mut pos_right = term_position.clone();
-    pos_right.push(1);
-    let right = named_tree_op_tree(document, term, &tree.args[1], catalog, pos_right)?;
-    let literal = Term::Const {
-        value: Json::Bool(tree.concept_name == "concept:or"),
-        sort: primitive_sort("Bool"),
-    };
-    let children = if tree.concept_name == "concept:and" {
-        // a && b = ite(a, b, false)
-        vec![left, right, literal]
-    } else {
-        // a || b = ite(a, true, b)
-        vec![left, literal, right]
-    };
-    let args_cid = term_args_cid(&children)?;
-    let metadata = named_term_citation_term(
-        document,
-        term,
-        Some(tree),
-        &ite_resolved_name,
-        &ite_op_cid,
-        &term_position,
-        &args_cid,
-    )?;
-    let mut args = Vec::with_capacity(children.len() + 1);
-    args.push(metadata);
-    args.extend(children);
-    Ok(Term::Op {
-        op_cid: ite_op_cid,
-        name: ite_resolved_name,
-        args,
-    })
-}
-
-fn document_metadata_term(named: &NamedTermDocument) -> Result<Term, BindError> {
-    Ok(Term::Const {
-        value: document_metadata_value(named)?,
-        sort: primitive_sort("NamedTermDocumentMetadata"),
-    })
-}
-
-fn named_term_citation_term(
-    document: &NamedTermDocument,
-    term: &NamedTerm,
-    tree: Option<&NamedTermTree>,
-    resolved_name: &str,
-    op_cid: &Cid,
-    term_position: &[usize],
-    args_cid: &str,
-) -> Result<Term, BindError> {
-    let citation_kind = if term_position.len() == 1 {
-        "named-term-citation"
-    } else {
-        "concept-citation"
-    };
-    let mut value = json!({
-        "kind": citation_kind,
-        "argsCid": args_cid,
-        "conceptCid": op_cid.as_str(),
-        "resolvedConceptName": resolved_name,
-        "termPosition": term_position,
-    });
-    if citation_kind == "named-term-citation" {
-        value["term"] = serde_json::to_value(term).map_err(|error| {
-            BindError::Failed(format!("serialize named term citation: {error}"))
-        })?;
-        value["document"] = document_metadata_value(document)?;
-    }
-    if let Some(tree) = tree {
-        value["conceptName"] = Json::String(tree.concept_name.clone());
-        value["operationKind"] = Json::String(tree.operation_kind.clone());
-        value["shapeCid"] = Json::String(tree.shape_cid.clone());
-    } else {
-        value["conceptName"] = Json::String(term.concept_name.clone());
-        value["operationKind"] = Json::String("op-application".to_string());
-        value["shapeCid"] = Json::String(term.term_shape_cid.clone());
-    }
-    Ok(Term::Const {
-        value,
-        sort: primitive_sort("ConceptCitation"),
-    })
-}
-
-fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError> {
-    let mut value = json!({
-        "candidateClusterManifest": serde_json::to_value(&named.candidate_cluster_manifest)
-            .map_err(|error| BindError::Failed(format!("serialize candidate cluster manifest: {error}")))?,
-        "kind": named.kind.clone(),
-        "schemaVersion": named.schema_version.clone(),
-        "sourceLanguage": named.source_language.clone(),
-        "workspaceRoot": named.workspace_root.clone(),
-    });
-    if !named.gap_records.is_empty() {
-        value["gapRecords"] = serde_json::to_value(&named.gap_records)
-            .map_err(|error| BindError::Failed(format!("serialize gap records: {error}")))?;
-    }
-    Ok(value)
-}
-
 fn candidate_cluster_manifest(terms: &[NamedTerm]) -> CandidateClusterManifest {
-    let mut by_concept: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut by_op: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for term in terms {
-        by_concept
-            .entry(term.concept_name.clone())
+        by_op
+            .entry(term.op_cid.clone())
             .or_default()
             .push(term.term_shape_cid.clone());
     }
-    let clusters = by_concept
+    let clusters = by_op
         .into_iter()
-        .map(|(concept_cluster, mut candidate_cids)| {
+        .map(|(op_cluster, mut candidate_cids)| {
             candidate_cids.sort();
             CandidateCluster {
                 candidate_count: candidate_cids.len() as u64,
                 candidate_cids,
-                concept_cluster,
+                op_cluster,
             }
         })
         .collect();
@@ -1607,111 +1105,6 @@ fn candidate_cluster_manifest(terms: &[NamedTerm]) -> CandidateClusterManifest {
         schema_version: "1".to_string(),
         total_candidates: terms.len() as u64,
     }
-}
-
-fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, BindError> {
-    let mut citations = Vec::new();
-    collect_named_term_citations(term, &mut citations);
-    citations.sort_by(|left, right| left.0.cmp(&right.0));
-    let first = citations.first().ok_or_else(|| {
-        BindError::Failed("bind-result op tree has no named-term citation".to_string())
-    })?;
-    let document = first.1.get("document").ok_or_else(|| {
-        BindError::Failed("named-term citation missing document metadata".to_string())
-    })?;
-    let gap_records = document
-        .get("gapRecords")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|error| BindError::Failed(format!("parse gap records: {error}")))?
-        .unwrap_or_default();
-    let parsed_candidate_cluster_manifest = document
-        .get("candidateClusterManifest")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|error| BindError::Failed(format!("parse candidate cluster manifest: {error}")))?;
-    let terms = citations
-        .into_iter()
-        .map(|(_, citation)| {
-            let value = citation
-                .get("term")
-                .cloned()
-                .ok_or_else(|| BindError::Failed("named-term citation missing term".to_string()))?;
-            serde_json::from_value::<NamedTerm>(value)
-                .map_err(|error| BindError::Failed(format!("parse named term citation: {error}")))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let candidate_cluster_manifest =
-        parsed_candidate_cluster_manifest.unwrap_or_else(|| candidate_cluster_manifest(&terms));
-    Ok(NamedTermDocument {
-        candidate_cluster_manifest,
-        gap_records,
-        kind: document
-            .get("kind")
-            .and_then(Json::as_str)
-            .unwrap_or("named-term-document")
-            .to_string(),
-        schema_version: document
-            .get("schemaVersion")
-            .and_then(Json::as_str)
-            .unwrap_or("1")
-            .to_string(),
-        source_language: document
-            .get("sourceLanguage")
-            .and_then(Json::as_str)
-            .unwrap_or("unknown")
-            .to_string(),
-        terms,
-        boundary_entries: document
-            .get("boundaryEntries")
-            .and_then(Json::as_array)
-            .cloned()
-            .unwrap_or_default(),
-        trait_decls: document
-            .get("traitDecls")
-            .and_then(Json::as_array)
-            .cloned()
-            .unwrap_or_default(),
-        module_items: document
-            .get("moduleItems")
-            .and_then(Json::as_array)
-            .cloned()
-            .unwrap_or_default(),
-        workspace_root: document
-            .get("workspaceRoot")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-    })
-}
-
-fn collect_named_term_citations<'a>(term: &'a Term, out: &mut Vec<(Vec<usize>, &'a Json)>) {
-    let Term::Op { args, .. } = term else {
-        return;
-    };
-    if let Some(Term::Const { value, .. }) = args.first() {
-        if value.get("kind").and_then(Json::as_str) == Some("named-term-citation") {
-            out.push((term_position_from_citation(value), value));
-        }
-    }
-    for arg in args {
-        collect_named_term_citations(arg, out);
-    }
-}
-
-fn term_position_from_citation(value: &Json) -> Vec<usize> {
-    value
-        .get("termPosition")
-        .and_then(Json::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Json::as_u64)
-                .map(|value| value as usize)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn site_cid(_entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<String, BindError> {
@@ -1725,9 +1118,9 @@ fn site_cid(_entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<
 fn wp_rule_synthesis_gap_record(
     source_lang: &str,
     source_op_cid: &str,
-    concept_name: &str,
+    operator_label: &str,
 ) -> Result<Json, BindError> {
-    let target_op = normalize_concept_name(concept_name);
+    let target_op = normalize_operator_label(operator_label);
     let gap = TransportGapMemento {
         fn_name: format!(
             "gap:{}:bind:to:{}:wp-rule",
@@ -1766,109 +1159,8 @@ fn wp_rule_synthesis_gap_record(
         .map_err(|error| BindError::Failed(format!("serialize wp_rule gap: {error}")))
 }
 
-fn normalize_concept_name(name: &str) -> String {
-    if name.starts_with("concept:") {
-        name.to_string()
-    } else {
-        format!("concept:{name}")
-    }
-}
-
-#[derive(Debug, Clone)]
-struct TermShape {
-    value: Json,
-    cid_cached: String,
-}
-
-impl TermShape {
-    fn from_kit(value: Json, cid: String) -> Self {
-        Self {
-            value,
-            cid_cached: cid,
-        }
-    }
-
-    fn shape_cid(&self) -> String {
-        self.cid_cached.clone()
-    }
-
-    fn classify(&self) -> &'static str {
-        classify_value(&self.value)
-    }
-}
-
-fn classify_value(value: &Json) -> &'static str {
-    let kind = value.get("kind").and_then(Json::as_str).unwrap_or("");
-    if kind != "body" {
-        return "unknown";
-    }
-    let stmts = value
-        .get("stmts")
-        .and_then(Json::as_array)
-        .map(|arr| arr.as_slice())
-        .unwrap_or(&[]);
-    let mut has_loop = false;
-    let mut has_if = false;
-    for stmt in stmts {
-        let kind = stmt.get("kind").and_then(Json::as_str).unwrap_or("");
-        match kind {
-            "while" | "for" => has_loop = true,
-            "if" => has_if = true,
-            _ => {}
-        }
-    }
-    if has_loop {
-        "retry-loop"
-    } else if has_if {
-        "guard-then-commit"
-    } else {
-        "unknown"
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CatalogEntry {
-    name: String,
-    shape_cid: String,
-    classification: &'static str,
-}
-
-#[derive(Debug, Clone)]
-struct Catalog {
-    entries: Vec<CatalogEntry>,
-}
-
-impl Catalog {
-    fn match_shape(&self, shape_cid: &str, shape: &TermShape) -> Option<&CatalogEntry> {
-        if let Some(entry) = self
-            .entries
-            .iter()
-            .find(|entry| entry.shape_cid == shape_cid)
-        {
-            return Some(entry);
-        }
-        let classification = shape.classify();
-        if classification == "unknown" {
-            return None;
-        }
-        self.entries
-            .iter()
-            .find(|entry| entry.classification == classification)
-    }
-}
-
-fn seed_catalog() -> Catalog {
-    // The catalog is the signature of witnesses having witnessed. At t=0,
-    // before any witness has witnessed, it is EMPTY. There is no seed: a
-    // hand-assembled initial population is the lie -- concepts named/classified
-    // by fiat instead of accreted from witnessing. Concept naming falls back to
-    // UNNAMED until a real witness promotes a concept in. (The former
-    // `legacy_classification_entries` carried empty `shape_cid`s -- not even
-    // content-addressed, pure fiction -- and the on-disk concept-shapes load
-    // was hand-authored, UNSIGNED_DEV_ONLY mementos. Both gone.)
-    Catalog {
-        entries: Vec::new(),
-    }
+fn normalize_operator_label(name: &str) -> String {
+    name.to_string()
 }
 
 fn primitive_sort(name: &str) -> Sort {
@@ -1976,6 +1268,7 @@ mod tests {
                 "file": "src/lib.rs",
                 "fn_name": "f",
                 "concept_annotation": "demo",
+                "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "param_names": ["x"],
                 "param_types": ["i64"],
                 "return_type": "i64",
@@ -1995,17 +1288,17 @@ mod tests {
         )
         .expect("bind succeeds");
         assert_eq!(named.kind, "named-term-document");
-        assert_eq!(named.terms[0].concept_name, "concept:demo");
+        assert_eq!(
+            named.terms[0].op_cid,
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
         assert_eq!(named.terms[0].function, "f");
     }
 
     #[test]
-    fn symbol_keyed_binding_is_named_by_symbol_not_concept() {
-        // The numpy sugar shim is sugar-only and concept-free: the binding
-        // for `numpy.add` declares `symbol`, no `concept_annotation`. The term
-        // must be named by the fully-qualified symbol verbatim (no `concept:`
-        // prefix, no catalog shape-match) so it is the join key the linker
-        // resolves call-edges against and the recognizer stamps as target_symbol.
+    fn symbol_keyed_binding_keeps_symbol_as_display_name() {
+        // The numpy sugar shim declares `symbol`; op_cid is identity, and the
+        // symbol remains display/join metadata for call-edge resolution.
         let term = json!({
             "kind": "ir-document",
             "workspaceRoot": "/tmp/numpy-shim",
@@ -2014,6 +1307,7 @@ mod tests {
                 "file": "provekit_shim_numpy/__init__.py",
                 "source_function_name": "add",
                 "symbol": "numpy.add",
+                "op_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 "target_library_tag": "numpy",
                 "param_names": ["x", "y"],
                 "param_types": ["", ""],
@@ -2030,12 +1324,12 @@ mod tests {
         )
         .expect("bind succeeds");
         assert_eq!(
-            named.terms[0].concept_name, "numpy.add",
-            "symbol-keyed binding must be named by its fully-qualified symbol"
+            named.terms[0].name, "numpy.add",
+            "symbol-keyed binding must keep its fully-qualified symbol as display name"
         );
-        assert!(
-            !named.terms[0].concept_name.starts_with("concept:"),
-            "symbol identity must not be concept-prefixed"
+        assert_eq!(
+            named.terms[0].op_cid,
+            "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         );
     }
 
@@ -2048,9 +1342,10 @@ mod tests {
                 "ir": [{
                     "kind": "bind-lift-entry",
                     "file": "src/lib.rs",
-                    "fn_name": "add",
-                    "concept_annotation": "add",
-                    "param_names": ["x", "y"],
+                "fn_name": "add",
+                "concept_annotation": "add",
+                "op_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "param_names": ["x", "y"],
                     "param_types": ["i64", "i64"],
                     "return_type": "i64",
                     "term_shape": {
@@ -2197,13 +1492,12 @@ mod tests {
                 schema_version: "1".to_string(),
                 source_language: "rust".to_string(),
                 terms: vec![NamedTerm {
-                    concept_name: "concept:add".to_string(),
+                    op_cid: "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
                     discharge_verdict: "loudly-bounded-lossy".to_string(),
                     file: String::new(),
                     function: function.to_string(),
                     fn_name_sugar: None,
                     name: "add".to_string(),
-                    named_term_tree: None,
                     param_types: vec!["i64".to_string(), "i64".to_string()],
                     params: vec!["x".to_string(), "y".to_string()],
                     return_type: "i64".to_string(),
@@ -2240,13 +1534,12 @@ mod tests {
             schema_version: "1".to_string(),
             source_language: "rust".to_string(),
             terms: vec![NamedTerm {
-                concept_name: "concept:deposit".to_string(),
+                op_cid: "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
                 discharge_verdict: "loudly-bounded-lossy".to_string(),
                 file: String::new(),
                 function: String::new(),
                 fn_name_sugar: None,
                 name: "concept:deposit".to_string(),
-                named_term_tree: None,
                 param_types: vec!["i64".to_string()],
                 params: vec!["balance".to_string()],
                 return_type: "i64".to_string(),

@@ -21,12 +21,10 @@
 pub mod bind;
 pub mod emit_obligation;
 pub mod lift_plugin;
-pub mod lower_plugin;
 pub mod path_executor;
 pub mod primitives;
 pub mod prove_kit;
-pub mod source_transform;
-pub mod source_transform_kit;
+pub mod source_aliases;
 pub mod stubs;
 pub mod traits;
 pub mod types;
@@ -38,21 +36,14 @@ pub use bind::{
     named_term_document_cid, named_term_document_from_bind_payload,
     strip_realize_sidecar_from_lift_term, BindContractWitness, BindError, BindKit, BindLiftEntry,
     BindOptions, CandidateCluster, CandidateClusterManifest, NamedTerm, NamedTermDocument,
-    NamedTermTree, NamedWitness,
+    NamedWitness,
 };
 pub use lift_plugin::{LiftKit, LiftPluginKit, LiftPluginKitError, LiftPluginKitSession};
-pub use lower_plugin::{
-    LowerKit, RealizeContractPayload, RealizeContractWitness, RealizeRequest, RealizeTransport,
-    RealizedSource,
-};
 pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecutionError};
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };
 pub use prove_kit::ProveKit;
-pub use source_transform_kit::{
-    decode_source_transform_payload, SourceTransformAdapter, SOURCE_TRANSFORM_PAYLOAD_SORT,
-};
 pub use stubs::{CKit, FunctionContractDomain, NoopPortfolio, RustKit};
 pub use traits::{
     Canonical, Catalog, CoreError, Domain, DomainError, HashMapCatalog, HashMapInputCatalog,

@@ -32,10 +32,10 @@
 
 use std::sync::Arc;
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClaimEnvelopeError {

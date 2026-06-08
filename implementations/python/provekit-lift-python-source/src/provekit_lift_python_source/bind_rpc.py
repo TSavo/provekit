@@ -561,7 +561,7 @@ def _recognize_calls_anywhere(
                         "end_col": node.end_col_offset or 0,
                     },
                     "symbol": binding.get("symbol"),
-                    "concept_name": binding.get("concept_name"),
+                    "op_cid": binding.get("op_cid"),
                     "library_tag": binding.get("library_tag"),
                     "family": binding.get("family"),
                     "template_cid": binding.get("template_cid"),
@@ -602,7 +602,7 @@ def _recognize_calls_anywhere(
                             "end_col": node.end_col_offset or 0,
                         },
                         "symbol": binding.get("symbol"),
-                        "concept_name": binding.get("concept_name"),
+                        "op_cid": binding.get("op_cid"),
                         "library_tag": binding.get("library_tag"),
                         "family": binding.get("family"),
                         "template_cid": binding.get("template_cid"),
@@ -744,7 +744,7 @@ def _vendor_proof_binding_templates(root: Path) -> list[dict[str, Any]]:
             templates.append(
                 {
                     "symbol": body.get("symbol"),
-                    "concept_name": body.get("concept_name"),
+                    "op_cid": body.get("op_cid"),
                     "library_tag": body.get("target_library_tag"),
                     "ast_template": ast_template,
                     "template_cid": template_cid,
@@ -814,7 +814,7 @@ def _binding_template_from_sugar_entry(entry: dict[str, Any]) -> dict[str, Any] 
         return None
     return {
         "symbol": entry.get("symbol"),
-        "concept_name": entry.get("concept_name"),
+        "op_cid": entry.get("op_cid"),
         "library_tag": entry.get("target_library_tag"),
         "family": entry.get("family"),
         "ast_template": body_source.get("ast_template"),
@@ -849,7 +849,7 @@ def _recognize_function(
         },
         "function_name": node.name,
         "symbol": binding.get("symbol"),
-        "concept_name": binding.get("concept_name"),
+        "op_cid": binding.get("op_cid"),
         "library_tag": binding.get("library_tag"),
         "family": binding.get("family"),
         "template_cid": candidate_cid,

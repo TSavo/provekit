@@ -5,8 +5,8 @@
 // Source of truth:
 //   protocol/specs/2026-05-13-effect-occurrence-memento.md
 
-use sugar_ir_types::{Classification, EffectOccurrence, OccurrenceKind, OccurrenceRole};
 use serde_json::{json, Value};
+use sugar_ir_types::{Classification, EffectOccurrence, OccurrenceKind, OccurrenceRole};
 
 fn fixture(kind: &str, args: Value, discharge_key: &str, locator: Value, role: &str) -> String {
     json!({

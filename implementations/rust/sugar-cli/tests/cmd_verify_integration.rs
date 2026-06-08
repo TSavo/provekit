@@ -23,11 +23,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs};
 use sugar_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
-use serde_json::{json, Value as Json};
 
 fn unique_dir(suffix: &str) -> PathBuf {
     let stamp = std::time::SystemTime::now()

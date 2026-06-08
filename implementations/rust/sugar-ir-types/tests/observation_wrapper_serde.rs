@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_ir_types::{
     EffectOccurrence, InvariantViolation, ObservationWrapperMemento, OccurrenceKind, OccurrenceRole,
 };
-use serde_json::{json, Value as Json};
 
 const ARTIFACT_CID: &str = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OBJECT_FCM_CID: &str = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";

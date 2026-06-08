@@ -16,9 +16,9 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use serde_json::Value as Json;
 use sugar_ir_compiler::IrCompiler;
 use sugar_ir_compiler_coq::{CoqCompiler, DIALECT};
-use serde_json::Value as Json;
 
 use crate::solvers::{SolveResult, Solver};
 use crate::types::ObligationVerdict;

@@ -6,10 +6,10 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use sugar_ir_types::{IrFormula, IrTerm, LetBinding, Sort};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use sugar_ir_types::{IrFormula, IrTerm, LetBinding, Sort};
 use thiserror::Error;
 
 use crate::compose::{

@@ -326,10 +326,10 @@ mod tests {
     use crate::core::primitives::address;
     use crate::core::traits::HashMapCatalog;
     use crate::core::types::{DomainKind, Verdict};
-    use sugar_canonicalizer::Value;
-    use sugar_ir_types::{IrFormula, IrTerm, Sort};
     use serde_json::json;
     use std::sync::Arc;
+    use sugar_canonicalizer::Value;
+    use sugar_ir_types::{IrFormula, IrTerm, Sort};
 
     // ---- DomainClaim fixture helpers ---------------------------------------
 

@@ -42,11 +42,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonValue};
 use sugar_verifier::solvers::{run_plan, SolverHandle, SolverPlan};
 use sugar_verifier::types::ObligationVerdict;
-use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
 
 /// Re-exports from `provekit-verifier` so callers do not need a direct
 /// dependency on the verifier crate to construct a registry / plan.

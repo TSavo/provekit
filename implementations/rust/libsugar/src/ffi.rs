@@ -42,11 +42,9 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::sync::Arc;
 
-use sugar_canonicalizer::Value;
-use sugar_ir_types::{
-    composition_refusal_header_cid, CompositionRefusalMemento, IrFormula, Sort,
-};
 use serde::Deserialize;
+use sugar_canonicalizer::Value;
+use sugar_ir_types::{composition_refusal_header_cid, CompositionRefusalMemento, IrFormula, Sort};
 
 use crate::compose::{
     build_value, cid_of_value, compose_chain_contracts, jcs_bytes_of_value, AliasingMemento,

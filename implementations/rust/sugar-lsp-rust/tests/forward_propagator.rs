@@ -2,9 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use sugar_lsp_rust::forward_propagator::{
-    BaselineEntry, ForwardPropagator, LspRange, Post, Stmt,
-};
+use sugar_lsp_rust::forward_propagator::{BaselineEntry, ForwardPropagator, LspRange, Post, Stmt};
 
 fn unwrap_entry() -> BaselineEntry {
     BaselineEntry::new(

@@ -19,8 +19,8 @@
 
 use std::path::{Path, PathBuf};
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use serde_json::Value as Json;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use tracing::{debug, info, warn};
 
 use crate::cbor_decode::decode;
@@ -556,9 +556,9 @@ fn json_to_value(j: &Json) -> std::sync::Arc<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use sugar_claim_envelope::{mint_effect_site_annotation, MintEffectSiteAnnotationArgs};
     use sugar_proof_envelope::{build_proof_envelope, ProofEnvelopeInput};
-    use std::collections::BTreeMap;
 
     const PANIC_EFFECT: &str = "concept:panic-freedom";
 

@@ -1,6 +1,6 @@
+use serde_json::{json, Value as Json};
 use sugar_ir_compiler::IrCompiler;
 use sugar_ir_compiler_maude::{emit, MaudeCompiler, DIALECT};
-use serde_json::{json, Value as Json};
 
 fn nat_obligation() -> Json {
     json!({
