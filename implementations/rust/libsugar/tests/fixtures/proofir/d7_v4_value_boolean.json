@@ -62,5 +62,5 @@
       }
     ]
   },
-  "trim_note": "walk_emit term output was trimmed to one bridge-compatible ProofIR term; the raw rust-algebra envelope fields not consumed by proofir_resolve are represented by target, source, handling, term_surface, proofir_catalog_ops, and loss_record. The widened nested constructor surface is preserved inside the ListOfExpr literal without minting new ops."
+  "trim_note": "walk_emit term output was trimmed to one bridge-compatible ProofIR term; the raw rust-algebra envelope fields not consumed by ProofIR local-CID check are represented by target, source, handling, term_surface, proofir_catalog_ops, and loss_record. The widened nested constructor surface is preserved inside the ListOfExpr literal without minting new ops."
 }

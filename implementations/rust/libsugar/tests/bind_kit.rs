@@ -310,7 +310,7 @@ fn bind_gap_record_emits_wp_rule_refusal() {
 
     assert_eq!(gap["kind"], "TransportGapMemento");
     assert_eq!(gap["gap_kind"], "wp-rule-mismatch");
-    assert_eq!(gap["target_concept_op"], "concept:add");
+    assert_eq!(gap["target_op"], "concept:add");
 }
 
 #[test]

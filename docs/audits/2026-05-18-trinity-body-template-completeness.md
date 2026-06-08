@@ -13,7 +13,7 @@ This audit answers a downstream question: for each declared boundary realization
 
 Inputs read:
 
-- `menagerie/concept-shapes/catalog/realizations/*.json`: declarative realization records
+- `deleted concept-shapes catalog/realizations/*.json`: declarative realization records
 - `menagerie/<lang>-language-signature/specs/body-templates/*.json`: emission templates
 - `implementations/python/provekit-realize-python-core/src/provekit_realize_python_core/realizer.py`
 - `implementations/rust/provekit-realize-rust-core/src/lib.rs`

@@ -8,7 +8,7 @@
 - `2026-05-12-plugin-protocol.md`
 - `2026-05-14-transport-gap-and-partial-morphism-protocol.md`
 - `menagerie/<lang>-language-signature/specs/sort_*.spec.json`
-- `menagerie/concept-shapes/catalog/realizations/`
+- `deleted concept-shapes catalog/realizations/`
 - admissibility-spine umbrella issue #796
 
 ## §0. Purpose
@@ -232,7 +232,7 @@ Two mementos that differ only by `precision_loss`, `range_loss`, a guard predica
 - `protocol/specs/2026-05-09-language-signature-protocol.md` defines `SortMemento` and `LanguageSignatureMemento`. `source_sort_cid` and `target_sort_cid` point at sort mementos in that layer.
 - `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md` defines the transport trichotomy and multidimensional loss records consumed by cross-language migration. `SortMorphismMemento` supplies the type and sort side of the same composition story.
 - `menagerie/<lang>-language-signature/specs/sort_*.spec.json` contains the in-tree sort declarations that become source and target referents for these mementos.
-- `menagerie/concept-shapes/catalog/realizations/` contains existing concept realization equations. This spec is intentionally parallel to those operation and abstraction realization facts, but scoped to sorts.
+- `deleted concept-shapes catalog/realizations/` contains existing concept realization equations. This spec is intentionally parallel to those operation and abstraction realization facts, but scoped to sorts.
 - The admissibility-spine umbrella issue #796 is the integration point for deciding when a language has enough sort and concept coverage to be admitted as a transport target.
 
 ## §9. Examples

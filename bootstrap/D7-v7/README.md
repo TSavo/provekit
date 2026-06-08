@@ -31,7 +31,7 @@ object.
 
 | fn | verdict | fixture CID | cluster_canonical_cid | cluster_cardinality | note |
 | --- | --- | --- | --- | --- | --- |
-| kind | NON_GOAL | n/a | n/a | n/a | raw match_expr contains var nodes; not bridge-compatible under proofir_resolve |
+| kind | NON_GOAL | n/a | n/a | n/a | raw match_expr contains var nodes; not bridge-compatible under local_cid_fixture_check |
 | null | BYTE_IDENTICAL | blake3-512:754c6ff2c9a0ff92d96bcce0d1269385809944e613c11696df0458703a4e5e187714866b9e35171eb09d7753b66274a5e0d51a99ff1e0a0be3d9da6c1082d23f | n/a | 4 scalar constructors | D7-v3 and v7 agree after rustfmt |
 | boolean | BYTE_IDENTICAL | blake3-512:fe4f9d22916f33696f6a318c559948f445c0e61f353370c8d8a007e64bc56057e937fd844685e7120fa6346a0a4abd1cd2301190020b7c4bfec41fccb77abe89 | n/a | 4 scalar constructors | D7-v5 direct param shape remains closed |
 | integer | BYTE_IDENTICAL | blake3-512:e69f9d9cf2ffac684c58502e416d722b4a94bf2269f7ac135010520e57a65660e7093b517bf17f01bfe1a574794881f3e7d28c091fb0a6b5507cddb2ec9e279a | n/a | 4 scalar constructors | D7-v5 direct param shape remains closed |
@@ -59,7 +59,7 @@ bootstrap/D7-v7/value_module_sweep_receipt.json.
 
 The integration test is implementations/rust/libprovekit/tests/d7_v7_module_sweep.rs.
 It recomputes each fixture CID.
-It resolves through libprovekit::proofir_resolve.
+It resolves through libprovekit::local_cid_fixture_check.
 It realizes through provekit_realize_rust_core::emit_from_resolved.
 It extracts the original function slice from value.rs.
 It rustfmts both sides.
@@ -78,4 +78,4 @@ object still refuses during lift with unsupported value expression Expr::Closure
 No lifter, realizer, or substrate extension was made in D7-v7.
 
 This is the n=1 case of the cycle invariance theorem on a real libprovekit submodule.
-For the in-scope value.rs functions, rustfmt(realize_rust(proofir_resolve(lift_rust(fn)))) equals rustfmt(fn) byte-for-byte.
+For the in-scope value.rs functions, rustfmt(realize_rust(local_cid_fixture_check(lift_rust(fn)))) equals rustfmt(fn) byte-for-byte.

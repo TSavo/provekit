@@ -1208,7 +1208,7 @@ fn legacy_object_is_sugar_carrier(object: &serde_json::Map<String, serde_json::V
 // §1.1 (TransportGapMemento), §1.2 (PartialMorphismMemento), §1.4 (LossyMorphismMemento).
 // CDDL: protocol/provekit-ir.cddl "Transport gap mementos" block.
 //
-// Amendment (this PR): `no-such-concept-op` added to GapKind.
+// Amendment (this PR): `no-such-target-op` added to GapKind.
 //
 // Key-order rule: struct field names mirror the CDDL alphabetical key order.
 // Fields with `skip_serializing_if = "Option::is_none"` are OMITTED when None.
@@ -1216,7 +1216,7 @@ fn legacy_object_is_sugar_carrier(object: &serde_json::Map<String, serde_json::V
 
 /// The `gap_kind` discriminant for a `TransportGapMemento`.
 ///
-/// `no-such-concept-op` is an amendment in this PR: the source-language op
+/// `no-such-target-op` is an amendment in this PR: the source-language op
 /// has no matching concept:* hub op at all (target_op_cid is absent).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GapKind {
@@ -1230,7 +1230,7 @@ pub enum GapKind {
     MissingSourceOp,
     #[serde(rename = "missing-target-construct")]
     MissingTargetConstruct,
-    #[serde(rename = "no-such-concept-op")]
+    #[serde(rename = "no-such-target-op")]
     NoSuchConceptOp,
     #[serde(rename = "polymorphic-source-op")]
     PolymorphicSourceOp,
@@ -1424,13 +1424,13 @@ pub struct ResolutionOption {
 ///   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.1
 /// CDDL: protocol/provekit-ir.cddl `TransportGapMemento`
 ///
-/// Amendment (this PR): `gap_kind: "no-such-concept-op"` -- source op has no
+/// Amendment (this PR): `gap_kind: "no-such-target-op"` -- source op has no
 /// hub op at all; `target_op_cid` is absent in that case.
 ///
 /// Locked JCS key order (alphabetical):
 ///   fn_name, gap_kind, kind, reason (omitted when absent), reason_note (omitted when absent),
 ///   resolution_options, schema_version, signature (omitted when absent),
-///   source_lang, source_op_cid, target_concept_op,
+///   source_lang, source_op_cid, target_op,
 ///   target_op_cid (omitted when absent)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransportGapMemento {
@@ -1454,8 +1454,8 @@ pub struct TransportGapMemento {
     pub source_lang: String,
     #[serde(rename = "source_op_cid")]
     pub source_op_cid: String,
-    #[serde(rename = "target_concept_op")]
-    pub target_concept_op: String,
+    #[serde(rename = "target_op")]
+    pub target_op: String,
     #[serde(rename = "target_op_cid")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_op_cid: Option<String>,

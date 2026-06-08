@@ -498,9 +498,7 @@ def _sugar_carrier_transported_op(
     concept_name: str,
     loss_record: dict[str, Any],
 ) -> dict[str, Any] | None:
-    concept_cid = _catalog_concept_cid(concept_name)
-    if concept_cid is None:
-        return None
+    concept_cid = _local_concept_cid(concept_name)
     args_jcs = [{"kind": "var", "name": param} for param in params]
     return {
         "args_jcs": args_jcs,
@@ -530,28 +528,8 @@ def _loss_record_from_contribution(
     return {"loss_record_contribution": contribution}
 
 
-@lru_cache(maxsize=1)
-def _concept_catalog_index() -> dict[str, Any]:
-    path = _find_repo_file(Path("menagerie/concept-shapes/catalog/index.json"))
-    if path is None:
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _catalog_concept_cid(concept_name: str) -> str | None:
-    index = _concept_catalog_index()
-    entries = index.get("entries")
-    if not isinstance(entries, dict):
-        return None
-    for entry in entries.values():
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("kind") != "algorithm" or entry.get("name") != concept_name:
-            continue
-        cid = entry.get("cid")
-        if isinstance(cid, str) and CID_RE.fullmatch(cid):
-            return cid
-    return None
+def _local_concept_cid(concept_name: str) -> str:
+    return _cid_of_json({"kind": "local-concept-citation-target", "name": concept_name})
 
 
 def _payload_role(role: str) -> str | None:

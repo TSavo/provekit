@@ -21,7 +21,7 @@ Each architecture's kit declares its own value-tier ops:
 - **Classical platforms** (Rust, Java, Python, TypeScript, C, Go, etc.):
   `concept:literal { value, sort }`. Single concrete value at the position;
   sort drawn from the substrate's canonical sort catalog
-  (`menagerie/concept-shapes/catalog/sorts/`).
+  (`deleted concept-shapes catalog/sorts/`).
 - **Quantum platforms**: `concept:superposition`,
   `concept:basis-state`, `concept:complex-amplitude`, `concept:measure`,
   etc. The "value" at a position is a QUANTUM STATE, not a single
@@ -57,7 +57,7 @@ Lifted term (in term_shape):
 ```
 Term::Op(concept:literal, [], {
   value: 42,
-  sort: <CID of menagerie/concept-shapes/catalog/sorts/Int.json>
+  sort: <CID of deleted concept-shapes catalog/sorts/Int.json>
 })
 ```
 
@@ -99,7 +99,7 @@ Term::Op(concept:superposition, [
     ])
   ])
 ], {
-  sort: <CID of menagerie/concept-shapes/catalog/sorts/Qubit.json>
+  sort: <CID of deleted concept-shapes catalog/sorts/Qubit.json>
 })
 ```
 
@@ -158,7 +158,7 @@ Term::Op(concept:cell-assignment, [
     Term::Const { value: 1, sort: <Int CID> }
   ])
 ], {
-  sort: <CID of menagerie/concept-shapes/catalog/sorts/Cell.json>
+  sort: <CID of deleted concept-shapes catalog/sorts/Cell.json>
 })
 ```
 
@@ -328,11 +328,11 @@ Both axes hold simultaneously by being separate. Supra omnia, rectum.
 
 When filing a new kit for a new platform:
 
-1. Mint your value-tier ops in `menagerie/concept-shapes/catalog/algorithms/`.
-   Name them per your platform's natural vocabulary (concept:superposition,
-   concept:cell-state, concept:stack-push, etc.).
+1. Mint your value-tier ops as local concept definitions. Name them per your
+   platform's natural vocabulary (concept:superposition, concept:cell-state,
+   concept:stack-push, etc.).
 2. Mint any new sorts you need in
-   `menagerie/concept-shapes/catalog/sorts/` (Qubit, QuantumRegister<N>,
+   `deleted concept-shapes catalog/sorts/` (Qubit, QuantumRegister<N>,
    Cell, StackFrame, etc.). Cite sibling pattern at
    `Int.<cid>.json`.
 3. Declare SortAdmission (and any platform-specific dimensions like
@@ -372,8 +372,8 @@ When filing a new kit for a new platform:
 - Trichotomy ruling: `docs/plans/2026-05-18-op-coverage-verdict-trichotomy-ruling.md`.
 - Refuse-leg ruling: `docs/plans/2026-05-18-refuse-leg-short-circuit-ruling.md`.
 - Cycle invariance theorem: project memory `provekit_cycle_invariance`.
-- Sort catalog: `menagerie/concept-shapes/catalog/sorts/`.
-- Concept algorithm catalog: `menagerie/concept-shapes/catalog/algorithms/`.
+- Sort catalog: `deleted concept-shapes catalog/sorts/`.
+- Concept definitions: kit-local content-addressed mementos.
 - Term IR: `implementations/rust/provekit-ir-types/src/lib.rs`.
 - Composition primitive: `implementations/rust/libprovekit/src/core/platform_semantics.rs:124`.
 - Comparison primitive: `implementations/rust/libprovekit/src/core/types.rs:874`.

@@ -1438,7 +1438,7 @@ mod callee_post_guard_fact_tests {
     const OPTION_TOTAL_CONTRACT_CID: &str = "blake3-512:option-totality-contract";
     const GENERIC_CONTRACT_CID: &str = "blake3-512:generic-result-contract";
     const BRIDGE_SYMBOL: &str = "serde_json_to_string_value";
-    const OPTION_BRIDGE_SYMBOL: &str = "concept_op_catalog_cid_known";
+    const OPTION_BRIDGE_SYMBOL: &str = "grammar_op_registry_cid_known";
     const GENERIC_BRIDGE_SYMBOL: &str = "to_string_generic";
 
     /// A memento pool with:

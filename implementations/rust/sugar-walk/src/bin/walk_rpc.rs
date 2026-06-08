@@ -3835,7 +3835,7 @@ fn is_panic_leaf(leaf: &str) -> bool {
 /// verifier can resolve the panic partial bridge at the exact panic site. The
 /// receiver producer's bridge coordinates ride separately as
 /// `producerLine`/`producerCol`/`producerSymbol`; a split-line
-/// `ConceptOpCatalog\n  .cid(..)\n  .expect(..)` needs all three coordinates
+/// `GrammarOpRegistry\n  .cid(..)\n  .expect(..)` needs all three coordinates
 /// because the receiver expression, producer call, and panic leaf can start on
 /// three different source lines. The verifier treats these as opaque provenance.
 fn collect_panic_loci(item_fn: &syn::ItemFn, rel_path: &str) -> Vec<Value> {
@@ -8318,7 +8318,7 @@ fn comment_shapes_for_fn_source(src: &str, fn_name: &str) -> Vec<Arc<CValue>> {
 }
 
 fn comment_shape(surface: &str) -> Option<Arc<CValue>> {
-    let op_cid = concept_op_cid("concept:comment")?;
+    let op_cid = local_op_cid("concept:comment")?;
     Some(CValue::object([
         (
             "args",
@@ -9062,7 +9062,7 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                 let mut assign_args = vec![target_leaf, shape_of_expr(&init.expr, ctx)];
                 if local_binding_is_mut(local) {
                     // Emit a concept:literal boolean true as the mutability flag.
-                    let Some(op_cid) = concept_op_cid("concept:literal") else {
+                    let Some(op_cid) = local_op_cid("concept:literal") else {
                         return non_operation_shape();
                     };
                     assign_args.push(CValue::object([
@@ -9181,7 +9181,7 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Expr::Loop(e) => {
             // `loop { body }` ≡ `while true { body }` — decompose via concept:literal(true).
             let true_lit = {
-                let Some(op_cid) = concept_op_cid("concept:literal") else {
+                let Some(op_cid) = local_op_cid("concept:literal") else {
                     return non_operation_shape();
                 };
                 CValue::object([
@@ -9703,7 +9703,7 @@ fn method_concept_leaf(method_name: &str, arity: usize) -> Arc<CValue> {
 }
 
 fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
-    let op_cid = match concept_op_cid(concept_name) {
+    let op_cid = match local_op_cid(concept_name) {
         Some(cid) => cid.to_string(),
         None => {
             // Not in the live catalogue yet — derive a CID from the
@@ -9736,7 +9736,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             let Some(decoded) = value.base10_parse::<i64>().ok() else {
                 return non_operation_shape();
             };
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
+            let Some(op_cid) = local_op_cid("concept:literal") else {
                 return non_operation_shape();
             };
             let suffix = value.suffix();
@@ -9775,7 +9775,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             // Substrate-canonical: sort + value (the decoded string).
             // Source-form escape choices (`"\\\""` vs `"\""`) are kit
             // presentation, not substrate state.
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
+            let Some(op_cid) = local_op_cid("concept:literal") else {
                 return non_operation_shape();
             };
             CValue::object([
@@ -9800,7 +9800,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
         // single-char string). Source spelling (`'a'` vs `'\u{61}'`) is kit
         // presentation; the substrate carries semantic identity only.
         syn::Lit::Char(value) => {
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
+            let Some(op_cid) = local_op_cid("concept:literal") else {
                 return non_operation_shape();
             };
             CValue::object([
@@ -9819,7 +9819,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
 }
 
 fn concept_literal_shape(value: Arc<CValue>, sort_cid: &str) -> Arc<CValue> {
-    let Some(op_cid) = concept_op_cid("concept:literal") else {
+    let Some(op_cid) = local_op_cid("concept:literal") else {
         return non_operation_shape();
     };
     CValue::object([
@@ -9840,7 +9840,7 @@ fn byte_array_value(bytes: Vec<u8>) -> Arc<CValue> {
     )
 }
 
-fn concept_op_cid(concept_name: &str) -> Option<&'static str> {
+fn local_op_cid(concept_name: &str) -> Option<&'static str> {
     if !concept_name.starts_with("concept:") {
         return None;
     }
@@ -10179,11 +10179,11 @@ mod tests {
 
     #[test]
     fn collect_panic_loci_splits_receiver_start_from_method_producer_line() {
-        let src = r#"pub struct ConceptOpCatalog;
+        let src = r#"pub struct GrammarOpRegistry;
 const CONCEPT_BIND_RESULT: &str = "concept:bind-result";
 
 pub fn split_method_chain() -> Cid {
-    ConceptOpCatalog
+    GrammarOpRegistry
         .cid(CONCEPT_BIND_RESULT)
         .unwrap()
 }
@@ -11438,7 +11438,7 @@ pub fn add(x: i64, y: i64) -> i64 {
 }
 "#,
         );
-        let add_cid = concept_op_cid("concept:add").expect("concept:add cid");
+        let add_cid = local_op_cid("concept:add").expect("concept:add cid");
 
         // Substrate-canonical shape (#1075 federation): operand NAMES are
         // sugar, so scoped param/local references lift as EMPTY structural
@@ -11787,8 +11787,8 @@ pub fn add_via_let(a: i64, b: i64) -> i64 {
 }
 "#,
         );
-        let assign_cid = concept_op_cid("concept:assign").expect("assign cid");
-        let add_cid = concept_op_cid("concept:add").expect("add cid");
+        let assign_cid = local_op_cid("concept:assign").expect("assign cid");
+        let add_cid = local_op_cid("concept:add").expect("add cid");
 
         // Substrate-canonical shape (#1075 federation):
         // - assign TARGET is kind:symbol "q" — a let-binding NAME is structural
@@ -13364,10 +13364,10 @@ reason = "format!(\"blake3-512:{}\", \"0\".repeat(128)) is a valid blake3-512 CI
 [[functions]]
 call_kind = "method"
 callee_crate = "consumer_crate"
-receiver_path = "ConceptOpCatalog"
+receiver_path = "GrammarOpRegistry"
 callee = "cid"
 arg0_path = "CONCEPT_BIND_RESULT"
-contract = "concept_op_catalog_cid__concept_bind_result"
+contract = "op_name_catalog_cid__concept_bind_result"
 post_predicate = "is_some"
 reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and json_cid returns a valid CID"
 "#,
@@ -13401,7 +13401,7 @@ reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and js
             })
         );
 
-        let cid = by_name("concept_op_catalog_cid__concept_bind_result");
+        let cid = by_name("op_name_catalog_cid__concept_bind_result");
         assert_eq!(cid["kind"], "contract");
         assert_eq!(cid["library"], "consumer_crate");
         assert_eq!(cid["bodyDischargeEligible"], false);
@@ -14270,7 +14270,7 @@ reason = "derive Serialize over serde_json-infallible fields"
     fn lift_implications_disambiguates_function_postcondition_shapes_from_manifest() {
         let src = r##"
 pub struct Cid;
-pub struct ConceptOpCatalog;
+pub struct GrammarOpRegistry;
 
 const CONCEPT_BIND_RESULT: &str = "concept:bind-result";
 const CONCEPT_SEQ: &str = "concept:seq";
@@ -14281,7 +14281,7 @@ impl Cid {
     }
 }
 
-impl ConceptOpCatalog {
+impl GrammarOpRegistry {
     pub fn cid(&self, _name: &str) -> Option<Cid> {
         panic!()
     }
@@ -14312,11 +14312,11 @@ pub fn parse_variable(value: String) -> Cid {
 }
 
 pub fn catalog_bind_result() -> Cid {
-    ConceptOpCatalog.cid(CONCEPT_BIND_RESULT).expect("concept:bind-result is primitive")
+    GrammarOpRegistry.cid(CONCEPT_BIND_RESULT).expect("concept:bind-result is primitive")
 }
 
 pub fn catalog_other_name() -> Cid {
-    ConceptOpCatalog.cid(CONCEPT_SEQ).expect("not audited")
+    GrammarOpRegistry.cid(CONCEPT_SEQ).expect("not audited")
 }
 "##;
         let root = temp_workspace("lift_implications_dfn_postconditions");
@@ -14364,10 +14364,10 @@ reason = "recognized producer with an unknown singleton predicate must not imply
 [[functions]]
 call_kind = "method"
 callee_crate = "consumer_crate"
-receiver_path = "ConceptOpCatalog"
+receiver_path = "GrammarOpRegistry"
 callee = "cid"
 arg0_path = "CONCEPT_BIND_RESULT"
-contract = "concept_op_catalog_cid__concept_bind_result"
+contract = "op_name_catalog_cid__concept_bind_result"
 post_predicate = "is_some"
 reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and json_cid returns a valid CID"
 "#,
@@ -14397,7 +14397,7 @@ reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and js
                     "bodyDischargeRefusalReason": "totality-axiom"
                 },
                 {
-                    "name": "concept_op_catalog_cid__concept_bind_result",
+                    "name": "op_name_catalog_cid__concept_bind_result",
                     "library": "consumer_crate",
                     "contract_cid": catalog_cid,
                     "bodyDischargeEligible": false,
@@ -14456,7 +14456,7 @@ reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and js
         assert_eq!(
             catalog_hits.len(),
             1,
-            "only ConceptOpCatalog.cid(CONCEPT_BIND_RESULT) may bridge to the catalog totality contract: {ir:?}"
+            "only GrammarOpRegistry.cid(CONCEPT_BIND_RESULT) may bridge to the catalog totality contract: {ir:?}"
         );
 
         let panic_targets: Vec<&str> = ir

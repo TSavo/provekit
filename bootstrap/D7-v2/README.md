@@ -52,7 +52,7 @@ That is the #962 trait-path-truncated issue.
 
 Out of scope for this receipt:
 Do not change provekit-walk.
-Do not change libprovekit::proofir_resolve.
+Do not change libprovekit::local_cid_fixture_check.
 Do not add new concept ops.
 Do not generalize beyond return plus call:new plus literal.
 Do not claim source-layer byte identity for Value::null.

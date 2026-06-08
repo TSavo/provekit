@@ -22,7 +22,7 @@ The three faces are one decision: open-keyed map at the schema layer forces pair
   "kind": "platform-semantic-tag",
   "schemaVersion": "1.0.0",
   "kit_cid": "blake3-512:<kit-registration-cid>",
-  "op_cid": "blake3-512:<concept-op-cid>",
+  "op_cid": "blake3-512:<target-op-cid>",
   "dimensions": {
     "<dim_name_1>": "blake3-512:<DimensionValueMemento-cid>",
     "<dim_name_2>": "blake3-512:<DimensionValueMemento-cid>",

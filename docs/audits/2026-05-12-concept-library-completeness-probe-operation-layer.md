@@ -16,75 +16,75 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `c11:op` | concept target | discharge method | status / gap reason |
 | --- | --- | --- | --- |
 | `c11:add` | concept:add | effect-subset | mapped |
-| `c11:addr_label` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:addr_label has no concept-op counterpart in current hub |
+| `c11:addr_label` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:addr_label has no target-op counterpart in current hub |
 | `c11:addr_of` | concept:addr | canon-alpha+repr | mapped |
-| `c11:alignof_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:alignof_expr has no concept-op counterpart in current hub |
-| `c11:alignof_type` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:alignof_type has no concept-op counterpart in current hub |
-| `c11:and` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:and has no concept-op counterpart in current hub |
+| `c11:alignof_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:alignof_expr has no target-op counterpart in current hub |
+| `c11:alignof_type` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:alignof_type has no target-op counterpart in current hub |
+| `c11:and` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:and has no target-op counterpart in current hub |
 | `c11:array_subscript` | concept:index | effect-subset | mapped |
-| `c11:asm_link_edge` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:asm_link_edge has no concept-op counterpart in current hub |
+| `c11:asm_link_edge` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:asm_link_edge has no target-op counterpart in current hub |
 | `c11:assign` | concept:assign | effect-subset | mapped |
-| `c11:binary_operator` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:binary_operator has no concept-op counterpart in current hub |
+| `c11:binary_operator` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:binary_operator has no target-op counterpart in current hub |
 | `c11:bit_and` | concept:bitand | canon-alpha+repr | mapped |
 | `c11:bit_not` | concept:bitnot | canon-alpha+repr | mapped |
 | `c11:bit_or` | concept:bitor | canon-alpha+repr | mapped |
 | `c11:bit_xor` | concept:bitxor | canon-alpha+repr | mapped |
-| `c11:bop_add` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_add has no concept-op counterpart in current hub |
-| `c11:bop_bitand` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_bitand has no concept-op counterpart in current hub |
-| `c11:bop_bitor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_bitor has no concept-op counterpart in current hub |
-| `c11:bop_bitxor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_bitxor has no concept-op counterpart in current hub |
-| `c11:bop_comma` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_comma has no concept-op counterpart in current hub |
-| `c11:bop_div` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_div has no concept-op counterpart in current hub |
-| `c11:bop_eq` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_eq has no concept-op counterpart in current hub |
-| `c11:bop_ge` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_ge has no concept-op counterpart in current hub |
-| `c11:bop_gt` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_gt has no concept-op counterpart in current hub |
-| `c11:bop_le` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_le has no concept-op counterpart in current hub |
-| `c11:bop_logand` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_logand has no concept-op counterpart in current hub |
-| `c11:bop_logor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_logor has no concept-op counterpart in current hub |
-| `c11:bop_lt` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_lt has no concept-op counterpart in current hub |
-| `c11:bop_mod` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_mod has no concept-op counterpart in current hub |
-| `c11:bop_mul` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_mul has no concept-op counterpart in current hub |
-| `c11:bop_ne` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_ne has no concept-op counterpart in current hub |
-| `c11:bop_shl` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_shl has no concept-op counterpart in current hub |
-| `c11:bop_shr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_shr has no concept-op counterpart in current hub |
-| `c11:bop_sub` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_sub has no concept-op counterpart in current hub |
+| `c11:bop_add` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_add has no target-op counterpart in current hub |
+| `c11:bop_bitand` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_bitand has no target-op counterpart in current hub |
+| `c11:bop_bitor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_bitor has no target-op counterpart in current hub |
+| `c11:bop_bitxor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_bitxor has no target-op counterpart in current hub |
+| `c11:bop_comma` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_comma has no target-op counterpart in current hub |
+| `c11:bop_div` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_div has no target-op counterpart in current hub |
+| `c11:bop_eq` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_eq has no target-op counterpart in current hub |
+| `c11:bop_ge` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_ge has no target-op counterpart in current hub |
+| `c11:bop_gt` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_gt has no target-op counterpart in current hub |
+| `c11:bop_le` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_le has no target-op counterpart in current hub |
+| `c11:bop_logand` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_logand has no target-op counterpart in current hub |
+| `c11:bop_logor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_logor has no target-op counterpart in current hub |
+| `c11:bop_lt` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_lt has no target-op counterpart in current hub |
+| `c11:bop_mod` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_mod has no target-op counterpart in current hub |
+| `c11:bop_mul` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_mul has no target-op counterpart in current hub |
+| `c11:bop_ne` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_ne has no target-op counterpart in current hub |
+| `c11:bop_shl` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_shl has no target-op counterpart in current hub |
+| `c11:bop_shr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_shr has no target-op counterpart in current hub |
+| `c11:bop_sub` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:bop_sub has no target-op counterpart in current hub |
 | `c11:break` | concept:break | effect-subset | mapped |
-| `c11:builtin_choose_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:builtin_choose_expr has no concept-op counterpart in current hub |
-| `c11:builtin_types_compatible_p` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:builtin_types_compatible_p has no concept-op counterpart in current hub |
+| `c11:builtin_choose_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:builtin_choose_expr has no target-op counterpart in current hub |
+| `c11:builtin_types_compatible_p` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:builtin_types_compatible_p has no target-op counterpart in current hub |
 | `c11:call` | concept:call | effect-subset | mapped |
-| `c11:case` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:case has no concept-op counterpart in current hub |
+| `c11:case` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:case has no target-op counterpart in current hub |
 | `c11:cast` | concept:cast | canon-alpha+repr | mapped |
-| `c11:char_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:char_literal has no concept-op counterpart in current hub |
-| `c11:comma` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:comma has no concept-op counterpart in current hub |
-| `c11:compound_assign_add` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_add has no concept-op counterpart in current hub |
-| `c11:compound_assign_bitand` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_bitand has no concept-op counterpart in current hub |
-| `c11:compound_assign_bitor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_bitor has no concept-op counterpart in current hub |
-| `c11:compound_assign_bitxor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_bitxor has no concept-op counterpart in current hub |
-| `c11:compound_assign_div` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_div has no concept-op counterpart in current hub |
-| `c11:compound_assign_mod` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_mod has no concept-op counterpart in current hub |
-| `c11:compound_assign_mul` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_mul has no concept-op counterpart in current hub |
-| `c11:compound_assign_shl` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_shl has no concept-op counterpart in current hub |
-| `c11:compound_assign_shr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_shr has no concept-op counterpart in current hub |
-| `c11:compound_assign_sub` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_sub has no concept-op counterpart in current hub |
-| `c11:compound_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_literal has no concept-op counterpart in current hub |
+| `c11:char_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:char_literal has no target-op counterpart in current hub |
+| `c11:comma` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:comma has no target-op counterpart in current hub |
+| `c11:compound_assign_add` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_add has no target-op counterpart in current hub |
+| `c11:compound_assign_bitand` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_bitand has no target-op counterpart in current hub |
+| `c11:compound_assign_bitor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_bitor has no target-op counterpart in current hub |
+| `c11:compound_assign_bitxor` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_bitxor has no target-op counterpart in current hub |
+| `c11:compound_assign_div` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_div has no target-op counterpart in current hub |
+| `c11:compound_assign_mod` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_mod has no target-op counterpart in current hub |
+| `c11:compound_assign_mul` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_mul has no target-op counterpart in current hub |
+| `c11:compound_assign_shl` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_shl has no target-op counterpart in current hub |
+| `c11:compound_assign_shr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_shr has no target-op counterpart in current hub |
+| `c11:compound_assign_sub` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_assign_sub has no target-op counterpart in current hub |
+| `c11:compound_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:compound_literal has no target-op counterpart in current hub |
 | `c11:conditional` | concept:ite | effect-subset | mapped |
 | `c11:continue` | concept:continue | effect-subset | mapped |
 | `c11:decl` | concept:decl | effect-subset | mapped |
-| `c11:default` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:default has no concept-op counterpart in current hub |
+| `c11:default` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:default has no target-op counterpart in current hub |
 | `c11:deref` | concept:deref | canon-alpha+repr | mapped |
 | `c11:div` | concept:div | effect-subset | mapped |
 | `c11:do` | concept:do | canon-alpha+repr | mapped |
 | `c11:eq` | concept:eq | canon-alpha+repr | mapped |
-| `c11:float_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:float_literal has no concept-op counterpart in current hub |
+| `c11:float_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:float_literal has no target-op counterpart in current hub |
 | `c11:for` | concept:for | effect-subset | mapped |
 | `c11:ge` | concept:ge | canon-alpha+repr | mapped |
-| `c11:generic_selection` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:generic_selection has no concept-op counterpart in current hub |
-| `c11:goto` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:goto has no concept-op counterpart in current hub |
+| `c11:generic_selection` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:generic_selection has no target-op counterpart in current hub |
+| `c11:goto` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:goto has no target-op counterpart in current hub |
 | `c11:gt` | concept:gt | canon-alpha+repr | mapped |
 | `c11:if` | concept:conditional | canon-alpha+repr | mapped |
-| `c11:imaginary_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:imaginary_literal has no concept-op counterpart in current hub |
-| `c11:init_list` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:init_list has no concept-op counterpart in current hub |
-| `c11:label` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:label has no concept-op counterpart in current hub |
+| `c11:imaginary_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:imaginary_literal has no target-op counterpart in current hub |
+| `c11:init_list` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:init_list has no target-op counterpart in current hub |
+| `c11:label` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:label has no target-op counterpart in current hub |
 | `c11:le` | concept:le | canon-alpha+repr | mapped |
 | `c11:lt` | concept:lt | canon-alpha+repr | mapped |
 | `c11:member` | concept:member | canon-alpha+repr | mapped |
@@ -93,11 +93,11 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `c11:ne` | concept:ne | canon-alpha+repr | mapped |
 | `c11:neg` | concept:neg | effect-subset | mapped |
 | `c11:not` | concept:not | canon-alpha+repr | mapped |
-| `c11:null` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:null has no concept-op counterpart in current hub |
-| `c11:offsetof` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:offsetof has no concept-op counterpart in current hub |
-| `c11:opaque` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:opaque has no concept-op counterpart in current hub |
-| `c11:or` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:or has no concept-op counterpart in current hub |
-| `c11:plus` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:plus has no concept-op counterpart in current hub |
+| `c11:null` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:null has no target-op counterpart in current hub |
+| `c11:offsetof` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:offsetof has no target-op counterpart in current hub |
+| `c11:opaque` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:opaque has no target-op counterpart in current hub |
+| `c11:or` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:or has no target-op counterpart in current hub |
+| `c11:plus` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:plus has no target-op counterpart in current hub |
 | `c11:post_dec` | concept:postdec | canon-alpha+repr | mapped |
 | `c11:post_inc` | concept:postinc | effect-subset | mapped |
 | `c11:pre_dec` | concept:predec | canon-alpha+repr | mapped |
@@ -106,29 +106,29 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `c11:seq` | concept:seq | canon-alpha+repr | mapped |
 | `c11:shl` | concept:shl | effect-subset | mapped |
 | `c11:shr` | concept:shr | effect-subset | mapped |
-| `c11:sizeof_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:sizeof_expr has no concept-op counterpart in current hub |
-| `c11:sizeof_type` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:sizeof_type has no concept-op counterpart in current hub |
+| `c11:sizeof_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:sizeof_expr has no target-op counterpart in current hub |
+| `c11:sizeof_type` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:sizeof_type has no target-op counterpart in current hub |
 | `c11:skip` | concept:skip | canon-alpha+repr | mapped |
 | `c11:source_unit` | concept:source-unit | canon-alpha+repr | mapped |
-| `c11:stmt_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:stmt_expr has no concept-op counterpart in current hub |
-| `c11:string_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:string_literal has no concept-op counterpart in current hub |
+| `c11:stmt_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:stmt_expr has no target-op counterpart in current hub |
+| `c11:string_literal` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:string_literal has no target-op counterpart in current hub |
 | `c11:sub` | concept:sub | effect-subset | mapped |
-| `c11:switch` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:switch has no concept-op counterpart in current hub |
-| `c11:typeof_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:typeof_expr has no concept-op counterpart in current hub |
-| `c11:typeof_type` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:typeof_type has no concept-op counterpart in current hub |
-| `c11:unary_operator` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:unary_operator has no concept-op counterpart in current hub |
-| `c11:unexposed_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:unexposed_expr has no concept-op counterpart in current hub |
-| `c11:unexposed_stmt` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:unexposed_stmt has no concept-op counterpart in current hub |
-| `c11:uop_addr_of` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_addr_of has no concept-op counterpart in current hub |
-| `c11:uop_bitnot` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_bitnot has no concept-op counterpart in current hub |
-| `c11:uop_deref` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_deref has no concept-op counterpart in current hub |
-| `c11:uop_lognot` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_lognot has no concept-op counterpart in current hub |
-| `c11:uop_neg` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_neg has no concept-op counterpart in current hub |
-| `c11:uop_plus` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_plus has no concept-op counterpart in current hub |
-| `c11:uop_post_dec` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_post_dec has no concept-op counterpart in current hub |
-| `c11:uop_post_inc` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_post_inc has no concept-op counterpart in current hub |
-| `c11:uop_pre_dec` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_pre_dec has no concept-op counterpart in current hub |
-| `c11:uop_pre_inc` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_pre_inc has no concept-op counterpart in current hub |
+| `c11:switch` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:switch has no target-op counterpart in current hub |
+| `c11:typeof_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:typeof_expr has no target-op counterpart in current hub |
+| `c11:typeof_type` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:typeof_type has no target-op counterpart in current hub |
+| `c11:unary_operator` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:unary_operator has no target-op counterpart in current hub |
+| `c11:unexposed_expr` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:unexposed_expr has no target-op counterpart in current hub |
+| `c11:unexposed_stmt` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:unexposed_stmt has no target-op counterpart in current hub |
+| `c11:uop_addr_of` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_addr_of has no target-op counterpart in current hub |
+| `c11:uop_bitnot` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_bitnot has no target-op counterpart in current hub |
+| `c11:uop_deref` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_deref has no target-op counterpart in current hub |
+| `c11:uop_lognot` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_lognot has no target-op counterpart in current hub |
+| `c11:uop_neg` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_neg has no target-op counterpart in current hub |
+| `c11:uop_plus` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_plus has no target-op counterpart in current hub |
+| `c11:uop_post_dec` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_post_dec has no target-op counterpart in current hub |
+| `c11:uop_post_inc` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_post_inc has no target-op counterpart in current hub |
+| `c11:uop_pre_dec` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_pre_dec has no target-op counterpart in current hub |
+| `c11:uop_pre_inc` | _none_ | _—_ | **unmapped** [no-concept-target]: c11:uop_pre_inc has no target-op counterpart in current hub |
 | `c11:while` | concept:while | effect-subset | mapped |
 
 ### 1.2 java
@@ -139,7 +139,7 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `java:op` | concept target | discharge method | status / gap reason |
 | --- | --- | --- | --- |
 | `java:add` | concept:add | _—_ | **unmapped** [precondition-mismatch]: precondition mismatch: got `{"kind":"atomic","name":"true","args":[]}` want `{"kind":"atomic","name":"no_signed_overflow... |
-| `java:and` | _none_ | _—_ | **unmapped** [no-concept-target]: java:and has no concept-op counterpart in current hub |
+| `java:and` | _none_ | _—_ | **unmapped** [no-concept-target]: java:and has no target-op counterpart in current hub |
 | `java:assign` | concept:assign | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"k... |
 | `java:bitand` | concept:bitand | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"k... |
 | `java:bitnot` | concept:bitnot | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Int","args":[]}]` |
@@ -154,7 +154,7 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `java:do` | concept:do | _—_ | **unmapped** [mint-refused]: wp mismatch: got `"do body while cond; opaque until invariant memento is supplied"` want `"do body once, then loop while... |
 | `java:eq` | concept:eq | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"k... |
 | `java:for` | concept:for | _—_ | **unmapped** [polymorphic]: effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(init.effect... |
-| `java:foreach` | _none_ | _—_ | **unmapped** [no-concept-target]: java:foreach has no concept-op counterpart in current hub |
+| `java:foreach` | _none_ | _—_ | **unmapped** [no-concept-target]: java:foreach has no target-op counterpart in current hub |
 | `java:ge` | concept:ge | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"k... |
 | `java:gt` | concept:gt | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"k... |
 | `java:if` | concept:conditional | _—_ | **unmapped** [polymorphic]: effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(then_branch... |
@@ -169,8 +169,8 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `java:neg` | concept:neg | _—_ | **unmapped** [precondition-mismatch]: precondition mismatch: got `{"kind":"atomic","name":"true","args":[]}` want `{"kind":"atomic","name":"no_signed_overflow... |
 | `java:new` | concept:new | _—_ | **unmapped** [mint-refused]: return sort mismatch: got `{"kind":"ctor","name":"Ref","args":[]}` want `{"kind":"ctor","name":"Expr","args":[]}` |
 | `java:not` | concept:not | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]}]` |
-| `java:or` | _none_ | _—_ | **unmapped** [no-concept-target]: java:or has no concept-op counterpart in current hub |
-| `java:plus` | _none_ | _—_ | **unmapped** [no-concept-target]: java:plus has no concept-op counterpart in current hub |
+| `java:or` | _none_ | _—_ | **unmapped** [no-concept-target]: java:or has no target-op counterpart in current hub |
+| `java:plus` | _none_ | _—_ | **unmapped** [no-concept-target]: java:plus has no target-op counterpart in current hub |
 | `java:postdec` | concept:postdec | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]}]` |
 | `java:postinc` | concept:postinc | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]}]` |
 | `java:predec` | concept:predec | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]}]` |
@@ -194,9 +194,9 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `python:op` | concept target | discharge method | status / gap reason |
 | --- | --- | --- | --- |
 | `python:add` | concept:add | _—_ | **unmapped** [polymorphic]: python:add is polymorphic (dispatches on operand type: int, float, str, list); concept:add is integer-only |
-| `python:and` | _none_ | _—_ | **unmapped** [no-concept-target]: python:and has no concept-op counterpart in current hub |
+| `python:and` | _none_ | _—_ | **unmapped** [no-concept-target]: python:and has no target-op counterpart in current hub |
 | `python:assign` | concept:assign | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]}]` want `[{... |
-| `python:attribute` | _none_ | _—_ | **unmapped** [no-concept-target]: python:attribute has no concept-op counterpart in current hub |
+| `python:attribute` | _none_ | _—_ | **unmapped** [no-concept-target]: python:attribute has no target-op counterpart in current hub |
 | `python:bitand` | concept:bitand | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]}]` want `[{... |
 | `python:bitnot` | concept:bitnot | _—_ | **unmapped** [no-lang-op-spec]: operation not in supported set for this language |
 | `python:bitor` | concept:bitor | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]}]` want `[{... |
@@ -206,27 +206,27 @@ abstraction-layer composition morphisms are excluded from coverage counts.
 | `python:compare` | concept:{eq,ne,lt,le,gt,ge} (multi-op) | _—_ | **unmapped** [no-concept-target]: python:compare is a single multi-comparison op encoding up to 6 relational ops; no single concept op target |
 | `python:continue` | concept:continue | _—_ | **unmapped** [polymorphic]: effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"control-transfer"... |
 | `python:div` | concept:div | _—_ | **unmapped** [no-lang-op-spec]: operation not in supported set for this language |
-| `python:expr` | _none_ | _—_ | **unmapped** [no-concept-target]: python:expr has no concept-op counterpart in current hub |
-| `python:floordiv` | _none_ | _—_ | **unmapped** [no-concept-target]: python:floordiv has no concept-op counterpart in current hub |
+| `python:expr` | _none_ | _—_ | **unmapped** [no-concept-target]: python:expr has no target-op counterpart in current hub |
+| `python:floordiv` | _none_ | _—_ | **unmapped** [no-concept-target]: python:floordiv has no target-op counterpart in current hub |
 | `python:for` | concept:for | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]},{"kind":"c... |
 | `python:if` | concept:conditional | wp-abstraction+effect-subset | mapped |
-| `python:ite-bool` | _none_ | _—_ | **unmapped** [no-concept-target]: python:ite-bool has no concept-op counterpart in current hub |
-| `python:lshift` | _none_ | _—_ | **unmapped** [no-concept-target]: python:lshift has no concept-op counterpart in current hub |
+| `python:ite-bool` | _none_ | _—_ | **unmapped** [no-concept-target]: python:ite-bool has no target-op counterpart in current hub |
+| `python:lshift` | _none_ | _—_ | **unmapped** [no-concept-target]: python:lshift has no target-op counterpart in current hub |
 | `python:mod` | concept:mod | _—_ | **unmapped** [mint-refused]: python:mod is floored remainder (follows sign of divisor); concept:mod is truncated-toward-zero remainder (follows sign ... |
 | `python:mul` | concept:mul | _—_ | **unmapped** [polymorphic]: python:mul is polymorphic (int * str repeats, etc.); concept:mul is integer-only |
 | `python:neg` | concept:neg | _—_ | **unmapped** [polymorphic]: python:neg is polymorphic (dispatches on operand type); concept:neg is integer-only |
 | `python:not` | concept:not | _—_ | **unmapped** [mint-refused]: arity_shape or slot policy mismatch: got `{"kind":"named","slots":[{"name":"operand"}]}` want `{"kind":"named","slots":[... |
-| `python:or` | _none_ | _—_ | **unmapped** [no-concept-target]: python:or has no concept-op counterpart in current hub |
-| `python:pass` | _none_ | _—_ | **unmapped** [no-concept-target]: python:pass has no concept-op counterpart in current hub |
-| `python:pos` | _none_ | _—_ | **unmapped** [no-concept-target]: python:pos has no concept-op counterpart in current hub |
-| `python:pow` | _none_ | _—_ | **unmapped** [no-concept-target]: python:pow has no concept-op counterpart in current hub |
-| `python:raise` | _none_ | _—_ | **unmapped** [no-concept-target]: python:raise has no concept-op counterpart in current hub |
+| `python:or` | _none_ | _—_ | **unmapped** [no-concept-target]: python:or has no target-op counterpart in current hub |
+| `python:pass` | _none_ | _—_ | **unmapped** [no-concept-target]: python:pass has no target-op counterpart in current hub |
+| `python:pos` | _none_ | _—_ | **unmapped** [no-concept-target]: python:pos has no target-op counterpart in current hub |
+| `python:pow` | _none_ | _—_ | **unmapped** [no-concept-target]: python:pow has no target-op counterpart in current hub |
+| `python:raise` | _none_ | _—_ | **unmapped** [no-concept-target]: python:raise has no target-op counterpart in current hub |
 | `python:return` | concept:return | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]}]` |
-| `python:rshift` | _none_ | _—_ | **unmapped** [no-concept-target]: python:rshift has no concept-op counterpart in current hub |
+| `python:rshift` | _none_ | _—_ | **unmapped** [no-concept-target]: python:rshift has no target-op counterpart in current hub |
 | `python:seq` | concept:seq | effect-subset | mapped |
 | `python:source-unit` | concept:source-unit | _—_ | **unmapped** [sort-mismatch]: formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{... |
 | `python:sub` | concept:sub | _—_ | **unmapped** [polymorphic]: python:sub is polymorphic (dispatches on operand type); concept:sub is integer-only |
-| `python:subscript` | _none_ | _—_ | **unmapped** [no-concept-target]: python:subscript has no concept-op counterpart in current hub |
+| `python:subscript` | _none_ | _—_ | **unmapped** [no-concept-target]: python:subscript has no target-op counterpart in current hub |
 | `python:while` | concept:while | _—_ | **unmapped** [polymorphic]: effect signature mismatch: got `{"effects":[{"kind":"effect-signature","name":"OpaqueLoop"}]}` want `{"effects":[{"kind"... |
 
 ## 2. Per-Language Summary Statistics
@@ -396,7 +396,7 @@ Trio impact: would move java:add, java:sub, java:mul, java:neg from `preconditio
 
 ### R2. Extend concept hub for python-specific ops: `floordiv`, `pow`, `pos`, `compare`
 
-python has 4 ops with no concept-op counterpart in the hub:
+python has 4 ops with no target-op counterpart in the hub:
 - `python:floordiv` — floor division (no hub analog; `concept:div` is truncated-toward-zero)
 - `python:pow` — exponentiation (no `concept:pow` exists)
 - `python:pos` — unary plus (no `concept:pos` exists)
