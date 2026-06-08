@@ -74,6 +74,13 @@ if [ ! -f "$JUNIT_JAR" ]; then
   fi
 fi
 export SUGAR_JUNIT_CONSOLE_JAR="$JUNIT_JAR"
+export SUGAR_JAVA_ASSERT_CLASSPATH="$JUNIT_JAR"
+
+echo "== derive assertion vocabulary from real JUnit jar =="
+javap -classpath "$JUNIT_JAR" -public org.junit.jupiter.api.Assertions \
+  | grep -E 'assertEquals\(double, double, double|assertEquals\(int, int\)|assertTrue\(boolean\)' \
+  | sed 's/^/real-junit-signature: /'
+echo "vocab override: .sugar/vocab-exceptions/org.junit.jupiter.api.Assertions.json declares equality/truth for the jar body gap; javap-signature tolerance overloads remain Approx"
 
 render_manifests() {
   local suite="$1"
@@ -185,4 +192,4 @@ run_suite() {
 run_suite good discharged discharged
 run_suite bad refused refused
 
-echo "java learned-assertion showcase self-check passed"
+echo "java real-JUnit learned-assertion showcase self-check passed"

@@ -267,7 +267,7 @@ pub fn derive_vocab_from_javap(
         }
     }
     source_like.push_str("}\n");
-    let mut vocab = derive_vocab_from_source(class_name, &source_like, exception_dirs)?;
+    let mut vocab = derive_vocab_from_source(class_name, &source_like, &[])?;
     for method in &mut vocab.methods {
         method.source = "javap-signature".to_string();
         for (idx, param) in method.params.iter_mut().enumerate() {
@@ -276,6 +276,7 @@ pub fn derive_vocab_from_javap(
             }
         }
     }
+    apply_vocab_exceptions(&mut vocab, class_name, exception_dirs)?;
     Ok(vocab)
 }
 
@@ -526,17 +527,42 @@ fn carries_tolerance(params: &[AssertParam]) -> bool {
     }) {
         return true;
     }
-    params.len() >= 3
-        && params.last().is_some_and(|p| is_floating_type(&p.ty))
-        && params[..params.len() - 1]
+    for idx in 2..params.len() {
+        if !is_floating_type(&params[idx].ty) {
+            continue;
+        }
+        if params[..idx]
             .iter()
-            .filter(|p| is_floating_type(&p.ty))
+            .filter(|p| is_floating_comparable_type(&p.ty))
             .count()
-            >= 2
+            < 2
+        {
+            continue;
+        }
+        if params[idx + 1..].iter().all(|p| is_message_type(&p.ty)) {
+            return true;
+        }
+    }
+    false
 }
 
 fn is_floating_type(ty: &str) -> bool {
     matches!(ty.trim(), "double" | "Double" | "float" | "Float")
+}
+
+fn is_floating_comparable_type(ty: &str) -> bool {
+    matches!(
+        ty.trim(),
+        "double" | "Double" | "float" | "Float" | "double[]" | "Double[]" | "float[]" | "Float[]"
+    )
+}
+
+fn is_message_type(ty: &str) -> bool {
+    let ty = ty.trim();
+    matches!(ty, "String" | "java.lang.String")
+        || ty == "Supplier<String>"
+        || ty == "java.util.function.Supplier<String>"
+        || ty == "java.util.function.Supplier<java.lang.String>"
 }
 
 fn is_boolean_type(ty: &str) -> bool {
@@ -567,9 +593,12 @@ fn apply_vocab_exceptions(
             let mut found = false;
             for method in &mut vocab.methods {
                 if method.name == name {
+                    found = true;
+                    if matches!(method.category, AssertCategory::Approx) {
+                        continue;
+                    }
                     method.category = category;
                     method.source = "external-exception".to_string();
-                    found = true;
                 }
             }
             if !found {
