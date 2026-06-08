@@ -102,7 +102,7 @@ clean_suite() {
   rm -rf "$dir/.sugar/runs" "$dir/.sugar/witnesses" "$dir/target"
 }
 
-json_status() {
+verify_status() {
   python3 - "$1" "$2" <<'PY'
 import json
 import re
@@ -115,7 +115,7 @@ if not match:
     print("MISSING")
     raise SystemExit(0)
 data = json.loads(text[match.start():])
-rows = data.get("rows") or data.get("obligations") or (data if isinstance(data, list) else [])
+rows = data.get("rows") or data.get("claims") or data.get("obligations") or (data if isinstance(data, list) else [])
 for row in rows:
     prop = row.get("property") or row.get("predicate") or ""
     if kind == "consistency" and prop.startswith("consistency:") and "witness-package" not in prop:
@@ -147,26 +147,36 @@ run_suite() {
     exit 1
   fi
 
-  echo "== prove $suite =="
+  echo "== verify durable proof+witness $suite =="
   set +e
-  (cd "$dir" && "$SUGAR" prove . --json) > "$dir/.prove.json" 2>&1
-  local prove_rc=$?
+  (cd "$dir" && "$SUGAR" verify --project . --json) > "$dir/.verify.json" 2>&1
+  local verify_rc=$?
   set -e
 
   local got_consistency got_witness
-  got_consistency="$(json_status "$dir/.prove.json" consistency)"
-  got_witness="$(json_status "$dir/.prove.json" witness)"
+  got_consistency="$(verify_status "$dir/.verify.json" consistency)"
+  got_witness="$(verify_status "$dir/.verify.json" witness)"
 
   if [ "$expect_consistency" = "discharged" ]; then
+    if [ "$verify_rc" -ne 0 ]; then
+      echo "$suite durable verify expected exit 0, got $verify_rc" >&2
+      cat "$dir/.verify.json" >&2
+      exit 1
+    fi
     if [ "$got_consistency" != "discharged" ]; then
       echo "$suite consistency expected discharged, got $got_consistency" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
   else
+    if [ "$verify_rc" -eq 0 ]; then
+      echo "$suite durable verify expected refusal, but verify exited 0" >&2
+      cat "$dir/.verify.json" >&2
+      exit 1
+    fi
     if [ "$got_consistency" = "discharged" ] || [ "$got_consistency" = "MISSING" ]; then
       echo "$suite consistency expected refusal, got $got_consistency" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
   fi
@@ -174,14 +184,13 @@ run_suite() {
   if [ "$expect_witness" = "discharged" ]; then
     if [ "$got_witness" != "discharged" ]; then
       echo "$suite witness expected discharged, got $got_witness" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
-    : "$prove_rc"
   else
     if [ "$got_witness" = "discharged" ] || [ "$got_witness" = "MISSING" ]; then
       echo "$suite witness expected refusal, got $got_witness" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
   fi

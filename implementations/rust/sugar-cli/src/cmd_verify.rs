@@ -45,8 +45,10 @@
 // exist in `sugar-verifier` / `sugar-proof-envelope`. PR-9 wires
 // them into one verb; it reimplements none of them.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use crate::project_config::read_project_config;
+use crate::report_fmt;
 use crate::witness_verify;
 use clap::Parser;
 use owo_colors::OwoColorize;
@@ -57,8 +59,8 @@ use sugar_verifier::body_discharge;
 use sugar_verifier::solvers::registry;
 use sugar_verifier::{
     classify, enumerate_callsites, instantiate, load_all_proofs, resolve_target, run_plan,
-    smt_emitter, DispatchConfig, FormulaTheory, MementoPool, ObligationVerdict, SolverHandle,
-    SolverPlan, SolversConfig,
+    smt_emitter, DispatchConfig, FormulaTheory, MementoPool, ObligationVerdict, Runner,
+    RunnerConfig, SolverHandle, SolverPlan, SolversConfig,
 };
 use tracing::{debug, info};
 
@@ -310,6 +312,10 @@ pub fn run(args: VerifyArgs) -> u8 {
         return EXIT_USER_ERROR;
     }
 
+    if args.emit_witnesses.is_none() && project_root.join(".sugar").join("config.toml").exists() {
+        return run_artifact_project_verify(&project_root, &args);
+    }
+
     let quiet = args.out.quiet;
     let json_out = args.out.json;
 
@@ -466,6 +472,160 @@ pub fn run(args: VerifyArgs) -> u8 {
     } else {
         // All failures were Undecidable / Disagreement: solver failure.
         EXIT_SOLVER_FAIL
+    }
+}
+
+fn run_artifact_project_verify(project_root: &Path, args: &VerifyArgs) -> u8 {
+    let quiet = args.out.quiet;
+    let json_out = args.out.json;
+    let cfg_doc = read_project_config(project_root);
+
+    crate::cmd_prove::configure_witness_discharge_env(project_root, &cfg_doc);
+
+    let mut extra_projects: Vec<PathBuf> = Vec::new();
+    for callee in &cfg_doc.callees {
+        let p = project_root.join(callee);
+        if p.exists() {
+            extra_projects.push(p);
+        }
+    }
+
+    let dependency_proofs = match crate::kit_dispatch::dependency_proofs_via_rpc(project_root) {
+        Ok(proofs) => proofs,
+        Err(error) => {
+            eprintln!(
+                "{}: dependency proof resolution skipped: {error}",
+                "warning".yellow().bold()
+            );
+            Vec::new()
+        }
+    };
+
+    let cfg = RunnerConfig {
+        project_root: project_root.to_path_buf(),
+        z3_path: args.z3.clone(),
+        extra_projects,
+        extra_proofs: dependency_proofs,
+        ..Default::default()
+    };
+    let runner = Runner::new(cfg);
+    let run_artifact = match runner.run_with_proof_run() {
+        Ok(artifact) => artifact,
+        Err(error) => {
+            eprintln!("{}: {error}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
+    };
+    let report = run_artifact.report;
+    let pool = load_all_proofs::run(project_root);
+    let witness_results = witness_verify::verify_witnesses(project_root, &pool);
+    let witnesses_ok = witness_results.iter().all(|w| w.is_ok());
+    let hard_failed_rows = report
+        .rows
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.status.as_str(),
+                "unsatisfied" | "refused" | "disagreement"
+            )
+        })
+        .count();
+    let proof_ok =
+        !report.rows.is_empty() && report.load_errors.is_empty() && hard_failed_rows == 0;
+    let proof_code = if proof_ok {
+        EXIT_OK
+    } else if hard_failed_rows > 0 {
+        EXIT_VERIFY_FAIL
+    } else {
+        EXIT_SOLVER_FAIL
+    };
+    let ok = proof_ok && witnesses_ok;
+
+    if json_out {
+        let mut out = report_fmt::report_to_json(&report);
+        let rows = out
+            .get("rows")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let claims: Vec<Json> = rows
+            .iter()
+            .map(|row| {
+                let status = row.get("status").and_then(Json::as_str).unwrap_or("");
+                json!({
+                    "property": row.get("property").cloned().unwrap_or(Json::Null),
+                    "propertyCid": row.get("propertyCid").cloned().unwrap_or(Json::Null),
+                    "status": status,
+                    "pass": status == "discharged",
+                    "reason": row.get("reason").cloned().unwrap_or(Json::Null),
+                    "dischargeMethod": row.get("dischargeMethod").cloned().unwrap_or(Json::Null),
+                    "bodyDischargeTier": row.get("bodyDischargeTier").cloned().unwrap_or(Json::Null),
+                    "bridge": row.get("bridge").cloned().unwrap_or(Json::Null),
+                    "callee": row.get("callee").cloned().unwrap_or(Json::Null),
+                    "file": row.get("file").cloned().unwrap_or(Json::Null),
+                    "line": row.get("line").cloned().unwrap_or(Json::Null),
+                })
+            })
+            .collect();
+        let witness_dim: Vec<Json> = witness_results
+            .iter()
+            .map(|w| {
+                json!({
+                    "witnessCid": w.witness_cid,
+                    "verdict": w.verdict,
+                    "checks": w.checks,
+                    "reason": w.reason,
+                })
+            })
+            .collect();
+        if let Some(obj) = out.as_object_mut() {
+            obj.insert("kind".into(), Json::String("verification-receipt".into()));
+            obj.insert("schemaVersion".into(), Json::String("1".into()));
+            obj.insert(
+                "project".into(),
+                Json::String(project_root.display().to_string()),
+            );
+            obj.insert("kit".into(), args.kit.clone().map(Json::String).unwrap_or(Json::Null));
+            obj.insert("claims".into(), Json::Array(claims));
+            obj.insert("totalClaims".into(), json!(rows.len()));
+            obj.insert("failed".into(), json!(hard_failed_rows));
+            obj.insert(
+                "witnessDimension".into(),
+                json!({
+                    "witnesses": witness_dim,
+                    "total": witness_results.len(),
+                    "ok": witnesses_ok,
+                }),
+            );
+            obj.insert("ok".into(), Json::Bool(ok));
+        }
+        match serde_json::to_string_pretty(&out) {
+            Ok(s) => println!("{s}"),
+            Err(e) => {
+                eprintln!("{}: serialize receipt JSON: {e}", "error".red().bold());
+                return EXIT_USER_ERROR;
+            }
+        }
+    } else {
+        report_fmt::print_report_pretty(&report, quiet);
+        if !quiet && !witness_results.is_empty() {
+            for witness in &witness_results {
+                println!(
+                    "  [witness:{}] {}  checks={}",
+                    witness.verdict,
+                    witness.witness_cid,
+                    witness.checks.join(",")
+                );
+            }
+        }
+    }
+
+    if ok {
+        EXIT_OK
+    } else if !witnesses_ok {
+        EXIT_VERIFY_FAIL
+    } else {
+        proof_code
     }
 }
 

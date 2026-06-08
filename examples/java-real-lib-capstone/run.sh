@@ -214,7 +214,7 @@ javap -classpath "$JUNIT_JAR" -public org.junit.jupiter.api.Assertions \
 echo "vocab override: .sugar/vocab-exceptions/org.junit.jupiter.api.Assertions.json declares equality/truth for the jar body gap; javap-signature tolerance overloads remain Approx"
 
 echo "== mint Apache Commons Codec real source/test suite =="
-rm -f "$PROJECT"/blake3-512:*.proof "$PROJECT/.prove.json"
+rm -f "$PROJECT"/blake3-512:*.proof "$PROJECT/.prove.json" "$PROJECT/.verify.json"
 rm -rf "$PROJECT/.sugar/runs" "$PROJECT/.sugar/witnesses" "$PROJECT/target"
 write_surface_manifests
 require_surface_manifests
@@ -226,28 +226,29 @@ if [ -z "$proof" ]; then
   exit 1
 fi
 
-echo "== prove consistency + witness =="
+echo "== verify durable proof+witness =="
 set +e
-(cd "$PROJECT" && "$SUGAR" prove . --json) > "$PROJECT/.prove.json" 2>&1
-prove_rc=$?
+(cd "$PROJECT" && "$SUGAR" verify --project . --json) > "$PROJECT/.verify.json" 2>&1
+verify_rc=$?
 set -e
-: "$prove_rc"
 
 summary="$(
-  python3 - "$PROJECT/.prove.json" "$PROJECT/target/sugar-java-junit/reports" <<'PY'
+  python3 - "$PROJECT/.verify.json" "$PROJECT/target/sugar-java-junit/reports" "$verify_rc" <<'PY'
 import json
 import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-prove_path, reports_dir = sys.argv[1:3]
-text = Path(prove_path).read_text(encoding="utf-8")
+verify_path, reports_dir, verify_rc = sys.argv[1:4]
+if int(verify_rc) != 0:
+    raise SystemExit(f"durable verify expected exit 0, got {verify_rc}")
+text = Path(verify_path).read_text(encoding="utf-8")
 match = re.search(r"(?m)^\{", text)
 if not match:
-    raise SystemExit("missing JSON prove report")
+    raise SystemExit("missing JSON verify report")
 data = json.loads(text[match.start():])
-rows = data.get("rows") or data.get("obligations") or (data if isinstance(data, list) else [])
+rows = data.get("rows") or data.get("claims") or data.get("obligations") or (data if isinstance(data, list) else [])
 consistency = []
 witness = []
 for row in rows:
@@ -286,7 +287,7 @@ PY
 echo "$summary"
 if ! grep -q 'junit_failures=0' <<<"$summary"; then
   echo "real JUnit witness had failures" >&2
-  cat "$PROJECT/.prove.json" >&2
+  cat "$PROJECT/.verify.json" >&2
   exit 1
 fi
 

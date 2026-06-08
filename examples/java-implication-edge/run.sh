@@ -126,7 +126,7 @@ if not match:
     print("MISSING")
     raise SystemExit(0)
 data = json.loads(text[match.start():])
-rows = data.get("rows") or data.get("obligations") or (data if isinstance(data, list) else [])
+rows = data.get("rows") or data.get("claims") or data.get("obligations") or (data if isinstance(data, list) else [])
 for row in rows:
     prop = row.get("property") or row.get("predicate") or ""
     if "witness-package" in prop:
@@ -150,7 +150,7 @@ if not match:
     print("MISSING")
     raise SystemExit(0)
 data = json.loads(text[match.start():])
-rows = data.get("rows") or data.get("obligations") or (data if isinstance(data, list) else [])
+rows = data.get("rows") or data.get("claims") or data.get("obligations") or (data if isinstance(data, list) else [])
 for row in rows:
     prop = row.get("property") or row.get("predicate") or ""
     if "witness-package" in prop:
@@ -179,25 +179,36 @@ run_suite() {
     exit 1
   fi
 
-  echo "== prove $suite =="
+  echo "== verify durable proof+witness $suite =="
   set +e
-  (cd "$dir" && "$SUGAR" prove . --json) > "$dir/.prove.json" 2>&1
+  (cd "$dir" && "$SUGAR" verify --project . --json) > "$dir/.verify.json" 2>&1
+  local verify_rc=$?
   set -e
 
   local got_edge got_witness
-  got_edge="$(edge_status "$dir/.prove.json")"
-  got_witness="$(witness_status "$dir/.prove.json")"
+  got_edge="$(edge_status "$dir/.verify.json")"
+  got_witness="$(witness_status "$dir/.verify.json")"
 
   if [ "$expect_edge" = "discharged" ]; then
+    if [ "$verify_rc" -ne 0 ]; then
+      echo "$suite durable verify expected exit 0, got $verify_rc" >&2
+      cat "$dir/.verify.json" >&2
+      exit 1
+    fi
     if [ "$got_edge" != "discharged" ]; then
       echo "$suite java implication edge expected discharged, got $got_edge" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
   else
+    if [ "$verify_rc" -eq 0 ]; then
+      echo "$suite durable verify expected refusal, but verify exited 0" >&2
+      cat "$dir/.verify.json" >&2
+      exit 1
+    fi
     if [ "$got_edge" = "discharged" ] || [ "$got_edge" = "MISSING" ]; then
       echo "$suite java implication edge expected refusal, got $got_edge" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
   fi
@@ -205,18 +216,18 @@ run_suite() {
   if [ "$expect_witness" = "discharged" ]; then
     if [ "$got_witness" != "discharged" ]; then
       echo "$suite witness expected discharged, got $got_witness" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
   else
     if [ "$got_witness" = "discharged" ] || [ "$got_witness" = "MISSING" ]; then
       echo "$suite witness expected refusal, got $got_witness" >&2
-      cat "$dir/.prove.json" >&2
+      cat "$dir/.verify.json" >&2
       exit 1
     fi
   fi
 
-  echo "$suite java_edge=$got_edge witness=$got_witness"
+  echo "$suite java_edge=$got_edge witness=$got_witness verify_rc=$verify_rc"
 }
 
 echo "EDGE: Java method callsite where producer.post must imply consumer.pre."
