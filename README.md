@@ -3,21 +3,49 @@
 
 > **Sugar in, `.proof` out.**
 
-Sugar is a proof supply chain for software that already exists. It is
-Git/IPFS/Sigstore for *correctness*: signed, content-addressed `.proof`
-artifacts that anyone can re-verify by recomputation, without trusting the
-original test runner and without re-running the original proof.
+Nobody depends on your code. They depend on what your code *does*. Sugar takes
+the ordinary surface you already write, the *sugar* (tests, assertions,
+contracts, schemas, validators, framework annotations, boundary and library
+bindings), and turns it into a signed, content-addressed `.proof` of the
+**behavior**: a portable claim other packages, tools, and languages can
+re-verify by recomputation, without trusting your test runner and without
+re-running your proof. It never asks anyone to rewrite code in a proof language.
+"Just sugar," the surface everyone waves off as not-the-real-thing, is exactly
+where correctness turns out to live.
 
-It does not ask anyone to rewrite code in a proof language. Feed it the ordinary
-surface you already write — the *sugar*: tests, assertions, contracts, schemas,
-validators, framework annotations, boundary and library bindings — and it turns
-that evidence into portable claims, packaged as signed, content-addressed
-`.proof` artifacts that other packages, tools, and languages can verify by
-recomputation. "Just sugar," the surface everyone waves off as not-the-real-thing,
-is exactly where correctness turns out to live. CIDs are BLAKE3-512; signatures
-are Ed25519.
+Sugar in, `.proof` out. CIDs are BLAKE3-512; signatures are Ed25519.
 
-## The claim Sugar makes checkable
+## Why it matters: the version lied, the behavior moved, Sugar saw it
+
+SemVer versions the *shadow*. It bumps when the bytes change and holds still when
+they don't, so it is jumpy about a rename and **stone blind to a backdoor**: a
+bugfix and a malicious patch are both "a patch." Nobody can read a version number
+and learn the one thing they actually need. Did the behavior move.
+
+Sugar versions the *object*. Lift any source and each behavior becomes a
+content-addressed contract; `sugar diff` compares two proof sets by behavior, not
+by text:
+
+- A rename, a reformat, a behavior-preserving refactor reads as `none`. No false
+  alarm, so you never train yourself to ignore the tool.
+- A behavior that appears or vanishes under a frozen version reads as `new` or
+  `lost`. That is the malicious patch the version number hid.
+
+You cannot bolt a credential harvester onto a package for free. New behavior means
+new effects (reads, writes, sockets), and effects cannot hide inside a fingerprint
+that records them: the CID moves, or the fingerprint is lying. This is the shape of
+the npm and PyPI supply-chain compromises that publish poisoned versions under
+continuous-looking version numbers. `sugar diff --frozen` fails on any behavior
+delta under a pinned dependency; `--require <bump>` turns the version from a
+promise a human types into a measurement derived from the proof delta, so a
+release that calls itself `minor` while a behavior was lost is refused at publish
+time.
+
+Honest scope: this works **today** as `cargo sugar` (Rust) and `sugar-check`
+(Python pre-commit hook). The npm/JS wedge is in progress; what is missing is the
+lifter, not the thesis.
+
+## How a `.proof` works: the claim, formally
 
 Correctness is `k(I) = t`: a program `k` applied to an input/precondition `I`
 produces an output/postcondition `t`. A `.proof` is a kept promise made
@@ -195,6 +223,11 @@ authoritative list; the current subcommands include:
 - `sugar verify`: verify a kit end to end. Lift its contract claims,
   discharge each via the solver-dispatch table, recompute witnesses with the kit
   oracle untrusted, and emit a signed per-claim receipt. This is the gate verb.
+- `sugar diff <a> <b>`: compare two minted proof sets by behavior, not text.
+  Classifies each behavior-CID as `held` / `renamed` / `new` / `lost` and reports
+  the implied bump. `--require <bump>` enforces honest semver at publish time;
+  `--frozen` fails on any behavior delta under a pinned dependency. The Rust and
+  Python wedges (`cargo sugar`, `sugar-check`) drive this verb.
 - `sugar dump`: pretty-print a `.proof` envelope (members, bodies,
   signatures).
 - `sugar hash`: compute the BLAKE3-512 CID of a file or stdin.
@@ -239,11 +272,10 @@ Verify the installed CLI's embedded protocol catalog:
 sugar verify-protocol
 ```
 
-For project setup and first runs, start with
-[docs/quickstart-end-user.md](docs/quickstart-end-user.md). If you are working
-on Sugar itself, see [docs/contributing/build.md](docs/contributing/build.md)
-for the polyglot Make targets, system dependencies, and per-implementation build
-commands.
+For a first run, work through the demos in [examples/](examples/); each one has a
+`run.sh` that mints, proves, and verifies end to end. If you are working on Sugar
+itself, see [docs/contributing/build.md](docs/contributing/build.md) for the
+polyglot Make targets, system dependencies, and per-implementation build commands.
 
 ## Run the demos
 
@@ -260,13 +292,12 @@ The numpy demos provision their own venv on first run.
 - **Canonical implementation:** the Rust CLI in
   `implementations/rust/sugar-cli`.
 - **Protocol catalog:** embedded in the CLI and verified by `sugar
-  verify-protocol`. The reference matrix
-  ([docs/reference/per-language-status.md](docs/reference/per-language-status.md))
-  tracks the catalog version it was last updated for.
-- **Supported ecosystem surface:** Rust, TypeScript, Python, Java, C#, Ruby,
-  Zig, Go, C++, Swift, C, and PHP have varying kit, library, lift-adapter,
-  embedded-verifier, and LSP coverage. Coverage is empirical; see
-  [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
+  verify-protocol`. The binary is the live authority for the catalog CID; do not
+  trust a version written in prose.
+- **Supported ecosystem surface:** coverage is empirical and uneven across
+  languages, and it changes faster than prose can track. The runnable
+  [examples/](examples/) are the honest picture of what works end to end today;
+  if it is not a passing example, treat it as in progress.
 - **Proof artifacts:** `.proof` envelopes, signed mementos, source CIDs, witness
   CIDs, contract CIDs, attestation CIDs, contract-set CIDs, and protocol catalog
   CIDs are the durable units.
@@ -279,21 +310,19 @@ The numpy demos provision their own venv on first run.
 
 ## Start here
 
+The user-facing docs were written ahead of the implementation and described
+installers and per-language flows that do not exist, so they were removed rather
+than left as fiction. What remains is real: the runnable demos, the code, the
+vocabulary, and the papers. Honest usage docs return when there is a path that
+runs end to end to document.
+
 | Goal | Read |
 |---|---|
 | Run the headline demo | [examples/numpy-vendor/](examples/numpy-vendor/) |
-| Install and run the CLI | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) |
+| See everything that runs today | [examples/](examples/) |
 | Learn the vocabulary | [SHARED-LANGUAGE.md](SHARED-LANGUAGE.md) |
-| Understand the product surface | [docs/explanation/product.md](docs/explanation/product.md) |
-| Understand the architecture | [docs/explanation/architecture.md](docs/explanation/architecture.md) |
-| Understand `.proof` and proofchains | [docs/explanation/proofchain.md](docs/explanation/proofchain.md) |
-| See kit and language coverage | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
-| Publish a `.proof` artifact | [docs/how-to/publishing-a-proof.md](docs/how-to/publishing-a-proof.md) |
-| Build or extend a kit | [docs/quickstart-extender.md](docs/quickstart-extender.md) |
-| Compare to other tools | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
+| Build Sugar from source | [docs/contributing/build.md](docs/contributing/build.md) |
 | Read the paper ladder | [docs/papers/README.md](docs/papers/README.md) |
-
-For the full docs map, see [docs/index.md](docs/index.md).
 
 ## What Sugar is not
 
