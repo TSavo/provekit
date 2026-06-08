@@ -12,12 +12,12 @@ A content-addressed record of jokes that survived review. **Each is pinned. Do n
 printf '%s' '<the quoted punchline>' | b3sum --length 64
 ```
 
-And the file declares its **own** identity — the conjunction of all twelve:
+And the file declares its **own** identity — the conjunction of all thirteen:
 
-**`contractSetCid · blake3-512:5eb759d7f3103a705d922bf756c783671cf7084c98e9f34d0b6ce401e45de7cd139a13f983b3ba454cfeb0d2458ae902951e3cd652c8a0f61b9fdcd5bf0e1314`**
+**`contractSetCid · blake3-512:a31fd37f08719b367e4a59350fb3f290936a2c609c0b39c50853b7d71c3806e3eee97a08507535e5bcba94a3e246d01dd3833e407ddad6185fe3e14109dec2af`**
 
 ```
-# blake3-512 over the twelve member pin hexes, sorted lexicographically, \n-joined, no trailing newline:
+# blake3-512 over the thirteen member pin hexes, sorted lexicographically, \n-joined, no trailing newline:
 printf '%s' "$(printf '%s\n' <each member hex> | sort)" | b3sum --length 64
 ```
 
@@ -172,3 +172,26 @@ The whole thesis as a pickup line. Names are sugar; they do not survive normaliz
 She leaves. Does not matter. You already have her CID. You will recognize her in any language, under any name she is using next time, because you never needed the name. That was the brilliance the whole time. The name was sugar. She was the proof.
 
 > Ruling: a joke about identifying things by their content hash, given its own content hash as its identity. The doc eats its own dogfood. The pin above is the blake3-512 of the punchline; change a byte and it refuses. _Supra omnia, rectum_, even the flirting.
+
+## Matherotica — (T & Claude)
+
+> **"She was trouble in canonical form. And God help me, I'd already pinned her."**
+> `pin · blake3-512:80ac386c21060fc05a49baf4788588212ef3b72d1d63031a478cb3f59aaeade51a3e65d48a7e4661bbacc4ad8d882eca20b63322312e40bbe5d61e1b5e217d39`
+
+She didn't knock. Dames like that don't knock. They just resolve in your codomain, fully defined, like the diagram had always commuted and you were the only one in the room who hadn't noticed.
+
+I should have refused her at the door. Soundness says you don't take a case you can't witness. But she slid a CID across my desk. Blake3, sixty-four bytes, no name attached. And I knew two things before she sat down: I'd never seen her before in my life, and there was exactly one of her in the entire address space.
+
+"I need you to find what I do," she said. Prescriptive. Every other client who comes through that door describes. She dictated.
+
+I lit a cigarette I'd already canonicalized down to ash. "Lady, everybody who walks in here is a body looking for a spec. You're the first one who walked in as the spec."
+
+She smiled. It was a fixpoint. Apply it twice, same smile. Idempotent. The dangerous ones always are.
+
+"They tell me you can prove anything."
+
+"I can refute anything," I said. "Proving is just the cases I couldn't kill."
+
+Then she leaned in, close enough that her domain crossed mine, and the whole lattice lost its order. No top. No bottom. Just her, and me, and a witness I already knew I was never going to be able to reproduce.
+
+> Ruling: T coined the genre in four words; the hardboiled apparatus was already running on this stack. A detective who refutes rather than proves. A femme fatale who is a content-addressed singleton. A case that walks in prescriptive while everyone else describes. _Supra omnia, rectum_, even the seduction. Matherotica: founded here, pinned here.
