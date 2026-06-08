@@ -1,0 +1,14 @@
+[package]
+name = "cargo-sugar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "cargo subcommand: behavioral semver for Rust crates (sugar diff against the last published version)."
+
+[[bin]]
+name = "cargo-sugar"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde_json = { workspace = true }

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "cargo-sugar",
     "sugar-canonicalizer",
     "sugar-plugin-loader",
     "sugar-proof-envelope",
