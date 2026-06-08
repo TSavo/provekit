@@ -25,6 +25,7 @@ from .canonicalizer import (
     encode_jcs,
     jcs_hash,
 )
+from .op_cid import local_op_cid, local_operator_shape, op_cid_from_shape
 from .ir import (
     Bool,
     BridgeDecl,
@@ -158,6 +159,8 @@ __all__ = [
     "locus_to_value",
     "lt",
     "lte",
+    "local_op_cid",
+    "local_operator_shape",
     "make_var",
     "mint_bridge",
     "mint_contract",
@@ -165,6 +168,7 @@ __all__ = [
     "ne",
     "not_",
     "num",
+    "op_cid_from_shape",
     "or_",
     "prove_contract",
     "str_const",

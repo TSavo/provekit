@@ -17,6 +17,7 @@ if str(PKG_SRC) not in sys.path:
 import provekit_realize_python_core.realizer as realizer
 from provekit_realize_python_core.realizer import (
     BodyTemplateEntry,
+    BodyTemplateOpCidError,
     MissingTemplateError,
     emit_stub,
 )
@@ -1194,6 +1195,95 @@ def test_named_term_tree_walk_emits_composed_body(monkeypatch) -> None:
         "extension": "py",
     }
     assert "NotImplementedError" not in result["source"]
+
+
+def test_body_template_dispatch_prefers_op_cid_when_present(monkeypatch) -> None:
+    op_cid = _cid("a")
+    monkeypatch.setattr(
+        realizer,
+        "entries",
+        lambda: (
+            BodyTemplateEntry(
+                concept_name="concept:add",
+                op_cid=op_cid,
+                template_kind="verbatim",
+                template="return ${param0} + 1",
+                min_params=1,
+                max_params=1,
+                requires_param_types=None,
+                requires_return_type=None,
+            ),
+        ),
+    )
+
+    assert (
+        realizer.body_template_for(
+            "concept:add",
+            ["x"],
+            ["int"],
+            "int",
+            op_cid=op_cid,
+        )
+        == "return x + 1"
+    )
+
+
+def test_body_template_dispatch_falls_back_when_no_templates_publish_op_cid(monkeypatch) -> None:
+    monkeypatch.setattr(
+        realizer,
+        "entries",
+        lambda: (
+            BodyTemplateEntry(
+                concept_name="concept:add",
+                template_kind="verbatim",
+                template="return ${param0} + 1",
+                min_params=1,
+                max_params=1,
+                requires_param_types=None,
+                requires_return_type=None,
+            ),
+        ),
+    )
+
+    assert (
+        realizer.body_template_for(
+            "concept:add",
+            ["x"],
+            ["int"],
+            "int",
+            op_cid=_cid("legacy"),
+        )
+        == "return x + 1"
+    )
+
+
+def test_body_template_dispatch_refuses_op_cid_concept_mismatch(monkeypatch) -> None:
+    op_cid = _cid("b")
+    monkeypatch.setattr(
+        realizer,
+        "entries",
+        lambda: (
+            BodyTemplateEntry(
+                concept_name="concept:add",
+                op_cid=op_cid,
+                template_kind="verbatim",
+                template="return ${param0} + 1",
+                min_params=1,
+                max_params=1,
+                requires_param_types=None,
+                requires_return_type=None,
+            ),
+        ),
+    )
+
+    with pytest.raises(BodyTemplateOpCidError, match="op_cid mismatch"):
+        realizer.body_template_for(
+            "concept:sub",
+            ["x"],
+            ["int"],
+            "int",
+            op_cid=op_cid,
+        )
 
 
 def test_named_term_tree_missing_node_concept_refuses_loudly() -> None:

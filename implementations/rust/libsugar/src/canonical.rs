@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use serde::Serialize;
 use serde_json::Value as Json;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
 use crate::{ProvekitError, Result};
 
@@ -27,6 +27,11 @@ pub fn json_jcs(value: &Json) -> Result<String> {
 pub fn json_cid(value: &Json) -> Result<String> {
     let jcs = json_jcs(value)?;
     Ok(blake3_512_of(jcs.as_bytes()))
+}
+
+/// Canonical operation identity: an op CID is the JSON CID of the op shape.
+pub fn op_cid_from_shape(shape: &Json) -> Result<String> {
+    json_cid(shape)
 }
 
 pub fn is_blake3_512_cid(value: &str) -> bool {

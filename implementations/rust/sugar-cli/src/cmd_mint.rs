@@ -2441,6 +2441,11 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
         .get("concept_name")
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty());
+    let op_cid = decl
+        .get("op_cid")
+        .or_else(|| decl.get("opCid"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty());
     if symbol.is_none() && concept_name.is_none() {
         return Err(
             "`library-sugar-binding-entry` missing `symbol` (or legacy `concept_name`)".to_string(),
@@ -2459,6 +2464,9 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
         header.insert("conceptName".to_string(), json!(concept_name));
     }
     header.insert("kind".to_string(), json!("library-sugar-binding-entry"));
+    if let Some(op_cid) = op_cid {
+        header.insert("opCid".to_string(), json!(op_cid));
+    }
     header.insert("signatureShapeCid".to_string(), json!(signature_shape_cid));
     if let Some(symbol) = symbol {
         header.insert("symbol".to_string(), json!(symbol));
@@ -2562,6 +2570,7 @@ fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     }
     let target_language = required_str(decl, "target_language", "realization-memento")?;
     let concept_name = required_str(decl, "concept_name", "realization-memento")?;
+    let op_cid = optional_str(decl, "op_cid").or_else(|| optional_str(decl, "opCid"));
     let library = required_str(decl, "library", "realization-memento")?;
     let source_function_name = required_str(decl, "source_function_name", "realization-memento")?;
 
@@ -2577,6 +2586,10 @@ fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
         },
         "schemaVersion": "1",
     });
+    let mut envelope = envelope;
+    if let Some(op_cid) = op_cid {
+        envelope["header"]["opCid"] = json!(op_cid);
+    }
     let canonical = encode_jcs(&json_to_cvalue(&envelope));
     let cid = blake3_512_of(canonical.as_bytes());
     Ok((cid, canonical.into_bytes()))
@@ -3034,6 +3047,59 @@ mod tests {
         let e = &entries[0];
         assert!(e.get("family").is_none(), "no family stamped");
         assert!(e.get("library_version").is_none(), "no version stamped");
+    }
+
+    #[test]
+    fn mint_library_sugar_binding_entry_preserves_op_cid_when_present() {
+        let (_cid, bytes) = mint_library_sugar_binding_entry(&json!({
+            "kind": "library-sugar-binding-entry",
+            "target_language": "python",
+            "target_library_tag": "numpy",
+            "symbol": "numpy.add",
+            "concept_name": "concept:add",
+            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "signature_shape_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "body_source": {
+                "source_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+        }))
+        .expect("mint library sugar binding entry");
+        let envelope: Value = serde_json::from_slice(&bytes).expect("canonical JSON envelope");
+
+        assert_eq!(envelope["header"]["conceptName"], "concept:add");
+        assert_eq!(
+            envelope["header"]["opCid"],
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(
+            envelope["body"]["op_cid"],
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+    }
+
+    #[test]
+    fn mint_realization_memento_preserves_op_cid_when_present() {
+        let (_cid, bytes) = mint_realization_memento(&json!({
+            "kind": "realization-memento",
+            "realization_kind": "boundary",
+            "target_language": "python",
+            "concept_name": "concept:add",
+            "op_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "library": "numpy",
+            "source_function_name": "add"
+        }))
+        .expect("mint realization memento");
+        let envelope: Value = serde_json::from_slice(&bytes).expect("canonical JSON envelope");
+
+        assert_eq!(envelope["header"]["conceptName"], "concept:add");
+        assert_eq!(
+            envelope["header"]["opCid"],
+            "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        );
+        assert_eq!(
+            envelope["body"]["op_cid"],
+            "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        );
     }
 
     #[test]

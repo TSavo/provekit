@@ -2,13 +2,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value as Json};
 use sugar_canonicalizer::blake3_512_of;
 use sugar_ir_types::{
     GapKind, IrFormula, IrTerm, OptionStatus, ResolutionOption, ResolutionOptionKind, Sort,
     TransportGapMemento,
 };
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as Json};
 use thiserror::Error;
 
 use super::primitives::address;
@@ -1266,7 +1266,7 @@ impl GrammarOpRegistry {
 
     fn cid(&self, name: &str) -> Option<Cid> {
         let shape = grammar_op_shape(name)?;
-        let cid = crate::canonical::json_cid(&shape).ok()?;
+        let cid = crate::canonical::op_cid_from_shape(&shape).ok()?;
         Cid::try_from(cid.as_str()).ok()
     }
 
