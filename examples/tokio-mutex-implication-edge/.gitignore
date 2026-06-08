@@ -1,0 +1,9 @@
+*.proof
+.prove.json
+.verify.json
+.verify_recompute.json
+**/.sugar/runs/
+**/.sugar/witnesses/
+**/target/
+Cargo.lock
+**/.sugar/lift/*/manifest.toml
