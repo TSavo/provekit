@@ -16,8 +16,6 @@ members = [
     "libsugar",
     "libsugar-rpc",
     "sugar-cli",
-    "sugar-macros",
-    "sugar-macros-rt",
     "sugar-lifter",
     "sugar-lift",
     "sugar-lift-contracts",
@@ -28,8 +26,6 @@ members = [
     "sugar-lsp",
     "sugar-lsp-protocol-catalog",
     "sugar-lsp-rust",
-    "sugar-build",
-    "examples/build_script_demo",
     "sugar-linkerd",
 ]
 

@@ -1,7 +1,0 @@
-error: #[provekit::contract] requires at least one of pre / post / inv
- --> tests/compile_fail/empty_contract.rs:9:1
-  |
-9 | #[contract()]
-  | ^^^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `contract` (in Nightly builds, run with -Z macro-backtrace for more info)

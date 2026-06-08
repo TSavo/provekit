@@ -14,7 +14,7 @@ For the spec-by-spec list see [`cids.md`](cids.md). For PEP, GCP, ORP, CBP, proo
 - **Kit**: per-language authoring surface. IR library, AST canonicalizer, prompt set, producer integrations, diagnostic translator. Per the kit standard at CID `blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88`.
 - **Libs**: per-language verification libraries. IR types, canonicalizer, memento envelope codec, embedded verifier.
 - **Lift adapters**: per-source-library walkers that promote existing annotations to signed contract mementos.
-- **Decorator macros**: per-language ergonomic surface for authoring contracts directly when no lift target exists (e.g., `#[provekit::contract]` in Rust).
+- **Decorator macros**: per-language ergonomic surface for authoring contracts directly when no lift target exists.
 - **Embedded verifier**: in-process verifier callable from the host language without spawning a subprocess.
 - **CLI**: shipping command-line implementation of `prove`, `verify-protocol`, `lift`, `dump`, etc.
 
@@ -34,7 +34,7 @@ Legend: `+` shipping in the current v1.6.6 tree, `~` planned or partial, `o` und
 
 | Language    | Kit | Libs | Lift adapters                                           | Decorator macros        | Embedded verifier | CLI                  | LSP Plugin           |
 |-------------|-----|------|---------------------------------------------------------|--------------------------|-------------------|----------------------|----------------------|
-| Rust        | `+` | `+`  | `+ proptest, contracts, kani, prusti` ; `o creusot, flux`          | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` | `+`                  |
+| Rust        | `+` | `+`  | `+ proptest, contracts, kani, prusti` ; `o creusot, flux`          | `-`      | `+`               | `+ provekit (canonical)` | `+`                  |
 | TypeScript  | `+` | `+`  | `+ zod, class-validator, fast-check` ; `~ io-ts, valibot, ajv`     | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Go          | `+` | `+`  | `+ go-playground/validator` ; `~ ozzo-validation`       | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | C++         | `+` | `+`  | `+ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   | `+`                  |
@@ -101,9 +101,7 @@ Column meanings:
 - `provekit-lift-creusot`: rich logical fragments; some annotations route through Tier 3 of the handshake.
 - `provekit-lift-flux`: refinement types; partial lift.
 
-**Decorator macros:** `provekit-macros` ships `#[provekit::contract]` and `#[provekit::verify]` for direct authoring when no lift target exists. The `provekit-macros-rt` crate carries the runtime support.
 
-**Build-script integration:** `provekit-build` lifts contract violations into compile-time errors via `build.rs`. Currently in flight; see `implementations/rust/provekit-build/` and `examples/build_script_demo/`.
 
 **Embedded verifier:** Yes. `provekit_verifier::run(project_root)` returns a `HandshakeReport` synchronously.
 
