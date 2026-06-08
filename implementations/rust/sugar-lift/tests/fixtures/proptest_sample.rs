@@ -1,5 +1,5 @@
 // Fixture: a representative slice of liftable proptest blocks. Used by
-// integration tests in sugar-lift/tests/. NOT compiled (this file
+// integration tests in provekit-lift/tests/. NOT compiled (this file
 // has no Cargo target); the lift adapter parses it as text via syn.
 
 proptest! {
