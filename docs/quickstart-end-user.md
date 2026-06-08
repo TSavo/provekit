@@ -35,7 +35,7 @@ This installs `provekit` to `~/.cargo/bin/`. If that directory is not on your
 PATH, add `export PATH="$HOME/.cargo/bin:$PATH"` to your shell config.
 
 If you are working inside the repo and have already run a debug build, the binary
-is at `implementations/rust/target/debug/provekit`; the demo scripts use that
+is at `implementations/rust/target/debug/sugar`; the demo scripts use that
 path directly. Confirm whichever binary you intend to use:
 
 ```sh
@@ -204,7 +204,7 @@ for how it is built and how to add one for another language.
 ## When something goes wrong
 
 `provekit: command not found`: `~/.cargo/bin` is not on your PATH (or you meant
-to use the in-repo `implementations/rust/target/debug/provekit`).
+to use the in-repo `implementations/rust/target/debug/sugar`).
 
 The numpy demos fail to provision: they need `python3` to build a venv and `z3`
 on PATH. The scripts use PEP 668 venvs and never `--break-system-packages`.

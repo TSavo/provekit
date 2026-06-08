@@ -16,7 +16,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || { echo "not in the provekit repo"; exit 1; }
 
-BIN=implementations/rust/target/debug/provekit
+BIN=implementations/rust/target/debug/sugar
 CLI=implementations/rust/sugar-cli
 IMPORTS="$CLI/.provekit/imports"
 SCRATCH=/tmp/self-apply

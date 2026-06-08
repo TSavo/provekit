@@ -28,7 +28,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-BIN="$REPO/implementations/rust/target/debug/provekit"
+BIN="$REPO/implementations/rust/target/debug/sugar"
 PP="$REPO/implementations/python/provekit-lift-python-source/src:$REPO/implementations/python/provekit-lift-py-tests/src"
 
 # The pytest-witness lifter RUNS numpy's test, and the numpy.testing lifter

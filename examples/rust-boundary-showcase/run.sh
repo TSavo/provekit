@@ -25,7 +25,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-BIN="$REPO/implementations/rust/target/debug/provekit"
+BIN="$REPO/implementations/rust/target/debug/sugar"
 WALK="$REPO/implementations/rust/target/debug/provekit-walk-rpc"
 
 VENDOR="$HERE/vendor"
