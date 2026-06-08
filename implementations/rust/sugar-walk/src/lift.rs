@@ -409,6 +409,35 @@ pub fn lift_function_postcondition_with_return_facts_and_pure_free_guards(
     Wp(simplify_conjunction(accum))
 }
 
+/// A ctor head the lifter emits for an opaque / effectful operation, whose value
+/// is NOT a referentially-transparent function of its arguments: a method call
+/// (`it.next()` advances an iterator), a channel/mutex conduit, an opaque macro,
+/// the `?` short-circuit. Inlining a `let` whose initializer contains one of
+/// these would DUPLICATE the effect (`let n = it.next(); n + n` is one advance
+/// doubled, not two advances), so such bindings must never be wrapped/inlined.
+fn is_impure_ctor_head(name: &str) -> bool {
+    name.starts_with("method:")
+        || name.starts_with("channel:")
+        || name.starts_with("mutex:")
+        || name.starts_with("macro:")
+        || name.starts_with("call:")
+        || name == "?"
+}
+
+/// Is `t` a pure value term -- safe to inline (duplicate) because its value is a
+/// referentially-transparent function of its free variables? Vars and consts are
+/// pure; a ctor is pure iff its head is not opaque/effectful and all its args are
+/// pure. Lambdas and nested lets are conservatively treated as not-inlinable.
+fn is_pure_value_term(t: &IrTerm) -> bool {
+    match t {
+        IrTerm::Var { .. } | IrTerm::Const { .. } => true,
+        IrTerm::Ctor { name, args } => {
+            !is_impure_ctor_head(name) && args.iter().all(is_pure_value_term)
+        }
+        IrTerm::Lambda { .. } | IrTerm::Let { .. } => false,
+    }
+}
+
 /// Re-attach the function's leading immutable `let` bindings to the derived
 /// result `body` term as a faithful [`IrTerm::Let`], so a reformat that
 /// introduces a local emits the same behavior identity as the inline form.
@@ -472,6 +501,15 @@ fn wrap_leading_lets(prefix: &[Stmt], body: IrTerm, ctx: &mut LiftCtx) -> IrTerm
         let Some(value) = lift_expr_to_term_inner(&init.expr, ctx) else {
             continue;
         };
+        // IMPURITY GUARD: only capture a `let` whose initializer is a pure value
+        // term. An effectful/opaque init (a `method:` call, a channel/mutex
+        // conduit, ...) must stay an un-inlined local -- abstracted to a free
+        // variable -- so canonicalization never duplicates the effect and never
+        // identifies `let n = it.next(); n + n` (one advance) with
+        // `it.next() + it.next()` (two advances).
+        if !is_pure_value_term(&value) {
+            continue;
+        }
         bindings.push(LetBinding {
             name,
             bound_term: value,
@@ -5097,6 +5135,77 @@ mod tests {
         assert!(
             !matches!(rhs, IrTerm::Let { .. }),
             "a rebound/shadowed name must bail, got {rhs:?}"
+        );
+    }
+
+    // --- impure-let discrimination (3 per the per-variant discipline) ---
+
+    /// STRUCTURAL: a `let` whose initializer is an effectful/opaque call
+    /// (`it.next()` -> `method:next`) is NOT captured -- the result term is left
+    /// referencing the free local, not an `IrTerm::Let`. Inlining it would
+    /// duplicate the effect.
+    #[test]
+    fn impure_let_init_is_not_wrapped() {
+        let post = lift_function_postcondition(&parse_fn(
+            r#"fn f(it: &mut It) -> i64 { let n = it.next(); n + 1 }"#,
+        ))
+        .into_formula();
+        let rhs = libsugar::wp::find_result_equation(&post, "result")
+            .expect("has a result equation");
+        assert!(
+            !matches!(rhs, IrTerm::Let { .. }),
+            "an effectful (method-call) let init must not be wrapped, got {rhs:?}"
+        );
+    }
+
+    /// DISCRIMINATION (the soundness keystone): binding an effectful call ONCE
+    /// and using it twice (`let n = it.next(); n + n` -- one advance, doubled)
+    /// must NOT share a behavior identity with calling it twice
+    /// (`it.next() + it.next()` -- two advances). The impurity guard keeps the
+    /// call abstracted to a free local rather than inlining it into both
+    /// positions.
+    #[test]
+    fn impure_let_used_twice_is_not_identified_with_double_eval() {
+        use sugar_ir_types::canonicalize_property;
+        let bound_once = lift_function_postcondition(&parse_fn(
+            r#"fn f(it: &mut It) -> i64 { let n = it.next(); n + n }"#,
+        ))
+        .into_formula();
+        let called_twice = lift_function_postcondition(&parse_fn(
+            r#"fn f(it: &mut It) -> i64 { it.next() + it.next() }"#,
+        ))
+        .into_formula();
+        assert_ne!(
+            canonicalize_property(&bound_once, &["it".to_string()], "result"),
+            canonicalize_property(&called_twice, &["it".to_string()], "result"),
+            "one effectful call bound and used twice must NOT equal two effectful calls"
+        );
+    }
+
+    /// POSITIVE (the guard does not over-refuse): a PURE init that is used twice
+    /// (`let n = x + 1; n * n`) is still wrapped and still shares its identity
+    /// with the inline form `(x+1) * (x+1)` -- pure terms are freely duplicable.
+    #[test]
+    fn pure_let_used_twice_is_still_identified() {
+        use sugar_ir_types::canonicalize_property;
+        let bound = lift_function_postcondition(&parse_fn(
+            r#"fn f(x: i64) -> i64 { let n = x + 1; n * n }"#,
+        ))
+        .into_formula();
+        let inline = lift_function_postcondition(&parse_fn(
+            r#"fn f(x: i64) -> i64 { (x + 1) * (x + 1) }"#,
+        ))
+        .into_formula();
+        let rhs = libsugar::wp::find_result_equation(&bound, "result")
+            .expect("has a result equation");
+        assert!(
+            matches!(rhs, IrTerm::Let { .. }),
+            "a pure let init must still be wrapped, got {rhs:?}"
+        );
+        assert_eq!(
+            canonicalize_property(&bound, &["x".to_string()], "result"),
+            canonicalize_property(&inline, &["x".to_string()], "result"),
+            "a pure let used twice must share the inline form's identity"
         );
     }
 }
