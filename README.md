@@ -43,9 +43,7 @@ time.
 
 Honest scope: this works **today** as `cargo sugar` (Rust) and `sugar-check`
 (Python pre-commit hook). The npm/JS wedge is in progress; what is missing is the
-lifter, not the thesis. The full argument, including which surface (the asserted
-*promise* vs. the lifted *behavior*) is and is not blind to additive malice, is in
-[docs/explanation/behavioral-versioning.md](docs/explanation/behavioral-versioning.md).
+lifter, not the thesis.
 
 ## How a `.proof` works: the claim, formally
 
@@ -274,11 +272,10 @@ Verify the installed CLI's embedded protocol catalog:
 sugar verify-protocol
 ```
 
-For project setup and first runs, start with
-[docs/quickstart-end-user.md](docs/quickstart-end-user.md). If you are working
-on Sugar itself, see [docs/contributing/build.md](docs/contributing/build.md)
-for the polyglot Make targets, system dependencies, and per-implementation build
-commands.
+For a first run, work through the demos in [examples/](examples/); each one has a
+`run.sh` that mints, proves, and verifies end to end. If you are working on Sugar
+itself, see [docs/contributing/build.md](docs/contributing/build.md) for the
+polyglot Make targets, system dependencies, and per-implementation build commands.
 
 ## Run the demos
 
@@ -295,13 +292,12 @@ The numpy demos provision their own venv on first run.
 - **Canonical implementation:** the Rust CLI in
   `implementations/rust/sugar-cli`.
 - **Protocol catalog:** embedded in the CLI and verified by `sugar
-  verify-protocol`. The reference matrix
-  ([docs/reference/per-language-status.md](docs/reference/per-language-status.md))
-  tracks the catalog version it was last updated for.
-- **Supported ecosystem surface:** Rust, TypeScript, Python, Java, C#, Ruby,
-  Zig, Go, C++, Swift, C, and PHP have varying kit, library, lift-adapter,
-  embedded-verifier, and LSP coverage. Coverage is empirical; see
-  [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
+  verify-protocol`. The binary is the live authority for the catalog CID; do not
+  trust a version written in prose.
+- **Supported ecosystem surface:** coverage is empirical and uneven across
+  languages, and it changes faster than prose can track. The runnable
+  [examples/](examples/) are the honest picture of what works end to end today;
+  if it is not a passing example, treat it as in progress.
 - **Proof artifacts:** `.proof` envelopes, signed mementos, source CIDs, witness
   CIDs, contract CIDs, attestation CIDs, contract-set CIDs, and protocol catalog
   CIDs are the durable units.
@@ -314,22 +310,19 @@ The numpy demos provision their own venv on first run.
 
 ## Start here
 
+The user-facing docs were written ahead of the implementation and described
+installers and per-language flows that do not exist, so they were removed rather
+than left as fiction. What remains is real: the runnable demos, the code, the
+vocabulary, and the papers. Honest usage docs return when there is a path that
+runs end to end to document.
+
 | Goal | Read |
 |---|---|
 | Run the headline demo | [examples/numpy-vendor/](examples/numpy-vendor/) |
-| Why behavioral versioning beats SemVer | [docs/explanation/behavioral-versioning.md](docs/explanation/behavioral-versioning.md) |
-| Install and run the CLI | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) |
+| See everything that runs today | [examples/](examples/) |
 | Learn the vocabulary | [SHARED-LANGUAGE.md](SHARED-LANGUAGE.md) |
-| Understand the product surface | [docs/explanation/product.md](docs/explanation/product.md) |
-| Understand the architecture | [docs/explanation/architecture.md](docs/explanation/architecture.md) |
-| Understand `.proof` and proofchains | [docs/explanation/proofchain.md](docs/explanation/proofchain.md) |
-| See kit and language coverage | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
-| Publish a `.proof` artifact | [docs/how-to/publishing-a-proof.md](docs/how-to/publishing-a-proof.md) |
-| Build or extend a kit | [docs/quickstart-extender.md](docs/quickstart-extender.md) |
-| Compare to other tools | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
+| Build Sugar from source | [docs/contributing/build.md](docs/contributing/build.md) |
 | Read the paper ladder | [docs/papers/README.md](docs/papers/README.md) |
-
-For the full docs map, see [docs/index.md](docs/index.md).
 
 ## What Sugar is not
 
