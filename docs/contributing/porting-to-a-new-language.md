@@ -96,7 +96,7 @@ See [writing-an-LSP-plugin.md](writing-an-LSP-plugin.md).
 
 Every language has a different idiom for "annotate this with a contract." Pick one:
 
-- **Decorator macros / attributes**: Rust `#[provekit::contract]`, Python `@provekit.contract`, .NET `[Provekit(...)]`, Java JSR 380 annotations.
+- **Decorator macros / attributes**: Python `@provekit.contract`, .NET `[Provekit(...)]`, Java JSR 380 annotations.
 - **Comment conventions**: Zig `//provekit:contract`, Go `//provekit:contract` (under evaluation), JML `//@ requires`.
 - **Property wrappers / macros**: Swift property wrappers + Swift 5.9 macros (under evaluation).
 - **Lift-only**: ship no decorator macros at all; every contract comes through a lift adapter. Good fit for languages whose ecosystem has strong existing annotation libraries.
