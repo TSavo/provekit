@@ -25,6 +25,7 @@ if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
 from sugar_lift_python_source.leaf_assertions import harvest_source
+from sugar_lift_python_source.canonical import cid_of_json
 from sugar_lift_python_source.lifter import lift_source
 from sugar_lift_python_source.verify_dialect import (
     VerifyDialectRefusal,
@@ -116,6 +117,18 @@ def _atoms_named(formula: dict[str, object], name: str) -> list[dict[str, object
     return [atom for atom in _flatten_and(formula) if atom.get("name") == name]
 
 
+def _int(value: int) -> dict[str, object]:
+    return {"kind": "const", "value": value, "sort": {"kind": "primitive", "name": "Int"}}
+
+
+def _var(name: str) -> dict[str, object]:
+    return {"kind": "var", "name": name}
+
+
+def _atom(name: str, lhs: dict[str, object], rhs: dict[str, object]) -> dict[str, object]:
+    return {"kind": "atomic", "name": name, "args": [lhs, rhs]}
+
+
 def test_double_lowers_to_dischargeable_core_form():
     source = "def double(x: int) -> int:\n    return x * 2\n"
     contract = _fn_contract(source)
@@ -132,6 +145,63 @@ def test_double_lowers_to_dischargeable_core_form():
     assert value["name"] == "*"  # python:mul normalized to SMT-core
     assert value["args"][0] == {"kind": "var", "name": "x"}
     assert value["args"][1]["value"] == 2
+
+
+def test_if_raise_body_guard_lowers_to_rust_shaped_precondition_cid():
+    source = (
+        "def bounded_digit(x: int) -> int:\n"
+        "    if x < 2 or x > 36:\n"
+        "        raise ValueError('x out of range')\n"
+        "    return x\n"
+    )
+    contract = _fn_contract(source)
+    out = to_verify_dialect(contract, collect_int_signatures(source)["bounded_digit"])
+
+    rust_equivalent_pre = {
+        "kind": "and",
+        "operands": [
+            _atom("≥", _var("x"), _int(2)),
+            _atom("≤", _var("x"), _int(36)),
+        ],
+    }
+    assert out["pre"] == rust_equivalent_pre
+    assert cid_of_json(out["pre"]) == cid_of_json(rust_equivalent_pre)
+    assert "panicLoci" not in out
+    assert out["effects"] == []
+
+
+def test_single_if_raise_body_guard_lowers_to_negated_comparison_precondition():
+    source = (
+        "def at_least_two(x: int) -> int:\n"
+        "    if x < 2:\n"
+        "        raise ValueError\n"
+        "    return x\n"
+    )
+    contract = _fn_contract(source)
+    out = to_verify_dialect(contract, collect_int_signatures(source)["at_least_two"])
+
+    assert out["pre"] == _atom("≥", _var("x"), _int(2))
+
+
+def test_precondition_guard_residual_does_not_emit_partial_prefix():
+    source = (
+        "def at_least_two(x: int) -> int:\n"
+        "    if helper(x):\n"
+        "        raise ValueError\n"
+        "    if x < 2:\n"
+        "        raise ValueError\n"
+        "    return x\n"
+    )
+    result = lift_source(source, "m.py")
+    contract = next(
+        item
+        for item in result.ir
+        if item.get("kind") == "function-contract"
+        and not str(item.get("fnName", "")).startswith("<source-unit")
+    )
+
+    assert contract["pre"] == {"kind": "atomic", "name": "true", "args": []}
+    assert any(item.get("kind") == "precondition-guard-skipped" for item in result.diagnostics)
 
 
 def test_addition_and_comparison_normalize():

@@ -160,6 +160,7 @@ def to_verify_dialect(contract: Json, sorts: _Sorts) -> Json:
     lhs, rhs = args[0], args[1]
     if not (isinstance(lhs, dict) and lhs.get("kind") == "var" and lhs.get("name") == "return_value"):
         raise VerifyDialectRefusal(fn_name, "post LHS is not the `return_value` result var")
+    precondition_guarded_body = _body_has_precondition_guard_prefix(rhs)
 
     # 1. Unwrap the single `python:return(<value>)` the body folds to. A body
     #    that is anything other than exactly one bare return (e.g. a sequence,
@@ -170,6 +171,7 @@ def to_verify_dialect(contract: Json, sorts: _Sorts) -> Json:
     # 2 + 3. Normalize the value expression's ops + literals to core SMT.
     formal_sorts_map = sorts.formal_sorts
     core_value = _normalize_term(value_expr, fn_name, formal_sorts_map)
+    core_pre = _normalize_formula(contract.get("pre"), fn_name, formal_sorts_map)
 
     # 4. Sorts: every formal must carry an Int/Bool annotation (the lifter
     #    erased them to `Value`, which z3 cannot reason about for arithmetic).
@@ -193,6 +195,16 @@ def to_verify_dialect(contract: Json, sorts: _Sorts) -> Json:
         )
 
     out = dict(contract)
+    if precondition_guarded_body:
+        guard_exception_classes = _panic_locus_exception_classes(out.get("panicLoci"))
+        out.pop("panicLoci", None)
+        effects = out.get("effects")
+        if isinstance(effects, list):
+            out["effects"] = [
+                effect
+                for effect in effects
+                if not _is_guard_raise_effect(effect, guard_exception_classes)
+            ]
     out["formalSorts"] = new_formal_sorts
     out["returnSort"] = prim_sort(return_sort)
     out["post"] = {
@@ -200,6 +212,7 @@ def to_verify_dialect(contract: Json, sorts: _Sorts) -> Json:
         "name": "=",
         "args": [{"kind": "var", "name": RESULT_VAR}, core_value],
     }
+    out["pre"] = core_pre
     # The bridge-writer (#1443) keys the auto-bridge on `bridgeSourceSymbol`;
     # the harvested callsite ctor uses the bare function name. Set it so
     # `enumerate_callsites` matches `double(3)`.
@@ -213,12 +226,165 @@ def _unwrap_return(term: Json, fn_name: str) -> Json:
         if isinstance(inner, list) and len(inner) == 1:
             return inner[0]
         raise VerifyDialectRefusal(fn_name, "python:return wrapper is malformed")
-    # A body that did not fold to exactly one return is not a value-op.
+    statements = _flatten_sequence(term)
+    if (
+        len(statements) >= 2
+        and all(_is_precondition_guard_statement(statement) for statement in statements[:-1])
+    ):
+        tail = statements[-1]
+        if isinstance(tail, dict) and tail.get("kind") == "ctor" and tail.get("name") == "python:return":
+            inner = tail.get("args")
+            if isinstance(inner, list) and len(inner) == 1:
+                return inner[0]
+            raise VerifyDialectRefusal(fn_name, "python:return wrapper is malformed")
+    # A body that did not fold to exactly one return after supported precondition
+    # guards is not a value-op.
     raise VerifyDialectRefusal(
         fn_name,
-        "body does not reduce to a single `return <expr>`; the verify-facing "
-        "dialect only discharges single-return value functions",
+        "body does not reduce to supported precondition guard(s) followed by "
+        "a single `return <expr>`; refusing",
     )
+
+
+def _flatten_sequence(term: Json) -> list[Json]:
+    if isinstance(term, dict) and term.get("kind") == "ctor" and term.get("name") == "python:seq":
+        args = term.get("args")
+        if isinstance(args, list) and len(args) == 2:
+            return [*_flatten_sequence(args[0]), *_flatten_sequence(args[1])]
+    return [term]
+
+
+def _body_has_precondition_guard_prefix(term: Json) -> bool:
+    statements = _flatten_sequence(term)
+    return (
+        len(statements) >= 2
+        and all(_is_precondition_guard_statement(statement) for statement in statements[:-1])
+    )
+
+
+def _panic_locus_exception_classes(value: object) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    out: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        exception_class = item.get("exceptionClass")
+        if isinstance(exception_class, str) and exception_class:
+            out.add(exception_class)
+    return out
+
+
+def _is_guard_raise_effect(effect: object, exception_classes: set[str]) -> bool:
+    if not isinstance(effect, dict):
+        return False
+    if effect.get("kind") == "panics":
+        return True
+    return (
+        effect.get("kind") == "unresolved_call"
+        and isinstance(effect.get("name"), str)
+        and effect["name"] in exception_classes
+    )
+
+
+def _is_precondition_guard_statement(term: Json) -> bool:
+    if not isinstance(term, dict) or term.get("kind") != "ctor" or term.get("name") != "python:if":
+        return False
+    args = term.get("args")
+    if not isinstance(args, list) or len(args) != 3:
+        return False
+    condition, then_branch, else_branch = args
+    return (
+        _is_flat_guard_condition(condition)
+        and _is_python_raise(then_branch)
+        and _is_python_pass(else_branch)
+    )
+
+
+def _is_flat_guard_condition(term: Json) -> bool:
+    if not isinstance(term, dict) or term.get("kind") != "ctor":
+        return False
+    name = term.get("name")
+    args = term.get("args")
+    if not isinstance(args, list):
+        return False
+    if name == "python:compare":
+        if len(args) != 3:
+            return False
+        op_const = args[0]
+        op_str = op_const.get("value") if isinstance(op_const, dict) else None
+        return (
+            str(op_str) in _CORE_CMP_OP
+            and _is_flat_guard_term(args[1])
+            and _is_flat_guard_term(args[2])
+        )
+    if name in {"python:and", "python:or"}:
+        return len(args) == 2 and all(_is_flat_guard_condition(arg) for arg in args)
+    if name == "python:not":
+        return len(args) == 1 and _is_flat_guard_condition(args[0])
+    return False
+
+
+def _is_flat_guard_term(term: Json) -> bool:
+    if not isinstance(term, dict):
+        return False
+    kind = term.get("kind")
+    if kind == "var":
+        return True
+    if kind != "const":
+        return False
+    sort = term.get("sort")
+    sort_name = sort.get("name") if isinstance(sort, dict) else None
+    return sort_name in {"Int", "Bool"}
+
+
+def _is_python_raise(term: Json) -> bool:
+    return isinstance(term, dict) and term.get("kind") == "ctor" and term.get("name") == "python:raise"
+
+
+def _is_python_pass(term: Json) -> bool:
+    if not isinstance(term, dict) or term.get("kind") != "ctor" or term.get("name") != "python:pass":
+        return False
+    args = term.get("args")
+    return isinstance(args, list) and len(args) == 1
+
+
+def _normalize_formula(formula: object, fn_name: str, formal_sorts: dict[str, str]) -> Json:
+    if not isinstance(formula, dict):
+        raise VerifyDialectRefusal(fn_name, "precondition is not an object")
+    kind = formula.get("kind")
+    if kind == "atomic":
+        name = str(formula.get("name", ""))
+        raw_args = formula.get("args")
+        args = raw_args if isinstance(raw_args, list) else []
+        if name in {"true", "false"}:
+            if args:
+                raise VerifyDialectRefusal(fn_name, f"`{name}` precondition has args")
+            return {"kind": "atomic", "name": name, "args": []}
+        if name not in {"=", "≠", "<", "≤", ">", "≥"}:
+            raise VerifyDialectRefusal(fn_name, f"precondition atom `{name}` is not core")
+        if len(args) != 2:
+            raise VerifyDialectRefusal(fn_name, f"precondition atom `{name}` arity != 2")
+        return {
+            "kind": "atomic",
+            "name": name,
+            "args": [
+                _normalize_term(args[0], fn_name, formal_sorts),
+                _normalize_term(args[1], fn_name, formal_sorts),
+            ],
+        }
+    if kind in {"and", "or", "not", "implies"}:
+        operands = formula.get("operands")
+        if not isinstance(operands, list):
+            raise VerifyDialectRefusal(fn_name, f"`{kind}` precondition operands missing")
+        return {
+            "kind": kind,
+            "operands": [
+                _normalize_formula(operand, fn_name, formal_sorts)
+                for operand in operands
+            ],
+        }
+    raise VerifyDialectRefusal(fn_name, f"unsupported precondition kind `{kind}`")
 
 
 def _normalize_term(term: Json, fn_name: str, formal_sorts: dict[str, str]) -> Json:

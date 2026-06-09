@@ -19,6 +19,7 @@ from .ir import (
     source_unit_contract,
     str_const,
     substrate_ctor,
+    true_formula,
     var,
 )
 
@@ -1226,6 +1227,7 @@ def _lift_function(
             receiver_context = None
         effects = _EffectSet()
         panic_loci: list[Json] = []
+        precondition = _lift_function_precondition(node, info.fn_name, source_path, result)
         emitter = _Emitter(
             fn_name=info.fn_name,
             locals_=locals_,
@@ -1243,6 +1245,7 @@ def _lift_function(
             effects=effects.sorted(),
             source_path=source_path,
             line=node.lineno,
+            precondition=precondition,
             panic_loci=panic_loci,
             parameter_shape=(
                 parameter_shape
@@ -1833,6 +1836,155 @@ def _function_locals(fn: ast.FunctionDef, formals: list[str]) -> set[str]:
     return set(formals) | collector.names
 
 
+def _lift_function_precondition(
+    fn: ast.FunctionDef,
+    fn_name: str,
+    source_path: str,
+    result: LiftResult,
+) -> Json:
+    parts: list[Json] = []
+    for statement in fn.body:
+        if _is_docstring_stmt(statement):
+            continue
+        lifted, residual = _lift_precondition_guard_statement(statement)
+        if residual is not None:
+            result.diagnostics.append(
+                {
+                    "kind": "precondition-guard-skipped",
+                    "path": source_path,
+                    "function": fn_name,
+                    "line": int(getattr(statement, "lineno", 0) or 0),
+                    "message": residual,
+                }
+            )
+            return true_formula()
+        if lifted is not None:
+            parts.append(lifted)
+            continue
+        break
+    return _simplify_conjunction(parts)
+
+
+def _lift_precondition_guard_statement(statement: ast.stmt) -> tuple[Json | None, str | None]:
+    if not isinstance(statement, ast.If):
+        return None, None
+    if statement.orelse or not _body_only_raises(statement.body):
+        return None, None
+    condition = _lift_guard_formula(statement.test)
+    if condition is None:
+        return None, "non-flat if-raise guard condition is a precondition residual"
+    return _negate_formula(condition), None
+
+
+def _body_only_raises(body: list[ast.stmt]) -> bool:
+    statements = [stmt for stmt in body if not _is_docstring_stmt(stmt)]
+    return len(statements) == 1 and isinstance(statements[0], ast.Raise)
+
+
+def _lift_guard_formula(node: ast.expr) -> Json | None:
+    if isinstance(node, ast.BoolOp):
+        if len(node.values) < 2:
+            return None
+        operands = [_lift_guard_formula(value) for value in node.values]
+        if any(operand is None for operand in operands):
+            return None
+        kind = "and" if isinstance(node.op, ast.And) else "or"
+        return _fold_connective(kind, [operand for operand in operands if operand is not None])
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        inner = _lift_guard_formula(node.operand)
+        return None if inner is None else _negate_formula(inner)
+    if isinstance(node, ast.Compare):
+        return _lift_guard_compare(node)
+    if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+        return _atomic("true" if node.value else "false", [])
+    return None
+
+
+def _lift_guard_compare(node: ast.Compare) -> Json | None:
+    if not node.ops or len(node.ops) != len(node.comparators):
+        return None
+    operands: list[ast.expr] = [node.left, *node.comparators]
+    atoms: list[Json] = []
+    for index, op_node in enumerate(node.ops):
+        op = _GUARD_CMP_OPS.get(type(op_node))
+        if op is None:
+            return None
+        left = _lift_guard_term(operands[index])
+        right = _lift_guard_term(operands[index + 1])
+        if left is None or right is None:
+            return None
+        atoms.append(_atomic(op, [left, right]))
+    return _simplify_conjunction(atoms)
+
+
+def _lift_guard_term(node: ast.expr) -> Json | None:
+    if isinstance(node, ast.Name):
+        return var(node.id)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, bool):
+            return bool_const(node.value)
+        if isinstance(node.value, int):
+            return int_const(node.value)
+        return None
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        operand = node.operand
+        if isinstance(operand, ast.Constant) and type(operand.value) is int:
+            value = operand.value
+            if isinstance(node.op, ast.USub):
+                value = -value
+            return int_const(value)
+    return None
+
+
+def _atomic(name: str, args: list[Json]) -> Json:
+    return {"kind": "atomic", "name": name, "args": args}
+
+
+def _simplify_conjunction(parts: list[Json]) -> Json:
+    if not parts:
+        return true_formula()
+    if len(parts) == 1:
+        return parts[0]
+    return {"kind": "and", "operands": parts}
+
+
+def _fold_connective(kind: str, operands: list[Json]) -> Json:
+    if not operands:
+        return true_formula()
+    if len(operands) == 1:
+        return operands[0]
+    return {"kind": kind, "operands": operands}
+
+
+def _negate_formula(formula: Json) -> Json:
+    kind = formula.get("kind")
+    if kind == "atomic":
+        name = str(formula.get("name", ""))
+        flipped = _NEGATED_ATOMIC.get(name)
+        if flipped is not None:
+            return _atomic(flipped, list(formula.get("args", [])))
+        return {"kind": "not", "operands": [formula]}
+    if kind == "not":
+        operands = formula.get("operands")
+        if isinstance(operands, list) and len(operands) == 1 and isinstance(operands[0], dict):
+            return operands[0]
+    if kind == "and":
+        operands = formula.get("operands")
+        if isinstance(operands, list):
+            return _fold_connective(
+                "or",
+                [_negate_formula(operand) for operand in operands if isinstance(operand, dict)],
+            )
+    if kind == "or":
+        operands = formula.get("operands")
+        if isinstance(operands, list):
+            return _fold_connective(
+                "and",
+                [_negate_formula(operand) for operand in operands if isinstance(operand, dict)],
+            )
+    return {"kind": "not", "operands": [formula]}
+
+
 def _module_global_names(tree: ast.Module) -> set[str]:
     names: set[str] = set()
     for stmt in tree.body:
@@ -2001,4 +2153,24 @@ _CMPOPS: dict[type[ast.cmpop], str] = {
     ast.IsNot: "is not",
     ast.In: "in",
     ast.NotIn: "not in",
+}
+
+_GUARD_CMP_OPS: dict[type[ast.cmpop], str] = {
+    ast.Eq: "=",
+    ast.NotEq: "≠",
+    ast.Lt: "<",
+    ast.LtE: "≤",
+    ast.Gt: ">",
+    ast.GtE: "≥",
+}
+
+_NEGATED_ATOMIC: dict[str, str] = {
+    "=": "≠",
+    "≠": "=",
+    "<": "≥",
+    "≤": ">",
+    ">": "≤",
+    "≥": "<",
+    "true": "false",
+    "false": "true",
 }

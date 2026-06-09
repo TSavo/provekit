@@ -86,6 +86,7 @@ def function_contract(
     effects: list[Json],
     source_path: str,
     line: int,
+    precondition: Json | None = None,
     panic_loci: list[Json] | None = None,
     parameter_shape: list[Json] | None = None,
 ) -> Json:
@@ -96,7 +97,7 @@ def function_contract(
         "formals": list(formals),
         "formalSorts": [prim_sort("Value") for _ in formals],
         "returnSort": prim_sort("Value"),
-        "pre": true_formula(),
+        "pre": precondition if precondition is not None else true_formula(),
         "post": eq_formula(var("return_value"), body_term),
         "bodyCid": None,
         "effects": effects,

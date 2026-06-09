@@ -196,6 +196,62 @@ fn stage_python_project(suffix: &str, lift_script: &Path, body_factor: i64) -> P
     project
 }
 
+fn stage_python_precondition_project(suffix: &str, lift_script: &Path, arg: i64) -> PathBuf {
+    let project = unique_dir(suffix);
+
+    fs::write(
+        project.join("bounded_digit.py"),
+        r#"def bounded_digit(x: int) -> int:
+    if x < 2 or x > 36:
+        raise ValueError("x out of range")
+    return x
+"#,
+    )
+    .expect("write bounded_digit.py");
+
+    fs::write(
+        project.join("test_bounded_digit.py"),
+        format!(
+            "from bounded_digit import bounded_digit\n\n\n\
+             def test_bounded_digit():\n    assert bounded_digit({arg}) == {arg}\n"
+        ),
+    )
+    .expect("write test_bounded_digit.py");
+
+    let sugar = project.join(".sugar");
+    fs::create_dir_all(sugar.join("lift").join("python")).expect("mkdir .sugar/lift/python");
+    fs::write(
+        sugar.join("config.toml"),
+        r#"[[plugins]]
+name = "python-lift"
+kind = "lift"
+surface = "python"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+"#,
+    )
+    .expect("write config.toml");
+    fs::write(
+        sugar.join("lift").join("python").join("manifest.toml"),
+        format!(
+            "name = \"python\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
+            lift_script.display()
+        ),
+    )
+    .expect("write manifest.toml");
+
+    project
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
     for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
@@ -417,6 +473,51 @@ fn python_production_path_double_discharges_and_mints_witness() {
     assert_eq!(code, 0, "positive run exits clean; got {code}");
 
     let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn python_precondition_body_guard_discharges_good_and_refuses_bad_callsite() {
+    if !python_available() {
+        eprintln!("python3 not on PATH: skipping python precondition bridge test");
+        return;
+    }
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping python precondition bridge test");
+        return;
+    }
+    let lift_script = build_python_lift_verify();
+
+    let good_project = stage_python_precondition_project("pre-good", &lift_script, 16);
+    run_mint(&good_project);
+    let good_witnesses = good_project.join("witnesses-out");
+    let (good, good_code) = run_verify_json_with_code(&good_project, &good_witnesses);
+    assert_eq!(good["totalClaims"], 1, "GOOD receipt: {good}");
+    let good_claim = &good["claims"].as_array().expect("claims")[0];
+    assert_eq!(good_claim["status"], "discharged", "GOOD claim: {good_claim}");
+    assert_eq!(good_claim["pass"], true, "GOOD claim: {good_claim}");
+    assert_eq!(good["ok"], true, "GOOD receipt: {good}");
+    assert_eq!(good_code, 0, "GOOD verify exit code");
+
+    let bad_project = stage_python_precondition_project("pre-bad", &lift_script, 1);
+    run_mint(&bad_project);
+    let bad_witnesses = bad_project.join("witnesses-out");
+    let (bad, bad_code) = run_verify_json_with_code(&bad_project, &bad_witnesses);
+    assert_eq!(bad["totalClaims"], 1, "BAD receipt: {bad}");
+    let bad_claim = &bad["claims"].as_array().expect("claims")[0];
+    assert_eq!(
+        bad_claim["status"], "unsatisfied",
+        "BAD callsite must violate bounded_digit precondition: {bad_claim}"
+    );
+    assert_eq!(bad_claim["pass"], false, "BAD claim: {bad_claim}");
+    assert!(
+        bad_claim["witnessCid"].is_null(),
+        "BAD precondition violation must not mint a witness: {bad_claim}"
+    );
+    assert_eq!(bad["ok"], false, "BAD receipt: {bad}");
+    assert_eq!(bad_code, 1, "BAD verify exit code");
+
+    let _ = fs::remove_dir_all(&good_project);
+    let _ = fs::remove_dir_all(&bad_project);
 }
 
 /// NEGATIVE end-to-end: broken body `x * 3`, verify Unsatisfied, exit 1, no
