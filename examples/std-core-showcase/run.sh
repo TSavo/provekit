@@ -2,7 +2,7 @@
 # std/core logo showcase: real Rust core tests, zero std source changes.
 #
 # Claimed proof surface:
-#   - `rust-src` provides the active toolchain's std/core source and tests.
+#   - `rust-src` provides the pinned toolchain's std/core source and tests.
 #   - The lifter sees a selected sound scalar direct call-result slice:
 #       * tests/cmp.rs integer call-result equality rows,
 #       * tests/time.rs finite decimal float method-call equality rows,
@@ -27,25 +27,27 @@ ASSERT_RPC="$BIN_DIR/rust_test_assertions_rpc"
 WORK="${STD_CORE_SHOWCASE_WORK:-$HERE/.work}"
 PROJECT="$WORK/proof-scope"
 WITNESS_TARGET="$WORK/coretests-target"
+STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
 echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, finite float rows from time.rs, exact string rows from fmt/mod.rs."
 echo "SCOPE: excluded gaps = generics, macros requiring expansion, NaN/infinity/ordered float refinements, chars, cfg-sensitive tests, complex terms."
+echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
 ensure_rust_src() {
   local sysroot stdroot
-  sysroot="$(rustc --print sysroot)"
+  if command -v rustup >/dev/null 2>&1; then
+    echo "== install rust-src for pinned toolchain $STD_CORE_RUST_TOOLCHAIN ==" >&2
+    rustup toolchain install "$STD_CORE_RUST_TOOLCHAIN" --profile minimal --component rust-src >/dev/null
+  fi
+  sysroot="$(rustc "+$STD_CORE_RUST_TOOLCHAIN" --print sysroot)"
   stdroot="$sysroot/lib/rustlib/src/rust/library"
   if [ -f "$stdroot/coretests/tests/cmp.rs" ]; then
     printf '%s\n' "$stdroot"
     return 0
   fi
-  if command -v rustup >/dev/null 2>&1; then
-    echo "== install rust-src for active toolchain =="
-    rustup component add rust-src >/dev/null
-  fi
   if [ ! -f "$stdroot/coretests/tests/cmp.rs" ]; then
-    echo "rust-src is missing coretests/tests/cmp.rs under $stdroot" >&2
+    echo "rust-src for pinned toolchain $STD_CORE_RUST_TOOLCHAIN is missing coretests/tests/cmp.rs under $stdroot" >&2
     exit 1
   fi
   printf '%s\n' "$stdroot"
@@ -66,8 +68,8 @@ for bin in "$SUGAR" "$ASSERT_RPC"; do
 done
 
 STDROOT="$(ensure_rust_src)"
-RUSTC_VERSION="$(rustc --version)"
-RUSTC_VERBOSE="$(rustc --version --verbose | tr '\n' ';')"
+RUSTC_VERSION="$(rustc "+$STD_CORE_RUST_TOOLCHAIN" --version)"
+RUSTC_VERBOSE="$(rustc "+$STD_CORE_RUST_TOOLCHAIN" --version --verbose | tr '\n' ';')"
 echo "rust-src: $STDROOT"
 echo "toolchain: $RUSTC_VERSION"
 
@@ -210,27 +212,27 @@ echo "== witness: rerun exact std/core vendor tests =="
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo test --test coretests cmp::test_ord_min_max_by -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests cmp::test_ord_min_max_by -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo test --test coretests cmp::test_ord_min_max_by_key -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests cmp::test_ord_min_max_by_key -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo test --test coretests fmt::test_lifetime -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests fmt::test_lifetime -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo test --test coretests time::div_duration_f32 -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests time::div_duration_f32 -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo test --test coretests time::div_duration_f64 -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests time::div_duration_f64 -- --exact --nocapture
 )
 
 echo "std/core showcase self-check passed"

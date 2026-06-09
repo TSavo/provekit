@@ -5,8 +5,9 @@ library's own tests and no source changes.
 
 Claimed slice:
 
-- Source: the active Rust toolchain's `rust-src` component, under
-  `library/coretests`.
+- Source: the pinned Rust `1.96.0` toolchain's `rust-src` component, under
+  `library/coretests`. The run script installs `rust-src` for that pinned
+  toolchain and does not use CI's active default std source.
 - Spec: selected scalar direct call-result `assert_eq!` rows from std/core own
   tests:
   - `coretests/tests/cmp.rs`: integer rows for
