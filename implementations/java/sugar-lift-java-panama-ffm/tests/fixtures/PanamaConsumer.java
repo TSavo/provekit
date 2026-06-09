@@ -1,0 +1,26 @@
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
+
+final class PanamaConsumer {
+    private static final Arena ARENA = Arena.ofAuto();
+    private static final SymbolLookup LOOKUP =
+            SymbolLookup.libraryLookup("libbase64_panama_demo.so", ARENA);
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final MethodHandle DECODED_LEN_ESTIMATE = LINKER.downcallHandle(
+            LOOKUP.find("decoded_len_estimate").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
+
+    static int decoded_len_estimate(int n) throws Throwable {
+        return Math.toIntExact((long) DECODED_LEN_ESTIMATE.invokeExact((long) n));
+    }
+
+    void good() throws Throwable {
+        assertEquals(3, decoded_len_estimate(4));
+    }
+}

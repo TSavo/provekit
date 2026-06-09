@@ -1,0 +1,12 @@
+name = "java-panama-ffm-lift"
+version = "0.1.0"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+command = ["@JDK_BIN@/java", "-cp", "@PANAMA_CLASSES@", "PanamaFfmLiftRpc"]
+working_dir = "."
+phase = "consumer"
+
+[capabilities]
+authoring_surfaces = ["java-panama-ffm"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

@@ -417,6 +417,12 @@ impl MementoPool {
                             self.name_to_cid.insert(n, memento_cid.clone());
                         } else if !new_has_pre && existing_has_pre {
                             // Incumbent is already pre-bearing; silently drop the new post-only.
+                        } else if is_euf_inv_only_conjoin_duplicate(&n, existing_env, new_env) {
+                            // Same-name #euf# inv-only contracts are the
+                            // intentional cross-proof conjoin case. Keep the
+                            // first name index for symbol lookup, keep both
+                            // mementos in the pool, and let
+                            // consistency::verify_consistency conjoin them.
                         } else {
                             // Same tier (both pre-bearing or both post-only): genuine collision.
                             self.load_errors.push(LoadError {
@@ -642,12 +648,18 @@ impl MementoPool {
         for (k, v) in other.name_to_cid {
             if let Some(existing) = self.name_to_cid.get(&k) {
                 if existing != &v {
-                    self.load_errors.push(LoadError {
-                        proof_path: v.clone(),
-                        reason: format!(
-                            "merge collision for contract name `{k}`: kept `{existing}`, dropped `{v}`"
-                        ),
-                    });
+                    if !is_euf_inv_only_conjoin_duplicate(
+                        &k,
+                        self.mementos.get(existing),
+                        self.mementos.get(&v),
+                    ) {
+                        self.load_errors.push(LoadError {
+                            proof_path: v.clone(),
+                            reason: format!(
+                                "merge collision for contract name `{k}`: kept `{existing}`, dropped `{v}`"
+                            ),
+                        });
+                    }
                 }
             } else {
                 self.name_to_cid.insert(k, v);
@@ -690,6 +702,35 @@ impl MementoPool {
                 .or_insert(shape);
         }
     }
+}
+
+fn is_euf_inv_only_conjoin_duplicate(
+    name: &str,
+    existing_env: Option<&Json>,
+    new_env: Option<&Json>,
+) -> bool {
+    name.contains("#euf#")
+        && existing_env.is_some_and(is_inv_only_consistency_contract)
+        && new_env.is_some_and(is_inv_only_consistency_contract)
+}
+
+fn is_inv_only_consistency_contract(env: &Json) -> bool {
+    if memento_kind(env) != Some("contract") {
+        return false;
+    }
+    let Some(body) = memento_body(env) else {
+        return false;
+    };
+    let has_inv = body.get("inv").is_some()
+        || body.get("invariant").is_some()
+        || memento_body_field(env, "invHash").is_some();
+    let has_pre = body.get("pre").is_some()
+        || body.get("precondition").is_some()
+        || memento_body_field(env, "preHash").is_some();
+    let has_post = body.get("post").is_some()
+        || body.get("postcondition").is_some()
+        || memento_body_field(env, "postHash").is_some();
+    has_inv && !has_pre && !has_post
 }
 
 /// `MementoPool` implements `OpacityMementoLookup` so that
@@ -995,6 +1036,64 @@ mod tests {
                 }
             }
         })
+    }
+
+    fn make_inv_only_contract(name: &str, value: i64) -> Json {
+        json!({
+            "envelope": {
+                "signer": "ed25519:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "declaredAt": "2026-05-05T00:00:00Z",
+                "signature": "ed25519:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "header": {
+                "schemaVersion": "1",
+                "kind": "contract",
+                "contractName": name,
+                "inv": {
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [
+                        {"kind": "var", "name": "r"},
+                        {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": value}
+                    ]
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn euf_inv_only_duplicate_names_are_conjoinable_not_load_errors() {
+        let name = "decoded_len_estimate#euf#c:callresult_decoded_len_estimate_a1(i:4)::assertion";
+        let mut pool = MementoPool::default();
+
+        pool.insert("blake3-512:java".to_string(), make_inv_only_contract(name, 3));
+        pool.insert("blake3-512:rust".to_string(), make_inv_only_contract(name, 4));
+
+        assert!(
+            pool.load_errors.is_empty(),
+            "same #euf# inv-only contracts are handled by consistency conjoin, not load errors: {:#?}",
+            pool.load_errors
+        );
+        assert_eq!(pool.name_to_cid.get(name), Some(&"blake3-512:java".to_string()));
+        assert!(pool.mementos.contains_key("blake3-512:java"));
+        assert!(pool.mementos.contains_key("blake3-512:rust"));
+    }
+
+    #[test]
+    fn non_euf_duplicate_names_remain_load_errors() {
+        let name = "src/lib.rs::tests::same_name";
+        let mut pool = MementoPool::default();
+
+        pool.insert("blake3-512:a".to_string(), make_inv_only_contract(name, 1));
+        pool.insert("blake3-512:b".to_string(), make_inv_only_contract(name, 2));
+
+        assert!(
+            pool.load_errors
+                .iter()
+                .any(|error| error.reason.contains("duplicate contract name")),
+            "plain same-name duplicates must still be surfaced: {:#?}",
+            pool.load_errors
+        );
     }
 
     #[test]
