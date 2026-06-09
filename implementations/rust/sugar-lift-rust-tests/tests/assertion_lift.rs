@@ -1483,6 +1483,90 @@ fn repeat_take_size_hint() {
 }
 
 #[test]
+fn const_block_wrapped_method_call_result_gets_stable_euf_key() {
+    // Vendor shape: rust-src library/coretests/tests/array.rs::const_array_ops.
+    let src = r#"
+#[test]
+fn const_array_ops() {
+    const fn doubler(x: usize) -> usize {
+        x * 2
+    }
+    assert_eq!(const { [5, 6, 1, 2].map(doubler) }, [10, 12, 2, 4]);
+    assert_eq!(const { std::array::from_fn::<_, 5, _>(doubler) }, [0, 2, 4, 6, 8]);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/array.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(
+        out.warnings.is_empty(),
+        "expression-only const block should not leave a residual: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 2);
+    let names = out
+        .decls
+        .iter()
+        .map(|decl| decl.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "method:map#euf#c:callresult_method_map_a2(v:literal:Array(i:5,i:6,i:1,i:2),v:tests/array.rs::const_array_ops::doubler)::assertion",
+            "std::array::from_fn::<_,const:5,_>#euf#c:callresult_std__array__from_fn_____const_5____a1(v:tests/array.rs::const_array_ops::doubler)::assertion",
+        ]
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "method:map");
+                    assert_eq!(args.len(), 2);
+                }
+                other => panic!("expected map method term, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Var { name } => {
+                    assert_eq!(name, "literal:Array(i:10,i:12,i:2,i:4)");
+                }
+                other => panic!("expected Array literal identity, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn nested_const_block_arguments_stay_residual_until_keyed_deliberately() {
+    let src = r#"
+fn apply(_: fn(usize) -> usize) -> usize { 0 }
+
+#[test]
+fn nested_const_arg() {
+    const fn doubler(x: usize) -> usize {
+        x * 2
+    }
+    assert_eq!(apply(const { doubler }), 0);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/array.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(out.decls.is_empty());
+    assert!(
+        out.warnings.iter().any(|warning| warning
+            .reason
+            .contains("unsupported term `const { doubler }`")),
+        "nested const block should stay residual, warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
 fn vendor_string_predicates_lift_to_string_theory_atoms_under_euf_keys() {
     // Vendor source: rust-src library/alloctests/tests/str.rs contains these
     // point-wise assertions in test_starts_with, test_ends_with, and contains.

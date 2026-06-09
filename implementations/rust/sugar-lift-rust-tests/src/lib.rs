@@ -543,8 +543,10 @@ fn assertions_from_macro(
             if args.exprs.len() < 2 {
                 return Err("assert_eq!: expected at least 2 arguments".to_string());
             }
-            let lhs = translate_term(&args.exprs[0]).map_err(|e| format!("assert_eq!: {e}"))?;
-            let rhs = translate_term(&args.exprs[1]).map_err(|e| format!("assert_eq!: {e}"))?;
+            let lhs = translate_assertion_term(&args.exprs[0], local_scope)
+                .map_err(|e| format!("assert_eq!: {e}"))?;
+            let rhs = translate_assertion_term(&args.exprs[1], local_scope)
+                .map_err(|e| format!("assert_eq!: {e}"))?;
             Ok(vec![assertion_entry_from_eq(lhs, rhs, local_scope)])
         }
         "assert" => {
@@ -714,8 +716,8 @@ fn translate_binary_bool_assertion(
         BinOp::Eq(_) | BinOp::Ne(_) | BinOp::Lt(_) | BinOp::Le(_) | BinOp::Gt(_) | BinOp::Ge(_) => {
             let op = relation_from_binop(&binary.op)
                 .expect("comparison op matched but did not map to relation");
-            let lhs = translate_term(&binary.left)?;
-            let rhs = translate_term(&binary.right)?;
+            let lhs = translate_assertion_term(&binary.left, local_scope)?;
+            let rhs = translate_assertion_term(&binary.right, local_scope)?;
             Ok(assertion_entry_from_relation(lhs, rhs, op, local_scope))
         }
         _ => Err(format!(
@@ -1533,6 +1535,48 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
         Expr::Paren(paren) => translate_term(&paren.expr),
         Expr::Group(group) => translate_term(&group.expr),
         other => Err(format!("unsupported term `{}`", token_key(other))),
+    }
+}
+
+fn translate_assertion_term(expr: &Expr, local_scope: &str) -> Result<Rc<Term>, String> {
+    match expr {
+        Expr::Const(const_block) => {
+            let term = translate_expression_only_block(&const_block.block, "const")?;
+            Ok(scope_const_block_locals(term, local_scope))
+        }
+        Expr::Paren(paren) => translate_assertion_term(&paren.expr, local_scope),
+        Expr::Group(group) => translate_assertion_term(&group.expr, local_scope),
+        _ => translate_term(expr),
+    }
+}
+
+fn scope_const_block_locals(term: Rc<Term>, local_scope: &str) -> Rc<Term> {
+    match term.as_ref() {
+        Term::Var { name } if should_scope_const_block_var(name) => {
+            make_var(format!("{local_scope}::{name}"))
+        }
+        Term::Ctor { name, args } => Rc::new(Term::Ctor {
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|arg| scope_const_block_locals(arg.clone(), local_scope))
+                .collect(),
+        }),
+        _ => term,
+    }
+}
+
+fn should_scope_const_block_var(name: &str) -> bool {
+    is_unqualified_local_name(name) && name != "_" && !name.starts_with("literal:")
+}
+
+fn translate_expression_only_block(block: &syn::Block, label: &str) -> Result<Rc<Term>, String> {
+    match block.stmts.as_slice() {
+        [Stmt::Expr(expr, None)] => translate_term(expr),
+        _ => Err(format!(
+            "{label} block is not an expression-only term `{}`",
+            token_key(block)
+        )),
     }
 }
 
