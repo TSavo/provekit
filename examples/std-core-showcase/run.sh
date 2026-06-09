@@ -210,7 +210,7 @@ needles = [
     "size_of::<u16>#euf#c:callresult_size_of___u16__a0()::assertion",
     "align_of::<u8>#euf#c:callresult_align_of___u8__a0()::assertion",
     "align_of::<u16>#euf#c:callresult_align_of___u16__a0()::assertion",
-    "method:to_string#euf#c:callresult_method_to_string_a1(v:a)::assertion",
+    "method:to_string#euf#c:callresult_method_to_string_a1(v:tests/fmt/mod.rs::test_lifetime::a)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",

@@ -326,7 +326,7 @@ fn string_call_result() {
     let decl = &out.decls[0];
     assert_eq!(
         decl.name,
-        "method:to_string#euf#c:callresult_method_to_string_a1(v:a)::assertion"
+        "method:to_string#euf#c:callresult_method_to_string_a1(v:tests/fmt.rs::string_call_result::a)::assertion"
     );
     let operands = inv_operands(decl);
     assert_eq!(operands.len(), 1);
@@ -356,7 +356,7 @@ fn float_call_result() {
     let decl = &out.decls[0];
     assert_eq!(
         decl.name,
-        "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:d,v:Duration)::assertion"
+        "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:tests/time.rs::float_call_result::d,v:tests/time.rs::float_call_result::Duration)::assertion"
     );
     let operands = inv_operands(decl);
     assert_eq!(operands.len(), 1);
@@ -392,11 +392,51 @@ fn float_mixed_refinement_gap() {
     let decl = &out.decls[0];
     assert_eq!(
         decl.name,
-        "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:d,v:Duration)::assertion"
+        "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:tests/time.rs::float_mixed_refinement_gap::d,v:tests/time.rs::float_mixed_refinement_gap::Duration)::assertion"
     );
     let operands = inv_operands(decl);
     assert_eq!(operands.len(), 1);
     assert_real_call_eq_atom(&operands[0], "method:div_duration_f64", "2.0");
+}
+
+#[test]
+fn method_call_result_euf_keys_scope_local_receivers_to_avoid_false_collisions() {
+    let src = r#"
+struct Cursor;
+
+impl Cursor {
+    fn get_ref(&self) -> Vec<u8> { Vec::new() }
+}
+
+#[test]
+fn first_local_cursor() {
+    let c = Cursor;
+    assert_eq!(c.get_ref().len(), 1);
+}
+
+#[test]
+fn second_local_cursor() {
+    let c = Cursor;
+    assert_eq!(c.get_ref().len(), 2);
+}
+"#;
+    let out = lift_file(&parse(src), "src/engine/tests.rs");
+    assert_eq!(out.seen, 2);
+    assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 2);
+
+    let names = out
+        .decls
+        .iter()
+        .map(|decl| decl.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "method:len#euf#c:callresult_method_len_a1(c:method:get_ref(v:src/engine/tests.rs::first_local_cursor::c))::assertion",
+            "method:len#euf#c:callresult_method_len_a1(c:method:get_ref(v:src/engine/tests.rs::second_local_cursor::c))::assertion",
+        ]
+    );
 }
 
 #[test]

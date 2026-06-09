@@ -69,7 +69,7 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, modules: &[String], out: &m
     let test_name = scoped_test_name(source_path, modules, &f.sig.ident.to_string());
     let mut entries = Vec::new();
     let mut skipped = Vec::new();
-    collect_assertion_entries(&f.block.stmts, &mut entries, &mut skipped);
+    collect_assertion_entries(&f.block.stmts, &test_name, &mut entries, &mut skipped);
 
     if !skipped.is_empty() {
         out.warnings.push(LiftWarning {
@@ -149,14 +149,27 @@ fn group_assertions(
 
 fn collect_assertion_entries(
     stmts: &[Stmt],
+    local_scope: &str,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
     for stmt in stmts {
         match stmt {
-            Stmt::Macro(m) => collect_macro(&m.mac.path, m.mac.tokens.clone(), entries, skipped),
+            Stmt::Macro(m) => collect_macro(
+                &m.mac.path,
+                m.mac.tokens.clone(),
+                local_scope,
+                entries,
+                skipped,
+            ),
             Stmt::Expr(Expr::Macro(m), _) => {
-                collect_macro(&m.mac.path, m.mac.tokens.clone(), entries, skipped)
+                collect_macro(
+                    &m.mac.path,
+                    m.mac.tokens.clone(),
+                    local_scope,
+                    entries,
+                    skipped,
+                )
             }
             _ => {}
         }
@@ -166,10 +179,11 @@ fn collect_assertion_entries(
 fn collect_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
+    local_scope: &str,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
-    match assertion_from_macro(path, tokens) {
+    match assertion_from_macro(path, tokens, local_scope) {
         Ok(Some(entry)) => entries.push(entry),
         Ok(None) => {}
         Err(reason) => skipped.push(reason),
@@ -179,6 +193,7 @@ fn collect_macro(
 fn assertion_from_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
+    local_scope: &str,
 ) -> Result<Option<AssertionEntry>, String> {
     let Some(name) = path
         .segments
@@ -195,14 +210,15 @@ fn assertion_from_macro(
             }
             let lhs = translate_term(&args.exprs[0]).map_err(|e| format!("assert_eq!: {e}"))?;
             let rhs = translate_term(&args.exprs[1]).map_err(|e| format!("assert_eq!: {e}"))?;
-            Ok(Some(assertion_entry_from_eq(lhs, rhs)))
+            Ok(Some(assertion_entry_from_eq(lhs, rhs, local_scope)))
         }
         "assert" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("assert!: {e}"))?;
             let Some(first) = args.exprs.first() else {
                 return Err("assert!: expected a condition".to_string());
             };
-            let entry = translate_bool_assertion(first).map_err(|e| format!("assert!: {e}"))?;
+            let entry = translate_bool_assertion(first, local_scope)
+                .map_err(|e| format!("assert!: {e}"))?;
             Ok(Some(entry))
         }
         other if other.starts_with("assert") || other.starts_with("debug_assert") => {
@@ -229,15 +245,15 @@ fn parse_macro_args(tokens: proc_macro2::TokenStream) -> syn::Result<MacroArgs> 
     syn::parse2(tokens)
 }
 
-fn translate_bool_assertion(expr: &Expr) -> Result<AssertionEntry, String> {
+fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionEntry, String> {
     match expr {
         Expr::Binary(binary) if matches!(binary.op, BinOp::Eq(_)) => {
             let lhs = translate_term(&binary.left)?;
             let rhs = translate_term(&binary.right)?;
-            Ok(assertion_entry_from_eq(lhs, rhs))
+            Ok(assertion_entry_from_eq(lhs, rhs, local_scope))
         }
-        Expr::Paren(paren) => translate_bool_assertion(&paren.expr),
-        Expr::Group(group) => translate_bool_assertion(&group.expr),
+        Expr::Paren(paren) => translate_bool_assertion(&paren.expr, local_scope),
+        Expr::Group(group) => translate_bool_assertion(&group.expr, local_scope),
         other => Err(format!(
             "only scalar equality is liftable, got `{}`",
             token_key(other)
@@ -245,11 +261,11 @@ fn translate_bool_assertion(expr: &Expr) -> Result<AssertionEntry, String> {
     }
 }
 
-fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>) -> AssertionEntry {
+fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>, local_scope: &str) -> AssertionEntry {
     let name = if is_concrete_value(lhs.as_ref()) {
-        callsite_assertion_name(rhs.as_ref())
+        callsite_assertion_name(rhs.as_ref(), local_scope)
     } else if is_concrete_value(rhs.as_ref()) {
-        callsite_assertion_name(lhs.as_ref())
+        callsite_assertion_name(lhs.as_ref(), local_scope)
     } else {
         None
     };
@@ -263,18 +279,18 @@ fn is_concrete_value(term: &Term) -> bool {
     matches!(term, Term::Const { .. })
 }
 
-fn callsite_assertion_name(term: &Term) -> Option<String> {
+fn callsite_assertion_name(term: &Term, local_scope: &str) -> Option<String> {
     let Term::Ctor { name, .. } = term else {
         return None;
     };
     let callee = callsite_callee_name(name)?;
     Some(format!(
         "{callee}#euf#{}::assertion",
-        canonical_callsite_sig(term)
+        canonical_callsite_sig(term, local_scope)
     ))
 }
 
-fn canonical_callsite_sig(term: &Term) -> String {
+fn canonical_callsite_sig(term: &Term, local_scope: &str) -> String {
     let Term::Ctor { name, args } = term else {
         return term_key(term);
     };
@@ -284,7 +300,13 @@ fn canonical_callsite_sig(term: &Term) -> String {
     let head = call_result_head(callee, args.len());
     let inner = args
         .iter()
-        .map(|arg| canonical_term_sig(arg))
+        .map(|arg| {
+            if callee.starts_with("method:") {
+                canonical_method_arg_sig(arg, local_scope)
+            } else {
+                canonical_term_sig(arg)
+            }
+        })
         .collect::<Vec<_>>()
         .join(",");
     format!("c:{head}({inner})")
@@ -328,6 +350,34 @@ fn canonical_term_sig(term: &Term) -> String {
         }
         _ => term_key(term),
     }
+}
+
+fn canonical_method_arg_sig(term: &Term, local_scope: &str) -> String {
+    match term {
+        Term::Var { name } if is_unqualified_local_name(name) => {
+            format!("v:{local_scope}::{name}")
+        }
+        Term::Var { name } => format!("v:{name}"),
+        Term::Const { value, .. } => match value {
+            ConstValue::Int(value) => format!("i:{value}"),
+            ConstValue::Real(value) => format!("r:{value}"),
+            ConstValue::String(value) => format!("s:{value:?}"),
+            ConstValue::Bool(value) => format!("b:{value}"),
+        },
+        Term::Ctor { name, args } => {
+            let inner = args
+                .iter()
+                .map(|arg| canonical_method_arg_sig(arg, local_scope))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("c:{name}({inner})")
+        }
+        _ => term_key(term),
+    }
+}
+
+fn is_unqualified_local_name(name: &str) -> bool {
+    !name.contains("::")
 }
 
 fn term_key(term: &Term) -> String {
