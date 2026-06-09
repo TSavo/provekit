@@ -252,6 +252,24 @@ fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionE
             let rhs = translate_term(&binary.right)?;
             Ok(assertion_entry_from_eq(lhs, rhs, local_scope))
         }
+        Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
+            let term = translate_term(&unary.expr)?;
+            Ok(assertion_entry_from_eq(
+                term,
+                bool_const(false),
+                local_scope,
+            ))
+        }
+        Expr::Call(_) | Expr::MethodCall(_) | Expr::Await(_) | Expr::Field(_) => {
+            let term = translate_term(expr)?;
+            if is_refinement_predicate_term(term.as_ref()) {
+                return Err(format!(
+                    "refinement predicate remains out of this exact-value slice `{}`",
+                    token_key(expr)
+                ));
+            }
+            Ok(assertion_entry_from_eq(term, bool_const(true), local_scope))
+        }
         Expr::Paren(paren) => translate_bool_assertion(&paren.expr, local_scope),
         Expr::Group(group) => translate_bool_assertion(&group.expr, local_scope),
         other => Err(format!(
@@ -277,6 +295,13 @@ fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>, local_scope: &str) -> A
 
 fn is_concrete_value(term: &Term) -> bool {
     matches!(term, Term::Const { .. })
+}
+
+fn bool_const(value: bool) -> Rc<Term> {
+    Rc::new(Term::Const {
+        value: ConstValue::Bool(value),
+        sort: sugar_ir_symbolic::Sort::bool(),
+    })
 }
 
 fn callsite_assertion_name(term: &Term, local_scope: &str) -> Option<String> {
@@ -380,6 +405,23 @@ fn is_unqualified_local_name(name: &str) -> bool {
     !name.contains("::")
 }
 
+fn is_refinement_predicate_term(term: &Term) -> bool {
+    matches!(
+        term,
+        Term::Ctor { name, .. }
+            if matches!(
+                name.as_str(),
+                "method:is_nan"
+                    | "method:is_finite"
+                    | "method:is_infinite"
+                    | "method:is_normal"
+                    | "method:is_subnormal"
+                    | "method:is_sign_positive"
+                    | "method:is_sign_negative"
+            )
+    )
+}
+
 fn term_key(term: &Term) -> String {
     format!("{term:?}")
         .split_whitespace()
@@ -424,6 +466,28 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
             name: "await".to_string(),
             args: vec![translate_term(&await_expr.base)?],
         })),
+        Expr::Reference(reference) if reference.mutability.is_none() => Ok(Rc::new(Term::Ctor {
+            name: "ref".to_string(),
+            args: vec![translate_term(&reference.expr)?],
+        })),
+        Expr::Range(range) => {
+            let start = match &range.start {
+                Some(expr) => translate_term(expr)?,
+                None => make_var("_"),
+            };
+            let end = match &range.end {
+                Some(expr) => translate_term(expr)?,
+                None => make_var("_"),
+            };
+            let name = match range.limits {
+                syn::RangeLimits::HalfOpen(_) => "range",
+                syn::RangeLimits::Closed(_) => "range_incl",
+            };
+            Ok(Rc::new(Term::Ctor {
+                name: name.to_string(),
+                args: vec![start, end],
+            }))
+        }
         Expr::Field(field) => Ok(Rc::new(Term::Ctor {
             name: format!("field:{}", token_key(&field.member)),
             args: vec![translate_term(&field.base)?],
@@ -454,6 +518,7 @@ fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {
             .map_err(|e| format!("int literal: {e}")),
         Lit::Float(f) => canonical_float_literal(f).map(real_const),
         Lit::Str(s) => Ok(str_const(s.value())),
+        Lit::Bool(b) => Ok(bool_const(b.value)),
         other => Err(format!(
             "only integer/string/finite decimal float scalar constants are liftable, got `{}`",
             token_key(other)

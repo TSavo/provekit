@@ -440,6 +440,102 @@ fn second_local_cursor() {
 }
 
 #[test]
+fn method_chain_predicate_assertion_uses_euf_callsite_key() {
+    let src = r#"
+struct Layout;
+struct ResultLike;
+
+impl Layout {
+    fn align_to(&self, _align: usize) -> ResultLike { ResultLike }
+}
+
+impl ResultLike {
+    fn is_err(&self) -> bool { true }
+}
+
+#[test]
+fn layout_errors() {
+    let layout = Layout;
+    assert!(layout.align_to(3).is_err());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/alloc.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:is_err#euf#c:callresult_method_is_err_a1(c:method:align_to(v:tests/alloc.rs::layout_errors::layout,i:3))::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, "method:is_err"),
+                other => panic!("expected method-chain predicate call, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Bool(value),
+                    ..
+                } => assert!(*value),
+                other => panic!("expected bool true rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn method_chain_predicate_range_contains_keys_bounds_and_reference_arg() {
+    let src = r#"
+#[test]
+fn test_range_contains() {
+    assert!(!(1u32..5).contains(&0u32));
+    assert!((1u32..5).contains(&1u32));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ops.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 2);
+
+    let names = out
+        .decls
+        .iter()
+        .map(|decl| decl.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:0))::assertion",
+            "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:1))::assertion",
+        ]
+    );
+    let first = inv_operands(&out.decls[0]);
+    assert_eq!(first.len(), 1);
+    match first[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Bool(value),
+                    ..
+                } => assert!(!*value),
+                other => panic!("expected bool false rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
 fn non_call_assertions_stay_location_keyed() {
     let src = r#"
 #[test]

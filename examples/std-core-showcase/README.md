@@ -18,6 +18,9 @@ Claimed slice:
   - `coretests/tests/time.rs`: finite decimal float rows for
     `Duration::div_duration_f{32,64}`.
   - `coretests/tests/fmt/mod.rs`: exact string rows for `to_string()`.
+  - `coretests/tests/alloc.rs` and `coretests/tests/ops.rs`: pure
+    method-chain predicate rows such as `layout.align_to(3).is_err()` and
+    `(1u32..5).contains(&1u32)`.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
   emits `#euf#` call-result consistency rows and every claimed row discharges.
 - Witness axis: the exact std vendor tests rerun with `cargo test --test
@@ -35,14 +38,17 @@ Named gaps toward full `coretests` coverage:
   literals stay out of this exact finite-value slice.
 - Strings/chars: exact string equality is claimed where it is a direct
   call-result value; char and richer string predicates are out of scope.
+- Method chains: pure immutable method-chain predicates with stable receiver
+  identity are claimed. Stateful chains or tests that reassign a receiver name
+  remain out of scope until the key can carry temporal identity.
 - CFG-sensitive tests: the lift reads source text and does not evaluate the
   active `#[cfg]` set.
-- Complex terms: nested calls, method chains, non-direct-call results, and
-  unsupported expression forms stay out of the claimed slice.
+- Complex terms: nested calls, stateful method chains, non-direct-call results,
+  and unsupported expression forms stay out of the claimed slice.
 
 The run script requires representative integer, generic type-arg-keyed,
-finite-float, and string rows, and rejects any non-discharged claimed `#euf#`
-row. It is intentionally not a full-`std` claim.
+finite-float, string, and pure method-chain predicate rows, and rejects any
+non-discharged claimed `#euf#` row. It is intentionally not a full-`std` claim.
 
 ## Grounded Full-Coretests Gap Census
 
@@ -53,9 +59,10 @@ count; it is the current engineering backlog shape for reaching all of
 `coretests`.
 
 Original pre-generics total: 1,146 gap items = 1,119 lift diagnostics + 27
-non-discharged emitted rows. This slice closes the 30 direct generic
-call-result identity items by carrying type arguments in the `#euf#` key, so
-the current known backlog is 1,116 items.
+non-discharged emitted rows. The generics slice closed the 30 direct generic
+call-result identity items by carrying type arguments in the `#euf#` key. This
+method-chain slice closes 17 pure method-chain predicate items, so the current
+known backlog is 1,099 items.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
@@ -64,7 +71,7 @@ the current known backlog is 1,116 items.
 | Floats | 18 | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 65 | `tests/mem.rs`: `#[cfg(target_pointer_width = "64")] assert_eq!(size_of::<usize>(), 8)` needs the active cfg set before it can be claimed. |
-| Complex terms | 479 | `tests/alloc.rs::layout_errors`: method-chain predicates such as `layout.align_to(3).is_err()`. |
+| Complex terms | 462 | `tests/alloc.rs::layout_errors`: remaining method-chain and complex expression shapes not in the pure literal/immutable receiver slice. |
 | Other | 331 | `tests/alloc.rs::layout_round_up_to_align_edge_cases`: no liftable scalar assertion under the current surface. |
 
 ### Complex-Term Decomposition
@@ -73,7 +80,7 @@ The 479 complex-term bucket breaks down as:
 
 | Sub-shape | Count | Representative std test/assertion |
 | --- | ---: | --- |
-| Method-chain predicates | 107 | `tests/alloc.rs::layout_errors`: `assert!(layout.align_to(3).is_err())`. |
+| Method-chain predicates | 90 | Closed 17 pure rows in this slice; remaining examples include reassigned receiver cases such as `tests/ops.rs::test_range_bounds`: `r.contains(&0)` after `r` is rebound. |
 | References, derefs, casts, unsafe blocks | 81 | `tests/array.rs::array_from_mut`: `assert_eq!(&value, "Hello World!")`. |
 | Method chains returning compared values | 68 | `tests/array.rs::iterator_nth`: `assert_eq!(IntoIterator::into_iter(v.clone()).nth(i).unwrap(), v[i])`. |
 | Residual unsupported term shapes | 61 | `tests/any.rs::any_fixed_vec`: `TypeId::of::<[u8; 3]>()` compared with a dynamic `type_id()`. |

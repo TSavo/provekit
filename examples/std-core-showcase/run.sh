@@ -8,6 +8,7 @@
 #       * tests/mem.rs generic type-arg-keyed size_of/align_of rows,
 #       * tests/time.rs finite decimal float method-call equality rows,
 #       * tests/fmt/mod.rs exact string method-call equality rows.
+#       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows.
 #   - `sugar mint` + `sugar verify` must produce only discharged `#euf#`
 #     consistency rows for that slice.
 #   - The exact vendor tests rerun as the witness axis.
@@ -15,7 +16,8 @@
 # Explicitly NOT claimed:
 #   - assertion macros requiring expansion,
 #   - float refinements such as NaN/infinity/ordered comparisons,
-#   - chars, cfg-sensitive generic width tests, and complex expression terms.
+#   - chars, cfg-sensitive generic width tests, stateful/reassigned receiver
+#     method chains, and complex expression terms.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,8 +32,8 @@ WITNESS_TARGET="$WORK/coretests-target"
 STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs, finite float rows from time.rs, exact string rows from fmt/mod.rs."
-echo "SCOPE: excluded gaps = macros requiring expansion, NaN/infinity/ordered float refinements, chars, cfg-sensitive generic width tests, complex terms."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs, finite float rows from time.rs, exact string rows from fmt/mod.rs, and pure method-chain predicate rows from alloc.rs/ops.rs."
+echo "SCOPE: excluded gaps = macros requiring expansion, NaN/infinity/ordered float refinements, chars, cfg-sensitive generic width tests, stateful/reassigned receiver method chains, complex terms."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
 ensure_rust_src() {
@@ -112,6 +114,78 @@ chunks = [
     *extract("size_of_basic"),
     "",
     *extract("align_of_basic"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
+
+python3 - "$STDROOT/coretests/tests/alloc.rs" "$PROJECT/tests/alloc.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    "use core::alloc::Layout;",
+    "",
+    *extract("layout_errors"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
+
+python3 - "$STDROOT/coretests/tests/ops.rs" "$PROJECT/tests/ops.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    *extract("test_range_contains"),
+    "",
+    *extract("test_range_to_contains"),
     "",
 ]
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
@@ -215,6 +289,11 @@ needles = [
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
+    "method:is_err#euf#c:callresult_method_is_err_a1(c:method:align_to(v:tests/alloc.rs::layout_errors::layout,i:3))::assertion",
+    "method:is_ok#euf#c:callresult_method_is_ok_a1(c:method:repeat(v:tests/alloc.rs::layout_errors::layout,v:tests/alloc.rs::layout_errors::align_max))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:0))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:1))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(c:range_incl(i:1,i:5),c:ref(i:5))::assertion",
 ]
 missing = [
     needle for needle in needles
@@ -276,8 +355,23 @@ echo "== witness: rerun exact std/core vendor tests =="
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests time::div_duration_f64 -- --exact --nocapture
 )
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests alloc::layout_errors -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests ops::test_range_contains -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests ops::test_range_to_contains -- --exact --nocapture
+)
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs} discharged; exact vendor tests reran."
-echo "not-claimed: full std/coretests; macros/NaN-infinity-ordered-float-refinements/chars/cfg-sensitive generic width tests/complex terms remain gap census items."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs} plus pure method-chain predicates from alloc.rs/ops.rs discharged; exact vendor tests reran."
+echo "not-claimed: full std/coretests; macros/NaN-infinity-ordered-float-refinements/chars/cfg-sensitive generic width tests/stateful-reassigned-receiver method chains/complex terms remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"
