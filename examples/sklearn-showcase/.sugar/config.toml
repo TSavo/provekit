@@ -1,0 +1,35 @@
+# sklearn showcase: the product-wall Python library after numpy and pandas.
+#
+# The proof shape mirrors pandas-showcase:
+#   python                 lifts bare pytest scalar claims.
+#   python-sklearn-testing learns sklearn.utils._testing when a test imports it.
+#   python-pytest-witness  re-runs the tests under real scikit-learn.
+#
+# This showcase deliberately stays inside exact, point-wise vendor rows. The
+# current liftable slice is scalar call results bound to a local name, plus exact
+# sklearn testing helpers when used on primitive terms. Approximate checks,
+# fitted-model claims, randomness, tuple-assignment tests, and tolerance rows are
+# residuals, not contracts.
+[[plugins]]
+name = "python-lift"
+kind = "lift"
+surface = "python"
+
+[[plugins]]
+name = "python-sklearn-testing-lift"
+kind = "lift"
+surface = "python-sklearn-testing"
+
+[[plugins]]
+name = "pytest-witness-lift"
+kind = "lift"
+surface = "python-pytest-witness"
+
+[solvers]
+default = "z3"
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

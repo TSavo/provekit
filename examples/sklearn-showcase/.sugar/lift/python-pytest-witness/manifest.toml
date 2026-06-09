@@ -1,0 +1,32 @@
+name = "pytest-witness-lift"
+version = "0.1.0-draft"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+# The witness lifter runs the real sklearn tests in the venv.
+command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/sugar-lift-py-pytest-witness/src:../../implementations/python/sugar-lift-py-tests/src:../../implementations/python/sugar-lift-python-source/src",
+    "/tmp/sklearn-witness-venv/bin/python",
+    "-m",
+    "sugar_pytest_witness.lift_lsp",
+]
+discharge_command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/sugar-lift-py-pytest-witness/src:../../implementations/python/sugar-lift-py-tests/src:../../implementations/python/sugar-lift-python-source/src",
+    "/tmp/sklearn-witness-venv/bin/python",
+    "-m",
+    "sugar_pytest_witness.discharge_cli",
+]
+witness_tool = "pytest"
+resolve_witness_command = [
+    "/usr/bin/env",
+    "PYTHONPATH=../../implementations/python/sugar-lift-py-pytest-witness/src:../../implementations/python/sugar-lift-py-tests/src:../../implementations/python/sugar-lift-python-source/src",
+    "/tmp/sklearn-witness-venv/bin/python",
+    "-m",
+    "sugar_pytest_witness.lift_lsp",
+]
+resolve_witness_method = "sugar.plugin.resolve_witness"
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-pytest-witness"]

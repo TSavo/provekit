@@ -283,6 +283,7 @@ test-all: check-no-concept-name
 SHOWCASE_RUNS = \
 	examples/numpy-showcase/run.sh \
 	examples/pandas-showcase/run.sh \
+	examples/sklearn-showcase/run.sh \
 	examples/rust-boundary-showcase/run.sh \
 	examples/rust-witness-showcase/run.sh \
 	examples/rust-test-assertion-consistency/run.sh \

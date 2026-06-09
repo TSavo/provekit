@@ -1,0 +1,7 @@
+*.proof
+.verify.raw
+.verify.json
+.sugar/runs/
+.sugar/witnesses/
+__pycache__/
+*.pyc
