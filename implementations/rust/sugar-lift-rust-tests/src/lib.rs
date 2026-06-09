@@ -361,8 +361,12 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
             for arg in &call.args {
                 args.push(translate_term(arg)?);
             }
+            let method = match &call.turbofish {
+                Some(args) => format!("{}{}", call.method, angle_args_key(args)),
+                None => call.method.to_string(),
+            };
             Ok(Rc::new(Term::Ctor {
-                name: format!("method:{}", call.method),
+                name: format!("method:{method}"),
                 args,
             }))
         }
@@ -453,9 +457,80 @@ fn expr_head_key(expr: &Expr) -> String {
 fn path_to_name(path: &syn::Path) -> String {
     path.segments
         .iter()
-        .map(|segment| segment.ident.to_string())
+        .map(|segment| {
+            let mut name = segment.ident.to_string();
+            name.push_str(&path_arguments_key(&segment.arguments));
+            name
+        })
         .collect::<Vec<_>>()
         .join("::")
+}
+
+fn path_arguments_key(arguments: &syn::PathArguments) -> String {
+    match arguments {
+        syn::PathArguments::None => String::new(),
+        syn::PathArguments::AngleBracketed(args) => angle_args_key(args),
+        syn::PathArguments::Parenthesized(args) => token_key(args),
+    }
+}
+
+fn angle_args_key(args: &syn::AngleBracketedGenericArguments) -> String {
+    let inner = args
+        .args
+        .iter()
+        .map(generic_arg_key)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("::<{inner}>")
+}
+
+fn generic_arg_key(arg: &syn::GenericArgument) -> String {
+    match arg {
+        syn::GenericArgument::Type(ty) => type_key(ty),
+        syn::GenericArgument::Const(expr) => format!("const:{}", token_key(expr)),
+        syn::GenericArgument::Lifetime(lifetime) => format!("'{}", lifetime.ident),
+        syn::GenericArgument::AssocType(assoc) => {
+            format!("{}={}", assoc.ident, type_key(&assoc.ty))
+        }
+        syn::GenericArgument::AssocConst(assoc) => {
+            format!("{}=const:{}", assoc.ident, token_key(&assoc.value))
+        }
+        syn::GenericArgument::Constraint(constraint) => token_key(constraint),
+        _ => token_key(arg),
+    }
+}
+
+fn type_key(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Path(path) => path_to_name(&path.path),
+        syn::Type::Reference(reference) => {
+            let mut out = String::from("&");
+            if let Some(lifetime) = &reference.lifetime {
+                out.push('\'');
+                out.push_str(&lifetime.ident.to_string());
+                out.push(' ');
+            }
+            if reference.mutability.is_some() {
+                out.push_str("mut ");
+            }
+            out.push_str(&type_key(&reference.elem));
+            out
+        }
+        syn::Type::Tuple(tuple) => {
+            let inner = tuple
+                .elems
+                .iter()
+                .map(type_key)
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("({inner})")
+        }
+        syn::Type::Array(array) => {
+            format!("[{};{}]", type_key(&array.elem), token_key(&array.len))
+        }
+        syn::Type::Slice(slice) => format!("[{}]", type_key(&slice.elem)),
+        _ => token_key(ty),
+    }
 }
 
 fn token_key<T: ToTokens>(node: T) -> String {

@@ -5,6 +5,7 @@
 #   - `rust-src` provides the pinned toolchain's std/core source and tests.
 #   - The lifter sees a selected sound scalar direct call-result slice:
 #       * tests/cmp.rs integer call-result equality rows,
+#       * tests/mem.rs generic type-arg-keyed size_of/align_of rows,
 #       * tests/time.rs finite decimal float method-call equality rows,
 #       * tests/fmt/mod.rs exact string method-call equality rows.
 #   - `sugar mint` + `sugar verify` must produce only discharged `#euf#`
@@ -12,10 +13,9 @@
 #   - The exact vendor tests rerun as the witness axis.
 #
 # Explicitly NOT claimed:
-#   - generic call-result keys such as size_of::<T>() / align_of::<T>(),
 #   - assertion macros requiring expansion,
 #   - float refinements such as NaN/infinity/ordered comparisons,
-#   - chars, cfg-sensitive tests, and complex expression terms.
+#   - chars, cfg-sensitive generic width tests, and complex expression terms.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,8 +30,8 @@ WITNESS_TARGET="$WORK/coretests-target"
 STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, finite float rows from time.rs, exact string rows from fmt/mod.rs."
-echo "SCOPE: excluded gaps = generics, macros requiring expansion, NaN/infinity/ordered float refinements, chars, cfg-sensitive tests, complex terms."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs, finite float rows from time.rs, exact string rows from fmt/mod.rs."
+echo "SCOPE: excluded gaps = macros requiring expansion, NaN/infinity/ordered float refinements, chars, cfg-sensitive generic width tests, complex terms."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
 ensure_rust_src() {
@@ -78,6 +78,44 @@ mkdir -p "$PROJECT/tests/fmt" "$PROJECT/.sugar/lift/rust-test-assertions"
 ln -s "$STDROOT/coretests/tests/cmp.rs" "$PROJECT/tests/cmp.rs"
 ln -s "$STDROOT/coretests/tests/time.rs" "$PROJECT/tests/time.rs"
 ln -s "$STDROOT/coretests/tests/fmt/mod.rs" "$PROJECT/tests/fmt/mod.rs"
+
+python3 - "$STDROOT/coretests/tests/mem.rs" "$PROJECT/tests/mem.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    "use core::mem::*;",
+    "",
+    *extract("size_of_basic"),
+    "",
+    *extract("align_of_basic"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
 
 cat > "$PROJECT/.sugar/config.toml" <<TOML
 [[plugins]]
@@ -166,13 +204,12 @@ if receipt is None:
 rows = receipt.get("rows", [])
 euf_rows = [r for r in rows if "#euf#" in (r.get("property") or "")]
 failed = [r for r in euf_rows if r.get("status") != "discharged"]
-generic = [
-    r for r in euf_rows
-    if "align_of#euf#" in (r.get("property") or "")
-    or "size_of#euf#" in (r.get("property") or "")
-]
 needles = [
     "cmp::max_by#euf#c:callresult_cmp__max_by_a3(i:1,i:-1,v:f)::assertion",
+    "size_of::<u8>#euf#c:callresult_size_of___u8__a0()::assertion",
+    "size_of::<u16>#euf#c:callresult_size_of___u16__a0()::assertion",
+    "align_of::<u8>#euf#c:callresult_align_of___u8__a0()::assertion",
+    "align_of::<u16>#euf#c:callresult_align_of___u16__a0()::assertion",
     "method:to_string#euf#c:callresult_method_to_string_a1(v:a)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
@@ -191,11 +228,6 @@ if missing:
     print("missing required claimed rows:", file=sys.stderr)
     for needle in missing:
         print(needle, file=sys.stderr)
-    raise SystemExit(1)
-if generic:
-    print("generic collision-prone rows leaked into claimed slice:", file=sys.stderr)
-    for row in generic:
-        print(row.get("property"), file=sys.stderr)
     raise SystemExit(1)
 if failed:
     print("non-discharged #euf# rows in claimed slice:", file=sys.stderr)
@@ -222,6 +254,16 @@ echo "== witness: rerun exact std/core vendor tests =="
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests mem::size_of_basic -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests mem::align_of_basic -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests fmt::test_lifetime -- --exact --nocapture
 )
 (
@@ -236,6 +278,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,time.rs,fmt/mod.rs} discharged; exact vendor tests reran."
-echo "not-claimed: full std/coretests; generics/macros/NaN-infinity-ordered-float-refinements/chars/cfg-sensitive/complex terms remain gap census items."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs} discharged; exact vendor tests reran."
+echo "not-claimed: full std/coretests; macros/NaN-infinity-ordered-float-refinements/chars/cfg-sensitive generic width tests/complex terms remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

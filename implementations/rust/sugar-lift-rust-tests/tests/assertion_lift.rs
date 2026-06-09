@@ -65,6 +65,30 @@ fn assert_int_call_eq_atom(
     }
 }
 
+fn assert_int_zero_arg_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: i64) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, expected_call);
+                    assert!(args.is_empty());
+                }
+                other => panic!("expected call term lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Int(value),
+                    ..
+                } => assert_eq!(*value, expected_rhs),
+                other => panic!("expected int rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
 fn assert_string_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: &str) {
     match formula {
         Formula::Atomic { name, args } => {
@@ -240,6 +264,43 @@ fn decoded_len_est() {
     let operands = inv_operands(decl);
     assert_eq!(operands.len(), 1);
     assert_int_call_eq_atom(&operands[0], 3, "call:decoded_len_estimate", 4);
+}
+
+#[test]
+fn direct_generic_call_result_assertions_include_type_args_in_euf_key() {
+    let src = r#"
+fn size_of<T>() -> usize { 1 }
+
+#[test]
+fn generic_identity_is_distinct() {
+    assert_eq!(size_of::<u8>(), 1);
+    assert_eq!(size_of::<u16>(), 2);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/mem.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 2);
+
+    let names = out
+        .decls
+        .iter()
+        .map(|decl| decl.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "size_of::<u8>#euf#c:callresult_size_of___u8__a0()::assertion",
+            "size_of::<u16>#euf#c:callresult_size_of___u16__a0()::assertion",
+        ]
+    );
+
+    let first = inv_operands(&out.decls[0]);
+    assert_eq!(first.len(), 1);
+    assert_int_zero_arg_call_eq_atom(&first[0], "call:size_of::<u8>", 1);
+    let second = inv_operands(&out.decls[1]);
+    assert_eq!(second.len(), 1);
+    assert_int_zero_arg_call_eq_atom(&second[0], "call:size_of::<u16>", 2);
 }
 
 #[test]
