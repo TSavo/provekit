@@ -274,6 +274,7 @@ SHOWCASE_RUNS = \
 	examples/rust-boundary-showcase/run.sh \
 	examples/rust-witness-showcase/run.sh \
 	examples/rust-test-assertion-consistency/run.sh \
+	examples/std-core-showcase/run.sh \
 	examples/tokio-effect-consistency/run.sh \
 	examples/tokio-await-implication-edge/run.sh \
 	examples/tokio-channel-implication-edge/run.sh \
