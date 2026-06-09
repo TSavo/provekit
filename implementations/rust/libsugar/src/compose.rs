@@ -533,10 +533,6 @@ pub fn sort_to_value(s: &Sort) -> Arc<Value> {
                 Value::string("function-or-dependent-sort-not-yet-modeled"),
             ),
         ]),
-        Sort::Float { width } => Value::object([
-            ("kind", Value::string("float")),
-            ("width", Value::integer(i64::from(*width))),
-        ]),
         Sort::Region { name } => Value::object([
             ("kind", Value::string("region")),
             ("name", Value::string(name.clone())),

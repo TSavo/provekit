@@ -38,12 +38,9 @@ impl From<ir::Sort> for Sort {
             // not yet model Function/Dependent. Deferred to #331 (Coq) /
             // #332 (SMT-LIB) along with the rest of the v1.5.0 grammar
             // grow downstream of the canonical `sugar-ir-types::Sort`.
-            ir::Sort::Function { .. }
-            | ir::Sort::Dependent { .. }
-            | ir::Sort::Float { .. }
-            | ir::Sort::Region { .. } => {
+            ir::Sort::Function { .. } | ir::Sort::Dependent { .. } | ir::Sort::Region { .. } => {
                 unimplemented!(
-                    "FunctionSort/DependentSort/FloatSort/RegionSort not supported in symbolic Sort wrapper: \
+                    "FunctionSort/DependentSort/RegionSort not supported in symbolic Sort wrapper: \
                      deferred to #331 (Coq) / #332 (SMT-LIB) / #401 (Region)"
                 )
             }

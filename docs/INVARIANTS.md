@@ -109,10 +109,9 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     generic without its type arg): place it in the hierarchy *and* preserve the semantics, or it
     falsePasses on the platform.
 
-    > Leak to evacuate: the legacy `Sort::Float { width }` carries a bit-width — a platform
-    > intrinsic — inside an IR sort, and defers IEEE semantics (#385). Per this invariant that
-    > width belongs in the kit as a refinement over `Real`, not as an IR sort. Float values
-    > already lift to `Real`; `Float{width}` is the residue to evacuate (or the #385 stub).
+    > Cut complete: the old width-bearing float sort was removed from ProofIR. Float source
+    > values lift to `Real`; IEEE width/NaN/orderedness semantics belong in kit-emitted FOL
+    > refinements over `Real`, never as platform data inside an IR sort.
 
 ## VI. Identity and federation
 

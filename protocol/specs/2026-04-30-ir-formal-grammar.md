@@ -190,12 +190,6 @@ with accompanying English explanation.
 |-----------|---------|
 | ValidFields | `∀s → HasKey("name")∧IsString(name) ∧ HasKey("indexVar")∧IsString(indexVar) ∧ HasKey("indexSort")∧IsSort(indexSort)` |
 
-**FloatSort** (Section: Sorts)
-
-| Invariant | Formula |
-|-----------|---------|
-| ValidWidth | `∀s → HasKey("width")∧IsPositiveInteger(width) ∧ width ∈ {16,32,64,128}` |
-
 **RegionSort** (Section: Sorts)
 
 | Invariant | Formula |
@@ -1057,7 +1051,7 @@ ensuring the proof is for the correct claim.
 ### Sort
 
 ```ebnf
-Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort | DependentSort | FloatSort | RegionSort
+Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort | DependentSort | RegionSort
 ```
 
 ### PrimitiveSort
@@ -1075,6 +1069,11 @@ The grammar allows any String as a primitive sort name. The canonical built-in
 names are `"Bool"`, `"Int"`, `"Real"`, `"String"`, `"Ref"`, `"Node"`, `"Edge"`,
 `"Region"`, `"Time"`. Kit-defined extensions (e.g. `"Address"`) are accepted
 in non-strict mode.
+
+Float source values use the canonical `"Real"` primitive sort. Source-language
+widths (`f32`/`f64`, Java `float`/`double`, etc.) and IEEE refinements
+(NaN/orderedness/rounding/negative zero) are kit-emitted FOL constraints over
+`Real`; they are not IR sort identity.
 
 ### BitvecSort
 
@@ -1142,21 +1141,6 @@ DependentSort ::= "{"
 `name` is a type-level name (e.g. `"Vec"`). `indexVar` is a value-level
 variable the type depends on (e.g. `"n"` for `Vec<n>`). `indexSort`
 constrains the sort of the index variable.
-
-### FloatSort
-
-Locked key order: `kind`, `width`.
-
-```ebnf
-FloatSort ::= "{"
-                "\"kind\"" ":" "\"float\"" ","
-                "\"width\"" ":" PositiveInteger
-              "}"
-```
-
-`width` is the bit-width of the IEEE-754 float: 16, 32, 64, or 128.
-FloatSort is opaque at the SMT-LIB and Coq layers (bit-pattern encoding);
-full floating-point theory is deferred to a follow-up RFC (#385).
 
 ### RegionSort
 
@@ -1229,13 +1213,6 @@ A FunctionSort must have a non-empty `args` array of Sorts and a valid `return` 
 ```
 A DependentSort must have a non-empty `name`, a non-empty `indexVar`, and a valid `indexSort`.
 
-**INVARIANT FloatSort.ValidWidth:**
-```
-∀s: FloatSort → HasKey(s, "kind") ∧ s.kind = "float" ∧
-                HasKey(s, "width") ∧ IsPositiveInteger(s.width) ∧ s.width ∈ {16, 32, 64, 128}
-```
-A FloatSort must have a `width` field that is one of the four IEEE-754 standard widths.
-
 **INVARIANT RegionSort.ValidName:**
 ```
 ∀s: RegionSort → HasKey(s, "kind") ∧ s.kind = "region" ∧
@@ -1299,16 +1276,6 @@ RegionSorts MUST be pre-resolved before reaching the SMT-LIB or Coq compiler lay
     "return": {"kind": "primitive", "name": "Bool"}
   }
 }
-```
-
-**FloatSort — 32-bit float:**
-```json
-{"kind": "float", "width": 32}
-```
-
-**FloatSort — 64-bit float:**
-```json
-{"kind": "float", "width": 64}
 ```
 
 **RegionSort — named lifetime:**

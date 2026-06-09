@@ -63,32 +63,17 @@ fn int_sort() -> Sort {
     }
 }
 
-/// `IrTerm::Const` carrying an IEEE-754 float constant as a raw bit
-/// pattern. The bit pattern is stored as a tagged JSON object
-/// `{"__float_bits__": <u64>}` so it is:
-///   1. Distinguishable from a plain integer constant with the same bit
-///      pattern.
-///   2. Byte-deterministic under JCS (object keys are ASCII-sorted; the
-///      single-key object is trivially stable).
-///   3. Survives round-trip through `serde_json` without precision loss
-///      (u64 fits in JSON Number exactly).
+/// `IrTerm::Const { value: <decimal-string>, sort: Real }`.
 ///
-/// `width` is the IEEE-754 width in bits (32 or 64). The 32-bit case
-/// stores the f32 bits zero-extended to u64.
-///
-/// ## NaN / -0.0 policy
-///
-/// The bit pattern is stored verbatim:
-///   - +0.0 (f32) → bits = 0x00000000
-///   - -0.0 (f32) → bits = 0x80000000
-///   - NaN, +inf, -inf: stored as their exact bit patterns.
-///
-/// Downstream solvers must apply their own float theory to interpret
-/// comparisons. We do NOT model NaN-inequality here.
-pub fn const_float(bits: u64, width: u8) -> IrTerm {
+/// Source float widths (`f32`/`f64`) and IEEE details are kit-local FOL
+/// refinements over this platform-free value sort. This helper deliberately
+/// carries no width or bit-pattern payload.
+pub fn const_real(value: impl Into<String>) -> IrTerm {
     IrTerm::Const {
-        value: serde_json::json!({"__float_bits__": bits}),
-        sort: Sort::Float { width },
+        value: Value::String(value.into()),
+        sort: Sort::Primitive {
+            name: "Real".to_string(),
+        },
     }
 }
 

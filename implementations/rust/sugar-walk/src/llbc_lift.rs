@@ -1759,56 +1759,37 @@ fn constant_to_ir_term(constant: &Value) -> Option<IrTerm> {
 
     // Float constants: {"Float": {"float_value": "1.5", "float_ty": "F64"}}
     // Charon serialises FloatValue with renamed fields (via #[charon::rename]).
-    // The `float_value` field is the decimal string representation of the
-    // float. We parse it to obtain the IEEE-754 bit pattern, which is then
-    // stored verbatim so downstream solvers can interpret it with the correct
-    // float theory.
-    //
-    // Parsing policy:
-    //   - We parse via f64 first, then reinterpret bits for F32 if needed.
-    //   - Inf / -Inf / NaN are accepted: their bit patterns are stored exactly.
-    //   - Positive-zero  → bits = 0x00_00_00_00 (f32) / 0x0000...0000 (f64).
-    //   - Negative-zero  → bits = 0x80_00_00_00 (f32) / 0x8000...0000 (f64).
-    //     -0.0 is DISTINCT from +0.0 at the bit level and is preserved as-is.
+    // The value is lifted as a platform-free Real constant. The source width
+    // and IEEE refinements (NaN/inf/rounding/orderedness/+0 vs -0) are kit-local
+    // FOL refinements, not an IR sort or bit-pattern payload.
     if let Some(float_obj) = lit.get("Float") {
         let float_str = float_obj.get("float_value")?.as_str()?;
-        let float_ty = float_obj.get("float_ty")?.as_str()?;
-        let (bits, width) = parse_float_constant(float_str, float_ty)?;
-        return Some(crate::wp::const_float(bits, width));
+        // Keep requiring the tag so malformed Charon constants do not silently
+        // lift, but do not carry width into ProofIR.
+        float_obj.get("float_ty")?.as_str()?;
+        let real_value = canonical_real_float_constant(float_str)?;
+        return Some(crate::wp::const_real(real_value));
     }
 
     None
 }
 
-/// Parse a Charon float constant string + type tag into (bits, width).
-/// Returns `None` if the type tag is unrecognised or the string can't
-/// be parsed. Accepts "inf", "-inf", "NaN", and standard decimal.
-fn parse_float_constant(float_str: &str, float_ty: &str) -> Option<(u64, u8)> {
-    match float_ty {
-        "F32" => {
-            let v: f32 = float_str.parse().ok()?;
-            Some((u64::from(v.to_bits()), 32))
-        }
-        "F64" => {
-            let v: f64 = float_str.parse().ok()?;
-            Some((v.to_bits(), 64))
-        }
-        "F16" => {
-            // f16 is not stable in Rust yet; store as 16-bit pattern via f64
-            // approximation. This is best-effort; full F16 support is deferred.
-            let v: f64 = float_str.parse().ok()?;
-            // Truncate to 16-bit by casting through f32 (lossy, documented).
-            let bits_32 = (v as f32).to_bits();
-            // Store only the lower 16 bits (IEEE 754 half has 1+5+10 bit layout).
-            Some((u64::from(bits_32 >> 16), 16))
-        }
-        "F128" => {
-            // f128 is not stable in Rust. Store 0 bits with width=128 as a
-            // sentinel; full F128 support deferred.
-            Some((0, 128))
-        }
-        _ => None,
+/// Normalize a finite Charon float literal into the canonical Real payload.
+/// IEEE-only values are an honest residual until the kit emits explicit
+/// refinements over Real.
+fn canonical_real_float_constant(float_str: &str) -> Option<String> {
+    let value = float_str.replace('_', "");
+    let lowered = value.to_ascii_lowercase();
+    if matches!(
+        lowered.as_str(),
+        "nan" | "+nan" | "-nan" | "inf" | "+inf" | "-inf"
+    ) {
+        return None;
     }
+    if value.is_empty() {
+        return None;
+    }
+    Some(value)
 }
 
 /// Lift a bare arm-pattern scalar (as appears in `SwitchInt` arm patterns)
@@ -2562,13 +2543,13 @@ mod tests {
         );
     }
 
-    // ---- IEEE-754 float lift (#385) ----
+    // ---- Float values lift to platform-free Real ----
 
     #[test]
-    fn floats_fixture_formal_sort_is_float64() {
+    fn floats_fixture_formal_sort_is_real() {
         // The synthetic floats.llbc fixture encodes `fn scale(x: f64) -> f64`.
-        // The lift must produce formal_sorts = [Sort::Float { width: 64 }]
-        // and return_sort = Sort::Float { width: 64 }.
+        // The lift must produce platform-free Real sorts. The f64 width is a
+        // kit-local refinement, not IR sort identity.
         //
         // NOTE: floats.llbc is a SYNTHETIC fixture (hand-crafted to match
         // Charon 0.1.184 JSON shape). A real fixture would require Charon
@@ -2584,13 +2565,17 @@ mod tests {
         assert_eq!(contract.formals, vec!["x".to_string()]);
         assert_eq!(
             contract.formal_sorts,
-            vec![Sort::Float { width: 64 }],
-            "f64 formal must lift to Sort::Float {{ width: 64 }}"
+            vec![Sort::Primitive {
+                name: "Real".to_string()
+            }],
+            "f64 formal must lift to platform-free Real"
         );
         assert_eq!(
             contract.return_sort,
-            Sort::Float { width: 64 },
-            "f64 return must lift to Sort::Float {{ width: 64 }}"
+            Sort::Primitive {
+                name: "Real".to_string()
+            },
+            "f64 return must lift to platform-free Real"
         );
     }
 
@@ -2914,14 +2899,14 @@ mod tests {
         );
     }
 
-    // ---- IEEE-754 float lift (#385) ----
+    // ---- Float constants lift to platform-free Real ----
 
     #[test]
-    fn float_constant_to_ir_term_f64_two() {
+    fn float_constant_to_ir_term_f64_two_is_real() {
         // Charon float constant shape:
         //   {"kind": {"Literal": {"Float": {"float_value": "2", "float_ty": "F64"}}}, ...}
-        // The lifter must produce IrTerm::Const with Sort::Float { width: 64 }
-        // and value = {"__float_bits__": 4611686018427387904} (bits of 2.0f64).
+        // The lifter must produce IrTerm::Const with Sort::Primitive("Real")
+        // and a decimal-string payload. It must not carry width or bit-patterns.
         use sugar_ir_types::{IrTerm, Sort};
         let constant = serde_json::json!({
             "kind": {
@@ -2936,22 +2921,23 @@ mod tests {
         let term = constant_to_ir_term(&constant).expect("should lift f64 constant 2.0");
         match &term {
             IrTerm::Const { value, sort } => {
-                assert_eq!(*sort, Sort::Float { width: 64 }, "sort must be Float{{64}}");
-                // 2.0f64 bit pattern
-                let expected_bits: u64 = 2.0_f64.to_bits();
-                let actual_bits = value
-                    .get("__float_bits__")
-                    .and_then(|v| v.as_u64())
-                    .expect("value must be tagged float object with __float_bits__");
-                assert_eq!(actual_bits, expected_bits, "2.0f64 bit pattern mismatch");
+                assert_eq!(
+                    *sort,
+                    Sort::Primitive {
+                        name: "Real".to_string()
+                    },
+                    "sort must be Real"
+                );
+                assert_eq!(value.as_str(), Some("2"));
+                assert!(value.is_string(), "Real constants use decimal strings");
             }
             other => panic!("expected IrTerm::Const, got {:?}", other),
         }
     }
 
     #[test]
-    fn float_constant_to_ir_term_f32_zero() {
-        // +0.0f32 must have bit pattern 0x00000000 (not the float NaN escape).
+    fn float_constant_to_ir_term_f32_zero_is_real() {
+        // +0.0f32 lifts as the Real value Charon provided.
         use sugar_ir_types::{IrTerm, Sort};
         let constant = serde_json::json!({
             "kind": {
@@ -2966,12 +2952,15 @@ mod tests {
         let term = constant_to_ir_term(&constant).expect("should lift f32 constant 0.0");
         match &term {
             IrTerm::Const { value, sort } => {
-                assert_eq!(*sort, Sort::Float { width: 32 }, "sort must be Float{{32}}");
-                let bits = value
-                    .get("__float_bits__")
-                    .and_then(|v| v.as_u64())
-                    .expect("__float_bits__ must be present");
-                assert_eq!(bits, 0_u64, "+0.0f32 bits must be 0");
+                assert_eq!(
+                    *sort,
+                    Sort::Primitive {
+                        name: "Real".to_string()
+                    },
+                    "sort must be Real"
+                );
+                assert_eq!(value.as_str(), Some("0"));
+                assert!(value.is_string(), "Real constants use decimal strings");
             }
             other => panic!("expected IrTerm::Const, got {:?}", other),
         }
@@ -3021,9 +3010,9 @@ mod tests {
     }
 
     #[test]
-    fn float_sort_jcs_roundtrip_byte_deterministic() {
-        // JCS roundtrip: Sort::Float { width: 64 } must serialize and
-        // content-address byte-deterministically across two independent runs.
+    fn real_float_contract_jcs_roundtrip_byte_deterministic() {
+        // JCS roundtrip: float source types normalize to Real and remain
+        // content-address byte-deterministic across two independent runs.
         use crate::canonical::{cid_of_value, jcs_bytes_of_value};
         use crate::contract::build_memento_value;
         use crate::llbc::LlbcCrate;
@@ -3038,23 +3027,33 @@ mod tests {
         let f2 = krate2.function_by_name("scale").unwrap();
         let contract2 = lift_llbc_function(f2, Some("floats.rs")).unwrap();
 
-        // Both formal_sorts must be Float{64}.
-        assert_eq!(contract1.formal_sorts, vec![Sort::Float { width: 64 }]);
-        assert_eq!(contract2.formal_sorts, vec![Sort::Float { width: 64 }]);
+        // Both formal_sorts must be Real.
+        assert_eq!(
+            contract1.formal_sorts,
+            vec![Sort::Primitive {
+                name: "Real".to_string()
+            }]
+        );
+        assert_eq!(
+            contract2.formal_sorts,
+            vec![Sort::Primitive {
+                name: "Real".to_string()
+            }]
+        );
 
         // Mementos must be byte-identical (JCS determinism).
         let v1 = build_memento_value(&contract1);
         let v2 = build_memento_value(&contract2);
         let cid1 = cid_of_value(&v1);
         let cid2 = cid_of_value(&v2);
-        assert_eq!(cid1, cid2, "float-sort contract CID must be deterministic");
+        assert_eq!(cid1, cid2, "Real float contract CID must be deterministic");
 
         // Bytes must also match.
         let b1 = jcs_bytes_of_value(&v1);
         let b2 = jcs_bytes_of_value(&v2);
         assert_eq!(
             b1, b2,
-            "float-sort contract JCS bytes must be deterministic"
+            "Real float contract JCS bytes must be deterministic"
         );
     }
 

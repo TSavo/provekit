@@ -184,8 +184,8 @@ pub type ProofType = String;
 
 // NOTE: The `Sort` enum below has been MANUALLY extended beyond the
 // codegen output to add Function + Dependent variants per the v1.5.0
-// grammar grow (issue #330, rust gap from PR #361), Float per #385,
-// and Region per #401 (v1.6.0 grammar grow).
+// grammar grow (issue #330, rust gap from PR #361), and Region per #401
+// (v1.6.0 grammar grow).
 // The codegen (`sugar-ir-codegen`) currently only emits the Primitive
 // arm even though the CDDL spec defines a 7-way union. If you regenerate
 // this file via `cargo run -p sugar-ir-codegen`, you WILL clobber the
@@ -210,28 +210,6 @@ pub enum Sort {
         #[serde(rename = "indexSort")]
         index_sort: Box<Sort>,
     },
-    /// IEEE-754 floating-point sort. `width` is 16, 32, 64, or 128 bits,
-    /// matching Charon's FloatTy (F16/F32/F64/F128).
-    ///
-    /// ## NaN / IEEE-754 semantics: deliberately NOT modelled here
-    ///
-    /// This sort carries only the bit-width. It does NOT model:
-    ///   - NaN equality (NaN ≠ NaN in IEEE 754, but substrate equality
-    ///     is structural / total over bit patterns).
-    ///   - Ordered vs. unordered comparisons (fcmp oeq vs. fcmp ueq).
-    ///   - Positive-zero vs. negative-zero (+0.0 == -0.0 in IEEE 754,
-    ///     but they have distinct bit patterns: 0x00000000 vs. 0x80000000
-    ///     for f32). The lifter treats them as distinct bit patterns.
-    ///   - Denormals, infinities, or rounding modes.
-    ///
-    /// The lifter preserves the raw IEEE-754 bit pattern as a u64 in the
-    /// `IrTerm::Const { value }` field (tagged as `{"__float_bits__": <u64>}`
-    /// to distinguish from plain integers). Downstream solvers that have a
-    /// float theory can interpret the bit pattern with their own axioms.
-    ///
-    /// This is tracked for full treatment in #385 / a follow-up RFC.
-    #[serde(rename = "float")]
-    Float { width: u8 },
     /// Lifetime / region sort for borrow-checker lifetime variables.
     /// `name` is the lifetime name, e.g. `"'a"`, `"'static"`, or a fresh
     /// region variable like `"'r0"` emitted by Charon's region inference.

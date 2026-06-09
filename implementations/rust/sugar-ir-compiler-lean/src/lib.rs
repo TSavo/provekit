@@ -586,14 +586,6 @@ fn emit_sort(sort: &Sort, ctx: &mut EmitContext) -> Result<String, CompileError>
                 lean_ident(index_var)
             ))
         }
-        Sort::Float { .. } => {
-            let serialized = serde_json::to_value(sort).unwrap_or(Json::Null);
-            ctx.opacities.push(OpacityEntry {
-                position_cid: position_cid_of(&serialized),
-                reason_code: "other:float_sort".to_string(),
-            });
-            Ok("Int".to_string())
-        }
         Sort::Region { .. } => {
             let serialized = serde_json::to_value(sort).unwrap_or(Json::Null);
             ctx.opacities.push(OpacityEntry {
@@ -610,7 +602,7 @@ fn emit_sort_paren(sort: &Sort, ctx: &mut EmitContext) -> Result<String, Compile
         Sort::Function { .. } | Sort::Dependent { .. } => {
             Ok(format!("({})", emit_sort(sort, ctx)?))
         }
-        Sort::Primitive { .. } | Sort::Float { .. } | Sort::Region { .. } => emit_sort(sort, ctx),
+        Sort::Primitive { .. } | Sort::Region { .. } => emit_sort(sort, ctx),
     }
 }
 

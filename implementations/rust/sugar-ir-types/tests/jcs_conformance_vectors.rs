@@ -17,18 +17,17 @@
 use sugar_canonicalizer::{encode_jcs, Value};
 
 // ---------------------------------------------------------------------------
-// V1 -- Large integer (bit pattern for 3.14f64, exceeds 2^53)
+// V1 -- Large integer (exceeds 2^53)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn v1_large_integer_above_js_safe_integer() {
-    // 4614253070214989087 == f64::to_bits(3.14_f64), stored as a plain integer.
     // This value exceeds Number.MAX_SAFE_INTEGER (9007199254740992 = 2^53).
     // A JS JSON.stringify() silently truncates it to ...000; our encoder must
     // emit all 19 decimal digits verbatim.
-    let v = Value::object([("__float_bits__", Value::integer(4614253070214989087_i64))]);
+    let v = Value::object([("large_integer", Value::integer(4614253070214989087_i64))]);
     let jcs = encode_jcs(&v);
-    assert_eq!(jcs, r#"{"__float_bits__":4614253070214989087}"#);
+    assert_eq!(jcs, r#"{"large_integer":4614253070214989087}"#);
 }
 
 // ---------------------------------------------------------------------------

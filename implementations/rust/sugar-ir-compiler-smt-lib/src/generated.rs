@@ -37,11 +37,8 @@ pub fn emit_term(term: &Term) -> String {
         Term::Const { value, sort, .. } => {
             let sort_name = match sort {
                 Sort::Primitive { name } => name.as_str(),
-                Sort::Function { .. }
-                | Sort::Dependent { .. }
-                | Sort::Float { .. }
-                | Sort::Region { .. } => {
-                    panic!("smt-lib: Const cannot carry a Function/Dependent/Float/Region sort in pure SMT-LIB v2.6");
+                Sort::Function { .. } | Sort::Dependent { .. } | Sort::Region { .. } => {
+                    panic!("smt-lib: Const cannot carry a Function/Dependent/Region sort in pure SMT-LIB v2.6");
                 }
             };
             emit_const_value(value, sort_name)
@@ -136,10 +133,6 @@ fn emit_sort_with_reason(sort: &Sort) -> (String, Option<String>) {
             Some("predicate_quantification".to_string()),
         ),
         Sort::Dependent { .. } => ("Int".to_string(), Some("dependent_type".to_string())),
-        Sort::Float { .. } => (
-            "Int".to_string(),
-            Some("other:FloatSort unsupported in pure SMT-LIB v2.6".to_string()),
-        ),
         Sort::Region { .. } => (
             "Int".to_string(),
             Some("other:RegionSort pre-resolved in composition".to_string()),
