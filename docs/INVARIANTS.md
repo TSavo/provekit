@@ -20,6 +20,16 @@ it does coherence, satisfaction, and the witness check. **The product is #1, the
 the rest is plumbing it into machines that already exist.** This is why we are not a compiler,
 type system, effects theory, or checker (II): the only thing we build is #1.
 
+**One sentence, written N times.** What follows is not N independent laws. It is a single
+sentence in N costumes: *the canonical structure is the only real thing, its content address is
+its name, and everything else is a shadow.* From clause one (structure is the only real thing):
+we see only claims, and behavior, types, and every effect are invisible (II, V, and #2 below).
+From clause two (its content address is its name): the CID is identity, composition is lawful,
+and federation needs no hub (VI). From clause three (everything else is a shadow): we hand over
+recomputable structure, never a version number, a coverage percent, or a squiggle (VIII). That a
+pile of rules collapses to one sentence is the test that this is a theory and not a checklist:
+read it from any of the N angles and the same thing comes back.
+
 ## I. What correctness is
 
 1. **Correctness is a four-slot tuple, relative to asserted claims.** #1 the **spec** (the
