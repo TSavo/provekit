@@ -292,7 +292,11 @@ SHOWCASE_RUNS = \
 	examples/java-real-lib-gson/run.sh \
 	examples/java-consumer-conjoin/run.sh \
 	examples/java-panama-ffm-conjoin/run.sh \
-	examples/testng-assertion-consistency/run.sh
+	examples/testng-assertion-consistency/run.sh \
+	examples/std-core-string-predicates/run.sh \
+	examples/python-bodyguard-precondition/run.sh \
+	examples/java-bodyguard-precondition/run.sh \
+	examples/forall-vampire-showcase/run.sh
 
 .PHONY: test-showcases
 test-showcases:
