@@ -30,6 +30,36 @@ def _flatten_and(formula):
     return [formula]
 
 
+def _all_decl_atoms(out):
+    atoms = []
+    for decl in out.decls:
+        atoms.extend(atom for atom in _flatten_and(decl.inv) if isinstance(atom, _Atomic))
+    return atoms
+
+
+def _assert_operator_dispatch_atom(
+    atom,
+    *,
+    expected_call: str,
+    expected_result: bool,
+):
+    assert isinstance(atom, _Atomic)
+    assert atom.name == "="
+    assert len(atom.args) == 2
+    operator_call = atom.args[0]
+    assert isinstance(operator_call, _Ctor)
+    assert operator_call.name == expected_call
+    assert len(operator_call.args) == 2
+    for operand in operator_call.args:
+        assert isinstance(operand, _Ctor)
+        assert operand.name == "call:Fool"
+        assert len(operand.args) == 1
+        assert isinstance(operand.args[0], _ConstBool)
+    result = atom.args[1]
+    assert isinstance(result, _ConstBool)
+    assert result.value is expected_result
+
+
 def _assert_none_guard_formula(formula, *, comparison_name: str, guard_name: str):
     atoms = [atom for atom in _flatten_and(formula) if isinstance(atom, _Atomic)]
     assert any(
@@ -288,6 +318,95 @@ def test_pattern3_pytest_eq_none_does_not_emit_substrate_guard_facts():
     assert isinstance(inv, _Connective)
     assert inv.kind == "and"
     assert _guard_names(inv) == []
+
+
+def test_pattern3_constructor_equality_uses_federated_operator_dispatch():
+    out = _lift("""
+        def test_user_eq_dispatch():
+            assert Fool(True) == Fool(False)
+            assert Fool(True) != Fool(True)
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    atoms = [atom for atom in _flatten_and(out.decls[0].inv) if isinstance(atom, _Atomic)]
+    assert len(atoms) == 2
+    _assert_operator_dispatch_atom(
+        atoms[0],
+        expected_call="call:eq:Fool",
+        expected_result=True,
+    )
+    _assert_operator_dispatch_atom(
+        atoms[1],
+        expected_call="call:eq:Fool",
+        expected_result=False,
+    )
+
+
+def test_pattern3_single_constructor_equality_uses_federated_operator_dispatch():
+    out = _lift("""
+        def test_single():
+            assert Fool(True) == Fool(False)
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    assert out.value_scope_lifted == 0, f"decls: {out.decls!r}"
+    assert len(out.decls) == 1
+    atoms = [atom for atom in _flatten_and(out.decls[0].inv) if isinstance(atom, _Atomic)]
+    assert len(atoms) == 1
+    _assert_operator_dispatch_atom(
+        atoms[0],
+        expected_call="call:eq:Fool",
+        expected_result=True,
+    )
+
+
+def test_constructor_equality_emits_no_degenerate_reflexive_atoms():
+    out = _lift("""
+        def test_single():
+            assert Fool(True) == Fool(False)
+    """)
+    reflexive = [
+        atom
+        for atom in _all_decl_atoms(out)
+        if atom.name == "=" and len(atom.args) == 2 and atom.args[0] == atom.args[1]
+    ]
+    assert reflexive == []
+
+
+def test_value_scope_bound_constructor_equality_uses_dispatch_without_reflexive_facts():
+    out = _lift("""
+        def test_bound_ctor():
+            value = Fool(True)
+            assert value == Fool(False)
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    atoms = _all_decl_atoms(out)
+    dispatch_atoms = [
+        atom
+        for atom in atoms
+        if atom.name == "="
+        and isinstance(atom.args[0], _Ctor)
+        and atom.args[0].name == "call:eq:Fool"
+    ]
+    assert len(dispatch_atoms) == 1
+    reflexive = [
+        atom
+        for atom in atoms
+        if atom.name == "=" and len(atom.args) == 2 and atom.args[0] == atom.args[1]
+    ]
+    assert reflexive == []
+
+
+def test_pattern3_scalar_call_result_equality_keeps_fol_path():
+    out = _lift("""
+        def test_scalar_call_result():
+            assert parse_int("42") == 42
+            assert parse_int("42") != 43
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    atoms = [atom for atom in _flatten_and(out.decls[0].inv) if isinstance(atom, _Atomic)]
+    assert [atom.name for atom in atoms] == ["=", "≠"]
+    for atom in atoms:
+        assert isinstance(atom.args[0], _Ctor)
+        assert atom.args[0].name == "parse_int"
 
 
 def test_pattern3_unittest_equal_none_does_not_emit_substrate_guard_facts():

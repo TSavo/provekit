@@ -45,6 +45,7 @@ from sugar_lift_py_tests.layer2 import (
     _call_origin_from_expr,
     _call_result_term,
     _canonical_term_sig,
+    _comparison_from_symbol,
     _Ctor,
     _euf_args_all_concrete,
     _iter_test_functions,
@@ -59,7 +60,6 @@ from sugar_lift_py_tests.ir import (
     Term,
     Formula,
     and_,
-    comparison_with_none_guard,
     ctor,
     gt,
     lt,
@@ -197,7 +197,7 @@ def _lift_assertion_scoped(
                 )
         l = _translate_term_scoped(call.args[0], scope, call_vars)
         r = _translate_term_scoped(call.args[1], scope, call_vars)
-        return comparison_with_none_guard(vocab.relation, l, r, emit_none_guard=False)
+        return _comparison_from_symbol(vocab.relation, l, r)
     if name in vocab.truth:
         if len(call.args) < 1:
             raise ValueError(f"{name} expects 1 positional arg")

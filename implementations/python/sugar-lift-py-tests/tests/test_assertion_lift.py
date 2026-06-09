@@ -10,11 +10,13 @@ import os
 
 import pytest
 
+from sugar_lift_py_tests.assertion_layer import AssertionVocab, lift_file_assertions
 from sugar_lift_py_tests.assertion_vocab_lift import (
     derive_vocab,
     learn_vocab,
     lift_test_file,
 )
+from sugar_lift_py_tests.ir import _Atomic, _ConstBool, _Ctor
 
 # The canonical externalized exceptions live next to this test, in a workspace.
 WORKSPACE = os.path.join(os.path.dirname(__file__), "workspace")
@@ -27,6 +29,43 @@ def _drop_workspace(tmp_path, module, exception):
     if exception is not None:
         (d / f"{module}.json").write_text(json.dumps(exception))
     return str(tmp_path)
+
+
+def _flatten_and(formula):
+    if getattr(formula, "kind", None) == "and":
+        out = []
+        for operand in formula.operands:
+            out.extend(_flatten_and(operand))
+        return out
+    return [formula]
+
+
+def test_learned_vocab_constructor_equality_uses_operator_dispatch():
+    vocab = AssertionVocab(label="unit", equality=frozenset({"assert_same"}))
+    out = lift_file_assertions(
+        (
+            "def test_box():\n"
+            "    assert_same(Fool(True), Fool(False))\n"
+            "    assert_same(Fool(True), Fool(True))\n"
+        ),
+        "t.py",
+        vocab,
+    )
+    assert out.lifted == 1, [w.reason for w in out.warnings]
+    atoms = [atom for atom in _flatten_and(out.decls[0].inv) if isinstance(atom, _Atomic)]
+    assert len(atoms) == 2
+    for atom in atoms:
+        assert atom.name == "="
+        assert len(atom.args) == 2
+        operator_call = atom.args[0]
+        assert isinstance(operator_call, _Ctor)
+        assert operator_call.name == "call:eq:Fool"
+        assert len(operator_call.args) == 2
+        assert isinstance(atom.args[1], _ConstBool)
+        assert atom.args[1].value is True
+        for operand in operator_call.args:
+            assert isinstance(operand, _Ctor)
+            assert operand.name == "call:Fool"
 
 
 # --- numpy --------------------------------------------------------------------

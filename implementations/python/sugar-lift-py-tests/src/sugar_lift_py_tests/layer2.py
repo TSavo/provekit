@@ -78,6 +78,7 @@ from .ir import (
     Formula,
     Int,
     Term,
+    _Atomic,
     _Ctor,
     and_,
     atomic,
@@ -450,7 +451,10 @@ def _classify_and_lift(
         _classify_helper_inlining(helper_calls, helpers, test_name, source_path, out)
         return
 
-    # PATTERN 3: every stmt is an assertion AND there are >= 2.
+    # PATTERN 3: every stmt is an assertion AND there are >= 2. A single
+    # constructor operator dispatch is also admitted because routing it through
+    # value-scope would treat the constructor operands as call-result EUF
+    # subjects and mint vacuous callresult facts instead of the source equality.
     asserts: List[ast.stmt] = []
     all_asserts = bool(body)
     for stmt in body:
@@ -459,8 +463,17 @@ def _classify_and_lift(
         else:
             all_asserts = False
             break
-    if all_asserts and len(asserts) >= 2:
-        _classify_characterization(asserts, test_name, source_path, out)
+    if all_asserts and (
+        len(asserts) >= 2
+        or (len(asserts) == 1 and _single_assertion_is_operator_dispatch(asserts[0]))
+    ):
+        _classify_characterization(
+            asserts,
+            test_name,
+            source_path,
+            out,
+            allow_single_operator_dispatch=len(asserts) == 1,
+        )
         return
 
     if _classify_value_scope(body, test_name, source_path, out):
@@ -930,6 +943,11 @@ def _translate_term(node: ast.expr) -> Term:
             raise ValueError("call target must be a simple name or method (recv.method)")
         if node.keywords:
             raise ValueError("call with kwargs is not liftable")
+        if _is_constructor_call_name(node.func.id):
+            return ctor(
+                f"call:{node.func.id}",
+                [_translate_term(arg) for arg in node.args],
+            )
         if len(node.args) == 0:
             return ctor(node.func.id, [])
         if len(node.args) > 1:
@@ -991,6 +1009,57 @@ def _comparison_from_identity_symbol(sym: str, left: Term, right: Term) -> Formu
     )
 
 
+_OPERATOR_CALL_NAMES = {
+    "=": "eq",
+    "≠": "eq",
+    "<": "lt",
+    "≤": "le",
+    ">": "gt",
+    "≥": "ge",
+}
+
+
+def _is_constructor_call_name(name: str) -> bool:
+    final_segment = name.rsplit("::", 1)[-1].rsplit(".", 1)[-1]
+    return bool(final_segment) and final_segment[0].isupper()
+
+
+def _constructor_operator_tag(term: Term) -> Optional[str]:
+    if not isinstance(term, _Ctor):
+        return None
+    callee = term.name.removeprefix("call:")
+    if _is_constructor_call_name(callee):
+        return callee
+    return None
+
+
+def _operator_dispatch_operand(term: Term) -> Term:
+    if isinstance(term, _Ctor):
+        callee = term.name.removeprefix("call:")
+        if _is_constructor_call_name(callee) and not term.name.startswith("call:"):
+            return ctor(f"call:{callee}", list(term.args))
+    return term
+
+
+def _comparison_from_symbol(sym: str, left: Term, right: Term) -> Formula:
+    tag = _constructor_operator_tag(left) or _constructor_operator_tag(right)
+    if tag is not None:
+        call_name = _OPERATOR_CALL_NAMES.get(sym)
+        if call_name is None:
+            raise ValueError(f"unsupported comparison symbol: {sym!r}")
+        return eq(
+            ctor(
+                f"call:{call_name}:{tag}",
+                [
+                    _operator_dispatch_operand(left),
+                    _operator_dispatch_operand(right),
+                ],
+            ),
+            bool_const(sym != "≠"),
+        )
+    return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
+
+
 def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     identity_sym = _IDENTITY_OP_MAP.get(type(op))
     if identity_sym is not None:
@@ -1012,7 +1081,7 @@ def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     sym = _COMPARE_OP_MAP.get(type(op))
     if sym is None:
         raise ValueError(f"unsupported comparison op: {type(op).__name__}")
-    return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
+    return _comparison_from_symbol(sym, left, right)
 
 
 def _is_pytest_approx_call(node: ast.expr) -> bool:
@@ -1479,7 +1548,7 @@ def _lift_assertion_stmt(stmt: ast.stmt) -> Formula:
             l = _translate_term(call.args[0])
             r = _translate_term(call.args[1])
             sym = _UNITTEST_BINARY_PREDICATES[name]
-            return comparison_with_none_guard(sym, l, r, emit_none_guard=False)
+            return _comparison_from_symbol(sym, l, r)
         if name in _UNITTEST_NONE_PREDICATES:
             if len(call.args) < 1:
                 raise ValueError(f"{name} expects 1 positional arg")
@@ -2460,8 +2529,31 @@ def _classify_helper_inlining(
 
 
 # ---------------------------------------------------------------------------
-# PATTERN 3: multi-assertion characterization
+# PATTERN 3: direct characterization asserts
 # ---------------------------------------------------------------------------
+
+
+def _formula_has_operator_dispatch(formula: Formula) -> bool:
+    if isinstance(formula, _Atomic):
+        if formula.name != "=" or not formula.args:
+            return False
+        lhs = formula.args[0]
+        if not isinstance(lhs, _Ctor):
+            return False
+        return any(
+            lhs.name.startswith(f"call:{operator_name}:")
+            for operator_name in set(_OPERATOR_CALL_NAMES.values())
+        )
+    if isinstance(formula, _Connective):
+        return any(_formula_has_operator_dispatch(operand) for operand in formula.operands)
+    return False
+
+
+def _single_assertion_is_operator_dispatch(stmt: ast.stmt) -> bool:
+    try:
+        return _formula_has_operator_dispatch(_lift_assertion_stmt(stmt))
+    except ValueError:
+        return False
 
 
 def _classify_characterization(
@@ -2469,6 +2561,8 @@ def _classify_characterization(
     test_name: str,
     source_path: str,
     out: Layer2Output,
+    *,
+    allow_single_operator_dispatch: bool = False,
 ) -> None:
     out.claimed_tests.add(test_name)
     out.seen += 1
@@ -2481,7 +2575,12 @@ def _classify_characterization(
         except ValueError as e:
             skipped.append(f"#{i}: {e}")
 
-    if len(atoms) < 2:
+    single_operator_dispatch = (
+        allow_single_operator_dispatch
+        and len(atoms) == 1
+        and _formula_has_operator_dispatch(atoms[0])
+    )
+    if len(atoms) < 2 and not single_operator_dispatch:
         out.claimed_tests.discard(test_name)
         out.characterization_skipped += 1
         skip_detail = f"; skipped: {'; '.join(skipped)}" if skipped else ""
@@ -2491,7 +2590,8 @@ def _classify_characterization(
         )
         return
 
-    out.decls.append(ContractDecl(name=test_name, inv=and_(atoms)))
+    inv = atoms[0] if len(atoms) == 1 else and_(atoms)
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
     out.lifted += 1
     out.characterization_lifted += 1
     if skipped:
@@ -2910,38 +3010,29 @@ def _apply_value_scope_binding(
         next_scope.current[name] = ssa
         origin = _call_origin_from_expr(value)
         if origin is not None:
-            # BINDING-FORM EUF SUBSTITUTION: check whether the RHS call has
-            # ALL-CONCRETE literal args.  If so, compute the EUF ctor term and
-            # store it alongside the SSA var name on the origin so
-            # ``_assertion_callsite_context`` can substitute the EUF ctor for
-            # the SSA var in the assertion formula.
-            #
-            # CARDINAL SOUNDNESS — concrete-only rule:
-            #   Concrete args (``r = f(5)``): EUF ctor keyed by (callee, args);
-            #     ``assert r == 1`` becomes ``callresult_f_a1(5) == 1`` →
-            #     cross-function same-input contradictions REFUSED. CORRECT.
-            #   Symbolic args (``r = f(x)``): origin.euf_term stays None →
-            #     assertion stays as SSA var ``r$0`` → location-keyed, no
-            #     cross-function unification → stays PROVEN. (x is
-            #     function-local; unifying would be the false-refusal bug.)
-            #     DO NOT set euf_term for symbolic args.
-            #   ZERO-arg calls (``r = f()``): NO input to unify on, and a
-            #     zero-arg call is the MOST likely to be stateful (reads ambient
-            #     state — counter, RNG, clock).  Require >=1 concrete arg:
-            #     ``r = f()`` stays location-keyed/SSA-var (independent), exactly
-            #     like symbolic args.  This also preserves SSA-reassign
-            #     independence for subscript/attribute bases over zero-arg call
-            #     results (``parsed = f(); parsed['k']`` stays a Var base).
-            euf_term = _call_result_term(value, origin, scope, {})
-            if (
-                euf_term is not None
-                and isinstance(euf_term, _Ctor)
-                and euf_term.args  # >=1 arg required (zero-arg → no input to key on)
-                and _euf_args_all_concrete(euf_term)
-            ):
-                origin.arg_sig = _canonical_term_sig(euf_term)
-                origin.euf_term = euf_term
-                origin.ssa_name = ssa_name
+            if not _is_constructor_call_name(origin.callee):
+                # BINDING-FORM EUF SUBSTITUTION: check whether the RHS call has
+                # ALL-CONCRETE literal args.  If so, compute the EUF ctor term and
+                # store it alongside the SSA var name on the origin so
+                # ``_assertion_callsite_context`` can substitute the EUF ctor for
+                # the SSA var in the assertion formula.
+                #
+                # CARDINAL SOUNDNESS -- concrete-only rule:
+                #   Concrete args (``r = f(5)``): EUF ctor keyed by (callee, args);
+                #     ``assert r == 1`` becomes ``callresult_f_a1(5) == 1``.
+                #   Symbolic args (``r = f(x)``): origin.euf_term stays None.
+                #   ZERO-arg calls (``r = f()``): no input to unify on, so stay
+                #     location-keyed/SSA-var.
+                euf_term = _call_result_term(value, origin, scope, {})
+                if (
+                    euf_term is not None
+                    and isinstance(euf_term, _Ctor)
+                    and euf_term.args  # >=1 arg required (zero-arg -> no input to key on)
+                    and _euf_args_all_concrete(euf_term)
+                ):
+                    origin.arg_sig = _canonical_term_sig(euf_term)
+                    origin.euf_term = euf_term
+                    origin.ssa_name = ssa_name
             next_scope.origins[name] = origin
         else:
             next_scope.origins.pop(name, None)
@@ -3345,6 +3436,11 @@ def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
     )
 
 
+def _is_constructor_call_expr(node: ast.Call) -> bool:
+    origin = _call_origin_from_expr(node)
+    return origin is not None and _is_constructor_call_name(origin.callee)
+
+
 def _assertion_value_exprs(stmt: ast.stmt) -> List[ast.expr]:
     exprs: List[ast.expr] = []
     if isinstance(stmt, ast.Assert):
@@ -3368,6 +3464,8 @@ def _collect_assertion_calls(stmt: ast.stmt) -> List[ast.Call]:
     for expr in _assertion_value_exprs(stmt):
         for node in ast.walk(expr):
             if not isinstance(node, ast.Call):
+                continue
+            if _is_constructor_call_expr(node):
                 continue
             if _call_origin_from_expr(node) is None:
                 continue
@@ -3447,12 +3545,7 @@ def _lift_assertion_stmt_scoped(
                 raise ValueError(f"{name} expects at least 2 positional args")
             l = _translate_term_scoped(call.args[0], scope, call_vars)
             r = _translate_term_scoped(call.args[1], scope, call_vars)
-            return comparison_with_none_guard(
-                _UNITTEST_BINARY_PREDICATES[name],
-                l,
-                r,
-                emit_none_guard=False,
-            )
+            return _comparison_from_symbol(_UNITTEST_BINARY_PREDICATES[name], l, r)
         if name in _UNITTEST_NONE_PREDICATES:
             if len(call.args) < 1:
                 raise ValueError(f"{name} expects 1 positional arg")
@@ -3579,6 +3672,11 @@ def _translate_term_scoped(
             raise ValueError("call target must be a simple name or method (recv.method)")
         if node.keywords:
             raise ValueError("call with kwargs is not liftable")
+        if _is_constructor_call_name(node.func.id):
+            return ctor(
+                f"call:{node.func.id}",
+                [_translate_term_scoped(arg, scope, call_vars) for arg in node.args],
+            )
         key = _call_key(node)
         if key in call_vars:
             return call_vars[key]
