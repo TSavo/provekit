@@ -109,6 +109,8 @@ pub enum PortfolioMode {
 pub struct DispatchConfig {
     #[serde(rename = "equational-theory", default)]
     pub equational_theory: Option<String>,
+    #[serde(rename = "first-order", default)]
+    pub first_order: Option<String>,
     #[serde(default)]
     pub strings: Option<String>,
     #[serde(default)]
@@ -274,6 +276,7 @@ mode = "consensus"
         let s = r#"
 [solvers]
 [solvers.dispatch]
+"first-order" = "vampire"
 strings = "cvc5"
 bitvectors = "bitwuzla"
 "linear-arithmetic" = "z3"
@@ -282,6 +285,7 @@ default = "z3"
         let c = SolversConfig::from_toml(s).unwrap();
         match SolverPlan::from_config(&c) {
             SolverPlan::Dispatch(d) => {
+                assert_eq!(d.first_order.as_deref(), Some("vampire"));
                 assert_eq!(d.strings.as_deref(), Some("cvc5"));
                 assert_eq!(d.bitvectors.as_deref(), Some("bitwuzla"));
                 assert_eq!(d.linear_arithmetic.as_deref(), Some("z3"));

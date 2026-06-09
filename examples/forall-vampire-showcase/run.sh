@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+RUST_DIR="$ROOT/implementations/rust"
+OUT_DIR="$ROOT/examples/forall-vampire-showcase/.generated"
+PROJECT="$OUT_DIR/project"
+VERIFY_JSON="$OUT_DIR/.verify.json"
+Z3_SMT="$OUT_DIR/z3-good-obligation.smt2"
+Z3_OUT="$OUT_DIR/.z3.out"
+
+mkdir -p "$OUT_DIR"
+
+for bin in z3 vampire python3; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "missing required binary: $bin" >&2
+    exit 2
+  fi
+done
+
+cd "$RUST_DIR"
+cargo run -q -p sugar-cli --example forall_vampire_fixture -- "$PROJECT" >/dev/null
+cargo build -q -p sugar-cli --bin sugar
+
+cat > "$Z3_SMT" <<'SMT'
+(set-logic ALL)
+(declare-fun mul (Int Int) Int)
+(declare-fun inv (Int) Int)
+(declare-fun e () Int)
+(assert (not
+  (=>
+    (and
+      (forall ((x Int) (y Int) (z Int))
+        (= (mul (mul x y) z) (mul x (mul y z))))
+      (forall ((x Int)) (= (mul e x) x))
+      (forall ((x Int)) (= (mul (inv x) x) e)))
+    (forall ((x Int)) (= (mul x e) x)))))
+(check-sat)
+SMT
+
+z3_rc=0
+timeout 10 z3 -smt2 "$Z3_SMT" > "$Z3_OUT" 2>&1 || z3_rc=$?
+
+SUGAR="$RUST_DIR/target/debug/sugar"
+verify_rc=0
+(
+  cd "$PROJECT"
+  "$SUGAR" verify --project . --emit-witnesses "$PROJECT/witnesses-out" --json
+) > "$VERIFY_JSON" || verify_rc=$?
+
+python3 - "$VERIFY_JSON" "$Z3_OUT" "$z3_rc" "$verify_rc" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+verify_path, z3_path, z3_rc, verify_rc = sys.argv[1:5]
+receipt = json.loads(Path(verify_path).read_text(encoding="utf-8"))
+claims = {row["property"]: row for row in receipt["claims"]}
+good = claims["forall_vampire_good_right_identity"]
+bad = claims["forall_vampire_bad_false_universal"]
+z3_text = Path(z3_path).read_text(encoding="utf-8").strip()
+
+print(f"z3_rc={z3_rc} z3_output={z3_text or '<empty>'}")
+print(
+    "GOOD "
+    f"status={good['status']} "
+    f"routed={good['routedSolver']} "
+    f"closed_by={good['dischargingSolver']} "
+    f"witness={good['witnessCid']}"
+)
+print(
+    "BAD "
+    f"status={bad['status']} "
+    f"routed={bad['routedSolver']} "
+    f"closed_by={bad['dischargingSolver']}"
+)
+
+if z3_rc != "124" and z3_text != "unknown":
+    raise SystemExit(f"expected z3 timeout rc=124 or unknown, got rc={z3_rc} output={z3_text!r}")
+if good["obligationClass"] != "first-order":
+    raise SystemExit(f"GOOD wrong class: {good}")
+if good["routedSolver"] != "vampire":
+    raise SystemExit(f"GOOD wrong route: {good}")
+if good["status"] != "discharged" or not str(good["dischargingSolver"]).startswith("vampire@"):
+    raise SystemExit(f"GOOD not closed by Vampire: {good}")
+if bad["obligationClass"] != "first-order":
+    raise SystemExit(f"BAD wrong class: {bad}")
+if bad["routedSolver"] != "vampire":
+    raise SystemExit(f"BAD wrong route: {bad}")
+if bad["status"] != "unsatisfied":
+    raise SystemExit(f"BAD not refused as unsatisfied: {bad}")
+if verify_rc != "1":
+    raise SystemExit(f"expected verify rc=1 because BAD is false, got {verify_rc}")
+PY
+
+echo "verify_json=$VERIFY_JSON"

@@ -30,6 +30,7 @@ use crate::solvers::DispatchConfig;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormulaTheory {
     EquationalTheory,
+    FirstOrder,
     Strings,
     Bitvectors,
     LinearArithmetic,
@@ -42,6 +43,7 @@ impl FormulaTheory {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::EquationalTheory => "equational-theory",
+            Self::FirstOrder => "first-order",
             Self::Strings => "strings",
             Self::Bitvectors => "bitvectors",
             Self::LinearArithmetic => "linear-arithmetic",
@@ -89,29 +91,10 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
     // over Default. Once we set a higher-precedence theory we keep it.
     match v {
         Json::Object(map) => {
-            if let Some(name) = map.get("name").and_then(|v| v.as_str()) {
-                if name == "equational_theory" {
-                    *theory = FormulaTheory::EquationalTheory;
-                    return;
-                }
-                if CATEGORY_OPS.iter().any(|op| name.contains(op)) {
-                    *theory = FormulaTheory::CategoricalStructure;
-                    return;
-                }
-                if STRING_OPS.contains(&name) {
-                    *theory = FormulaTheory::Strings;
-                    return;
-                }
-                if BV_OPS.contains(&name) && *theory != FormulaTheory::Strings {
-                    *theory = FormulaTheory::Bitvectors;
-                }
-                if matches!(name, ">" | "<" | ">=" | "<=" | "=" | "+" | "-" | "*")
-                    && *theory == FormulaTheory::Default
-                {
-                    *theory = FormulaTheory::LinearArithmetic;
-                }
-            }
-            // Detect bitvector sorts: {"kind":"primitive","name":"BitVec"} or BV<n>.
+            // Detect special sorts before the quantifier marker. A quantified
+            // String/BV/dependent obligation still belongs to its stronger
+            // theory seat; otherwise the quantifier itself makes it a
+            // first-order obligation.
             if let Some(sort) = map.get("sort") {
                 if let Some(srt_obj) = sort.as_object() {
                     if srt_obj
@@ -135,6 +118,38 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
                             *theory = FormulaTheory::Bitvectors;
                         }
                     }
+                }
+            }
+
+            if map
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .is_some_and(|kind| matches!(kind, "forall" | "exists" | "choice"))
+                && *theory == FormulaTheory::Default
+            {
+                *theory = FormulaTheory::FirstOrder;
+            }
+
+            if let Some(name) = map.get("name").and_then(|v| v.as_str()) {
+                if name == "equational_theory" {
+                    *theory = FormulaTheory::EquationalTheory;
+                    return;
+                }
+                if CATEGORY_OPS.iter().any(|op| name.contains(op)) {
+                    *theory = FormulaTheory::CategoricalStructure;
+                    return;
+                }
+                if STRING_OPS.contains(&name) {
+                    *theory = FormulaTheory::Strings;
+                    return;
+                }
+                if BV_OPS.contains(&name) && *theory != FormulaTheory::Strings {
+                    *theory = FormulaTheory::Bitvectors;
+                }
+                if matches!(name, ">" | "<" | ">=" | "<=" | "=" | "+" | "-" | "*")
+                    && *theory == FormulaTheory::Default
+                {
+                    *theory = FormulaTheory::LinearArithmetic;
                 }
             }
             for (_, child) in map {
@@ -169,6 +184,7 @@ pub fn dispatch_for_formula<'a>(formula: &Json, dispatch: &'a DispatchConfig) ->
     let t = classify(formula);
     let by_theory = match t {
         FormulaTheory::EquationalTheory => dispatch.equational_theory.as_deref(),
+        FormulaTheory::FirstOrder => dispatch.first_order.as_deref(),
         FormulaTheory::Strings => dispatch.strings.as_deref(),
         FormulaTheory::Bitvectors => dispatch.bitvectors.as_deref(),
         FormulaTheory::LinearArithmetic => dispatch.linear_arithmetic.as_deref(),
@@ -229,6 +245,7 @@ mod tests {
     fn dispatch_picks_solver() {
         let d = DispatchConfig {
             equational_theory: Some("maude".into()),
+            first_order: Some("vampire".into()),
             strings: Some("cvc5".into()),
             bitvectors: Some("bitwuzla".into()),
             linear_arithmetic: Some("z3".into()),
@@ -247,9 +264,36 @@ mod tests {
     }
 
     #[test]
+    fn classify_forall_as_first_order() {
+        let f = json!({
+            "kind": "forall",
+            "name": "x",
+            "sort": {"kind":"primitive","name":"Int"},
+            "body": {"kind":"atomic","name":"=","args":[
+                {"kind":"ctor","name":"f","args":[{"kind":"var","name":"x"}]},
+                {"kind":"var","name":"x"}
+            ]}
+        });
+        assert_eq!(classify(&f), FormulaTheory::FirstOrder);
+
+        let d = DispatchConfig {
+            equational_theory: None,
+            first_order: Some("vampire".into()),
+            strings: None,
+            bitvectors: None,
+            linear_arithmetic: Some("z3".into()),
+            dependent_type: None,
+            categorical_structure: None,
+            default: Some("z3".into()),
+        };
+        assert_eq!(dispatch_for_formula(&f, &d), Some("vampire"));
+    }
+
+    #[test]
     fn dispatch_picks_lean_for_dependent_sort() {
         let d = DispatchConfig {
             equational_theory: None,
+            first_order: None,
             strings: None,
             bitvectors: None,
             linear_arithmetic: None,
@@ -275,6 +319,7 @@ mod tests {
     fn dispatch_picks_lean_for_category_theory_name() {
         let d = DispatchConfig {
             equational_theory: None,
+            first_order: None,
             strings: None,
             bitvectors: None,
             linear_arithmetic: None,

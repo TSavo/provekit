@@ -58,9 +58,9 @@ use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string};
 use sugar_verifier::body_discharge;
 use sugar_verifier::solvers::registry;
 use sugar_verifier::{
-    classify, enumerate_callsites, instantiate, load_all_proofs, resolve_target, run_plan,
-    smt_emitter, DispatchConfig, FormulaTheory, MementoPool, ObligationVerdict, Runner,
-    RunnerConfig, SolverHandle, SolverPlan, SolversConfig,
+    classify, enumerate_callsites, instantiate, load_all_proofs, memento_body, memento_kind,
+    resolve_target, run_plan, smt_emitter, DispatchConfig, FormulaTheory, MementoPool,
+    ObligationVerdict, Runner, RunnerConfig, SolverHandle, SolverPlan, SolversConfig,
 };
 use tracing::{debug, info};
 
@@ -223,6 +223,7 @@ pub struct VerifyArgs {
 pub fn verify_dispatch_table() -> DispatchConfig {
     DispatchConfig {
         equational_theory: Some("maude".into()),
+        first_order: Some("vampire".into()),
         strings: Some("cvc5".into()),
         bitvectors: Some("bitwuzla".into()),
         linear_arithmetic: Some("z3".into()),
@@ -258,6 +259,19 @@ struct ClaimResult {
     /// a route can be visible on a violation, while a method is only a proof
     /// classification for discharged obligations.
     body_discharge_tier: Option<String>,
+}
+
+/// A direct formula claim from a contract memento.
+///
+/// Normal `inv` contracts are consistency facts: verify checks that asserted
+/// facts can coexist. A contract may opt into validity checking with
+/// `invVerification = "obligation"`, in which case `inv` is treated as the
+/// obligation itself and dispatched through the solver table.
+#[derive(Debug, Clone)]
+struct DirectFormulaClaim {
+    property_name: String,
+    property_cid: String,
+    formula: Json,
 }
 
 fn callsite_actual_terms(cs: &sugar_verifier::CallSite) -> Vec<Json> {
@@ -339,8 +353,12 @@ pub fn run(args: VerifyArgs) -> u8 {
     // catalog and enumerate its callsites/claims.
     let pool = load_all_proofs::run(&project_root);
     let callsites = enumerate_callsites::run(&pool);
+    let direct_formula_claims = enumerate_direct_formula_claims(&pool);
 
-    if callsites.is_empty() && !witness_verify::has_witnesses(&pool) {
+    if callsites.is_empty()
+        && direct_formula_claims.is_empty()
+        && !witness_verify::has_witnesses(&pool)
+    {
         // No contract claims AND no witnesses. Reporting this as success is a
         // vacuous green: the run proved nothing. (A .proof carrying only
         // witness-mementos -- the pytest-witness seat -- has no callsites but
@@ -393,7 +411,7 @@ pub fn run(args: VerifyArgs) -> u8 {
         println!(
             "  {} {} claims via {}",
             "discharging".dimmed(),
-            callsites.len(),
+            callsites.len() + direct_formula_claims.len(),
             plan_label
         );
     }
@@ -422,11 +440,22 @@ pub fn run(args: VerifyArgs) -> u8 {
     }
 
     // Stage 2-4: per-claim discharge + witness mint.
-    let mut results: Vec<ClaimResult> = Vec::with_capacity(callsites.len());
+    let mut results: Vec<ClaimResult> =
+        Vec::with_capacity(callsites.len() + direct_formula_claims.len());
     for cs in &callsites {
         results.push(verify_one_claim(
             cs,
             &pool,
+            &plan,
+            &solver_registry,
+            &witness_dir,
+            &signer_seed,
+            signer_is_authoritative,
+        ));
+    }
+    for claim in &direct_formula_claims {
+        results.push(verify_direct_formula_claim(
+            claim,
             &plan,
             &solver_registry,
             &witness_dir,
@@ -592,7 +621,10 @@ fn run_artifact_project_verify(project_root: &Path, args: &VerifyArgs) -> u8 {
                 "project".into(),
                 Json::String(project_root.display().to_string()),
             );
-            obj.insert("kit".into(), args.kit.clone().map(Json::String).unwrap_or(Json::Null));
+            obj.insert(
+                "kit".into(),
+                args.kit.clone().map(Json::String).unwrap_or(Json::Null),
+            );
             obj.insert("claims".into(), Json::Array(claims));
             obj.insert("totalClaims".into(), json!(rows.len()));
             obj.insert("failed".into(), json!(hard_failed_rows));
@@ -671,6 +703,107 @@ fn build_plan_and_registry(
     // No kit config: the default verify dispatch table over single-Z3.
     let reg = registry::build_default_z3(z3_path);
     (SolverPlan::Dispatch(verify_dispatch_table()), reg, true)
+}
+
+fn enumerate_direct_formula_claims(pool: &MementoPool) -> Vec<DirectFormulaClaim> {
+    let mut out = Vec::new();
+    for (cid, env) in &pool.mementos {
+        if memento_kind(env) != Some("contract") {
+            continue;
+        }
+        let Some(body) = memento_body(env) else {
+            continue;
+        };
+        if body.get("invVerification").and_then(Json::as_str) != Some("obligation") {
+            continue;
+        }
+        let Some(formula) = body.get("inv").filter(|v| v.is_object()).cloned() else {
+            continue;
+        };
+        let property_name = body
+            .get("name")
+            .and_then(Json::as_str)
+            .or_else(|| body.get("contractName").and_then(Json::as_str))
+            .unwrap_or("<unnamed>")
+            .to_string();
+        out.push(DirectFormulaClaim {
+            property_name,
+            property_cid: cid.clone(),
+            formula,
+        });
+    }
+    out
+}
+
+fn verify_direct_formula_claim(
+    claim: &DirectFormulaClaim,
+    plan: &SolverPlan,
+    solver_registry: &std::collections::HashMap<String, SolverHandle>,
+    witness_dir: &std::path::Path,
+    signer_seed: &[u8; 32],
+    signer_is_authoritative: bool,
+) -> ClaimResult {
+    let mut result = ClaimResult {
+        property_name: claim.property_name.clone(),
+        property_cid: claim.property_cid.clone(),
+        obligation_class: FormulaTheory::Default.as_str().to_string(),
+        routed_solver: "<none>".to_string(),
+        discharging_solver: "<none>".to_string(),
+        verdict: ObligationVerdict::Undecidable,
+        reason: String::new(),
+        witness_cid: None,
+        discharge_method: None,
+        body_discharge_tier: None,
+    };
+
+    let theory = classify(&claim.formula);
+    result.obligation_class = theory.as_str().to_string();
+    result.routed_solver = routed_seat(plan, theory);
+
+    let smt = match smt_emitter::emit(&claim.formula) {
+        Ok(s) => s,
+        Err(e) => {
+            result.reason = format!("smt-emit: {e}");
+            return result;
+        }
+    };
+
+    let (verdict, reason, invs) = run_plan(plan, solver_registry, &smt, Some(&claim.formula));
+    result.verdict = verdict;
+    result.reason = reason;
+    result.discharging_solver = invs
+        .iter()
+        .find(|i| i.authoritative)
+        .map(|i| format!("{}@{}", i.result.solver_name, i.result.solver_version))
+        .unwrap_or_else(|| "<none>".to_string());
+
+    if verdict == ObligationVerdict::Discharged {
+        result.discharge_method = Some("solver-substantive".to_string());
+        let pseudo_callsite = sugar_verifier::CallSite {
+            bridge_ir_name: "direct-invariant".into(),
+            bridge_target_cid: claim.property_cid.clone(),
+            bridge_source_layer: "contract".into(),
+            bridge_target_layer: "solver".into(),
+            property_name: claim.property_name.clone(),
+            property_cid: claim.property_cid.clone(),
+            ..Default::default()
+        };
+        match mint_verification_witness(
+            &pseudo_callsite,
+            &claim.formula,
+            &result.discharging_solver,
+            witness_dir,
+            signer_seed,
+            signer_is_authoritative,
+        ) {
+            Ok(cid) => result.witness_cid = Some(cid),
+            Err(e) => {
+                result.reason = format!("{} [witness-mint warning: {e}]", result.reason);
+            }
+        }
+    }
+
+    result
 }
 
 /// Discharge a single contract claim and mint a witness if it holds.
@@ -816,12 +949,11 @@ fn verify_one_claim(
                 "verify_one_claim: guard-discharge: resolved target pre, about to specialize \
                  with the callsite actual terms"
             );
-            let instantiated =
-                match instantiate::run_specialized(
-                    &resolved,
-                    &callsite_actual_terms(cs),
-                    cs.formal_actuals.as_ref(),
-                ) {
+            let instantiated = match instantiate::run_specialized(
+                &resolved,
+                &callsite_actual_terms(cs),
+                cs.formal_actuals.as_ref(),
+            ) {
                 Ok(ob) => ob.ir_formula,
                 Err(e) => {
                     result.reason = format!("instantiate: {e}");
@@ -1048,6 +1180,7 @@ fn routed_seat(plan: &SolverPlan, theory: FormulaTheory) -> String {
     };
     let by_theory = match theory {
         FormulaTheory::EquationalTheory => d.equational_theory.as_deref(),
+        FormulaTheory::FirstOrder => d.first_order.as_deref(),
         FormulaTheory::Strings => d.strings.as_deref(),
         FormulaTheory::Bitvectors => d.bitvectors.as_deref(),
         FormulaTheory::LinearArithmetic => d.linear_arithmetic.as_deref(),
@@ -1393,6 +1526,7 @@ mod tests {
         // requirement leans on.
         let plan = SolverPlan::Dispatch(verify_dispatch_table());
         assert_eq!(routed_seat(&plan, FormulaTheory::LinearArithmetic), "z3");
+        assert_eq!(routed_seat(&plan, FormulaTheory::FirstOrder), "vampire");
         assert_eq!(routed_seat(&plan, FormulaTheory::Bitvectors), "bitwuzla");
         assert_eq!(routed_seat(&plan, FormulaTheory::Strings), "cvc5");
         assert_eq!(routed_seat(&plan, FormulaTheory::EquationalTheory), "maude");

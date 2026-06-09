@@ -459,6 +459,7 @@ mod tests {
         );
         let plan = SolverPlan::Dispatch(crate::solvers::DispatchConfig {
             equational_theory: None,
+            first_order: None,
             strings: Some("cvc5".into()),
             bitvectors: None,
             linear_arithmetic: Some("z3".into()),
@@ -481,6 +482,7 @@ mod tests {
         );
         let plan = SolverPlan::Dispatch(crate::solvers::DispatchConfig {
             equational_theory: None,
+            first_order: None,
             strings: None,
             bitvectors: None,
             linear_arithmetic: None,
