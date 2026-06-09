@@ -1700,6 +1700,8 @@ fn mint_ir_document(
         body_discharge_refusal_reason: Option<String>,
         library: Option<String>,
         bridge_source_symbol: Option<String>,
+        formals: Option<Vec<String>>,
+        formal_sorts: Option<Vec<Value>>,
     }
 
     impl MintedContractRef {
@@ -2009,6 +2011,12 @@ fn mint_ir_document(
                     .collect()
             })
             .unwrap_or_default();
+        let formals_binding = formals_json.map(|_| formals.clone());
+        let formal_sorts_binding = decl
+            .get("formalSorts")
+            .or_else(|| decl.get("formal_sorts"))
+            .and_then(|v| v.as_array())
+            .cloned();
         let formal_sorts: Vec<std::sync::Arc<sugar_canonicalizer::Value>> = decl
             .get("formalSorts")
             .or_else(|| decl.get("formal_sorts"))
@@ -2213,6 +2221,8 @@ fn mint_ir_document(
                 body_discharge_refusal_reason,
                 library,
                 bridge_source_symbol,
+                formals: formals_binding,
+                formal_sorts: formal_sorts_binding,
             });
         let name_cids = cids_by_name.entry(args.contract_name.clone()).or_default();
         if !name_cids.contains(&m.cid) {
@@ -2406,7 +2416,7 @@ fn mint_ir_document(
             let has_pre = contract.has_nontrivial_pre;
             let body_bearing =
                 (has_pre || contract.post_hash.is_some()) && contract.body_discharge_eligible;
-            json!({
+            let mut binding = json!({
                 "name": name,
                 "contract_cid": contract.attestation_cid.clone(),
                 "body_bearing": body_bearing,
@@ -2419,7 +2429,14 @@ fn mint_ir_document(
                 // did not stamp one (the matcher then defaults to the current
                 // crate, which is correct for a producer contract).
                 "library": contract.library.clone(),
-            })
+            });
+            if let Some(formals) = &contract.formals {
+                binding["formals"] = json!(formals);
+            }
+            if let Some(formal_sorts) = &contract.formal_sorts {
+                binding["formalSorts"] = Value::Array(formal_sorts.clone());
+            }
+            binding
         })
         .collect();
 
@@ -4023,6 +4040,11 @@ mod tests {
             .find(|binding| binding["name"] == "Widget::run")
             .expect("producer binding");
         assert_eq!(binding["bridgeSourceSymbol"], "run");
+        assert_eq!(binding["formals"], json!(["self"]));
+        assert_eq!(
+            binding["formalSorts"],
+            json!([{"kind": "primitive", "name": "unit"}])
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

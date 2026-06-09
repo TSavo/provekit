@@ -772,6 +772,66 @@ fn callsite_scoped_bridge_for_locus<'a>(
     ))
 }
 
+fn callsite_scoped_bridge_for_arg_terms<'a>(
+    pool: &'a MementoPool,
+    callsite_bundle_cid: Option<&str>,
+    callee: &str,
+    arg_terms: &[Json],
+) -> Option<&'a Json> {
+    let bundle = callsite_bundle_cid?;
+    let callee = panic_freedom::normalize_leaf_method_name(callee);
+    let mut matched = None;
+    for ((bridge_bundle, _file, _line, bridge_callee), bridge) in &pool.bridges_by_callsite {
+        if bridge_bundle != bundle || bridge_callee != callee {
+            continue;
+        }
+        if !bridge_formal_actuals_match_arg_terms(pool, bridge, arg_terms) {
+            continue;
+        }
+        if matched.is_some() {
+            return None;
+        }
+        matched = Some(bridge);
+    }
+    matched
+}
+
+fn bridge_formal_actuals_match_arg_terms(
+    pool: &MementoPool,
+    bridge: &Json,
+    arg_terms: &[Json],
+) -> bool {
+    let Some(bridge_body) = memento_body(bridge) else {
+        return false;
+    };
+    let Some(target_cid) = bridge_body
+        .get("targetContractCid")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    else {
+        return false;
+    };
+    let Some(target_body) = pool.mementos.get(target_cid).and_then(memento_body) else {
+        return false;
+    };
+    let Some(formals) = target_body.get("formals").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    if formals.len() != arg_terms.len() {
+        return false;
+    }
+    let Some(formal_actuals) = bridge_body
+        .get("callsite")
+        .and_then(|v| v.get("formalActuals"))
+        .and_then(|v| v.as_object())
+    else {
+        return false;
+    };
+    formals.iter().zip(arg_terms).all(|(formal, actual)| {
+        formal.as_str().and_then(|name| formal_actuals.get(name)) == Some(actual)
+    })
+}
+
 fn attribute_safety_locus_for<'a>(term: &Json, panic_loci: &'a [Json]) -> Option<&'a Json> {
     panic_loci.iter().find(|locus| {
         locus.get("subkind").and_then(|v| v.as_str()) == Some("attribute-access")
@@ -842,10 +902,15 @@ fn walk_term(
     let scoped_bridge = scoped_panic_locus.and_then(|locus| {
         callsite_scoped_bridge_for_locus(pool, callsite_bundle_cid, &bridge_name, locus)
     });
+    let scoped_arg_bridge = if scoped_panic_locus.is_none() {
+        callsite_scoped_bridge_for_arg_terms(pool, callsite_bundle_cid, &bridge_name, &arg_terms)
+    } else {
+        None
+    };
     let bridge_env = if scoped_panic_locus.is_some() {
         scoped_bridge
     } else {
-        pool.bridges_by_symbol.get(&bridge_name)
+        scoped_arg_bridge.or_else(|| pool.bridges_by_symbol.get(&bridge_name))
     };
     if let Some(benv) = bridge_env {
         // Shape-agnostic: v1.2-layered bridges carry the fields on
@@ -1351,6 +1416,127 @@ mod guard_propagation_tests {
         });
         pool.mementos.insert(caller, contract);
         pool
+    }
+
+    #[test]
+    fn formula_walk_selects_callsite_bridge_by_formal_actuals() {
+        let mut pool = MementoPool::default();
+        let bundle = "blake3-512:caller-bundle".to_string();
+        let caller = "blake3-512:caller".to_string();
+        let target = "blake3-512:to-digit-contract".to_string();
+        let int_sort = json!({"kind": "primitive", "name": "Int"});
+        let int_const = |value: i64| json!({"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": value});
+        let to_digit_call = json!({
+            "kind": "ctor",
+            "name": "method:to_digit",
+            "args": [int_const(97), int_const(16)],
+        });
+        let target_contract = json!({
+            "envelope": true,
+            "header": {
+                "kind": "contract",
+                "contractName": "char::to_digit",
+                "formals": ["self", "radix"],
+                "formalSorts": [int_sort.clone(), int_sort],
+                "pre": {
+                    "kind": "and",
+                    "operands": [
+                        {"kind": "atomic", "name": ">=", "args": [{"kind": "var", "name": "radix"}, int_const(2)]},
+                        {"kind": "atomic", "name": "<=", "args": [{"kind": "var", "name": "radix"}, int_const(36)]}
+                    ]
+                }
+            }
+        });
+        let internal_bridge = json!({
+            "envelope": true,
+            "header": {
+                "kind": "bridge",
+                "sourceSymbol": "method:to_digit",
+                "targetContractCid": target,
+                "sourceLayer": "rust",
+                "targetLayer": "rust-tests",
+                "callsite": {
+                    "file": "src/core_char_methods.rs",
+                    "start_line": 344,
+                    "panicSite": false,
+                    "formalActuals": {
+                        "self": {"kind": "var", "name": "self"},
+                        "radix": {"kind": "var", "name": "radix"}
+                    }
+                }
+            }
+        });
+        let caller_bridge = json!({
+            "envelope": true,
+            "header": {
+                "kind": "bridge",
+                "sourceSymbol": "method:to_digit",
+                "targetContractCid": target,
+                "sourceLayer": "rust",
+                "targetLayer": "rust-tests",
+                "callsite": {
+                    "file": "src/lib.rs",
+                    "start_line": 3,
+                    "panicSite": false,
+                    "formalActuals": {
+                        "self": int_const(97),
+                        "radix": int_const(16)
+                    }
+                }
+            }
+        });
+        pool.mementos.insert(target.clone(), target_contract);
+        pool.bridges_by_symbol
+            .insert("method:to_digit".to_string(), internal_bridge.clone());
+        pool.bridges_by_callsite.insert(
+            (
+                bundle.clone(),
+                "src/core_char_methods.rs".to_string(),
+                344,
+                "method:to_digit".to_string(),
+            ),
+            internal_bridge,
+        );
+        pool.bridges_by_callsite.insert(
+            (
+                bundle.clone(),
+                "src/lib.rs".to_string(),
+                3,
+                "method:to_digit".to_string(),
+            ),
+            caller_bridge,
+        );
+        pool.bundle_members
+            .entry(bundle)
+            .or_default()
+            .insert(caller.clone());
+        pool.mementos.insert(
+            caller,
+            json!({
+                "envelope": true,
+                "header": {
+                    "kind": "contract",
+                    "contractName": "bodyguard_edge",
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [{"kind": "var", "name": "result"}, to_digit_call],
+                    }
+                }
+            }),
+        );
+
+        let sites = run(&pool);
+        let call = sites
+            .iter()
+            .find(|cs| cs.bridge_ir_name == "method:to_digit")
+            .expect("to_digit callsite");
+        assert_eq!(call.file.as_deref(), Some("src/lib.rs"));
+        assert_eq!(call.line, Some(3));
+        assert_eq!(
+            call.formal_actuals.as_ref().and_then(|v| v.get("self")),
+            Some(&int_const(97))
+        );
     }
 
     fn pool_with_leaf_scoped_panic_bridge(body_term: Json, method: &str) -> MementoPool {

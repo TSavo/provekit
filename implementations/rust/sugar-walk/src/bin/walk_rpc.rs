@@ -2803,6 +2803,10 @@ fn lift_call_actual_term(expr: &syn::Expr) -> Option<Value> {
     serde_json::to_value(term).ok()
 }
 
+fn stable_local_actual_term(term: &Value) -> bool {
+    term.get("kind").and_then(Value::as_str) == Some("const")
+}
+
 fn collect_callsites_in_block(
     block: &syn::Block,
     rel_path: &str,
@@ -2832,6 +2836,7 @@ fn collect_callsites_in_block(
         current_crate: &'a str,
         local_types: HashMap<String, String>,
         value_types: HashMap<String, TypeIdentity>,
+        local_terms: HashMap<String, Value>,
         enum_variant_types: &'a EnumVariantTypeMap,
         struct_field_types: &'a StructFieldTypeMap,
         infallible_serialize: &'a InfallibleSerializeManifest,
@@ -2847,6 +2852,20 @@ fn collect_callsites_in_block(
             self.value_types
                 .get(name)
                 .or_else(|| self.param_type_map.get(name))
+        }
+
+        fn actual_term_for_expr(&self, expr: &syn::Expr) -> Option<Value> {
+            if let Some(name) = expr_bare_ident_name(expr) {
+                if let Some(term) = self.local_terms.get(&name) {
+                    return Some(term.clone());
+                }
+            }
+            lift_call_actual_term(expr)
+        }
+
+        fn stable_local_term_for_expr(&self, expr: &syn::Expr) -> Option<Value> {
+            let term = self.actual_term_for_expr(expr)?;
+            stable_local_actual_term(&term).then_some(term)
         }
 
         fn expr_type_identity(&self, expr: &syn::Expr) -> Option<TypeIdentity> {
@@ -3034,6 +3053,9 @@ fn collect_callsites_in_block(
             }
             self.pure_free_guard_facts
                 .retain(|fact| fact.arg_roots.is_disjoint(roots));
+            for root in roots {
+                self.local_terms.remove(root);
+            }
         }
 
         fn invalidate_pure_free_guard_facts_for_expr_effects(&mut self, expr: &syn::Expr) {
@@ -3054,9 +3076,11 @@ fn collect_callsites_in_block(
         fn visit_block(&mut self, node: &'ast syn::Block) {
             let saved_local_types = self.local_types.clone();
             let saved_value_types = self.value_types.clone();
+            let saved_local_terms = self.local_terms.clone();
             syn::visit::visit_block(self, node);
             self.local_types = saved_local_types;
             self.value_types = saved_value_types;
+            self.local_terms = saved_local_terms;
         }
 
         fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
@@ -3105,7 +3129,7 @@ fn collect_callsites_in_block(
                     actual_terms: node
                         .args
                         .iter()
-                        .map(lift_call_actual_term)
+                        .map(|arg| self.actual_term_for_expr(arg))
                         .collect::<Option<Vec<_>>>(),
                     file: self.rel_path.to_string(),
                     line: start.line,
@@ -3219,13 +3243,15 @@ fn collect_callsites_in_block(
                     )
                 })
                 .flatten();
-            let actual_terms = lift_call_actual_term(&node.receiver).and_then(|receiver| {
-                let mut actuals = vec![receiver];
-                for arg in &node.args {
-                    actuals.push(lift_call_actual_term(arg)?);
-                }
-                Some(actuals)
-            });
+            let actual_terms = self
+                .actual_term_for_expr(&node.receiver)
+                .and_then(|receiver| {
+                    let mut actuals = vec![receiver];
+                    for arg in &node.args {
+                        actuals.push(self.actual_term_for_expr(arg)?);
+                    }
+                    Some(actuals)
+                });
             self.out.push(CallSite {
                 callee,
                 contract_callee,
@@ -3262,6 +3288,7 @@ fn collect_callsites_in_block(
             for arm in &node.arms {
                 let saved_local_types = self.local_types.clone();
                 let saved_value_types = self.value_types.clone();
+                let saved_local_terms = self.local_terms.clone();
                 if let Some(inner_type) = option_inner_type.as_ref() {
                     bind_option_pattern_type_id(
                         &arm.pat,
@@ -3284,6 +3311,7 @@ fn collect_callsites_in_block(
                 self.visit_expr(&arm.body);
                 self.local_types = saved_local_types;
                 self.value_types = saved_value_types;
+                self.local_terms = saved_local_terms;
             }
         }
         fn visit_expr_if(&mut self, node: &'ast syn::ExprIf) {
@@ -3291,6 +3319,7 @@ fn collect_callsites_in_block(
                 self.visit_expr(&expr_let.expr);
                 let saved_local_types = self.local_types.clone();
                 let saved_value_types = self.value_types.clone();
+                let saved_local_terms = self.local_terms.clone();
                 if let Some(inner_type) = self.expr_option_inner_type_identity(&expr_let.expr) {
                     bind_option_pattern_type_id(
                         &expr_let.pat,
@@ -3302,6 +3331,7 @@ fn collect_callsites_in_block(
                 self.visit_block(&node.then_branch);
                 self.local_types = saved_local_types;
                 self.value_types = saved_value_types;
+                self.local_terms = saved_local_terms;
                 if let Some((_else_token, else_branch)) = &node.else_branch {
                     self.visit_expr(else_branch);
                 }
@@ -3395,7 +3425,14 @@ fn collect_callsites_in_block(
                         )
                     })
             });
+            let local_term = node
+                .init
+                .as_ref()
+                .and_then(|init| self.stable_local_term_for_expr(&init.expr));
             self.invalidate_pure_free_guard_facts_for_pat(&node.pat);
+            for name in pat_bound_idents(&node.pat) {
+                self.local_terms.remove(&name);
+            }
             let local_type = explicit_type.clone().or(inferred_type);
             if let (Some(name), Some(krate)) = (
                 pat_ident_name(&node.pat),
@@ -3408,6 +3445,9 @@ fn collect_callsites_in_block(
             }
             if let (Some(name), Some(type_id)) = (pat_ident_name(&node.pat), local_type) {
                 self.value_types.insert(name, type_id);
+            }
+            if let (Some(name), Some(term)) = (pat_immutable_ident_name(&node.pat), local_term) {
+                self.local_terms.insert(name, term);
             }
         }
     }
@@ -3423,6 +3463,7 @@ fn collect_callsites_in_block(
             .map(|(name, type_id)| (name.clone(), type_id.krate.clone()))
             .collect(),
         value_types: param_type_map.clone(),
+        local_terms: HashMap::new(),
         enum_variant_types,
         struct_field_types,
         infallible_serialize,
@@ -3516,6 +3557,16 @@ fn pat_ident_name(pat: &syn::Pat) -> Option<String> {
     match pat {
         syn::Pat::Ident(ident) => Some(ident.ident.to_string()),
         syn::Pat::Type(pat_type) => pat_ident_name(&pat_type.pat),
+        _ => None,
+    }
+}
+
+fn pat_immutable_ident_name(pat: &syn::Pat) -> Option<String> {
+    match pat {
+        syn::Pat::Ident(ident) if ident.mutability.is_none() && ident.subpat.is_none() => {
+            Some(ident.ident.to_string())
+        }
+        syn::Pat::Type(pat_type) => pat_immutable_ident_name(&pat_type.pat),
         _ => None,
     }
 }
@@ -13275,6 +13326,67 @@ edition = "2021"
         );
         assert_eq!(bridge["callsite"]["formalActuals"]["self"]["kind"], "var");
         assert_eq!(bridge["callsite"]["formalActuals"]["self"]["name"], "value");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_resolves_stable_local_receiver_in_formal_actuals() {
+        let src = r##"
+pub fn caller() -> Option<u32> {
+    let ch = 'a';
+    ch.to_digit(16)
+}
+"##;
+        let root = temp_workspace("lift_implications_stable_local_receiver_formal_actuals");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_cid = "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let contract_bindings = json!([
+            {
+                "name": "char::to_digit",
+                "contract_cid": contract_cid,
+                "bridgeSourceSymbol": "to_digit",
+                "formals": ["self", "radix"],
+                "body_bearing": true,
+                "has_pre": true,
+                "bodyDischargeEligible": true,
+            }
+        ]);
+
+        let consumer = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift implications");
+        let ir = consumer["ir"].as_array().expect("consumer ir array");
+        let bridge = ir
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "method:to_digit")
+            .unwrap_or_else(|| panic!("method:to_digit bridge missing: {consumer:#?}"));
+        assert_eq!(bridge["targetContractCid"], contract_cid);
+        assert_eq!(
+            bridge["callsite"]["formalActuals"]["self"],
+            json!({"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": 97})
+        );
+        assert_eq!(
+            bridge["callsite"]["formalActuals"]["radix"],
+            json!({"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": 16})
+        );
 
         let _ = fs::remove_dir_all(root);
     }
