@@ -30,6 +30,17 @@ recomputable structure, never a version number, a coverage percent, or a squiggl
 pile of rules collapses to one sentence is the test that this is a theory and not a checklist:
 read it from any of the N angles and the same thing comes back.
 
+**Every language is Sugar.** Not just operators (9x), not just function names (VI) — the entire
+source language is surface syntax that desugars to ProofIR *at the boundary*, because **ProofIR
+is the language of boundaries**. Claims exist only at seams — an assertion, a call edge, an
+`.await`, an FFI crossing, a version bump — and the only thing that survives crossing a boundary
+is the contract, whose language is ProofIR. That is *why* effects are invisible (they never
+cross a boundary as a claim, so they were never in the language we speak); *why* the lifter is a
+desugarer, one per language, and the core is language-blind (IV); *why* federation needs no hub
+(two languages meeting at a boundary both desugar into the boundary-language, so identical
+claims get identical CIDs by construction); and *why* `sugar diff` works (a release is a
+boundary too). The product is named for this theorem.
+
 ## I. What correctness is
 
 1. **Correctness is a four-slot tuple, relative to asserted claims.** #1 the **spec** (the
