@@ -59,6 +59,7 @@ impl From<ConstValue> for serde_json::Value {
     fn from(v: ConstValue) -> Self {
         match v {
             ConstValue::Int(n) => serde_json::Value::Number(n.into()),
+            ConstValue::Real(n) => serde_json::Value::String(n),
             ConstValue::String(s) => serde_json::Value::String(s),
             ConstValue::Bool(b) => serde_json::Value::Bool(b),
         }
@@ -69,6 +70,7 @@ impl From<&ConstValue> for serde_json::Value {
     fn from(v: &ConstValue) -> Self {
         match v {
             ConstValue::Int(n) => serde_json::Value::Number((*n).into()),
+            ConstValue::Real(n) => serde_json::Value::String(n.clone()),
             ConstValue::String(s) => serde_json::Value::String(s.clone()),
             ConstValue::Bool(b) => serde_json::Value::Bool(*b),
         }
@@ -126,10 +128,14 @@ pub fn term_to_ir(t: &Term) -> ir::Term {
 pub fn term_from_ir(t: ir::Term) -> Term {
     match t {
         ir::Term::Var { name, .. } => Term::Var { name },
-        ir::Term::Const { value, sort } => Term::Const {
-            value: value.try_into().expect("valid const value"),
-            sort: sort.into(),
-        },
+        ir::Term::Const { value, sort } => {
+            let sort: Sort = sort.into();
+            let value = match (sort.name.as_str(), value) {
+                ("Real", serde_json::Value::String(s)) => ConstValue::Real(s),
+                (_, value) => value.try_into().expect("valid const value"),
+            };
+            Term::Const { value, sort }
+        }
         ir::Term::Ctor { name, args } => Term::Ctor {
             name,
             args: args.into_iter().map(|a| Rc::new(term_from_ir(a))).collect(),

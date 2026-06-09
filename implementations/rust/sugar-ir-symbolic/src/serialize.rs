@@ -61,6 +61,7 @@ pub fn term_to_value(t: &Term) -> Arc<Value> {
         Term::Const { value, sort } => {
             let value_v = match value {
                 ConstValue::Int(n) => Value::integer(*n),
+                ConstValue::Real(n) => Value::string(n.clone()),
                 ConstValue::String(s) => Value::string(s.clone()),
                 ConstValue::Bool(b) => Value::boolean(*b),
             };
@@ -254,6 +255,7 @@ fn write_term(out: &mut String, t: &Term) {
             out.push_str(r#"{"kind":"const","value":"#);
             match value {
                 ConstValue::Int(n) => out.push_str(&n.to_string()),
+                ConstValue::Real(n) => write_string(out, n),
                 ConstValue::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
                 ConstValue::String(s) => write_string(out, s),
             }

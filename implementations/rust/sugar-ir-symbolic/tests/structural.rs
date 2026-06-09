@@ -14,7 +14,7 @@ use std::rc::Rc;
 use sugar_ir_symbolic::{
     and_, atomic_, begin_collecting, choice, contract, eq, exists, finish, forall, gt, gte,
     implies, lambda, let_term, lt, lte, must, ne, not_, num, or_, out, parse_int, reset_collector,
-    str_const, ConstValue, ContractArgs, Formula, Int, Sort, Term,
+    real_const, str_const, ConstValue, ContractArgs, Formula, Int, Sort, Term,
 };
 
 // ---------------------------------------------------------------------------
@@ -320,6 +320,21 @@ fn str_const_is_string_const() {
                 _ => panic!("expected String const"),
             }
             assert_eq!(sort.name, "String");
+        }
+        _ => panic!("expected Const"),
+    }
+}
+
+#[test]
+fn real_const_is_real_const() {
+    let t = real_const("2.0");
+    match t.as_ref() {
+        Term::Const { value, sort } => {
+            match value {
+                ConstValue::Real(s) => assert_eq!(s, "2.0"),
+                _ => panic!("expected Real const"),
+            }
+            assert_eq!(sort.name, "Real");
         }
         _ => panic!("expected Const"),
     }

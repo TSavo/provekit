@@ -10,7 +10,9 @@
 use std::rc::Rc;
 
 use quote::ToTokens;
-use sugar_ir_symbolic::{and_, eq, make_var, num, ConstValue, ContractDecl, Formula, Term};
+use sugar_ir_symbolic::{
+    and_, eq, make_var, num, real_const, str_const, ConstValue, ContractDecl, Formula, Term,
+};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{BinOp, Expr, ExprLit, Item, Lit, Stmt, Token, UnOp};
@@ -72,13 +74,12 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, modules: &[String], out: &m
     if !skipped.is_empty() {
         out.warnings.push(LiftWarning {
             source_path: source_path.to_string(),
-            item_name: test_name,
+            item_name: test_name.clone(),
             reason: format!(
                 "rust test assertions: unsupported assertion surface; released to layer 0: {}",
                 skipped.join("; ")
             ),
         });
-        return;
     }
 
     if entries.is_empty() {
@@ -245,19 +246,28 @@ fn translate_bool_assertion(expr: &Expr) -> Result<AssertionEntry, String> {
 }
 
 fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>) -> AssertionEntry {
-    let name =
-        callsite_assertion_name(lhs.as_ref()).or_else(|| callsite_assertion_name(rhs.as_ref()));
+    let name = if is_concrete_value(lhs.as_ref()) {
+        callsite_assertion_name(rhs.as_ref())
+    } else if is_concrete_value(rhs.as_ref()) {
+        callsite_assertion_name(lhs.as_ref())
+    } else {
+        None
+    };
     AssertionEntry {
         name,
         atom: eq(lhs, rhs),
     }
 }
 
+fn is_concrete_value(term: &Term) -> bool {
+    matches!(term, Term::Const { .. })
+}
+
 fn callsite_assertion_name(term: &Term) -> Option<String> {
     let Term::Ctor { name, .. } = term else {
         return None;
     };
-    let callee = name.strip_prefix("call:")?;
+    let callee = callsite_callee_name(name)?;
     Some(format!(
         "{callee}#euf#{}::assertion",
         canonical_callsite_sig(term)
@@ -268,7 +278,7 @@ fn canonical_callsite_sig(term: &Term) -> String {
     let Term::Ctor { name, args } = term else {
         return term_key(term);
     };
-    let Some(callee) = name.strip_prefix("call:") else {
+    let Some(callee) = callsite_callee_name(name) else {
         return term_key(term);
     };
     let head = call_result_head(callee, args.len());
@@ -278,6 +288,11 @@ fn canonical_callsite_sig(term: &Term) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!("c:{head}({inner})")
+}
+
+fn callsite_callee_name(name: &str) -> Option<&str> {
+    name.strip_prefix("call:")
+        .or_else(|| name.starts_with("method:").then_some(name))
 }
 
 fn call_result_head(callee: &str, arity: usize) -> String {
@@ -299,6 +314,7 @@ fn canonical_term_sig(term: &Term) -> String {
         Term::Var { name } => format!("v:{name}"),
         Term::Const { value, .. } => match value {
             ConstValue::Int(value) => format!("i:{value}"),
+            ConstValue::Real(value) => format!("r:{value}"),
             ConstValue::String(value) => format!("s:{value:?}"),
             ConstValue::Bool(value) => format!("b:{value}"),
         },
@@ -382,11 +398,27 @@ fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {
             .base10_parse::<i64>()
             .map(num)
             .map_err(|e| format!("int literal: {e}")),
+        Lit::Float(f) => canonical_float_literal(f).map(real_const),
+        Lit::Str(s) => Ok(str_const(s.value())),
         other => Err(format!(
-            "only integer scalar constants are liftable, got `{}`",
+            "only integer/string/finite decimal float scalar constants are liftable, got `{}`",
             token_key(other)
         )),
     }
+}
+
+fn canonical_float_literal(lit: &syn::LitFloat) -> Result<String, String> {
+    let digits = lit.base10_digits().replace('_', "");
+    if digits.contains('e') || digits.contains('E') {
+        return Err(format!(
+            "float literal with exponent is a refinement gap `{}`",
+            lit.to_token_stream()
+        ));
+    }
+    if digits.is_empty() {
+        return Err("empty float literal".to_string());
+    }
+    Ok(digits)
 }
 
 fn const_int(expr: &Expr) -> Option<i64> {

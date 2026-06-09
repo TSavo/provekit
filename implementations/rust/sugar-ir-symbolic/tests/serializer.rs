@@ -16,7 +16,7 @@ use sugar_ir_symbolic::serialize::{
 };
 use sugar_ir_symbolic::{
     and_, choice, eq, exists, forall, gt, implies, lambda, let_term, must, not_, num, or_, out,
-    parse_int, reset_collector, str_const, ConstValue, Int, Sort, Term,
+    parse_int, real_const, reset_collector, str_const, ConstValue, Int, Sort, Term,
 };
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,17 @@ fn term_const_int_emits_value_and_sort() {
     assert_eq!(
         s,
         "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":42}"
+    );
+}
+
+#[test]
+fn term_const_real_emits_decimal_string_value_and_sort() {
+    let t = real_const("2.0");
+    let v = term_to_value(t.as_ref());
+    let s = encode_jcs(&v);
+    assert_eq!(
+        s,
+        "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Real\"},\"value\":\"2.0\"}"
     );
 }
 

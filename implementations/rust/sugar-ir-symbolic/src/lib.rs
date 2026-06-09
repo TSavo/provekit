@@ -16,7 +16,7 @@
 //   forall(sort, |v| body) / exists(sort, |v| body)
 //   and_(vec![..]), or_(vec![..]), not_(a), implies(a, b)
 //   eq, ne, gt, gte, lt, lte            -- atomic predicates
-//   num, str_const, parse_int           -- term primitives
+//   num, real_const, str_const, parse_int -- term primitives
 //   out()                               -- references the post return value
 //
 // We use `Rc` (not `Box`) for formula and term nodes; sub-trees are
@@ -92,6 +92,7 @@ pub fn Bool() -> Sort {
 #[derive(Debug, Clone)]
 pub enum ConstValue {
     Int(i64),
+    Real(String),
     String(String),
     Bool(bool),
 }
@@ -134,6 +135,13 @@ pub fn num(value: i64) -> Rc<Term> {
     Rc::new(Term::Const {
         value: ConstValue::Int(value),
         sort: Sort::int(),
+    })
+}
+
+pub fn real_const<S: Into<String>>(value: S) -> Rc<Term> {
+    Rc::new(Term::Const {
+        value: ConstValue::Real(value.into()),
+        sort: Sort::real(),
     })
 }
 

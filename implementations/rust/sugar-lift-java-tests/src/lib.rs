@@ -1396,6 +1396,7 @@ fn canonical_term_sig(term: &Term) -> String {
         Term::Var { name } => format!("v:{name}"),
         Term::Const { value, .. } => match value {
             sugar_ir_symbolic::ConstValue::Int(value) => format!("i:{value}"),
+            sugar_ir_symbolic::ConstValue::Real(value) => format!("r:{value}"),
             sugar_ir_symbolic::ConstValue::String(value) => format!("s:{value:?}"),
             sugar_ir_symbolic::ConstValue::Bool(value) => format!("b:{value}"),
         },

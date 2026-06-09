@@ -388,13 +388,7 @@ fn parse_term_at(v: &Json, path: &str) -> Result<Rc<Term>, ParseError> {
                 }
                 ("String", Json::String(s)) => ConstValue::String(s.clone()),
                 ("Bool", Json::Bool(b)) => ConstValue::Bool(*b),
-                ("Real", Json::Number(_)) => {
-                    return Err(ParseError::Mismatch {
-                        path: format!("{path}.value"),
-                        expected: "ConstValue::Real (not yet supported in Rust kit)".into(),
-                        actual: "Number".into(),
-                    });
-                }
+                ("Real", Json::String(s)) => ConstValue::Real(s.clone()),
                 (s, v) => {
                     return Err(ParseError::Mismatch {
                         path: format!("{path}.value"),
@@ -590,7 +584,8 @@ mod tests {
     use super::*;
     use crate::serialize::{formula_to_value, marshal_declarations};
     use crate::{
-        and_, eq, gt, gte, lt, lte, must, not_, num, or_, reset_collector, str_const, ConstValue,
+        and_, eq, gt, gte, lt, lte, must, not_, num, or_, real_const, reset_collector, str_const,
+        ConstValue,
     };
 
     fn jcs_to_json(v: &std::sync::Arc<sugar_canonicalizer::Value>) -> Json {
@@ -650,6 +645,15 @@ mod tests {
     #[test]
     fn round_trip_const_string_term() {
         let f = eq(str_const("blake3-512:foo"), str_const("blake3-512:foo"));
+        let j = jcs_to_json(&formula_to_value(&f));
+        let parsed = parse_formula(&j).expect("parse");
+        let j2 = jcs_to_json(&formula_to_value(&parsed));
+        assert_eq!(j, j2);
+    }
+
+    #[test]
+    fn round_trip_const_real_term() {
+        let f = eq(real_const("2.0"), real_const("2.0"));
         let j = jcs_to_json(&formula_to_value(&f));
         let parsed = parse_formula(&j).expect("parse");
         let j2 = jcs_to_json(&formula_to_value(&parsed));

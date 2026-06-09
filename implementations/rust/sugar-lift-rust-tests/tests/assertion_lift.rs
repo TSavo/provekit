@@ -65,6 +65,51 @@ fn assert_int_call_eq_atom(
     }
 }
 
+fn assert_string_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: &str) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, expected_call),
+                other => panic!("expected call term lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::String(value),
+                    ..
+                } => assert_eq!(value, expected_rhs),
+                other => panic!("expected string rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+fn assert_real_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: &str) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, expected_call),
+                other => panic!("expected call term lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Real(value),
+                    sort,
+                } => {
+                    assert_eq!(value, expected_rhs);
+                    assert_eq!(sort.name, "Real");
+                }
+                other => panic!("expected real rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
 fn assert_await_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: i64) {
     match formula {
         Formula::Atomic { name, args } => {
@@ -195,6 +240,102 @@ fn decoded_len_est() {
     let operands = inv_operands(decl);
     assert_eq!(operands.len(), 1);
     assert_int_call_eq_atom(&operands[0], 3, "call:decoded_len_estimate", 4);
+}
+
+#[test]
+fn direct_method_call_result_string_assertion_uses_euf_callsite_key() {
+    let src = r#"
+struct Name;
+
+impl Name {
+    fn to_string(&self) -> String { "hello".to_owned() }
+}
+
+#[test]
+fn string_call_result() {
+    let a = Name;
+    assert_eq!(a.to_string(), "hello");
+}
+"#;
+    let out = lift_file(&parse(src), "tests/fmt.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:to_string#euf#c:callresult_method_to_string_a1(v:a)::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_string_call_eq_atom(&operands[0], "method:to_string", "hello");
+}
+
+#[test]
+fn direct_method_call_result_float_assertion_uses_euf_callsite_key() {
+    let src = r#"
+struct Duration;
+
+impl Duration {
+    fn div_duration_f64(&self, _other: Duration) -> f64 { 2.0 }
+}
+
+#[test]
+fn float_call_result() {
+    let d = Duration;
+    assert_eq!(d.div_duration_f64(Duration), 2.0);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/time.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:d,v:Duration)::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_real_call_eq_atom(&operands[0], "method:div_duration_f64", "2.0");
+}
+
+#[test]
+fn mixed_supported_and_refinement_assertions_lift_supported_rows() {
+    let src = r#"
+struct Duration;
+
+impl Duration {
+    fn div_duration_f64(&self, _other: Duration) -> f64 { 2.0 }
+}
+
+#[test]
+fn float_mixed_refinement_gap() {
+    let d = Duration;
+    assert_eq!(d.div_duration_f64(Duration), 2.0);
+    assert!(d.div_duration_f64(Duration).is_nan());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/time.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(
+        out.warnings.len(),
+        1,
+        "unsupported refinement assertion should stay loud"
+    );
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:d,v:Duration)::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_real_call_eq_atom(&operands[0], "method:div_duration_f64", "2.0");
 }
 
 #[test]
