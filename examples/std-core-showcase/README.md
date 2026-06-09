@@ -9,13 +9,16 @@ Claimed slice:
   `library/coretests`. The run script installs `rust-src` for that pinned
   toolchain and does not use CI's active default std source.
 - Spec: selected scalar direct call-result `assert_eq!` rows from std/core own
-  tests:
+  tests plus direct type-reflection comparisons:
   - `coretests/tests/cmp.rs`: integer rows for
     `cmp::{min_by,max_by,min_by_key,max_by_key}`.
   - `coretests/tests/mem.rs`: generic type-arg-keyed rows for
     `size_of::<T>()` and `align_of::<T>()` from the non-cfg
     `size_of_basic` / `align_of_basic` vendor tests plus the active
     pinned-target pointer-width cfg tests.
+  - `coretests/tests/intrinsics.rs`: direct `TypeId::of::<T>()` equality and
+    inequality rows from `test_typeid_sized_types` and
+    `test_typeid_unsized_types`.
   - `coretests/tests/time.rs`: finite decimal float rows for
     `Duration::div_duration_f{32,64}`.
   - `coretests/tests/fmt/mod.rs`: exact string rows for `to_string()`.
@@ -26,7 +29,8 @@ Claimed slice:
     asserted value is a closed bitwise expression, such as
     `x.load(SeqCst) == 0xf731 & 0x137f`.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
-  emits `#euf#` call-result consistency rows and every claimed row discharges.
+  emits `#euf#` call-result consistency rows plus TypeId consistency rows, and
+  every claimed row discharges.
 - Witness axis: the exact std vendor tests rerun with `cargo test --test
   coretests ... -- --exact`.
 
@@ -51,15 +55,19 @@ Named gaps toward full `coretests` coverage:
 - CFG-sensitive tests: only assertions whose `#[cfg]` predicates are active
   under the explicitly pinned Rust target are claimed. Inactive and ambiguous
   cfg predicates remain named residuals.
+- Type identity: direct `TypeId::of::<T>()` comparisons from current
+  `coretests/tests/intrinsics.rs` are claimed. Dynamic `Any::is::<T>()`
+  predicates remain in the no-scalar assertion bucket until that predicate form
+  is lifted explicitly.
 - Complex terms: closed bitwise-expression RHS terms are claimed where the
   call-result key is stable. Nested calls with non-value callees, stateful
   method chains, non-direct-call results, and unsupported expression forms stay
   out of the claimed slice.
 
 The run script requires representative integer, generic type-arg-keyed, active
-cfg pointer-width, finite-float, string, and pure method-chain predicate rows,
-and rejects any non-discharged claimed `#euf#` row. It is intentionally not a
-full-`std` claim.
+cfg pointer-width, TypeId comparison, finite-float, string, pure method-chain
+predicate, and stable-key compound RHS rows, and rejects any non-discharged
+claimed row. It is intentionally not a full-`std` claim.
 
 ## Grounded Full-Coretests Gap Census
 
@@ -75,8 +83,9 @@ call-result identity items by carrying type arguments in the `#euf#` key. The
 method-chain slice closed 17 pure method-chain predicate items. The pinned
 target cfg slice closes 4 active pointer-width `mem.rs` rows on a 64-bit target.
 This compound term slice claims 18 additional stable-key atomic rows, 8 of
-which close operator-expression RHS complex terms. The current known backlog is
-1,077 items for that target.
+which close operator-expression RHS complex terms. The TypeId comparison slice
+closes 2 current `intrinsics.rs` diagnostic items. The current known backlog is
+1,075 items for that target.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
@@ -85,19 +94,19 @@ which close operator-expression RHS complex terms. The current known backlog is
 | Floats | 18 | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
-| Complex terms | 444 | `tests/alloc.rs::layout_errors`: remaining method-chain and complex expression shapes not in the pure literal/immutable receiver/closed-compound-value slice. |
+| Complex terms | 442 | Residual after the complex-term and TypeId slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed; remaining term shapes are outside this bounded TypeId slice or belong to expression-structure work. |
 | Other | 331 | `tests/alloc.rs::layout_round_up_to_align_edge_cases`: no liftable scalar assertion under the current surface. |
 
 ### Complex-Term Decomposition
 
-The 479 complex-term bucket breaks down as:
+The current complex-term residual sub-shapes include:
 
 | Sub-shape | Count | Representative std test/assertion |
 | --- | ---: | --- |
 | Method-chain predicates | 90 | Closed 17 pure rows in this slice; remaining examples include reassigned receiver cases such as `tests/ops.rs::test_range_bounds`: `r.contains(&0)` after `r` is rebound. |
 | References, derefs, casts, unsafe blocks | 81 | `tests/array.rs::array_from_mut`: `assert_eq!(&value, "Hello World!")`. |
 | Method chains returning compared values | 68 | `tests/array.rs::iterator_nth`: `assert_eq!(IntoIterator::into_iter(v.clone()).nth(i).unwrap(), v[i])`. |
-| Residual unsupported term shapes | 61 | `tests/any.rs::any_fixed_vec`: `TypeId::of::<[u8; 3]>()` compared with a dynamic `type_id()`. |
+| Residual unsupported term shapes | 59 | Closed current direct `TypeId::of::<T>()` comparison rows from `tests/intrinsics.rs`; remaining term-shape residuals exclude the stale `tests/any.rs::any_fixed_vec` TypeId example, which is now an `Any::is::<T>()` predicate in the pinned source. |
 | Operator / expression RHS | 48 | This slice closes stable-key atomic bitwise RHS rows such as `tests/atomic.rs::uint_and`: `assert_eq!(x.load(SeqCst), 0xf731 & 0x137f)`; residual rows include stateful/repeated receiver and pointer arithmetic forms needing temporal identity. |
 | Array, slice, and tuple literals | 48 | `tests/array.rs::array_from_ref`: `assert_eq!(&[*VALUE], ARR)`. |
 | Boolean operators / non-equality predicates | 25 | `tests/array.rs::array_mixed_equality_integers`: `assert!(array3 != slice3b)`. |

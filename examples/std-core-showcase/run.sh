@@ -3,10 +3,11 @@
 #
 # Claimed proof surface:
 #   - `rust-src` provides the pinned toolchain's std/core source and tests.
-#   - The lifter sees a selected sound scalar direct call-result slice:
+#   - The lifter sees a selected sound scalar and type-reflection slice:
 #       * tests/cmp.rs integer call-result equality rows,
 #       * tests/mem.rs generic type-arg-keyed size_of/align_of rows,
 #         including active pinned-target pointer-width cfg rows,
+#       * tests/intrinsics.rs direct TypeId comparison rows,
 #       * tests/time.rs finite decimal float method-call equality rows,
 #       * tests/fmt/mod.rs exact string method-call equality rows.
 #       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows.
@@ -37,7 +38,7 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, and atomic.rs compound bitwise-expression RHS rows with stable keys."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, and atomic.rs compound bitwise-expression RHS rows with stable keys."
 echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
@@ -153,6 +154,44 @@ chunks = [
     *extract("align_of_32"),
     "",
     *extract("align_of_64"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
+
+python3 - "$STDROOT/coretests/tests/intrinsics.rs" "$PROJECT/tests/intrinsics.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    "use core::any::TypeId;",
+    "",
+    *extract("test_typeid_sized_types"),
+    "",
+    *extract("test_typeid_unsized_types"),
     "",
 ]
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
@@ -421,10 +460,23 @@ needles = [
     "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_or::x,v:tests/atomic.rs::uint_or::SeqCst)::assertion",
     "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_xor::x,v:tests/atomic.rs::uint_xor::SeqCst)::assertion",
 ]
+type_id_needles = [
+    "consistency:tests/intrinsics.rs::test_typeid_sized_types",
+    "consistency:tests/intrinsics.rs::test_typeid_unsized_types",
+]
 missing = [
     needle for needle in needles
     if not any(needle in (r.get("property") or "") for r in euf_rows)
 ]
+missing_type_id = [
+    needle for needle in type_id_needles
+    if not any(needle == (r.get("property") or "") for r in rows)
+]
+type_id_rows = [
+    r for r in rows
+    if (r.get("property") or "") in type_id_needles
+]
+failed_type_id = [r for r in type_id_rows if r.get("status") != "discharged"]
 
 if not euf_rows:
     print("no #euf# consistency rows found", file=sys.stderr)
@@ -437,13 +489,24 @@ if missing:
     for needle in missing:
         print(needle, file=sys.stderr)
     raise SystemExit(1)
+if missing_type_id:
+    print("missing required TypeId claimed rows:", file=sys.stderr)
+    for needle in missing_type_id:
+        print(needle, file=sys.stderr)
+    raise SystemExit(1)
 if failed:
     print("non-discharged #euf# rows in claimed slice:", file=sys.stderr)
     for row in failed:
         print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
     raise SystemExit(1)
+if failed_type_id:
+    print("non-discharged TypeId rows in claimed slice:", file=sys.stderr)
+    for row in failed_type_id:
+        print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
 
 print(f"claimed-euf-rows={len(euf_rows)} discharged={len(euf_rows)} failed=0")
+print(f"typeid-rows={len(type_id_rows)} discharged={len(type_id_rows)} failed=0")
 print(
     f"cfg-active-pointer-width={target_pointer_width} "
     f"cfg-active-pointer-bytes={target_pointer_bytes} "
@@ -451,6 +514,8 @@ print(
 )
 for row in euf_rows:
     print(f"row: {row.get('property')} status={row.get('status')}")
+for row in type_id_rows:
+    print(f"typeid-row: {row.get('property')} status={row.get('status')}")
 PY
 
 echo "== witness: rerun exact std/core vendor tests =="
@@ -483,6 +548,16 @@ echo "== witness: rerun exact std/core vendor tests =="
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests mem::align_of_"$TARGET_POINTER_WIDTH" -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests intrinsics::test_typeid_sized_types -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests intrinsics::test_typeid_unsized_types -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
@@ -561,6 +636,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, and stable-key atomic compound bitwise-expression RHS rows discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, and stable-key atomic compound bitwise-expression RHS rows discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macro surfaces outside this showcase/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

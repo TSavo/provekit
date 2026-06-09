@@ -1391,6 +1391,9 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
         })),
         Expr::Path(path) => Ok(make_var(path_to_name(&path.path))),
         Expr::Call(call) => {
+            if let Some(term) = type_id_of_call_term(&call.func, call.args.len())? {
+                return Ok(term);
+            }
             let mut args = Vec::new();
             for arg in &call.args {
                 args.push(translate_term(arg)?);
@@ -1430,6 +1433,10 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
             name: "ref".to_string(),
             args: vec![translate_term(&reference.expr)?],
         })),
+        Expr::Cast(cast) if is_shared_dyn_any_type(&cast.ty) => Ok(Rc::new(Term::Ctor {
+            name: format!("cast:{}", type_key(&cast.ty)),
+            args: vec![translate_term(&cast.expr)?],
+        })),
         Expr::Range(range) => {
             let start = match &range.start {
                 Some(expr) => translate_term(expr)?,
@@ -1468,6 +1475,65 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
         Expr::Group(group) => translate_term(&group.expr),
         other => Err(format!("unsupported term `{}`", token_key(other))),
     }
+}
+
+fn type_id_of_call_term(func: &Expr, arg_len: usize) -> Result<Option<Rc<Term>>, String> {
+    if arg_len != 0 {
+        return Ok(None);
+    }
+    let Expr::Path(path) = func else {
+        return Ok(None);
+    };
+    if !is_type_id_of_path(&path.path) {
+        return Ok(None);
+    }
+    let Some(last) = path.path.segments.last() else {
+        return Ok(None);
+    };
+    let syn::PathArguments::AngleBracketed(args) = &last.arguments else {
+        return Err("TypeId::of requires exactly one type argument".to_string());
+    };
+    if args.args.len() != 1 {
+        return Err("TypeId::of requires exactly one type argument".to_string());
+    }
+    let Some(syn::GenericArgument::Type(ty)) = args.args.first() else {
+        return Err("TypeId::of requires a type argument".to_string());
+    };
+    Ok(Some(Rc::new(Term::Ctor {
+        name: format!("type_id::{}", type_key(ty)),
+        args: Vec::new(),
+    })))
+}
+
+fn is_type_id_of_path(path: &syn::Path) -> bool {
+    let segments = path.segments.iter().collect::<Vec<_>>();
+    matches!(
+        segments.as_slice(),
+        [.., type_id, of]
+            if type_id.ident == "TypeId" && of.ident == "of"
+    )
+}
+
+fn is_shared_dyn_any_type(ty: &syn::Type) -> bool {
+    let syn::Type::Reference(reference) = ty else {
+        return false;
+    };
+    if reference.mutability.is_some() {
+        return false;
+    }
+    let syn::Type::TraitObject(trait_object) = reference.elem.as_ref() else {
+        return false;
+    };
+    trait_object.bounds.iter().any(|bound| {
+        let syn::TypeParamBound::Trait(trait_bound) = bound else {
+            return false;
+        };
+        trait_bound
+            .path
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == "Any")
+    })
 }
 
 fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {
@@ -1654,6 +1720,19 @@ fn type_key(ty: &syn::Type) -> String {
             format!("[{};{}]", type_key(&array.elem), token_key(&array.len))
         }
         syn::Type::Slice(slice) => format!("[{}]", type_key(&slice.elem)),
+        syn::Type::TraitObject(trait_object) => {
+            let bounds = trait_object
+                .bounds
+                .iter()
+                .map(|bound| match bound {
+                    syn::TypeParamBound::Trait(trait_bound) => path_to_name(&trait_bound.path),
+                    syn::TypeParamBound::Lifetime(lifetime) => format!("'{}", lifetime.ident),
+                    _ => token_key(bound),
+                })
+                .collect::<Vec<_>>()
+                .join("+");
+            format!("dyn {bounds}")
+        }
         _ => token_key(ty),
     }
 }

@@ -262,6 +262,54 @@ fn assert_string_len_cmp_atom(
     }
 }
 
+fn assert_type_id_cmp_atom(
+    formula: &Formula,
+    expected_op: &str,
+    expected_static_type: &str,
+    expected_cast_type: &str,
+    expected_receiver: &str,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, expected_op);
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, &format!("type_id::{expected_static_type}"));
+                    assert!(args.is_empty());
+                }
+                other => panic!("expected static TypeId term lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "method:type_id");
+                    assert_eq!(args.len(), 1);
+                    match args[0].as_ref() {
+                        Term::Ctor { name, args } => {
+                            assert_eq!(name, &format!("cast:{expected_cast_type}"));
+                            assert_eq!(args.len(), 1);
+                            match args[0].as_ref() {
+                                Term::Ctor { name, args } => {
+                                    assert_eq!(name, "ref");
+                                    assert_eq!(args.len(), 1);
+                                    match args[0].as_ref() {
+                                        Term::Var { name } => assert_eq!(name, expected_receiver),
+                                        other => panic!("expected referenced receiver var, got {other:?}"),
+                                    }
+                                }
+                                other => panic!("expected ref receiver term, got {other:?}"),
+                            }
+                        }
+                        other => panic!("expected cast receiver term, got {other:?}"),
+                    }
+                }
+                other => panic!("expected dynamic type_id term rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected TypeId comparison atom, got {other:?}"),
+    }
+}
+
 fn formula_contains_atomic_name(formula: &Formula, expected_name: &str) -> bool {
     match formula {
         Formula::Atomic { name, .. } => name == expected_name,
@@ -682,6 +730,32 @@ fn cfg_statements() {
         "inactive target_feature statement cfg residual must be named: {:?}",
         out.warnings
     );
+}
+
+#[test]
+fn type_id_of_and_dyn_any_receiver_lift_as_keyed_reflection_terms() {
+    let src = r#"
+use core::any::TypeId;
+
+#[test]
+fn any_fixed_vec_type_id() {
+    let test = [0_u8; 3];
+    assert_eq!(TypeId::of::<[u8; 3]>(), (&test as &dyn core::any::Any).type_id());
+    assert!(TypeId::of::<[u8; 4]>() != (&test as &dyn core::any::Any).type_id());
+}
+"#;
+    let out = lift_file(&parse(src), "coretests/tests/any.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(out.warnings.is_empty(), "unexpected lift warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(decl.name, "coretests/tests/any.rs::any_fixed_vec_type_id");
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    assert_type_id_cmp_atom(&operands[0], "=", "[u8;3]", "&dyn core::any::Any", "test");
+    assert_type_id_cmp_atom(&operands[1], "\u{2260}", "[u8;4]", "&dyn core::any::Any", "test");
 }
 
 #[test]
