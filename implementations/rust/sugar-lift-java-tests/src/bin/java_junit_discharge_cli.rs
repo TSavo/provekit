@@ -43,7 +43,18 @@ fn run() -> i32 {
         return emit("REFUSED", "discharge error: proofData missing packageCid");
     };
     let code_files = kit::memento_str_list(&pd, "codeFiles");
-    let (verdict, reason) = kit::discharge_bundle(package_cid, &code_files, Path::new(project_dir));
+    let expected_count = pd.get("count").and_then(|v| v.as_u64()).map(|v| v as usize);
+    let expected_passed = pd
+        .get("passed")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
+    let (verdict, reason) = kit::discharge_bundle_or_package(
+        package_cid,
+        &code_files,
+        Path::new(project_dir),
+        expected_count,
+        expected_passed,
+    );
     emit(&verdict, &reason)
 }
 

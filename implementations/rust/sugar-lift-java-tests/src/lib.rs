@@ -3005,6 +3005,25 @@ pub fn discharge_bundle(
     )
 }
 
+pub fn discharge_bundle_or_package(
+    bundle_cid: &str,
+    code_files: &[String],
+    project_dir: &Path,
+    expected_count: Option<usize>,
+    expected_passed: Option<usize>,
+) -> (String, String) {
+    if let Some(verdict) = discharge_package(
+        "JUnit",
+        bundle_cid,
+        project_dir,
+        expected_count,
+        expected_passed,
+    ) {
+        return verdict;
+    }
+    discharge_bundle(bundle_cid, code_files, project_dir)
+}
+
 pub fn discharge_testng_bundle(
     bundle_cid: &str,
     code_files: &[String],
@@ -3017,6 +3036,125 @@ pub fn discharge_testng_bundle(
         project_dir,
         build_testng_suite_bundle,
     )
+}
+
+pub fn discharge_testng_bundle_or_package(
+    bundle_cid: &str,
+    code_files: &[String],
+    project_dir: &Path,
+    expected_count: Option<usize>,
+    expected_passed: Option<usize>,
+) -> (String, String) {
+    if let Some(verdict) = discharge_package(
+        "TestNG",
+        bundle_cid,
+        project_dir,
+        expected_count,
+        expected_passed,
+    ) {
+        return verdict;
+    }
+    discharge_testng_bundle(bundle_cid, code_files, project_dir)
+}
+
+fn discharge_package(
+    label: &str,
+    bundle_cid: &str,
+    project_dir: &Path,
+    expected_count: Option<usize>,
+    expected_passed: Option<usize>,
+) -> Option<(String, String)> {
+    let path = project_dir
+        .join(".sugar")
+        .join("witnesses")
+        .join(cid_filename(bundle_cid, ".witness"));
+    if !path.is_file() {
+        return None;
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return Some((
+                "REFUSED".to_string(),
+                format!("witness package exists but cannot be read: {e}"),
+            ))
+        }
+    };
+    let computed = blake3_512_of(&bytes);
+    if computed != bundle_cid {
+        return Some((
+            "REFUSED".to_string(),
+            format!("witness package hashes to {computed}, pinned {bundle_cid}"),
+        ));
+    }
+
+    let mut count = 0usize;
+    let mut passed = 0usize;
+    let mut failed: Vec<String> = Vec::new();
+    for (idx, line) in bytes.split(|b| *b == b'\n').enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = match serde_json::from_slice(line) {
+            Ok(value) => value,
+            Err(e) => {
+                return Some((
+                    "REFUSED".to_string(),
+                    format!("witness package line {} is not JSON: {e}", idx + 1),
+                ))
+            }
+        };
+        count += 1;
+        let outcome = value.get("outcome").and_then(|v| v.as_str()).unwrap_or("");
+        if outcome == "passed" {
+            passed += 1;
+        } else {
+            let test = value
+                .get("test")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<unknown>");
+            failed.push(test.to_string());
+        }
+    }
+
+    if let Some(expected) = expected_count {
+        if count != expected {
+            return Some((
+                "REFUSED".to_string(),
+                format!("witness package count {count} does not match proofData count {expected}"),
+            ));
+        }
+    }
+    if let Some(expected) = expected_passed {
+        if passed != expected {
+            return Some((
+                "REFUSED".to_string(),
+                format!(
+                    "witness package passed count {passed} does not match proofData passed {expected}"
+                ),
+            ));
+        }
+    }
+    if !failed.is_empty() {
+        let shown: Vec<&str> = failed.iter().take(6).map(String::as_str).collect();
+        let more = if failed.len() > 6 {
+            format!(" (+{} more)", failed.len() - 6)
+        } else {
+            String::new()
+        };
+        return Some((
+            "REFUSED".to_string(),
+            format!(
+                "witness package verified by CID but {}/{count} {label} tests failed: {}{more}",
+                failed.len(),
+                shown.join(", ")
+            ),
+        ));
+    }
+    Some((
+        "DISCHARGED".to_string(),
+        format!("witness package verified by CID; all {count} {label} witnesses passed"),
+    ))
 }
 
 fn discharge_bundle_with(
