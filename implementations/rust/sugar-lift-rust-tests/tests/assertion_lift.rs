@@ -534,6 +534,32 @@ fn size_of_64() {
 }
 
 #[test]
+fn cfg_test_modules_lift_without_explicit_target_cfg() {
+    let src = r#"
+fn make_value() -> i32 { 6 }
+
+#[cfg(test)]
+mod tests {
+    use super::make_value;
+
+    #[test]
+    fn scalar_is_six() {
+        assert_eq!(make_value(), 6);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "src/lib.rs");
+
+    assert_eq!(out.seen, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "make_value#euf#c:callresult_make_value_a0()::assertion"
+    );
+}
+
+#[test]
 fn cfg_gated_statement_assertions_lift_only_active_assertions() {
     let src = r#"
 fn value() -> i32 { 1 }

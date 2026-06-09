@@ -441,11 +441,16 @@ fn cfg_eval_for_attrs(attrs: &[syn::Attribute], options: &LiftOptions) -> CfgEva
 }
 
 fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) -> CfgEval {
-    let Some(target_cfg) = target_cfg else {
-        return CfgEval::Ambiguous(format!("no explicit target cfg facts for `{predicate}`"));
-    };
     match predicate {
         CfgPredicate::Name(name) => {
+            if name == "test" {
+                return CfgEval::Active;
+            }
+            let Some(target_cfg) = target_cfg else {
+                return CfgEval::Ambiguous(format!(
+                    "no explicit target cfg facts for `{predicate}`"
+                ));
+            };
             if target_cfg.contains_name(name) {
                 CfgEval::Active
             } else {
@@ -453,6 +458,11 @@ fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) 
             }
         }
         CfgPredicate::KeyValue(key, value) => {
+            let Some(target_cfg) = target_cfg else {
+                return CfgEval::Ambiguous(format!(
+                    "no explicit target cfg facts for `{predicate}`"
+                ));
+            };
             if target_cfg.contains_key_value(key, value) {
                 CfgEval::Active
             } else {
@@ -462,7 +472,7 @@ fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) 
         CfgPredicate::All(predicates) => {
             let mut ambiguous = None;
             for child in predicates {
-                match cfg_eval_predicate(child, Some(target_cfg)) {
+                match cfg_eval_predicate(child, target_cfg) {
                     CfgEval::Active => {}
                     CfgEval::Inactive(reason) => return CfgEval::Inactive(reason),
                     CfgEval::Ambiguous(reason) => {
@@ -480,7 +490,7 @@ fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) 
             let mut inactive = Vec::new();
             let mut ambiguous = None;
             for child in predicates {
-                match cfg_eval_predicate(child, Some(target_cfg)) {
+                match cfg_eval_predicate(child, target_cfg) {
                     CfgEval::Active => return CfgEval::Active,
                     CfgEval::Inactive(reason) => inactive.push(reason),
                     CfgEval::Ambiguous(reason) => {
@@ -494,7 +504,7 @@ fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) 
                 CfgEval::Inactive(format!("any inactive: {}", inactive.join("; ")))
             }
         }
-        CfgPredicate::Not(child) => match cfg_eval_predicate(child, Some(target_cfg)) {
+        CfgPredicate::Not(child) => match cfg_eval_predicate(child, target_cfg) {
             CfgEval::Active => CfgEval::Inactive(predicate.to_string()),
             CfgEval::Inactive(_) => CfgEval::Active,
             CfgEval::Ambiguous(reason) => CfgEval::Ambiguous(reason),
