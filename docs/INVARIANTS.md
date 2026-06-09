@@ -3,6 +3,20 @@
 The load-bearing laws of the substrate. Violating one is the bug, not a judgment call.
 These were re-derived many times before being written down; check work against them.
 
+## 0. The one unique thing (the product)
+
+We do exactly one novel thing: **#1 — the ProofIR.** We lift real programs and their tests into
+content-addressed, federating first-order logic. That is the invention and the moat. Everything
+else in this document — the lifters, the sort universe, erasure/recovery, vendor-tests-as-spec,
+the canonical CID, no hubs — exists only to make that ProofIR *right*.
+
+Correctness #2, #3, #4 are not ours to invent — they are **composition of the ProofIR with tools
+that already exist**: #2 (coherent) is z3-SAT over the IR; #3 (satisfied) is a solver discharging
+`post |= pre` (z3 / coq / vampire); #4 (witnessed) is re-running the tests and recomputing the
+CID. Hand an off-the-shelf prover or runner the IR and it does #2/#3/#4. **The product is the
+ProofIR; the rest is plumbing it into machines that already exist.** This is why we are not a
+compiler, type system, effects theory, or checker (II): the only thing we build is #1.
+
 ## I. What correctness is
 
 1. **Correctness is four parts, relative to asserted claims.** A spec exists; the spec is
@@ -109,9 +123,10 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     generic without its type arg): place it in the hierarchy *and* preserve the semantics, or it
     falsePasses on the platform.
 
-    > Cut complete: the old width-bearing float sort was removed from ProofIR. Float source
-    > values lift to `Real`; IEEE width/NaN/orderedness semantics belong in kit-emitted FOL
-    > refinements over `Real`, never as platform data inside an IR sort.
+    > Leak to evacuate: the legacy `Sort::Float { width }` carries a bit-width — a platform
+    > intrinsic — inside an IR sort, and defers IEEE semantics (#385). Per this invariant that
+    > width belongs in the kit as a refinement over `Real`, not as an IR sort. Float values
+    > already lift to `Real`; `Float{width}` is the residue to evacuate (or the #385 stub).
 
 ## VI. Identity and federation
 
