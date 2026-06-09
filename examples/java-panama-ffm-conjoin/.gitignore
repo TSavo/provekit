@@ -3,6 +3,7 @@ work/
 .prove.json
 .verify.json
 .verify_recompute.json
+java-panama-ffm.call-edges.json
 **/.sugar/imports/
 **/.sugar/runs/
 **/.sugar/witnesses/

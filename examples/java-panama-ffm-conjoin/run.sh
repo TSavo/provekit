@@ -17,7 +17,6 @@ JUNIT_VERSION="${JUNIT_VERSION:-1.10.2}"
 MAVEN_BASE="${MAVEN_BASE:-https://repo1.maven.org/maven2}"
 JAR_DIR="${SUGAR_JAVA_PANAMA_JAR_DIR:-/tmp/sugar-java-panama-ffm}"
 JUNIT_JAR="${SUGAR_JUNIT_CONSOLE_JAR:-$JAR_DIR/junit-platform-console-standalone-$JUNIT_VERSION.jar}"
-JDK22_URL="${SUGAR_JDK22_URL:-https://api.adoptium.net/v3/binary/latest/22/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk}"
 JDK22_DIR="${SUGAR_JDK22_DIR:-/tmp/sugar-jdk-22}"
 WORK="$HERE/work"
 BASE64_SRC="$WORK/base64-$BASE64_VERSION"
@@ -62,6 +61,35 @@ fetch_file() {
   fi
 }
 
+adoptium_os() {
+  case "$(uname -s)" in
+    Darwin) printf 'mac' ;;
+    Linux) printf 'linux' ;;
+    *) echo "unsupported JDK bootstrap OS: $(uname -s)" >&2; exit 1 ;;
+  esac
+}
+
+adoptium_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) printf 'x64' ;;
+    arm64|aarch64) printf 'aarch64' ;;
+    *) echo "unsupported JDK bootstrap arch: $(uname -m)" >&2; exit 1 ;;
+  esac
+}
+
+jdk_bin_from_dir() {
+  local dir="$1"
+  if [ -x "$dir/bin/java" ] && [ -x "$dir/bin/javac" ]; then
+    printf '%s\n' "$dir/bin"
+    return 0
+  fi
+  if [ -x "$dir/Contents/Home/bin/java" ] && [ -x "$dir/Contents/Home/bin/javac" ]; then
+    printf '%s\n' "$dir/Contents/Home/bin"
+    return 0
+  fi
+  return 1
+}
+
 ensure_jdk22() {
   local major
   major="$(java -version 2>&1 | python3 -c 'import re,sys; text=sys.stdin.read(); m=re.search(r"version \"([0-9]+)", text); print(m.group(1) if m else "0")' || true)"
@@ -70,15 +98,25 @@ ensure_jdk22() {
     export JDK_BIN
     return 0
   fi
-  if [ ! -x "$JDK22_DIR/bin/java" ] || [ ! -x "$JDK22_DIR/bin/javac" ]; then
+  local cached_bin=""
+  cached_bin="$(jdk_bin_from_dir "$JDK22_DIR" 2>/dev/null || true)"
+  if [ -n "$cached_bin" ] && ! "$cached_bin/java" -version >/dev/null 2>&1; then
+    cached_bin=""
+  fi
+  if [ -z "$cached_bin" ]; then
     echo "== fetch JDK 22 for Panama FFM =="
     rm -rf "$JDK22_DIR"
     mkdir -p "$JDK22_DIR"
-    local archive="$JDK22_DIR.tar.gz"
-    fetch_file "$archive" "$JDK22_URL"
+    local os arch archive jdk_url
+    os="$(adoptium_os)"
+    arch="$(adoptium_arch)"
+    archive="$JDK22_DIR-$os-$arch.tar.gz"
+    jdk_url="${SUGAR_JDK22_URL:-https://api.adoptium.net/v3/binary/latest/22/ga/$os/$arch/jdk/hotspot/normal/eclipse?project=jdk}"
+    fetch_file "$archive" "$jdk_url"
     tar -xzf "$archive" -C "$JDK22_DIR" --strip-components=1
+    cached_bin="$(jdk_bin_from_dir "$JDK22_DIR")"
   fi
-  JDK_BIN="$JDK22_DIR/bin"
+  JDK_BIN="$cached_bin"
   export JDK_BIN
   export PATH="$JDK_BIN:$PATH"
 }
