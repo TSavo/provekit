@@ -248,6 +248,20 @@ fn formula_count_atomic_name(formula: &Formula, expected_name: &str) -> usize {
     }
 }
 
+fn formula_count_connective_kind(formula: &Formula, expected_kind: &str) -> usize {
+    match formula {
+        Formula::Connective { kind, operands } => {
+            usize::from(kind == expected_kind)
+                + operands
+                    .iter()
+                    .map(|operand| formula_count_connective_kind(operand, expected_kind))
+                    .sum::<usize>()
+        }
+        Formula::Quantifier { body, .. } => formula_count_connective_kind(body, expected_kind),
+        _ => 0,
+    }
+}
+
 fn assert_await_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: i64) {
     match formula {
         Formula::Atomic { name, args } => {
@@ -1045,6 +1059,71 @@ fn test_is_ascii() {
         "expected byte iterator to lower to arithmetic range checks in {:?}",
         out.decls
     );
+}
+
+#[test]
+fn vendor_assert_all_and_assert_none_macros_expand_to_bounded_claims() {
+    // Vendor macro shape: rust-src library/coretests/tests/ascii.rs.
+    let src = r#"
+#[test]
+fn test_is_ascii_alphabetic() {
+    assert_all!(is_ascii_alphabetic, "Az",);
+    assert_none!(is_ascii_digit, "aZ",);
+}
+"#;
+    let out = lift_file(&parse(src), "coretests/tests/ascii.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(
+        out.warnings.is_empty(),
+        "unexpected lift warnings: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "coretests/tests/ascii.rs::test_is_ascii_alphabetic"
+    );
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 8);
+    let inv = out.decls[0].inv.as_deref().expect("macro row has inv");
+    assert_eq!(formula_count_atomic_name(inv, "str.is_ascii_alphabetic"), 2);
+    assert_eq!(formula_count_atomic_name(inv, "str.is_ascii_digit"), 2);
+    assert!(
+        formula_count_atomic_name(inv, "\u{2265}") >= 4,
+        "expected byte predicates to lower to arithmetic ranges: {inv:?}"
+    );
+    assert!(
+        formula_count_connective_kind(inv, "not") >= 4,
+        "assert_none! must negate each bounded element: {inv:?}"
+    );
+}
+
+#[test]
+fn assertion_macros_refuse_dynamic_sources_and_unicode_predicates() {
+    let src = r#"
+#[test]
+fn dynamic_or_unicode_macro_sources() {
+    let dynamic = "123";
+    assert_all!(is_ascii_digit, dynamic);
+    assert_all!(is_alphabetic, "A");
+}
+"#;
+    let out = lift_file(&parse(src), "coretests/tests/ascii.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert_eq!(out.decls.len(), 0);
+    assert_eq!(out.warnings.len(), 2, "warnings: {:?}", out.warnings);
+    assert!(out.warnings[0]
+        .reason
+        .contains("assert_all!: expected string literal source"));
+    assert!(out.warnings[0]
+        .reason
+        .contains("unicode char predicate is_alphabetic is not lifted"));
+    assert!(out.warnings[1]
+        .reason
+        .contains("no liftable scalar assertions"));
 }
 
 #[test]

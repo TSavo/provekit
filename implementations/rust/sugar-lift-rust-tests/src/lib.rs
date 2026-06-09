@@ -509,24 +509,23 @@ fn collect_macro(
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
-    match assertion_from_macro(path, tokens, local_scope) {
-        Ok(Some(entry)) => entries.push(entry),
-        Ok(None) => {}
+    match assertions_from_macro(path, tokens, local_scope) {
+        Ok(macro_entries) => entries.extend(macro_entries),
         Err(reason) => skipped.push(reason),
     }
 }
 
-fn assertion_from_macro(
+fn assertions_from_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
     local_scope: &str,
-) -> Result<Option<AssertionEntry>, String> {
+) -> Result<Vec<AssertionEntry>, String> {
     let Some(name) = path
         .segments
         .last()
         .map(|segment| segment.ident.to_string())
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     match name.as_str() {
         "assert_eq" => {
@@ -536,7 +535,7 @@ fn assertion_from_macro(
             }
             let lhs = translate_term(&args.exprs[0]).map_err(|e| format!("assert_eq!: {e}"))?;
             let rhs = translate_term(&args.exprs[1]).map_err(|e| format!("assert_eq!: {e}"))?;
-            Ok(Some(assertion_entry_from_eq(lhs, rhs, local_scope)))
+            Ok(vec![assertion_entry_from_eq(lhs, rhs, local_scope)])
         }
         "assert" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("assert!: {e}"))?;
@@ -545,12 +544,78 @@ fn assertion_from_macro(
             };
             let entry = translate_bool_assertion(first, local_scope)
                 .map_err(|e| format!("assert!: {e}"))?;
-            Ok(Some(entry))
+            Ok(vec![entry])
+        }
+        "assert_all" | "assert_none" => {
+            let args = parse_macro_args(tokens).map_err(|e| format!("{name}!: {e}"))?;
+            assertion_entries_from_ascii_macro(name.as_str(), &args.exprs)
         }
         other if other.starts_with("assert") || other.starts_with("debug_assert") => {
             Err(format!("{other}!: unsupported assertion macro"))
         }
-        _ => Ok(None),
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn assertion_entries_from_ascii_macro(
+    macro_name: &str,
+    exprs: &[Expr],
+) -> Result<Vec<AssertionEntry>, String> {
+    if exprs.len() < 2 {
+        return Err(format!(
+            "{macro_name}!: expected predicate name and at least one literal source"
+        ));
+    }
+    let predicate = ascii_macro_predicate_name(&exprs[0]).ok_or_else(|| {
+        format!(
+            "{macro_name}!: expected a simple ASCII predicate name, got `{}`",
+            token_key(&exprs[0])
+        )
+    })?;
+    let negate = macro_name == "assert_none";
+    let mut entries = Vec::new();
+    for source in &exprs[1..] {
+        let value = literal_string_value(source).ok_or_else(|| {
+            format!(
+                "{macro_name}!: expected string literal source, got `{}`",
+                token_key(source)
+            )
+        })?;
+        for ch in value.chars() {
+            let atom = ascii_char_class_atom(&predicate, str_const(ch.to_string()))
+                .ok_or_else(|| unsupported_ascii_macro_predicate(&predicate))?;
+            entries.push(AssertionEntry {
+                name: None,
+                atom: if negate { not_(atom) } else { atom },
+            });
+        }
+        for byte in value.as_bytes() {
+            let atom = ascii_byte_class_atom(&predicate, num(i64::from(*byte)))
+                .ok_or_else(|| unsupported_ascii_macro_predicate(&predicate))?;
+            entries.push(AssertionEntry {
+                name: None,
+                atom: if negate { not_(atom) } else { atom },
+            });
+        }
+    }
+    Ok(entries)
+}
+
+fn ascii_macro_predicate_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => path.path.get_ident().map(|ident| ident.to_string()),
+        Expr::Paren(paren) => ascii_macro_predicate_name(&paren.expr),
+        Expr::Group(group) => ascii_macro_predicate_name(&group.expr),
+        _ => None,
+    }
+}
+
+fn unsupported_ascii_macro_predicate(predicate: &str) -> String {
+    if predicate == "is_alphabetic" {
+        "unicode char predicate is_alphabetic is not lifted; z3 string theory has no Rust Unicode Alphabetic database"
+            .to_string()
+    } else {
+        format!("unsupported bounded ASCII macro predicate `{predicate}`")
     }
 }
 
@@ -791,6 +856,16 @@ fn translate_string_predicate_assertion(
                     }))
                 }
                 "is_ascii_digit" => ascii_char_class_assertion(call, local_scope, "str.is_ascii_digit"),
+                "is_ascii_alphanumeric" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_alphanumeric",
+                ),
+                "is_ascii_octdigit" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_octdigit",
+                ),
                 "is_ascii_lowercase" => ascii_char_class_assertion(
                     call,
                     local_scope,
@@ -806,10 +881,25 @@ fn translate_string_predicate_assertion(
                     local_scope,
                     "str.is_ascii_hexdigit",
                 ),
+                "is_ascii_punctuation" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_punctuation",
+                ),
+                "is_ascii_graphic" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_graphic",
+                ),
                 "is_ascii_whitespace" => ascii_char_class_assertion(
                     call,
                     local_scope,
                     "str.is_ascii_whitespace",
+                ),
+                "is_ascii_control" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_control",
                 ),
                 "is_alphabetic" if char_literal_term(&call.receiver).is_some() => Err(
                     "unicode char predicate is_alphabetic is not lifted; z3 string theory has no Rust Unicode Alphabetic database"
@@ -938,10 +1028,8 @@ fn iterator_element_predicate_atom(
                 format!("unsupported char iterator predicate `{method}`")
             }
         }),
-        IteratorKind::Bytes => match method.as_str() {
-            "is_ascii" => Ok(byte_is_ascii_formula(element)),
-            _ => Err(format!("unsupported byte iterator predicate `{method}`")),
-        },
+        IteratorKind::Bytes => ascii_byte_class_atom(&method, element)
+            .ok_or_else(|| format!("unsupported byte iterator predicate `{method}`")),
     }
 }
 
@@ -949,20 +1037,74 @@ fn ascii_char_class_atom(method: &str, receiver: Rc<Term>) -> Option<Rc<Formula>
     let atom_name = match method {
         "is_ascii" => "str.is_ascii",
         "is_ascii_alphabetic" => "str.is_ascii_alphabetic",
+        "is_ascii_alphanumeric" => "str.is_ascii_alphanumeric",
         "is_ascii_digit" => "str.is_ascii_digit",
+        "is_ascii_octdigit" => "str.is_ascii_octdigit",
         "is_ascii_lowercase" => "str.is_ascii_lowercase",
         "is_ascii_uppercase" => "str.is_ascii_uppercase",
         "is_ascii_hexdigit" => "str.is_ascii_hexdigit",
+        "is_ascii_punctuation" => "str.is_ascii_punctuation",
+        "is_ascii_graphic" => "str.is_ascii_graphic",
         "is_ascii_whitespace" => "str.is_ascii_whitespace",
+        "is_ascii_control" => "str.is_ascii_control",
         _ => return None,
     };
     Some(atomic_(atom_name, vec![receiver]))
+}
+
+fn ascii_byte_class_atom(method: &str, byte: Rc<Term>) -> Option<Rc<Formula>> {
+    match method {
+        "is_ascii" => Some(byte_is_ascii_formula(byte)),
+        "is_ascii_alphabetic" => Some(or_(vec![
+            byte_range(byte.clone(), b'A', b'Z'),
+            byte_range(byte, b'a', b'z'),
+        ])),
+        "is_ascii_alphanumeric" => Some(or_(vec![
+            byte_range(byte.clone(), b'A', b'Z'),
+            byte_range(byte.clone(), b'a', b'z'),
+            byte_range(byte, b'0', b'9'),
+        ])),
+        "is_ascii_digit" => Some(byte_range(byte, b'0', b'9')),
+        "is_ascii_octdigit" => Some(byte_range(byte, b'0', b'7')),
+        "is_ascii_lowercase" => Some(byte_range(byte, b'a', b'z')),
+        "is_ascii_uppercase" => Some(byte_range(byte, b'A', b'Z')),
+        "is_ascii_hexdigit" => Some(or_(vec![
+            byte_range(byte.clone(), b'0', b'9'),
+            byte_range(byte.clone(), b'A', b'F'),
+            byte_range(byte, b'a', b'f'),
+        ])),
+        "is_ascii_punctuation" => Some(or_(vec![
+            byte_range(byte.clone(), b'!', b'/'),
+            byte_range(byte.clone(), b':', b'@'),
+            byte_range(byte.clone(), b'[', b'`'),
+            byte_range(byte, b'{', b'~'),
+        ])),
+        "is_ascii_graphic" => Some(byte_range(byte, b'!', b'~')),
+        "is_ascii_whitespace" => Some(or_(vec![
+            eq(byte.clone(), num(i64::from(b' '))),
+            eq(byte.clone(), num(9)),
+            eq(byte.clone(), num(10)),
+            eq(byte.clone(), num(12)),
+            eq(byte, num(13)),
+        ])),
+        "is_ascii_control" => Some(or_(vec![
+            byte_range(byte.clone(), 0u8, 31u8),
+            eq(byte, num(127)),
+        ])),
+        _ => None,
+    }
 }
 
 fn byte_is_ascii_formula(byte: Rc<Term>) -> Rc<Formula> {
     and_(vec![gte(byte.clone(), num(0)), lte(byte, num(127))])
 }
 
+fn byte_range(byte: Rc<Term>, low: u8, high: u8) -> Rc<Formula> {
+    and_(vec![
+        gte(byte.clone(), num(i64::from(low))),
+        lte(byte, num(i64::from(high))),
+    ])
+}
 fn literal_iterator_elements(expr: &Expr) -> Result<Option<(IteratorKind, Vec<Rc<Term>>)>, String> {
     match expr {
         Expr::MethodCall(call) if call.args.is_empty() && call.method == "chars" => {

@@ -326,11 +326,16 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "suffix-of"
             | "str.is_ascii"
             | "str.is_ascii_alphabetic"
+            | "str.is_ascii_alphanumeric"
             | "str.is_ascii_digit"
+            | "str.is_ascii_octdigit"
             | "str.is_ascii_lowercase"
             | "str.is_ascii_uppercase"
             | "str.is_ascii_hexdigit"
+            | "str.is_ascii_punctuation"
+            | "str.is_ascii_graphic"
             | "str.is_ascii_whitespace"
+            | "str.is_ascii_control"
     )
 }
 

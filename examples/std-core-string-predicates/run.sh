@@ -15,8 +15,8 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 
 echo "SCOPE: Rust std/core and alloc string predicate rows, zero std source changes."
 echo "SCOPE: GOOD claims are vendor point assertions only; BAD is an explicit negative-control twin."
-echo "SCOPE: lifted predicates = contains, starts_with/prefix-of, ends_with/suffix-of, str.len, str.is_ascii, literal chars().all/.any, literal bytes().is_ascii, char is_ascii, char is_ascii_alphabetic."
-echo "SCOPE: residuals = Unicode is_alphabetic, non-literal receivers, non-literal iterator sources, and closure bodies beyond the ASCII checks above."
+echo "SCOPE: lifted predicates = contains, starts_with/prefix-of, ends_with/suffix-of, str.len, str.is_ascii, literal chars().all/.any, literal bytes().is_ascii, char ASCII classes, and bounded assert_all/assert_none ASCII macro rows."
+echo "SCOPE: residuals = Unicode is_alphabetic, non-literal receivers, non-literal iterator/macro sources, unsupported closure bodies, and non-ASCII custom assertion macros."
 
 if [ "${STD_CORE_STRING_PREDICATES_SKIP_LOCAL_BUILD:-0}" != "1" ]; then
   echo "== build local proof binaries =="
@@ -93,7 +93,18 @@ extract_functions \
 extract_functions \
   "$STDROOT/coretests/tests/ascii.rs" \
   "$GOOD/tests/ascii.rs" \
-  test_is_ascii
+  test_is_ascii \
+  test_is_ascii_alphabetic \
+  test_is_ascii_uppercase \
+  test_is_ascii_lowercase \
+  test_is_ascii_alphanumeric \
+  test_is_ascii_digit \
+  test_is_ascii_octdigit \
+  test_is_ascii_hexdigit \
+  test_is_ascii_punctuation \
+  test_is_ascii_graphic \
+  test_is_ascii_whitespace \
+  test_is_ascii_control
 
 cat > "$GOOD/tests/char_methods_doctest.rs" <<'RS'
 // Vendor source: rust-src library/core/src/char/methods.rs doctest examples
@@ -114,6 +125,16 @@ cat > "$BAD/tests/str_bad.rs" <<'RS'
 fn bad_contains_twin() {
     assert!("abcde".contains("bcd"));
     assert!(!"abcde".contains("bcd"));
+}
+RS
+
+cat > "$BAD/tests/ascii_bad.rs" <<'RS'
+// Negative control derived from rust-src library/coretests/tests/ascii.rs assert_all/assert_none shape.
+// The two macro assertions intentionally contradict on the same bounded literal source.
+#[test]
+fn bad_assert_all_none_twin() {
+    assert_all!(is_ascii_digit, "0");
+    assert_none!(is_ascii_digit, "0");
 }
 RS
 
@@ -217,7 +238,10 @@ good_rows = [
     r for r in good.get("rows", [])
     if "#euf#" in (r.get("property") or "") or "tests/ascii.rs::test_is_ascii" in (r.get("property") or "")
 ]
-bad_rows = [r for r in bad.get("rows", []) if "#euf#" in (r.get("property") or "")]
+bad_rows = [
+    r for r in bad.get("rows", [])
+    if "#euf#" in (r.get("property") or "") or "tests/ascii_bad.rs::bad_assert_all_none_twin" in (r.get("property") or "")
+]
 
 required = {
     "contains": "method:contains#euf#c:callresult_method_contains_a2(s:\"abcde\",s:\"bcd\")::assertion",
@@ -229,6 +253,17 @@ required = {
     "char-is-ascii": "method:is_ascii#euf#c:callresult_method_is_ascii_a1(s:\"a\")::assertion",
     "char-is-ascii-alpha": "method:is_ascii_alphabetic#euf#c:callresult_method_is_ascii_alphabetic_a1(s:\"A\")::assertion",
     "iterator-bytes-and-chars": "tests/ascii.rs::test_is_ascii",
+    "assert-all-none-alpha": "tests/ascii.rs::test_is_ascii_alphabetic",
+    "assert-all-none-uppercase": "tests/ascii.rs::test_is_ascii_uppercase",
+    "assert-all-none-lowercase": "tests/ascii.rs::test_is_ascii_lowercase",
+    "assert-all-none-alphanumeric": "tests/ascii.rs::test_is_ascii_alphanumeric",
+    "assert-all-none-digit": "tests/ascii.rs::test_is_ascii_digit",
+    "assert-all-none-octdigit": "tests/ascii.rs::test_is_ascii_octdigit",
+    "assert-all-none-hexdigit": "tests/ascii.rs::test_is_ascii_hexdigit",
+    "assert-all-none-punctuation": "tests/ascii.rs::test_is_ascii_punctuation",
+    "assert-all-none-graphic": "tests/ascii.rs::test_is_ascii_graphic",
+    "assert-all-none-whitespace": "tests/ascii.rs::test_is_ascii_whitespace",
+    "assert-all-none-control": "tests/ascii.rs::test_is_ascii_control",
 }
 
 missing = [
@@ -259,12 +294,22 @@ if iterator_row.get("status") != "discharged":
 
 bad_target = "method:contains#euf#c:callresult_method_contains_a2(s:\"abcde\",s:\"bcd\")::assertion"
 bad_matches = [row for row in bad_rows if bad_target in (row.get("property") or "")]
+bad_macro_target = "tests/ascii_bad.rs::bad_assert_all_none_twin"
+bad_macro_matches = [row for row in bad_rows if bad_macro_target in (row.get("property") or "")]
 if not bad_matches:
     print("BAD missing contradictory contains row", file=sys.stderr)
+    raise SystemExit(1)
+if not bad_macro_matches:
+    print("BAD missing contradictory assert_all/assert_none row", file=sys.stderr)
     raise SystemExit(1)
 if all(row.get("status") == "discharged" for row in bad_matches):
     print("BAD contradictory row discharged unexpectedly", file=sys.stderr)
     for row in bad_matches:
+        print(json.dumps(row, indent=2), file=sys.stderr)
+    raise SystemExit(1)
+if all(row.get("status") == "discharged" for row in bad_macro_matches):
+    print("BAD contradictory assert_all/assert_none row discharged unexpectedly", file=sys.stderr)
+    for row in bad_macro_matches:
         print(json.dumps(row, indent=2), file=sys.stderr)
     raise SystemExit(1)
 
@@ -276,6 +321,8 @@ for label, needle in required.items():
 print(f"BAD .verify.json ok={bad.get('ok')} totalClaims={bad.get('totalClaims')} eufRows={len(bad_rows)}")
 for row in bad_matches:
     print(f"BAD contains twin: {row.get('status')} {row.get('property')} reason={row.get('reason')}")
+for row in bad_macro_matches:
+    print(f"BAD assert_all/assert_none twin: {row.get('status')} {row.get('property')} reason={row.get('reason')}")
 PY
 
 echo "toolchain-detail: $RUSTC_VERBOSE"

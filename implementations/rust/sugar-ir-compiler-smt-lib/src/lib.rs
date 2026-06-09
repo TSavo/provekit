@@ -514,11 +514,16 @@ mod tests {
                 eq(str_len("～～～～～"), int_const(15)),
                 string_theory_atom("str.is_ascii", vec![string_const("banana\0\u{7f}")]),
                 string_theory_atom("str.is_ascii_alphabetic", vec![string_const("A")]),
+                string_theory_atom("str.is_ascii_alphanumeric", vec![string_const("A")]),
                 string_theory_atom("str.is_ascii_digit", vec![string_const("9")]),
+                string_theory_atom("str.is_ascii_octdigit", vec![string_const("7")]),
                 string_theory_atom("str.is_ascii_lowercase", vec![string_const("z")]),
                 string_theory_atom("str.is_ascii_uppercase", vec![string_const("Z")]),
                 string_theory_atom("str.is_ascii_hexdigit", vec![string_const("f")]),
+                string_theory_atom("str.is_ascii_punctuation", vec![string_const("!")]),
+                string_theory_atom("str.is_ascii_graphic", vec![string_const("~")]),
                 string_theory_atom("str.is_ascii_whitespace", vec![string_const(" ")]),
+                string_theory_atom("str.is_ascii_control", vec![string_const("\u{7f}")]),
                 {"kind": "not", "operands": [
                     string_theory_atom("str.is_ascii_alphabetic", vec![string_const("0")])
                 ]},
@@ -534,7 +539,14 @@ mod tests {
             script.contains("str.in_re"),
             "ascii predicates must lower to z3 regex string checks, got:\n{script}"
         );
-        assert!(script.contains("(re.range \"0\" \"9\")"), "digit regex missing: {script}");
+        assert!(
+            script.contains("(re.range \"0\" \"9\")"),
+            "digit regex missing: {script}"
+        );
+        assert!(
+            script.contains("(re.range \"0\" \"7\")"),
+            "octdigit regex missing: {script}"
+        );
         assert!(
             script.contains("(re.range \"a\" \"z\")"),
             "lowercase regex missing: {script}"
@@ -542,6 +554,18 @@ mod tests {
         assert!(
             script.contains("(re.range \"A\" \"Z\")"),
             "uppercase regex missing: {script}"
+        );
+        assert!(
+            script.contains("(re.range \"!\" \"/\")"),
+            "punctuation regex missing: {script}"
+        );
+        assert!(
+            script.contains("(re.range \"!\" \"~\")"),
+            "graphic regex missing: {script}"
+        );
+        assert!(
+            script.contains("(re.range \"\\u{0}\" \"\\u{1f}\")"),
+            "control regex missing: {script}"
         );
         assert!(
             script.contains("(re.union"),

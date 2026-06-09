@@ -65,11 +65,16 @@ const STRING_OPS: &[&str] = &[
     "str.indexof",
     "str.is_ascii",
     "str.is_ascii_alphabetic",
+    "str.is_ascii_alphanumeric",
     "str.is_ascii_digit",
+    "str.is_ascii_octdigit",
     "str.is_ascii_lowercase",
     "str.is_ascii_uppercase",
     "str.is_ascii_hexdigit",
+    "str.is_ascii_punctuation",
+    "str.is_ascii_graphic",
     "str.is_ascii_whitespace",
+    "str.is_ascii_control",
 ];
 
 const BV_OPS: &[&str] = &[
@@ -227,11 +232,16 @@ mod tests {
             "str.len",
             "str.is_ascii",
             "str.is_ascii_alphabetic",
+            "str.is_ascii_alphanumeric",
             "str.is_ascii_digit",
+            "str.is_ascii_octdigit",
             "str.is_ascii_lowercase",
             "str.is_ascii_uppercase",
             "str.is_ascii_hexdigit",
+            "str.is_ascii_punctuation",
+            "str.is_ascii_graphic",
             "str.is_ascii_whitespace",
+            "str.is_ascii_control",
         ] {
             let f = json!({
                 "kind": "atomic",

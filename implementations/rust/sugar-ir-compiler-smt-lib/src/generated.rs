@@ -329,8 +329,16 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
             "(str.in_re {} (re.union (re.range \"A\" \"Z\") (re.range \"a\" \"z\")))",
             emit_string_term(&args[0])
         )),
+        "str.is_ascii_alphanumeric" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.union (re.range \"0\" \"9\") (re.union (re.range \"A\" \"Z\") (re.range \"a\" \"z\"))))",
+            emit_string_term(&args[0])
+        )),
         "str.is_ascii_digit" if args.len() == 1 => Some(format!(
             "(str.in_re {} (re.range \"0\" \"9\"))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_octdigit" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.range \"0\" \"7\"))",
             emit_string_term(&args[0])
         )),
         "str.is_ascii_lowercase" if args.len() == 1 => Some(format!(
@@ -345,8 +353,20 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
             "(str.in_re {} (re.union (re.range \"0\" \"9\") (re.union (re.range \"A\" \"F\") (re.range \"a\" \"f\"))))",
             emit_string_term(&args[0])
         )),
+        "str.is_ascii_punctuation" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.union (re.range \"!\" \"/\") (re.union (re.range \":\" \"@\") (re.union (re.range \"[\" \"`\") (re.range \"{{\" \"~\")))))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_graphic" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.range \"!\" \"~\"))",
+            emit_string_term(&args[0])
+        )),
         "str.is_ascii_whitespace" if args.len() == 1 => Some(format!(
             "(str.in_re {} (re.union (re.union (re.union (re.union (re.range \" \" \" \") (re.range \"\\u{{9}}\" \"\\u{{9}}\")) (re.range \"\\u{{a}}\" \"\\u{{a}}\")) (re.range \"\\u{{c}}\" \"\\u{{c}}\")) (re.range \"\\u{{d}}\" \"\\u{{d}}\")))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_control" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.union (re.range \"\\u{{0}}\" \"\\u{{1f}}\") (re.range \"\\u{{7f}}\" \"\\u{{7f}}\")))",
             emit_string_term(&args[0])
         )),
         _ => None,
@@ -361,11 +381,16 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "suffix-of"
             | "str.is_ascii"
             | "str.is_ascii_alphabetic"
+            | "str.is_ascii_alphanumeric"
             | "str.is_ascii_digit"
+            | "str.is_ascii_octdigit"
             | "str.is_ascii_lowercase"
             | "str.is_ascii_uppercase"
             | "str.is_ascii_hexdigit"
+            | "str.is_ascii_punctuation"
+            | "str.is_ascii_graphic"
             | "str.is_ascii_whitespace"
+            | "str.is_ascii_control"
     )
 }
 
