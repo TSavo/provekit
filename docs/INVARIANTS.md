@@ -49,6 +49,16 @@ type system, effects theory, or checker (II): the only thing we build is #1.
    operands coalesce (same subject); impure/symbolic operands stay locus-distinct (their own
    subject). Both are sound; we simply decline to assume two impure calls are equal.
 
+   Failure semantics are invisible by construction. A body guard's condition lifts as a flat
+   predicate (`if x == 0 { panic!() }` becomes the precondition `x != 0`, a claim); the panic
+   itself asserts nothing to us, exactly like a no-op line (invariant 2). Effects are never
+   *loudly bounded lossy* either: that band of the trichotomy (exact / loudly-bounded-lossy /
+   refuse) only exists when we hold a representation and announce what we dropped from it (an f32
+   kept as `Real`, IEEE width logged as a named residual). We hold no representation of a panic,
+   so there is nothing to bound the loss on. The only honest moves are lift the precondition
+   exactly, or REFUSE (skip and name the residual). There is no lossy model of a failure; if
+   there were a failure-model to approximate, we already crossed into effects and went wrong.
+
 6. **Not a correctness checker.** The solver decides — z3, coq, vampire, maude. We lift to IR,
    form the obligation, and route it to a prover. We do not implement theories: floats are
    z3's FP theory, strings z3's string theory, quantifiers go to vampire/coq.
