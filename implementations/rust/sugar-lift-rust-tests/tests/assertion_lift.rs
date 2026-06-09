@@ -310,6 +310,81 @@ fn assert_type_id_cmp_atom(
     }
 }
 
+enum ExpectedScalar {
+    Int(i64),
+    Bool(bool),
+}
+
+enum ExpectedOperatorArg {
+    Constructor(&'static str, ExpectedScalar),
+}
+
+fn assert_scalar_const(term: &Term, expected: ExpectedScalar) {
+    match (term, expected) {
+        (
+            Term::Const {
+                value: ConstValue::Int(value),
+                ..
+            },
+            ExpectedScalar::Int(expected),
+        ) => assert_eq!(*value, expected),
+        (
+            Term::Const {
+                value: ConstValue::Bool(value),
+                ..
+            },
+            ExpectedScalar::Bool(expected),
+        ) => assert_eq!(*value, expected),
+        (other, _) => panic!("expected scalar const, got {other:?}"),
+    }
+}
+
+fn assert_operator_arg(term: &Term, expected: &ExpectedOperatorArg) {
+    match expected {
+        ExpectedOperatorArg::Constructor(expected_name, expected_arg) => match term {
+            Term::Ctor { name, args } => {
+                assert_eq!(name, expected_name);
+                assert_eq!(args.len(), 1);
+                match expected_arg {
+                    ExpectedScalar::Int(value) => {
+                        assert_scalar_const(&args[0], ExpectedScalar::Int(*value));
+                    }
+                    ExpectedScalar::Bool(value) => {
+                        assert_scalar_const(&args[0], ExpectedScalar::Bool(*value));
+                    }
+                }
+            }
+            other => panic!("expected constructor operator arg, got {other:?}"),
+        },
+    }
+}
+
+fn assert_operator_bool_atom(
+    formula: &Formula,
+    expected_call: &str,
+    expected_args: &[ExpectedOperatorArg],
+    expected_result: bool,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, expected_call);
+                    assert_eq!(args.len(), expected_args.len());
+                    for (actual, expected) in args.iter().zip(expected_args.iter()) {
+                        assert_operator_arg(actual, expected);
+                    }
+                }
+                other => panic!("expected operator call lhs, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Bool(expected_result));
+        }
+        other => panic!("expected operator result equality atom, got {other:?}"),
+    }
+}
+
 fn formula_contains_atomic_name(formula: &Formula, expected_name: &str) -> bool {
     match formula {
         Formula::Atomic { name, .. } => name == expected_name,
@@ -1055,26 +1130,215 @@ fn bool_compare_exchange() {
             assert_eq!(name, "=");
             assert_eq!(args.len(), 2);
             match args[0].as_ref() {
-                Term::Ctor { name, .. } => assert_eq!(name, "method:compare_exchange"),
-                other => panic!("expected compare_exchange lhs, got {other:?}"),
-            }
-            match args[1].as_ref() {
                 Term::Ctor { name, args } => {
-                    assert_eq!(name, "call:Ok");
-                    assert_eq!(args.len(), 1);
+                    assert_eq!(name, "call:eq:Ok");
+                    assert_eq!(args.len(), 2);
                     match args[0].as_ref() {
-                        Term::Const {
-                            value: ConstValue::Bool(value),
-                            ..
-                        } => assert!(!*value),
-                        other => panic!("expected bool constructor arg, got {other:?}"),
+                        Term::Ctor { name, .. } => assert_eq!(name, "method:compare_exchange"),
+                        other => panic!("expected compare_exchange lhs, got {other:?}"),
+                    }
+                    match args[1].as_ref() {
+                        Term::Ctor { name, args } => {
+                            assert_eq!(name, "call:Ok");
+                            assert_eq!(args.len(), 1);
+                            match args[0].as_ref() {
+                                Term::Const {
+                                    value: ConstValue::Bool(value),
+                                    ..
+                                } => assert!(!*value),
+                                other => panic!("expected bool constructor arg, got {other:?}"),
+                            }
+                        }
+                        other => panic!("expected Ok constructor rhs, got {other:?}"),
                     }
                 }
-                other => panic!("expected Ok constructor rhs, got {other:?}"),
+                other => panic!("expected operator call lhs, got {other:?}"),
             }
+            assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
         }
         other => panic!("expected equality atom, got {other:?}"),
     }
+}
+
+#[test]
+fn constructor_operator_comparisons_lift_as_uninterpreted_operator_results() {
+    let src = r#"
+struct Int(i32);
+struct RevInt(i32);
+struct Fool(bool);
+
+#[test]
+fn cmp_default() {
+    assert!(Int(2) > Int(1));
+    assert!(Int(2) >= Int(1));
+    assert!(Int(1) >= Int(1));
+    assert!(Int(1) < Int(2));
+    assert!(Int(1) <= Int(2));
+    assert!(Int(1) <= Int(1));
+    assert!(RevInt(2) < RevInt(1));
+    assert!(RevInt(2) <= RevInt(1));
+    assert!(RevInt(1) <= RevInt(1));
+    assert!(RevInt(1) > RevInt(2));
+    assert!(RevInt(1) >= RevInt(2));
+    assert!(RevInt(1) >= RevInt(1));
+    assert_eq!(Fool(true), Fool(false));
+    assert!(Fool(true) != Fool(true));
+    assert!(Fool(false) != Fool(false));
+    assert_eq!(Fool(false), Fool(true));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/cmp.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(out.decls[0].name, "tests/cmp.rs::cmp_default");
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 16);
+    assert_operator_bool_atom(
+        &operands[0],
+        "call:gt:Int",
+        &[
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(2)),
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[1],
+        "call:ge:Int",
+        &[
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(2)),
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[2],
+        "call:ge:Int",
+        &[
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[3],
+        "call:lt:Int",
+        &[
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(2)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[4],
+        "call:le:Int",
+        &[
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(2)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[5],
+        "call:le:Int",
+        &[
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:Int", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[6],
+        "call:lt:RevInt",
+        &[
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(2)),
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[7],
+        "call:le:RevInt",
+        &[
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(2)),
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[8],
+        "call:le:RevInt",
+        &[
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[9],
+        "call:gt:RevInt",
+        &[
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(2)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[10],
+        "call:ge:RevInt",
+        &[
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(2)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[11],
+        "call:ge:RevInt",
+        &[
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+            ExpectedOperatorArg::Constructor("call:RevInt", ExpectedScalar::Int(1)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[12],
+        "call:eq:Fool",
+        &[
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(true)),
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(false)),
+        ],
+        true,
+    );
+    assert_operator_bool_atom(
+        &operands[13],
+        "call:eq:Fool",
+        &[
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(true)),
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(true)),
+        ],
+        false,
+    );
+    assert_operator_bool_atom(
+        &operands[14],
+        "call:eq:Fool",
+        &[
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(false)),
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(false)),
+        ],
+        false,
+    );
+    assert_operator_bool_atom(
+        &operands[15],
+        "call:eq:Fool",
+        &[
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(false)),
+            ExpectedOperatorArg::Constructor("call:Fool", ExpectedScalar::Bool(true)),
+        ],
+        true,
+    );
 }
 
 #[test]

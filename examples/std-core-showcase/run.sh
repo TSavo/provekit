@@ -14,7 +14,8 @@
 #       * tests/time.rs direct call-result comparison rows.
 #       * tests/atomic.rs compound value rows with bitwise-expression RHS
 #         terms, limited to non-repeated stable keys.
-#   - `sugar mint` + `sugar verify` must produce only discharged `#euf#`
+#       * tests/cmp.rs::cmp_default user-type operator-dispatch row.
+#   - `sugar mint` + `sugar verify` must produce only discharged claimed
 #     consistency rows for that slice.
 #   - The exact vendor tests rerun as the witness axis.
 #
@@ -38,7 +39,7 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, and atomic.rs compound bitwise-expression RHS rows with stable keys."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, and cmp.rs::cmp_default user-type operator dispatch."
 echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
@@ -432,6 +433,10 @@ if receipt is None:
 rows = receipt.get("rows", [])
 euf_rows = [r for r in rows if "#euf#" in (r.get("property") or "")]
 failed = [r for r in euf_rows if r.get("status") != "discharged"]
+cmp_default_rows = [
+    r for r in rows
+    if (r.get("property") or "") == "consistency:tests/cmp.rs::cmp_default"
+]
 needles = [
     "cmp::max_by#euf#c:callresult_cmp__max_by_a3(i:1,i:-1,v:f)::assertion",
     "size_of::<u8>#euf#c:callresult_size_of___u8__a0()::assertion",
@@ -493,6 +498,15 @@ if missing_type_id:
     print("missing required TypeId claimed rows:", file=sys.stderr)
     for needle in missing_type_id:
         print(needle, file=sys.stderr)
+if len(cmp_default_rows) != 1:
+    print(f"expected exactly one claimed cmp_default row, got {len(cmp_default_rows)}", file=sys.stderr)
+    for row in cmp_default_rows:
+        print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
+cmp_default_row = cmp_default_rows[0]
+if cmp_default_row.get("status") != "discharged":
+    print("claimed cmp_default row did not discharge:", file=sys.stderr)
+    print(f"{cmp_default_row.get('status')} {cmp_default_row.get('property')} {cmp_default_row.get('reason')}", file=sys.stderr)
     raise SystemExit(1)
 if failed:
     print("non-discharged #euf# rows in claimed slice:", file=sys.stderr)
@@ -507,6 +521,7 @@ if failed_type_id:
 
 print(f"claimed-euf-rows={len(euf_rows)} discharged={len(euf_rows)} failed=0")
 print(f"typeid-rows={len(type_id_rows)} discharged={len(type_id_rows)} failed=0")
+print("claimed-cmp-default-row=1 discharged=1 failed=0")
 print(
     f"cfg-active-pointer-width={target_pointer_width} "
     f"cfg-active-pointer-bytes={target_pointer_bytes} "
@@ -519,6 +534,11 @@ for row in type_id_rows:
 PY
 
 echo "== witness: rerun exact std/core vendor tests =="
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests cmp::cmp_default -- --exact --nocapture
+)
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
@@ -636,6 +656,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, and stable-key atomic compound bitwise-expression RHS rows discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macro surfaces outside this showcase/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

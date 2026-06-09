@@ -28,9 +28,12 @@ Claimed slice:
   - `coretests/tests/atomic.rs`: stable-key compound RHS rows where the
     asserted value is a closed bitwise expression, such as
     `x.load(SeqCst) == 0xf731 & 0x137f`.
+  - `coretests/tests/cmp.rs::cmp_default`: user-type operator dispatch for
+    `Int`, `RevInt`, and `Fool` comparisons, lifted as uninterpreted operator
+    call results.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
-  emits `#euf#` call-result consistency rows plus TypeId consistency rows, and
-  every claimed row discharges.
+  emits `#euf#` call-result consistency rows, TypeId consistency rows, and the
+  `cmp_default` operator-dispatch row, and every claimed row discharges.
 - Witness axis: the exact std vendor tests rerun with `cargo test --test
   coretests ... -- --exact`.
 
@@ -40,6 +43,10 @@ Named gaps toward full `coretests` coverage:
   generic call results. The showcase claims the non-cfg `size_of_basic` and
   `align_of_basic` rows plus the active pointer-width cfg rows for the
   explicitly pinned target.
+- Operator dispatch typing: comparisons whose user-typed operand is built by a
+  lowercase-named function (not an uppercase constructor) still take the FOL path;
+  on the consistency axis the failure direction is conservative (false-refusal,
+  never falsePass). Named residual until operand typing is kit-resolvable.
 - Macros: bounded ASCII `assert_all!` / `assert_none!` expansion lives in the
   lifter, but this scalar std-core showcase does not claim broader macro
   surfaces.
@@ -66,8 +73,9 @@ Named gaps toward full `coretests` coverage:
 
 The run script requires representative integer, generic type-arg-keyed, active
 cfg pointer-width, TypeId comparison, finite-float, string, pure method-chain
-predicate, and stable-key compound RHS rows, and rejects any non-discharged
-claimed row. It is intentionally not a full-`std` claim.
+predicate, stable-key compound RHS rows, and the `cmp_default` user-type operator
+row, and rejects any non-discharged claimed row. It is intentionally not a
+full-`std` claim.
 
 ## Grounded Full-Coretests Gap Census
 
@@ -84,8 +92,9 @@ method-chain slice closed 17 pure method-chain predicate items. The pinned
 target cfg slice closes 4 active pointer-width `mem.rs` rows on a 64-bit target.
 This compound term slice claims 18 additional stable-key atomic rows, 8 of
 which close operator-expression RHS complex terms. The TypeId comparison slice
-closes 2 current `intrinsics.rs` diagnostic items. The current known backlog is
-1,075 items for that target.
+closes 2 current `intrinsics.rs` diagnostic items. The operator-dispatch slice
+closes the pre-existing `cmp_default` over-refusal. The current known backlog is
+1,074 items for that target.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |

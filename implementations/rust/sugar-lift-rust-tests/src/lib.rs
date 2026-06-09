@@ -746,6 +746,22 @@ enum RelationOp {
     Ge,
 }
 
+impl RelationOp {
+    fn operator_call_name(self) -> &'static str {
+        match self {
+            RelationOp::Eq | RelationOp::Ne => "eq",
+            RelationOp::Lt => "lt",
+            RelationOp::Le => "le",
+            RelationOp::Gt => "gt",
+            RelationOp::Ge => "ge",
+        }
+    }
+
+    fn operator_asserted_result(self) -> bool {
+        !matches!(self, RelationOp::Ne)
+    }
+}
+
 fn relation_from_binop(op: &BinOp) -> Option<RelationOp> {
     match op {
         BinOp::Eq(_) => Some(RelationOp::Eq),
@@ -1195,6 +1211,15 @@ fn assertion_entry_from_relation(
     op: RelationOp,
     local_scope: &str,
 ) -> AssertionEntry {
+    if let Some(tag) =
+        constructor_operator_tag(lhs.as_ref()).or_else(|| constructor_operator_tag(rhs.as_ref()))
+    {
+        return AssertionEntry {
+            name: None,
+            atom: constructor_operator_atom(lhs, rhs, op, &tag),
+        };
+    }
+
     let name = if is_ground_value(lhs.as_ref()) {
         callsite_assertion_name(rhs.as_ref(), local_scope)
     } else if is_ground_value(rhs.as_ref()) {
@@ -1211,6 +1236,36 @@ fn assertion_entry_from_relation(
         RelationOp::Ge => gte(lhs, rhs),
     };
     AssertionEntry { name, atom }
+}
+
+fn constructor_operator_atom(
+    lhs: Rc<Term>,
+    rhs: Rc<Term>,
+    op: RelationOp,
+    tag: &str,
+) -> Rc<Formula> {
+    // Federated operator-dispatch shape: user-type operators are method calls,
+    // so ==/!= lift as equality over the canonical eq call result, and
+    // order operators lift as their own canonical call results. Java .equals
+    // and Python __eq__ must mirror this byte-for-byte for the same TypeKey.
+    let operator_call = Rc::new(Term::Ctor {
+        name: format!("call:{}:{tag}", op.operator_call_name()),
+        args: vec![lhs, rhs],
+    });
+    eq(operator_call, bool_const(op.operator_asserted_result()))
+}
+
+fn constructor_operator_tag(term: &Term) -> Option<String> {
+    let Term::Ctor { name, .. } = term else {
+        return None;
+    };
+    let callee = name.strip_prefix("call:")?;
+    let final_segment = callee.rsplit("::").next().unwrap_or(callee);
+    final_segment
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+        .then(|| callee.to_string())
 }
 
 fn is_ground_value(term: &Term) -> bool {
