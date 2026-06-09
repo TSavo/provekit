@@ -73,6 +73,8 @@ help:
 	@echo "  make self-lift-canonicalizer  run sugar-lift against the canonicalizer crate"
 	@echo ""
 	@echo "Maintenance:"
+	@echo "  make setup-git-hooks wire committed Git hooks into this clone"
+	@echo "  make test-git-hooks  test committed Git hooks"
 	@echo "  make clean          remove build artifacts"
 
 # --- Per-language builds -----------------------------------------------------
@@ -158,6 +160,16 @@ $(BCARGO_PYTHON_ENV_STAMP): Makefile $(wildcard implementations/python/*/pyproje
 .PHONY: check-cargo-entrypoint
 check-cargo-entrypoint:
 	tools/check-cargo-entrypoint.sh
+
+.PHONY: setup-git-hooks
+setup-git-hooks:
+	@test -x hooks/pre-commit || (echo "missing executable hook: hooks/pre-commit" >&2; exit 1)
+	git config core.hooksPath hooks
+	@echo "core.hooksPath=hooks"
+
+.PHONY: test-git-hooks
+test-git-hooks:
+	hooks/tests/pre-commit-format.sh
 
 .PHONY: test-rust
 # The rust integration tests register per-language carriers via

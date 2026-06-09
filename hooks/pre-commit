@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="$(git rev-parse --show-toplevel)"
+cd "$repo"
+
+manifest="$repo/implementations/rust/Cargo.toml"
+if [ ! -f "$manifest" ]; then
+  echo "pre-commit: missing Rust workspace manifest: $manifest" >&2
+  exit 1
+fi
+
+staged=()
+while IFS= read -r -d '' path; do
+  staged+=("$path")
+done < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.rs')
+
+if [ "${#staged[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+format_paths=()
+restage_paths=()
+for path in "${staged[@]}"; do
+  if [ ! -f "$path" ]; then
+    continue
+  fi
+  if ! git diff --quiet -- "$path"; then
+    echo "pre-commit: skipping partially staged Rust file: $path" >&2
+    continue
+  fi
+  format_paths+=("./$path")
+  restage_paths+=("$path")
+done
+
+if [ "${#format_paths[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+cargo fmt --manifest-path "$manifest" -- "${format_paths[@]}"
+git add -- "${restage_paths[@]}"
