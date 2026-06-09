@@ -10,6 +10,8 @@ WALK_RPC="$BIN_DIR/sugar-walk-rpc"
 WORK="${PYTHON_BODYGUARD_WORK:-$HERE/.work}"
 PY_SRC="$REPO/implementations/python/sugar-lift-python-source/src"
 PY_TESTS="$REPO/implementations/python/sugar-lift-py-tests/src"
+VENV="${PYTHON_BODYGUARD_VENV:-/tmp/python-bodyguard-precondition-venv}"
+PYTHON="$VENV/bin/python"
 
 echo "SCOPE: Python body guard -> precondition predicate, zero Python source changes outside the fixture."
 echo "SCOPE: guard = if x < 2 or x > 36: raise ValueError(...)."
@@ -24,6 +26,21 @@ fi
 if ! command -v z3 >/dev/null 2>&1; then
   echo "missing z3" >&2
   exit 1
+fi
+
+# The Python source lifter imports canonical.py, which imports blake3. CI runs
+# this showcase with a bare system python3, so keep deps in a venv instead of
+# touching the system interpreter (PEP 668).
+if [ ! -x "$PYTHON" ]; then
+  python3 -m venv "$VENV"
+fi
+if ! "$PYTHON" - <<'PY' >/dev/null 2>&1
+import blake3
+import cbor2
+import nacl
+PY
+then
+  "$VENV/bin/pip" install -q blake3 cbor2 pynacl
 fi
 
 if [ "${PYTHON_BODYGUARD_SKIP_LOCAL_BUILD:-0}" != "1" ]; then
@@ -48,10 +65,9 @@ mkdir -p "$WORK"
 LIFT_WRAPPER="$WORK/sugar-lift-python-verify.sh"
 cat > "$LIFT_WRAPPER" <<SH
 #!/bin/sh
-PYTHON=\${PYTHON:-python3}
 PYTHONPATH="$PY_SRC:$PY_TESTS\${PYTHONPATH:+:\$PYTHONPATH}"
 export PYTHONPATH
-exec "\$PYTHON" -c "from sugar_lift_python_source.verify_rpc import run_rpc; run_rpc()"
+exec "$PYTHON" -c "from sugar_lift_python_source.verify_rpc import run_rpc; run_rpc()"
 SH
 chmod +x "$LIFT_WRAPPER"
 
@@ -102,7 +118,7 @@ TOML
 }
 
 extract_json_receipt() {
-  python3 - "$1" <<'PY'
+  "$PYTHON" - "$1" <<'PY'
 import json
 import re
 import sys
@@ -141,7 +157,7 @@ verify_suite() {
   set -e
   extract_json_receipt "$dir/.verify.raw" > "$dir/.verify.json"
 
-  python3 - "$dir/.verify.json" "$suite" "$expected_status" "$expected_code" "$code" <<'PY'
+  "$PYTHON" - "$dir/.verify.json" "$suite" "$expected_status" "$expected_code" "$code" <<'PY'
 import json
 import sys
 
@@ -166,7 +182,7 @@ PY
 }
 
 compare_federation_cids() {
-  python3 - "$WORK/good/bounded_digit.py" "$WORK/python-pre.json" <<'PY'
+  "$PYTHON" - "$WORK/good/bounded_digit.py" "$WORK/python-pre.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -185,7 +201,7 @@ pre = to_verify_dialect(contract, collect_int_signatures(source)["bounded_digit"
 json.dump({"pre": pre, "cid": cid_of_json(pre)}, open(sys.argv[2], "w", encoding="utf-8"), sort_keys=True)
 PY
 
-  python3 - "$WALK_RPC" "$WORK/rust-pre.json" <<'PY'
+  "$PYTHON" - "$WALK_RPC" "$WORK/rust-pre.json" <<'PY'
 import json
 import subprocess
 import sys
@@ -221,7 +237,7 @@ pre = response["result"]
 json.dump({"pre": pre, "cid": cid_of_json(pre)}, open(out_path, "w", encoding="utf-8"), sort_keys=True)
 PY
 
-  python3 - "$WORK/python-pre.json" "$WORK/rust-pre.json" "$WORK/federation.json" <<'PY'
+  "$PYTHON" - "$WORK/python-pre.json" "$WORK/rust-pre.json" "$WORK/federation.json" <<'PY'
 import json
 import sys
 
