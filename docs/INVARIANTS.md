@@ -174,6 +174,13 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
 
 12. **The .proof is content-addressed and re-verifiable.** We do not ask for trust; we hand
     over a recomputable artifact. Everyone else asserts their code is correct; we `.proof` it.
+    The genre we replace is the shadow in a lab coat. SemVer projects an arbitrary behavioral
+    change onto three integers and a publisher's promise (`^1.2.0` is a bet, enforced by
+    nothing); the green badge attests one run; coverage counts lines, not claims; a type
+    signature swears it typechecks, never that it upholds its precondition. Each computes a proxy
+    for correctness and trains you to defer to the proxy. We do not ship a smaller proxy: we ship
+    the thing the proxy stood in for, recomputable. SemVer says "minor, trust me"; we discharge
+    `post |= pre` at the seam and hand over the math.
 
 ## IX. How we work on it
 
