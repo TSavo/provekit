@@ -146,6 +146,21 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
    threaded in source order. Nested calls key recursively — the outermost call is the subject,
    inner calls are operands.
 
+9x. **`==` is sugar.** A source-language equality or comparison operator is sugar for a method
+    call — `PartialEq::eq`, `.equals()`, `__eq__` — exactly as function names are sugar (VI).
+    FOL `=` / `distinct` / `<` are reserved for PRIMITIVE terms (literals, known-scalar call
+    results). An operator whose operand is a non-primitive (constructor / user-typed) term
+    lifts as the *operator-dispatch call atom* — an uninterpreted per-type call-result row
+    (`=(call:eq:<TypeKey>(a,b), true|false)`), never FOL equality: the user impl can make `eq`
+    anything (std's own `cmp_default` test ships a deliberately inverted `PartialEq`), and FOL
+    `distinct(x,x)` is unsatisfiable while `x != x` can be *true in the language*. EUF keeps
+    this sound and point-wise faithful (congruence forces same-args -> same-result only). This
+    shape is the FEDERATED canonical atom (10b): every seat's `==`-on-objects desugars to it
+    byte-identically. The distinction is syntactic (is the operand a primitive term?), not type
+    inference — we are still not a type system (II). Lifting FOL `=` over a user-typed term is
+    the overclaim that false-refused std's `cmp_default`; the gate question for every lifter's
+    `=` is "what does this operator dispatch to?"
+
 ## Vb. The sort universe
 
 9a. **The sort universe primitives are `Int`, `Real`, `Bool` — platform-free, abstract**
