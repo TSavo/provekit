@@ -56,6 +56,30 @@ These were re-derived many times before being written down; check work against t
    threaded in source order. Nested calls key recursively — the outermost call is the subject,
    inner calls are operands.
 
+## Vb. The sort universe
+
+9a. **The sort universe primitives are `Int`, `Real`, `Bool` — platform-free, abstract**
+    (`sugar-ir-types::PrimitiveSortName`). Number values live here; a float *value* is a `Real`.
+    Number itself has no platform intrinsics: no width, no wrapping, no endianness, no `usize`.
+
+9b. **Platform intrinsics live in the kits, never as IR sorts.** Bit-widths (`i32`/`u8`/`usize`),
+    wrapping/overflow, the `f32`/`f64` IEEE bit-representation, `size_of`/`align_of`, endianness
+    — all resolved in the per-platform kit, as *refinements over `Int`/`Real`* with the platform
+    semantics preserved as FOL constraints: `u8` -> `Int` with `0..=255`; `i32::wrapping_add` ->
+    `Int` `(a+b) mod 2^32`; `usize`/`size_of` -> `Int` + a platform-width refinement; finite
+    float -> `Real`; `f32`/`f64` IEEE semantics -> kit refinement over `Real`. Kits speak RPC to
+    the CLI and emit FOL-only ProofIR; the CLI/verifier stay platform-blind (only the primitives
+    + FOL); the solver discharges. The base sorts federate — any kit emits the same canonical
+    `Int`/`Real` for the same value (same CID), platform semantics riding as preserved
+    constraints. **Dropping a platform semantic is unsound** (treating `i32` as unbounded, a
+    generic without its type arg): place it in the hierarchy *and* preserve the semantics, or it
+    falsePasses on the platform.
+
+    > Leak to evacuate: the legacy `Sort::Float { width }` carries a bit-width — a platform
+    > intrinsic — inside an IR sort, and defers IEEE semantics (#385). Per this invariant that
+    > width belongs in the kit as a refinement over `Real`, not as an IR sort. Float values
+    > already lift to `Real`; `Float{width}` is the residue to evacuate (or the #385 stub).
+
 ## VI. Identity and federation
 
 10. **The CID is the identity. There are no hubs.** Identical canonical shape -> identical CID,
