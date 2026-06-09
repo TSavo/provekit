@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use sugar_ir_symbolic::serialize::marshal_declarations;
-use sugar_lift_rust_tests::lift_file;
+use sugar_lift_rust_tests::{lift_file_with_options, LiftOptions, TargetCfg};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SURFACE: &str = "rust-test-assertions";
@@ -86,6 +86,21 @@ fn lift(params: &Value) -> Value {
 
     let mut entries = Vec::new();
     let mut diagnostics = Vec::new();
+    let options = match lift_options_from_config(&workspace_root, params) {
+        Ok(options) => options,
+        Err(reason) => {
+            diagnostics.push(json!({
+                "kind": "lift-gap",
+                "path": params
+                    .get("config_path")
+                    .and_then(Value::as_str)
+                    .unwrap_or(".sugar/config.toml"),
+                "item": "rust-test-assertions.target_cfg",
+                "reason": reason,
+            }));
+            LiftOptions::default()
+        }
+    };
     for rel in &rel_paths {
         let abs = workspace_root.join(rel);
         let bytes = match std::fs::read(&abs) {
@@ -121,7 +136,7 @@ fn lift(params: &Value) -> Value {
                 continue;
             }
         };
-        let out = lift_file(&file, rel);
+        let out = lift_file_with_options(&file, rel, &options);
         let marshalled = marshal_declarations(&out.decls);
         let parsed: Value = serde_json::from_str(&marshalled).unwrap_or_else(|_| json!([]));
         if let Some(arr) = parsed.as_array() {
@@ -143,6 +158,64 @@ fn lift(params: &Value) -> Value {
         "diagnostics": diagnostics,
         "refusals": [],
     })
+}
+
+fn lift_options_from_config(workspace_root: &Path, params: &Value) -> Result<LiftOptions, String> {
+    let config_rel = params
+        .get("config_path")
+        .and_then(Value::as_str)
+        .unwrap_or(".sugar/config.toml");
+    let config_path = workspace_root.join(config_rel);
+    match std::fs::read_to_string(&config_path) {
+        Ok(text) => target_cfg_from_config_text(&text).map(|cfg| match cfg {
+            Some(cfg) => LiftOptions::for_target_cfg(cfg),
+            None => LiftOptions::default(),
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LiftOptions::default()),
+        Err(e) => Err(format!("cannot read {}: {e}", config_path.display())),
+    }
+}
+
+fn target_cfg_from_config_text(text: &str) -> Result<Option<TargetCfg>, String> {
+    let doc: toml::Value =
+        toml::from_str(text).map_err(|e| format!("invalid TOML in cfg config: {e}"))?;
+    let Some(surface) = doc.get("rust-test-assertions") else {
+        return Ok(None);
+    };
+    let Some(section) = surface.get("target_cfg") else {
+        return Ok(None);
+    };
+    let target = section
+        .get("target")
+        .and_then(toml::Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if target.is_empty() {
+        return Err(
+            "[rust-test-assertions.target_cfg] requires target = \"<pinned target>\"".to_string(),
+        );
+    }
+    let Some(facts) = section.get("facts").and_then(toml::Value::as_array) else {
+        return Err(
+            "[rust-test-assertions.target_cfg] requires facts = [rustc --print cfg lines]"
+                .to_string(),
+        );
+    };
+    if facts.is_empty() {
+        return Err("[rust-test-assertions.target_cfg].facts must not be empty".to_string());
+    }
+    let mut parsed = Vec::with_capacity(facts.len());
+    for fact in facts {
+        let Some(fact) = fact.as_str() else {
+            return Err(
+                "[rust-test-assertions.target_cfg].facts entries must be strings".to_string(),
+            );
+        };
+        parsed.push(fact);
+    }
+    TargetCfg::from_rustc_cfg_facts(parsed)
+        .map(Some)
+        .map_err(|e| format!("invalid rust-test-assertions target cfg facts: {e}"))
 }
 
 const IGNORED_DIRS: &[&str] = &[
@@ -224,5 +297,53 @@ fn main() {
         if method == "shutdown" {
             break;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_cfg_config_is_optional() {
+        let cfg = target_cfg_from_config_text(
+            r#"
+[[plugins]]
+name = "rust-test-assertions-lift"
+"#,
+        )
+        .expect("config parses");
+
+        assert!(cfg.is_none());
+    }
+
+    #[test]
+    fn target_cfg_config_requires_pinned_target() {
+        let err = target_cfg_from_config_text(
+            r#"
+[rust-test-assertions.target_cfg]
+facts = ["unix"]
+"#,
+        )
+        .expect_err("target is required");
+
+        assert!(err.contains("requires target"));
+    }
+
+    #[test]
+    fn target_cfg_config_parses_explicit_rustc_facts() {
+        let cfg = target_cfg_from_config_text(
+            r#"
+[rust-test-assertions.target_cfg]
+target = "x86_64-apple-darwin"
+facts = [
+  "target_pointer_width=\"64\"",
+  "unix",
+]
+"#,
+        )
+        .expect("config parses");
+
+        assert!(cfg.is_some());
     }
 }

@@ -7,6 +7,8 @@
 // ContractDecls. The verifier's existing consistency pass checks those closed
 // invariants with raw SAT: SAT => consistent/discharged; UNSAT => refused.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::rc::Rc;
 
 use quote::ToTokens;
@@ -33,10 +35,91 @@ pub struct AdapterOutput {
     pub lifted: usize,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LiftOptions {
+    pub target_cfg: Option<TargetCfg>,
+}
+
+impl LiftOptions {
+    pub fn for_target_cfg(target_cfg: TargetCfg) -> Self {
+        Self {
+            target_cfg: Some(target_cfg),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TargetCfg {
+    facts: BTreeMap<String, BTreeSet<Option<String>>>,
+}
+
+impl TargetCfg {
+    pub fn from_rustc_cfg_facts<I, S>(facts: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut out = Self::default();
+        for raw in facts {
+            out.insert_rustc_cfg_fact(raw.as_ref())?;
+        }
+        Ok(out)
+    }
+
+    pub fn from_rustc_cfg_text(text: &str) -> Result<Self, String> {
+        Self::from_rustc_cfg_facts(text.lines())
+    }
+
+    fn insert_rustc_cfg_fact(&mut self, raw: &str) -> Result<(), String> {
+        let fact = raw.trim();
+        if fact.is_empty() {
+            return Ok(());
+        }
+        let (key, value) = if let Some(eq) = fact.find('=') {
+            let key = fact[..eq].trim();
+            let value = parse_rustc_cfg_quoted_value(fact[eq + 1..].trim())?;
+            (key, Some(value))
+        } else {
+            (fact, None)
+        };
+        if key.is_empty() {
+            return Err(format!("empty cfg key in `{fact}`"));
+        }
+        self.facts.entry(key.to_string()).or_default().insert(value);
+        Ok(())
+    }
+
+    fn contains_name(&self, name: &str) -> bool {
+        self.facts
+            .get(name)
+            .is_some_and(|values| values.contains(&None))
+    }
+
+    fn contains_key_value(&self, key: &str, value: &str) -> bool {
+        self.facts
+            .get(key)
+            .is_some_and(|values| values.contains(&Some(value.to_string())))
+    }
+}
+
+fn parse_rustc_cfg_quoted_value(raw: &str) -> Result<String, String> {
+    let lit = syn::parse_str::<syn::LitStr>(raw)
+        .map_err(|e| format!("cfg value must be a quoted Rust string `{raw}`: {e}"))?;
+    Ok(lit.value())
+}
+
 pub fn lift_file(file: &syn::File, source_path: &str) -> AdapterOutput {
+    lift_file_with_options(file, source_path, &LiftOptions::default())
+}
+
+pub fn lift_file_with_options(
+    file: &syn::File,
+    source_path: &str,
+    options: &LiftOptions,
+) -> AdapterOutput {
     let mut out = AdapterOutput::default();
     let mut modules = Vec::new();
-    walk_items(&file.items, source_path, &mut modules, &mut out);
+    walk_items(&file.items, source_path, &mut modules, options, &mut out);
     out
 }
 
@@ -44,15 +127,40 @@ fn walk_items(
     items: &[Item],
     source_path: &str,
     modules: &mut Vec<String>,
+    options: &LiftOptions,
     out: &mut AdapterOutput,
 ) {
     for item in items {
         match item {
-            Item::Fn(f) => visit_test_fn(f, source_path, modules, out),
+            Item::Fn(f) => visit_test_fn(f, source_path, modules, options, out),
             Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
+                    let module_name = scoped_test_name(source_path, modules, &m.ident.to_string());
+                    match cfg_eval_for_attrs(&m.attrs, options) {
+                        CfgEval::Active => {}
+                        CfgEval::Inactive(reason) => {
+                            out.warnings.push(LiftWarning {
+                                source_path: source_path.to_string(),
+                                item_name: module_name,
+                                reason: format!(
+                                    "rust test assertions: inactive cfg; skipped module: {reason}"
+                                ),
+                            });
+                            continue;
+                        }
+                        CfgEval::Ambiguous(reason) => {
+                            out.warnings.push(LiftWarning {
+                                source_path: source_path.to_string(),
+                                item_name: module_name,
+                                reason: format!(
+                                    "rust test assertions: ambiguous cfg; skipped module: {reason}"
+                                ),
+                            });
+                            continue;
+                        }
+                    }
                     modules.push(m.ident.to_string());
-                    walk_items(items, source_path, modules, out);
+                    walk_items(items, source_path, modules, options, out);
                     modules.pop();
                 }
             }
@@ -61,16 +169,48 @@ fn walk_items(
     }
 }
 
-fn visit_test_fn(f: &syn::ItemFn, source_path: &str, modules: &[String], out: &mut AdapterOutput) {
+fn visit_test_fn(
+    f: &syn::ItemFn,
+    source_path: &str,
+    modules: &[String],
+    options: &LiftOptions,
+    out: &mut AdapterOutput,
+) {
     if !has_test_attr(&f.attrs) {
         return;
     }
-    out.seen += 1;
 
     let test_name = scoped_test_name(source_path, modules, &f.sig.ident.to_string());
+    match cfg_eval_for_attrs(&f.attrs, options) {
+        CfgEval::Active => {}
+        CfgEval::Inactive(reason) => {
+            out.warnings.push(LiftWarning {
+                source_path: source_path.to_string(),
+                item_name: test_name,
+                reason: format!("rust test assertions: inactive cfg; skipped test: {reason}"),
+            });
+            return;
+        }
+        CfgEval::Ambiguous(reason) => {
+            out.warnings.push(LiftWarning {
+                source_path: source_path.to_string(),
+                item_name: test_name,
+                reason: format!("rust test assertions: ambiguous cfg; skipped test: {reason}"),
+            });
+            return;
+        }
+    }
+    out.seen += 1;
+
     let mut entries = Vec::new();
     let mut skipped = Vec::new();
-    collect_assertion_entries(&f.block.stmts, &test_name, &mut entries, &mut skipped);
+    collect_assertion_entries(
+        &f.block.stmts,
+        &test_name,
+        options,
+        &mut entries,
+        &mut skipped,
+    );
 
     if !skipped.is_empty() {
         out.warnings.push(LiftWarning {
@@ -151,27 +291,214 @@ fn group_assertions(
 fn collect_assertion_entries(
     stmts: &[Stmt],
     local_scope: &str,
+    options: &LiftOptions,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
     for stmt in stmts {
         match stmt {
-            Stmt::Macro(m) => collect_macro(
-                &m.mac.path,
-                m.mac.tokens.clone(),
-                local_scope,
-                entries,
-                skipped,
-            ),
-            Stmt::Expr(Expr::Macro(m), _) => collect_macro(
-                &m.mac.path,
-                m.mac.tokens.clone(),
-                local_scope,
-                entries,
-                skipped,
-            ),
+            Stmt::Macro(m) => match cfg_eval_for_attrs(&m.attrs, options) {
+                CfgEval::Active => collect_macro(
+                    &m.mac.path,
+                    m.mac.tokens.clone(),
+                    local_scope,
+                    entries,
+                    skipped,
+                ),
+                CfgEval::Inactive(reason) => {
+                    skipped.push(format!("inactive cfg on assertion; skipped: {reason}"));
+                }
+                CfgEval::Ambiguous(reason) => {
+                    skipped.push(format!("ambiguous cfg on assertion; skipped: {reason}"));
+                }
+            },
+            Stmt::Expr(Expr::Macro(m), _) => match cfg_eval_for_attrs(&m.attrs, options) {
+                CfgEval::Active => collect_macro(
+                    &m.mac.path,
+                    m.mac.tokens.clone(),
+                    local_scope,
+                    entries,
+                    skipped,
+                ),
+                CfgEval::Inactive(reason) => {
+                    skipped.push(format!("inactive cfg on assertion; skipped: {reason}"));
+                }
+                CfgEval::Ambiguous(reason) => {
+                    skipped.push(format!("ambiguous cfg on assertion; skipped: {reason}"));
+                }
+            },
             _ => {}
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CfgEval {
+    Active,
+    Inactive(String),
+    Ambiguous(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CfgPredicate {
+    Name(String),
+    KeyValue(String, String),
+    All(Vec<CfgPredicate>),
+    Any(Vec<CfgPredicate>),
+    Not(Box<CfgPredicate>),
+}
+
+impl Parse for CfgPredicate {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let path: syn::Path = input.parse()?;
+        let name = path_to_name(&path);
+        if input.peek(Token![=]) {
+            let _: Token![=] = input.parse()?;
+            let value: syn::LitStr = input.parse()?;
+            return Ok(CfgPredicate::KeyValue(name, value.value()));
+        }
+        if input.peek(syn::token::Paren) {
+            let content;
+            syn::parenthesized!(content in input);
+            let args = Punctuated::<CfgPredicate, Token![,]>::parse_terminated(&content)?
+                .into_iter()
+                .collect::<Vec<_>>();
+            return match name.as_str() {
+                "all" => Ok(CfgPredicate::All(args)),
+                "any" => Ok(CfgPredicate::Any(args)),
+                "not" if args.len() == 1 => Ok(CfgPredicate::Not(Box::new(
+                    args.into_iter().next().unwrap(),
+                ))),
+                "not" => Err(syn::Error::new_spanned(
+                    path,
+                    "cfg not(...) expects exactly one predicate",
+                )),
+                _ => Err(syn::Error::new_spanned(
+                    path,
+                    "unsupported cfg predicate function",
+                )),
+            };
+        }
+        Ok(CfgPredicate::Name(name))
+    }
+}
+
+impl fmt::Display for CfgPredicate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CfgPredicate::Name(name) => f.write_str(name),
+            CfgPredicate::KeyValue(key, value) => write!(f, "{key} = {value:?}"),
+            CfgPredicate::All(predicates) => write!(
+                f,
+                "all({})",
+                predicates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            CfgPredicate::Any(predicates) => write!(
+                f,
+                "any({})",
+                predicates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            CfgPredicate::Not(predicate) => write!(f, "not({predicate})"),
+        }
+    }
+}
+
+fn cfg_eval_for_attrs(attrs: &[syn::Attribute], options: &LiftOptions) -> CfgEval {
+    let mut saw_cfg = false;
+    for attr in attrs {
+        if !attr.path().is_ident("cfg") {
+            continue;
+        }
+        saw_cfg = true;
+        let predicate = match attr.parse_args::<CfgPredicate>() {
+            Ok(predicate) => predicate,
+            Err(e) => {
+                return CfgEval::Ambiguous(format!(
+                    "cannot parse cfg `{}`: {e}",
+                    attr.to_token_stream()
+                ));
+            }
+        };
+        match cfg_eval_predicate(&predicate, options.target_cfg.as_ref()) {
+            CfgEval::Active => {}
+            CfgEval::Inactive(reason) => return CfgEval::Inactive(reason),
+            CfgEval::Ambiguous(reason) => return CfgEval::Ambiguous(reason),
+        }
+    }
+    if saw_cfg {
+        CfgEval::Active
+    } else {
+        CfgEval::Active
+    }
+}
+
+fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) -> CfgEval {
+    let Some(target_cfg) = target_cfg else {
+        return CfgEval::Ambiguous(format!("no explicit target cfg facts for `{predicate}`"));
+    };
+    match predicate {
+        CfgPredicate::Name(name) => {
+            if target_cfg.contains_name(name) {
+                CfgEval::Active
+            } else {
+                CfgEval::Inactive(predicate.to_string())
+            }
+        }
+        CfgPredicate::KeyValue(key, value) => {
+            if target_cfg.contains_key_value(key, value) {
+                CfgEval::Active
+            } else {
+                CfgEval::Inactive(predicate.to_string())
+            }
+        }
+        CfgPredicate::All(predicates) => {
+            let mut ambiguous = None;
+            for child in predicates {
+                match cfg_eval_predicate(child, Some(target_cfg)) {
+                    CfgEval::Active => {}
+                    CfgEval::Inactive(reason) => return CfgEval::Inactive(reason),
+                    CfgEval::Ambiguous(reason) => {
+                        ambiguous.get_or_insert(reason);
+                    }
+                }
+            }
+            if let Some(reason) = ambiguous {
+                CfgEval::Ambiguous(reason)
+            } else {
+                CfgEval::Active
+            }
+        }
+        CfgPredicate::Any(predicates) => {
+            let mut inactive = Vec::new();
+            let mut ambiguous = None;
+            for child in predicates {
+                match cfg_eval_predicate(child, Some(target_cfg)) {
+                    CfgEval::Active => return CfgEval::Active,
+                    CfgEval::Inactive(reason) => inactive.push(reason),
+                    CfgEval::Ambiguous(reason) => {
+                        ambiguous.get_or_insert(reason);
+                    }
+                }
+            }
+            if let Some(reason) = ambiguous {
+                CfgEval::Ambiguous(reason)
+            } else {
+                CfgEval::Inactive(format!("any inactive: {}", inactive.join("; ")))
+            }
+        }
+        CfgPredicate::Not(child) => match cfg_eval_predicate(child, Some(target_cfg)) {
+            CfgEval::Active => CfgEval::Inactive(predicate.to_string()),
+            CfgEval::Inactive(_) => CfgEval::Active,
+            CfgEval::Ambiguous(reason) => CfgEval::Ambiguous(reason),
+        },
     }
 }
 
@@ -636,9 +963,7 @@ fn byte_is_ascii_formula(byte: Rc<Term>) -> Rc<Formula> {
     and_(vec![gte(byte.clone(), num(0)), lte(byte, num(127))])
 }
 
-fn literal_iterator_elements(
-    expr: &Expr,
-) -> Result<Option<(IteratorKind, Vec<Rc<Term>>)>, String> {
+fn literal_iterator_elements(expr: &Expr) -> Result<Option<(IteratorKind, Vec<Rc<Term>>)>, String> {
     match expr {
         Expr::MethodCall(call) if call.args.is_empty() && call.method == "chars" => {
             let Some(value) = literal_string_value(&call.receiver) else {

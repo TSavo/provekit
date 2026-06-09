@@ -1,5 +1,5 @@
 use sugar_ir_symbolic::{ConstValue, Formula, Term};
-use sugar_lift_rust_tests::lift_file;
+use sugar_lift_rust_tests::{lift_file, lift_file_with_options, LiftOptions, TargetCfg};
 
 fn parse(src: &str) -> syn::File {
     syn::parse_file(src).expect("fixture parses")
@@ -224,14 +224,10 @@ fn assert_string_len_cmp_atom(
 fn formula_contains_atomic_name(formula: &Formula, expected_name: &str) -> bool {
     match formula {
         Formula::Atomic { name, .. } => name == expected_name,
-        Formula::Connective { operands, .. } => {
-            operands
-                .iter()
-                .any(|operand| formula_contains_atomic_name(operand, expected_name))
-        }
-        Formula::Quantifier { body, .. } => {
-            formula_contains_atomic_name(body, expected_name)
-        }
+        Formula::Connective { operands, .. } => operands
+            .iter()
+            .any(|operand| formula_contains_atomic_name(operand, expected_name)),
+        Formula::Quantifier { body, .. } => formula_contains_atomic_name(body, expected_name),
         _ => false,
     }
 }
@@ -419,6 +415,160 @@ fn generic_identity_is_distinct() {
     let second = inv_operands(&out.decls[1]);
     assert_eq!(second.len(), 1);
     assert_int_zero_arg_call_eq_atom(&second[0], "call:size_of::<u16>", 2);
+}
+
+#[test]
+fn cfg_gated_test_functions_lift_only_when_active_for_explicit_target_cfg() {
+    let src = r#"
+fn size_of<T>() -> usize { 1 }
+
+#[test]
+#[cfg(target_pointer_width = "32")]
+fn size_of_32() {
+    assert_eq!(size_of::<usize>(), 4);
+}
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn size_of_64() {
+    assert_eq!(size_of::<usize>(), 8);
+}
+
+#[test]
+#[cfg(all(unix, target_pointer_width = "64"))]
+fn size_of_unix_64() {
+    assert_eq!(size_of::<*const usize>(), 8);
+}
+
+#[test]
+#[cfg(any(windows, target_pointer_width = "32"))]
+fn size_of_inactive_any() {
+    assert_eq!(size_of::<*const usize>(), 4);
+}
+"#;
+    let cfg = TargetCfg::from_rustc_cfg_facts([
+        "unix",
+        "target_pointer_width=\"64\"",
+        "target_arch=\"x86_64\"",
+    ])
+    .expect("target cfg parses");
+    let out = lift_file_with_options(
+        &parse(src),
+        "tests/mem.rs",
+        &LiftOptions::for_target_cfg(cfg),
+    );
+
+    assert_eq!(out.seen, 2);
+    assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
+    let names = out
+        .decls
+        .iter()
+        .map(|decl| decl.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "size_of::<usize>#euf#c:callresult_size_of___usize__a0()::assertion",
+            "size_of::<* const usize>#euf#c:callresult_size_of_____const_usize__a0()::assertion",
+        ]
+    );
+    assert_int_zero_arg_call_eq_atom(&inv_operands(&out.decls[0])[0], "call:size_of::<usize>", 8);
+    assert_int_zero_arg_call_eq_atom(
+        &inv_operands(&out.decls[1])[0],
+        "call:size_of::<* const usize>",
+        8,
+    );
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("inactive cfg") && w.item_name.ends_with("size_of_32")),
+        "inactive cfg residual must be named: {:?}",
+        out.warnings
+    );
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("inactive cfg")
+                && w.item_name.ends_with("size_of_inactive_any")),
+        "inactive any cfg residual must be named: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn cfg_gated_assertions_are_skipped_without_explicit_target_cfg() {
+    let src = r#"
+fn size_of<T>() -> usize { 1 }
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn size_of_64() {
+    assert_eq!(size_of::<usize>(), 8);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/mem.rs");
+
+    assert_eq!(out.seen, 0);
+    assert_eq!(out.lifted, 0);
+    assert!(
+        out.decls.is_empty(),
+        "cfg-gated claim requires explicit target cfg"
+    );
+    assert_eq!(out.warnings.len(), 1);
+    assert!(out.warnings[0].reason.contains("ambiguous cfg"));
+    assert!(out.warnings[0].reason.contains("target_pointer_width"));
+}
+
+#[test]
+fn cfg_gated_statement_assertions_lift_only_active_assertions() {
+    let src = r#"
+fn value() -> i32 { 1 }
+
+#[test]
+fn cfg_statements() {
+    #[cfg(target_pointer_width = "32")]
+    assert_eq!(value(), 4);
+
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(value(), 8);
+
+    #[cfg(all(unix, not(target_pointer_width = "32")))]
+    assert_eq!(value(), 9);
+
+    #[cfg(target_feature = "definitely-not-a-real-feature")]
+    assert_eq!(value(), 99);
+}
+"#;
+    let cfg = TargetCfg::from_rustc_cfg_facts(["unix", "target_pointer_width=\"64\""])
+        .expect("target cfg parses");
+    let out = lift_file_with_options(
+        &parse(src),
+        "tests/cfg.rs",
+        &LiftOptions::for_target_cfg(cfg),
+    );
+
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 2);
+    assert_eq_atom(&operands[0], 8);
+    assert_eq_atom(&operands[1], 9);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("inactive cfg") && w.reason.contains("32")),
+        "inactive statement cfg residual must be named: {:?}",
+        out.warnings
+    );
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("inactive cfg")
+                && w.reason.contains("definitely-not-a-real-feature")),
+        "inactive target_feature statement cfg residual must be named: {:?}",
+        out.warnings
+    );
 }
 
 #[test]
@@ -810,11 +960,31 @@ fn char_ascii_classes() {
         other => panic!("expected negated ascii alphabetic atom, got {other:?}"),
     }
     assert_string_predicate_atom(&inv_operands(&out.decls[2])[0], "str.is_ascii", &["a"]);
-    assert_string_predicate_atom(&inv_operands(&out.decls[3])[0], "str.is_ascii_digit", &["0"]);
-    assert_string_predicate_atom(&inv_operands(&out.decls[4])[0], "str.is_ascii_hexdigit", &["f"]);
-    assert_string_predicate_atom(&inv_operands(&out.decls[5])[0], "str.is_ascii_lowercase", &["z"]);
-    assert_string_predicate_atom(&inv_operands(&out.decls[6])[0], "str.is_ascii_uppercase", &["Z"]);
-    assert_string_predicate_atom(&inv_operands(&out.decls[7])[0], "str.is_ascii_whitespace", &[" "]);
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[3])[0],
+        "str.is_ascii_digit",
+        &["0"],
+    );
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[4])[0],
+        "str.is_ascii_hexdigit",
+        &["f"],
+    );
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[5])[0],
+        "str.is_ascii_lowercase",
+        &["z"],
+    );
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[6])[0],
+        "str.is_ascii_uppercase",
+        &["Z"],
+    );
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[7])[0],
+        "str.is_ascii_whitespace",
+        &[" "],
+    );
 }
 
 #[test]
@@ -839,8 +1009,16 @@ fn test_is_ascii() {
     let out = lift_file(&parse(src), "coretests/tests/ascii.rs");
     assert_eq!(out.seen, 1);
     assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
-    assert!(out.warnings.is_empty(), "unexpected lift warnings: {:?}", out.warnings);
-    assert_eq!(out.decls.len(), 3, "expected two direct rows and one iterator/byte row");
+    assert!(
+        out.warnings.is_empty(),
+        "unexpected lift warnings: {:?}",
+        out.warnings
+    );
+    assert_eq!(
+        out.decls.len(),
+        3,
+        "expected two direct rows and one iterator/byte row"
+    );
     let named_ascii = out
         .decls
         .iter()

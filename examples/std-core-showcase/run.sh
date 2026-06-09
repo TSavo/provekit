@@ -6,6 +6,7 @@
 #   - The lifter sees a selected sound scalar direct call-result slice:
 #       * tests/cmp.rs integer call-result equality rows,
 #       * tests/mem.rs generic type-arg-keyed size_of/align_of rows,
+#         including active pinned-target pointer-width cfg rows,
 #       * tests/time.rs finite decimal float method-call equality rows,
 #       * tests/fmt/mod.rs exact string method-call equality rows.
 #       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows.
@@ -17,7 +18,7 @@
 # Explicitly NOT claimed:
 #   - assertion macros requiring expansion,
 #   - float refinements such as NaN/infinity/ordered comparisons,
-#   - chars, cfg-sensitive generic width tests, stateful/reassigned receiver
+#   - chars, inactive or ambiguous cfg rows, stateful/reassigned receiver
 #     method chains, and complex expression terms.
 set -euo pipefail
 
@@ -31,10 +32,11 @@ WORK="${STD_CORE_SHOWCASE_WORK:-$HERE/.work}"
 PROJECT="$WORK/proof-scope"
 WITNESS_TARGET="$WORK/coretests-target"
 STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
+STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, and direct call-result comparison FOL rows from time.rs."
-echo "SCOPE: excluded gaps = macros requiring expansion, NaN/infinity/ordered float refinements, chars, cfg-sensitive generic width tests, stateful/reassigned receiver method chains, complex terms."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, and direct call-result comparison FOL rows from time.rs."
+echo "SCOPE: excluded gaps = macros requiring expansion, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, complex terms."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
 ensure_rust_src() {
@@ -71,13 +73,35 @@ for bin in "$SUGAR" "$ASSERT_RPC"; do
 done
 
 STDROOT="$(ensure_rust_src)"
+if [ -z "$STD_CORE_RUST_TARGET" ]; then
+  STD_CORE_RUST_TARGET="$(rustc "+$STD_CORE_RUST_TOOLCHAIN" -vV | awk '/^host:/ {print $2}')"
+fi
 RUSTC_VERSION="$(rustc "+$STD_CORE_RUST_TOOLCHAIN" --version)"
 RUSTC_VERBOSE="$(rustc "+$STD_CORE_RUST_TOOLCHAIN" --version --verbose | tr '\n' ';')"
 echo "rust-src: $STDROOT"
 echo "toolchain: $RUSTC_VERSION"
+echo "target: $STD_CORE_RUST_TARGET"
 
 rm -rf "$WORK"
 mkdir -p "$PROJECT/tests/fmt" "$PROJECT/.sugar/lift/rust-test-assertions"
+TARGET_CFG_FACTS_FILE="$WORK/target-cfg.txt"
+rustc "+$STD_CORE_RUST_TOOLCHAIN" --test --target "$STD_CORE_RUST_TARGET" --print cfg \
+  | sort > "$TARGET_CFG_FACTS_FILE"
+TARGET_POINTER_WIDTH="$(awk -F'"' '/^target_pointer_width=/ {print $2; exit}' "$TARGET_CFG_FACTS_FILE")"
+if [ -z "$TARGET_POINTER_WIDTH" ]; then
+  echo "pinned target cfg facts do not include target_pointer_width" >&2
+  exit 1
+fi
+case "$TARGET_POINTER_WIDTH" in
+  16|32|64) ;;
+  *)
+    echo "unsupported target_pointer_width for std-core mem cfg showcase: $TARGET_POINTER_WIDTH" >&2
+    exit 1
+    ;;
+esac
+TARGET_POINTER_BYTES=$((TARGET_POINTER_WIDTH / 8))
+echo "target-cfg: target_pointer_width=$TARGET_POINTER_WIDTH pointer_bytes=$TARGET_POINTER_BYTES"
+echo "target-cfg: facts=$(wc -l < "$TARGET_CFG_FACTS_FILE" | tr -d ' ')"
 ln -s "$STDROOT/coretests/tests/cmp.rs" "$PROJECT/tests/cmp.rs"
 ln -s "$STDROOT/coretests/tests/time.rs" "$PROJECT/tests/time.rs"
 ln -s "$STDROOT/coretests/tests/fmt/mod.rs" "$PROJECT/tests/fmt/mod.rs"
@@ -114,7 +138,19 @@ chunks = [
     "",
     *extract("size_of_basic"),
     "",
+    *extract("size_of_16"),
+    "",
+    *extract("size_of_32"),
+    "",
+    *extract("size_of_64"),
+    "",
     *extract("align_of_basic"),
+    "",
+    *extract("align_of_16"),
+    "",
+    *extract("align_of_32"),
+    "",
+    *extract("align_of_64"),
     "",
 ]
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
@@ -216,6 +252,27 @@ library = "rust-std-coretests-scalar"
 version = "$RUSTC_VERSION"
 TOML
 
+python3 - "$PROJECT/.sugar/config.toml" "$STD_CORE_RUST_TARGET" "$TARGET_CFG_FACTS_FILE" <<'PY'
+import json
+import sys
+
+config_path, target, facts_path = sys.argv[1:]
+facts = [
+    line.strip()
+    for line in open(facts_path, encoding="utf-8")
+    if line.strip()
+]
+if not facts:
+    raise SystemExit("target cfg facts file is empty")
+with open(config_path, "a", encoding="utf-8") as out:
+    out.write("\n[rust-test-assertions.target_cfg]\n")
+    out.write(f"target = {json.dumps(target)}\n")
+    out.write("facts = [\n")
+    for fact in facts:
+        out.write(f"  {json.dumps(fact)},\n")
+    out.write("]\n")
+PY
+
 cat > "$PROJECT/.sugar/lift/rust-test-assertions/manifest.toml" <<TOML
 name = "rust-test-assertions-lift"
 version = "0.1.0"
@@ -251,12 +308,14 @@ echo "proof: $(basename "$proof_path")"
 echo "== verify std/core selected source slice =="
 (cd "$PROJECT" && "$SUGAR" verify --project . --json) > "$PROJECT/.verify.json" 2>&1 || true
 
-python3 - "$PROJECT/.verify.json" <<'PY'
+python3 - "$PROJECT/.verify.json" "$TARGET_POINTER_WIDTH" "$TARGET_POINTER_BYTES" <<'PY'
 import json
 import re
 import sys
 
 path = sys.argv[1]
+target_pointer_width = sys.argv[2]
+target_pointer_bytes = sys.argv[3]
 text = open(path, encoding="utf-8").read()
 text = re.sub(r"\x1b\[[0-9;]*m", "", text)
 decoder = json.JSONDecoder()
@@ -283,8 +342,12 @@ needles = [
     "cmp::max_by#euf#c:callresult_cmp__max_by_a3(i:1,i:-1,v:f)::assertion",
     "size_of::<u8>#euf#c:callresult_size_of___u8__a0()::assertion",
     "size_of::<u16>#euf#c:callresult_size_of___u16__a0()::assertion",
+    "size_of::<usize>#euf#c:callresult_size_of___usize__a0()::assertion",
+    "size_of::<* const usize>#euf#c:callresult_size_of_____const_usize__a0()::assertion",
     "align_of::<u8>#euf#c:callresult_align_of___u8__a0()::assertion",
     "align_of::<u16>#euf#c:callresult_align_of___u16__a0()::assertion",
+    "align_of::<usize>#euf#c:callresult_align_of___usize__a0()::assertion",
+    "align_of::<* const usize>#euf#c:callresult_align_of_____const_usize__a0()::assertion",
     "method:to_string#euf#c:callresult_method_to_string_a1(v:tests/fmt/mod.rs::test_lifetime::a)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::NANOSECOND,v:Duration::MAX)::assertion",
@@ -306,8 +369,8 @@ missing = [
 if not euf_rows:
     print("no #euf# consistency rows found", file=sys.stderr)
     raise SystemExit(1)
-if len(euf_rows) < 100:
-    print(f"expected at least 100 claimed #euf# rows after comparison-FOL lift, got {len(euf_rows)}", file=sys.stderr)
+if len(euf_rows) < 104:
+    print(f"expected at least 104 claimed #euf# rows after cfg-sensitive mem lift, got {len(euf_rows)}", file=sys.stderr)
     raise SystemExit(1)
 if missing:
     print("missing required claimed rows:", file=sys.stderr)
@@ -321,6 +384,11 @@ if failed:
     raise SystemExit(1)
 
 print(f"claimed-euf-rows={len(euf_rows)} discharged={len(euf_rows)} failed=0")
+print(
+    f"cfg-active-pointer-width={target_pointer_width} "
+    f"cfg-active-pointer-bytes={target_pointer_bytes} "
+    "cfg-row-delta=4"
+)
 for row in euf_rows:
     print(f"row: {row.get('property')} status={row.get('status')}")
 PY
@@ -329,55 +397,65 @@ echo "== witness: rerun exact std/core vendor tests =="
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests cmp::test_ord_min_max_by -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests cmp::test_ord_min_max_by -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests cmp::test_ord_min_max_by_key -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests cmp::test_ord_min_max_by_key -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests mem::size_of_basic -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests mem::size_of_basic -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests mem::align_of_basic -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests mem::size_of_"$TARGET_POINTER_WIDTH" -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests fmt::test_lifetime -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests mem::align_of_basic -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests time::div_duration_f32 -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests mem::align_of_"$TARGET_POINTER_WIDTH" -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests time::div_duration_f64 -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests fmt::test_lifetime -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests alloc::layout_errors -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests time::div_duration_f32 -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests ops::test_range_contains -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests time::div_duration_f64 -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
-    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests ops::test_range_to_contains -- --exact --nocapture
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests alloc::layout_errors -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests ops::test_range_contains -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests ops::test_range_to_contains -- --exact --nocapture
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, pure method-chain predicates from alloc.rs/ops.rs, and direct comparison FOL rows from time.rs discharged; exact vendor tests reran."
-echo "not-claimed: full std/coretests; macros/NaN-infinity-ordered-float-refinements/chars/cfg-sensitive generic width tests/stateful-reassigned-receiver method chains/complex terms remain gap census items."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, pure method-chain predicates from alloc.rs/ops.rs, and direct comparison FOL rows from time.rs discharged; exact vendor tests reran."
+echo "not-claimed: full std/coretests; macros/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

@@ -1553,6 +1553,8 @@ dependencies = [
  "sugar-ir-symbolic",
  "sugar-ir-types",
  "sugar-proof-envelope",
+ "sugar-walk",
+ "syn",
  "tempfile",
  "walkdir",
 ]
@@ -1585,6 +1587,7 @@ dependencies = [
  "serde_json",
  "sugar-ir-symbolic",
  "syn",
+ "toml",
  "walkdir",
 ]
 
