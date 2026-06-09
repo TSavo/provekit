@@ -2572,6 +2572,7 @@ If this kit depends on others, mint them and place their .proof outputs here."
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
@@ -2656,10 +2657,18 @@ mod tests {
 
     /// Create a dummy executable file.
     fn make_executable(path: &Path) {
+        write_executable_file(path, "#!/bin/sh\n");
+    }
+
+    fn write_executable_file(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();
         }
-        fs::write(path, b"#!/bin/sh\n").unwrap();
+        {
+            let mut file = fs::File::create(path).unwrap();
+            file.write_all(body.as_bytes()).unwrap();
+            file.sync_all().unwrap();
+        }
         let mut perms = fs::metadata(path).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(path, perms).unwrap();
@@ -2683,14 +2692,10 @@ mod tests {
                 }
             }
         });
-        fs::write(
+        write_executable_file(
             path,
-            format!("#!/bin/sh\nread _line\nprintf '%s\\n' '{}'\n", response),
-        )
-        .unwrap();
-        let mut perms = fs::metadata(path).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(path, perms).unwrap();
+            &format!("#!/bin/sh\nread _line\nprintf '%s\\n' '{}'\n", response),
+        );
     }
 
     fn valid_panic_freedom_declaration(surface: &str) -> Value {
@@ -2815,17 +2820,13 @@ mod tests {
             }
         })
         .to_string();
-        fs::write(
+        write_executable_file(
             path,
-            format!(
+            &format!(
                 "#!/bin/sh\nwhile IFS= read -r line; do\ncase \"$line\" in\n  *initialize*) printf '%s\\n' '{}';;\n  *sugar.plugin.kit_declaration*) printf '%s\\n' '{}';;\n  *shutdown*) exit 0;;\n  *) printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":99,\"error\":{{\"code\":-32601,\"message\":\"unknown method\"}}}}';;\nesac\ndone\n",
                 initialize_response, declaration_response
             ),
-        )
-        .unwrap();
-        let mut perms = fs::metadata(path).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(path, perms).unwrap();
+        );
     }
 
     fn write_declaration_kit(kit: &Path, plugin_name: &str) {

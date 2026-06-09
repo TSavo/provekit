@@ -8,7 +8,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use serde_json::{json, Value};
 use sugar_claim_envelope::{KitDeclaration, KitDeclarationError, KIT_DECLARATION_RPC_METHOD};
@@ -55,21 +55,7 @@ pub fn load_kit_declaration_with_command(
         return Err(KitDeclarationLoadError::EmptyCommand);
     }
 
-    let mut cmd = Command::new(&command[0]);
-    cmd.args(&command[1..]);
-    if let Some(working_dir) = working_dir {
-        cmd.current_dir(working_dir);
-    }
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|source| KitDeclarationLoadError::Spawn {
-            command: command.to_vec(),
-            source,
-        })?;
+    let mut child = spawn_kit_declaration_command(command, working_dir)?;
 
     let mut stdin = child
         .stdin
@@ -126,6 +112,46 @@ pub fn load_kit_declaration_with_command(
         serde_json::from_value(result).map_err(KitDeclarationLoadError::Shape)?;
     declaration.validate()?;
     Ok(declaration)
+}
+
+fn spawn_kit_declaration_command(
+    command: &[String],
+    working_dir: Option<&Path>,
+) -> Result<Child, KitDeclarationLoadError> {
+    const ETXTBSY: i32 = 26;
+    const ATTEMPTS: usize = 5;
+    const BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
+
+    let mut last_etxtbsy = None;
+    for attempt in 0..ATTEMPTS {
+        let mut cmd = Command::new(&command[0]);
+        cmd.args(&command[1..]);
+        if let Some(working_dir) = working_dir {
+            cmd.current_dir(working_dir);
+        }
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+
+        match cmd.spawn() {
+            Ok(child) => return Ok(child),
+            Err(source) if source.raw_os_error() == Some(ETXTBSY) && attempt + 1 < ATTEMPTS => {
+                last_etxtbsy = Some(source);
+                std::thread::sleep(BACKOFF);
+            }
+            Err(source) => {
+                return Err(KitDeclarationLoadError::Spawn {
+                    command: command.to_vec(),
+                    source,
+                });
+            }
+        }
+    }
+
+    Err(KitDeclarationLoadError::Spawn {
+        command: command.to_vec(),
+        source: last_etxtbsy.expect("ETXTBSY retry loop records the last error"),
+    })
 }
 
 fn read_response<R: BufRead>(
