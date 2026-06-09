@@ -98,6 +98,12 @@ the blake3 of the resolved bytes against the pinned `witness_cid`. A body that d
 recompute is a *broken oracle*, refused loudly. **Trust the recomputation, never the resolver.**
 That is correctness #4 made trustless — the sharpest form of invariant 12.
 
+What the witness body literally *is*: the mundane attestation the world already calls proof — a
+JUnit PASS log, a vitest coverage report, a signature on a page. On its face it is a squiggle:
+trivially faked, worth nothing. It becomes worth something only because rust recomputes its CID.
+Everyone else ships the squiggle and says *trust me* (the green badge, the coverage percent, the
+signature); we ship the squiggle **plus the recomputation that makes faking it pointless**.
+
 Coherence (correctness #2) is **not** a lifter either — it is the verifier's z3-SAT over the
 conjoined contract. Lifters produce claims / obligations / edges / witness-bytes; the rust CLI
 verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust disposes.
