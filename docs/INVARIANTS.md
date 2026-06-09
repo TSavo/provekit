@@ -48,6 +48,30 @@ These were re-derived many times before being written down; check work against t
    solver discharges. Test: the IR for a value is the canonical shape *any* lifter would emit,
    so it federates by CID.
 
+## IVb. The lifter roles
+
+Every lifter is per-language/per-platform, speaks RPC to the CLI, and emits language-agnostic
+FOL ProofIR (invariant 8). Their roles are distinct and map onto the four parts of correctness:
+
+- **Contract lifter** — reads the vendor's own tests/source and lifts the *claims* into contract
+  rows (the `#euf#` atoms, pre/post). The spec originates here (invariant 7). Correctness #1
+  (a spec exists). [`sugar-lift-rust-tests`, `sugar-lift-java-tests`, `sugar-lift-python-source`]
+- **Implication lifter** — lifts the seam obligations: the producer's post conjoined as
+  antecedent against the consumer's pre (`post |= pre`), at every call / `.await` / channel /
+  lock boundary. Correctness #3 (the program satisfies the spec). [the handshake /
+  `build_implication_obligation` / the effect edges]
+- **Bridge lifter** — lifts a cross-language / FFI call edge into a `CallEdgeDecl`
+  (`sourceContractCid` -> `targetSymbol`/`targetContractCid`), keying the caller's callsite to
+  the callee's contract by symbol-CID so the conjoiner binds them across `.proof`s. Makes
+  cross-language correctness work — the symbol-CID is the identity, no hub (invariant 10). [the
+  Panama lifter, `cpython_ctypes_resolver`, the go cgo resolver]
+- **Witness lifter/runner** — reruns the real tests, content-addresses the outcomes, and
+  discharges only when the suite re-runs cleanly. Correctness #4 (a witness demonstrates it).
+  [`java_junit_witness_rpc`, the pytest witness]
+
+Coherence (correctness #2) is **not** a lifter — it is the verifier's z3-SAT over the conjoined
+contract. Lifters produce claims/obligations/edges/witnesses; the solver decides (invariant 6).
+
 ## V. The logic
 
 9. **ProofIR is first-order logic.** Atoms plus and/or/not/implies/forall/exists.
@@ -86,6 +110,29 @@ These were re-derived many times before being written down; check work against t
     automatically, across languages and across time. Federation and cross-language binding are
     byte-identical CIDs plus the bridge memento (post |= pre at the call edge) — never a
     concept layer, a naming registry, or an identity hub.
+
+10b. **Cross-FFI works because every lifter shares one canonical form — not a hub.** For a
+    caller's bridge edge to bind a callee's contract row across languages, both lifters must
+    produce *byte-identical* canonical output for the same logical content:
+    - the `#euf#` subject key (callee + canonical arg-signature) — same call -> same key;
+    - the canonical sort/value encoding (erase to the same `Int`/`Real`; `4` is `i:4` from any
+      lifter; a float value is the same `Real` everywhere);
+    - the canonical FOL/JCS bytes of the atom — same claim -> same bytes -> same CID;
+    - the symbol-resolution convention (`<kit>:<symbol>`) — the bridge's `targetSymbol` names
+      the callee exactly as the contract lifter keyed its row.
+    This is enforced, not hoped: every kit must pass the cross-language conformance fixtures —
+    *same canonical formula in, same bytes out*; a kit that diverges fails conformance. The
+    shared canonicalization is what lets the CID *be* the identity across the FFI boundary —
+    the bridge binds caller<->callee by that CID, with no concept layer between them.
+
+10c. **The witness lifter is the runtime half of cross-FFI.** The static bind (10b) says the
+    contract *crosses* the boundary; the witness says it actually *executes and behaves*. For a
+    Java caller into a Rust callee, the witness lifter reruns the real cross-language execution
+    — the Java program genuinely invoking the Rust function through the FFI — and
+    content-addresses the outcome into a reproducible witness package, re-verified by CID +
+    recompute, never a trusted run (invariant 12). Both halves are required: the shared
+    canonical CID binds the contract statically; the content-addressed reproducible witness
+    demonstrates the execution. A green run nobody can recompute is not a witness.
 
 ## VII. Soundness
 
