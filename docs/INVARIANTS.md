@@ -169,6 +169,15 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     byte-identical CIDs plus the bridge memento (post |= pre at the call edge) — never a
     concept layer, a naming registry, or an identity hub.
 
+    Composition is lawful *by construction*, not by luck. Because the CID is a deterministic
+    function of canonical structure, regrouping cannot change it (associativity), and the no-op
+    seam leaves it fixed (identity). Those are the monad laws, and they are forced, not observed.
+    That lawfulness *is* federation: the same logical composition yields the same CID no matter
+    who assembled it or in what order, which is exactly why no hub is needed to reconcile two
+    parties. Remove the laws and federation collapses into needing a hub. "Composition is
+    content-addressed and canonical" and "composition satisfies the monad laws" are one statement
+    written twice.
+
 10b. **Cross-FFI works because every lifter shares one canonical form — not a hub.** For a
     caller's bridge edge to bind a callee's contract row across languages, both lifters must
     produce *byte-identical* canonical output for the same logical content:
