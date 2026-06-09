@@ -168,6 +168,23 @@ public final class Chain {
 }
 "#;
 
+const OBJECT_BODYGUARD_CHAIN: &str = r#"
+package demo;
+
+public final class ObjectGuard {
+    static final class Fool {
+        Fool(int value) {}
+    }
+
+    static int distinct(Fool lhs, Fool rhs) {
+        if (lhs == rhs) {
+            throw new IllegalArgumentException("same");
+        }
+        return 1;
+    }
+}
+"#;
+
 fn find_contract<'a>(ir: &'a [serde_json::Value], name: &str) -> &'a serde_json::Value {
     ir.iter()
         .find(|entry| entry["kind"] == "function-contract" && entry["name"] == name)
@@ -426,6 +443,36 @@ fn java_bodyguard_precondition_formula_is_byte_identical_to_rust() {
     assert_eq!(
         java_pre_cid, rust_pre_cid,
         "same formula bytes must produce the same CID"
+    );
+}
+
+#[test]
+fn java_bodyguard_object_reference_eq_lifts_as_dispatch_precondition() {
+    let out = lift_java_jsr380_contracts_from_source(
+        OBJECT_BODYGUARD_CHAIN,
+        "src/main/java/demo/ObjectGuard.java",
+    )
+    .expect("lift object bodyguard contracts");
+    assert!(out.diagnostics.is_empty(), "{:#?}", out.diagnostics);
+    let contract = find_contract(&out.ir, "distinct");
+    assert_eq!(
+        contract["source"]["contractSource"],
+        "java-source-bodyguard-precondition"
+    );
+    let pre = &contract["pre"];
+    assert_eq!(pre["name"], "=");
+    assert_eq!(pre["args"][0]["name"], "call:eq:Fool");
+    assert_eq!(
+        pre["args"][0]["args"][0],
+        json!({"kind": "var", "name": "lhs"})
+    );
+    assert_eq!(
+        pre["args"][0]["args"][1],
+        json!({"kind": "var", "name": "rhs"})
+    );
+    assert_eq!(
+        pre["args"][1],
+        json!({"kind": "const", "sort": {"kind": "primitive", "name": "Bool"}, "value": false})
     );
 }
 

@@ -10,7 +10,9 @@ use std::rc::Rc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use sugar_ir_symbolic::{and_, eq, make_var, num, str_const, ContractDecl, Formula, Term};
+use sugar_ir_symbolic::{
+    and_, eq, make_var, ne, num, str_const, ConstValue, ContractDecl, Formula, Sort, Term,
+};
 use sugar_ir_symbolic::{
     atomic_, serialize::marshal_declarations, EvidenceCertificate, EvidenceTerm,
 };
@@ -1208,11 +1210,11 @@ fn assertion_from_statement(
                 translate_term_in_scope(&args[0], name_scope).map_err(|e| format!("{name}: {e}"))?;
             let actual =
                 translate_term_in_scope(&args[1], name_scope).map_err(|e| format!("{name}: {e}"))?;
-            let contract_name = callsite_assertion_name(actual.as_ref());
-            Ok(Some(AssertionEntry {
-                name: contract_name,
-                atom: eq(actual, expected),
-            }))
+            Ok(Some(assertion_entry_from_equality(
+                expected,
+                actual,
+                &equality_mode_for_assertion(&method),
+            )))
         }
         AssertCategory::Truth => {
             let Some(first) = args.first() else {
@@ -1240,6 +1242,167 @@ fn callsite_assertion_name(actual: &Term) -> Option<String> {
         "{callee}#euf#{}::assertion",
         canonical_callsite_sig(actual)
     ))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EqualityDispatchMode {
+    ForceFol,
+    Object { type_key: Option<String> },
+    Unknown,
+}
+
+fn assertion_entry_from_equality(
+    expected: Rc<Term>,
+    actual: Rc<Term>,
+    mode: &EqualityDispatchMode,
+) -> AssertionEntry {
+    if let Some(atom) = equality_dispatch_atom(expected.clone(), actual.clone(), mode, true) {
+        return AssertionEntry { name: None, atom };
+    }
+    let contract_name = callsite_assertion_name(actual.as_ref());
+    AssertionEntry {
+        name: contract_name,
+        atom: eq(actual, expected),
+    }
+}
+
+fn equality_mode_for_assertion(method: &LearnedAssert) -> EqualityDispatchMode {
+    let Some(first) = method.params.first().map(|param| param.ty.as_str()) else {
+        return EqualityDispatchMode::Unknown;
+    };
+    let Some(second) = method.params.get(1).map(|param| param.ty.as_str()) else {
+        return EqualityDispatchMode::Unknown;
+    };
+    if java_type_has_exact_fol_equality(first) && java_type_has_exact_fol_equality(second) {
+        return EqualityDispatchMode::ForceFol;
+    }
+    EqualityDispatchMode::Object {
+        type_key: java_operator_type_key(first).or_else(|| java_operator_type_key(second)),
+    }
+}
+
+fn java_type_has_exact_fol_equality(ty: &str) -> bool {
+    is_java_primitive_scalar_type(ty) || is_java_string_type(ty)
+}
+
+fn is_java_primitive_scalar_type(ty: &str) -> bool {
+    matches!(
+        ty.trim(),
+        "byte" | "short" | "int" | "long" | "float" | "double" | "char" | "boolean"
+    )
+}
+
+fn is_java_string_type(ty: &str) -> bool {
+    matches!(ty.trim(), "String" | "java.lang.String")
+}
+
+fn java_operator_type_key(ty: &str) -> Option<String> {
+    if java_type_has_exact_fol_equality(ty) {
+        return None;
+    }
+    let key = java_type_key(ty)?;
+    (!key.is_empty()).then_some(key)
+}
+
+fn java_type_key(raw: &str) -> Option<String> {
+    let mut out = raw.trim().trim_end_matches("...").trim().to_string();
+    if out.is_empty() {
+        return None;
+    }
+    while out.ends_with("[]") {
+        out.truncate(out.len() - 2);
+        out = out.trim().to_string();
+    }
+    if let Some(idx) = out.find('<') {
+        out.truncate(idx);
+    }
+    let out = out.trim();
+    if out.is_empty() {
+        return None;
+    }
+    let out = out.rsplit('.').next().unwrap_or(out).trim();
+    (!out.is_empty()).then(|| out.to_string())
+}
+
+fn equality_dispatch_atom(
+    lhs: Rc<Term>,
+    rhs: Rc<Term>,
+    mode: &EqualityDispatchMode,
+    expected_result: bool,
+) -> Option<Rc<Formula>> {
+    let tag = equality_dispatch_tag(lhs.as_ref(), rhs.as_ref(), mode)?;
+    Some(operator_dispatch_atom(lhs, rhs, &tag, expected_result))
+}
+
+fn equality_dispatch_tag(lhs: &Term, rhs: &Term, mode: &EqualityDispatchMode) -> Option<String> {
+    if matches!(mode, EqualityDispatchMode::ForceFol) || equality_has_exact_fol_shape(lhs, rhs) {
+        return None;
+    }
+    constructor_operator_tag(lhs)
+        .or_else(|| constructor_operator_tag(rhs))
+        .or_else(|| match mode {
+            EqualityDispatchMode::Object { type_key } => {
+                Some(type_key.clone().unwrap_or_else(|| "Object".to_string()))
+            }
+            EqualityDispatchMode::Unknown if equality_has_ambiguous_object_shape(lhs, rhs) => {
+                Some("Object".to_string())
+            }
+            _ => None,
+        })
+}
+
+fn equality_has_exact_fol_shape(lhs: &Term, rhs: &Term) -> bool {
+    if constructor_operator_tag(lhs).is_some() || constructor_operator_tag(rhs).is_some() {
+        return false;
+    }
+    is_ground_value(lhs) || is_ground_value(rhs)
+}
+
+fn equality_has_ambiguous_object_shape(lhs: &Term, rhs: &Term) -> bool {
+    !is_ground_value(lhs) && !is_ground_value(rhs)
+}
+
+fn operator_dispatch_atom(
+    lhs: Rc<Term>,
+    rhs: Rc<Term>,
+    tag: &str,
+    expected_result: bool,
+) -> Rc<Formula> {
+    // Federated operator-dispatch shape. Java .equals, Java == over object
+    // terms, Rust PartialEq::eq, and Python __eq__ all lift to this call result
+    // form when equality dispatch is user-defined rather than primitive FOL.
+    let operator_call = Rc::new(Term::Ctor {
+        name: format!("call:eq:{tag}"),
+        args: vec![lhs, rhs],
+    });
+    eq(operator_call, bool_const(expected_result))
+}
+
+fn bool_const(value: bool) -> Rc<Term> {
+    Rc::new(Term::Const {
+        value: ConstValue::Bool(value),
+        sort: Sort::bool(),
+    })
+}
+
+fn is_ground_value(term: &Term) -> bool {
+    matches!(term, Term::Const { .. })
+}
+
+fn constructor_operator_tag(term: &Term) -> Option<String> {
+    let Term::Ctor { name, .. } = term else {
+        return None;
+    };
+    let callee = name.strip_prefix("call:")?;
+    let final_segment = callee
+        .rsplit(|ch| matches!(ch, '.' | '$' | ':'))
+        .next()
+        .unwrap_or(callee);
+    final_segment
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+        .then(|| java_type_key(callee).unwrap_or_else(|| callee.to_string()))
 }
 
 fn call_parts(stmt: &str) -> Option<(&str, &str)> {
@@ -1290,32 +1453,70 @@ fn translate_bool_assertion_in_scope(
     expr: &str,
     name_scope: &JavaNameScope,
 ) -> Result<Rc<Formula>, String> {
-    let Some((lhs, rhs)) = split_top_level_eq(expr) else {
+    let Some((lhs, op, rhs)) = split_top_level_equality(expr) else {
         return Err(format!(
             "only scalar equality is liftable, got `{}`",
             compact(expr)
         ));
     };
-    Ok(eq(
-        translate_term_in_scope(lhs, name_scope)?,
-        translate_term_in_scope(rhs, name_scope)?,
-    ))
+    let lhs = translate_term_in_scope(lhs, name_scope)?;
+    let rhs = translate_term_in_scope(rhs, name_scope)?;
+    if let Some(atom) = equality_dispatch_atom(
+        lhs.clone(),
+        rhs.clone(),
+        &EqualityDispatchMode::Unknown,
+        op == "==",
+    ) {
+        return Ok(atom);
+    }
+    Ok(if op == "==" {
+        eq(lhs, rhs)
+    } else {
+        ne(lhs, rhs)
+    })
 }
 
-fn split_top_level_eq(expr: &str) -> Option<(&str, &str)> {
+fn split_top_level_equality(expr: &str) -> Option<(&str, &'static str, &str)> {
+    for op in ["==", "!="] {
+        if let Some((lhs, rhs)) = split_top_level_operator(expr, op) {
+            return Some((lhs, op, rhs));
+        }
+    }
+    None
+}
+
+fn split_top_level_operator<'a>(expr: &'a str, op: &str) -> Option<(&'a str, &'a str)> {
     let mut paren = 0i32;
-    let bytes = expr.as_bytes();
-    let mut i = 0usize;
-    while i + 1 < bytes.len() {
-        match bytes[i] as char {
+    let mut in_string = false;
+    let mut escape = false;
+    let mut idx = 0usize;
+    while idx + op.len() <= expr.len() {
+        let ch = expr[idx..].chars().next()?;
+        if in_string {
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            idx += ch.len_utf8();
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
             '(' => paren += 1,
             ')' => paren -= 1,
-            '=' if paren == 0 && bytes[i + 1] == b'=' => {
-                return Some((expr[..i].trim(), expr[i + 2..].trim()));
+            _ if paren == 0 && expr[idx..].starts_with(op) => {
+                let lhs = expr[..idx].trim();
+                let rhs = expr[idx + op.len()..].trim();
+                if !lhs.is_empty() && !rhs.is_empty() {
+                    return Some((lhs, rhs));
+                }
             }
             _ => {}
         }
-        i += 1;
+        idx += ch.len_utf8();
     }
     None
 }
@@ -1345,6 +1546,17 @@ fn translate_term_in_scope(expr: &str, name_scope: &JavaNameScope) -> Result<Rc<
             ],
         }));
     }
+    if let Some((ty, args_src)) = java_new_parts(expr) {
+        let args = split_args(args_src)
+            .iter()
+            .map(|arg| translate_term_in_scope(arg, name_scope))
+            .collect::<Result<Vec<_>, _>>()?;
+        let key = java_type_key(ty).unwrap_or_else(|| compact(ty));
+        return Ok(Rc::new(Term::Ctor {
+            name: format!("call:{key}"),
+            args,
+        }));
+    }
     if let Some((head, args_src)) = call_parts(expr) {
         let args = split_args(args_src)
             .iter()
@@ -1359,6 +1571,15 @@ fn translate_term_in_scope(expr: &str, name_scope: &JavaNameScope) -> Result<Rc<
         return Ok(make_var(compact(expr)));
     }
     Err(format!("unsupported term `{}`", compact(expr)))
+}
+
+fn java_new_parts(expr: &str) -> Option<(&str, &str)> {
+    let rest = expr.trim().strip_prefix("new ")?;
+    let (ty, args) = call_parts(rest)?;
+    if java_type_key(ty).as_deref() == Some("String") {
+        return None;
+    }
+    Some((ty, args))
 }
 
 fn canonical_callsite_sig(term: &Term) -> String {
@@ -1548,6 +1769,7 @@ struct JavaContractMethod {
 
 #[derive(Debug, Clone)]
 struct JavaParamContract {
+    ty: String,
     name: String,
     constraints: Vec<JavaConstraint>,
 }
@@ -1845,17 +2067,18 @@ fn parse_java_contract_methods(src: &str) -> Vec<JavaContractMethod> {
         let head = &src[head_start..open];
         let return_head = &src[head_start..open_paren];
         let params_src = &src[open_paren + 1..close_paren];
-        let params = split_args(params_src)
+        let params: Vec<JavaParamContract> = split_args(params_src)
             .iter()
             .enumerate()
             .filter_map(|(idx, raw)| parse_java_param_contract(raw, idx))
             .collect();
         let body = &src[open + 1..close];
+        let param_types = java_param_type_map(&params);
         methods.push(JavaContractMethod {
             name,
+            body_precondition: java_bodyguard_precondition_formula(body, &param_types),
             params,
             return_constraints: find_jsr380_constraints(return_head),
-            body_precondition: java_bodyguard_precondition_formula(body),
             return_expr: find_return_expr(body),
             is_test: head.contains("@Test"),
         });
@@ -1869,9 +2092,17 @@ fn parse_java_param_contract(raw: &str, idx: usize) -> Option<JavaParamContract>
     let stripped = strip_java_annotations(raw);
     let parsed = parse_param(&stripped, idx)?;
     Some(JavaParamContract {
+        ty: parsed.ty,
         name: parsed.name,
         constraints,
     })
+}
+
+fn java_param_type_map(params: &[JavaParamContract]) -> std::collections::BTreeMap<String, String> {
+    params
+        .iter()
+        .map(|param| (param.name.clone(), param.ty.clone()))
+        .collect()
 }
 
 fn find_jsr380_constraints(src: &str) -> Vec<JavaConstraint> {
@@ -2091,7 +2322,10 @@ fn conjoin_formula_jsons(mut operands: Vec<serde_json::Value>) -> Option<serde_j
     }
 }
 
-fn java_bodyguard_precondition_formula(body: &str) -> Option<serde_json::Value> {
+fn java_bodyguard_precondition_formula(
+    body: &str,
+    param_types: &std::collections::BTreeMap<String, String>,
+) -> Option<serde_json::Value> {
     let mut preconditions = Vec::new();
     let mut search = 0usize;
     while let Some(if_pos) = find_java_keyword(body, "if", search) {
@@ -2131,7 +2365,7 @@ fn java_bodyguard_precondition_formula(body: &str) -> Option<serde_json::Value> 
         let then_body = &body[block_open + 1..block_close];
         if block_only_throws(then_body) {
             let condition = body[cond_open + 1..cond_close].trim();
-            if let Ok(formula) = java_condition_formula_json(condition) {
+            if let Ok(formula) = java_condition_formula_json(condition, param_types) {
                 preconditions.push(negate_formula_json(formula));
             }
         }
@@ -2166,14 +2400,17 @@ fn block_only_throws(body: &str) -> bool {
     statements.len() == 1 && statements[0].trim_start().starts_with("throw ")
 }
 
-fn java_condition_formula_json(expr: &str) -> Result<serde_json::Value, String> {
+fn java_condition_formula_json(
+    expr: &str,
+    param_types: &std::collections::BTreeMap<String, String>,
+) -> Result<serde_json::Value, String> {
     let expr = trim_wrapping_parens(expr.trim());
     if let Some((lhs, rhs)) = split_top_level_logical(expr, "||") {
         return Ok(serde_json::json!({
             "kind": "or",
             "operands": [
-                java_condition_formula_json(lhs)?,
-                java_condition_formula_json(rhs)?
+                java_condition_formula_json(lhs, param_types)?,
+                java_condition_formula_json(rhs, param_types)?
             ]
         }));
     }
@@ -2181,13 +2418,16 @@ fn java_condition_formula_json(expr: &str) -> Result<serde_json::Value, String> 
         return Ok(serde_json::json!({
             "kind": "and",
             "operands": [
-                java_condition_formula_json(lhs)?,
-                java_condition_formula_json(rhs)?
+                java_condition_formula_json(lhs, param_types)?,
+                java_condition_formula_json(rhs, param_types)?
             ]
         }));
     }
     if let Some(rest) = expr.strip_prefix('!') {
-        return Ok(negate_formula_json(java_condition_formula_json(rest)?));
+        return Ok(negate_formula_json(java_condition_formula_json(
+            rest,
+            param_types,
+        )?));
     }
     let Some((lhs, op, rhs)) = split_top_level_comparison(expr) else {
         return Err(format!(
@@ -2195,11 +2435,118 @@ fn java_condition_formula_json(expr: &str) -> Result<serde_json::Value, String> 
             compact(expr)
         ));
     };
+    let lhs_term = java_expr_term_json(lhs)?;
+    let rhs_term = java_expr_term_json(rhs)?;
+    if matches!(op, "==" | "!=") {
+        if let Some(formula) =
+            java_equality_dispatch_formula_json(&lhs_term, &rhs_term, param_types, op == "==")
+        {
+            return Ok(formula);
+        }
+    }
     Ok(serde_json::json!({
         "kind": "atomic",
         "name": java_comparison_name(op),
-        "args": [java_expr_term_json(lhs)?, java_expr_term_json(rhs)?]
+        "args": [lhs_term, rhs_term]
     }))
+}
+
+fn java_equality_dispatch_formula_json(
+    lhs: &serde_json::Value,
+    rhs: &serde_json::Value,
+    param_types: &std::collections::BTreeMap<String, String>,
+    expected_result: bool,
+) -> Option<serde_json::Value> {
+    let tag = java_equality_dispatch_tag_json(lhs, rhs, param_types)?;
+    Some(serde_json::json!({
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+            {
+                "kind": "ctor",
+                "name": format!("call:eq:{tag}"),
+                "args": [lhs.clone(), rhs.clone()]
+            },
+            {
+                "kind": "const",
+                "sort": {"kind": "primitive", "name": "Bool"},
+                "value": expected_result
+            }
+        ]
+    }))
+}
+
+fn java_equality_dispatch_tag_json(
+    lhs: &serde_json::Value,
+    rhs: &serde_json::Value,
+    param_types: &std::collections::BTreeMap<String, String>,
+) -> Option<String> {
+    if java_json_constructor_operator_tag(lhs).is_some()
+        || java_json_constructor_operator_tag(rhs).is_some()
+    {
+        return java_json_constructor_operator_tag(lhs)
+            .or_else(|| java_json_constructor_operator_tag(rhs));
+    }
+    if java_json_is_ground_value(lhs) || java_json_is_ground_value(rhs) {
+        return None;
+    }
+    let lhs_var_key = java_json_var_operator_type_key(lhs, param_types);
+    let rhs_var_key = java_json_var_operator_type_key(rhs, param_types);
+    if lhs_var_key.is_none()
+        && rhs_var_key.is_none()
+        && java_json_var_has_primitive_type(lhs, param_types)
+        && java_json_var_has_primitive_type(rhs, param_types)
+    {
+        return None;
+    }
+    lhs_var_key.or(rhs_var_key)
+}
+
+fn java_json_constructor_operator_tag(term: &serde_json::Value) -> Option<String> {
+    let name = term.get("name").and_then(|value| value.as_str())?;
+    let callee = name.strip_prefix("call:")?;
+    let final_segment = callee
+        .rsplit(|ch| matches!(ch, '.' | '$' | ':'))
+        .next()
+        .unwrap_or(callee);
+    final_segment
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+        .then(|| java_type_key(callee).unwrap_or_else(|| callee.to_string()))
+}
+
+fn java_json_is_ground_value(term: &serde_json::Value) -> bool {
+    term.get("kind").and_then(|value| value.as_str()) == Some("const")
+}
+
+fn java_json_var_operator_type_key(
+    term: &serde_json::Value,
+    param_types: &std::collections::BTreeMap<String, String>,
+) -> Option<String> {
+    let name = java_json_var_name(term)?;
+    let ty = param_types.get(name)?;
+    (!is_java_primitive_scalar_type(ty))
+        .then(|| java_type_key(ty))
+        .flatten()
+}
+
+fn java_json_var_has_primitive_type(
+    term: &serde_json::Value,
+    param_types: &std::collections::BTreeMap<String, String>,
+) -> bool {
+    let Some(name) = java_json_var_name(term) else {
+        return false;
+    };
+    param_types
+        .get(name)
+        .is_some_and(|ty| is_java_primitive_scalar_type(ty))
+}
+
+fn java_json_var_name(term: &serde_json::Value) -> Option<&str> {
+    (term.get("kind").and_then(|value| value.as_str()) == Some("var"))
+        .then(|| term.get("name").and_then(|value| value.as_str()))
+        .flatten()
 }
 
 fn split_top_level_logical<'a>(expr: &'a str, op: &str) -> Option<(&'a str, &'a str)> {
@@ -2295,6 +2642,11 @@ fn negate_formula_json(formula: serde_json::Value) -> serde_json::Value {
             let Some(name) = formula.get("name").and_then(|v| v.as_str()) else {
                 return serde_json::json!({"kind": "not", "operands": [formula]});
             };
+            if name == "=" {
+                if let Some(negated) = negate_operator_dispatch_json(&formula) {
+                    return negated;
+                }
+            }
             let flipped = match name {
                 "<" => "≥",
                 "≤" => ">",
@@ -2332,6 +2684,21 @@ fn negate_formula_json(formula: serde_json::Value) -> serde_json::Value {
         }
         _ => serde_json::json!({"kind": "not", "operands": [formula]}),
     }
+}
+
+fn negate_operator_dispatch_json(formula: &serde_json::Value) -> Option<serde_json::Value> {
+    let args = formula.get("args")?.as_array()?;
+    if args.len() != 2 {
+        return None;
+    }
+    let call_name = args[0].get("name")?.as_str()?;
+    if !call_name.starts_with("call:eq:") {
+        return None;
+    }
+    let result = args[1].get("value")?.as_bool()?;
+    let mut out = formula.clone();
+    out["args"][1]["value"] = serde_json::Value::Bool(!result);
+    Some(out)
 }
 
 fn min_formula_json(var: &str, min: i64) -> serde_json::Value {
@@ -2423,6 +2790,18 @@ fn java_expr_term_json(expr: &str) -> Result<serde_json::Value, String> {
             "kind": "const",
             "sort": {"kind": "primitive", "name": "Int"},
             "value": value
+        }));
+    }
+    if let Some((ty, args_src)) = java_new_parts(expr) {
+        let args = split_args(args_src)
+            .iter()
+            .map(|arg| java_expr_term_json(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        let key = java_type_key(ty).unwrap_or_else(|| compact(ty));
+        return Ok(serde_json::json!({
+            "kind": "ctor",
+            "name": format!("call:{key}"),
+            "args": args
         }));
     }
     if let Some((head, args_src)) = call_parts(expr) {

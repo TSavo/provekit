@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-use sugar_ir_symbolic::{ConstValue, Formula, Term};
+use sugar_ir_symbolic::{serialize::formula_to_value, ConstValue, Formula, Term};
 use sugar_lift_java_tests::{
     derive_vocab_from_javap, derive_vocab_from_source, learn_vocab_from_exception_dirs,
     lift_source_with_vocab, AssertCategory,
@@ -21,6 +21,16 @@ public final class LearnedAssertions {
         }
     }
     public static void assertSameText(String expected, String actual) {
+        if (!java.util.Objects.equals(expected, actual)) {
+            throw new AssertionError("not equal");
+        }
+    }
+    public static void assertSameFool(Fool expected, Fool actual) {
+        if (!expected.equals(actual)) {
+            throw new AssertionError("not equal");
+        }
+    }
+    public static void assertSameObject(Object expected, Object actual) {
         if (!java.util.Objects.equals(expected, actual)) {
             throw new AssertionError("not equal");
         }
@@ -196,6 +206,109 @@ fn assert_string_eq_atom(formula: &Formula, expected_rhs: &str) {
         }
         other => panic!("expected equality atom, got {other:?}"),
     }
+}
+
+fn assert_operator_bool_atom(
+    formula: &Formula,
+    expected_call: &str,
+    expected_lhs_ctor: &str,
+    expected_lhs_value: i64,
+    expected_rhs_ctor: &str,
+    expected_rhs_value: i64,
+    expected_result: bool,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, expected_call);
+                    assert_eq!(args.len(), 2);
+                    assert_single_int_ctor(&args[0], expected_lhs_ctor, expected_lhs_value);
+                    assert_single_int_ctor(&args[1], expected_rhs_ctor, expected_rhs_value);
+                }
+                other => panic!("expected operator call lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Bool(value),
+                    ..
+                } => assert_eq!(*value, expected_result),
+                other => panic!("expected bool result rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected operator result equality atom, got {other:?}"),
+    }
+}
+
+fn assert_operator_var_atom(
+    formula: &Formula,
+    expected_call: &str,
+    expected_lhs_var: &str,
+    expected_rhs_var: &str,
+    expected_result: bool,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, expected_call);
+                    assert_eq!(args.len(), 2);
+                    match args[0].as_ref() {
+                        Term::Var { name } => assert_eq!(name, expected_lhs_var),
+                        other => panic!("expected lhs var, got {other:?}"),
+                    }
+                    match args[1].as_ref() {
+                        Term::Var { name } => assert_eq!(name, expected_rhs_var),
+                        other => panic!("expected rhs var, got {other:?}"),
+                    }
+                }
+                other => panic!("expected operator call lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Bool(value),
+                    ..
+                } => assert_eq!(*value, expected_result),
+                other => panic!("expected bool result rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected operator result equality atom, got {other:?}"),
+    }
+}
+
+fn assert_single_int_ctor(term: &Term, expected_ctor: &str, expected_value: i64) {
+    match term {
+        Term::Ctor { name, args } => {
+            assert_eq!(name, expected_ctor);
+            assert_eq!(args.len(), 1);
+            match args[0].as_ref() {
+                Term::Const {
+                    value: ConstValue::Int(value),
+                    ..
+                } => assert_eq!(*value, expected_value),
+                other => panic!("expected int constructor arg, got {other:?}"),
+            }
+        }
+        other => panic!("expected constructor arg, got {other:?}"),
+    }
+}
+
+fn formula_jcs(formula: &Formula) -> String {
+    sugar_canonicalizer::encode_jcs(&formula_to_value(formula))
+}
+
+fn formula_cid(formula: &Formula) -> String {
+    let jcs = formula_jcs(formula);
+    sugar_canonicalizer::blake3_512_of(jcs.as_bytes())
+}
+
+fn rust_lift(src: &str, source_path: &str) -> sugar_lift_rust_tests::AdapterOutput {
+    let file = syn::parse_file(src).expect("rust fixture parses");
+    sugar_lift_rust_tests::lift_file(&file, source_path)
 }
 
 fn assert_method_category(
@@ -615,9 +728,50 @@ class TextTest {
     let out = lift_source_with_vocab(src, "src/test/java/demo/TextTest.java", &vocab);
     assert_eq!(out.seen, 1);
     assert_eq!(out.lifted, 1);
+    assert_eq!(
+        out.decls[0].name,
+        "encode#euf#c:callresult_encode_a1(s:\"codec\")::assertion"
+    );
     let operands = inv_operands(&out.decls[0]);
     assert_eq!(operands.len(), 1);
     assert_string_eq_atom(&operands[0], "codec");
+}
+
+#[test]
+fn string_constructor_assertion_preserves_legacy_new_string_key() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import org.junit.jupiter.api.Test;
+
+class TextConstructorTest {
+    @Test
+    void textConstructor() {
+        assertSameText("codec", new String(bytes));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/TextConstructorTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(
+        out.decls[0].name,
+        "new String#euf#c:callresult_new_String_a1(v:bytes)::assertion"
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    assert_string_eq_atom(&operands[0], "codec");
+    match operands[0].as_ref() {
+        Formula::Atomic { args, .. } => match args[0].as_ref() {
+            Term::Ctor { name, .. } => assert_eq!(name, "call:new String"),
+            other => panic!("expected new String call lhs, got {other:?}"),
+        },
+        other => panic!("expected equality atom, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1059,4 +1213,164 @@ fn external_exception_file_is_the_human_remainder_not_code() {
             .category,
         AssertCategory::Equality
     );
+}
+
+#[test]
+fn object_assert_equals_operator_dispatch_atom() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameFool;
+import org.junit.jupiter.api.Test;
+
+class FoolDispatchTest {
+    static final class Fool {
+        Fool(int value) {}
+    }
+
+    @Test
+    void foolDispatch() {
+        assertSameFool(new Fool(1), new Fool(0));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/FoolDispatchTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "src/test/java/demo/FoolDispatchTest.java::demo.FoolDispatchTest.foolDispatch"
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    assert_operator_bool_atom(
+        &operands[0],
+        "call:eq:Fool",
+        "call:Fool",
+        1,
+        "call:Fool",
+        0,
+        true,
+    );
+}
+
+#[test]
+fn object_reference_eq_operator_dispatch_atom() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertTruth;
+import org.junit.jupiter.api.Test;
+
+class FoolReferenceTest {
+    static final class Fool {
+        Fool(int value) {}
+    }
+
+    @Test
+    void foolReference() {
+        assertTruth(new Fool(1) == new Fool(0));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/FoolReferenceTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    assert_operator_bool_atom(
+        &operands[0],
+        "call:eq:Fool",
+        "call:Fool",
+        1,
+        "call:Fool",
+        0,
+        true,
+    );
+}
+
+#[test]
+fn object_var_vs_var_assert_equals_uses_coarse_operator_dispatch_atom() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameObject;
+import org.junit.jupiter.api.Test;
+
+class ObjectVarDispatchTest {
+    @Test
+    void objectVarDispatch() {
+        assertSameObject(json, streamed);
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/ObjectVarDispatchTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    assert_operator_var_atom(&operands[0], "call:eq:Object", "json", "streamed", true);
+}
+
+#[test]
+fn java_object_operator_dispatch_atom_matches_rust_canonical_bytes() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let java_src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameFool;
+import org.junit.jupiter.api.Test;
+
+class FoolFederationTest {
+    static final class Fool {
+        Fool(int value) {}
+    }
+
+    @Test
+    void foolFederation() {
+        assertSameFool(new Fool(1), new Fool(0));
+    }
+}
+"#;
+    let java_out = lift_source_with_vocab(
+        java_src,
+        "src/test/java/demo/FoolFederationTest.java",
+        &vocab,
+    );
+    assert_eq!(java_out.seen, 1);
+    assert_eq!(java_out.lifted, 1, "warnings: {:?}", java_out.warnings);
+    let java_atom = inv_operands(&java_out.decls[0])[0].clone();
+
+    let rust_src = r#"
+struct Fool(i32);
+
+#[test]
+fn java_federation_shape() {
+    assert_eq!(Fool(1), Fool(0));
+}
+"#;
+    let rust_out = rust_lift(rust_src, "tests/cmp.rs");
+    assert_eq!(rust_out.seen, 1);
+    assert_eq!(rust_out.lifted, 1, "warnings: {:?}", rust_out.warnings);
+    let rust_atom = inv_operands(&rust_out.decls[0])[0].clone();
+
+    let java_cid = formula_cid(&java_atom);
+    let rust_cid = formula_cid(&rust_atom);
+    println!("java_operator_cid={java_cid}");
+    println!("rust_operator_cid={rust_cid}");
+    assert_eq!(formula_jcs(&java_atom), formula_jcs(&rust_atom));
+    assert_eq!(java_cid, rust_cid);
 }

@@ -47,6 +47,7 @@ name = "java_testng_discharge_cli"
 path = "src/bin/java_testng_discharge_cli.rs"
 
 [dev-dependencies]
+sugar-lift-rust-tests = { path = "../sugar-lift-rust-tests" }
 sugar-walk = { path = "../sugar-walk" }
 syn = { workspace = true }
 tempfile = { workspace = true }
