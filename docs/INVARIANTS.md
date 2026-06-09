@@ -65,10 +65,12 @@ FOL ProofIR (invariant 8). Their roles are distinct and map onto the four parts 
   the callee's contract by symbol-CID so the conjoiner binds them across `.proof`s. Makes
   cross-language correctness work — the symbol-CID is the identity, no hub (invariant 10). [the
   Panama lifter, `cpython_ctypes_resolver`, the go cgo resolver]
-- **Witness lifter (kit oracle)** — RESOLVES the witness body bytes over
-  `sugar.plugin.resolve_witness` (from the witness package, or by re-running). It is UNTRUSTED
-  and does *not* verify or discharge — it only hands back bytes. [`java_junit_witness_rpc`, the
-  pytest witness]
+- **Witness lifter (kit oracle)** — WITNESSES THE PROGRAM: it resolves the witness body — the
+  run that *demonstrates the program satisfies its spec* — over `sugar.plugin.resolve_witness`
+  (from the package, or by re-running). This is correctness #4, and it is what **completes the
+  correctness tuple** (spec exists, coherent, satisfied, *witnessed*) for *any* program. It has
+  nothing to do with cross-language — every proof's tuple is completed by its witness. The kit
+  is UNTRUSTED and only hands back bytes. [`java_junit_witness_rpc`, the pytest witness]
 
 Verification of the witness lives in the **rust CLI** (`witness_verify`), never the kit: rust
 checks the ed25519 signature over the witness CID with its *own* primitive, and **recomputes**
@@ -132,16 +134,6 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     *same canonical formula in, same bytes out*; a kit that diverges fails conformance. The
     shared canonicalization is what lets the CID *be* the identity across the FFI boundary —
     the bridge binds caller<->callee by that CID, with no concept layer between them.
-
-10c. **The witness is the runtime half of cross-FFI — resolved by the kit, verified by rust.**
-    The static bind (10b) says the contract *crosses* the boundary; the witness says it actually
-    *executes and behaves*. For a Java caller into a Rust callee, the witness lifter (kit)
-    RESOLVES the run-body of the real cross-language execution — the Java program genuinely
-    invoking the Rust function through the FFI — and the **rust CLI recomputes its blake3 CID and
-    checks the ed25519 signature** to verify it (trust the recomputation, never the resolver).
-    Both halves are required: the shared canonical CID binds the contract statically; the
-    recompute-verified witness demonstrates the execution. A green run nobody can recompute is
-    not a witness.
 
 ## VII. Soundness
 
