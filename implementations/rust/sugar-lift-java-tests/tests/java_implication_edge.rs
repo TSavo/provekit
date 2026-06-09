@@ -1,4 +1,5 @@
 use serde_json::json;
+use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use sugar_lift_java_tests::{
     lift_java_implication_bridges_from_source, lift_java_jsr380_contracts_from_source,
 };
@@ -146,6 +147,27 @@ public final class Chain {
 }
 "#;
 
+const BODYGUARD_CHAIN: &str = r#"
+package demo;
+
+public final class Chain {
+    static int digit(int radix) {
+        if (radix < Character.MIN_RADIX || radix > Character.MAX_RADIX) {
+            throw new IllegalArgumentException("radix");
+        }
+        return radix;
+    }
+
+    static int goodEdge() {
+        return digit(16);
+    }
+
+    static int badEdge() {
+        return digit(1);
+    }
+}
+"#;
+
 fn find_contract<'a>(ir: &'a [serde_json::Value], name: &str) -> &'a serde_json::Value {
     ir.iter()
         .find(|entry| entry["kind"] == "function-contract" && entry["name"] == name)
@@ -180,6 +202,51 @@ fn assert_has_atomic(formula: &serde_json::Value, name: &str) {
         names.iter().any(|candidate| candidate == name),
         "expected formula to contain atomic `{name}`, saw {names:?}: {formula:#?}"
     );
+}
+
+fn cvalue_from_json(value: &serde_json::Value) -> std::sync::Arc<CValue> {
+    match value {
+        serde_json::Value::Null => CValue::null(),
+        serde_json::Value::Bool(value) => CValue::boolean(*value),
+        serde_json::Value::Number(number) => CValue::integer(
+            number
+                .as_i64()
+                .expect("canonical formulas use integer numbers"),
+        ),
+        serde_json::Value::String(value) => CValue::string(value.clone()),
+        serde_json::Value::Array(values) => {
+            CValue::array(values.iter().map(cvalue_from_json).collect())
+        }
+        serde_json::Value::Object(values) => CValue::object(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), cvalue_from_json(value))),
+        ),
+    }
+}
+
+fn formula_jcs(formula: &serde_json::Value) -> String {
+    encode_jcs(&cvalue_from_json(formula))
+}
+
+fn formula_cid(formula: &serde_json::Value) -> String {
+    blake3_512_of(formula_jcs(formula).as_bytes())
+}
+
+fn rust_radix_precondition_formula() -> serde_json::Value {
+    let item_fn: syn::ItemFn = syn::parse_str(
+        r#"
+        fn to_digit(radix: u32) {
+            assert!(
+                radix >= 2 && radix <= 36,
+                "to_digit: invalid radix"
+            );
+        }
+        "#,
+    )
+    .expect("parse rust function");
+    let pre = sugar_walk::lift::lift_function_precondition(&item_fn);
+    serde_json::to_value(pre.as_formula()).expect("serialize rust precondition")
 }
 
 #[test]
@@ -297,6 +364,94 @@ fn jsr380_breadth_discrimination_surfaces_weakened_posts_and_nullness_silence() 
     let range_consumer = find_contract(&bad.ir, "rangeConsumer");
     assert_eq!(range_consumer["pre"]["operands"][0]["args"][1]["value"], 10);
     assert_eq!(range_consumer["pre"]["operands"][1]["args"][1]["value"], 90);
+}
+
+#[test]
+fn java_bodyguard_throw_lifts_to_precondition_without_annotations() {
+    let out =
+        lift_java_jsr380_contracts_from_source(BODYGUARD_CHAIN, "src/main/java/demo/Chain.java")
+            .expect("lift bodyguard contracts");
+    assert!(out.diagnostics.is_empty(), "{:#?}", out.diagnostics);
+
+    let digit = find_contract(&out.ir, "digit");
+    assert_eq!(digit["formals"], json!(["radix"]));
+    assert_eq!(
+        digit["source"]["contractSource"],
+        "java-source-bodyguard-precondition"
+    );
+    assert_eq!(digit["pre"]["kind"], "and");
+    assert_eq!(digit["pre"]["operands"][0]["name"], "≥");
+    assert_eq!(
+        digit["pre"]["operands"][0]["args"][0],
+        json!({"kind": "var", "name": "radix"})
+    );
+    assert_eq!(digit["pre"]["operands"][0]["args"][1]["value"], 2);
+    assert_eq!(digit["pre"]["operands"][1]["name"], "≤");
+    assert_eq!(
+        digit["pre"]["operands"][1]["args"][0],
+        json!({"kind": "var", "name": "radix"})
+    );
+    assert_eq!(digit["pre"]["operands"][1]["args"][1]["value"], 36);
+
+    let good_edge = find_contract(&out.ir, "goodEdge");
+    assert_eq!(good_edge["post"]["name"], "=");
+    assert_eq!(good_edge["post"]["args"][1]["name"], "digit");
+    assert_eq!(good_edge["post"]["args"][1]["args"][0]["value"], 16);
+
+    let bad_edge = find_contract(&out.ir, "badEdge");
+    assert_eq!(bad_edge["post"]["name"], "=");
+    assert_eq!(bad_edge["post"]["args"][1]["name"], "digit");
+    assert_eq!(bad_edge["post"]["args"][1]["args"][0]["value"], 1);
+}
+
+#[test]
+fn java_bodyguard_precondition_formula_is_byte_identical_to_rust() {
+    let out =
+        lift_java_jsr380_contracts_from_source(BODYGUARD_CHAIN, "src/main/java/demo/Chain.java")
+            .expect("lift bodyguard contracts");
+    let java_pre = find_contract(&out.ir, "digit")["pre"].clone();
+    let rust_pre = rust_radix_precondition_formula();
+    let java_pre_jcs = formula_jcs(&java_pre);
+    let rust_pre_jcs = formula_jcs(&rust_pre);
+    let java_pre_cid = formula_cid(&java_pre);
+    let rust_pre_cid = formula_cid(&rust_pre);
+
+    println!("java_pre_cid={java_pre_cid}");
+    println!("rust_pre_cid={rust_pre_cid}");
+
+    assert_eq!(
+        java_pre_jcs, rust_pre_jcs,
+        "canonical JCS bytes must match for federation"
+    );
+    assert_eq!(
+        java_pre_cid, rust_pre_cid,
+        "same formula bytes must produce the same CID"
+    );
+}
+
+#[test]
+fn java_implication_bridge_carries_bodyguard_actuals_for_good_and_bad_callers() {
+    let bindings = vec![json!({
+        "name": "digit",
+        "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    })];
+    let out = lift_java_implication_bridges_from_source(
+        BODYGUARD_CHAIN,
+        "src/main/java/demo/Chain.java",
+        &bindings,
+    )
+    .expect("lift bodyguard bridges");
+    assert!(out.diagnostics.is_empty(), "{:#?}", out.diagnostics);
+
+    let mut actuals = out
+        .ir
+        .iter()
+        .filter(|entry| entry["kind"] == "bridge" && entry["sourceSymbol"] == "digit")
+        .map(|entry| entry["callsite"]["formalActuals"]["radix"]["value"].as_i64())
+        .collect::<Vec<_>>();
+    actuals.sort();
+    println!("formalActuals.radix={actuals:?}");
+    assert_eq!(actuals, vec![Some(1), Some(16)]);
 }
 
 #[test]

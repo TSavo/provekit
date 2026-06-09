@@ -1541,6 +1541,7 @@ struct JavaContractMethod {
     name: String,
     params: Vec<JavaParamContract>,
     return_constraints: Vec<JavaConstraint>,
+    body_precondition: Option<serde_json::Value>,
     return_expr: Option<String>,
     is_test: bool,
 }
@@ -1562,6 +1563,7 @@ enum JavaConstraint {
 #[derive(Debug, Clone)]
 struct JavaCallsite {
     callee: String,
+    args: Vec<serde_json::Value>,
     file: String,
     line: usize,
     col: usize,
@@ -1627,10 +1629,18 @@ pub fn lift_java_jsr380_contracts_from_source(
         if method.is_test {
             continue;
         }
-        let pre = method
+        let mut pre_parts = method
             .params
             .iter()
-            .find_map(|param| constraints_formula_json(&param.name, &param.constraints));
+            .filter_map(|param| constraints_formula_json(&param.name, &param.constraints))
+            .collect::<Vec<_>>();
+        if let Some(body_precondition) = method.body_precondition.clone() {
+            pre_parts.push(body_precondition);
+        }
+        let has_body_precondition = method.body_precondition.is_some();
+        let has_jsr380_precondition = !pre_parts.is_empty() && !has_body_precondition
+            || pre_parts.len() > usize::from(has_body_precondition);
+        let pre = conjoin_formula_jsons(pre_parts);
         let post = constraints_formula_json("result", &method.return_constraints).or_else(|| {
             let expr = method.return_expr.as_deref()?;
             if !expr_contains_call(expr) {
@@ -1650,6 +1660,11 @@ pub fn lift_java_jsr380_contracts_from_source(
         if pre.is_none() && post.is_none() {
             continue;
         }
+        let contract_source = match (has_jsr380_precondition, has_body_precondition) {
+            (false, true) => "java-source-bodyguard-precondition",
+            (true, true) => "jsr380-annotations-and-java-source-bodyguard",
+            _ => "jsr380-annotations-or-body-callsite",
+        };
         let formals: Vec<String> = method.params.iter().map(|p| p.name.clone()).collect();
         let formal_sorts: Vec<serde_json::Value> = formals
             .iter()
@@ -1664,7 +1679,7 @@ pub fn lift_java_jsr380_contracts_from_source(
             "bridgeSourceSymbol": method.name,
             "source": {
                 "language": "java",
-                "contractSource": "jsr380-annotations-or-body-callsite",
+                "contractSource": contract_source,
                 "file": source_path,
             },
         });
@@ -1685,6 +1700,7 @@ pub fn lift_java_implication_bridges_from_source(
     contract_bindings: &[serde_json::Value],
 ) -> Result<JavaImplicationLiftOutput, String> {
     let bindings = java_contract_bindings_by_leaf(contract_bindings);
+    let formals_by_method = java_formals_by_method(src);
     let mut out = JavaImplicationLiftOutput::default();
     for callsite in collect_java_implication_callsites(src, source_path) {
         let Some(target_cid) = bindings.get(&callsite.callee) else {
@@ -1699,6 +1715,16 @@ pub fn lift_java_implication_bridges_from_source(
             }));
             continue;
         };
+        let mut callsite_json = serde_json::json!({
+            "file": callsite.file,
+            "start_line": callsite.line,
+            "start_col": callsite.col,
+        });
+        if let Some(formals) = formals_by_method.get(&callsite.callee) {
+            if let Some(formal_actuals) = formal_actuals_json(formals, &callsite.args) {
+                callsite_json["formalActuals"] = formal_actuals;
+            }
+        }
         out.ir.push(serde_json::json!({
             "kind": "bridge",
             "name": format!(
@@ -1712,14 +1738,37 @@ pub fn lift_java_implication_bridges_from_source(
             "target": {"kind": "contract", "cid": target_cid},
             "targetContractCid": target_cid,
             "targetLayer": "java-jsr380-contracts",
-            "callsite": {
-                "file": callsite.file,
-                "start_line": callsite.line,
-                "start_col": callsite.col,
-            },
+            "callsite": callsite_json,
         }));
     }
     Ok(out)
+}
+
+fn java_formals_by_method(src: &str) -> std::collections::BTreeMap<String, Vec<String>> {
+    parse_java_contract_methods(src)
+        .into_iter()
+        .filter(|method| !method.is_test)
+        .map(|method| {
+            (
+                method.name,
+                method.params.into_iter().map(|param| param.name).collect(),
+            )
+        })
+        .collect()
+}
+
+fn formal_actuals_json(
+    formals: &[String],
+    args: &[serde_json::Value],
+) -> Option<serde_json::Value> {
+    if formals.is_empty() || args.len() < formals.len() {
+        return None;
+    }
+    let mut object = serde_json::Map::new();
+    for (formal, actual) in formals.iter().zip(args.iter()) {
+        object.insert(formal.clone(), actual.clone());
+    }
+    Some(serde_json::Value::Object(object))
 }
 
 fn enumerate_java_sources_for_lift(workspace_root: &Path, source_paths: &[String]) -> Vec<String> {
@@ -1806,6 +1855,7 @@ fn parse_java_contract_methods(src: &str) -> Vec<JavaContractMethod> {
             name,
             params,
             return_constraints: find_jsr380_constraints(return_head),
+            body_precondition: java_bodyguard_precondition_formula(body),
             return_expr: find_return_expr(body),
             is_test: head.contains("@Test"),
         });
@@ -2026,6 +2076,264 @@ fn constraints_formula_json(
     }
 }
 
+fn conjoin_formula_jsons(mut operands: Vec<serde_json::Value>) -> Option<serde_json::Value> {
+    let mut unique = Vec::new();
+    for operand in operands.drain(..) {
+        if !unique.contains(&operand) {
+            unique.push(operand);
+        }
+    }
+    operands = unique;
+    match operands.len() {
+        0 => None,
+        1 => operands.pop(),
+        _ => Some(serde_json::json!({"kind": "and", "operands": operands})),
+    }
+}
+
+fn java_bodyguard_precondition_formula(body: &str) -> Option<serde_json::Value> {
+    let mut preconditions = Vec::new();
+    let mut search = 0usize;
+    while let Some(if_pos) = find_java_keyword(body, "if", search) {
+        let after_if = if_pos + "if".len();
+        let cond_open = body[after_if..]
+            .char_indices()
+            .find(|(_, ch)| !ch.is_whitespace())
+            .and_then(|(idx, ch)| (ch == '(').then_some(after_if + idx));
+        let Some(cond_open) = cond_open else {
+            search = after_if;
+            continue;
+        };
+        let Some(cond_close) =
+            matching_brace_like(&body[cond_open..], '(', ')').map(|idx| cond_open + idx)
+        else {
+            search = after_if;
+            continue;
+        };
+        let after_cond = cond_close + 1;
+        let block_open = body[after_cond..]
+            .char_indices()
+            .find(|(_, ch)| !ch.is_whitespace())
+            .and_then(|(idx, ch)| (ch == '{').then_some(after_cond + idx));
+        let Some(block_open) = block_open else {
+            search = after_cond;
+            continue;
+        };
+        let Some(block_close) = matching_brace(body, block_open) else {
+            search = block_open + 1;
+            continue;
+        };
+        let after_block = body[block_close + 1..].trim_start();
+        if after_block.starts_with("else") {
+            search = block_close + 1;
+            continue;
+        }
+        let then_body = &body[block_open + 1..block_close];
+        if block_only_throws(then_body) {
+            let condition = body[cond_open + 1..cond_close].trim();
+            if let Ok(formula) = java_condition_formula_json(condition) {
+                preconditions.push(negate_formula_json(formula));
+            }
+        }
+        search = block_close + 1;
+    }
+    conjoin_formula_jsons(preconditions)
+}
+
+fn find_java_keyword(src: &str, keyword: &str, start: usize) -> Option<usize> {
+    let mut search = start;
+    while let Some(found_rel) = src[search..].find(keyword) {
+        let found = search + found_rel;
+        let before_ok = src[..found]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !is_ident_char(ch));
+        let after = found + keyword.len();
+        let after_ok = src[after..]
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_ident_char(ch));
+        if before_ok && after_ok {
+            return Some(found);
+        }
+        search = after;
+    }
+    None
+}
+
+fn block_only_throws(body: &str) -> bool {
+    let statements = split_statements(body);
+    statements.len() == 1 && statements[0].trim_start().starts_with("throw ")
+}
+
+fn java_condition_formula_json(expr: &str) -> Result<serde_json::Value, String> {
+    let expr = trim_wrapping_parens(expr.trim());
+    if let Some((lhs, rhs)) = split_top_level_logical(expr, "||") {
+        return Ok(serde_json::json!({
+            "kind": "or",
+            "operands": [
+                java_condition_formula_json(lhs)?,
+                java_condition_formula_json(rhs)?
+            ]
+        }));
+    }
+    if let Some((lhs, rhs)) = split_top_level_logical(expr, "&&") {
+        return Ok(serde_json::json!({
+            "kind": "and",
+            "operands": [
+                java_condition_formula_json(lhs)?,
+                java_condition_formula_json(rhs)?
+            ]
+        }));
+    }
+    if let Some(rest) = expr.strip_prefix('!') {
+        return Ok(negate_formula_json(java_condition_formula_json(rest)?));
+    }
+    let Some((lhs, op, rhs)) = split_top_level_comparison(expr) else {
+        return Err(format!(
+            "unsupported Java guard condition `{}`",
+            compact(expr)
+        ));
+    };
+    Ok(serde_json::json!({
+        "kind": "atomic",
+        "name": java_comparison_name(op),
+        "args": [java_expr_term_json(lhs)?, java_expr_term_json(rhs)?]
+    }))
+}
+
+fn split_top_level_logical<'a>(expr: &'a str, op: &str) -> Option<(&'a str, &'a str)> {
+    let mut paren = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    let bytes = expr.as_bytes();
+    let mut idx = 0usize;
+    while idx + op.len() <= bytes.len() {
+        let ch = expr[idx..].chars().next()?;
+        if in_string {
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            idx += ch.len_utf8();
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            _ if paren == 0 && expr[idx..].starts_with(op) => {
+                let lhs = expr[..idx].trim();
+                let rhs = expr[idx + op.len()..].trim();
+                if !lhs.is_empty() && !rhs.is_empty() {
+                    return Some((lhs, rhs));
+                }
+            }
+            _ => {}
+        }
+        idx += ch.len_utf8();
+    }
+    None
+}
+
+fn split_top_level_comparison<'a>(expr: &'a str) -> Option<(&'a str, &'static str, &'a str)> {
+    for op in ["<=", ">=", "==", "!=", "<", ">"] {
+        let mut paren = 0i32;
+        let mut in_string = false;
+        let mut escape = false;
+        let mut idx = 0usize;
+        while idx + op.len() <= expr.len() {
+            let ch = expr[idx..].chars().next()?;
+            if in_string {
+                if escape {
+                    escape = false;
+                } else if ch == '\\' {
+                    escape = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                idx += ch.len_utf8();
+                continue;
+            }
+            match ch {
+                '"' => in_string = true,
+                '(' => paren += 1,
+                ')' => paren -= 1,
+                _ if paren == 0 && expr[idx..].starts_with(op) => {
+                    let lhs = expr[..idx].trim();
+                    let rhs = expr[idx + op.len()..].trim();
+                    if !lhs.is_empty() && !rhs.is_empty() {
+                        return Some((lhs, op, rhs));
+                    }
+                }
+                _ => {}
+            }
+            idx += ch.len_utf8();
+        }
+    }
+    None
+}
+
+fn java_comparison_name(op: &str) -> &'static str {
+    match op {
+        "<" => "<",
+        "<=" => "≤",
+        ">" => ">",
+        ">=" => "≥",
+        "==" => "=",
+        "!=" => "≠",
+        _ => unreachable!("unknown Java comparison operator"),
+    }
+}
+
+fn negate_formula_json(formula: serde_json::Value) -> serde_json::Value {
+    match formula.get("kind").and_then(|v| v.as_str()) {
+        Some("atomic") => {
+            let Some(name) = formula.get("name").and_then(|v| v.as_str()) else {
+                return serde_json::json!({"kind": "not", "operands": [formula]});
+            };
+            let flipped = match name {
+                "<" => "≥",
+                "≤" => ">",
+                ">" => "≤",
+                "≥" => "<",
+                "=" => "≠",
+                "≠" => "=",
+                _ => return serde_json::json!({"kind": "not", "operands": [formula]}),
+            };
+            let mut out = formula;
+            out["name"] = serde_json::Value::String(flipped.to_string());
+            out
+        }
+        Some("and") => {
+            let operands = formula
+                .get("operands")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(negate_formula_json)
+                .collect::<Vec<_>>();
+            serde_json::json!({"kind": "or", "operands": operands})
+        }
+        Some("or") => {
+            let operands = formula
+                .get("operands")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(negate_formula_json)
+                .collect::<Vec<_>>();
+            serde_json::json!({"kind": "and", "operands": operands})
+        }
+        _ => serde_json::json!({"kind": "not", "operands": [formula]}),
+    }
+}
+
 fn min_formula_json(var: &str, min: i64) -> serde_json::Value {
     serde_json::json!({
         "kind": "atomic",
@@ -2092,6 +2400,24 @@ fn expr_contains_call(expr: &str) -> bool {
 
 fn java_expr_term_json(expr: &str) -> Result<serde_json::Value, String> {
     let expr = trim_wrapping_parens(expr.trim());
+    let compact_expr = compact(expr);
+    match compact_expr.as_str() {
+        "Character.MIN_RADIX" | "java.lang.Character.MIN_RADIX" => {
+            return Ok(serde_json::json!({
+                "kind": "const",
+                "sort": {"kind": "primitive", "name": "Int"},
+                "value": 2
+            }));
+        }
+        "Character.MAX_RADIX" | "java.lang.Character.MAX_RADIX" => {
+            return Ok(serde_json::json!({
+                "kind": "const",
+                "sort": {"kind": "primitive", "name": "Int"},
+                "value": 36
+            }));
+        }
+        _ => {}
+    }
     if let Ok(value) = expr.parse::<i64>() {
         return Ok(serde_json::json!({
             "kind": "const",
@@ -2229,6 +2555,10 @@ fn collect_callsites_in_java_body(
         if ws >= bytes.len() || bytes[ws] != b'(' {
             continue;
         }
+        let Some(close_paren) = matching_brace_like(&body[ws..], '(', ')').map(|end| ws + end)
+        else {
+            continue;
+        };
         let leaf = ident.rsplit('.').next().unwrap_or(ident);
         if matches!(
             leaf,
@@ -2241,8 +2571,13 @@ fn collect_callsites_in_java_body(
         }
         let abs = body_start + start;
         let (line, col) = line_col(src, abs);
+        let args = split_args(&body[ws + 1..close_paren])
+            .iter()
+            .filter_map(|arg| java_expr_term_json(arg).ok())
+            .collect();
         out.push(JavaCallsite {
             callee: leaf.to_string(),
+            args,
             file: source_path.to_string(),
             line,
             col,
