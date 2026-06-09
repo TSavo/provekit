@@ -47,8 +47,7 @@ fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
 pub fn latest_version(name: &str) -> Result<String, String> {
     let body = curl(&[&api_url(name)])?;
     let text = String::from_utf8_lossy(&body);
-    parse_latest(&text)
-        .ok_or_else(|| format!("crates.io: no published version found for `{name}`"))
+    parse_latest(&text).ok_or_else(|| format!("crates.io: no published version found for `{name}`"))
 }
 
 /// Download `name`@`version` and extract its crate root directly into `dst`

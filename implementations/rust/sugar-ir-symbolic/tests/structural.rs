@@ -13,8 +13,8 @@ use std::rc::Rc;
 
 use sugar_ir_symbolic::{
     and_, atomic_, begin_collecting, choice, contract, eq, exists, finish, forall, gt, gte,
-    implies, lambda, let_term, lt, lte, must, ne, not_, num, or_, out, parse_int, reset_collector,
-    real_const, str_const, ConstValue, ContractArgs, Formula, Int, Sort, Term,
+    implies, lambda, let_term, lt, lte, must, ne, not_, num, or_, out, parse_int, real_const,
+    reset_collector, str_const, ConstValue, ContractArgs, Formula, Int, Sort, Term,
 };
 
 // ---------------------------------------------------------------------------

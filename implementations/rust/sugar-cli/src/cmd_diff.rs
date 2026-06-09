@@ -122,7 +122,8 @@ pub fn gate_ok(s: &Summary, require: Option<&str>, frozen: bool) -> Result<bool,
         return Ok(s.new_behaviors == 0 && s.lost_behaviors == 0 && s.renamed == 0);
     }
     if let Some(req) = require {
-        let allowed = rank(req).ok_or_else(|| format!("invalid --require '{req}' (none|minor|major)"))?;
+        let allowed =
+            rank(req).ok_or_else(|| format!("invalid --require '{req}' (none|minor|major)"))?;
         let needed = rank(s.bump()).expect("bump() returns a valid rank");
         return Ok(needed <= allowed);
     }
@@ -279,7 +280,10 @@ pub fn run(args: DiffArgs) -> u8 {
             if args.frozen {
                 eprintln!("frozen: dependency behavior changed under a fixed pin");
             } else if let Some(req) = &args.require {
-                eprintln!("gate: behavior requires {}, exceeds claimed {req}", s.bump());
+                eprintln!(
+                    "gate: behavior requires {}, exceeds claimed {req}",
+                    s.bump()
+                );
             }
             EXIT_VERIFY_FAIL
         }
@@ -305,15 +309,24 @@ mod tests {
     fn identity_holds_all_behaviors_no_bump() {
         let a = table(&[("f", "cid1"), ("g", "cid2")]);
         let s = summarize(&a, &a);
-        assert_eq!((s.held, s.new_behaviors, s.lost_behaviors, s.renamed), (2, 0, 0, 0));
+        assert_eq!(
+            (s.held, s.new_behaviors, s.lost_behaviors, s.renamed),
+            (2, 0, 0, 0)
+        );
         assert!(!s.breaking());
         assert_eq!(s.bump(), "none");
     }
 
     #[test]
     fn pure_rename_is_renamed_not_breaking() {
-        let s = summarize(&table(&[("old_name", "cidA")]), &table(&[("new_name", "cidA")]));
-        assert_eq!((s.renamed, s.new_behaviors, s.lost_behaviors, s.held), (1, 0, 0, 0));
+        let s = summarize(
+            &table(&[("old_name", "cidA")]),
+            &table(&[("new_name", "cidA")]),
+        );
+        assert_eq!(
+            (s.renamed, s.new_behaviors, s.lost_behaviors, s.held),
+            (1, 0, 0, 0)
+        );
         assert!(!s.breaking());
         assert_eq!(s.bump(), "none");
     }

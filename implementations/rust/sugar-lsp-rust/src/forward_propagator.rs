@@ -9,7 +9,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Post {
     constraints: Vec<String>,

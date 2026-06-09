@@ -43,14 +43,10 @@ fn proof_cid_is_deterministic_across_runs() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir1 = std::env::temp_dir().join(format!(
-        "sugar-lift-det1-{}-{nanos1}",
-        std::process::id()
-    ));
-    let dir2 = std::env::temp_dir().join(format!(
-        "sugar-lift-det2-{}-{nanos1}",
-        std::process::id()
-    ));
+    let dir1 =
+        std::env::temp_dir().join(format!("sugar-lift-det1-{}-{nanos1}", std::process::id()));
+    let dir2 =
+        std::env::temp_dir().join(format!("sugar-lift-det2-{}-{nanos1}", std::process::id()));
     let opts = LiftOptions::default();
     let (_r1, m1, _p1) = lift_and_mint(&fixtures_dir(), &dir1, &opts).expect("first run");
     let (_r2, m2, _p2) = lift_and_mint(&fixtures_dir(), &dir2, &opts).expect("second run");
@@ -163,8 +159,7 @@ fn cli_runs_against_fixtures() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let out =
-        std::env::temp_dir().join(format!("sugar-lift-cli-{}-{nanos}", std::process::id()));
+    let out = std::env::temp_dir().join(format!("sugar-lift-cli-{}-{nanos}", std::process::id()));
     let flags = sugar_lift::CliFlags {
         workspace: Some(fixtures_dir()),
         target_dir: Some(out.clone()),

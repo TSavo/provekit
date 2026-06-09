@@ -3265,7 +3265,10 @@ mod tests {
             json.contains("\"≥\"") && json.contains("\"≤\""),
             "pre should contain radix bounds: {json}"
         );
-        assert!(json.contains("\"radix\""), "pre should mention radix: {json}");
+        assert!(
+            json.contains("\"radix\""),
+            "pre should mention radix: {json}"
+        );
     }
 
     #[test]
@@ -5017,10 +5020,9 @@ mod tests {
     fn leading_let_reformat_shares_behavior_identity() {
         use sugar_ir_types::canonicalize_property;
 
-        let inline = lift_function_postcondition(&parse_fn(
-            r#"fn double(x: i64) -> i64 { x * 2 }"#,
-        ))
-        .into_formula();
+        let inline =
+            lift_function_postcondition(&parse_fn(r#"fn double(x: i64) -> i64 { x * 2 }"#))
+                .into_formula();
         let reformat = lift_function_postcondition(&parse_fn(
             r#"fn double(x: i64) -> i64 { let n = x; n * 2 }"#,
         ))
@@ -5060,12 +5062,11 @@ mod tests {
     /// emitted term: `fn f(x){ let _k = 99; x*2 }` still emits a bare `x*2`.
     #[test]
     fn unreferenced_leading_let_is_not_wrapped() {
-        let post = lift_function_postcondition(&parse_fn(
-            r#"fn f(x: i64) -> i64 { let k = 99; x * 2 }"#,
-        ))
-        .into_formula();
-        let rhs = libsugar::wp::find_result_equation(&post, "result")
-            .expect("has a result equation");
+        let post =
+            lift_function_postcondition(&parse_fn(r#"fn f(x: i64) -> i64 { let k = 99; x * 2 }"#))
+                .into_formula();
+        let rhs =
+            libsugar::wp::find_result_equation(&post, "result").expect("has a result equation");
         assert!(
             !matches!(rhs, IrTerm::Let { .. }),
             "an unreferenced leading let must not wrap the result term, got {rhs:?}"
@@ -5107,8 +5108,8 @@ mod tests {
             r#"fn f(x: i64) -> i64 { let a = x; let b = a + 1; b * 2 }"#,
         ))
         .into_formula();
-        let rhs = libsugar::wp::find_result_equation(&post, "result")
-            .expect("has a result equation");
+        let rhs =
+            libsugar::wp::find_result_equation(&post, "result").expect("has a result equation");
         let IrTerm::Let { bindings, body } = &rhs else {
             panic!("expected an outer let, got {rhs:?}");
         };
@@ -5137,15 +5138,14 @@ mod tests {
     #[test]
     fn mutable_shadow_is_refused_no_false_identity() {
         use sugar_ir_types::canonicalize_property;
-        let inline =
-            lift_function_postcondition(&parse_fn(r#"fn f(x: i64) -> i64 { x * 2 }"#))
-                .into_formula();
+        let inline = lift_function_postcondition(&parse_fn(r#"fn f(x: i64) -> i64 { x * 2 }"#))
+            .into_formula();
         let shadow = lift_function_postcondition(&parse_fn(
             r#"fn f(x: i64) -> i64 { let n = x; let mut n = x + 1; n * 2 }"#,
         ))
         .into_formula();
-        let rhs = libsugar::wp::find_result_equation(&shadow, "result")
-            .expect("has a result equation");
+        let rhs =
+            libsugar::wp::find_result_equation(&shadow, "result").expect("has a result equation");
         assert!(
             !matches!(rhs, IrTerm::Let { .. }),
             "a mutable shadow must bail (no wrap), got {rhs:?}"
@@ -5165,8 +5165,8 @@ mod tests {
             r#"fn f(input: i64) -> i64 { let x = 0; let x = input; x * 2 }"#,
         ))
         .into_formula();
-        let rhs = libsugar::wp::find_result_equation(&post, "result")
-            .expect("has a result equation");
+        let rhs =
+            libsugar::wp::find_result_equation(&post, "result").expect("has a result equation");
         assert!(
             !matches!(rhs, IrTerm::Let { .. }),
             "a rebound/shadowed name must bail, got {rhs:?}"
@@ -5185,8 +5185,8 @@ mod tests {
             r#"fn f(it: &mut It) -> i64 { let n = it.next(); n + 1 }"#,
         ))
         .into_formula();
-        let rhs = libsugar::wp::find_result_equation(&post, "result")
-            .expect("has a result equation");
+        let rhs =
+            libsugar::wp::find_result_equation(&post, "result").expect("has a result equation");
         assert!(
             !matches!(rhs, IrTerm::Let { .. }),
             "an effectful (method-call) let init must not be wrapped, got {rhs:?}"
@@ -5227,12 +5227,11 @@ mod tests {
             r#"fn f(x: i64) -> i64 { let n = x + 1; n * n }"#,
         ))
         .into_formula();
-        let inline = lift_function_postcondition(&parse_fn(
-            r#"fn f(x: i64) -> i64 { (x + 1) * (x + 1) }"#,
-        ))
-        .into_formula();
-        let rhs = libsugar::wp::find_result_equation(&bound, "result")
-            .expect("has a result equation");
+        let inline =
+            lift_function_postcondition(&parse_fn(r#"fn f(x: i64) -> i64 { (x + 1) * (x + 1) }"#))
+                .into_formula();
+        let rhs =
+            libsugar::wp::find_result_equation(&bound, "result").expect("has a result equation");
         assert!(
             matches!(rhs, IrTerm::Let { .. }),
             "a pure let init must still be wrapped, got {rhs:?}"

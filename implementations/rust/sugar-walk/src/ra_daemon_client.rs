@@ -318,8 +318,7 @@ fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Result<Un
 
     // Inherit SUGAR_RESOLVE_ORACLE / SUGAR_RUST_ANALYZER so the daemon's
     // RA host honours the same opt-in as the cold path did.
-    let binary =
-        std::env::var("SUGAR_LINKERD_BIN").unwrap_or_else(|_| "sugar-linkerd".into());
+    let binary = std::env::var("SUGAR_LINKERD_BIN").unwrap_or_else(|_| "sugar-linkerd".into());
     debug!(binary = %binary, socket = %socket_path.display(), "ra-daemon: spawning sugar-linkerd");
     // The daemon detaches its stdio. For diagnosis, SUGAR_LINKERD_LOG can
     // redirect the daemon's stderr to a file (otherwise it is discarded so the

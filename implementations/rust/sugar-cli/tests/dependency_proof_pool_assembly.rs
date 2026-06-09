@@ -153,11 +153,7 @@ fn publish_user_bridge(project_dir: &Path, target_cid: &str, target_bundle_cid: 
     let mut members = BTreeMap::new();
     members.insert(source_cid, source_bytes);
     members.insert(bridge_cid, bridge_bytes);
-    write_proof(
-        &project_dir.join(".sugar"),
-        "@user/local-bridge",
-        members,
-    );
+    write_proof(&project_dir.join(".sugar"), "@user/local-bridge", members);
 }
 
 fn publish_contradictory_implication_project() -> PathBuf {

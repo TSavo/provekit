@@ -19,10 +19,7 @@ fn temp_dir(tag: &str) -> PathBuf {
 #[test]
 fn discover_returns_empty_when_root_missing() {
     let mut p = std::env::temp_dir();
-    p.push(format!(
-        "sugar-ir-compiler-missing-{}",
-        std::process::id()
-    ));
+    p.push(format!("sugar-ir-compiler-missing-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     let m = manifest::discover(&p);
     assert!(m.is_empty());
@@ -52,10 +49,7 @@ dialects = ["smt-lib-v2.6"]
     assert_eq!(m.name, "smt-lib-reference");
     assert_eq!(m.version, "0.1.0");
     assert_eq!(m.protocol_version, "sugar-ir-compiler/1");
-    assert_eq!(
-        m.binary,
-        PathBuf::from("/usr/local/bin/sugar-ir-smt-lib")
-    );
+    assert_eq!(m.binary, PathBuf::from("/usr/local/bin/sugar-ir-smt-lib"));
     assert_eq!(m.dialects, vec!["smt-lib-v2.6".to_string()]);
 
     fs::remove_dir_all(&root).ok();

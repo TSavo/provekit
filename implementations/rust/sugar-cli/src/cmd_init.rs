@@ -33,12 +33,7 @@ pub(crate) fn init_project(project: &Path, force: bool, quiet: bool) -> Result<(
     }
 
     let toml_path = project.join("sugar.toml");
-    write_if_absent_or_force(
-        &toml_path,
-        &sugar_toml_template(),
-        force,
-        "sugar.toml",
-    )?;
+    write_if_absent_or_force(&toml_path, &sugar_toml_template(), force, "sugar.toml")?;
 
     let cache_dir = project.join(".sugar").join("cache");
     std::fs::create_dir_all(&cache_dir)
@@ -135,8 +130,7 @@ mod tests {
 
     #[test]
     fn init_creates_expected_files() {
-        let dir =
-            std::env::temp_dir().join(format!("sugar-cli-init-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sugar-cli-init-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 

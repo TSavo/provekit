@@ -1000,8 +1000,7 @@ fn hash_map_catalog_contains_reports_membership_without_get_fetch() {
 
 #[test]
 fn lift_plugin_transport_is_a_core_kit_with_legacy_response_escape_hatch() {
-    let temp =
-        std::env::temp_dir().join(format!("sugar-lift-plugin-kit-{}", std::process::id()));
+    let temp = std::env::temp_dir().join(format!("sugar-lift-plugin-kit-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp).expect("create temp dir");
     let script = temp.join("fake-lifter.sh");
@@ -1065,8 +1064,7 @@ done
 
 #[test]
 fn lift_kit_transforms_source_through_lift_plugin_transport_and_carries_term_payload() {
-    let temp =
-        std::env::temp_dir().join(format!("sugar-lift-kit-source-{}", std::process::id()));
+    let temp = std::env::temp_dir().join(format!("sugar-lift-kit-source-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp).expect("create temp dir");
     let script = temp.join("fake-lifter.sh");

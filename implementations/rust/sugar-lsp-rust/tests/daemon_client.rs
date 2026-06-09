@@ -30,10 +30,7 @@ fn daemon_bin() -> PathBuf {
         .join("target")
         .join("release")
         .join("sugar-linkerd");
-    let debug = workspace
-        .join("target")
-        .join("debug")
-        .join("sugar-linkerd");
+    let debug = workspace.join("target").join("debug").join("sugar-linkerd");
     if release.exists() {
         release
     } else {

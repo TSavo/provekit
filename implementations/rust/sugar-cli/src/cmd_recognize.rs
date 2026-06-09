@@ -646,9 +646,7 @@ working_dir = "."
         .unwrap();
         let m = parse_manifest(&manifest_path).expect("parse");
         assert_eq!(m.command.len(), 2);
-        assert!(m.command[0]
-            .to_string_lossy()
-            .ends_with("sugar-walk-rpc"));
+        assert!(m.command[0].to_string_lossy().ends_with("sugar-walk-rpc"));
         assert_eq!(m.command[1].to_string_lossy(), "--rpc");
         assert_eq!(m.working_dir, Some(PathBuf::from(".")));
         std::fs::remove_dir_all(&tmp).ok();

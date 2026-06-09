@@ -54,11 +54,8 @@ fn walk_lifts_canonicalizer_blake3_function_to_envelope() {
     // Step 4: Build the FunctionContractMemento. We pass the source
     // file path so the contract's locus carries the canonicalizer's
     // location. body_cid is None — this is a structural lift only.
-    let contract = build_function_contract_with_file(
-        item_fn,
-        None,
-        Some("sugar-canonicalizer/src/hash.rs"),
-    );
+    let contract =
+        build_function_contract_with_file(item_fn, None, Some("sugar-canonicalizer/src/hash.rs"));
     assert_eq!(contract.fn_name, "blake3_512_of");
 
     // Step 5: Wrap as a signed MintedEnvelope and verify cache behavior.
@@ -142,11 +139,8 @@ fn walk_canonicalizer_function_locus_carries_canonicalizer_path() {
     let src = read_canonicalizer_source("hash.rs");
     let file: syn::File = syn::parse_str(&src).expect("hash.rs parses");
     let item_fn = first_function_named(&file, "blake3_512_of").expect("blake3_512_of present");
-    let contract = build_function_contract_with_file(
-        item_fn,
-        None,
-        Some("sugar-canonicalizer/src/hash.rs"),
-    );
+    let contract =
+        build_function_contract_with_file(item_fn, None, Some("sugar-canonicalizer/src/hash.rs"));
     assert_eq!(
         contract.locus.file.as_deref(),
         Some("sugar-canonicalizer/src/hash.rs")

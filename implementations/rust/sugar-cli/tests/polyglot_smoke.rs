@@ -70,9 +70,7 @@ fn daemon_bin() -> PathBuf {
     if profile_dir.file_name().and_then(|name| name.to_str()) == Some("release") {
         cmd.arg("--release");
     }
-    let output = cmd
-        .output()
-        .expect("spawn cargo build for sugar-linkerd");
+    let output = cmd.output().expect("spawn cargo build for sugar-linkerd");
     assert!(
         output.status.success(),
         "cargo build failed for sugar-linkerd\nstdout:\n{}\nstderr:\n{}",
@@ -107,9 +105,7 @@ fn unix_socket_bind_available() -> bool {
             true
         }
         Err(err) => {
-            eprintln!(
-                "sugar-linkerd daemon smoke skipped: Unix socket bind unavailable ({err})"
-            );
+            eprintln!("sugar-linkerd daemon smoke skipped: Unix socket bind unavailable ({err})");
             false
         }
     }

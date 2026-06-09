@@ -1263,8 +1263,7 @@ pub fn resolve_batch(
         // *did* opt in is a genuine environmental fault worth a WARN. start()
         // already logs the specific cause (debug "oracle disabled" / warn
         // "binary not found"); here we classify the batch-level consequence.
-        let opted_in =
-            std::env::var("SUGAR_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+        let opted_in = std::env::var("SUGAR_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
         if opted_in {
             warn!(
                 total_queries = total,

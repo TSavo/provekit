@@ -58,7 +58,9 @@ fn canon_term(t: &IrTerm, ctx: &Ctx) -> IrTerm {
             if let Some(term) = ctx.subst.get(name) {
                 term.clone()
             } else if let Some(canon) = ctx.rename.get(name) {
-                IrTerm::Var { name: canon.clone() }
+                IrTerm::Var {
+                    name: canon.clone(),
+                }
             } else {
                 IrTerm::Var { name: name.clone() }
             }
@@ -230,7 +232,10 @@ mod tests {
                 body: Box::new(mul(var("n"), var("two"))),
             },
         );
-        assert_eq!(canonicalize_formula(&plain), canonicalize_formula(&with_let));
+        assert_eq!(
+            canonicalize_formula(&plain),
+            canonicalize_formula(&with_let)
+        );
     }
 
     /// A real behavior change (x*2 vs x*3) must NOT be identified.

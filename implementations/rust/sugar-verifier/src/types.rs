@@ -1082,15 +1082,24 @@ mod tests {
         let name = "decoded_len_estimate#euf#c:callresult_decoded_len_estimate_a1(i:4)::assertion";
         let mut pool = MementoPool::default();
 
-        pool.insert("blake3-512:java".to_string(), make_inv_only_contract(name, 3));
-        pool.insert("blake3-512:rust".to_string(), make_inv_only_contract(name, 4));
+        pool.insert(
+            "blake3-512:java".to_string(),
+            make_inv_only_contract(name, 3),
+        );
+        pool.insert(
+            "blake3-512:rust".to_string(),
+            make_inv_only_contract(name, 4),
+        );
 
         assert!(
             pool.load_errors.is_empty(),
             "same #euf# inv-only contracts are handled by consistency conjoin, not load errors: {:#?}",
             pool.load_errors
         );
-        assert_eq!(pool.name_to_cid.get(name), Some(&"blake3-512:java".to_string()));
+        assert_eq!(
+            pool.name_to_cid.get(name),
+            Some(&"blake3-512:java".to_string())
+        );
         assert!(pool.mementos.contains_key("blake3-512:java"));
         assert!(pool.mementos.contains_key("blake3-512:rust"));
     }

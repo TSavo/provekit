@@ -18,12 +18,9 @@ fn read_canonicalizer_source(filename: &str) -> String {
 fn term_emit_ssa_hoists_statement_method_effects() {
     let src = read_canonicalizer_source("hash.rs");
     let file: syn::File = syn::parse_str(&src).expect("hash.rs parses");
-    let bytes = rust_function_term_json_for_file(
-        &file,
-        "blake3_512_of",
-        "sugar-canonicalizer/src/hash.rs",
-    )
-    .expect("blake3_512_of term JSON");
+    let bytes =
+        rust_function_term_json_for_file(&file, "blake3_512_of", "sugar-canonicalizer/src/hash.rs")
+            .expect("blake3_512_of term JSON");
     let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("term JSON");
 
     let surface = parsed["term_surface"].as_str().expect("term surface");

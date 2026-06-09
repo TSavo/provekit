@@ -59,8 +59,7 @@ pub fn formula_to_canonical(f: &IrFormula) -> Arc<Value> {
 
 /// Canonicalize an `IrTerm` into a JCS-canonicalizer Value tree.
 pub fn term_to_canonical(t: &IrTerm) -> Arc<Value> {
-    let serde =
-        serde_json::to_value(t).expect("IrTerm serializes (sugar-ir-types is generated)");
+    let serde = serde_json::to_value(t).expect("IrTerm serializes (sugar-ir-types is generated)");
     serde_to_canonical(serde)
 }
 

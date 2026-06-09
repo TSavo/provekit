@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value as Json;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
-use crate::{SugarError, Result};
+use crate::{Result, SugarError};
 
 const LEGACY_CONCEPT_PREFIX: &str = "concept:";
 

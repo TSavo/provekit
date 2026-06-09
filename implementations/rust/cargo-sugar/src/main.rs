@@ -261,7 +261,10 @@ fn mint(project: &Path, out_dir: &Path) -> Result<(), String> {
         .status()
         .map_err(|e| format!("spawn `{sugar} mint`: {e}"))?;
     if !status.success() {
-        return Err(format!("`sugar mint --project {}` failed", project.display()));
+        return Err(format!(
+            "`sugar mint --project {}` failed",
+            project.display()
+        ));
     }
     Ok(())
 }

@@ -76,9 +76,7 @@ const ERR_INTERNAL: i64 = -32603;
 
 pub fn run(args: ComposeArgs) -> u8 {
     if !args.rpc {
-        eprintln!(
-            "error: `sugar compose` only supports the JSON-RPC transport today; pass --rpc"
-        );
+        eprintln!("error: `sugar compose` only supports the JSON-RPC transport today; pass --rpc");
         return crate::EXIT_USER_ERROR;
     }
     let stdin = std::io::stdin();

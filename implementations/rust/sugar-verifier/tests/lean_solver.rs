@@ -112,10 +112,7 @@ ir_compiler = "lean"
 
 #[test]
 fn mathlib_commit_parser_reads_lake_manifest() {
-    let dir = std::env::temp_dir().join(format!(
-        "sugar-lean-manifest-test-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("sugar-lean-manifest-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("create temp dir");
     std::fs::write(
         dir.join("lake-manifest.json"),

@@ -205,8 +205,7 @@ fn try_witness_discharge(
         Ok(p) if !p.trim().is_empty() => p,
         _ => {
             return Some(undecidable(
-                "custom witness present but SUGAR_WITNESS_PROJECT_DIR unset (fail-closed)"
-                    .into(),
+                "custom witness present but SUGAR_WITNESS_PROJECT_DIR unset (fail-closed)".into(),
             ))
         }
     };

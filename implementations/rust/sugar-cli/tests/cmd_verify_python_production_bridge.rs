@@ -493,7 +493,10 @@ fn python_precondition_body_guard_discharges_good_and_refuses_bad_callsite() {
     let (good, good_code) = run_verify_json_with_code(&good_project, &good_witnesses);
     assert_eq!(good["totalClaims"], 1, "GOOD receipt: {good}");
     let good_claim = &good["claims"].as_array().expect("claims")[0];
-    assert_eq!(good_claim["status"], "discharged", "GOOD claim: {good_claim}");
+    assert_eq!(
+        good_claim["status"], "discharged",
+        "GOOD claim: {good_claim}"
+    );
     assert_eq!(good_claim["pass"], true, "GOOD claim: {good_claim}");
     assert_eq!(good["ok"], true, "GOOD receipt: {good}");
     assert_eq!(good_code, 0, "GOOD verify exit code");

@@ -41,7 +41,9 @@ fn repo_root() -> PathBuf {
 /// chars. This rejects e.g. `invalid-filename-cid.proof` (a deliberate negative
 /// fixture) whose stem is not 128 hex.
 fn claimed_cid(file_name: &str) -> Option<String> {
-    let s = file_name.strip_prefix(BLAKE3_512_PREFIX).unwrap_or(file_name);
+    let s = file_name
+        .strip_prefix(BLAKE3_512_PREFIX)
+        .unwrap_or(file_name);
     let stem = s.split('.').next().unwrap_or("");
     if stem.len() == 128 && stem.bytes().all(|b| b.is_ascii_hexdigit()) {
         Some(format!("{BLAKE3_512_PREFIX}{stem}"))
@@ -102,5 +104,8 @@ fn every_committed_cid_named_file_hashes_to_its_filename() {
         mismatches.join("\n")
     );
 
-    eprintln!("integrity: {} content-addressed artifacts verified", files.len());
+    eprintln!(
+        "integrity: {} content-addressed artifacts verified",
+        files.len()
+    );
 }

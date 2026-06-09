@@ -29,13 +29,22 @@ for path in "${staged[@]}"; do
     echo "pre-commit: skipping partially staged Rust file: $path" >&2
     continue
   fi
-  format_paths+=("./$path")
-  restage_paths+=("$path")
+  case "$path" in
+    implementations/rust/*)
+      format_paths+=("${path#implementations/rust/}")
+      restage_paths+=("$path")
+      ;;
+    *)
+      echo "pre-commit: skipping Rust file outside the cargo workspace: $path" >&2
+      ;;
+  esac
 done
 
 if [ "${#format_paths[@]}" -eq 0 ]; then
   exit 0
 fi
 
-cargo fmt --manifest-path "$manifest" -- "${format_paths[@]}"
+# cargo fmt cannot resolve targets for file args via --manifest-path at the
+# virtual workspace root; run from the workspace dir with relative paths.
+(cd "$repo/implementations/rust" && cargo fmt -- "${format_paths[@]}")
 git add -- "${restage_paths[@]}"

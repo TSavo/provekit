@@ -343,8 +343,7 @@ fn specialized_precondition_substitutes_all_formals_with_call_actuals() {
         "self": actuals[0].clone(),
         "radix": actuals[1].clone()
     });
-    let r = instantiate::run_specialized(&rp, &actuals, Some(&formal_actuals))
-        .expect("specialize");
+    let r = instantiate::run_specialized(&rp, &actuals, Some(&formal_actuals)).expect("specialize");
     assert_eq!(
         r.ir_formula,
         json!({

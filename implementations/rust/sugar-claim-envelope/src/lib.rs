@@ -2111,11 +2111,7 @@ mod tests {
         json_to_cvalue(&serde_json::to_value(f).expect("formula serializes"))
     }
 
-    fn contract_args_for_post(
-        name: &str,
-        post: Arc<Value>,
-        formals: &[&str],
-    ) -> MintContractArgs {
+    fn contract_args_for_post(name: &str, post: Arc<Value>, formals: &[&str]) -> MintContractArgs {
         MintContractArgs {
             evidence_term: None,
             formals: formals.iter().map(|s| s.to_string()).collect(),
@@ -2179,12 +2175,21 @@ mod tests {
         // double(x) = x*3 -- a real behavior change
         let changed = eq_result(mul(var("x"), int(3)));
 
-        let cid_inline =
-            contract_cid(&contract_args_for_post("double", post_value(&inline), &["x"]));
-        let cid_let =
-            contract_cid(&contract_args_for_post("double", post_value(&with_let), &["x"]));
-        let cid_changed =
-            contract_cid(&contract_args_for_post("double", post_value(&changed), &["x"]));
+        let cid_inline = contract_cid(&contract_args_for_post(
+            "double",
+            post_value(&inline),
+            &["x"],
+        ));
+        let cid_let = contract_cid(&contract_args_for_post(
+            "double",
+            post_value(&with_let),
+            &["x"],
+        ));
+        let cid_changed = contract_cid(&contract_args_for_post(
+            "double",
+            post_value(&changed),
+            &["x"],
+        ));
 
         assert_eq!(
             cid_inline, cid_let,

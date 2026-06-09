@@ -3255,9 +3255,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
                 .evidence
                 .get("manifestPath")
                 .and_then(Value::as_str)
-                .is_some_and(
-                    |path| path.ends_with(".sugar/lift/rust-fn-contracts/manifest.toml")
-                ),
+                .is_some_and(|path| path.ends_with(".sugar/lift/rust-fn-contracts/manifest.toml")),
             "version check evidence should name the manifest path: {version_check:#?}"
         );
     }
