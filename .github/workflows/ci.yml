@@ -75,10 +75,16 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Install system deps (z3, maven)
+      - name: Install system deps (z3, maven, vampire)
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends z3 maven
+          sudo apt-get install -y --no-install-recommends z3 maven unzip
+          # Vampire v5.0.1 prebuilt static binary (matches tools/portfolio pin) so the
+          # forall-vampire showcase runs in CI for real instead of skipping.
+          curl -fsSL -o /tmp/vampire.zip https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          unzip -o -q /tmp/vampire.zip -d /tmp/vampire-bin
+          sudo install -m 0755 /tmp/vampire-bin/vampire /usr/local/bin/vampire
+          vampire --version | head -1 || true
 
       - name: make ci
         run: make ci
