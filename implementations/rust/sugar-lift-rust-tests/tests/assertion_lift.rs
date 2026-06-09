@@ -134,6 +134,32 @@ fn assert_real_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs
     }
 }
 
+fn assert_int_call_cmp_atom(
+    formula: &Formula,
+    expected_op: &str,
+    expected_call: &str,
+    expected_rhs: i64,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, expected_op);
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, expected_call),
+                other => panic!("expected call term lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Int(value),
+                    ..
+                } => assert_eq!(*value, expected_rhs),
+                other => panic!("expected int rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected comparison atom, got {other:?}"),
+    }
+}
+
 fn assert_await_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: i64) {
     match formula {
         Formula::Atomic { name, args } => {
@@ -532,6 +558,103 @@ fn test_range_contains() {
             }
         }
         other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn call_result_comparison_assertions_use_fol_atoms_and_euf_key() {
+    let src = r#"
+fn value() -> i32 { 6 }
+
+#[test]
+fn comparison_atoms() {
+    assert!(value() > 3);
+    assert!(value() <= 9);
+    assert!(value() != 7);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/compare.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(decl.name, "value#euf#c:callresult_value_a0()::assertion");
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 3);
+    assert_int_call_cmp_atom(&operands[0], ">", "call:value", 3);
+    assert_int_call_cmp_atom(&operands[1], "\u{2264}", "call:value", 9);
+    assert_int_call_cmp_atom(&operands[2], "\u{2260}", "call:value", 7);
+}
+
+#[test]
+fn same_callsite_connectives_lift_as_fol_connectives_under_euf_key() {
+    let src = r#"
+fn value() -> i32 { 6 }
+
+#[test]
+fn connective_atoms() {
+    assert!(value() > 3 && value() < 9);
+    assert!(value() < 3 || value() > 5);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/compare.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(decl.name, "value#euf#c:callresult_value_a0()::assertion");
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    match operands[0].as_ref() {
+        Formula::Connective { kind, operands } => {
+            assert_eq!(kind, "and");
+            assert_eq!(operands.len(), 2);
+            assert_int_call_cmp_atom(&operands[0], ">", "call:value", 3);
+            assert_int_call_cmp_atom(&operands[1], "<", "call:value", 9);
+        }
+        other => panic!("expected and connective, got {other:?}"),
+    }
+    match operands[1].as_ref() {
+        Formula::Connective { kind, operands } => {
+            assert_eq!(kind, "or");
+            assert_eq!(operands.len(), 2);
+            assert_int_call_cmp_atom(&operands[0], "<", "call:value", 3);
+            assert_int_call_cmp_atom(&operands[1], ">", "call:value", 5);
+        }
+        other => panic!("expected or connective, got {other:?}"),
+    }
+}
+
+#[test]
+fn negated_call_result_comparison_lifts_as_fol_not_under_euf_key() {
+    let src = r#"
+fn value() -> i32 { 6 }
+
+#[test]
+fn negated_comparison() {
+    assert!(value() >= 3);
+    assert!(!(value() < 3));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/compare.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(decl.name, "value#euf#c:callresult_value_a0()::assertion");
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    assert_int_call_cmp_atom(&operands[0], "\u{2265}", "call:value", 3);
+    match operands[1].as_ref() {
+        Formula::Connective { kind, operands } => {
+            assert_eq!(kind, "not");
+            assert_eq!(operands.len(), 1);
+            assert_int_call_cmp_atom(&operands[0], "<", "call:value", 3);
+        }
+        other => panic!("expected not connective, got {other:?}"),
     }
 }
 

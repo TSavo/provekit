@@ -9,6 +9,7 @@
 #       * tests/time.rs finite decimal float method-call equality rows,
 #       * tests/fmt/mod.rs exact string method-call equality rows.
 #       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows.
+#       * tests/time.rs direct call-result comparison rows.
 #   - `sugar mint` + `sugar verify` must produce only discharged `#euf#`
 #     consistency rows for that slice.
 #   - The exact vendor tests rerun as the witness axis.
@@ -32,7 +33,7 @@ WITNESS_TARGET="$WORK/coretests-target"
 STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs, finite float rows from time.rs, exact string rows from fmt/mod.rs, and pure method-chain predicate rows from alloc.rs/ops.rs."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, and direct call-result comparison FOL rows from time.rs."
 echo "SCOPE: excluded gaps = macros requiring expansion, NaN/infinity/ordered float refinements, chars, cfg-sensitive generic width tests, stateful/reassigned receiver method chains, complex terms."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
@@ -286,8 +287,10 @@ needles = [
     "align_of::<u16>#euf#c:callresult_align_of___u16__a0()::assertion",
     "method:to_string#euf#c:callresult_method_to_string_a1(v:tests/fmt/mod.rs::test_lifetime::a)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
+    "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::NANOSECOND,v:Duration::MAX)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
+    "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:Duration::NANOSECOND,v:Duration::MAX)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
     "method:is_err#euf#c:callresult_method_is_err_a1(c:method:align_to(v:tests/alloc.rs::layout_errors::layout,i:3))::assertion",
     "method:is_ok#euf#c:callresult_method_is_ok_a1(c:method:repeat(v:tests/alloc.rs::layout_errors::layout,v:tests/alloc.rs::layout_errors::align_max))::assertion",
@@ -302,6 +305,9 @@ missing = [
 
 if not euf_rows:
     print("no #euf# consistency rows found", file=sys.stderr)
+    raise SystemExit(1)
+if len(euf_rows) < 100:
+    print(f"expected at least 100 claimed #euf# rows after comparison-FOL lift, got {len(euf_rows)}", file=sys.stderr)
     raise SystemExit(1)
 if missing:
     print("missing required claimed rows:", file=sys.stderr)
@@ -372,6 +378,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs} plus pure method-chain predicates from alloc.rs/ops.rs discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, pure method-chain predicates from alloc.rs/ops.rs, and direct comparison FOL rows from time.rs discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macros/NaN-infinity-ordered-float-refinements/chars/cfg-sensitive generic width tests/stateful-reassigned-receiver method chains/complex terms remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

@@ -11,7 +11,8 @@ use std::rc::Rc;
 
 use quote::ToTokens;
 use sugar_ir_symbolic::{
-    and_, eq, make_var, num, real_const, str_const, ConstValue, ContractDecl, Formula, Term,
+    and_, eq, gt, gte, lt, lte, make_var, ne, not_, num, or_, real_const, str_const, ConstValue,
+    ContractDecl, Formula, Term,
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -247,18 +248,21 @@ fn parse_macro_args(tokens: proc_macro2::TokenStream) -> syn::Result<MacroArgs> 
 
 fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionEntry, String> {
     match expr {
-        Expr::Binary(binary) if matches!(binary.op, BinOp::Eq(_)) => {
-            let lhs = translate_term(&binary.left)?;
-            let rhs = translate_term(&binary.right)?;
-            Ok(assertion_entry_from_eq(lhs, rhs, local_scope))
-        }
+        Expr::Binary(binary) => translate_binary_bool_assertion(binary, local_scope),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
-            let term = translate_term(&unary.expr)?;
-            Ok(assertion_entry_from_eq(
-                term,
-                bool_const(false),
-                local_scope,
-            ))
+            if let Ok(term) = translate_term(&unary.expr) {
+                Ok(assertion_entry_from_eq(
+                    term,
+                    bool_const(false),
+                    local_scope,
+                ))
+            } else {
+                let entry = translate_bool_assertion(&unary.expr, local_scope)?;
+                Ok(AssertionEntry {
+                    name: entry.name,
+                    atom: not_(entry.atom),
+                })
+            }
         }
         Expr::Call(_) | Expr::MethodCall(_) | Expr::Await(_) | Expr::Field(_) => {
             let term = translate_term(expr)?;
@@ -279,7 +283,80 @@ fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionE
     }
 }
 
+fn translate_binary_bool_assertion(
+    binary: &syn::ExprBinary,
+    local_scope: &str,
+) -> Result<AssertionEntry, String> {
+    match &binary.op {
+        BinOp::And(_) | BinOp::Or(_) => {
+            let left = translate_bool_assertion(&binary.left, local_scope)?;
+            let right = translate_bool_assertion(&binary.right, local_scope)?;
+            let name = common_assertion_name(&left.name, &right.name);
+            let atom = if matches!(binary.op, BinOp::And(_)) {
+                and_(vec![left.atom, right.atom])
+            } else {
+                or_(vec![left.atom, right.atom])
+            };
+            Ok(AssertionEntry { name, atom })
+        }
+        BinOp::Eq(_)
+        | BinOp::Ne(_)
+        | BinOp::Lt(_)
+        | BinOp::Le(_)
+        | BinOp::Gt(_)
+        | BinOp::Ge(_) => {
+            let op = relation_from_binop(&binary.op)
+                .expect("comparison op matched but did not map to relation");
+            let lhs = translate_term(&binary.left)?;
+            let rhs = translate_term(&binary.right)?;
+            Ok(assertion_entry_from_relation(lhs, rhs, op, local_scope))
+        }
+        _ => Err(format!(
+            "only scalar comparison/connective assertions are liftable, got `{}`",
+            token_key(binary)
+        )),
+    }
+}
+
+fn common_assertion_name(left: &Option<String>, right: &Option<String>) -> Option<String> {
+    match (left, right) {
+        (Some(left), Some(right)) if left == right => Some(left.clone()),
+        _ => None,
+    }
+}
+
 fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>, local_scope: &str) -> AssertionEntry {
+    assertion_entry_from_relation(lhs, rhs, RelationOp::Eq, local_scope)
+}
+
+#[derive(Clone, Copy)]
+enum RelationOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+fn relation_from_binop(op: &BinOp) -> Option<RelationOp> {
+    match op {
+        BinOp::Eq(_) => Some(RelationOp::Eq),
+        BinOp::Ne(_) => Some(RelationOp::Ne),
+        BinOp::Lt(_) => Some(RelationOp::Lt),
+        BinOp::Le(_) => Some(RelationOp::Le),
+        BinOp::Gt(_) => Some(RelationOp::Gt),
+        BinOp::Ge(_) => Some(RelationOp::Ge),
+        _ => None,
+    }
+}
+
+fn assertion_entry_from_relation(
+    lhs: Rc<Term>,
+    rhs: Rc<Term>,
+    op: RelationOp,
+    local_scope: &str,
+) -> AssertionEntry {
     let name = if is_concrete_value(lhs.as_ref()) {
         callsite_assertion_name(rhs.as_ref(), local_scope)
     } else if is_concrete_value(rhs.as_ref()) {
@@ -287,9 +364,17 @@ fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>, local_scope: &str) -> A
     } else {
         None
     };
+    let atom = match op {
+        RelationOp::Eq => eq(lhs, rhs),
+        RelationOp::Ne => ne(lhs, rhs),
+        RelationOp::Lt => lt(lhs, rhs),
+        RelationOp::Le => lte(lhs, rhs),
+        RelationOp::Gt => gt(lhs, rhs),
+        RelationOp::Ge => gte(lhs, rhs),
+    };
     AssertionEntry {
         name,
-        atom: eq(lhs, rhs),
+        atom,
     }
 }
 
