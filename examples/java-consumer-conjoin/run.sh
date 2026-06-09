@@ -309,11 +309,11 @@ TEXT_PROOF="$(ensure_real_library_proof "Apache Commons Text $TEXT_VERSION" "$RE
 GSON_PROOF="$(ensure_real_library_proof "Gson $GSON_VERSION" "$REPO/examples/java-real-lib-gson" "JAVA_REAL_LIB_GSON")"
 
 echo "SCOPE: real libraries imported = Commons Codec $CODEC_VERSION, Commons IO $IO_VERSION, Commons Text $TEXT_VERSION, Gson $GSON_VERSION"
-echo "SCOPE: proven Codec row mirrored = org.apache.commons.codec.binary.Base64Test.java:978 assertEquals(\"Zg==\", Base64.encodeBase64String(StringUtils.getBytesUtf8(\"f\")))"
-echo "SCOPE: GOOD agrees on bound library-call results; BAD conjoins 4 and 5 for the same bound Commons Codec result."
+echo "SCOPE: proven Codec row mirrored = org.apache.commons.codec.binary.Base64Test.java:282 assertEquals(\"K/fMJwH+Q5e0nr7tWsxwkA==\", Base64.encodeBase64String(b4), ...), b4=Hex.decodeHex(\"2bf7cc2701fe4397b49ebeed5acc7090\")"
+echo "SCOPE: this turns a runtime error into a compile-time contract: the BAD url-safe assumption fails as a JUnit witness and is also refused statically by the conjoined proof against Codec's real Base64Test row."
 
 run_suite good discharged discharged
 run_suite bad refused refused
 
-echo "collision-pair: bad app assertions assertEquals(4, codecLength) vs assertEquals(5, codecLength) on Apache Commons Codec Base64.encodeBase64String(\"f\").length()"
+echo "collision-pair: bad app assertEquals(\"K_fMJwH-Q5e0nr7tWsxwkA\", Base64.encodeBase64String(b4)) vs Codec Base64Test assertEquals(\"K/fMJwH+Q5e0nr7tWsxwkA==\", Base64.encodeBase64String(b4))"
 echo "java consumer conjoin showcase self-check passed"

@@ -545,7 +545,7 @@ class ScalarTest {
     let decl = &out.decls[0];
     assert_eq!(
         decl.name,
-        "src/test/java/demo/ScalarTest.java::demo.ScalarTest.scalarIsSix"
+        "makeValue#euf#c:callresult_makeValue_a0()::assertion"
     );
     assert!(decl.pre.is_none());
     assert!(decl.post.is_none());
@@ -618,6 +618,80 @@ class TextTest {
     let operands = inv_operands(&out.decls[0]);
     assert_eq!(operands.len(), 1);
     assert_string_eq_atom(&operands[0], "codec");
+}
+
+#[test]
+fn direct_call_assertion_uses_python_style_euf_callsite_key() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import org.apache.commons.codec.binary.Base64;
+import org.junit.jupiter.api.Test;
+
+class CodecConsumerTest {
+    @Test
+    void standardBase64() {
+        assertSameText("K/fMJwH+Q5e0nr7tWsxwkA==", Base64.encodeBase64String(b4));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/CodecConsumerTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    let name = &out.decls[0].name;
+    assert!(
+        name.starts_with("org.apache.commons.codec.binary.Base64.encodeBase64String#euf#"),
+        "direct library-call assertion must be keyed by callee+args, got {name}"
+    );
+    assert!(
+        name.ends_with("::assertion"),
+        "callsite assertion name must be verifier cross-proof shape, got {name}"
+    );
+}
+
+#[test]
+fn unsupported_junit_assertion_does_not_drop_supported_assertion_in_same_method() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameText;
+import org.apache.commons.codec.binary.Base64;
+import org.junit.jupiter.api.Test;
+
+class MixedAssertionsTest {
+    @Test
+    void mixedAssertions() {
+        assertUnsupported(value);
+        assertSameText("K/fMJwH+Q5e0nr7tWsxwkA==", Base64.encodeBase64String(b4));
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(src, "src/test/java/demo/MixedAssertionsTest.java", &vocab);
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert!(
+        out.decls[0]
+            .name
+            .starts_with("org.apache.commons.codec.binary.Base64.encodeBase64String#euf#"),
+        "supported assertion should survive under callsite key: {:?}",
+        out.decls
+    );
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("assertUnsupported")),
+        "unsupported assertion must be reported loudly, warnings: {:?}",
+        out.warnings
+    );
 }
 
 #[test]
@@ -762,6 +836,42 @@ class ReassignedActualTest {
         out.warnings
             .iter()
             .any(|w| w.reason.contains("reassigned actual variable")),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn receiver_field_path_conflict_is_scoped_out() {
+    let vocab =
+        derive_vocab_from_source("demo.assertions.LearnedAssertions", ASSERT_LIB, &[]).unwrap();
+    let src = r#"
+package demo;
+
+import static demo.assertions.LearnedAssertions.assertSameValue;
+import org.junit.jupiter.api.Test;
+
+class ReceiverFieldStateTest {
+    @Test
+    void receiverFieldState() {
+        assertSameValue(0, context.ibitWorkArea);
+        decode(context);
+        assertSameValue(15, context.ibitWorkArea);
+    }
+}
+"#;
+
+    let out = lift_source_with_vocab(
+        src,
+        "src/test/java/demo/ReceiverFieldStateTest.java",
+        &vocab,
+    );
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("receiver field/path actual")),
         "warnings: {:?}",
         out.warnings
     );

@@ -6,6 +6,7 @@ import com.google.gson.Gson;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.junit.jupiter.api.Test;
@@ -13,22 +14,16 @@ import org.junit.jupiter.api.Test;
 final class CodecConsumerTest {
     @Test
     void libraryResultsAgree() throws Exception {
-        String json = new Gson().toJson(new Payload("f", 1));
-        int gsonLength = json.length();
-        String encoded = Base64.encodeBase64String("f".getBytes(StandardCharsets.UTF_8));
-        int codecLength = encoded.length();
-        String streamed = IOUtils.toString(new ByteArrayInputStream(encoded.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);
-        int ioLength = streamed.length();
-        int textLength = StringEscapeUtils.unescapeJson(StringEscapeUtils.escapeJson(streamed)).length();
+        String json = new Gson().toJson(new Payload("codec-base64", 1));
+        String escaped = StringEscapeUtils.escapeJson(json);
+        String streamed = IOUtils.toString(new ByteArrayInputStream(
+                StringEscapeUtils.unescapeJson(escaped).getBytes(StandardCharsets.UTF_8)),
+                StandardCharsets.UTF_8);
 
-        assertEquals(23, gsonLength);
-        assertEquals(23, gsonLength);
-        assertEquals(4, codecLength);
-        assertEquals(4, codecLength);
-        assertEquals(4, ioLength);
-        assertEquals(4, ioLength);
-        assertEquals(4, textLength);
-        assertEquals(4, textLength);
+        final byte[] b4 = Hex.decodeHex("2bf7cc2701fe4397b49ebeed5acc7090");
+
+        assertEquals(json, streamed);
+        assertEquals("K/fMJwH+Q5e0nr7tWsxwkA==", Base64.encodeBase64String(b4));
     }
 
     static final class Payload {

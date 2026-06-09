@@ -302,6 +302,7 @@ pub fn lift_source_with_vocab(
 ) -> AdapterOutput {
     let mut out = AdapterOutput::default();
     let package_name = package_name(src);
+    let name_scope = JavaNameScope::from_source(src, package_name.as_deref());
     let Some(class_name) = first_class_name(src) else {
         return out;
     };
@@ -313,21 +314,28 @@ pub fn lift_source_with_vocab(
             &class_name,
             &method.name,
         );
-        let mut atoms = Vec::new();
+        let mut entries = Vec::new();
         let mut skipped = Vec::new();
-        collect_assertion_atoms(&method.body, vocab, &mut atoms, &mut skipped);
+        collect_assertion_entries(
+            &method.body,
+            vocab,
+            &name_scope,
+            &test_name,
+            &mut entries,
+            &mut skipped,
+        );
 
         if !skipped.is_empty() {
             out.warnings.push(LiftWarning {
                 source_path: source_path.to_string(),
-                item_name: test_name,
+                item_name: test_name.clone(),
                 reason: format!(
-                    "java test assertions: unsupported assertion surface; released to layer 0: {}",
+                    "java test assertions: unsupported assertion surface; skipped from conjunction: {}",
                     skipped.join("; ")
                 ),
             });
-            continue;
         }
+        let atoms: Vec<Rc<Formula>> = entries.iter().map(|entry| entry.atom.clone()).collect();
         if atoms.is_empty() {
             out.warnings.push(LiftWarning {
                 source_path: source_path.to_string(),
@@ -345,16 +353,23 @@ pub fn lift_source_with_vocab(
             continue;
         }
 
-        out.decls.push(ContractDecl {
-            name: test_name,
-            pre: None,
-            post: None,
-            inv: Some(and_(atoms)),
-            out_binding: "out".to_string(),
-            evidence: None,
-            panic_loci: Vec::new(),
-            concept_hint: None,
-        });
+        let mut groups: std::collections::BTreeMap<String, Vec<Rc<Formula>>> =
+            std::collections::BTreeMap::new();
+        for entry in entries {
+            groups.entry(entry.name).or_default().push(entry.atom);
+        }
+        for (name, group_atoms) in groups {
+            out.decls.push(ContractDecl {
+                name,
+                pre: None,
+                post: None,
+                inv: Some(and_(group_atoms)),
+                out_binding: "out".to_string(),
+                evidence: None,
+                panic_loci: Vec::new(),
+                concept_hint: None,
+            });
+        }
         out.lifted += 1;
     }
     out
@@ -396,6 +411,8 @@ fn unsupported_consistency_shape(atoms: &[Rc<Formula>], body: &str) -> Option<St
     let assignment_counts = assignment_counts(body);
     let mut reassigned_actuals: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
+    let mut receiver_field_actuals: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
     for atom in atoms {
         let Some((actual, expected)) = equality_terms(atom) else {
             continue;
@@ -403,6 +420,16 @@ fn unsupported_consistency_shape(atoms: &[Rc<Formula>], body: &str) -> Option<St
         let Term::Var { name } = actual else {
             continue;
         };
+        if var_name_is_receiver_field_path(name) {
+            let expected_key = term_key(expected);
+            if let Some(prev) = receiver_field_actuals.insert(name.clone(), expected_key.clone()) {
+                if prev != expected_key {
+                    return Some(
+                        "java test assertions: receiver field/path actual has conflicting expected values; released to layer 0".to_string(),
+                    );
+                }
+            }
+        }
         if assignment_counts.get(name).copied().unwrap_or(0) < 2 {
             continue;
         }
@@ -438,6 +465,10 @@ fn unsupported_consistency_shape(atoms: &[Rc<Formula>], body: &str) -> Option<St
         }
     }
     None
+}
+
+fn var_name_is_receiver_field_path(name: &str) -> bool {
+    name.contains('.') || name.contains('[')
 }
 
 fn equality_terms(formula: &Formula) -> Option<(&Term, &Term)> {
@@ -914,6 +945,60 @@ fn package_name(src: &str) -> Option<String> {
     })
 }
 
+#[derive(Debug, Clone, Default)]
+struct JavaNameScope {
+    package: Option<String>,
+    imports: std::collections::BTreeMap<String, String>,
+}
+
+impl JavaNameScope {
+    fn from_source(src: &str, package: Option<&str>) -> Self {
+        let mut imports = std::collections::BTreeMap::new();
+        for line in src.lines() {
+            let line = line.trim();
+            if line.starts_with("import static ") {
+                continue;
+            }
+            let Some(rest) = line.strip_prefix("import ") else {
+                continue;
+            };
+            let target = rest.trim_end_matches(';').trim();
+            if target.ends_with(".*") {
+                continue;
+            }
+            if let Some(simple) = target.rsplit('.').next() {
+                imports.insert(simple.to_string(), target.to_string());
+            }
+        }
+        Self {
+            package: package.map(str::to_string),
+            imports,
+        }
+    }
+
+    fn resolve_callee(&self, head: &str) -> String {
+        let head = compact(head);
+        let Some((first, tail)) = head.split_once('.') else {
+            return head;
+        };
+        if let Some(imported) = self.imports.get(first) {
+            return format!("{imported}.{tail}");
+        }
+        if is_java_type_name(first) {
+            if let Some(package) = &self.package {
+                return format!("{package}.{head}");
+            }
+        }
+        head
+    }
+}
+
+fn is_java_type_name(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+}
+
 fn first_class_name(src: &str) -> Option<String> {
     let tokens = lexical_tokens(src);
     for pair in tokens.windows(2) {
@@ -1031,15 +1116,26 @@ fn is_ident_char(ch: char) -> bool {
     ch == '_' || ch == '$' || ch.is_ascii_alphanumeric()
 }
 
-fn collect_assertion_atoms(
+#[derive(Debug, Clone)]
+struct LiftedAssertionEntry {
+    name: String,
+    atom: Rc<Formula>,
+}
+
+fn collect_assertion_entries(
     body: &str,
     vocab: &AssertionVocab,
-    atoms: &mut Vec<Rc<Formula>>,
+    name_scope: &JavaNameScope,
+    default_name: &str,
+    entries: &mut Vec<LiftedAssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
     for stmt in split_statements(body) {
-        match assertion_from_statement(&stmt, vocab) {
-            Ok(Some(atom)) => atoms.push(atom),
+        match assertion_from_statement(&stmt, vocab, name_scope) {
+            Ok(Some(entry)) => entries.push(LiftedAssertionEntry {
+                name: entry.name.unwrap_or_else(|| default_name.to_string()),
+                atom: entry.atom,
+            }),
             Ok(None) => {}
             Err(reason) => skipped.push(reason),
         }
@@ -1080,10 +1176,16 @@ fn split_statements(body: &str) -> Vec<String> {
     out
 }
 
+struct AssertionEntry {
+    name: Option<String>,
+    atom: Rc<Formula>,
+}
+
 fn assertion_from_statement(
     stmt: &str,
     vocab: &AssertionVocab,
-) -> Result<Option<Rc<Formula>>, String> {
+    name_scope: &JavaNameScope,
+) -> Result<Option<AssertionEntry>, String> {
     let Some((head, args_src)) = call_parts(stmt) else {
         return Ok(None);
     };
@@ -1102,16 +1204,23 @@ fn assertion_from_statement(
             if args.len() < 2 {
                 return Err(format!("{name}: expected at least 2 arguments"));
             }
-            let expected = translate_term(&args[0]).map_err(|e| format!("{name}: {e}"))?;
-            let actual = translate_term(&args[1]).map_err(|e| format!("{name}: {e}"))?;
-            Ok(Some(eq(actual, expected)))
+            let expected =
+                translate_term_in_scope(&args[0], name_scope).map_err(|e| format!("{name}: {e}"))?;
+            let actual =
+                translate_term_in_scope(&args[1], name_scope).map_err(|e| format!("{name}: {e}"))?;
+            let contract_name = callsite_assertion_name(actual.as_ref());
+            Ok(Some(AssertionEntry {
+                name: contract_name,
+                atom: eq(actual, expected),
+            }))
         }
         AssertCategory::Truth => {
             let Some(first) = args.first() else {
                 return Err(format!("{name}: expected a condition"));
             };
-            let atom = translate_bool_assertion(first).map_err(|e| format!("{name}: {e}"))?;
-            Ok(Some(atom))
+            let atom = translate_bool_assertion_in_scope(first, name_scope)
+                .map_err(|e| format!("{name}: {e}"))?;
+            Ok(Some(AssertionEntry { name: None, atom }))
         }
         AssertCategory::Approx => Err(format!(
             "approximate assertion `{name}` is not exact equality (a ~= b within tolerance); refused to avoid false-pass"
@@ -1120,6 +1229,17 @@ fn assertion_from_statement(
             "LOUD REFUSAL -- assertion `{name}` is not structurally clear; not lifted"
         )),
     }
+}
+
+fn callsite_assertion_name(actual: &Term) -> Option<String> {
+    let Term::Ctor { name, .. } = actual else {
+        return None;
+    };
+    let callee = name.strip_prefix("call:")?;
+    Some(format!(
+        "{callee}#euf#{}::assertion",
+        canonical_callsite_sig(actual)
+    ))
 }
 
 fn call_parts(stmt: &str) -> Option<(&str, &str)> {
@@ -1166,14 +1286,20 @@ fn split_args(args: &str) -> Vec<String> {
     out
 }
 
-fn translate_bool_assertion(expr: &str) -> Result<Rc<Formula>, String> {
+fn translate_bool_assertion_in_scope(
+    expr: &str,
+    name_scope: &JavaNameScope,
+) -> Result<Rc<Formula>, String> {
     let Some((lhs, rhs)) = split_top_level_eq(expr) else {
         return Err(format!(
             "only scalar equality is liftable, got `{}`",
             compact(expr)
         ));
     };
-    Ok(eq(translate_term(lhs)?, translate_term(rhs)?))
+    Ok(eq(
+        translate_term_in_scope(lhs, name_scope)?,
+        translate_term_in_scope(rhs, name_scope)?,
+    ))
 }
 
 fn split_top_level_eq(expr: &str) -> Option<(&str, &str)> {
@@ -1194,7 +1320,7 @@ fn split_top_level_eq(expr: &str) -> Option<(&str, &str)> {
     None
 }
 
-fn translate_term(expr: &str) -> Result<Rc<Term>, String> {
+fn translate_term_in_scope(expr: &str, name_scope: &JavaNameScope) -> Result<Rc<Term>, String> {
     let expr = trim_wrapping_parens(expr.trim());
     if expr.starts_with('"') {
         return parse_java_string_literal(expr).map(str_const);
@@ -1213,16 +1339,19 @@ fn translate_term(expr: &str) -> Result<Rc<Term>, String> {
     if let Some((lhs, op, rhs)) = split_top_level_arithmetic(expr) {
         return Ok(Rc::new(Term::Ctor {
             name: op.to_string(),
-            args: vec![translate_term(lhs)?, translate_term(rhs)?],
+            args: vec![
+                translate_term_in_scope(lhs, name_scope)?,
+                translate_term_in_scope(rhs, name_scope)?,
+            ],
         }));
     }
     if let Some((head, args_src)) = call_parts(expr) {
         let args = split_args(args_src)
             .iter()
-            .map(|arg| translate_term(arg))
+            .map(|arg| translate_term_in_scope(arg, name_scope))
             .collect::<Result<Vec<_>, _>>()?;
         return Ok(Rc::new(Term::Ctor {
-            name: format!("call:{}", compact(head)),
+            name: format!("call:{}", name_scope.resolve_callee(head)),
             args,
         }));
     }
@@ -1230,6 +1359,56 @@ fn translate_term(expr: &str) -> Result<Rc<Term>, String> {
         return Ok(make_var(compact(expr)));
     }
     Err(format!("unsupported term `{}`", compact(expr)))
+}
+
+fn canonical_callsite_sig(term: &Term) -> String {
+    let Term::Ctor { name, args } = term else {
+        return term_key(term);
+    };
+    let Some(callee) = name.strip_prefix("call:") else {
+        return term_key(term);
+    };
+    let head = call_result_head(callee, args.len());
+    let inner = args
+        .iter()
+        .map(|arg| canonical_term_sig(arg))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("c:{head}({inner})")
+}
+
+fn call_result_head(callee: &str, arity: usize) -> String {
+    let safe = callee
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii() && ch.is_ascii_alphanumeric() {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    format!("callresult_{safe}_a{arity}")
+}
+
+fn canonical_term_sig(term: &Term) -> String {
+    match term {
+        Term::Var { name } => format!("v:{name}"),
+        Term::Const { value, .. } => match value {
+            sugar_ir_symbolic::ConstValue::Int(value) => format!("i:{value}"),
+            sugar_ir_symbolic::ConstValue::String(value) => format!("s:{value:?}"),
+            sugar_ir_symbolic::ConstValue::Bool(value) => format!("b:{value}"),
+        },
+        Term::Ctor { name, args } => {
+            let inner = args
+                .iter()
+                .map(|arg| canonical_term_sig(arg))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("c:{name}({inner})")
+        }
+        _ => term_key(term),
+    }
 }
 
 fn parse_java_string_literal(expr: &str) -> Result<String, String> {
