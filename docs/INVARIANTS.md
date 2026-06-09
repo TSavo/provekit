@@ -59,6 +59,16 @@ type system, effects theory, or checker (II): the only thing we build is #1.
    exactly, or REFUSE (skip and name the residual). There is no lossy model of a failure; if
    there were a failure-model to approximate, we already crossed into effects and went wrong.
 
+   The same holds for async and concurrency. We never model what `.await`, a channel, or a mutex
+   *does* (suspend, poll, schedule, resume); that is an effect. So `.await`, a channel send, a
+   lock acquire, a `throw`, an FFI call, and a plain synchronous call are ONE primitive to us: a
+   seam (a locus, its own subject) carrying a `post |= pre` obligation. We do not keep four
+   effect theories for four kinds of boundary; we keep one boundary with one obligation, and the
+   *kind* of boundary (the async-ness, the FFI-ness, the lockedness) is invisible. Refusing to
+   model the effect is exactly what collapses those into a single seam primitive, and it is why
+   we cover async and concurrency without ever owning an effects theory. Failure was only the
+   first effect, not the only one.
+
 6. **Not a correctness checker.** The solver decides — z3, coq, vampire, maude. We lift to IR,
    form the obligation, and route it to a prover. We do not implement theories: floats are
    z3's FP theory, strings z3's string theory, quantifiers go to vampire/coq.
