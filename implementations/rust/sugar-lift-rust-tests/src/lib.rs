@@ -1544,6 +1544,10 @@ fn translate_assertion_term(expr: &Expr, local_scope: &str) -> Result<Rc<Term>, 
             let term = translate_expression_only_block(&const_block.block, "const")?;
             Ok(scope_const_block_locals(term, local_scope))
         }
+        Expr::Path(path) if path.path.is_ident("None") => Ok(Rc::new(Term::Ctor {
+            name: "call:None".to_string(),
+            args: Vec::new(),
+        })),
         Expr::Paren(paren) => translate_assertion_term(&paren.expr, local_scope),
         Expr::Group(group) => translate_assertion_term(&group.expr, local_scope),
         _ => translate_term(expr),

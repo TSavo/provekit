@@ -36,12 +36,16 @@ Claimed slice:
     around stable call-result rows from `const_array_ops`, including
     `std::array::from_fn::<_, 5, _>(doubler)` and
     `[5, 6, 1, 2].map(doubler)`.
+  - `coretests/tests/option.rs::test_and`: nullary and variant constructor
+    equality rows for immutable `Option` values, lifted as location-keyed
+    operator-dispatch claims.
   - `coretests/tests/cmp.rs::cmp_default`: user-type operator dispatch for
     `Int`, `RevInt`, and `Fool` comparisons, lifted as uninterpreted operator
     call results.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
   emits `#euf#` call-result consistency rows, TypeId consistency rows, and the
-  `cmp_default` operator-dispatch row, and every claimed row discharges.
+  `cmp_default` and `option::test_and` operator-dispatch rows, and every claimed
+  row discharges.
 - Witness axis: the exact std vendor tests rerun with `cargo test --test
   coretests ... -- --exact`.
 
@@ -77,20 +81,22 @@ Named gaps toward full `coretests` coverage:
   is lifted explicitly.
 - Complex terms: closed bitwise-expression RHS terms, exact literal array/tuple
   value identities, and expression-only `const { expr }` wrappers are claimed
-  where the call-result key is stable. Direct aggregate constructor reasoning
-  is not claimed; arrays and tuples are opaque exact values in ProofIR, and
+  where the call-result key is stable. Nullary/variant constructor expected
+  values are claimed only through operator dispatch on immutable inputs, such as
+  `option::test_and`; arrays and tuples are opaque exact values in ProofIR, and
   aggregate literals containing non-literal elements are conservatively skipped.
-  Const blocks with statements, control flow, or unsupported inner terms stay
-  residual. Nested calls with non-value callees, stateful method chains,
-  non-direct-call results, and unsupported expression forms stay out of the
-  claimed slice.
+  Direct aggregate constructor reasoning beyond that bounded operator-dispatch
+  shape stays residual. Const blocks with statements, control flow, or
+  unsupported inner terms stay residual. Nested calls with non-value callees,
+  stateful method chains, non-direct-call results, and unsupported expression
+  forms stay out of the claimed slice.
 
 The run script requires representative integer, generic type-arg-keyed, active
 cfg pointer-width, TypeId comparison, finite-float, string, pure method-chain
 predicate, stable-key compound RHS rows, literal array/tuple exact-value rows,
-expression-only const-block rows, and the `cmp_default` user-type operator row,
-and rejects any non-discharged claimed row. It is intentionally not a
-full-`std` claim.
+expression-only const-block rows, the `option::test_and` constructor
+operator-dispatch row, and the `cmp_default` user-type operator row, and rejects
+any non-discharged claimed row. It is intentionally not a full-`std` claim.
 
 ## Grounded Full-Coretests Gap Census
 
@@ -111,8 +117,9 @@ closes 2 current `intrinsics.rs` diagnostic items. The operator-dispatch slice
 closes the pre-existing `cmp_default` over-refusal. This literal aggregate
 method-chain slice closes 13 additional stable-key `iter/range.rs` rows. This
 expression-only const-block slice closes 2 `array.rs::const_array_ops` rows with
-scoped local-function identity. The current known backlog is 1,059 items for
-that target.
+scoped local-function identity. This constructor-dispatch slice closes 8
+`option.rs::test_and` nullary/variant constructor rows. The current known
+backlog is 1,051 items for that target.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
@@ -121,7 +128,7 @@ that target.
 | Floats | 18 | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
-| Complex terms | 427 | Residual after the complex-term, TypeId, literal aggregate method-chain, and expression-only const-block slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, and 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
+| Complex terms | 419 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, and constructor-dispatch slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, and 8 `option.rs::test_and` constructor rows lift through operator dispatch. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
 | Other | 331 | `tests/alloc.rs::layout_round_up_to_align_edge_cases`: no liftable scalar assertion under the current surface. |
 
 ### Complex-Term Decomposition
@@ -137,7 +144,7 @@ The current complex-term residual sub-shapes include:
 | Operator / expression RHS | 48 | This slice closes stable-key atomic bitwise RHS rows such as `tests/atomic.rs::uint_and`: `assert_eq!(x.load(SeqCst), 0xf731 & 0x137f)`; residual rows include stateful/repeated receiver and pointer arithmetic forms needing temporal identity. |
 | Array, slice, and tuple literals | 47 | Exact literal array/tuple identities are now claimed only when they sit on stable call-result rows. This slice also closes the expression-only const-block free-call row `tests/array.rs::const_array_ops`: `assert_eq!(const { std::array::from_fn::<_, 5, _>(doubler) }, [0, 2, 4, 6, 8])`. Direct aggregate comparisons and aggregate literals with non-literal elements remain residual, for example `tests/array.rs::array_from_ref`: `assert_eq!(&[*VALUE], ARR)`. |
 | Boolean operators / non-equality predicates | 25 | `tests/array.rs::array_mixed_equality_integers`: `assert!(array3 != slice3b)`. |
-| Nested calls / constructors | 20 | `tests/async_iter/mod.rs::into_async_iter`: `assert_eq!(..., Poll::Ready(Some(0)))`. |
+| Nested calls / constructors | 12 | Closed 8 immutable `Option` constructor-dispatch rows from `tests/option.rs::test_and`; residual examples include `tests/async_iter/mod.rs::into_async_iter`: `assert_eq!(..., Poll::Ready(Some(0)))`. |
 | Boolean predicate residual | 13 | `tests/array.rs::array_from_ref`: `assert!(core::ptr::eq(VALUE, &ARR[0]))`. |
 
 ### Other / No-Liftable Decomposition

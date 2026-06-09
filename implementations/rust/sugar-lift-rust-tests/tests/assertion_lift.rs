@@ -1173,6 +1173,113 @@ fn bool_compare_exchange() {
 }
 
 #[test]
+fn nullary_option_constructor_expected_value_uses_operator_dispatch() {
+    // Vendor shape: rust-src library/coretests/tests/iter/range.rs::test_range_nth.
+    // `None` is the nullary Option constructor, not a local variable. Keeping it
+    // as a constructor lets the user-overridable equality dispatch stay
+    // explicit and location-keyed instead of pretending this is scalar `=`.
+    let src = r#"
+#[test]
+fn test_range_nth() {
+    assert_eq!((10..15).nth(5), None);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/iter/range.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(out.decls[0].name, "tests/iter/range.rs::test_range_nth");
+
+    match inv_operands(&out.decls[0])[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "call:eq:None");
+                    assert_eq!(args.len(), 2);
+                    match args[0].as_ref() {
+                        Term::Ctor { name, .. } => assert_eq!(name, "method:nth"),
+                        other => panic!("expected nth lhs, got {other:?}"),
+                    }
+                    match args[1].as_ref() {
+                        Term::Ctor { name, args } => {
+                            assert_eq!(name, "call:None");
+                            assert!(args.is_empty());
+                        }
+                        other => panic!("expected None constructor rhs, got {other:?}"),
+                    }
+                }
+                other => panic!("expected operator call lhs, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn option_test_and_constructor_rows_stay_location_keyed() {
+    // Vendor shape: rust-src library/coretests/tests/option.rs::test_and.
+    // The inputs are immutable Option values; the equality itself is still
+    // Option::eq, so this is one location-keyed operator-dispatch contract.
+    let src = r#"
+use core::option::*;
+
+#[test]
+fn test_and() {
+    let x: Option<isize> = Some(1);
+    assert_eq!(x.and(Some(2)), Some(2));
+    assert_eq!(x.and(None::<isize>), None);
+
+    let x: Option<isize> = None;
+    assert_eq!(x.and(Some(2)), None);
+    assert_eq!(x.and(None::<isize>), None);
+
+    const FOO: Option<isize> = Some(1);
+    const A: Option<isize> = FOO.and(Some(2));
+    const B: Option<isize> = FOO.and(None);
+    assert_eq!(A, Some(2));
+    assert_eq!(B, None);
+
+    const BAR: Option<isize> = None;
+    const C: Option<isize> = BAR.and(Some(2));
+    const D: Option<isize> = BAR.and(None);
+    assert_eq!(C, None);
+    assert_eq!(D, None);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/option.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(out.decls[0].name, "tests/option.rs::test_and");
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 8);
+    for operand in operands {
+        match operand.as_ref() {
+            Formula::Atomic { name, args } => {
+                assert_eq!(name, "=");
+                assert_eq!(args.len(), 2);
+                match args[0].as_ref() {
+                    Term::Ctor { name, args } => {
+                        assert!(
+                            name == "call:eq:Some" || name == "call:eq:None",
+                            "unexpected operator-dispatch call: {name}"
+                        );
+                        assert_eq!(args.len(), 2);
+                    }
+                    other => panic!("expected operator-dispatch lhs, got {other:?}"),
+                }
+                assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
+            }
+            other => panic!("expected equality atom, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn constructor_operator_comparisons_lift_as_uninterpreted_operator_results() {
     let src = r#"
 struct Int(i32);
