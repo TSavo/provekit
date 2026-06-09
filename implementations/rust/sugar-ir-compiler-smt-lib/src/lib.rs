@@ -438,6 +438,105 @@ mod tests {
         }
     }
 
+    fn string_theory_atom(name: &str, args: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({"kind": "atomic", "name": name, "args": args})
+    }
+
+    fn str_len(s: &str) -> serde_json::Value {
+        serde_json::json!({"kind": "ctor", "name": "str.len", "args": [string_const(s)]})
+    }
+
+    #[test]
+    fn string_contains_prefix_suffix_route_to_z3_string_theory() {
+        let z3 = which_z3().expect("z3 required for string theory check");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom("contains", vec![string_const("abcde"), string_const("bcd")]),
+                string_theory_atom("prefix-of", vec![string_const("ab"), string_const("abcde")]),
+                string_theory_atom("suffix-of", vec![string_const("de"), string_const("abcde")]),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains(r#"(str.contains "abcde" "bcd")"#),
+            "contains must lower to z3 string theory, got:\n{script}"
+        );
+        assert!(
+            script.contains(r#"(str.prefixof "ab" "abcde")"#),
+            "prefix-of must lower to z3 string theory, got:\n{script}"
+        );
+        assert!(
+            script.contains(r#"(str.suffixof "de" "abcde")"#),
+            "suffix-of must lower to z3 string theory, got:\n{script}"
+        );
+        assert!(
+            !script.contains("strlit_"),
+            "string-theory atoms must not use opaque equality literals:\n{script}"
+        );
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "true string predicates must be SAT: {out}"
+        );
+    }
+
+    #[test]
+    fn string_theory_bad_twin_is_unsat() {
+        let z3 = which_z3().expect("z3 required for string theory check");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom("contains", vec![string_const("abcde"), string_const("bcd")]),
+                {"kind": "not", "operands": [
+                    string_theory_atom("contains", vec![string_const("abcde"), string_const("bcd")])
+                ]},
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "contradictory string predicate twin must be UNSAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn string_len_and_ascii_class_predicates_route_to_z3_string_theory() {
+        let z3 = which_z3().expect("z3 required for string theory check");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                eq(str_len("～～～～～"), int_const(15)),
+                string_theory_atom("str.is_ascii", vec![string_const("banana\0\u{7f}")]),
+                string_theory_atom("str.is_ascii_alphabetic", vec![string_const("A")]),
+                {"kind": "not", "operands": [
+                    string_theory_atom("str.is_ascii_alphabetic", vec![string_const("0")])
+                ]},
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains("(str.len \"～～～～～\")"),
+            "str.len must lower to z3 string length, got:\n{script}"
+        );
+        assert!(
+            script.contains("str.in_re"),
+            "ascii predicates must lower to z3 regex string checks, got:\n{script}"
+        );
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "true len/ascii predicate set must be SAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
     // ── Cross-type literal distinctness (Python `==` semantics) ───────────
     // Helpers for int / bool / None literal terms.
     fn int_const(n: i64) -> serde_json::Value {

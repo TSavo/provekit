@@ -63,6 +63,8 @@ const STRING_OPS: &[&str] = &[
     "str.++",
     "str.len",
     "str.indexof",
+    "str.is_ascii",
+    "str.is_ascii_alphabetic",
 ];
 
 const BV_OPS: &[&str] = &[

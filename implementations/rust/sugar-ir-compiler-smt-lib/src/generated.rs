@@ -44,6 +44,9 @@ pub fn emit_term(term: &Term) -> String {
             emit_const_value(value, sort_name)
         }
         Term::Ctor { name, args, .. } => {
+            if name == "str.len" && args.len() == 1 {
+                return format!("(str.len {})", emit_string_term(&args[0]));
+            }
             if args.is_empty() {
                 return smt_quote(name);
             };
@@ -81,6 +84,9 @@ pub fn emit_term(term: &Term) -> String {
             format!("(let ({}) {})", binding_strs.join(" "), body_str)
         }
         Term::Ctor { name, args } => {
+            if name == "str.len" && args.len() == 1 {
+                return format!("(str.len {})", emit_string_term(&args[0]));
+            }
             if args.is_empty() {
                 return smt_quote(name);
             };
@@ -205,6 +211,9 @@ fn collect_opaque_quantifier_sorts_formula(formula: &Formula, out: &mut BTreeMap
 pub fn emit_formula(formula: &Formula) -> String {
     match formula {
         Formula::Atomic { name, args } => {
+            if let Some(rendered) = emit_string_theory_atomic(name, args) {
+                return rendered;
+            }
             let smt_name = smt_atomic_name(name);
             if args.is_empty() {
                 return smt_name.to_string();
@@ -293,6 +302,80 @@ pub fn emit_formula(formula: &Formula) -> String {
             )
         }
     }
+}
+
+fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
+    match name {
+        "contains" if args.len() == 2 => Some(format!(
+            "(str.contains {} {})",
+            emit_string_term(&args[0]),
+            emit_string_term(&args[1])
+        )),
+        "prefix-of" if args.len() == 2 => Some(format!(
+            "(str.prefixof {} {})",
+            emit_string_term(&args[0]),
+            emit_string_term(&args[1])
+        )),
+        "suffix-of" if args.len() == 2 => Some(format!(
+            "(str.suffixof {} {})",
+            emit_string_term(&args[0]),
+            emit_string_term(&args[1])
+        )),
+        "str.is_ascii" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.* (re.range \"\\u{{0}}\" \"\\u{{7f}}\")))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_alphabetic" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.union (re.range \"A\" \"Z\") (re.range \"a\" \"z\")))",
+            emit_string_term(&args[0])
+        )),
+        _ => None,
+    }
+}
+
+fn is_string_theory_atomic_predicate(name: &str) -> bool {
+    matches!(
+        name,
+        "contains" | "prefix-of" | "suffix-of" | "str.is_ascii" | "str.is_ascii_alphabetic"
+    )
+}
+
+fn emit_string_term(term: &Term) -> String {
+    match term {
+        Term::Const { value, sort } => {
+            if matches!(sort, Sort::Primitive { name } if name == "String") {
+                if let serde_json::Value::String(s) = value {
+                    return smt_string_literal(s);
+                }
+            }
+            emit_term(term)
+        }
+        Term::Var { name } => smt_quote(name),
+        Term::Ctor { name, args } if name == "str.++" && args.len() == 2 => {
+            format!(
+                "(str.++ {} {})",
+                emit_string_term(&args[0]),
+                emit_string_term(&args[1])
+            )
+        }
+        Term::Let { body, .. } => emit_string_term(body),
+        _ => emit_term(term),
+    }
+}
+
+fn smt_string_literal(s: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\"\""),
+            '\u{0}'..='\u{1f}' | '\u{7f}' => {
+                out.push_str(&format!("\\u{{{:x}}}", ch as u32));
+            }
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
 }
 
 // String/bool literal encoding + cross-type distinctness live in the
@@ -540,7 +623,13 @@ pub fn collect_free_vars_formula(
     bound: &BTreeSet<String>,
 ) {
     match formula {
-        Formula::Atomic { args, .. } => {
+        Formula::Atomic { name, args } => {
+            if is_string_theory_atomic_predicate(name) {
+                for a in args {
+                    collect_free_vars_string_term(a, out, bound);
+                }
+                return;
+            }
             // A var in an atom that carries a `Real` const is a real-arithmetic
             // operand (e.g. `(< (- a b) 0.00000015)`): declare it `Real`, not
             // `Int`. Atoms with no Real const collect exactly as before, so all
@@ -649,6 +738,12 @@ fn collect_free_vars_term_ctx(
         }
         Term::Const { .. } => {}
         Term::Ctor { args, .. } => {
+            if let Term::Ctor { name, args } = term {
+                if name == "str.len" && args.len() == 1 {
+                    collect_free_vars_string_term(&args[0], out, bound);
+                    return;
+                }
+            }
             for a in args {
                 collect_free_vars_term_ctx(a, out, bound, real_ctx);
             }
@@ -670,6 +765,41 @@ fn collect_free_vars_term_ctx(
                 current_bound.insert(b.name.clone());
             }
             collect_free_vars_term_ctx(body, out, &current_bound, real_ctx);
+        }
+    }
+}
+
+fn collect_free_vars_string_term(
+    term: &Term,
+    out: &mut BTreeMap<String, String>,
+    bound: &BTreeSet<String>,
+) {
+    match term {
+        Term::Var { name, .. } => {
+            if !bound.contains(name) {
+                out.insert(name.clone(), "String".to_string());
+            }
+        }
+        Term::Const { .. } => {}
+        Term::Ctor { args, .. } => {
+            for a in args {
+                collect_free_vars_string_term(a, out, bound);
+            }
+        }
+        Term::Lambda {
+            param_name, body, ..
+        } => {
+            let mut nb = bound.clone();
+            nb.insert(param_name.clone());
+            collect_free_vars_string_term(body, out, &nb);
+        }
+        Term::Let { bindings, body, .. } => {
+            let mut current_bound = bound.clone();
+            for b in bindings {
+                collect_free_vars_string_term(&b.bound_term, out, &current_bound);
+                current_bound.insert(b.name.clone());
+            }
+            collect_free_vars_string_term(body, out, &current_bound);
         }
     }
 }
@@ -709,6 +839,7 @@ fn known_term_sort(term: &Term) -> Option<String> {
             Some(sort_name(sort))
         }
         Term::Var { .. } => Some("Int".to_string()),
+        Term::Ctor { name, .. } if name == "str.len" => Some("Int".to_string()),
         Term::Ctor { .. } => None,
         Term::Lambda { .. } => None,
         Term::Let { body, .. } => known_term_sort(body),
@@ -782,7 +913,7 @@ fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, Ctor
 /// uninterpreted is the sound choice (the cardinal-sin guard). They keep
 /// getting declared uninterpreted, exactly as before.
 fn is_builtin_term_operator(name: &str) -> bool {
-    matches!(name, "+" | "-" | "*")
+    matches!(name, "+" | "-" | "*" | "str.len" | "str.++")
 }
 
 fn collect_ctor_decls_term(
@@ -830,6 +961,9 @@ fn collect_ctor_decls_term(
 /// predicate name as special: it is the COMPLEMENT of the builtin set, so it
 /// is generic and language-blind.
 fn is_builtin_atomic_predicate(name: &str) -> bool {
+    if is_string_theory_atomic_predicate(name) {
+        return true;
+    }
     matches!(
         smt_atomic_name(name),
         // Equality / relational theory predicates.
@@ -1006,7 +1140,7 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     // values; bool encoded as int; floats residual). See `literal_encoding`.
     // The axiom is a Python-TRUE fact, so it is sound on the negated path too:
     // it only removes spurious models, never adds one.
-    preamble.push_str(&LiteralConstants::from_formula(formula).preamble());
+    preamble.push_str(&LiteralConstants::from_formula_for_legacy_literals(formula).preamble());
     // Emit isinstance disjointness clauses for genuinely-disjoint builtin type
     // pairs that appear with the same subject in the formula. These are
     // Python-TRUE facts (ground, quantifier-free). See `isinstance_encoding`.
@@ -1096,7 +1230,7 @@ pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
     // Declare string-literal constants and emit the cross-type distinctness
     // axiom (str/None distinct from each other and from concrete int/bool
     // values; bool encoded as int; floats residual). See `literal_encoding`.
-    preamble.push_str(&LiteralConstants::from_formula(formula).preamble());
+    preamble.push_str(&LiteralConstants::from_formula_for_legacy_literals(formula).preamble());
     // Emit isinstance disjointness clauses (see `isinstance_encoding`).
     preamble.push_str(&IsinstanceClauses::from_formula(formula).preamble());
 

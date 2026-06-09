@@ -11,8 +11,8 @@ use std::rc::Rc;
 
 use quote::ToTokens;
 use sugar_ir_symbolic::{
-    and_, eq, gt, gte, lt, lte, make_var, ne, not_, num, or_, real_const, str_const, ConstValue,
-    ContractDecl, Formula, Term,
+    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, not_, num, or_, real_const, str_const,
+    ConstValue, ContractDecl, Formula, Term,
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -163,15 +163,13 @@ fn collect_assertion_entries(
                 entries,
                 skipped,
             ),
-            Stmt::Expr(Expr::Macro(m), _) => {
-                collect_macro(
-                    &m.mac.path,
-                    m.mac.tokens.clone(),
-                    local_scope,
-                    entries,
-                    skipped,
-                )
-            }
+            Stmt::Expr(Expr::Macro(m), _) => collect_macro(
+                &m.mac.path,
+                m.mac.tokens.clone(),
+                local_scope,
+                entries,
+                skipped,
+            ),
             _ => {}
         }
     }
@@ -247,9 +245,18 @@ fn parse_macro_args(tokens: proc_macro2::TokenStream) -> syn::Result<MacroArgs> 
 }
 
 fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionEntry, String> {
+    if let Some(entry) = translate_string_predicate_assertion(expr, local_scope)? {
+        return Ok(entry);
+    }
     match expr {
         Expr::Binary(binary) => translate_binary_bool_assertion(binary, local_scope),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
+            if let Some(entry) = translate_string_predicate_assertion(&unary.expr, local_scope)? {
+                return Ok(AssertionEntry {
+                    name: entry.name,
+                    atom: not_(entry.atom),
+                });
+            }
             if let Ok(term) = translate_term(&unary.expr) {
                 Ok(assertion_entry_from_eq(
                     term,
@@ -299,12 +306,7 @@ fn translate_binary_bool_assertion(
             };
             Ok(AssertionEntry { name, atom })
         }
-        BinOp::Eq(_)
-        | BinOp::Ne(_)
-        | BinOp::Lt(_)
-        | BinOp::Le(_)
-        | BinOp::Gt(_)
-        | BinOp::Ge(_) => {
+        BinOp::Eq(_) | BinOp::Ne(_) | BinOp::Lt(_) | BinOp::Le(_) | BinOp::Gt(_) | BinOp::Ge(_) => {
             let op = relation_from_binop(&binary.op)
                 .expect("comparison op matched but did not map to relation");
             let lhs = translate_term(&binary.left)?;
@@ -351,6 +353,121 @@ fn relation_from_binop(op: &BinOp) -> Option<RelationOp> {
     }
 }
 
+fn translate_string_predicate_assertion(
+    expr: &Expr,
+    local_scope: &str,
+) -> Result<Option<AssertionEntry>, String> {
+    match expr {
+        Expr::Paren(paren) => translate_string_predicate_assertion(&paren.expr, local_scope),
+        Expr::Group(group) => translate_string_predicate_assertion(&group.expr, local_scope),
+        Expr::MethodCall(call) => {
+            let method = call.method.to_string();
+            match method.as_str() {
+                "contains" => {
+                    let Some(receiver) = string_or_char_literal_term(&call.receiver) else {
+                        return Ok(None);
+                    };
+                    if call.args.len() != 1 {
+                        return Err("string contains predicate expects one literal pattern".to_string());
+                    }
+                    let Some(pattern) = string_or_char_literal_term(&call.args[0]) else {
+                        return Err(format!(
+                            "string contains predicate needs a string/char literal pattern, got `{}`",
+                            token_key(&call.args[0])
+                        ));
+                    };
+                    let name = method_call_assertion_name(
+                        "contains",
+                        vec![receiver.clone(), pattern.clone()],
+                        local_scope,
+                    );
+                    Ok(Some(AssertionEntry {
+                        name,
+                        atom: atomic_("contains", vec![receiver, pattern]),
+                    }))
+                }
+                "starts_with" | "ends_with" => {
+                    let Some(receiver) = string_or_char_literal_term(&call.receiver) else {
+                        return Ok(None);
+                    };
+                    if call.args.len() != 1 {
+                        return Err(format!("{method} predicate expects one literal pattern"));
+                    }
+                    let Some(pattern) = string_or_char_literal_term(&call.args[0]) else {
+                        return Err(format!(
+                            "{method} predicate needs a string/char literal pattern, got `{}`",
+                            token_key(&call.args[0])
+                        ));
+                    };
+                    let name = method_call_assertion_name(
+                        method.as_str(),
+                        vec![receiver.clone(), pattern.clone()],
+                        local_scope,
+                    );
+                    let atom_name = if method == "starts_with" {
+                        "prefix-of"
+                    } else {
+                        "suffix-of"
+                    };
+                    Ok(Some(AssertionEntry {
+                        name,
+                        atom: atomic_(atom_name, vec![pattern, receiver]),
+                    }))
+                }
+                "is_ascii" => {
+                    let Some(receiver) = string_or_char_literal_term(&call.receiver) else {
+                        return Ok(None);
+                    };
+                    if !call.args.is_empty() {
+                        return Err("is_ascii predicate expects no arguments".to_string());
+                    }
+                    let name =
+                        method_call_assertion_name("is_ascii", vec![receiver.clone()], local_scope);
+                    Ok(Some(AssertionEntry {
+                        name,
+                        atom: atomic_("str.is_ascii", vec![receiver]),
+                    }))
+                }
+                "is_ascii_alphabetic" => {
+                    let Some(receiver) = char_literal_term(&call.receiver) else {
+                        return Ok(None);
+                    };
+                    if !call.args.is_empty() {
+                        return Err("is_ascii_alphabetic predicate expects no arguments".to_string());
+                    }
+                    let name = method_call_assertion_name(
+                        "is_ascii_alphabetic",
+                        vec![receiver.clone()],
+                        local_scope,
+                    );
+                    Ok(Some(AssertionEntry {
+                        name,
+                        atom: atomic_("str.is_ascii_alphabetic", vec![receiver]),
+                    }))
+                }
+                "is_alphabetic" if char_literal_term(&call.receiver).is_some() => Err(
+                    "unicode char predicate is_alphabetic is not lifted; z3 string theory has no Rust Unicode Alphabetic database"
+                        .to_string(),
+                ),
+                _ => Ok(None),
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+fn method_call_assertion_name(
+    method: &str,
+    args: Vec<Rc<Term>>,
+    local_scope: &str,
+) -> Option<String> {
+    let term = Term::Ctor {
+        name: format!("method:{method}"),
+        args,
+    };
+    callsite_assertion_name(&term, local_scope)
+}
+
 fn assertion_entry_from_relation(
     lhs: Rc<Term>,
     rhs: Rc<Term>,
@@ -372,10 +489,7 @@ fn assertion_entry_from_relation(
         RelationOp::Gt => gt(lhs, rhs),
         RelationOp::Ge => gte(lhs, rhs),
     };
-    AssertionEntry {
-        name,
-        atom,
-    }
+    AssertionEntry { name, atom }
 }
 
 fn is_concrete_value(term: &Term) -> bool {
@@ -423,6 +537,9 @@ fn canonical_callsite_sig(term: &Term, local_scope: &str) -> String {
 }
 
 fn callsite_callee_name(name: &str) -> Option<&str> {
+    if name == "str.len" {
+        return Some("method:len");
+    }
     name.strip_prefix("call:")
         .or_else(|| name.starts_with("method:").then_some(name))
 }
@@ -534,6 +651,14 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
             }))
         }
         Expr::MethodCall(call) => {
+            if call.method == "len" && call.args.is_empty() {
+                if let Some(receiver) = string_or_char_literal_term(&call.receiver) {
+                    return Ok(Rc::new(Term::Ctor {
+                        name: "str.len".to_string(),
+                        args: vec![receiver],
+                    }));
+                }
+            }
             let mut args = vec![translate_term(&call.receiver)?];
             for arg in &call.args {
                 args.push(translate_term(arg)?);
@@ -603,11 +728,37 @@ fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {
             .map_err(|e| format!("int literal: {e}")),
         Lit::Float(f) => canonical_float_literal(f).map(real_const),
         Lit::Str(s) => Ok(str_const(s.value())),
+        Lit::Char(c) => Ok(str_const(c.value().to_string())),
         Lit::Bool(b) => Ok(bool_const(b.value)),
         other => Err(format!(
-            "only integer/string/finite decimal float scalar constants are liftable, got `{}`",
+            "only integer/string/char/finite decimal float scalar constants are liftable, got `{}`",
             token_key(other)
         )),
+    }
+}
+
+fn string_or_char_literal_term(expr: &Expr) -> Option<Rc<Term>> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(s), ..
+        }) => Some(str_const(s.value())),
+        Expr::Lit(ExprLit {
+            lit: Lit::Char(c), ..
+        }) => Some(str_const(c.value().to_string())),
+        Expr::Paren(paren) => string_or_char_literal_term(&paren.expr),
+        Expr::Group(group) => string_or_char_literal_term(&group.expr),
+        _ => None,
+    }
+}
+
+fn char_literal_term(expr: &Expr) -> Option<Rc<Term>> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Char(c), ..
+        }) => Some(str_const(c.value().to_string())),
+        Expr::Paren(paren) => char_literal_term(&paren.expr),
+        Expr::Group(group) => char_literal_term(&group.expr),
+        _ => None,
     }
 }
 

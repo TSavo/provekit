@@ -160,6 +160,67 @@ fn assert_int_call_cmp_atom(
     }
 }
 
+fn assert_string_predicate_atom(formula: &Formula, expected_name: &str, expected_strings: &[&str]) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, expected_name);
+            assert_eq!(args.len(), expected_strings.len());
+            for (arg, expected) in args.iter().zip(expected_strings) {
+                match arg.as_ref() {
+                    Term::Const {
+                        value: ConstValue::String(value),
+                        sort,
+                    } => {
+                        assert_eq!(value, expected);
+                        assert_eq!(sort.name, "String");
+                    }
+                    other => panic!("expected string arg {expected:?}, got {other:?}"),
+                }
+            }
+        }
+        other => panic!("expected string predicate atom, got {other:?}"),
+    }
+}
+
+fn assert_string_len_cmp_atom(
+    formula: &Formula,
+    expected_op: &str,
+    expected_lhs: &str,
+    expected_rhs: i64,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, expected_op);
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "str.len");
+                    assert_eq!(args.len(), 1);
+                    match args[0].as_ref() {
+                        Term::Const {
+                            value: ConstValue::String(value),
+                            sort,
+                        } => {
+                            assert_eq!(value, expected_lhs);
+                            assert_eq!(sort.name, "String");
+                        }
+                        other => panic!("expected string len receiver, got {other:?}"),
+                    }
+                }
+                other => panic!("expected str.len term lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Int(value),
+                    ..
+                } => assert_eq!(*value, expected_rhs),
+                other => panic!("expected int rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected string length comparison atom, got {other:?}"),
+    }
+}
+
 fn assert_await_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: i64) {
     match formula {
         Formula::Atomic { name, args } => {
@@ -559,6 +620,160 @@ fn test_range_contains() {
         }
         other => panic!("expected equality atom, got {other:?}"),
     }
+}
+
+#[test]
+fn vendor_string_predicates_lift_to_string_theory_atoms_under_euf_keys() {
+    // Vendor source: rust-src library/alloctests/tests/str.rs contains these
+    // point-wise assertions in test_starts_with, test_ends_with, and contains.
+    let src = r#"
+#[test]
+fn test_starts_with() {
+    assert!("abc".starts_with("a"));
+    assert!(!"a".starts_with("abc"));
+}
+
+#[test]
+fn test_ends_with() {
+    assert!("abc".ends_with("c"));
+}
+
+#[test]
+fn contains() {
+    assert!("abcde".contains("bcd"));
+    assert!(!"abcde".contains("def"));
+    assert!("abc".contains('b'));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/str.rs");
+    assert_eq!(out.seen, 3);
+    assert_eq!(out.lifted, 3, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 6);
+
+    let names = out
+        .decls
+        .iter()
+        .map(|decl| decl.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "method:starts_with#euf#c:callresult_method_starts_with_a2(s:\"abc\",s:\"a\")::assertion",
+            "method:starts_with#euf#c:callresult_method_starts_with_a2(s:\"a\",s:\"abc\")::assertion",
+            "method:ends_with#euf#c:callresult_method_ends_with_a2(s:\"abc\",s:\"c\")::assertion",
+            "method:contains#euf#c:callresult_method_contains_a2(s:\"abcde\",s:\"bcd\")::assertion",
+            "method:contains#euf#c:callresult_method_contains_a2(s:\"abcde\",s:\"def\")::assertion",
+            "method:contains#euf#c:callresult_method_contains_a2(s:\"abc\",s:\"b\")::assertion",
+        ]
+    );
+
+    assert_string_predicate_atom(&inv_operands(&out.decls[0])[0], "prefix-of", &["a", "abc"]);
+    match inv_operands(&out.decls[1])[0].as_ref() {
+        Formula::Connective { kind, operands } => {
+            assert_eq!(kind, "not");
+            assert_eq!(operands.len(), 1);
+            assert_string_predicate_atom(&operands[0], "prefix-of", &["abc", "a"]);
+        }
+        other => panic!("expected negated prefix atom, got {other:?}"),
+    }
+    assert_string_predicate_atom(&inv_operands(&out.decls[2])[0], "suffix-of", &["c", "abc"]);
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[3])[0],
+        "contains",
+        &["abcde", "bcd"],
+    );
+    match inv_operands(&out.decls[4])[0].as_ref() {
+        Formula::Connective { kind, operands } => {
+            assert_eq!(kind, "not");
+            assert_eq!(operands.len(), 1);
+            assert_string_predicate_atom(&operands[0], "contains", &["abcde", "def"]);
+        }
+        other => panic!("expected negated contains atom, got {other:?}"),
+    }
+    assert_string_predicate_atom(&inv_operands(&out.decls[5])[0], "contains", &["abc", "b"]);
+}
+
+#[test]
+fn vendor_ascii_and_len_predicates_lift_conservatively() {
+    // Vendor source: rust-src library/coretests/tests/ascii.rs::test_is_ascii
+    // and library/alloctests/tests/str.rs:157.
+    let src = r#"
+#[test]
+fn test_is_ascii() {
+    assert!("".is_ascii());
+    assert!("banana\0\u{7F}".is_ascii());
+}
+
+#[test]
+fn test_len() {
+    assert_eq!("～～～～～".len(), 15);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ascii.rs");
+    assert_eq!(out.seen, 2);
+    assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 3);
+
+    assert_eq!(
+        out.decls[0].name,
+        "method:is_ascii#euf#c:callresult_method_is_ascii_a1(s:\"\")::assertion"
+    );
+    assert_string_predicate_atom(&inv_operands(&out.decls[0])[0], "str.is_ascii", &[""]);
+    assert_eq!(
+        out.decls[1].name,
+        "method:is_ascii#euf#c:callresult_method_is_ascii_a1(s:\"banana\\0\\u{7f}\")::assertion"
+    );
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[1])[0],
+        "str.is_ascii",
+        &["banana\0\u{7F}"],
+    );
+    assert_eq!(
+        out.decls[2].name,
+        "method:len#euf#c:callresult_method_len_a1(s:\"～～～～～\")::assertion"
+    );
+    assert_string_len_cmp_atom(&inv_operands(&out.decls[2])[0], "=", "～～～～～", 15);
+}
+
+#[test]
+fn vendor_char_ascii_class_lifts_and_unicode_alphabetic_stays_residual() {
+    // Vendor source: rust-src library/core/src/char/methods.rs doc examples.
+    let src = r#"
+#[test]
+fn char_ascii_classes() {
+    assert!('A'.is_ascii_alphabetic());
+    assert!(!'0'.is_ascii_alphabetic());
+    assert!('a'.is_ascii());
+    assert!('a'.is_alphabetic());
+}
+"#;
+    let out = lift_file(&parse(src), "core/src/char/methods.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 3);
+    assert_eq!(out.warnings.len(), 1);
+    assert!(out.warnings[0]
+        .reason
+        .contains("unicode char predicate is_alphabetic is not lifted"));
+
+    assert_eq!(
+        out.decls[0].name,
+        "method:is_ascii_alphabetic#euf#c:callresult_method_is_ascii_alphabetic_a1(s:\"A\")::assertion"
+    );
+    assert_string_predicate_atom(
+        &inv_operands(&out.decls[0])[0],
+        "str.is_ascii_alphabetic",
+        &["A"],
+    );
+    match inv_operands(&out.decls[1])[0].as_ref() {
+        Formula::Connective { kind, operands } => {
+            assert_eq!(kind, "not");
+            assert_eq!(operands.len(), 1);
+            assert_string_predicate_atom(&operands[0], "str.is_ascii_alphabetic", &["0"]);
+        }
+        other => panic!("expected negated ascii alphabetic atom, got {other:?}"),
+    }
+    assert_string_predicate_atom(&inv_operands(&out.decls[2])[0], "str.is_ascii", &["a"]);
 }
 
 #[test]

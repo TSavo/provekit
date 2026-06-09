@@ -36,8 +36,10 @@ Named gaps toward full `coretests` coverage:
   this lift.
 - Float refinements: NaN, infinity, ordering, `-0.0`, and exponent-form
   literals stay out of this exact finite-value slice.
-- Strings/chars: exact string equality is claimed where it is a direct
-  call-result value; char and richer string predicates are out of scope.
+- Strings/chars: exact string equality is claimed here where it is a direct
+  call-result value. Richer point-wise string predicates and ASCII char
+  predicates are covered by the sibling `std-core-string-predicates`
+  showcase; Unicode `char::is_alphabetic` remains a named residual.
 - Method chains: pure immutable method-chain predicates with stable receiver
   identity are claimed. Stateful chains or tests that reassign a receiver name
   remain out of scope until the key can carry temporal identity.

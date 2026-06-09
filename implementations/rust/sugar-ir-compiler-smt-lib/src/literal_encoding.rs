@@ -100,12 +100,25 @@ pub struct LiteralConstants {
 
 impl LiteralConstants {
     /// Walk a formula collecting every literal constant. Idempotent per value.
+    #[cfg(test)]
     pub fn from_formula(formula: &Formula) -> Self {
         let mut lc = LiteralConstants::default();
         lc.collect_formula(formula);
         lc
     }
 
+    /// Walk a formula collecting only literals that still use the legacy
+    /// opaque-Int equality encoding. String-theory atoms render their string
+    /// operands as real SMT `String` literals, so collecting those same
+    /// operands here would add unused `strlit_*` declarations and distinctness
+    /// axioms to otherwise pure string-theory scripts.
+    pub fn from_formula_for_legacy_literals(formula: &Formula) -> Self {
+        let mut lc = LiteralConstants::default();
+        lc.collect_formula_for_legacy_literals(formula);
+        lc
+    }
+
+    #[cfg(test)]
     fn collect_formula(&mut self, formula: &Formula) {
         match formula {
             Formula::Atomic { args, .. } => {
@@ -132,6 +145,36 @@ impl LiteralConstants {
         }
     }
 
+    fn collect_formula_for_legacy_literals(&mut self, formula: &Formula) {
+        match formula {
+            Formula::Atomic { name, args } => {
+                if is_string_theory_atomic_predicate(name) {
+                    return;
+                }
+                for a in args {
+                    self.collect_term_for_legacy_literals(a);
+                }
+            }
+            Formula::And { operands }
+            | Formula::Or { operands }
+            | Formula::Not { operands }
+            | Formula::Implies { operands } => {
+                for o in operands {
+                    self.collect_formula_for_legacy_literals(o);
+                }
+            }
+            Formula::Forall { body, .. }
+            | Formula::Exists { body, .. }
+            | Formula::Choice { body, .. } => self.collect_formula_for_legacy_literals(body),
+            Formula::Substitute { .. } | Formula::Apply { .. } => {}
+            Formula::DivergenceBetween { source, target } => {
+                self.collect_formula_for_legacy_literals(source);
+                self.collect_formula_for_legacy_literals(target);
+            }
+        }
+    }
+
+    #[cfg(test)]
     fn collect_term(&mut self, term: &Term) {
         match term {
             // CRITICAL: partition by VALUE, not by the declared sort label, so
@@ -191,6 +234,46 @@ impl LiteralConstants {
         }
     }
 
+    fn collect_term_for_legacy_literals(&mut self, term: &Term) {
+        match term {
+            Term::Ctor { name, .. } if name == "str.len" || name == "str.++" => {}
+            Term::Ctor { name, args } => {
+                if name == "None" && args.is_empty() {
+                    self.opaque_symbols.insert(NONE_SYMBOL.to_string());
+                }
+                for a in args {
+                    self.collect_term_for_legacy_literals(a);
+                }
+            }
+            Term::Lambda { body, .. } => self.collect_term_for_legacy_literals(body),
+            Term::Let { bindings, body, .. } => {
+                for b in bindings {
+                    self.collect_term_for_legacy_literals(&b.bound_term);
+                }
+                self.collect_term_for_legacy_literals(body);
+            }
+            Term::Const { value, .. } => match value {
+                serde_json::Value::String(s) => {
+                    self.opaque_symbols.insert(string_lit_name(s));
+                }
+                serde_json::Value::Bool(b) => {
+                    self.concrete_ints.insert(if *b { 1 } else { 0 });
+                }
+                serde_json::Value::Number(_) => {
+                    if let Some(i) = value.as_i64() {
+                        self.concrete_ints.insert(i);
+                    } else if let Some(u) = value.as_u64() {
+                        if let Ok(i) = i64::try_from(u) {
+                            self.concrete_ints.insert(i);
+                        }
+                    }
+                }
+                _ => {}
+            },
+            Term::Var { .. } => {}
+        }
+    }
+
     /// Emit the preamble lines that declare string-literal constants and the
     /// cross-type distinctness axiom.
     ///
@@ -233,6 +316,13 @@ impl LiteralConstants {
         out.push_str(&format!("(assert (distinct {}))\n", members.join(" ")));
         out
     }
+}
+
+fn is_string_theory_atomic_predicate(name: &str) -> bool {
+    matches!(
+        name,
+        "contains" | "prefix-of" | "suffix-of" | "str.is_ascii" | "str.is_ascii_alphabetic"
+    )
 }
 
 /// Render an i64 as an SMT-LIB v2.6 numeral. Non-negative -> bare digits;
