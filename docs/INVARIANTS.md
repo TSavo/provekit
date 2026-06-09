@@ -5,23 +5,29 @@ These were re-derived many times before being written down; check work against t
 
 ## 0. The one unique thing (the product)
 
-We do exactly one novel thing: **#1 — the ProofIR.** We lift real programs and their tests into
+We make exactly one thing: **#1 — the spec: the ProofIR, lifted from code.** It is
 content-addressed, federating first-order logic. That is the invention and the moat. Everything
 else in this document — the lifters, the sort universe, erasure/recovery, vendor-tests-as-spec,
-the canonical CID, no hubs — exists only to make that ProofIR *right*.
+the canonical CID, no hubs — exists only to make that spec *right*.
 
-Correctness #2, #3, #4 are not ours to invent — they are **composition of the ProofIR with tools
-that already exist**: #2 (coherent) is z3-SAT over the IR; #3 (satisfied) is a solver discharging
-`post |= pre` (z3 / coq / vampire); #4 (witnessed) is re-running the tests and recomputing the
-CID. Hand an off-the-shelf prover or runner the IR and it does #2/#3/#4. **The product is the
-ProofIR; the rest is plumbing it into machines that already exist.** This is why we are not a
-compiler, type system, effects theory, or checker (II): the only thing we build is #1.
+The rest of the tuple is **composition with tools that already exist**: **#2** is the solver
+saying the spec is coherent (z3-SAT over the IR) — and **#1 and #2 are one object, a coherent
+spec** (the lifted spec plus the proof it is consistent); **#3** is the **program** itself (the
+input we prove); **#4** is the **witness** (re-run + recompute the CID). The *satisfaction*
+(the program satisfies the coherent spec) is what we prove — a solver discharging `post |= pre`
+(z3 / coq / vampire) — not a thing we invent. Hand an off-the-shelf prover or runner the IR and
+it does coherence, satisfaction, and the witness check. **The product is #1, the spec/ProofIR;
+the rest is plumbing it into machines that already exist.** This is why we are not a compiler,
+type system, effects theory, or checker (II): the only thing we build is #1.
 
 ## I. What correctness is
 
-1. **Correctness is four parts, relative to asserted claims.** A spec exists; the spec is
-   coherent; a program satisfies it; a witness demonstrates it. Not "compiles," not "green
-   tests," not coverage — those are everyone else's gates, assumed here as axioms.
+1. **Correctness is a four-slot tuple, relative to asserted claims.** #1 the **spec** (the
+   ProofIR, lifted from code); #2 the **solver saying the spec is coherent** — and #1+#2 are one
+   object, *a coherent spec*; #3 the **program**; #4 the **witness**. Correctness is the proof
+   that the program (#3) satisfies the coherent spec (#1+#2), demonstrated by the witness (#4).
+   Satisfaction is what we *prove* about #3, not a slot. Not "compiles," not "green tests," not
+   coverage — those are everyone else's gates, assumed here as axioms.
 
 2. **We see only claims.** A program enters our universe solely through its assertions. A
    claim is an operator over operands — a first-order-logic atom. A line that asserts nothing
@@ -123,10 +129,12 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     generic without its type arg): place it in the hierarchy *and* preserve the semantics, or it
     falsePasses on the platform.
 
-    > Leak to evacuate: the legacy `Sort::Float { width }` carries a bit-width — a platform
-    > intrinsic — inside an IR sort, and defers IEEE semantics (#385). Per this invariant that
-    > width belongs in the kit as a refinement over `Real`, not as an IR sort. Float values
-    > already lift to `Real`; `Float{width}` is the residue to evacuate (or the #385 stub).
+    > Evacuated (main `4b45d9f48`): the legacy `Sort::Float { width }` carried a bit-width — a
+    > platform intrinsic — inside an IR sort. It is now cut from the IR entirely. Float values
+    > lift to `Real`; finite float constants emit `Real` decimal strings; `f32`/`f64` IEEE
+    > semantics (NaN/inf/orderedness/±0/width) are named kit-refinement residuals over `Real`,
+    > not IR sort identity. The IR grammar CID changed accordingly; no committed `.proof`
+    > carried the old sort, so federation is unbroken.
 
 ## VI. Identity and federation
 
