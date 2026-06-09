@@ -881,6 +881,11 @@ pub struct CallSite {
     /// Multi-formal precondition discharge uses this vector to specialize a
     /// target pre over every formal without interpreting the language.
     pub arg_terms: Vec<Json>,
+    /// Optional kit-provided binding from target formal name to the callsite
+    /// actual term that denotes it. This is opaque verifier data: the language
+    /// kit owns receiver/argument alignment; the verifier substitutes by these
+    /// names and fails closed when a required binding is absent.
+    pub formal_actuals: Option<Json>,
     /// Optional kit-provided producer provenance for panic-site receiver calls.
     /// For `producer().expect(..)`, the panic leaf and the producer call can
     /// start on different source lines. The verifier treats these as opaque

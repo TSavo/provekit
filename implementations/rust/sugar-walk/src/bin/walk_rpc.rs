@@ -102,6 +102,45 @@ fn log_body_discharge_policy_warnings(
     }
 }
 
+fn formal_actuals_for_binding(binding: &Value, actual_terms: Option<&[Value]>) -> Option<Value> {
+    let formals = binding.get("formals")?.as_array()?;
+    if formals.is_empty() {
+        return Some(json!({}));
+    }
+    let actual_terms = actual_terms?;
+    if actual_terms.len() != formals.len() {
+        return None;
+    }
+    let mut out = serde_json::Map::new();
+    for (formal, actual) in formals.iter().zip(actual_terms.iter()) {
+        let name = formal.as_str()?.trim();
+        if name.is_empty() {
+            return None;
+        }
+        out.insert(name.to_string(), actual.clone());
+    }
+    Some(Value::Object(out))
+}
+
+fn callsite_with_formal_actuals(
+    file: &str,
+    line: usize,
+    col: usize,
+    panic_site: bool,
+    formal_actuals: Option<Value>,
+) -> Value {
+    let mut callsite = json!({
+        "file": file,
+        "start_line": line,
+        "start_col": col,
+        "panicSite": panic_site,
+    });
+    if let Some(formal_actuals) = formal_actuals {
+        callsite["formalActuals"] = formal_actuals;
+    }
+    callsite
+}
+
 fn main() -> io::Result<()> {
     // Logs go to stderr only; stdout is the JSON-RPC channel and must stay
     // byte-clean. Default level: warn. Set RUST_LOG to override:
@@ -676,6 +715,11 @@ struct CallSite {
     /// stable contract key. Keep them in the census as explicit lift gaps
     /// rather than silently dropping them or guessing a bridge target.
     unsupported_reason: Option<&'static str>,
+    /// Concrete callsite actuals in target-signature order as resolved by this
+    /// Rust kit: free calls carry call arguments, methods carry receiver first
+    /// followed by explicit arguments. The verifier treats the resulting
+    /// `formalActuals` map as opaque data and never infers Rust call syntax.
+    actual_terms: Option<Vec<Value>>,
     file: String,
     line: usize,
     col: usize,
@@ -766,6 +810,7 @@ fn collect_tokio_mpsc_channel_conduit_callsites(file: &syn::File, rel_path: &str
                         disambiguated_callee: None,
                         disambiguated_crate: None,
                         unsupported_reason: None,
+                        actual_terms: None,
                         file: self.rel_path.to_string(),
                         line,
                         col,
@@ -962,6 +1007,7 @@ fn collect_tokio_mutex_guard_conduit_callsites(file: &syn::File, rel_path: &str)
                         disambiguated_callee: None,
                         disambiguated_crate: None,
                         unsupported_reason: None,
+                        actual_terms: None,
                         file: self.rel_path.to_string(),
                         line,
                         col,
@@ -2752,6 +2798,11 @@ fn collect_callsites_in_items(
     }
 }
 
+fn lift_call_actual_term(expr: &syn::Expr) -> Option<Value> {
+    let term = sugar_walk::lift::lift_expr_to_term(expr)?;
+    serde_json::to_value(term).ok()
+}
+
 fn collect_callsites_in_block(
     block: &syn::Block,
     rel_path: &str,
@@ -3051,6 +3102,11 @@ fn collect_callsites_in_block(
                         .map(|(_, leaf)| leaf.clone()),
                     disambiguated_crate: disambiguated_target.map(|(krate, _)| krate),
                     unsupported_reason: None,
+                    actual_terms: node
+                        .args
+                        .iter()
+                        .map(lift_call_actual_term)
+                        .collect::<Option<Vec<_>>>(),
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -3065,6 +3121,7 @@ fn collect_callsites_in_block(
                     disambiguated_callee: None,
                     disambiguated_crate: None,
                     unsupported_reason: Some("unsupported-closure-invocation"),
+                    actual_terms: None,
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -3079,6 +3136,7 @@ fn collect_callsites_in_block(
                     disambiguated_callee: None,
                     disambiguated_crate: None,
                     unsupported_reason: Some("unsupported-dynamic-callee"),
+                    actual_terms: None,
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -3161,6 +3219,13 @@ fn collect_callsites_in_block(
                     )
                 })
                 .flatten();
+            let actual_terms = lift_call_actual_term(&node.receiver).and_then(|receiver| {
+                let mut actuals = vec![receiver];
+                for arg in &node.args {
+                    actuals.push(lift_call_actual_term(arg)?);
+                }
+                Some(actuals)
+            });
             self.out.push(CallSite {
                 callee,
                 contract_callee,
@@ -3180,6 +3245,7 @@ fn collect_callsites_in_block(
                     .or_else(|| manifest_panic_target.map(|(krate, _)| krate))
                     .or_else(|| function_postcondition_target.map(|(krate, _)| krate)),
                 unsupported_reason: None,
+                actual_terms,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
@@ -3281,6 +3347,7 @@ fn collect_callsites_in_block(
                 disambiguated_callee: None,
                 disambiguated_crate: None,
                 unsupported_reason: None,
+                actual_terms: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
@@ -3391,6 +3458,7 @@ fn unsupported_macro_callsite(mac: &syn::Macro, rel_path: &str) -> CallSite {
         disambiguated_callee: None,
         disambiguated_crate: None,
         unsupported_reason: Some("unsupported-macro-callsite"),
+        actual_terms: None,
         file: rel_path.to_string(),
         line: start.line,
         col: start.column,
@@ -5596,6 +5664,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             } else {
                 cs.callee.clone()
             };
+            let formal_actuals = formal_actuals_for_binding(binding, cs.actual_terms.as_deref());
             let mut bridge = json!({
                 "kind": "bridge",
                 "name": format!(
@@ -5609,12 +5678,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 "target": { "cid": target_cid, "kind": "contract" },
                 "targetContractCid": target_cid,
                 "targetLayer": "rust-tests",
-                "callsite": {
-                    "file": cs.file,
-                    "start_line": cs.line,
-                    "start_col": cs.col,
-                    "panicSite": is_panic,
-                },
+                "callsite": callsite_with_formal_actuals(
+                    &cs.file,
+                    cs.line,
+                    cs.col,
+                    is_panic,
+                    formal_actuals,
+                ),
             });
             if let Some(tpc) = binding
                 .get("target_proof_cid")
@@ -13199,8 +13269,23 @@ edition = "2021"
             .find(|entry| entry["sourceSymbol"] == "method:to_digit")
             .unwrap_or_else(|| panic!("method:to_digit bridge missing: {consumer:#?}"));
         assert_eq!(bridge["targetContractCid"], target["contract_cid"]);
+        assert_eq!(
+            bridge["callsite"]["formalActuals"]["radix"],
+            json!({"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": 1})
+        );
+        assert_eq!(bridge["callsite"]["formalActuals"]["self"]["kind"], "var");
+        assert_eq!(bridge["callsite"]["formalActuals"]["self"]["name"], "value");
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn formal_actuals_for_binding_refuses_arity_mismatch() {
+        let binding = json!({
+            "formals": ["self", "radix"],
+        });
+        let actuals = vec![json!({"kind": "var", "name": "value"})];
+        assert_eq!(formal_actuals_for_binding(&binding, Some(&actuals)), None);
     }
 
     #[test]

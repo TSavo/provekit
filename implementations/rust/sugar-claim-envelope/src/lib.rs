@@ -1176,6 +1176,7 @@ pub struct BridgeCallsite {
     pub panic_site: bool,
     pub file: Option<String>,
     pub line: Option<i64>,
+    pub formal_actuals: Option<Arc<Value>>,
 }
 
 /// Compute the content CID of a bridge declaration (signer-independent).
@@ -1274,6 +1275,9 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
         }
         if let Some(line) = cs.line {
             cs_fields.push(("start_line", Value::integer(line)));
+        }
+        if let Some(ref formal_actuals) = cs.formal_actuals {
+            cs_fields.push(("formalActuals", formal_actuals.clone()));
         }
         kind_specific.push(("callsite".into(), Value::object(cs_fields)));
     }

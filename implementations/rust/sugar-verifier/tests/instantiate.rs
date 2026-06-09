@@ -339,7 +339,12 @@ fn specialized_precondition_substitutes_all_formals_with_call_actuals() {
         json!({"kind": "var", "name": "ch"}),
         json!({"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}}),
     ];
-    let r = instantiate::run_specialized(&rp, &actuals).expect("specialize");
+    let formal_actuals = json!({
+        "self": actuals[0].clone(),
+        "radix": actuals[1].clone()
+    });
+    let r = instantiate::run_specialized(&rp, &actuals, Some(&formal_actuals))
+        .expect("specialize");
     assert_eq!(
         r.ir_formula,
         json!({
@@ -376,9 +381,112 @@ fn specialized_precondition_refuses_when_actual_count_does_not_cover_formals() {
         ..Default::default()
     };
     let actuals = vec![json!({"kind": "var", "name": "ch"})];
-    let err = instantiate::run_specialized(&rp, &actuals).expect_err("must fail closed");
+    let err = instantiate::run_specialized(&rp, &actuals, None).expect_err("must fail closed");
     assert!(
-        err.contains("not enough actual terms"),
+        err.contains("formalActuals required for multi-formal precondition"),
         "expected a fail-closed arity error, got {err}"
+    );
+}
+
+#[test]
+fn specialized_precondition_binds_free_function_formals_by_name() {
+    let formula = json!({
+        "kind": "forall",
+        "name": "lo",
+        "sort": {"kind": "primitive", "name": "Int"},
+        "body": {"kind": "atomic", "name": "<=", "args": [
+            {"kind": "var", "name": "lo"},
+            {"kind": "var", "name": "hi"}
+        ]}
+    });
+    let rp = ResolvedProperty {
+        cid: "blake3-512:range".into(),
+        ir_formula: Some(formula),
+        formal_names: vec!["lo".into(), "hi".into()],
+        ..Default::default()
+    };
+    let actuals = vec![
+        json!({"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}),
+        json!({"kind": "const", "value": 9, "sort": {"kind": "primitive", "name": "Int"}}),
+    ];
+    let formal_actuals = json!({
+        "hi": actuals[1].clone(),
+        "lo": actuals[0].clone()
+    });
+    let r = instantiate::run_specialized(&rp, &actuals, Some(&formal_actuals))
+        .expect("specialize free function by formal map");
+    assert_eq!(
+        r.ir_formula,
+        json!({"kind": "atomic", "name": "<=", "args": [
+            {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}},
+            {"kind": "const", "value": 9, "sort": {"kind": "primitive", "name": "Int"}}
+        ]})
+    );
+}
+
+#[test]
+fn specialized_precondition_binds_by_formal_actual_map_not_position() {
+    let formula = json!({
+        "kind": "forall",
+        "name": "self",
+        "sort": {"kind": "primitive", "name": "Self"},
+        "body": {
+            "kind": "atomic", "name": "<=", "args": [
+                {"kind": "var", "name": "radix"},
+                {"kind": "const", "value": 36, "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        }
+    });
+    let rp = ResolvedProperty {
+        cid: "blake3-512:to-digit".into(),
+        ir_formula: Some(formula),
+        formal_names: vec!["self".into(), "radix".into()],
+        ..Default::default()
+    };
+    let actuals = vec![
+        json!({"kind": "var", "name": "receiver"}),
+        json!({"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}}),
+    ];
+    let formal_actuals = json!({
+        "radix": {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}},
+        "self": {"kind": "var", "name": "receiver"}
+    });
+    let r = instantiate::run_specialized(&rp, &actuals, Some(&formal_actuals))
+        .expect("specialize by explicit formal map");
+    assert_eq!(
+        r.ir_formula,
+        json!({
+            "kind": "atomic", "name": "<=", "args": [
+                {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}},
+                {"kind": "const", "value": 36, "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        })
+    );
+}
+
+#[test]
+fn specialized_precondition_refuses_when_formal_actual_map_misses_guarded_formal() {
+    let formula = json!({
+        "kind": "forall",
+        "name": "self",
+        "sort": {"kind": "primitive", "name": "Self"},
+        "body": {"kind": "atomic", "name": "<=", "args": [
+            {"kind": "var", "name": "radix"},
+            {"kind": "const", "value": 36, "sort": {"kind": "primitive", "name": "Int"}}
+        ]}
+    });
+    let rp = ResolvedProperty {
+        cid: "blake3-512:to-digit".into(),
+        ir_formula: Some(formula),
+        formal_names: vec!["self".into(), "radix".into()],
+        ..Default::default()
+    };
+    let actuals = vec![json!({"kind": "var", "name": "receiver"})];
+    let formal_actuals = json!({"self": {"kind": "var", "name": "receiver"}});
+    let err = instantiate::run_specialized(&rp, &actuals, Some(&formal_actuals))
+        .expect_err("missing guarded formal must fail closed");
+    assert!(
+        err.contains("formalActuals missing target formal `radix`"),
+        "expected missing-formal failure, got {err}"
     );
 }

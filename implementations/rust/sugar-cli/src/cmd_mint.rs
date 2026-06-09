@@ -1575,11 +1575,24 @@ fn parse_bridge_callsite(
         })?),
         None => None,
     };
+    let formal_actuals = match object.get("formalActuals") {
+        Some(value) => {
+            if !value.is_object() {
+                return Err(format!(
+                    "bridge `{source_symbol}`: callsite.formalActuals must be an object, got {}",
+                    json_type_name(value)
+                ));
+            }
+            Some(json_to_cvalue(value))
+        }
+        None => None,
+    };
 
     Ok(Some(BridgeCallsite {
         panic_site,
         file,
         line,
+        formal_actuals,
     }))
 }
 
@@ -3642,12 +3655,27 @@ mod tests {
     }
 
     #[test]
+    fn mint_ir_document_rejects_non_object_bridge_formal_actuals() {
+        assert_malformed_bridge_callsite_fails_closed(
+            json!({"panicSite": true, "formalActuals": []}),
+            "callsite.formalActuals must be an object",
+        );
+    }
+
+    #[test]
     fn mint_ir_document_well_formed_bridge_callsite_threads_through_header() {
         let (bytes, _, _) = mint_from_ir_document(
             &explicit_bridge_ir_with_callsite(Some(json!({
                 "panicSite": true,
                 "file": "src/lib.rs",
-                "line": 25
+                "line": 25,
+                "formalActuals": {
+                    "radix": {
+                        "kind": "const",
+                        "value": 16,
+                        "sort": {"kind": "primitive", "name": "Int"}
+                    }
+                }
             }))),
             None,
             None,
@@ -3661,7 +3689,18 @@ mod tests {
         let header = bridge_header(&catalog);
         assert_eq!(
             header.get("callsite"),
-            Some(&json!({"panicSite": true, "file": "src/lib.rs", "start_line": 25}))
+            Some(&json!({
+                "panicSite": true,
+                "file": "src/lib.rs",
+                "start_line": 25,
+                "formalActuals": {
+                    "radix": {
+                        "kind": "const",
+                        "value": 16,
+                        "sort": {"kind": "primitive", "name": "Int"}
+                    }
+                }
+            }))
         );
     }
 

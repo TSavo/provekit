@@ -51,6 +51,7 @@ pub fn run(resolved: &ResolvedProperty, arg_term: &Option<Json>) -> Result<Oblig
 pub fn run_specialized(
     resolved: &ResolvedProperty,
     arg_terms: &[Json],
+    formal_actuals: Option<&Json>,
 ) -> Result<Obligation, String> {
     let f = resolved
         .ir_formula
@@ -70,16 +71,34 @@ pub fn run_specialized(
     } else {
         resolved.formal_names.clone()
     };
-    if arg_terms.len() < formal_names.len() {
-        return Err(format!(
-            "not enough actual terms to specialize precondition: need {}, got {}",
-            formal_names.len(),
-            arg_terms.len()
-        ));
-    }
     let mut substituted = body.clone();
-    for (name, actual) in formal_names.iter().zip(arg_terms.iter()) {
-        substituted = substitute_formula(&substituted, name, actual);
+    if let Some(formal_actuals) = formal_actuals {
+        let bindings = formal_actuals
+            .as_object()
+            .ok_or("formalActuals must be an object mapping formal names to actual terms")?;
+        for name in &formal_names {
+            let actual = bindings
+                .get(name)
+                .ok_or_else(|| format!("formalActuals missing target formal `{name}`"))?;
+            substituted = substitute_formula(&substituted, name, actual);
+        }
+    } else {
+        if formal_names.len() > 1 {
+            return Err(format!(
+                "formalActuals required for multi-formal precondition: {} formals",
+                formal_names.len()
+            ));
+        }
+        if arg_terms.len() < formal_names.len() {
+            return Err(format!(
+                "not enough actual terms to specialize precondition: need {}, got {}",
+                formal_names.len(),
+                arg_terms.len()
+            ));
+        }
+        for (name, actual) in formal_names.iter().zip(arg_terms.iter()) {
+            substituted = substitute_formula(&substituted, name, actual);
+        }
     }
     Ok(Obligation {
         property_cid: resolved.cid.clone(),

@@ -255,6 +255,10 @@ fn callsite_from_panic_locus(
         callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
         arg_terms: arg_term.iter().cloned().collect(),
         arg_term,
+        formal_actuals: bridge_body
+            .get("callsite")
+            .and_then(|v| v.get("formalActuals"))
+            .cloned(),
         producer_file,
         producer_line,
         producer_symbol,
@@ -325,6 +329,7 @@ fn attribute_safety_callsite_from_locus(
         callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
         arg_term: locus.get("argTerm").cloned(),
         arg_terms: locus.get("argTerm").cloned().into_iter().collect(),
+        formal_actuals: None,
         producer_file: file.clone(),
         producer_line: None,
         producer_symbol: None,
@@ -964,6 +969,9 @@ fn walk_term(
             callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
             arg_term: arg_term.clone(),
             arg_terms: arg_terms.clone(),
+            formal_actuals: bridge_callsite
+                .and_then(|v| v.get("formalActuals"))
+                .cloned(),
             producer_file: occ_locus
                 .and_then(|locus| {
                     locus

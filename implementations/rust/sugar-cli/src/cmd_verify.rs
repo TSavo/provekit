@@ -817,7 +817,11 @@ fn verify_one_claim(
                  with the callsite actual terms"
             );
             let instantiated =
-                match instantiate::run_specialized(&resolved, &callsite_actual_terms(cs)) {
+                match instantiate::run_specialized(
+                    &resolved,
+                    &callsite_actual_terms(cs),
+                    cs.formal_actuals.as_ref(),
+                ) {
                 Ok(ob) => ob.ir_formula,
                 Err(e) => {
                     result.reason = format!("instantiate: {e}");
@@ -1434,6 +1438,7 @@ mod tests {
             property_cid: "blake3-512:prop".into(),
             arg_term: None,
             arg_terms: Vec::new(),
+            formal_actuals: None,
             producer_file: None,
             producer_line: None,
             producer_symbol: None,
@@ -1546,6 +1551,7 @@ mod tests {
             property_cid: "blake3-512:panic-prop".into(),
             arg_term: Some(json!({"kind": "var", "name": "opt"})),
             arg_terms: Vec::new(),
+            formal_actuals: None,
             producer_file: None,
             producer_line: None,
             producer_symbol: None,

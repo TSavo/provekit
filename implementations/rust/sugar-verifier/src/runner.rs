@@ -1576,7 +1576,11 @@ fn work_one(
     } else {
         used_implication_form = false;
         let actual_terms = callsite_actual_terms(cs);
-        let ob = match instantiate::run_specialized(&resolved, &actual_terms) {
+        let ob = match instantiate::run_specialized(
+            &resolved,
+            &actual_terms,
+            cs.formal_actuals.as_ref(),
+        ) {
             Ok(o) => o,
             Err(e) => {
                 n_residue.fetch_add(1, Ordering::Relaxed);

@@ -120,6 +120,60 @@ fn finds_ctor_in_atomic_args_in_pre() {
 }
 
 #[test]
+fn callsite_carries_formal_actuals_from_bridge_callsite() {
+    let target_cid = "blake3-512:target";
+    let mut pool = MementoPool::default();
+    pool.bridges_by_symbol.insert(
+        "method:to_digit".into(),
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "method:to_digit",
+                    "sourceLayer": "rust",
+                    "targetContractCid": target_cid,
+                    "targetLayer": "rust-tests",
+                    "callsite": {
+                        "panicSite": false,
+                        "formalActuals": {
+                            "self": {"kind": "var", "name": "ch"},
+                            "radix": {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}}
+                        }
+                    }
+                }
+            }
+        }),
+    );
+    pool.mementos.insert(
+        "blake3-512:caller".into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "caller",
+                    "post": {"kind": "atomic", "name": "=", "args": [
+                        {"kind": "ctor", "name": "method:to_digit", "args": [
+                            {"kind": "var", "name": "ch"},
+                            {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}}
+                        ]},
+                        {"kind": "const", "value": 10, "sort": {"kind": "primitive", "name": "Int"}}
+                    ]}
+                }
+            }
+        }),
+    );
+    let sites = enumerate_callsites::run(&pool);
+    assert_eq!(sites.len(), 1);
+    assert_eq!(
+        sites[0].formal_actuals,
+        Some(json!({
+            "self": {"kind": "var", "name": "ch"},
+            "radix": {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}}
+        }))
+    );
+}
+
+#[test]
 fn finds_ctor_in_post_slot() {
     let target_cid = "blake3-512:target";
     let pool = pool_with_bridge_and_contract(
