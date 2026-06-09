@@ -14,6 +14,8 @@
 #       * tests/time.rs direct call-result comparison rows.
 #       * tests/atomic.rs compound value rows with bitwise-expression RHS
 #         terms, limited to non-repeated stable keys.
+#       * tests/iter/range.rs literal array/tuple exact-value terms, kept on
+#         stable #euf# keys.
 #       * tests/cmp.rs::cmp_default user-type operator-dispatch row.
 #   - `sugar mint` + `sugar verify` must produce only discharged claimed
 #     consistency rows for that slice.
@@ -39,7 +41,7 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, and cmp.rs::cmp_default user-type operator dispatch."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, and cmp.rs::cmp_default user-type operator dispatch."
 echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
@@ -87,7 +89,7 @@ echo "toolchain: $RUSTC_VERSION"
 echo "target: $STD_CORE_RUST_TARGET"
 
 rm -rf "$WORK"
-mkdir -p "$PROJECT/tests/fmt" "$PROJECT/.sugar/lift/rust-test-assertions"
+mkdir -p "$PROJECT/tests/fmt" "$PROJECT/tests/iter" "$PROJECT/.sugar/lift/rust-test-assertions"
 TARGET_CFG_FACTS_FILE="$WORK/target-cfg.txt"
 rustc "+$STD_CORE_RUST_TOOLCHAIN" --test --target "$STD_CORE_RUST_TARGET" --print cfg \
   | sort > "$TARGET_CFG_FACTS_FILE"
@@ -323,6 +325,43 @@ chunks = [
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
 PY
 
+python3 - "$STDROOT/coretests/tests/iter/range.rs" "$PROJECT/tests/iter/range.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    "use core::iter::*;",
+    "use super::*;",
+    "",
+    *extract("test_range"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
+
 cat > "$PROJECT/.sugar/config.toml" <<TOML
 [[plugins]]
 name = "rust-test-assertions-lift"
@@ -464,6 +503,10 @@ needles = [
     "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_nand::x,v:tests/atomic.rs::uint_nand::SeqCst)::assertion",
     "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_or::x,v:tests/atomic.rs::uint_or::SeqCst)::assertion",
     "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_xor::x,v:tests/atomic.rs::uint_xor::SeqCst)::assertion",
+    "method:count#euf#c:callresult_method_count_a1(c:range(i:200,i:-5))::assertion",
+    "method:count#euf#c:callresult_method_count_a1(c:method:rev(c:range(i:200,i:-5)))::assertion",
+    "method:size_hint#euf#c:callresult_method_size_hint_a1(c:range(i:0,i:100))::assertion",
+    "method:size_hint#euf#c:callresult_method_size_hint_a1(c:range(i:-10,i:-1))::assertion",
 ]
 type_id_needles = [
     "consistency:tests/intrinsics.rs::test_typeid_sized_types",
@@ -654,8 +697,13 @@ echo "== witness: rerun exact std/core vendor tests =="
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::int_xor -- --exact --nocapture
 )
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests iter::range::test_range -- --exact --nocapture
+)
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macro surfaces outside this showcase/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

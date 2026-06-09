@@ -1271,6 +1271,7 @@ fn constructor_operator_tag(term: &Term) -> Option<String> {
 fn is_ground_value(term: &Term) -> bool {
     match term {
         Term::Const { .. } => true,
+        Term::Var { name } if name.starts_with("literal:") => true,
         Term::Ctor { name, args } if is_ground_value_ctor(name) => {
             args.iter().all(|arg| is_ground_value(arg))
         }
@@ -1382,6 +1383,7 @@ fn canonical_term_sig(term: &Term) -> String {
 
 fn canonical_method_arg_sig(term: &Term, local_scope: &str) -> String {
     match term {
+        Term::Var { name } if name.starts_with("literal:") => format!("v:{name}"),
         Term::Var { name } if is_unqualified_local_name(name) => {
             format!("v:{local_scope}::{name}")
         }
@@ -1458,6 +1460,8 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
                 args,
             }))
         }
+        Expr::Array(array) => literal_aggregate_term("Array", array.elems.iter(), expr),
+        Expr::Tuple(tuple) => literal_aggregate_term("Tuple", tuple.elems.iter(), expr),
         Expr::MethodCall(call) => {
             if call.method == "len" && call.args.is_empty() {
                 if let Some(receiver) = string_or_char_literal_term(&call.receiver) {
@@ -1529,6 +1533,41 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
         Expr::Paren(paren) => translate_term(&paren.expr),
         Expr::Group(group) => translate_term(&group.expr),
         other => Err(format!("unsupported term `{}`", token_key(other))),
+    }
+}
+
+fn literal_aggregate_term<'a>(
+    kind: &str,
+    elems: impl Iterator<Item = &'a Expr>,
+    source: &Expr,
+) -> Result<Rc<Term>, String> {
+    let mut args = Vec::new();
+    for elem in elems {
+        let term = translate_term(elem)?;
+        if !is_literal_identity_term(term.as_ref()) {
+            return Err(format!(
+                "{kind} literal contains non-literal element `{}`",
+                token_key(source)
+            ));
+        }
+        args.push(term);
+    }
+    let inner = args
+        .iter()
+        .map(|arg| canonical_term_sig(arg))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok(make_var(format!("literal:{kind}({inner})")))
+}
+
+fn is_literal_identity_term(term: &Term) -> bool {
+    match term {
+        Term::Const { .. } => true,
+        Term::Var { name } => name.starts_with("literal:"),
+        Term::Ctor { name, args } if constructor_operator_tag(term).is_some() => {
+            name.starts_with("call:") && args.iter().all(|arg| is_literal_identity_term(arg))
+        }
+        _ => false,
     }
 }
 

@@ -294,7 +294,9 @@ fn assert_type_id_cmp_atom(
                                     assert_eq!(args.len(), 1);
                                     match args[0].as_ref() {
                                         Term::Var { name } => assert_eq!(name, expected_receiver),
-                                        other => panic!("expected referenced receiver var, got {other:?}"),
+                                        other => panic!(
+                                            "expected referenced receiver var, got {other:?}"
+                                        ),
                                     }
                                 }
                                 other => panic!("expected ref receiver term, got {other:?}"),
@@ -822,7 +824,11 @@ fn any_fixed_vec_type_id() {
     let out = lift_file(&parse(src), "coretests/tests/any.rs");
     assert_eq!(out.seen, 1);
     assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
-    assert!(out.warnings.is_empty(), "unexpected lift warnings: {:?}", out.warnings);
+    assert!(
+        out.warnings.is_empty(),
+        "unexpected lift warnings: {:?}",
+        out.warnings
+    );
     assert_eq!(out.decls.len(), 1);
 
     let decl = &out.decls[0];
@@ -830,7 +836,13 @@ fn any_fixed_vec_type_id() {
     let operands = inv_operands(decl);
     assert_eq!(operands.len(), 2);
     assert_type_id_cmp_atom(&operands[0], "=", "[u8;3]", "&dyn core::any::Any", "test");
-    assert_type_id_cmp_atom(&operands[1], "\u{2260}", "[u8;4]", "&dyn core::any::Any", "test");
+    assert_type_id_cmp_atom(
+        &operands[1],
+        "\u{2260}",
+        "[u8;4]",
+        "&dyn core::any::Any",
+        "test",
+    );
 }
 
 #[test]
@@ -1357,6 +1369,117 @@ fn two_calls() {
     assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
     assert_eq!(out.decls.len(), 1);
     assert_eq!(out.decls[0].name, "tests/calls.rs::two_calls");
+}
+
+#[test]
+fn literal_array_receiver_method_chain_gets_stable_euf_key() {
+    // Vendor shape: rust-src library/coretests/tests/array.rs::iterator_last.
+    let src = r#"
+#[test]
+fn iterator_last_literal_array() {
+    assert_eq!(IntoIterator::into_iter([0]).last().unwrap(), 0);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/array.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(
+        out.warnings.is_empty(),
+        "literal array receiver should not leave a residual: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "method:unwrap#euf#c:callresult_method_unwrap_a1(c:method:last(c:call:IntoIterator::into_iter(v:literal:Array(i:0))))::assertion"
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "method:unwrap");
+                    assert_eq!(args.len(), 1);
+                    match args[0].as_ref() {
+                        Term::Ctor { name, args } => {
+                            assert_eq!(name, "method:last");
+                            assert_eq!(args.len(), 1);
+                            match args[0].as_ref() {
+                                Term::Ctor { name, args } => {
+                                    assert_eq!(name, "call:IntoIterator::into_iter");
+                                    assert_eq!(args.len(), 1);
+                                    match args[0].as_ref() {
+                                        Term::Var { name } => {
+                                            assert_eq!(name, "literal:Array(i:0)");
+                                        }
+                                        other => {
+                                            panic!("expected Array literal identity, got {other:?}")
+                                        }
+                                    }
+                                }
+                                other => {
+                                    panic!("expected IntoIterator::into_iter term, got {other:?}")
+                                }
+                            }
+                        }
+                        other => panic!("expected last method receiver, got {other:?}"),
+                    }
+                }
+                other => panic!("expected unwrap method term, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Int(0));
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn tuple_expected_value_gets_stable_euf_key() {
+    // Vendor shape: rust-src library/coretests/tests/iter/sources.rs::test_repeat_take.
+    let src = r#"
+#[test]
+fn repeat_take_size_hint() {
+    assert_eq!(repeat(42).take(3).size_hint(), (3, Some(3)));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/iter/sources.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(
+        out.warnings.is_empty(),
+        "tuple expected value should not leave a residual: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "method:size_hint#euf#c:callresult_method_size_hint_a1(c:method:take(c:call:repeat(i:42),i:3))::assertion"
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "method:size_hint");
+                    assert_eq!(args.len(), 1);
+                }
+                other => panic!("expected size_hint lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Var { name } => {
+                    assert_eq!(name, "literal:Tuple(i:3,c:call:Some(i:3))");
+                }
+                other => panic!("expected Tuple literal identity, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
 }
 
 #[test]
