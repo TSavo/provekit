@@ -1115,6 +1115,7 @@ fn byte_range(byte: Rc<Term>, low: u8, high: u8) -> Rc<Formula> {
         lte(byte, num(i64::from(high))),
     ])
 }
+
 fn literal_iterator_elements(expr: &Expr) -> Result<Option<(IteratorKind, Vec<Rc<Term>>)>, String> {
     match expr {
         Expr::MethodCall(call) if call.args.is_empty() && call.method == "chars" => {
@@ -1194,9 +1195,9 @@ fn assertion_entry_from_relation(
     op: RelationOp,
     local_scope: &str,
 ) -> AssertionEntry {
-    let name = if is_concrete_value(lhs.as_ref()) {
+    let name = if is_ground_value(lhs.as_ref()) {
         callsite_assertion_name(rhs.as_ref(), local_scope)
-    } else if is_concrete_value(rhs.as_ref()) {
+    } else if is_ground_value(rhs.as_ref()) {
         callsite_assertion_name(lhs.as_ref(), local_scope)
     } else {
         None
@@ -1212,8 +1213,33 @@ fn assertion_entry_from_relation(
     AssertionEntry { name, atom }
 }
 
-fn is_concrete_value(term: &Term) -> bool {
-    matches!(term, Term::Const { .. })
+fn is_ground_value(term: &Term) -> bool {
+    match term {
+        Term::Const { .. } => true,
+        Term::Ctor { name, args } if is_ground_value_ctor(name) => {
+            args.iter().all(|arg| is_ground_value(arg))
+        }
+        _ => false,
+    }
+}
+
+fn is_ground_value_ctor(name: &str) -> bool {
+    matches!(
+        name,
+        "+" | "-"
+            | "*"
+            | "int-div"
+            | "int-rem"
+            | "bit-and"
+            | "bit-or"
+            | "bit-xor"
+            | "shift-left"
+            | "shift-right"
+            | "bit-not"
+            | "ref"
+            | "range"
+            | "range_incl"
+    )
 }
 
 fn bool_const(value: bool) -> Rc<Term> {
@@ -1359,6 +1385,10 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
                 .ok_or_else(|| format!("unsupported negative literal `{}`", token_key(expr)))?;
             Ok(num(-value))
         }
+        Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => Ok(Rc::new(Term::Ctor {
+            name: "bit-not".to_string(),
+            args: vec![translate_term(&unary.expr)?],
+        })),
         Expr::Path(path) => Ok(make_var(path_to_name(&path.path))),
         Expr::Call(call) => {
             let mut args = Vec::new();
@@ -1442,10 +1472,7 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
 
 fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {
     match &lit.lit {
-        Lit::Int(i) => i
-            .base10_parse::<i64>()
-            .map(num)
-            .map_err(|e| format!("int literal: {e}")),
+        Lit::Int(i) => parse_int_lit(i).map(num),
         Lit::Float(f) => canonical_float_literal(f).map(real_const),
         Lit::Str(s) => Ok(str_const(s.value())),
         Lit::Char(c) => Ok(str_const(c.value().to_string())),
@@ -1455,6 +1482,26 @@ fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {
             token_key(other)
         )),
     }
+}
+
+fn parse_int_lit(lit: &syn::LitInt) -> Result<i64, String> {
+    let mut text = lit.to_string();
+    let suffix = lit.suffix();
+    if !suffix.is_empty() && text.ends_with(suffix) {
+        text.truncate(text.len() - suffix.len());
+    }
+    let text = text.replace('_', "");
+    let (radix, digits) =
+        if let Some(rest) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+            (16, rest)
+        } else if let Some(rest) = text.strip_prefix("0o").or_else(|| text.strip_prefix("0O")) {
+            (8, rest)
+        } else if let Some(rest) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
+            (2, rest)
+        } else {
+            (10, text.as_str())
+        };
+    i64::from_str_radix(digits, radix).map_err(|e| format!("int literal `{}`: {e}", lit))
 }
 
 fn string_or_char_literal_term(expr: &Expr) -> Option<Rc<Term>> {
@@ -1500,7 +1547,7 @@ fn const_int(expr: &Expr) -> Option<i64> {
     match expr {
         Expr::Lit(ExprLit {
             lit: Lit::Int(i), ..
-        }) => i.base10_parse().ok(),
+        }) => parse_int_lit(i).ok(),
         Expr::Paren(paren) => const_int(&paren.expr),
         Expr::Group(group) => const_int(&group.expr),
         _ => None,
@@ -1512,6 +1559,13 @@ fn term_binop_name(op: &BinOp) -> Option<&'static str> {
         BinOp::Add(_) => Some("+"),
         BinOp::Sub(_) => Some("-"),
         BinOp::Mul(_) => Some("*"),
+        BinOp::Div(_) => Some("int-div"),
+        BinOp::Rem(_) => Some("int-rem"),
+        BinOp::BitAnd(_) => Some("bit-and"),
+        BinOp::BitOr(_) => Some("bit-or"),
+        BinOp::BitXor(_) => Some("bit-xor"),
+        BinOp::Shl(_) => Some("shift-left"),
+        BinOp::Shr(_) => Some("shift-right"),
         _ => None,
     }
 }

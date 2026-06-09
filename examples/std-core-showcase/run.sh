@@ -11,6 +11,8 @@
 #       * tests/fmt/mod.rs exact string method-call equality rows.
 #       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows.
 #       * tests/time.rs direct call-result comparison rows.
+#       * tests/atomic.rs compound value rows with bitwise-expression RHS
+#         terms, limited to non-repeated stable keys.
 #   - `sugar mint` + `sugar verify` must produce only discharged `#euf#`
 #     consistency rows for that slice.
 #   - The exact vendor tests rerun as the witness axis.
@@ -35,8 +37,8 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, and direct call-result comparison FOL rows from time.rs."
-echo "SCOPE: excluded gaps = macros requiring expansion, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, complex terms."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, and atomic.rs compound bitwise-expression RHS rows with stable keys."
+echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
 ensure_rust_src() {
@@ -228,6 +230,59 @@ chunks = [
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
 PY
 
+python3 - "$STDROOT/coretests/tests/atomic.rs" "$PROJECT/tests/atomic.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    "use core::sync::atomic::Ordering::SeqCst;",
+    "use core::sync::atomic::*;",
+    "",
+    *extract("bool_and"),
+    "",
+    *extract("uint_and"),
+    "",
+    *extract("uint_nand"),
+    "",
+    *extract("uint_or"),
+    "",
+    *extract("uint_xor"),
+    "",
+    *extract("int_and"),
+    "",
+    *extract("int_nand"),
+    "",
+    *extract("int_or"),
+    "",
+    *extract("int_xor"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
+
 cat > "$PROJECT/.sugar/config.toml" <<TOML
 [[plugins]]
 name = "rust-test-assertions-lift"
@@ -360,6 +415,11 @@ needles = [
     "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:0))::assertion",
     "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:1))::assertion",
     "method:contains#euf#c:callresult_method_contains_a2(c:range_incl(i:1,i:5),c:ref(i:5))::assertion",
+    "method:fetch_and#euf#c:callresult_method_fetch_and_a3(v:tests/atomic.rs::uint_and::x,i:4991,v:tests/atomic.rs::uint_and::SeqCst)::assertion",
+    "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_and::x,v:tests/atomic.rs::uint_and::SeqCst)::assertion",
+    "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_nand::x,v:tests/atomic.rs::uint_nand::SeqCst)::assertion",
+    "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_or::x,v:tests/atomic.rs::uint_or::SeqCst)::assertion",
+    "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_xor::x,v:tests/atomic.rs::uint_xor::SeqCst)::assertion",
 ]
 missing = [
     needle for needle in needles
@@ -369,8 +429,8 @@ missing = [
 if not euf_rows:
     print("no #euf# consistency rows found", file=sys.stderr)
     raise SystemExit(1)
-if len(euf_rows) < 104:
-    print(f"expected at least 104 claimed #euf# rows after cfg-sensitive mem lift, got {len(euf_rows)}", file=sys.stderr)
+if len(euf_rows) < 122:
+    print(f"expected at least 122 claimed #euf# rows after cfg-sensitive mem and compound-term lifts, got {len(euf_rows)}", file=sys.stderr)
     raise SystemExit(1)
 if missing:
     print("missing required claimed rows:", file=sys.stderr)
@@ -454,8 +514,53 @@ echo "== witness: rerun exact std/core vendor tests =="
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests ops::test_range_to_contains -- --exact --nocapture
 )
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::bool_and -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::uint_and -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::uint_nand -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::uint_or -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::uint_xor -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::int_and -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::int_nand -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::int_or -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::int_xor -- --exact --nocapture
+)
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, pure method-chain predicates from alloc.rs/ops.rs, and direct comparison FOL rows from time.rs discharged; exact vendor tests reran."
-echo "not-claimed: full std/coretests; macros/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms remain gap census items."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, and stable-key atomic compound bitwise-expression RHS rows discharged; exact vendor tests reran."
+echo "not-claimed: full std/coretests; macro surfaces outside this showcase/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

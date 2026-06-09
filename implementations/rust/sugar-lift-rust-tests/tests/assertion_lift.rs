@@ -160,6 +160,47 @@ fn assert_int_call_cmp_atom(
     }
 }
 
+fn assert_method_call_eq_compound_rhs(
+    formula: &Formula,
+    expected_call: &str,
+    expected_rhs_ctor: &str,
+    expected_lhs: i64,
+    expected_rhs: i64,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, expected_call),
+                other => panic!("expected method call lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, expected_rhs_ctor);
+                    assert_eq!(args.len(), 2);
+                    match args[0].as_ref() {
+                        Term::Const {
+                            value: ConstValue::Int(value),
+                            ..
+                        } => assert_eq!(*value, expected_lhs),
+                        other => panic!("expected int compound lhs, got {other:?}"),
+                    }
+                    match args[1].as_ref() {
+                        Term::Const {
+                            value: ConstValue::Int(value),
+                            ..
+                        } => assert_eq!(*value, expected_rhs),
+                        other => panic!("expected int compound rhs, got {other:?}"),
+                    }
+                }
+                other => panic!("expected compound rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
 fn assert_string_predicate_atom(formula: &Formula, expected_name: &str, expected_strings: &[&str]) {
     match formula {
         Formula::Atomic { name, args } => {
@@ -560,6 +601,38 @@ mod tests {
 }
 
 #[test]
+fn cfg_test_modules_are_active_without_explicit_target_cfg() {
+    let src = r#"
+fn decoded_len_estimate(_: usize) -> usize { 3 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decoded_len_est() {
+        assert_eq!(3, decoded_len_estimate(4));
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "src/decode.rs");
+
+    assert_eq!(out.seen, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "decoded_len_estimate#euf#c:callresult_decoded_len_estimate_a1(i:4)::assertion"
+    );
+    assert_int_call_eq_atom(
+        &inv_operands(&out.decls[0])[0],
+        3,
+        "call:decoded_len_estimate",
+        4,
+    );
+}
+
+#[test]
 fn cfg_gated_statement_assertions_lift_only_active_assertions() {
     let src = r#"
 fn value() -> i32 { 1 }
@@ -841,6 +914,111 @@ fn test_range_contains() {
         }
         other => panic!("expected equality atom, got {other:?}"),
     }
+}
+
+#[test]
+fn method_call_result_with_bitwise_rhs_uses_euf_callsite_key() {
+    let src = r#"
+struct AtomicLike;
+struct SeqCst;
+
+impl AtomicLike {
+    fn load(&self, _ordering: SeqCst) -> usize { 0 }
+}
+
+#[test]
+fn uint_and() {
+    let x = AtomicLike;
+    assert_eq!(x.load(SeqCst), 0xf731 & 0x137f);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/atomic.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_and::x,v:tests/atomic.rs::uint_and::SeqCst)::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_method_call_eq_compound_rhs(&operands[0], "method:load", "bit-and", 0xf731, 0x137f);
+}
+
+#[test]
+fn constructor_call_expected_value_stays_location_keyed() {
+    let src = r#"
+struct AtomicLike;
+struct SeqCst;
+
+impl AtomicLike {
+    fn compare_exchange(
+        &self,
+        _current: bool,
+        _new: bool,
+        _success: SeqCst,
+        _failure: SeqCst,
+    ) -> Result<bool, bool> {
+        Ok(false)
+    }
+}
+
+#[test]
+fn bool_compare_exchange() {
+    let a = AtomicLike;
+    assert_eq!(a.compare_exchange(false, true, SeqCst, SeqCst), Ok(false));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/atomic.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(out.decls[0].name, "tests/atomic.rs::bool_compare_exchange");
+    match inv_operands(&out.decls[0])[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, "method:compare_exchange"),
+                other => panic!("expected compare_exchange lhs, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "call:Ok");
+                    assert_eq!(args.len(), 1);
+                    match args[0].as_ref() {
+                        Term::Const {
+                            value: ConstValue::Bool(value),
+                            ..
+                        } => assert!(!*value),
+                        other => panic!("expected bool constructor arg, got {other:?}"),
+                    }
+                }
+                other => panic!("expected Ok constructor rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn ordinary_call_result_rhs_does_not_become_a_ground_value() {
+    let src = r#"
+fn left() -> i32 { 1 }
+fn right() -> i32 { 1 }
+
+#[test]
+fn two_calls() {
+    assert_eq!(left(), right());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/calls.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(out.decls[0].name, "tests/calls.rs::two_calls");
 }
 
 #[test]
