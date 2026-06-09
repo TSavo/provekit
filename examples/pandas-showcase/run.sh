@@ -49,7 +49,13 @@ echo "$report"
 echo ""
 echo "== self-check: sugar must prove the good code and refuse the bug both ways =="
 fail=0
-check() { if echo "$report" | grep -q "$2"; then echo "  ok: $1"; else echo "  MISSING: $1 ($2)"; fail=1; fi; }
+check_text() {
+  local haystack="$1" label="$2" pattern="$3"
+  # Avoid `echo "$report" | grep -q` under pipefail: grep can exit early
+  # after a match, then echo may SIGPIPE and make a present verdict look absent.
+  if grep -q "$pattern" <<<"$haystack"; then echo "  ok: $label"; else echo "  MISSING: $label ($pattern)"; fail=1; fi
+}
+check() { check_text "$report" "$1" "$2"; }
 # Consistency axis: the two good contracts discharge, the contradiction is UNSAT.
 check "consistency discharges Series.sum == 6"      "consistent about callsite .test_column_sum_is_six"
 check "consistency discharges frame round-trip"     "consistent about callsite .test_frame_round_trips_exactly"
@@ -75,6 +81,22 @@ print(f"  {'ok' if ok else 'MISSING'}: package records good tests passed")
 print(f"  {'ok' if bad else 'MISSING'}: package records the contradiction failed")
 sys.exit(0 if (ok and bad) else 1)
 PY
+
+echo ""
+echo "== verify durable artifact (expected refusal: the contradictory twin is in this proof) =="
+verify_report="$(PATH="$VENV/bin:$PATH" "$BIN" verify --project . --json 2>&1)"
+verify_rc=$?
+echo "$verify_report"
+if [ "$verify_rc" -eq 0 ]; then
+  echo "  MISSING: durable verify must refuse the expected contradictory twin"
+  fail=1
+else
+  echo "  ok: durable verify refused the expected contradictory twin (exit $verify_rc)"
+fi
+check_text "$verify_report" "durable verify preserves Series.sum discharge" "consistent about callsite .test_column_sum_is_six"
+check_text "$verify_report" "durable verify preserves frame discharge" "consistent about callsite .test_frame_round_trips_exactly"
+check_text "$verify_report" "durable verify preserves contradiction refusal" "contradictory about callsite .test_column_sum_contradiction"
+check_text "$verify_report" "durable verify recomputes witness package" '"verdict": "verified"'
 
 echo ""
 if [ "$fail" -eq 0 ]; then

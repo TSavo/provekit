@@ -115,7 +115,13 @@ echo "$report"
 echo ""
 echo "== self-check: sugar must prove the good rot90 contract and refuse the degenerate both ways =="
 fail=0
-check() { if echo "$report" | grep -q "$2"; then echo "  ok: $1"; else echo "  MISSING: $1 ($2)"; fail=1; fi; }
+check_text() {
+  local haystack="$1" label="$2" pattern="$3"
+  # Avoid `echo "$report" | grep -q` under pipefail: grep can exit early
+  # after a match, then echo may SIGPIPE and make a present verdict look absent.
+  if grep -q "$pattern" <<<"$haystack"; then echo "  ok: $label"; else echo "  MISSING: $label ($pattern)"; fail=1; fi
+}
+check() { check_text "$report" "$1" "$2"; }
 # Consistency axis: the good rot90 element facts discharge; the contradiction is UNSAT.
 check "consistency discharges rot90 element facts"  "consistent about callsite .test_rot90_quarter_turn"
 check "consistency REFUSES the contradiction"       "contradictory about callsite .test_rot90_contradiction"
@@ -124,8 +130,19 @@ check "witness REFUSES the degenerate by recompute" "witness REFUSED by recomput
 check "witness names the failing degenerate test"   "test_rot90_contradiction"
 
 echo ""
-echo "== verify (witness axis: rust recomputes; the kit oracle is untrusted) =="
-PATH="$VENV/bin:$PATH" "$BIN" verify --project . || fail=1
+echo "== verify durable artifact (expected refusal: the degenerate twin is in this proof) =="
+verify_report="$(PATH="$VENV/bin:$PATH" "$BIN" verify --project . --json 2>&1)"
+verify_rc=$?
+echo "$verify_report"
+if [ "$verify_rc" -eq 0 ]; then
+  echo "  MISSING: durable verify must refuse the expected degenerate twin"
+  fail=1
+else
+  echo "  ok: durable verify refused the expected degenerate twin (exit $verify_rc)"
+fi
+check_text "$verify_report" "durable verify preserves good rot90 discharge" "consistent about callsite .test_rot90_quarter_turn"
+check_text "$verify_report" "durable verify preserves contradiction refusal" "contradictory about callsite .test_rot90_contradiction"
+check_text "$verify_report" "durable verify recomputes witness package" '"verdict": "verified"'
 
 echo ""
 if [ "$fail" -eq 0 ]; then
