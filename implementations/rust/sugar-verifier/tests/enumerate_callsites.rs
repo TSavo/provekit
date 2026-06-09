@@ -372,6 +372,43 @@ fn callsite_carries_arg_term_from_atomic() {
 }
 
 #[test]
+fn callsite_carries_all_arg_terms_from_atomic() {
+    let target_cid = "blake3-512:target";
+    let pool = pool_with_bridge_and_contract(
+        "method:to_digit",
+        target_cid,
+        json!({
+            "contractName": "p",
+            "post": {
+                "kind": "atomic", "name": "=",
+                "args": [
+                    {"kind": "ctor", "name": "method:to_digit", "args": [
+                        {"kind": "var", "name": "self"},
+                        {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}}
+                    ]},
+                    {"kind": "var", "name": "out"}
+                ]
+            }
+        }),
+    );
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1);
+    assert_eq!(
+        cs[0].arg_term,
+        Some(json!({"kind": "var", "name": "self"})),
+        "legacy first-arg field stays stable"
+    );
+    assert_eq!(
+        cs[0].arg_terms,
+        vec![
+            json!({"kind": "var", "name": "self"}),
+            json!({"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}})
+        ],
+        "multi-formal precondition discharge needs every actual in source order"
+    );
+}
+
+#[test]
 fn multiple_callsites_in_same_contract_each_listed() {
     let target_cid = "blake3-512:target";
     let pool = pool_with_bridge_and_contract(

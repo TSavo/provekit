@@ -875,6 +875,12 @@ pub struct CallSite {
     /// loaded together.
     pub callsite_bundle_cid: Option<String>,
     pub arg_term: Option<Json>,
+    /// All actual argument terms on the bridged call, in source order. The
+    /// legacy `arg_term` remains the first actual for producer-post and
+    /// panic-site paths that intentionally operate on a single receiver/value.
+    /// Multi-formal precondition discharge uses this vector to specialize a
+    /// target pre over every formal without interpreting the language.
+    pub arg_terms: Vec<Json>,
     /// Optional kit-provided producer provenance for panic-site receiver calls.
     /// For `producer().expect(..)`, the panic leaf and the producer call can
     /// start on different source lines. The verifier treats these as opaque
@@ -935,6 +941,11 @@ pub struct ResolvedProperty {
     pub cid: String,
     pub ir_formula: Option<Json>,
     pub ir_kit_version: String,
+    /// Target contract formal names and sorts, copied from the contract header
+    /// when present. These are identity slots for callsite substitution only;
+    /// the verifier does not interpret source-language types.
+    pub formal_names: Vec<String>,
+    pub formal_sorts: Vec<Json>,
     /// True iff the resolved target contract is a body-derived op-contract
     /// (body-bearing), not a plain refinement target.
     ///

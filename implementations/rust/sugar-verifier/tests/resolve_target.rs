@@ -104,6 +104,55 @@ fn resolves_returns_none_pre_when_contract_has_no_pre() {
     assert!(r.ir_formula.is_none());
 }
 
+#[test]
+fn resolves_formal_names_and_sorts_for_multi_formal_precondition() {
+    let target_cid = "blake3-512:contract1";
+    let env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "formals": ["self", "radix"],
+                "formalSorts": [
+                    {"kind": "primitive", "name": "Self"},
+                    {"kind": "primitive", "name": "Int"}
+                ],
+                "pre": {
+                    "kind": "and",
+                    "operands": [
+                        {"kind": "atomic", "name": ">=", "args": [
+                            {"kind": "var", "name": "radix"},
+                            {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}
+                        ]},
+                        {"kind": "atomic", "name": "<=", "args": [
+                            {"kind": "var", "name": "radix"},
+                            {"kind": "const", "value": 36, "sort": {"kind": "primitive", "name": "Int"}}
+                        ]}
+                    ]
+                }
+            }
+        }
+    });
+    let pool = pool_with(target_cid, env);
+    let cs = callsite_targeting(target_cid);
+    let r = resolve_target::run(&cs, &pool).expect("resolve");
+    assert_eq!(r.formal_names, vec!["self", "radix"]);
+    assert_eq!(
+        r.formal_sorts,
+        vec![
+            json!({"kind": "primitive", "name": "Self"}),
+            json!({"kind": "primitive", "name": "Int"})
+        ]
+    );
+    assert_eq!(
+        r.ir_formula
+            .as_ref()
+            .and_then(|f| f.get("name"))
+            .and_then(|v| v.as_str()),
+        Some("self"),
+        "legacy wrapper still exposes the first formal for existing paths"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Fail-closed: bad inputs
 // ---------------------------------------------------------------------------

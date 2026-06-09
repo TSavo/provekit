@@ -138,6 +138,8 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
         .get("pre")
         .cloned()
         .map(|pre| wrap_pre_forall(pre, body));
+    let formal_names = formal_names(body);
+    let formal_sorts = formal_sorts(body);
     // A target carrying a `formals` array is a body-derived op-contract
     // (body-bearing). The caller must NOT vacuous-pass such a target if its
     // obligation was not reduced + discharged; it must refuse. Surface the
@@ -161,8 +163,29 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
         cid: cs.bridge_target_cid.clone(),
         ir_formula,
         ir_kit_version: String::new(),
+        formal_names,
+        formal_sorts,
         target_is_body_bearing,
     })
+}
+
+fn formal_names(body: &Json) -> Vec<String> {
+    body.get("formals")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn formal_sorts(body: &Json) -> Vec<Json> {
+    body.get("formalSorts")
+        .and_then(|v| v.as_array())
+        .map(|items| items.to_vec())
+        .unwrap_or_default()
 }
 
 /// Wrap a bare precondition formula in `forall (firstFormal: sort). pre` so the

@@ -1019,13 +1019,23 @@ fn assert_macro_condition(mac: &Macro) -> Option<Expr> {
     if seg.ident != "assert" {
         return None;
     }
-    let parsed_cond = syn::parse2::<Expr>(mac.tokens.clone()).ok()?;
-    // assert!(c) parses to just c. assert!(c, "msg") parses as a tuple-expr;
-    // take the first elem.
+    let parsed_cond = syn::parse2::<Expr>(first_macro_arg_tokens(mac.tokens.clone())).ok()?;
+    // Keep the prior tuple fallback for already-parenthesized conditions.
     match parsed_cond {
         Expr::Tuple(t) => t.elems.first().cloned(),
         other => Some(other),
     }
+}
+
+fn first_macro_arg_tokens(tokens: TokenStream) -> TokenStream {
+    let mut first = TokenStream::new();
+    for token in tokens {
+        if matches!(&token, TokenTree::Punct(punct) if punct.as_char() == ',') {
+            break;
+        }
+        first.extend(std::iter::once(token));
+    }
+    first
 }
 
 fn tracked_direct_guard_fact(expr: &Expr, ctx: &mut LiftCtx) -> Option<TrackedGuardFact> {
@@ -3231,6 +3241,31 @@ mod tests {
             pre.as_formula(),
             atomic_ge(var("x"), const_int(5)).as_formula()
         );
+    }
+
+    #[test]
+    fn lifts_assert_macro_with_message_as_predicate() {
+        let item_fn = parse_fn(
+            r#"
+            fn to_digit(radix: u32) {
+                assert!(
+                    radix >= 2 && radix <= 36,
+                    "to_digit: invalid radix -- radix must be in the range 2 to 36 inclusive"
+                );
+            }
+        "#,
+        );
+        let pre = lift_function_precondition(&item_fn);
+        let json = serde_json::to_string(pre.as_formula()).unwrap();
+        assert!(
+            json.contains("\"and\""),
+            "pre should be a conjunction: {json}"
+        );
+        assert!(
+            json.contains("\"≥\"") && json.contains("\"≤\""),
+            "pre should contain radix bounds: {json}"
+        );
+        assert!(json.contains("\"radix\""), "pre should mention radix: {json}");
     }
 
     #[test]

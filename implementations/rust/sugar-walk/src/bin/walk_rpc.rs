@@ -5223,6 +5223,17 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             if leaf.is_empty() {
                 continue;
             }
+            let mut key_leaves = vec![leaf];
+            if let Some(alias) = binding
+                .get("bridgeSourceSymbol")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                if !key_leaves.iter().any(|existing| existing == alias) {
+                    key_leaves.push(alias.to_string());
+                }
+            }
             let body_policy = body_discharge_policy_from_object(binding);
             log_body_discharge_policy_warnings(
                 "walk-lift-implication-contract-binding",
@@ -5236,21 +5247,28 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 .filter(|s| !s.is_empty())
                 .map(normalize_crate_root)
                 .unwrap_or_else(|| current_crate.clone());
-            let key = (library, leaf);
+            let keys = key_leaves
+                .into_iter()
+                .map(|leaf| (library.clone(), leaf))
+                .collect::<Vec<_>>();
             if !body_discharge_eligible {
-                ineligible_by_key.insert(key, binding);
+                for key in keys {
+                    ineligible_by_key.insert(key, binding);
+                }
                 continue;
             }
-            match contracts_by_key.get(&key) {
-                None => {
-                    contracts_by_key.insert(key, binding);
-                }
-                Some(existing) => {
-                    // Upgrade to the most dischargeable binding; never
-                    // downgrade. For panic partials, a pre-bearing contract is
-                    // the only shape that can prove the site cannot panic.
-                    if binding_rank(binding) > binding_rank(existing) {
+            for key in keys {
+                match contracts_by_key.get(&key) {
+                    None => {
                         contracts_by_key.insert(key, binding);
+                    }
+                    Some(existing) => {
+                        // Upgrade to the most dischargeable binding; never
+                        // downgrade. For panic partials, a pre-bearing contract is
+                        // the only shape that can prove the site cannot panic.
+                        if binding_rank(binding) > binding_rank(existing) {
+                            contracts_by_key.insert(key, binding);
+                        }
                     }
                 }
             }
@@ -6790,6 +6808,7 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
                 serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())?;
             entry["name"] = json!(target.fn_name.clone());
             entry["fn_name"] = json!(target.fn_name.clone());
+            entry["contract_cid"] = json!(contract.cid.clone());
             entry["bridgeSourceSymbol"] = json!(target.source_name.clone());
             entry["bodyDischargeEligible"] = json!(body_discharge_eligible);
             if let Some(reason) = refusal_reason {
@@ -13120,6 +13139,66 @@ pub fn caller(input: &str) -> i64 {
             norm["targetContractCid"],
             "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_uses_bridge_source_symbol_for_impl_method_contracts() {
+        let src = r##"
+pub struct Digitish;
+
+impl Digitish {
+    pub fn to_digit(&self, radix: u32) -> u32 {
+        assert!(radix >= 2 && radix <= 36, "radix out of range");
+        radix
+    }
+}
+
+pub fn caller(value: Digitish) -> u32 {
+    value.to_digit(1)
+}
+"##;
+        let root = temp_workspace("lift_implications_impl_method_bridge_source_symbol");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let producer = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+        }))
+        .expect("function contract lift");
+        let contract_bindings = producer["ir"].as_array().expect("producer ir array");
+        let target = contract_bindings
+            .iter()
+            .find(|entry| entry["name"] == "Digitish::to_digit")
+            .expect("impl method contract should be lifted");
+        assert_eq!(target["bridgeSourceSymbol"], "to_digit");
+
+        let consumer = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift implications");
+        let ir = consumer["ir"].as_array().expect("consumer ir array");
+        let bridge = ir
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "method:to_digit")
+            .unwrap_or_else(|| panic!("method:to_digit bridge missing: {consumer:#?}"));
+        assert_eq!(bridge["targetContractCid"], target["contract_cid"]);
 
         let _ = fs::remove_dir_all(root);
     }

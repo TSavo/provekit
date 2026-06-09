@@ -40,6 +40,54 @@ pub fn run(resolved: &ResolvedProperty, arg_term: &Option<Json>) -> Result<Oblig
     })
 }
 
+/// Specialize a target precondition to the concrete callsite actuals.
+///
+/// This is the value-level seam obligation used when the caller directly calls
+/// a precondition-bearing target: substitute every target formal with the
+/// corresponding bridged ctor argument and return the bare specialized
+/// predicate. The legacy `run` API above intentionally preserves its quantified
+/// wrapper for older single-formal paths; this helper is for actual callsite
+/// discharge.
+pub fn run_specialized(
+    resolved: &ResolvedProperty,
+    arg_terms: &[Json],
+) -> Result<Obligation, String> {
+    let f = resolved
+        .ir_formula
+        .as_ref()
+        .ok_or("resolved property has no ir_formula (no pre slot)")?;
+    if f.get("kind").and_then(|v| v.as_str()) != Some("forall") {
+        return Err("precondition formula is not a forall".into());
+    }
+    let fallback_name = f
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("forall has empty bound-variable name")?
+        .to_string();
+    let body = f.get("body").ok_or("forall has no body")?;
+    let formal_names = if resolved.formal_names.is_empty() {
+        vec![fallback_name]
+    } else {
+        resolved.formal_names.clone()
+    };
+    if arg_terms.len() < formal_names.len() {
+        return Err(format!(
+            "not enough actual terms to specialize precondition: need {}, got {}",
+            formal_names.len(),
+            arg_terms.len()
+        ));
+    }
+    let mut substituted = body.clone();
+    for (name, actual) in formal_names.iter().zip(arg_terms.iter()) {
+        substituted = substitute_formula(&substituted, name, actual);
+    }
+    Ok(Obligation {
+        property_cid: resolved.cid.clone(),
+        ir_kit_version: resolved.ir_kit_version.clone(),
+        ir_formula: substituted,
+    })
+}
+
 /// Public adapter so other stages (notably the handshake's
 /// implication-form obligation builder) can reuse the same
 /// alpha-renaming helper.

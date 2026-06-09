@@ -304,3 +304,81 @@ fn obligation_carries_property_cid_and_kit_version() {
     assert_eq!(r.property_cid, "blake3-512:abc");
     assert_eq!(r.ir_kit_version, "rust-kit@1.0");
 }
+
+#[test]
+fn specialized_precondition_substitutes_all_formals_with_call_actuals() {
+    let formula = json!({
+        "kind": "forall",
+        "name": "self",
+        "sort": {"kind": "primitive", "name": "Self"},
+        "body": {
+            "kind": "and",
+            "operands": [
+                {"kind": "atomic", "name": ">=", "args": [
+                    {"kind": "var", "name": "radix"},
+                    {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}
+                ]},
+                {"kind": "atomic", "name": "<=", "args": [
+                    {"kind": "var", "name": "radix"},
+                    {"kind": "const", "value": 36, "sort": {"kind": "primitive", "name": "Int"}}
+                ]}
+            ]
+        }
+    });
+    let rp = ResolvedProperty {
+        cid: "blake3-512:to-digit".into(),
+        ir_formula: Some(formula),
+        formal_names: vec!["self".into(), "radix".into()],
+        formal_sorts: vec![
+            json!({"kind": "primitive", "name": "Self"}),
+            json!({"kind": "primitive", "name": "Int"}),
+        ],
+        ..Default::default()
+    };
+    let actuals = vec![
+        json!({"kind": "var", "name": "ch"}),
+        json!({"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}}),
+    ];
+    let r = instantiate::run_specialized(&rp, &actuals).expect("specialize");
+    assert_eq!(
+        r.ir_formula,
+        json!({
+            "kind": "and",
+            "operands": [
+                {"kind": "atomic", "name": ">=", "args": [
+                    {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}},
+                    {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}
+                ]},
+                {"kind": "atomic", "name": "<=", "args": [
+                    {"kind": "const", "value": 16, "sort": {"kind": "primitive", "name": "Int"}},
+                    {"kind": "const", "value": 36, "sort": {"kind": "primitive", "name": "Int"}}
+                ]}
+            ]
+        })
+    );
+}
+
+#[test]
+fn specialized_precondition_refuses_when_actual_count_does_not_cover_formals() {
+    let formula = json!({
+        "kind": "forall",
+        "name": "self",
+        "sort": {"kind": "primitive", "name": "Self"},
+        "body": {"kind": "atomic", "name": ">=", "args": [
+            {"kind": "var", "name": "radix"},
+            {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}
+        ]}
+    });
+    let rp = ResolvedProperty {
+        cid: "blake3-512:to-digit".into(),
+        ir_formula: Some(formula),
+        formal_names: vec!["self".into(), "radix".into()],
+        ..Default::default()
+    };
+    let actuals = vec![json!({"kind": "var", "name": "ch"})];
+    let err = instantiate::run_specialized(&rp, &actuals).expect_err("must fail closed");
+    assert!(
+        err.contains("not enough actual terms"),
+        "expected a fail-closed arity error, got {err}"
+    );
+}

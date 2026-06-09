@@ -1686,6 +1686,7 @@ fn mint_ir_document(
         body_discharge_eligible: bool,
         body_discharge_refusal_reason: Option<String>,
         library: Option<String>,
+        bridge_source_symbol: Option<String>,
     }
 
     impl MintedContractRef {
@@ -2155,7 +2156,7 @@ fn mint_ir_document(
         // indexes `pool.mementos` by), so `CatalogResolver` resolves the
         // chain. Language-neutral: it operates on the protocol's fields, not
         // on any source language.
-        if let Some(source_symbol) = bridge_source_symbol {
+        if let Some(source_symbol) = bridge_source_symbol.clone() {
             let bridge = mint_bridge(&MintBridgeArgs {
                 produced_by: "sugar-cli".to_string(),
                 produced_at: produced_at.clone(),
@@ -2198,6 +2199,7 @@ fn mint_ir_document(
                 body_discharge_eligible,
                 body_discharge_refusal_reason,
                 library,
+                bridge_source_symbol,
             });
         let name_cids = cids_by_name.entry(args.contract_name.clone()).or_default();
         if !name_cids.contains(&m.cid) {
@@ -2398,6 +2400,7 @@ fn mint_ir_document(
                 "has_pre": has_pre,
                 "bodyDischargeEligible": contract.body_discharge_eligible,
                 "bodyDischargeRefusalReason": contract.body_discharge_refusal_reason.clone(),
+                "bridgeSourceSymbol": contract.bridge_source_symbol.clone(),
                 // Crate tag (Tier 1): lets the implication lifter key this
                 // producer contract by (crate, leaf). Omitted when the lifter
                 // did not stamp one (the matcher then defaults to the current
@@ -3952,6 +3955,35 @@ mod tests {
                 .and_then(|v| v.as_str()),
             Some("libsugar")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mint_ir_document_forwards_bridge_source_symbol_to_bindings() {
+        let root = temp_workspace("mint_contract_bridge_source_symbol_forward");
+        let out_dir = root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        let ir = vec![json!({
+            "kind": "function-contract",
+            "name": "Widget::run",
+            "bridgeSourceSymbol": "run",
+            "formals": ["self"],
+            "formalSorts": [{"kind": "primitive", "name": "unit"}],
+            "returnSort": {"kind": "primitive", "name": "unit"},
+            "pre": {"kind": "atomic", "name": "ready", "args": []},
+            "post": {"kind": "atomic", "name": "true", "args": []},
+            "bodyDischargeEligible": true
+        })];
+
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint ir-document");
+        let binding = minted
+            .contract_bindings
+            .iter()
+            .find(|binding| binding["name"] == "Widget::run")
+            .expect("producer binding");
+        assert_eq!(binding["bridgeSourceSymbol"], "run");
 
         let _ = std::fs::remove_dir_all(root);
     }

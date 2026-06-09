@@ -1575,7 +1575,8 @@ fn work_one(
         }
     } else {
         used_implication_form = false;
-        let ob = match instantiate::run(&resolved, &cs.arg_term) {
+        let actual_terms = callsite_actual_terms(cs);
+        let ob = match instantiate::run_specialized(&resolved, &actual_terms) {
             Ok(o) => o,
             Err(e) => {
                 n_residue.fetch_add(1, Ordering::Relaxed);
@@ -1603,18 +1604,12 @@ fn work_one(
         // COMPLEMENT predicate, which never establishes the positive pre, so it
         // also stays undecidable. Fail-safe by construction: no path marks an
         // unguarded site panic-safe. This verifier recognizes no predicate name.
-        // CAPTURE / SPECIALIZATION FIX (BOTH panic branches). See the matching
-        // block + full rationale in `cmd_verify::verify_one_claim`. The
-        // call-site obligation is the pre SPECIALIZED to the actual arg
-        // (`pre[formal := arg]`, free vars), never `forall formal. pre`.
-        // `instantiate::run` substitutes the arg but re-wraps in a forall
-        // re-binding the formal, which (1) captures the guard fact's free var on
-        // the GUARDED branch and (2) collapses to the literal `true` on the
-        // UNGUARDED branch when the formal's sort is OPAQUE (the SMT emitter's
-        // opaque-`forall`->`true` opacity), falsely discharging the bare pre.
-        // The forall's body IS the specialized pre; the outer binder is
-        // redundant. Strip it ONCE here, before the guarded/unguarded split.
-        // We do NOT touch `instantiate::run` (shared by the refinement path).
+        // The call-site obligation is the target pre SPECIALIZED to this
+        // call's actual terms (`pre[formal_i := actual_i]`, free vars), never a
+        // source-language effect model. `run_specialized` returns that bare
+        // predicate directly. Keep the strip as a defensive no-op for older
+        // hand-built obligations that still arrive with one redundant outer
+        // forall.
         let specialized = instantiate::strip_outer_forall(&ob.ir_formula);
         if specialized != ob.ir_formula {
             debug!(
@@ -1775,6 +1770,13 @@ fn work_one(
     };
 
     (cs.clone(), verdict, reason, discharge_method, None)
+}
+
+fn callsite_actual_terms(cs: &CallSite) -> Vec<Json> {
+    if !cs.arg_terms.is_empty() {
+        return cs.arg_terms.clone();
+    }
+    cs.arg_term.iter().cloned().collect()
 }
 
 fn short(s: &str) -> String {

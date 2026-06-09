@@ -253,6 +253,7 @@ fn callsite_from_panic_locus(
         property_name: property_name.to_string(),
         property_cid: property_cid.to_string(),
         callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
+        arg_terms: arg_term.iter().cloned().collect(),
         arg_term,
         producer_file,
         producer_line,
@@ -323,6 +324,7 @@ fn attribute_safety_callsite_from_locus(
         property_cid: property_cid.to_string(),
         callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
         arg_term: locus.get("argTerm").cloned(),
+        arg_terms: locus.get("argTerm").cloned().into_iter().collect(),
         producer_file: file.clone(),
         producer_line: None,
         producer_symbol: None,
@@ -804,10 +806,12 @@ fn walk_term(
         .unwrap_or_default()
         .to_string();
     let bridge_name = panic_freedom::normalize_leaf_method_name(&name).to_string();
-    let arg_term = t
+    let arg_terms = t
         .get("args")
         .and_then(|v| v.as_array())
-        .and_then(|arr| arr.first().cloned());
+        .cloned()
+        .unwrap_or_default();
+    let arg_term = arg_terms.first().cloned();
     if let Some(locus) = attribute_safety_locus_for(t, panic_loci) {
         if let Some(cs) = attribute_safety_callsite_from_locus(
             locus,
@@ -959,6 +963,7 @@ fn walk_term(
             property_cid: property_cid.to_string(),
             callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
             arg_term: arg_term.clone(),
+            arg_terms: arg_terms.clone(),
             producer_file: occ_locus
                 .and_then(|locus| {
                     locus

@@ -260,6 +260,13 @@ struct ClaimResult {
     body_discharge_tier: Option<String>,
 }
 
+fn callsite_actual_terms(cs: &sugar_verifier::CallSite) -> Vec<Json> {
+    if !cs.arg_terms.is_empty() {
+        return cs.arg_terms.clone();
+    }
+    cs.arg_term.iter().cloned().collect()
+}
+
 pub fn run(args: VerifyArgs) -> u8 {
     // Early dispatch: the supply-chain admission gate. When any of
     // --artifact / --proof / --policy is given, verify a package release
@@ -805,12 +812,12 @@ fn verify_one_claim(
                 target_cid = %cs.bridge_target_cid,
                 resolved_pre = %resolved.ir_formula.as_ref()
                     .map(|f| f.to_string()).unwrap_or_else(|| "<none>".into()),
-                arg_term = %cs.arg_term.as_ref()
-                    .map(|a| a.to_string()).unwrap_or_else(|| "<none>".into()),
-                "verify_one_claim: guard-discharge: resolved target pre, about to instantiate \
-                 with the callsite arg"
+                arg_terms = %json!(callsite_actual_terms(cs)),
+                "verify_one_claim: guard-discharge: resolved target pre, about to specialize \
+                 with the callsite actual terms"
             );
-            let instantiated = match instantiate::run(&resolved, &cs.arg_term) {
+            let instantiated =
+                match instantiate::run_specialized(&resolved, &callsite_actual_terms(cs)) {
                 Ok(ob) => ob.ir_formula,
                 Err(e) => {
                     result.reason = format!("instantiate: {e}");
@@ -839,39 +846,12 @@ fn verify_one_claim(
             // an else-branch carries the NEGATED guard (`is_none(recv)`), which
             // never establishes `is_some(recv)` (also undecidable). No path
             // marks an unguarded site safe. `panic_guarded` flags the tag below.
-            // CAPTURE / SPECIALIZATION FIX (BOTH panic branches). The call-site
-            // obligation is the pre SPECIALIZED to the actual argument flowing
-            // into the call (`pre[formal := arg]`, with the actual's vars FREE),
-            // never the universal `forall formal. pre`. `instantiate::run`
-            // substitutes the arg into the pre's forall body but then RE-WRAPS
-            // it in a forall re-binding the same formal -- two distinct bugs the
-            // outer binder causes, both fixed by stripping it ONCE here:
-            //   1. GUARDED: the re-bound forall captures the guard fact's free
-            //      var, yielding `is_some(opt_free) => forall opt. is_some(opt)`
-            //      = `P(a) => forall x. P(x)`, which the solver correctly
-            //      refutes -> the guarded site would never discharge.
-            //   2. UNGUARDED: when the formal's sort is OPAQUE (a non-primitive
-            //      Rust sort like `Option<T>`), the SMT emitter collapses the
-            //      whole opaque-sorted `forall` to the literal `true`
-            //      (predicate-quantification opacity in
-            //      `emit_formula_with_opacities`), so the negated obligation is
-            //      `(not true)` = unsat -> the bare unprovable pre is FALSELY
-            //      discharged (a false "cannot panic"). Specializing to the free
-            //      arg yields `is_some(opt)` over a free `opt`, which the solver
-            //      correctly leaves SAT-for-negation -> honestly undecidable.
-            // The forall's BODY is exactly `pre[formal := arg]`; the outer binder
-            // is redundant (vacuous when arg != formal, capturing/opaque-collapsing
-            // when it is). We do NOT touch `instantiate::run` (shared by the
-            // refinement path; changing its output perturbs obligation CIDs /
-            // hash-tier lookups) and we do NOT universalize the guard (asserting
-            // `forall opt. is_some(opt)` as fact would be unsound).
-            //
-            // NOTE (reported debt, not fixed here): the opaque-sorted-`forall` ->
-            // `true` collapse in the SMT emitter is a GENERAL latent false-pass
-            // on the negated/proof path for ANY universally-quantified property
-            // over a non-primitive sort. Stripping removes panic obligations from
-            // that path, but the emitter hole remains for other opaque-quantified
-            // contracts. See the report.
+            // The call-site obligation is the target pre SPECIALIZED to this
+            // call's actual terms (`pre[formal_i := actual_i]`, free vars),
+            // never a universal statement about all inputs and never a model of
+            // panic effects. `run_specialized` returns that bare predicate
+            // directly. Keep the strip as a defensive no-op for older hand-built
+            // obligations that still arrive with one redundant outer forall.
             let specialized = instantiate::strip_outer_forall(&instantiated);
             if specialized != instantiated {
                 debug!(
@@ -1453,6 +1433,7 @@ mod tests {
             property_name: "demo_property".into(),
             property_cid: "blake3-512:prop".into(),
             arg_term: None,
+            arg_terms: Vec::new(),
             producer_file: None,
             producer_line: None,
             producer_symbol: None,
@@ -1564,6 +1545,7 @@ mod tests {
             property_name: "panic_site".into(),
             property_cid: "blake3-512:panic-prop".into(),
             arg_term: Some(json!({"kind": "var", "name": "opt"})),
+            arg_terms: Vec::new(),
             producer_file: None,
             producer_line: None,
             producer_symbol: None,
