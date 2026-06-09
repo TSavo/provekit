@@ -172,6 +172,15 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     the overclaim that false-refused std's `cmp_default`; the gate question for every lifter's
     `=` is "what does this operator dispatch to?"
 
+    And the constructive half: **a user's `equals` is a function with a contract, and we lift
+    it.** The dispatch atom is not a refusal — it is the vendor's equals contract as ordinary
+    `#euf#` call-result rows (`cmp_default`'s inverted `eq` becomes four point-wise claims,
+    proven consistent). Equality thereby inherits the whole substrate for free: the rows
+    coalesce and conjoin (a consumer contradicting the vendor's `eq` is a real z3 refusal),
+    federate by CID, carry seam obligations (a pre that relies on equals behavior), and move
+    under `sugar diff` when a release changes what `equals` does. No new machinery — the
+    operator was a method call all along, so the method-call substrate simply applies.
+
 ## Vb. The sort universe
 
 9a. **The sort universe primitives are `Int`, `Real`, `Bool` — platform-free, abstract**
