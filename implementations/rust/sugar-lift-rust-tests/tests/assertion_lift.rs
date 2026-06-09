@@ -221,6 +221,37 @@ fn assert_string_len_cmp_atom(
     }
 }
 
+fn formula_contains_atomic_name(formula: &Formula, expected_name: &str) -> bool {
+    match formula {
+        Formula::Atomic { name, .. } => name == expected_name,
+        Formula::Connective { operands, .. } => {
+            operands
+                .iter()
+                .any(|operand| formula_contains_atomic_name(operand, expected_name))
+        }
+        Formula::Quantifier { body, .. } => {
+            formula_contains_atomic_name(body, expected_name)
+        }
+        _ => false,
+    }
+}
+
+fn formula_contains_relation_name(formula: &Formula, expected_name: &str) -> bool {
+    formula_contains_atomic_name(formula, expected_name)
+}
+
+fn formula_count_atomic_name(formula: &Formula, expected_name: &str) -> usize {
+    match formula {
+        Formula::Atomic { name, .. } => usize::from(name == expected_name),
+        Formula::Connective { operands, .. } => operands
+            .iter()
+            .map(|operand| formula_count_atomic_name(operand, expected_name))
+            .sum(),
+        Formula::Quantifier { body, .. } => formula_count_atomic_name(body, expected_name),
+        _ => 0,
+    }
+}
+
 fn assert_await_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs: i64) {
     match formula {
         Formula::Atomic { name, args } => {
@@ -745,12 +776,17 @@ fn char_ascii_classes() {
     assert!(!'0'.is_ascii_alphabetic());
     assert!('a'.is_ascii());
     assert!('a'.is_alphabetic());
+    assert!('0'.is_ascii_digit());
+    assert!('f'.is_ascii_hexdigit());
+    assert!('z'.is_ascii_lowercase());
+    assert!('Z'.is_ascii_uppercase());
+    assert!(' '.is_ascii_whitespace());
 }
 "#;
     let out = lift_file(&parse(src), "core/src/char/methods.rs");
     assert_eq!(out.seen, 1);
     assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
-    assert_eq!(out.decls.len(), 3);
+    assert_eq!(out.decls.len(), 8);
     assert_eq!(out.warnings.len(), 1);
     assert!(out.warnings[0]
         .reason
@@ -774,6 +810,63 @@ fn char_ascii_classes() {
         other => panic!("expected negated ascii alphabetic atom, got {other:?}"),
     }
     assert_string_predicate_atom(&inv_operands(&out.decls[2])[0], "str.is_ascii", &["a"]);
+    assert_string_predicate_atom(&inv_operands(&out.decls[3])[0], "str.is_ascii_digit", &["0"]);
+    assert_string_predicate_atom(&inv_operands(&out.decls[4])[0], "str.is_ascii_hexdigit", &["f"]);
+    assert_string_predicate_atom(&inv_operands(&out.decls[5])[0], "str.is_ascii_lowercase", &["z"]);
+    assert_string_predicate_atom(&inv_operands(&out.decls[6])[0], "str.is_ascii_uppercase", &["Z"]);
+    assert_string_predicate_atom(&inv_operands(&out.decls[7])[0], "str.is_ascii_whitespace", &[" "]);
+}
+
+#[test]
+fn vendor_literal_iterator_all_any_and_byte_slices_lift_soundly() {
+    // Vendor source: rust-src library/coretests/tests/ascii.rs::test_is_ascii.
+    let src = r#"
+#[test]
+fn test_is_ascii() {
+    assert!(b"".is_ascii());
+    assert!(b"banana\0\x7F".is_ascii());
+    assert!(b"banana\0\x7F".iter().all(|b| b.is_ascii()));
+    assert!(!b"Vi\xe1\xbb\x87t Nam".is_ascii());
+    assert!(!b"Vi\xe1\xbb\x87t Nam".iter().all(|b| b.is_ascii()));
+    assert!(!b"\xe1\xbb\x87".iter().any(|b| b.is_ascii()));
+    assert!("".is_ascii());
+    assert!("banana\0\x7F".is_ascii());
+    assert!("banana\0\x7F".chars().all(|c| c.is_ascii()));
+    assert!(!"ประเทศไทย中华Việt Nam".chars().all(|c| c.is_ascii()));
+    assert!(!"ประเทศไทย中华ệ ".chars().any(|c| c.is_ascii()));
+}
+"#;
+    let out = lift_file(&parse(src), "coretests/tests/ascii.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(out.warnings.is_empty(), "unexpected lift warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 3, "expected two direct rows and one iterator/byte row");
+    let named_ascii = out
+        .decls
+        .iter()
+        .filter(|decl| decl.name.starts_with("method:is_ascii#"))
+        .count();
+    assert_eq!(named_ascii, 2, "expected two direct string is_ascii rows");
+    assert!(
+        out.decls.iter().any(|decl| {
+            decl.name == "coretests/tests/ascii.rs::test_is_ascii"
+                && decl
+                    .inv
+                    .as_deref()
+                    .is_some_and(|inv| formula_count_atomic_name(inv, "str.is_ascii") >= 10)
+        }),
+        "expected unrolled iterator/byte row in {:?}",
+        out.decls
+    );
+    assert!(
+        out.decls.iter().any(|decl| {
+            decl.inv
+                .as_deref()
+                .is_some_and(|inv| formula_contains_relation_name(inv, "≥"))
+        }),
+        "expected byte iterator to lower to arithmetic range checks in {:?}",
+        out.decls
+    );
 }
 
 #[test]

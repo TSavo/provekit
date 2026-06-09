@@ -248,6 +248,9 @@ fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionE
     if let Some(entry) = translate_string_predicate_assertion(expr, local_scope)? {
         return Ok(entry);
     }
+    if let Some(entry) = translate_literal_iterator_assertion(expr, local_scope)? {
+        return Ok(entry);
+    }
     match expr {
         Expr::Binary(binary) => translate_binary_bool_assertion(binary, local_scope),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
@@ -415,18 +418,33 @@ fn translate_string_predicate_assertion(
                     }))
                 }
                 "is_ascii" => {
-                    let Some(receiver) = string_or_char_literal_term(&call.receiver) else {
-                        return Ok(None);
-                    };
                     if !call.args.is_empty() {
                         return Err("is_ascii predicate expects no arguments".to_string());
                     }
-                    let name =
-                        method_call_assertion_name("is_ascii", vec![receiver.clone()], local_scope);
-                    Ok(Some(AssertionEntry {
-                        name,
-                        atom: atomic_("str.is_ascii", vec![receiver]),
-                    }))
+                    if let Some(receiver) = string_or_char_literal_term(&call.receiver) {
+                        let name = method_call_assertion_name(
+                            "is_ascii",
+                            vec![receiver.clone()],
+                            local_scope,
+                        );
+                        return Ok(Some(AssertionEntry {
+                            name,
+                            atom: atomic_("str.is_ascii", vec![receiver]),
+                        }));
+                    }
+                    let Some(bytes) = literal_byte_string_value(&call.receiver) else {
+                        return Ok(None);
+                    };
+                    let atoms = bytes
+                        .into_iter()
+                        .map(|b| byte_is_ascii_formula(num(i64::from(b))))
+                        .collect::<Vec<_>>();
+                    let atom = if atoms.is_empty() {
+                        eq(bool_const(true), bool_const(true))
+                    } else {
+                        and_(atoms)
+                    };
+                    Ok(Some(AssertionEntry { name: None, atom }))
                 }
                 "is_ascii_alphabetic" => {
                     let Some(receiver) = char_literal_term(&call.receiver) else {
@@ -445,6 +463,27 @@ fn translate_string_predicate_assertion(
                         atom: atomic_("str.is_ascii_alphabetic", vec![receiver]),
                     }))
                 }
+                "is_ascii_digit" => ascii_char_class_assertion(call, local_scope, "str.is_ascii_digit"),
+                "is_ascii_lowercase" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_lowercase",
+                ),
+                "is_ascii_uppercase" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_uppercase",
+                ),
+                "is_ascii_hexdigit" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_hexdigit",
+                ),
+                "is_ascii_whitespace" => ascii_char_class_assertion(
+                    call,
+                    local_scope,
+                    "str.is_ascii_whitespace",
+                ),
                 "is_alphabetic" if char_literal_term(&call.receiver).is_some() => Err(
                     "unicode char predicate is_alphabetic is not lifted; z3 string theory has no Rust Unicode Alphabetic database"
                         .to_string(),
@@ -453,6 +492,210 @@ fn translate_string_predicate_assertion(
             }
         }
         _ => Ok(None),
+    }
+}
+
+fn ascii_char_class_assertion(
+    call: &syn::ExprMethodCall,
+    local_scope: &str,
+    atom_name: &str,
+) -> Result<Option<AssertionEntry>, String> {
+    let Some(receiver) = char_literal_term(&call.receiver) else {
+        return Ok(None);
+    };
+    if !call.args.is_empty() {
+        return Err(format!("{} predicate expects no arguments", call.method));
+    }
+    let method = call.method.to_string();
+    let name = method_call_assertion_name(method.as_str(), vec![receiver.clone()], local_scope);
+    Ok(Some(AssertionEntry {
+        name,
+        atom: atomic_(atom_name, vec![receiver]),
+    }))
+}
+
+fn translate_literal_iterator_assertion(
+    expr: &Expr,
+    _local_scope: &str,
+) -> Result<Option<AssertionEntry>, String> {
+    let Expr::MethodCall(call) = expr else {
+        return Ok(None);
+    };
+    let method = call.method.to_string();
+    if !matches!(method.as_str(), "all" | "any") {
+        return Ok(None);
+    }
+    if call.args.len() != 1 {
+        return Err(format!("{method} predicate expects one closure"));
+    }
+    let Some(closure) = call.args.first().and_then(|expr| match expr {
+        Expr::Closure(closure) => Some(closure),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+    if closure.inputs.len() != 1 {
+        return Err(format!("{method} predicate expects one closure parameter"));
+    }
+    let param_name = closure
+        .inputs
+        .first()
+        .and_then(|pat| match pat {
+            syn::Pat::Ident(ident) => Some(ident.ident.to_string()),
+            _ => None,
+        })
+        .ok_or_else(|| format!("{method} predicate requires a simple identifier parameter"))?;
+
+    let Some((iter_kind, elements)) = literal_iterator_elements(&call.receiver)? else {
+        return Ok(None);
+    };
+    let mut atoms = Vec::new();
+    for element in elements {
+        atoms.push(iterator_element_predicate_atom(
+            closure.body.as_ref(),
+            &param_name,
+            element,
+            iter_kind,
+        )?);
+    }
+    let atom = if method == "all" {
+        if atoms.is_empty() {
+            eq(bool_const(true), bool_const(true))
+        } else {
+            and_(atoms)
+        }
+    } else if atoms.is_empty() {
+        eq(bool_const(true), bool_const(false))
+    } else {
+        or_(atoms)
+    };
+    Ok(Some(AssertionEntry { name: None, atom }))
+}
+
+#[derive(Clone, Copy)]
+enum IteratorKind {
+    Chars,
+    Bytes,
+}
+
+fn iterator_element_predicate_atom(
+    body: &Expr,
+    param_name: &str,
+    element: Rc<Term>,
+    iter_kind: IteratorKind,
+) -> Result<Rc<Formula>, String> {
+    let Expr::MethodCall(call) = body else {
+        return Err(format!(
+            "iterator closure body must be a simple method call, got `{}`",
+            token_key(body)
+        ));
+    };
+    if !call.args.is_empty() {
+        return Err(format!(
+            "iterator closure predicate `{}` expects no arguments",
+            call.method
+        ));
+    }
+    if !matches_param_receiver(&call.receiver, param_name) {
+        return Err(format!(
+            "iterator closure predicate must read its bound parameter `{param_name}`"
+        ));
+    }
+    let method = call.method.to_string();
+    match iter_kind {
+        IteratorKind::Chars => ascii_char_class_atom(&method, element).ok_or_else(|| {
+            if method == "is_alphabetic" {
+                "unicode char predicate is_alphabetic is not lifted; z3 string theory has no Rust Unicode Alphabetic database"
+                    .to_string()
+            } else {
+                format!("unsupported char iterator predicate `{method}`")
+            }
+        }),
+        IteratorKind::Bytes => match method.as_str() {
+            "is_ascii" => Ok(byte_is_ascii_formula(element)),
+            _ => Err(format!("unsupported byte iterator predicate `{method}`")),
+        },
+    }
+}
+
+fn ascii_char_class_atom(method: &str, receiver: Rc<Term>) -> Option<Rc<Formula>> {
+    let atom_name = match method {
+        "is_ascii" => "str.is_ascii",
+        "is_ascii_alphabetic" => "str.is_ascii_alphabetic",
+        "is_ascii_digit" => "str.is_ascii_digit",
+        "is_ascii_lowercase" => "str.is_ascii_lowercase",
+        "is_ascii_uppercase" => "str.is_ascii_uppercase",
+        "is_ascii_hexdigit" => "str.is_ascii_hexdigit",
+        "is_ascii_whitespace" => "str.is_ascii_whitespace",
+        _ => return None,
+    };
+    Some(atomic_(atom_name, vec![receiver]))
+}
+
+fn byte_is_ascii_formula(byte: Rc<Term>) -> Rc<Formula> {
+    and_(vec![gte(byte.clone(), num(0)), lte(byte, num(127))])
+}
+
+fn literal_iterator_elements(
+    expr: &Expr,
+) -> Result<Option<(IteratorKind, Vec<Rc<Term>>)>, String> {
+    match expr {
+        Expr::MethodCall(call) if call.args.is_empty() && call.method == "chars" => {
+            let Some(value) = literal_string_value(&call.receiver) else {
+                return Ok(None);
+            };
+            let elements = value
+                .chars()
+                .map(|ch| str_const(ch.to_string()))
+                .collect::<Vec<_>>();
+            Ok(Some((IteratorKind::Chars, elements)))
+        }
+        Expr::MethodCall(call) if call.args.is_empty() && call.method == "iter" => {
+            let Some(bytes) = literal_byte_string_value(&call.receiver) else {
+                return Ok(None);
+            };
+            let elements = bytes.into_iter().map(|b| num(i64::from(b))).collect();
+            Ok(Some((IteratorKind::Bytes, elements)))
+        }
+        Expr::Paren(paren) => literal_iterator_elements(&paren.expr),
+        Expr::Group(group) => literal_iterator_elements(&group.expr),
+        _ => Ok(None),
+    }
+}
+
+fn literal_string_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(s), ..
+        }) => Some(s.value()),
+        Expr::Paren(paren) => literal_string_value(&paren.expr),
+        Expr::Group(group) => literal_string_value(&group.expr),
+        _ => None,
+    }
+}
+
+fn literal_byte_string_value(expr: &Expr) -> Option<Vec<u8>> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::ByteStr(bytes),
+            ..
+        }) => Some(bytes.value()),
+        Expr::Paren(paren) => literal_byte_string_value(&paren.expr),
+        Expr::Group(group) => literal_byte_string_value(&group.expr),
+        _ => None,
+    }
+}
+
+fn matches_param_receiver(expr: &Expr, param_name: &str) -> bool {
+    match expr {
+        Expr::Path(path) => path
+            .path
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == param_name),
+        Expr::Paren(paren) => matches_param_receiver(&paren.expr, param_name),
+        Expr::Group(group) => matches_param_receiver(&group.expr, param_name),
+        _ => false,
     }
 }
 

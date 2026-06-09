@@ -514,6 +514,11 @@ mod tests {
                 eq(str_len("～～～～～"), int_const(15)),
                 string_theory_atom("str.is_ascii", vec![string_const("banana\0\u{7f}")]),
                 string_theory_atom("str.is_ascii_alphabetic", vec![string_const("A")]),
+                string_theory_atom("str.is_ascii_digit", vec![string_const("9")]),
+                string_theory_atom("str.is_ascii_lowercase", vec![string_const("z")]),
+                string_theory_atom("str.is_ascii_uppercase", vec![string_const("Z")]),
+                string_theory_atom("str.is_ascii_hexdigit", vec![string_const("f")]),
+                string_theory_atom("str.is_ascii_whitespace", vec![string_const(" ")]),
                 {"kind": "not", "operands": [
                     string_theory_atom("str.is_ascii_alphabetic", vec![string_const("0")])
                 ]},
@@ -528,6 +533,19 @@ mod tests {
         assert!(
             script.contains("str.in_re"),
             "ascii predicates must lower to z3 regex string checks, got:\n{script}"
+        );
+        assert!(script.contains("(re.range \"0\" \"9\")"), "digit regex missing: {script}");
+        assert!(
+            script.contains("(re.range \"a\" \"z\")"),
+            "lowercase regex missing: {script}"
+        );
+        assert!(
+            script.contains("(re.range \"A\" \"Z\")"),
+            "uppercase regex missing: {script}"
+        );
+        assert!(
+            script.contains("(re.union"),
+            "union-based ascii class regex missing: {script}"
         );
         let out = run_z3(&z3, &script);
         assert_eq!(

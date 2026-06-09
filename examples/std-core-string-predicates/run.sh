@@ -15,8 +15,8 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 
 echo "SCOPE: Rust std/core and alloc string predicate rows, zero std source changes."
 echo "SCOPE: GOOD claims are vendor point assertions only; BAD is an explicit negative-control twin."
-echo "SCOPE: lifted predicates = contains, starts_with/prefix-of, ends_with/suffix-of, str.len, str.is_ascii, char is_ascii, char is_ascii_alphabetic."
-echo "SCOPE: residuals = Unicode is_alphabetic, non-literal receivers, iterator .all/.any predicates, byte-slice predicates."
+echo "SCOPE: lifted predicates = contains, starts_with/prefix-of, ends_with/suffix-of, str.len, str.is_ascii, literal chars().all/.any, literal bytes().is_ascii, char is_ascii, char is_ascii_alphabetic."
+echo "SCOPE: residuals = Unicode is_alphabetic, non-literal receivers, non-literal iterator sources, and closure bodies beyond the ASCII checks above."
 
 if [ "${STD_CORE_STRING_PREDICATES_SKIP_LOCAL_BUILD:-0}" != "1" ]; then
   echo "== build local proof binaries =="
@@ -213,7 +213,10 @@ def receipt(path):
 
 good = receipt(sys.argv[1])
 bad = receipt(sys.argv[2])
-good_rows = [r for r in good.get("rows", []) if "#euf#" in (r.get("property") or "")]
+good_rows = [
+    r for r in good.get("rows", [])
+    if "#euf#" in (r.get("property") or "") or "tests/ascii.rs::test_is_ascii" in (r.get("property") or "")
+]
 bad_rows = [r for r in bad.get("rows", []) if "#euf#" in (r.get("property") or "")]
 
 required = {
@@ -225,6 +228,7 @@ required = {
     "str-is-ascii": "method:is_ascii#euf#c:callresult_method_is_ascii_a1(s:\"banana\\0\\u{7f}\")::assertion",
     "char-is-ascii": "method:is_ascii#euf#c:callresult_method_is_ascii_a1(s:\"a\")::assertion",
     "char-is-ascii-alpha": "method:is_ascii_alphabetic#euf#c:callresult_method_is_ascii_alphabetic_a1(s:\"A\")::assertion",
+    "iterator-bytes-and-chars": "tests/ascii.rs::test_is_ascii",
 }
 
 missing = [
@@ -239,6 +243,18 @@ if failed_good:
     print("GOOD has non-discharged #euf# rows:", file=sys.stderr)
     for row in failed_good:
         print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
+
+iterator_row = next(
+    (row for row in good_rows if "tests/ascii.rs::test_is_ascii" in (row.get("property") or "")),
+    None,
+)
+if iterator_row is None:
+    print("GOOD missing iterator/byte row", file=sys.stderr)
+    raise SystemExit(1)
+if iterator_row.get("status") != "discharged":
+    print("GOOD iterator/byte row was not discharged", file=sys.stderr)
+    print(json.dumps(iterator_row, ensure_ascii=False), file=sys.stderr)
     raise SystemExit(1)
 
 bad_target = "method:contains#euf#c:callresult_method_contains_a2(s:\"abcde\",s:\"bcd\")::assertion"

@@ -329,6 +329,26 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
             "(str.in_re {} (re.union (re.range \"A\" \"Z\") (re.range \"a\" \"z\")))",
             emit_string_term(&args[0])
         )),
+        "str.is_ascii_digit" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.range \"0\" \"9\"))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_lowercase" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.range \"a\" \"z\"))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_uppercase" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.range \"A\" \"Z\"))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_hexdigit" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.union (re.range \"0\" \"9\") (re.union (re.range \"A\" \"F\") (re.range \"a\" \"f\"))))",
+            emit_string_term(&args[0])
+        )),
+        "str.is_ascii_whitespace" if args.len() == 1 => Some(format!(
+            "(str.in_re {} (re.union (re.union (re.union (re.union (re.range \" \" \" \") (re.range \"\\u{{9}}\" \"\\u{{9}}\")) (re.range \"\\u{{a}}\" \"\\u{{a}}\")) (re.range \"\\u{{c}}\" \"\\u{{c}}\")) (re.range \"\\u{{d}}\" \"\\u{{d}}\")))",
+            emit_string_term(&args[0])
+        )),
         _ => None,
     }
 }
@@ -336,7 +356,16 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
 fn is_string_theory_atomic_predicate(name: &str) -> bool {
     matches!(
         name,
-        "contains" | "prefix-of" | "suffix-of" | "str.is_ascii" | "str.is_ascii_alphabetic"
+        "contains"
+            | "prefix-of"
+            | "suffix-of"
+            | "str.is_ascii"
+            | "str.is_ascii_alphabetic"
+            | "str.is_ascii_digit"
+            | "str.is_ascii_lowercase"
+            | "str.is_ascii_uppercase"
+            | "str.is_ascii_hexdigit"
+            | "str.is_ascii_whitespace"
     )
 }
 

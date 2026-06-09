@@ -65,6 +65,11 @@ const STRING_OPS: &[&str] = &[
     "str.indexof",
     "str.is_ascii",
     "str.is_ascii_alphabetic",
+    "str.is_ascii_digit",
+    "str.is_ascii_lowercase",
+    "str.is_ascii_uppercase",
+    "str.is_ascii_hexdigit",
+    "str.is_ascii_whitespace",
 ];
 
 const BV_OPS: &[&str] = &[
@@ -214,12 +219,27 @@ mod tests {
 
     #[test]
     fn classify_strings_by_op() {
-        let f = json!({
-            "kind": "atomic",
-            "name": "length",
-            "args": [{"kind":"var","name":"s"}]
-        });
-        assert_eq!(classify(&f), FormulaTheory::Strings);
+        for name in [
+            "length",
+            "contains",
+            "prefix-of",
+            "suffix-of",
+            "str.len",
+            "str.is_ascii",
+            "str.is_ascii_alphabetic",
+            "str.is_ascii_digit",
+            "str.is_ascii_lowercase",
+            "str.is_ascii_uppercase",
+            "str.is_ascii_hexdigit",
+            "str.is_ascii_whitespace",
+        ] {
+            let f = json!({
+                "kind": "atomic",
+                "name": name,
+                "args": [{"kind":"var","name":"s"}]
+            });
+            assert_eq!(classify(&f), FormulaTheory::Strings, "name={name}");
+        }
     }
 
     #[test]
