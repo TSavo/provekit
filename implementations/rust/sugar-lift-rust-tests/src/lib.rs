@@ -10,7 +10,7 @@
 use std::rc::Rc;
 
 use quote::ToTokens;
-use sugar_ir_symbolic::{and_, eq, make_var, num, ContractDecl, Formula, Term};
+use sugar_ir_symbolic::{and_, eq, make_var, num, ConstValue, ContractDecl, Formula, Term};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{BinOp, Expr, ExprLit, Item, Lit, Stmt, Token, UnOp};
@@ -65,9 +65,9 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, modules: &[String], out: &m
     out.seen += 1;
 
     let test_name = scoped_test_name(source_path, modules, &f.sig.ident.to_string());
-    let mut atoms = Vec::new();
+    let mut entries = Vec::new();
     let mut skipped = Vec::new();
-    collect_assertion_atoms(&f.block.stmts, &mut atoms, &mut skipped);
+    collect_assertion_entries(&f.block.stmts, &mut entries, &mut skipped);
 
     if !skipped.is_empty() {
         out.warnings.push(LiftWarning {
@@ -81,7 +81,7 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, modules: &[String], out: &m
         return;
     }
 
-    if atoms.is_empty() {
+    if entries.is_empty() {
         out.warnings.push(LiftWarning {
             source_path: source_path.to_string(),
             item_name: test_name,
@@ -90,16 +90,18 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, modules: &[String], out: &m
         return;
     }
 
-    out.decls.push(ContractDecl {
-        name: test_name,
-        pre: None,
-        post: None,
-        inv: Some(and_(atoms)),
-        out_binding: "out".to_string(),
-        evidence: None,
-        panic_loci: Vec::new(),
-        concept_hint: None,
-    });
+    for (name, atoms) in group_assertions(entries, &test_name) {
+        out.decls.push(ContractDecl {
+            name,
+            pre: None,
+            post: None,
+            inv: Some(and_(atoms)),
+            out_binding: "out".to_string(),
+            evidence: None,
+            panic_loci: Vec::new(),
+            concept_hint: None,
+        });
+    }
     out.lifted += 1;
 }
 
@@ -120,16 +122,40 @@ fn scoped_test_name(source_path: &str, modules: &[String], fn_name: &str) -> Str
     }
 }
 
-fn collect_assertion_atoms(
+struct AssertionEntry {
+    name: Option<String>,
+    atom: Rc<Formula>,
+}
+
+fn group_assertions(
+    entries: Vec<AssertionEntry>,
+    fallback_name: &str,
+) -> Vec<(String, Vec<Rc<Formula>>)> {
+    let mut groups: Vec<(String, Vec<Rc<Formula>>)> = Vec::new();
+    for entry in entries {
+        let name = entry.name.unwrap_or_else(|| fallback_name.to_string());
+        if let Some((_, atoms)) = groups
+            .iter_mut()
+            .find(|(group_name, _)| group_name == &name)
+        {
+            atoms.push(entry.atom);
+        } else {
+            groups.push((name, vec![entry.atom]));
+        }
+    }
+    groups
+}
+
+fn collect_assertion_entries(
     stmts: &[Stmt],
-    atoms: &mut Vec<Rc<Formula>>,
+    entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
     for stmt in stmts {
         match stmt {
-            Stmt::Macro(m) => collect_macro(&m.mac.path, m.mac.tokens.clone(), atoms, skipped),
+            Stmt::Macro(m) => collect_macro(&m.mac.path, m.mac.tokens.clone(), entries, skipped),
             Stmt::Expr(Expr::Macro(m), _) => {
-                collect_macro(&m.mac.path, m.mac.tokens.clone(), atoms, skipped)
+                collect_macro(&m.mac.path, m.mac.tokens.clone(), entries, skipped)
             }
             _ => {}
         }
@@ -139,11 +165,11 @@ fn collect_assertion_atoms(
 fn collect_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
-    atoms: &mut Vec<Rc<Formula>>,
+    entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
     match assertion_from_macro(path, tokens) {
-        Ok(Some(atom)) => atoms.push(atom),
+        Ok(Some(entry)) => entries.push(entry),
         Ok(None) => {}
         Err(reason) => skipped.push(reason),
     }
@@ -152,7 +178,7 @@ fn collect_macro(
 fn assertion_from_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
-) -> Result<Option<Rc<Formula>>, String> {
+) -> Result<Option<AssertionEntry>, String> {
     let Some(name) = path
         .segments
         .last()
@@ -168,15 +194,15 @@ fn assertion_from_macro(
             }
             let lhs = translate_term(&args.exprs[0]).map_err(|e| format!("assert_eq!: {e}"))?;
             let rhs = translate_term(&args.exprs[1]).map_err(|e| format!("assert_eq!: {e}"))?;
-            Ok(Some(eq(lhs, rhs)))
+            Ok(Some(assertion_entry_from_eq(lhs, rhs)))
         }
         "assert" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("assert!: {e}"))?;
             let Some(first) = args.exprs.first() else {
                 return Err("assert!: expected a condition".to_string());
             };
-            let atom = translate_bool_assertion(first).map_err(|e| format!("assert!: {e}"))?;
-            Ok(Some(atom))
+            let entry = translate_bool_assertion(first).map_err(|e| format!("assert!: {e}"))?;
+            Ok(Some(entry))
         }
         other if other.starts_with("assert") || other.starts_with("debug_assert") => {
             Err(format!("{other}!: unsupported assertion macro"))
@@ -202,12 +228,12 @@ fn parse_macro_args(tokens: proc_macro2::TokenStream) -> syn::Result<MacroArgs> 
     syn::parse2(tokens)
 }
 
-fn translate_bool_assertion(expr: &Expr) -> Result<Rc<Formula>, String> {
+fn translate_bool_assertion(expr: &Expr) -> Result<AssertionEntry, String> {
     match expr {
         Expr::Binary(binary) if matches!(binary.op, BinOp::Eq(_)) => {
             let lhs = translate_term(&binary.left)?;
             let rhs = translate_term(&binary.right)?;
-            Ok(eq(lhs, rhs))
+            Ok(assertion_entry_from_eq(lhs, rhs))
         }
         Expr::Paren(paren) => translate_bool_assertion(&paren.expr),
         Expr::Group(group) => translate_bool_assertion(&group.expr),
@@ -216,6 +242,83 @@ fn translate_bool_assertion(expr: &Expr) -> Result<Rc<Formula>, String> {
             token_key(other)
         )),
     }
+}
+
+fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>) -> AssertionEntry {
+    let name =
+        callsite_assertion_name(lhs.as_ref()).or_else(|| callsite_assertion_name(rhs.as_ref()));
+    AssertionEntry {
+        name,
+        atom: eq(lhs, rhs),
+    }
+}
+
+fn callsite_assertion_name(term: &Term) -> Option<String> {
+    let Term::Ctor { name, .. } = term else {
+        return None;
+    };
+    let callee = name.strip_prefix("call:")?;
+    Some(format!(
+        "{callee}#euf#{}::assertion",
+        canonical_callsite_sig(term)
+    ))
+}
+
+fn canonical_callsite_sig(term: &Term) -> String {
+    let Term::Ctor { name, args } = term else {
+        return term_key(term);
+    };
+    let Some(callee) = name.strip_prefix("call:") else {
+        return term_key(term);
+    };
+    let head = call_result_head(callee, args.len());
+    let inner = args
+        .iter()
+        .map(|arg| canonical_term_sig(arg))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("c:{head}({inner})")
+}
+
+fn call_result_head(callee: &str, arity: usize) -> String {
+    let safe = callee
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii() && ch.is_ascii_alphanumeric() {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    format!("callresult_{safe}_a{arity}")
+}
+
+fn canonical_term_sig(term: &Term) -> String {
+    match term {
+        Term::Var { name } => format!("v:{name}"),
+        Term::Const { value, .. } => match value {
+            ConstValue::Int(value) => format!("i:{value}"),
+            ConstValue::String(value) => format!("s:{value:?}"),
+            ConstValue::Bool(value) => format!("b:{value}"),
+        },
+        Term::Ctor { name, args } => {
+            let inner = args
+                .iter()
+                .map(|arg| canonical_term_sig(arg))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("c:{name}({inner})")
+        }
+        _ => term_key(term),
+    }
+}
+
+fn term_key(term: &Term) -> String {
+    format!("{term:?}")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
