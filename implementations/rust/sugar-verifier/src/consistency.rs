@@ -960,6 +960,56 @@ mod tests {
         assert_eq!(res[0].verdict, ObligationVerdict::Discharged);
     }
 
+    /// A bounded loop lifts to a guarded universal `forall x. (0<=x<3 => f(x)==1)`.
+    /// The verifier must REFUTE a claim that contradicts it at an in-range point:
+    /// conjoined with `f(2)==2`, z3 instantiates x=2 and the conjunction is UNSAT.
+    /// This is the loops-to-forall mechanism proven end to end, in z3 -- not the
+    /// lifter's word, the solver's verdict.
+    #[test]
+    fn bounded_forall_refutes_contradicting_claim_in_range() {
+        let (plan, reg) = z3_plan_and_registry();
+        let xvar = || var("x");
+        let callf = |arg: Json| json!({"kind":"ctor","name":"call:f","args":[arg]});
+        // forall x:Int. ( 0<=x<3 => f(x)==1 )
+        let guard = json!({"kind":"and","operands":[
+            json!({"kind":"atomic","name":"\u{2264}","args":[int(0), xvar()]}),
+            json!({"kind":"atomic","name":"<","args":[xvar(), int(3)]}),
+        ]});
+        let body = eqf(callf(xvar()), int(1));
+        let forall = json!({
+            "kind":"forall","name":"x",
+            "sort":{"kind":"primitive","name":"Int"},
+            "body": json!({"kind":"implies","operands":[guard, body]}),
+        });
+        let name = "loop.rs::t::assertion";
+
+        // The universal alone is consistent (PROVEN).
+        let mut pool = MementoPool::default();
+        insert_contract(&mut pool, "blake3-512:fa", name, forall.clone());
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 1);
+        assert_eq!(
+            res[0].verdict,
+            ObligationVerdict::Discharged,
+            "bounded universal alone must be consistent: {res:?}"
+        );
+
+        // Conjoined with f(2)==2 (an in-range contradiction): REFUTED.
+        let contradiction = json!({"kind":"and","operands":[
+            forall.clone(),
+            eqf(callf(int(2)), int(2)),
+        ]});
+        let mut pool = MementoPool::default();
+        insert_contract(&mut pool, "blake3-512:fc", name, contradiction);
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 1);
+        assert_eq!(
+            res[0].verdict,
+            ObligationVerdict::Unsatisfied,
+            "z3 must instantiate x=2 and refute f(2)==1 and f(2)==2: {res:?}"
+        );
+    }
+
     /// A WITNESS member in a same-callsite group must NOT short-circuit the group
     /// and mask a contradictory inv conjunction. Witnesses settle per-member; the
     /// `and(==5,==6)` must still surface as Unsatisfied. (Review: CodeRabbit

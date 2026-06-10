@@ -15,8 +15,8 @@ mod macro_expand;
 
 use quote::ToTokens;
 use sugar_ir_symbolic::{
-    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, not_, num, or_, real_const, str_const,
-    ConstValue, ContractDecl, Formula, Term,
+    and_, atomic_, eq, forall, gt, gte, implies, lt, lte, make_var, ne, not_, num, or_, real_const,
+    str_const, ConstValue, ContractDecl, Formula, Sort, Term,
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -1016,6 +1016,197 @@ fn const_eval_select_runtime_targets(stmts: &[Stmt]) -> BTreeSet<String> {
     out
 }
 
+/// True if a block of statements mutates anything: an assignment / compound
+/// assignment, a `let mut` binding, or a `&mut` borrow. A loop whose body
+/// mutates is not a clean universal over the loop variable, so it is gutter.
+fn loop_body_mutates(stmts: &[Stmt]) -> bool {
+    #[derive(Default)]
+    struct MutScan {
+        mutates: bool,
+    }
+    impl<'ast> syn::visit::Visit<'ast> for MutScan {
+        fn visit_expr_assign(&mut self, _: &'ast syn::ExprAssign) {
+            self.mutates = true;
+        }
+        fn visit_expr_binary(&mut self, b: &'ast syn::ExprBinary) {
+            if matches!(
+                b.op,
+                BinOp::AddAssign(_)
+                    | BinOp::SubAssign(_)
+                    | BinOp::MulAssign(_)
+                    | BinOp::DivAssign(_)
+                    | BinOp::RemAssign(_)
+                    | BinOp::BitXorAssign(_)
+                    | BinOp::BitAndAssign(_)
+                    | BinOp::BitOrAssign(_)
+                    | BinOp::ShlAssign(_)
+                    | BinOp::ShrAssign(_)
+            ) {
+                self.mutates = true;
+            }
+            syn::visit::visit_expr_binary(self, b);
+        }
+        fn visit_expr_reference(&mut self, r: &'ast syn::ExprReference) {
+            if r.mutability.is_some() {
+                self.mutates = true;
+            }
+            syn::visit::visit_expr_reference(self, r);
+        }
+        fn visit_pat_ident(&mut self, p: &'ast syn::PatIdent) {
+            if p.mutability.is_some() {
+                self.mutates = true;
+            }
+            syn::visit::visit_pat_ident(self, p);
+        }
+    }
+    let mut scan = MutScan::default();
+    for stmt in stmts {
+        syn::visit::Visit::visit_stmt(&mut scan, stmt);
+    }
+    scan.mutates
+}
+
+/// Substitute every free occurrence of the variable `name` in a term with
+/// `repl`. Used to bind a loop variable to a quantifier's bound variable.
+fn subst_var_in_term(term: &Rc<Term>, name: &str, repl: &Rc<Term>) -> Rc<Term> {
+    match term.as_ref() {
+        Term::Var { name: n } if n == name => repl.clone(),
+        Term::Ctor { name: cname, args } => Rc::new(Term::Ctor {
+            name: cname.clone(),
+            args: args
+                .iter()
+                .map(|a| subst_var_in_term(a, name, repl))
+                .collect(),
+        }),
+        _ => term.clone(),
+    }
+}
+
+/// Substitute `name` with `repl` throughout a formula (respecting quantifier
+/// shadowing: a nested quantifier binding the same name is left untouched).
+fn subst_var_in_formula(formula: &Rc<Formula>, name: &str, repl: &Rc<Term>) -> Rc<Formula> {
+    match formula.as_ref() {
+        Formula::Atomic { name: rel, args } => Rc::new(Formula::Atomic {
+            name: rel.clone(),
+            args: args
+                .iter()
+                .map(|a| subst_var_in_term(a, name, repl))
+                .collect(),
+        }),
+        Formula::Connective { kind, operands } => Rc::new(Formula::Connective {
+            kind: kind.clone(),
+            operands: operands
+                .iter()
+                .map(|f| subst_var_in_formula(f, name, repl))
+                .collect(),
+        }),
+        Formula::Quantifier {
+            kind,
+            name: bound,
+            sort,
+            body,
+        } => {
+            let new_body = if bound == name {
+                body.clone()
+            } else {
+                subst_var_in_formula(body, name, repl)
+            };
+            Rc::new(Formula::Quantifier {
+                kind: kind.clone(),
+                name: bound.clone(),
+                sort: sort.clone(),
+                body: new_body,
+            })
+        }
+        _ => formula.clone(),
+    }
+}
+
+/// Read a `for <ident> in <range> { body }` loop as the bounded universal it
+/// literally states: forall x. (range_guard(x) => body(x)). The range is
+/// transcribed letter for letter (start..end / start..=end); the body is lifted
+/// through the normal collector, so a body that does not compute to a truth
+/// value (effectful, mutated accumulator, conditional) is gutter (None here,
+/// refused by the caller). Returns the quantified formula and the number of
+/// body assert macros it accounts for, or None to refuse the loop.
+#[allow(clippy::too_many_arguments)]
+fn try_lift_for_loop_forall(
+    f: &syn::ExprForLoop,
+    scope: &TemporalScope,
+    options: &LiftOptions,
+    reducer: &ReductionCtx<'_>,
+    float_widths: &mut FloatWidthScope,
+    macro_depth: usize,
+) -> Option<(Rc<Formula>, usize)> {
+    // The loop variable must be a plain ident (the bound variable).
+    let var = match &*f.pat {
+        Pat::Ident(p) if p.subpat.is_none() => p.ident.to_string(),
+        _ => return None,
+    };
+    // The iterator must be a range with both bounds present; we transcribe it as
+    // the guard. (Open ranges / runtime collections are not yet read here.)
+    let Expr::Range(range) = &*f.expr else {
+        return None;
+    };
+    let (start_expr, end_expr) = match (&range.start, &range.end) {
+        (Some(s), Some(e)) => (s, e),
+        _ => return None,
+    };
+    let start = translate_term_in_scope(start_expr, scope).ok()?;
+    let end = translate_term_in_scope(end_expr, scope).ok()?;
+    let inclusive = matches!(range.limits, syn::RangeLimits::Closed(_));
+
+    // Lift the body through the normal collector. Truth-table-or-gutter: every
+    // body assert must lift cleanly (none refused, none missing) or we refuse
+    // the whole loop.
+    let n_body = count_asserts_in_stmts(&f.body.stmts);
+    if n_body == 0 {
+        return None;
+    }
+    // Purity gate: the body must not mutate anything. An assignment, a `let mut`,
+    // or a `&mut` borrow means a value varies across iterations independently of
+    // the loop variable (e.g. an accumulator `count = count + 1`), so a single
+    // universal over x would be a false claim. Gutter such loops -- the
+    // single-iteration view can look stable when it is not.
+    if loop_body_mutates(&f.body.stmts) {
+        return None;
+    }
+    let mut body_entries = Vec::new();
+    let mut body_skipped = Vec::new();
+    let mut body_lifted = 0usize;
+    let mut body_helpers = HashSet::new();
+    collect_assertion_entries(
+        &f.body.stmts,
+        scope.local_scope(),
+        options,
+        reducer,
+        float_widths,
+        &mut body_entries,
+        &mut body_skipped,
+        &mut body_lifted,
+        &mut body_helpers,
+        macro_depth,
+    );
+    if !body_skipped.is_empty() || body_entries.len() != n_body {
+        return None;
+    }
+    let body_conj = and_(body_entries.iter().map(|e| e.atom.clone()).collect());
+
+    // forall x:Int. ( start <= x (< | <=) end ) => body[var := x]
+    let quantified = forall(Sort::int(), move |x| {
+        let lower = lte(start.clone(), x.clone());
+        let upper = if inclusive {
+            lte(x.clone(), end.clone())
+        } else {
+            lt(x.clone(), end.clone())
+        };
+        let guard = and_(vec![lower, upper]);
+        let body = subst_var_in_formula(&body_conj, &var, &x);
+        implies(guard, body)
+    });
+    Some((quantified, n_body))
+}
+
 fn unconditional_block_stmts(expr: &Expr) -> Option<&[Stmt]> {
     match expr {
         Expr::Block(b) => Some(&b.block.stmts),
@@ -1259,7 +1450,25 @@ fn collect_assertion_entries(
             }
             // Control-flow contexts: asserts are conditional or parametric; refuse.
             Stmt::Expr(Expr::ForLoop(f), _) => {
-                refuse_nested_asserts_in_stmts(&f.body.stmts, "for", skipped);
+                // A bounded loop is the universal it states: read the range as a
+                // guard and lift forall x. (guard => body). If the body does not
+                // wholly compute to truth values, gutter the loop (refuse).
+                if let Some((quantified, n)) = try_lift_for_loop_forall(
+                    f,
+                    &temporal_scope,
+                    options,
+                    reducer,
+                    float_widths,
+                    macro_depth,
+                ) {
+                    entries.push(AssertionEntry {
+                        name: None,
+                        atom: quantified,
+                    });
+                    *macros_lifted += n;
+                } else {
+                    refuse_nested_asserts_in_stmts(&f.body.stmts, "for", skipped);
+                }
             }
             Stmt::Expr(Expr::While(w), _) => {
                 let body_count = count_asserts_in_stmts(&w.body.stmts);

@@ -4446,20 +4446,24 @@ fn refusal_reasons(out: &sugar_lift_rust_tests::AdapterOutput) -> Vec<String> {
 
 #[test]
 fn assert_in_for_loop_is_named_refusal_not_silent() {
-    // RED before: an assert nested in a for loop was never reached (silent).
-    // GREEN after: it is counted and refused with a "for context" reason, and
-    // NOT lifted as an unconditional row.
+    // A loop the lifter cannot read as a clean universal (here a runtime
+    // collection, no concrete range to transcribe as a guard) is refused with a
+    // "for context" reason, not silently dropped. (A concrete bounded loop with
+    // a pure body lifts as a forall instead; see bounded_for_loop_lifts_as_forall.)
     let src = r#"
 #[test]
 fn loop_test() {
-    for i in 0..3 {
+    for i in items {
         assert_eq!(i, i);
     }
 }
 "#;
     let out = lift_file(&parse(src), "tests/iter.rs");
     assert_eq!(out.seen, 1);
-    assert_eq!(out.assertions_lifted, 0, "loop body assert must not lift");
+    assert_eq!(
+        out.assertions_lifted, 0,
+        "non-range loop body assert must not lift"
+    );
     assert!(
         refusal_reasons(&out)
             .iter()
@@ -4940,4 +4944,78 @@ fn t() {
 "#;
     let out = lift_file(&parse(src), "tests/c.rs");
     assert_eq!(out.assertions_lifted, 0, "closure assert must not lift");
+}
+
+// --- bounded loop -> universal quantifier (L5) ---
+
+fn inv_formula(decl: &sugar_ir_symbolic::ContractDecl) -> std::rc::Rc<Formula> {
+    decl.inv.clone().expect("decl has inv")
+}
+
+fn contains_forall(f: &Formula) -> bool {
+    match f {
+        Formula::Quantifier { kind, body, .. } => kind == "forall" || contains_forall(body),
+        Formula::Connective { operands, .. } => operands.iter().any(|o| contains_forall(o)),
+        _ => false,
+    }
+}
+
+#[test]
+fn bounded_for_loop_lifts_as_forall() {
+    // for x in 0..3 { assert_eq!(g(x), 1) } reads as forall x. (0<=x<3 => g(x)==1).
+    let src = r#"
+#[test]
+fn t() {
+    for x in 0..3 {
+        assert_eq!(g(x), 1);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/loop.rs");
+    assert_eq!(
+        out.assertions_lifted, 1,
+        "loop must lift; warnings: {:?}",
+        out.skip_reasons
+    );
+    assert_eq!(out.decls.len(), 1);
+    assert!(
+        contains_forall(&inv_formula(&out.decls[0])),
+        "lifted loop must contain a forall quantifier"
+    );
+}
+
+#[test]
+fn for_loop_over_runtime_collection_stays_refused() {
+    // No concrete range to transcribe as a guard: gutter (refused), not lifted.
+    let src = r#"
+#[test]
+fn t() {
+    for x in items {
+        assert_eq!(g(x), 1);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/loop.rs");
+    assert_eq!(out.assertions_lifted, 0, "non-range loop must stay refused");
+}
+
+#[test]
+fn for_loop_with_mutated_accumulator_body_stays_refused() {
+    // The body does not compute to a truth value of x (count is mutated across
+    // iterations): gutter the whole loop rather than emit a false universal.
+    let src = r#"
+#[test]
+fn t() {
+    let mut count = 0;
+    for x in 0..3 {
+        count = count + 1;
+        assert_eq!(count, x);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/loop.rs");
+    assert_eq!(
+        out.assertions_lifted, 0,
+        "mutated-accumulator loop must not lift as forall"
+    );
 }
