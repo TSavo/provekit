@@ -317,7 +317,8 @@ SHOWCASE_RUNS = \
 	examples/itertools-showcase/run.sh \
 	examples/num-integer-showcase/run.sh \
 	examples/bitflags-showcase/run.sh \
-	examples/forall-loop-showcase/run.sh
+	examples/forall-loop-showcase/run.sh \
+	examples/java-assertion-consistency/run.sh
 
 .PHONY: test-showcases
 test-showcases:
