@@ -1,0 +1,172 @@
+# After Point Samples: Generalizing Universes from Fixedpoint Invariants
+
+> **Status.** Sustained argument. Contains an executed experiment with verbatim solver output, an honest residue list, and engaged counterarguments. Written to be cite-able.
+>
+> **Companion to.** [01 Whitepaper](01-whitepaper.md), [02 Bluepaper](02-bluepaper.md), [07 After Verification](07-after-verification-bug-classes-as-missing-edges.md), [12 After Languages](12-after-languages-how-proofir-represents-every-language.md), [13 After Grammars](13-after-grammars-programming-languages-as-content-addressed-algebras.md).
+>
+> **Premise the earlier papers established.** A protocol for content-addressable, signed, byte-deterministic claims about software behavior. Per-language lifters read native source through that language's own front-end and emit backend-neutral first-order ProofIR; a language-blind verifier conjoins claims keyed by content-addressed callsite names and asks a solver whether the conjunction is satisfiable. The vendor's own test suite is the specification source: no vendor assertion, no claim.
+>
+> **What this paper argues.** That a vendor's unit test is not evidence *about* a specification — it **is** the specification, in existential form: a sworn statement that a contract exists at a callsite, carrying one coordinate of that contract. That the contract's universal form is not missing — it is sitting in the vendor's implementation source, readable by the same AST walk that read the test. That the point sample's permanent role is to *select* the dig site and *audit* the reading, after which it retires and the universal serves every input forever — including inputs no test has ever touched. We executed the experiment on a real library and report the solver transcripts. The point-sample era of the substrate ends here; what replaces it is the universe, minted as a contract, gated by the vendor's own sworn vectors.
+
+## §0: The claim
+
+Every testing regime in the industry shares one bound: coverage is sampling. A test suite asserts finitely many points of an infinite behavior; everything between the points is hope. Property-based testing widens the sample; fuzzing randomizes it; coverage metrics measure how much of the *code* the sample touches while saying nothing about how much of the *behavior* it pins. The bound is treated as a law of nature.
+
+It is not a law of nature. It is an artifact of treating the test as the only readable statement of intent.
+
+The claim of this paper: for the pure, walkable subset of a vendor's implementation, the test suite and the implementation jointly determine a **universe** — the exact set of outputs the code can produce — and that universe is derivable mechanically, mintable as a content-addressed contract, checkable by an off-the-shelf solver, and *audited by the vendor's own test vectors*. Once minted, the universe answers for every input. The vendor wrote a test for `"foo"`; the solver now speaks for `"bar"` and `"baz"` — inputs that appear in no test file on earth — and a false claim about any of them is refuted with the same finality as a false claim about `"foo"`.
+
+Three sentences carry the whole argument, and the rest of the paper is their elaboration:
+
+1. **The test is the spec.** It says: *there is a contract here — I swear it* — and it notarizes one coordinate.
+2. **The code itself tells us how to generalize it.** The implementation body, walked through its own grammar, defines the valid universe of the output.
+3. **All we do is service those constraints.** We never originate a claim. The vendor points, the vendor's code answers, the vendor's samples audit, the solver serves.
+
+## §1: The point-contract era and its honest bound
+
+The substrate's first-generation contracts are point rows lifted from vendor test suites. Apache Commons Codec's own `Base64Test.java` asserts, at line 878 of release 1.16.1:
+
+```java
+assertEquals("Zm9v", Base64.encodeBase64String(StringUtils.getBytesUtf8("foo")));
+```
+
+The lifter reads that assertion through `com.sun.source` — javac's own compiler front-end — and emits a contract whose name is the content-keyed callsite and whose invariant is the sworn equality. When a consumer's test asserts something about *the same callsite*, the verifier conjoins the two invariants and asks the solver for raw satisfiability. Two distinct string literals asserted equal to the same call result are unsatisfiable; the consumer's claim is refuted by the vendor's. This machinery is real, shipped, and exercised in anger: the consumer who confuses standard and URL-safe Base64 alphabets — asserting an expected value containing `/` against a call that can only produce `-` and `_` — is refuted by the vendor's own test row, statically, before anything executes.
+
+The bound, stated honestly because refusing to hedge it was always part of the discipline: **point rows refute only at collisions.** The consumer must assert about the same callee with the same arguments the vendor happened to test. Collisions are more common than they look — developers copy canonical examples from documentation, and documentation examples are overwhelmingly the vendor's test vectors — but the bound is structural. A consumer claim about `encodeBase64String("bar")` faces no vendor row, because no vendor test ever spoke the word `"bar"`. In the point-contract era, that claim is unconstrained. At worst, the refutation channel is a lucky collision.
+
+The point-contract era's defense of this bound was scope discipline: the vendor's tests are the spec; no assertion, no row; silence by design. That defense is correct and this paper does not weaken it — it discovers that the defense was hiding an asset. The bound was never "we only know finitely many points." The bound was "we only *read* finitely many statements." The vendor made more statements than their test file.
+
+## §2: The thesis — the test is the spec, the code is its universal form
+
+Look again at what the vendor's test actually says. Not its literal content — its *speech act*. `assertEquals("Zm9v", encodeBase64String("foo"))` performs two declarations at once:
+
+1. **An existential.** *There is a contract governing this callsite.* The vendor considered this behavior load-bearing enough to swear by. Of all the functions in the library, this one carries a promise.
+2. **A coordinate.** One point of that contract, notarized: at input `"foo"`, the output is `"Zm9v"`.
+
+The point-contract era consumed the coordinate and discarded the existential. But the existential is the more valuable half: it is a *pointer into the implementation*. The contract the test swears exists is not stored in the test — the test merely samples it. The contract is stored in the only place it could be: the function's body. The body is source. Source is sugar. Sugar is available to AST-walk. And the substrate's operating law — the one that built every lifter — already covers it:
+
+> *It's source. Sugar. We have it. It's available to AST walk. Or? We don't reason about it.*
+
+There was never a second mechanism to invent. Generalization is the same read — letter by letter, through the language's own grammar, keeping what computes to truth-table values and tossing the rest over the shoulder, by name — pointed at `src/main` instead of `src/test`. The test tells us *where* to walk. The body tells us *what is there*. And — closing the loop — the test's coordinate then audits *whether we read it right*.
+
+This last step deserves its own statement, because it is what keeps the generalization from becoming the thing the substrate forbids. A walked universal is *our reading* of the vendor's code. Readings can be wrong. The vendor's sworn coordinates are the audit: the derived universal must reproduce every vector the vendor's suite asserts at that surface — **∀ ⊨ sample** — or the universal is rejected and the point rows stand alone. The vendor verifies our generalization of the vendor. Mechanically, in-substrate, this gate costs nothing: the universe row is minted into the same pool as the vendor's point rows, keyed to the same callsites, and the verifier's existing same-name conjoin checks them against each other as a side effect of doing its ordinary job. A wrong universe contradicts the vendor's own rows and surfaces as unsatisfiable immediately. **The gate is the engine itself.**
+
+So the division of labor, final form:
+
+- **Test-selects.** The vendor's suite enumerates the surfaces the vendor warrants. We walk those and only those.
+- **Body-generalizes.** The implementation defines the universe; the walk derives it; nothing is authored.
+- **Sample-gates.** The vendor's coordinates audit the derivation; a reading their own vectors contradict is refused.
+
+The point sample is the ladder. The universal is the floor. The ladder is consumed at mint time and retires; the contract that ships has no rows in it.
+
+## §3: The mechanism is the old mechanism
+
+Nothing in §2 required new philosophy, and it is worth being precise about why, because the absence of novelty is the strongest soundness argument available.
+
+The substrate's lifters already read implementation bodies for semantics. The Rust lifter's panic-locus pass reads `match e { Pat => ok, _ => panic!() }` and lifts the assertion that the panic arm is unreached. The Java lifter's throw-locus vocabulary derivation reads every public static method of an assertion framework, inlines the delegation chain through vendored source, finds the guarded `throw`, and classifies the assertion's semantics from the *guard* — the method's name appears nowhere in the derivation, because names are sugar and a renamed copy of `assertEquals` must classify identically while a name-impostor whose body is `return;` must not classify at all. The JSR-380 constraint story is the same shape one level up: the `@Min` annotation's declaration is an empty interface carrying no semantics; the binding is the `implements ConstraintValidator<Min, T>` clause in source; the semantics is the validator's `isValid` body, which *returns the predicate*. In every case the doctrine is identical: the meaning is in the body, the body is source, the walk retrieves it or refuses by name.
+
+Generalization is this exact pass applied to the vendor's implementation:
+
+- **Loops state universals.** The substrate already lifts a test's bounded loop as `∀x. (lo ≤ x < hi) ⇒ P(x)`, and the verifier already treats closed universals as ambient — conjoined into every obligation so the solver instantiates them against point claims. The implementation's encode loop is the same shape, one level down.
+- **Immutability is a free axiom.** The mut-oracle discipline — a non-`mut` Rust local is provably stable because the compiler enforces it; a `final` (or effectively-final) Java local likewise — is what makes a walked table a constant rather than a snapshot. `static final` is read off the AST node, not assumed.
+- **The residue is named, never silent.** Whatever does not reduce to truth-table values at the walk — streaming state, configuration flow, reference-identity guards — is refused by name and listed. The accounting identity that governs every lifter (every assertion lifted, refused-by-name, or counted as a defect; silent ≡ 0) governs the universe walk unchanged.
+
+And the residue has a precise ontological status: **the pile is sugar.** Every item tossed over the shoulder is not un-liftable — it is un-liftable *so far*. The history of the substrate is the history of the pile draining: macros were residue until the expander read them; panic-bearing matches were residue until panic-locus read them; the assertion frameworks' `delta` overloads were a hand-written special case until throw-locus showed the approximate semantics falls out of the guard. Each deeper reading moves a class of sugar from the pile into FOL. Nothing earns permanent residence — because (as §8 argues) the things that genuinely cannot be read this way were never in the ontology to begin with.
+
+## §4: The experiment
+
+The thesis was executed against Apache Commons Codec 1.16.1 — real library, real release, real test vector — under the substrate's provenance discipline. Every input to the experiment is pinned: `Base64.java` (sha256 `d6e02dcc3b277f5f366724b1b2d74fda3cff1db37ca8ca709db60cd3adee0fdf`), `BaseNCodec.java`, and `Base64Test.java` (sha256 `ef97352ff2460ff416ae5850dfbb38fc36064c7ac1f16fba6f14fe224ebb1604`) were fetched from the `rel/commons-codec-1.16.1` tag of the vendor's repository, license headers intact, hashes recorded and independently re-verified against upstream byte-for-byte. The sworn sample is the vendor's own line 878, quoted in §1. The walker is a `com.sun.source` tool; the SMT emitter consumes only the walker's JSON output and contains no Base64 knowledge of its own. The rule of the experiment was the rule of the substrate: **every constraint must trace to an AST node of the vendor's source; anything that cannot is excluded by construction.**
+
+What the walk retrieved, with tree provenance:
+
+- `STANDARD_ENCODE_TABLE` (`Base64.java:75`): a `NewArrayTree` initializer of 64 character literals — `A–Z a–z 0–9 + /` — under modifiers walked as `private static final`. The immutability axiom holds; the table is a constant.
+- The pad character `'='` (`BaseNCodec.java:179`), the 6-bit mask (`:129`), the 3-byte/4-char block structure (`:64`/`:65`).
+- The per-block bit arithmetic (`Base64.java:780–783`): four table indexings at shifts 18/12/6/0 of the 24-bit work area, with both mod-3 tail branches (`742–744`, `753–755`) walked, including their padding.
+
+Two constraint tiers were emitted as SMT over bitvectors:
+
+- **Weak tier:** every output byte is a member of the walked table ∪ pad; output length is the block formula.
+- **Strong tier:** the full per-block equations — output pinned uniquely as a function of input.
+
+Four checks, run against z3 4.15.4, all green, transcripts preserved:
+
+| Check | Assertion | Result |
+|---|---|---|
+| A — derive | strong constraints + input `"foo"`; `(get-model)` | `sat`; model `y = 90,109,57,118` = **`"Zm9v"`**, byte-for-byte the vendor's sworn vector |
+| B — uniqueness | strong constraints + `Y ≠ "Zm9v"` | **`unsat`** — the universe pins Y |
+| C — generalized refutation | strong constraints, *any* input; some output byte ∈ {`-`,`_`} | **`unsat`** — the URL-safe confusion refuted **quantified over the domain, no sample anywhere in the proof** |
+| D — weak refutation | weak constraints; out-of-alphabet output byte | **`unsat`** |
+
+Check A is the sample-gate passing in public: the solver, given nothing but constraints walked from the vendor's source, *computed the vendor's own test vector*. The walk read the code correctly, and the vendor's notarized coordinate is the certificate. Check C is the era ending: the refutation covers every input that exists and every input that will ever exist, and the proof does not contain a test vector.
+
+The residue, reported because honest accounting is the product: the closed-form 24-bit work area was synthesized from the walked per-byte accumulation — production needs a real symbolic-execution step there, not a pattern match (this is *the* seam between tiers); the mod-3 tail branches are walked but their SMT emitters were not completed; the `urlSafe ? URL_SAFE_ENCODE_TABLE : STANDARD_ENCODE_TABLE` constructor flow and the pad's reference-identity guard are read but not modeled; purity over the streaming `Context` is assumed, not proven. Six items, each named, each a dig site.
+
+One boundary must be stated to keep the experiment in its place: the prototype drove z3 directly. Under the substrate's acceptance discipline — *if it is not `sugar lift → sugar verify → unsat` through the shipping CLI, parsed from real receipts, it is a fraud* — the prototype is **evidence, not product**. The production form (the weak tier minted as callsite contracts delivered through the existing conjoin, with a string-membership atom added to the SMT emitter's established string-theory hook) is the pipeline phase that follows it, and its acceptance gate is a showcase in which the bad twin asserts the URL-safe confusion **on an input the vendor never tested** and the real CLI returns `unsatisfied`.
+
+## §5: What the universe buys
+
+**Verification collapses to two solver primitives.** With the universe minted, every question about a contracted output is: *here is the valid universe of Y — `z3.check`, `z3.model`.* Membership is the check: a consumer claim inside the universe is consistent; a claim outside it — the `/` in a URL-safe expectation — is unsatisfiable. The model is the witness: where the universe pins the output (strong tier), the solver *computes the function from its definition*, and the answer to `encodeBase64String("bar")` is `"YmFy"`, derived, not executed. The vendor wrote `"foo"`; we get `"bar"` and `"baz"` from the solver.
+
+**Coverage detaches from sampling.** The point-contract era's refutation probability was the collision probability — a number between 0 and 1 that depended on the vendor's diligence and the consumer's luck. The universe makes it 1, everywhere, by construction. *Did the vendor write a unit test for `"bar"`? For `"baz"`? Did we get a lucky collision?* No, no, and there is nothing to collide with — and the false claim is refuted anyway. The vendor's suite stops being the boundary of refutation and becomes its audit.
+
+**The missing contract atom exists now.** The substrate's composition machinery (`post ⊨ pre` seam obligations) was starved at exactly one point: vendor tests are point-wise, so no universal function contract existed to compose, and the marquee cross-library demonstration — producer emits standard-alphabet Base64, consumer requires URL-safe — was honestly declared unbuildable. The walked universe **is** the missing atom. Producer's post: output ∈ standard table (walked from their body). Consumer's pre: input ∈ URL-safe table (walked from theirs). The solver finds `+` and `/` in one universe and not the other; the seam refuses. The bug that no individual test can see — both sides are locally correct — is caught as two universes that do not fit, with nothing hand-authored anywhere.
+
+**False claims stop compiling.** Everything an execution would reveal is now available at authoring time, which moves correctness across a categorical line: from observed-at-runtime to contradicted-at-write-time. The editor experience this licenses is concrete: type `assertEquals("YmFy+/=", encodeBase64URLSafeString(...))` and the contradiction surfaces before the file is saved — not lint-red but *inconsistent-with-the-definition-of-the-function-you-called* red, with the true value in the hover, supplied by `z3.model`. The unit test stops being how contradictions are discovered and becomes a historical artifact of when discovery was expensive. Against contracted libraries, you can still be wrong in your head; you can no longer be wrong in the file.
+
+**The ex-falso guard becomes structural.** A false premise admitted into a verified pool poisons every conclusion conjoined with it. Point-wise, a false claim survived unless it collided. Under universes, no false statement about a contracted surface survives admission. The pool's consistency stops being probabilistic.
+
+## §6: Why the boundary is the product
+
+The scope rule — *if the vendor didn't assert it, we don't assert it* — reads, to the uninitiated, as a limitation clause. This section states why it is the substrate's most defensible sentence and one of its most valuable outputs.
+
+**The sample is not just the clue; it is the license.** A walked universal with no vendor sample behind it cannot be gated — nothing audits the reading — and an ungated universal is *our* claim about *their* code. The industry already has a name for a party that demands trust for unverifiable claims about the supply chain: a vendor. The no-vendor axiom does not permit the substrate to become the next one. The test is the vendor's signature authorizing us to speak; no signature, no speech.
+
+**Their silence is information, transmitted at full fidelity.** A vendor who did not test a behavior is telling you they do not warrant it. Manufacturing a contract there is forging a promise on their letterhead — and it is where false passes come from. The substrate is an amplifier of exactly what the vendor committed: samples in, universes out, gain supplied by their own source, distortion zero.
+
+**The silent gap is the analysis.** Here is the inversion that turns the boundary from disclaimer into deliverable: only *total accounting* makes silence legible. Because every assertion is either lifted or refused by name — silent ≡ 0 — the unsworn remainder is **enumerable**. A coverage tool reports "78% of lines executed." The substrate answers a question no tool has ever answered: *here is the exact list of behaviors no one has ever promised you*, per dependency, per surface, measured by the vendor's own suite. The rendered boundary of the vendor's promise is an audit product, and rendering it requires precisely the discipline that the point-sample era looked like it was "limited" by.
+
+**The chain of custody is unbroken and entirely theirs.** The `"foo"` is literally the vendor's: their repository, their release tag, their test file, their line 878, hash-verified against their upstream. Their test swears the contract exists; their body defines its universe; their vector audits our walk; and when the solver refutes a lie about `"bar"`, the refutation traces, link by link, to nothing but the vendor's own published statements. The substrate added recomputation. It never added testimony.
+
+## §7: The ontology underneath — fixedpoints, and why side effects do not exist
+
+Two deeper consequences fall out, and they explain features of the substrate that previously looked like design taste.
+
+**The `=` was sugar too.** What does `encodeBase64String("foo") = "Zm9v"` desugar to? *This callsite is a fixedpoint: evaluate it twice, it never changes.* A point sample pins a universe at a point precisely because the pinned computation is replay-invariant — and replay-invariance is the substrate's oldest primitive wearing its oldest name: `k(I) = t`, the content address. The fully desugared form of every assertion ever written is a CID. This is why the architecture's organs were never separate inventions: the *witness* (re-run, recompute the hash) is replay-invariance made operational; the *EUF purity* that makes same-callsite conjunction sound (one callsite, one value, pool-wide) is the same fixedpoint at the solver layer; the walked *universe* is what must be true at the fixedpoint; the *memento* is the fixedpoint pinned to disk. Test row, witness recompute, ambient conjunction, content address: one statement, four depths.
+
+The exclusion side of the same coin draws the ontology's outer edge. What cannot be replayed — the clock read, the race, the dice roll — cannot pin, cannot be content-addressed, and therefore is not refused, not residue, but **nonexistent**. The substrate's standing rule "if you can't content-address it, it doesn't belong" was the ontology's boundary all along.
+
+**Which is why side effects do not exist here.** The substrate's universe is claims (a program enters it solely through its assertions), and a claim is always a *value* comparison — that is what an assert is. So consider any side effect anyone has ever cared about: a file written, a buffer flushed, a message enqueued. How does the party who cares about it test it? They **read the effect back and assert a value**: the file's contents equal X; the queue's head equals Y. The arrange-act-*assert* discipline is a purification machine the entire industry already operates: every observable behavior worth swearing to arrives at the substrate as a sworn value observation, the effect-to-value reduction performed by the vendor, in the vendor's own test file, under the vendor's own name. Effects therefore land in the same two bins as everything else — observed (a value row; lift it) or unobserved (unsworn; silence, by §6's boundary) — and the substrate needs no effects theory because effects do not occur in its ontology. The one place they genuinely fire — execution — is quarantined inside the witness: the kit-oracle re-runs the suite, the world happens to it there, untrusted, and what returns is bytes whose hash either recomputes or does not. The solver side never meets an effect.
+
+This is not a restriction that costs coverage. It is the observation that the only effects anyone ever *promised* were promised as values — and promises-as-values are exactly what the substrate lifts.
+
+## §8: Soundness discipline — what the walk must know
+
+A generalization machine inherits every soundness obligation of a lifter and adds one: it must know the *language*, not just the grammar. Two gates from the production build illustrate the standard, and both exist as breakable tests, not policy.
+
+**Operator dispatch is part of the read.** Java's `==` on primitives is value equality — inside the algebra. On references it is *identity*, and two `.equals()` values can be distinct references (boxed `Integer ==` is cache-dependent). A guard classifier that lifts a reference-`==` assertion as value-inequality swears a claim the vendor never made. The production gate classifies bare and negated `==`/`!=` guards only over primitive-typed parameters, read from the `PrimitiveTypeTree` node; reference identity refuses by name. The suite carries the explicit discrimination pair — the *same guard shape* over `Object`s must refuse and over `int`s must lift — because a Java lifter that cannot demonstrate it understands `==` versus `.equals` has no business reading Java. Every Java developer knows the difference; the lifter must know it *testably*.
+
+**Approximation is read, not patterned.** Assertion frameworks' tolerance overloads (`assertEquals(double, double, double delta)`) must not lift as exact equality — the false pass of treating `≈` as `=`. The first-generation rule keyed on the signature; the throw-locus generation deleted the special case entirely, because the approximate semantics falls out of the walked guard (`Math.abs(e−a) ≤ delta`) like every other meaning. The lesson generalizes: every special case in a lifter is a confession that something wasn't walked deeply enough.
+
+**The verdict must not depend on one jury.** The universe is ProofIR — backend-neutral first-order logic — and the substrate's compiler seats render it to z3 and cvc5 (SMT-LIB), Vampire, Coq, Lean, and Maude. Independent provers with unrelated implementations returning the same verdict on the same CID'd contract is the no-vendor axiom applied to the solver layer: trusting one solver is having a vendor; a portfolio of independent recomputations is math. (The string-membership atom of the weak tier lands first in the SMT-LIB emitter — z3 and cvc5 immediately — with the remaining backends' renderings as follow-on arms; the atom itself is backend-neutral by construction.)
+
+**And the acceptance line never moves.** A universe, a gate, a refutation — none of it exists until it survives `sugar lift → sugar verify → unsat` through the shipping CLI with the verdict parsed from real receipts. Research transcripts are evidence. The CLI is the ground.
+
+## §9: Counterarguments
+
+**"This is just symbolic execution."** The solving step is classical; the contribution is everything around it that symbolic execution never had: a *specification-provenance discipline* (universes derive only at vendor-sworn surfaces, audited by vendor vectors — never speculative whole-program exploration), a *refusal calculus* (what doesn't walk is named, not approximated), *content-addressed federation* (the derived contract is a signed, CID'd artifact any consumer composes against, not a transient analysis result), and a *chain of custody* terminating entirely in the vendor's published statements. Symbolic execution is a technique. This is a jurisdiction.
+
+**"Vendor tests are too thin a spec source; real contracts live in docs and heads."** The boundary is the answer, not the problem (§6): the substrate proves what was promised and *renders the unpromised surface enumerable*. A documentation sentence is not machine-auditable testimony; a test is. And the flywheel runs the right direction — every test the vendor adds is a new sworn surface, a new dig license, a new universe, with no coordination required.
+
+**"This works for table-driven codecs and little else."** The weak tier generalizes to the entire family of output-from-literal-constant implementations, which is larger than it sounds (codecs, escapers, formatters, mappers). The strong tier needs one piece of real machinery — the symbolic step over the walked loop — which is named in the residue, not hidden. And the pile is sugar (§3): the boundary of "walkable" has moved every month the substrate has existed, in one direction. The claim is not "everything generalizes today." The claim is "what generalizes is derived, gated, and final — and the rest is named."
+
+**"Property-based testing already generalizes."** PBT samples a property the *developer* authored, at runtime, probabilistically, and its counterexamples are found, not proven absent. The universe is the vendor's own code's property, derived rather than authored, checked by proof rather than sampling, and its refutations are unsatisfiability verdicts, not lucky draws. PBT widens the sample; this retires sampling.
+
+**"Why trust the walker?"** Don't. That is what the gate is for. The walked universal must re-derive every vendor vector at its surface (∀ ⊨ sample — check A) or it is rejected; in-pool, this audit is performed by the same conjoin that checks everyone else, so a wrong reading surfaces as a contradiction with the vendor's own rows the moment it is minted. Add the multi-backend portfolio (§8) and the walker sits inside the same trust-nothing architecture as every other component: the kit proposes, recomputation disposes.
+
+## §10: After point samples
+
+The era this paper closes believed the test suite was the asset. It was the *index* of the asset. The vendor's tests are the sworn enumeration of which behaviors carry contracts; the contracts themselves were always in the code, in universal form, waiting for a reader whose discipline was strong enough to be trusted with them — walk through the language's own grammar, keep only truth-table values, name every refusal, let the vendor's own coordinates audit the result, and put the verdict where anyone can recompute it.
+
+What the substrate gains is not "more coverage." It is a different *kind* of object on the wall: not *N assertions lifted from their suite* but *this function carries its contract* — one universe, minted once, gated by the vendor's own sworn samples, answering for every input forever, composable by content address with every other universe, refutable-against by every solver seated. The point sample's epitaph is exactly its job description, completed: it said *there is a contract here, I swear it* — and it was right, and we went and got it.
+
+The job, one line, unchanged since the first lifter and unchanged by this paper: **walk the sugar, name the facts like a detective, and close the case.**
