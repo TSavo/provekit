@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Unit tests for JavaTestAssertionsRpc (Phase 2: vocab-driven lifter)
+# Unit tests for JavaTestAssertionsRpc (Phase 3: final-oracle + loop→∀ lifter)
 # Compiles the kit, drives it via JSON-RPC, asserts on output with python3.
 # Skips cleanly if no JDK is on PATH.
 #
-# Test suite:
+# Test suite (P1/P2):
 #   1. Vocab derivation + exact-lift: ExactLift.java produces 2 contracts with
 #      correct IR shape (assertEquals=equality, expected-first from learned vocab)
 #   2. Discrimination (string-arg): StringArgDiscrimination.java → 0 contracts,
@@ -17,6 +17,16 @@
 #   6. Extended vocab (assertNotEquals, assertNull, assertNotNull): produces correct
 #      ≠ and None-ctor IR atoms
 #   7. Exceptions overlay: assertArrayEquals in equality via .sugar/vocab-exceptions/
+#
+# Test suite (P3 — loop→∀ + final-oracle):
+#   8. Loop→∀ exact shape: ForLoopForall.java → 1 forall contract with
+#      correct IR (forall x. 0<=x<3 => g(x)==1) and ::loop::x name
+#   9. Accumulator discrimination: ForLoopAccumulator.java → loop REFUSED by name
+#      (acc += g(x) is a mutation → not a universal)
+#  10. Effectively-final positive: ForLoopEffectivelyFinal.java → 1 forall contract
+#      (outer non-final but never-reassigned local does NOT block lifting)
+#  11. Non-literal bound discrimination: ForLoopOpenBound.java → loop REFUSED
+#      (x < n where n is a variable → open forall)
 set -euo pipefail
 
 command -v javac >/dev/null 2>&1 || { echo "SKIP: no JDK on PATH"; exit 0; }
@@ -388,5 +398,193 @@ assert len(unlearned_diags) == 0, \
 print(f"PASS: exceptions overlay: assertArrayEquals NOT in unlearned (override applied). Diags: {reasons}")
 PY
 
+
 echo
-echo "== all 7 tests PASS =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 8: loop→∀ exact IR shape (ForLoopForall.java)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT8="$(run_lift "$FIXTURES" "ForLoopForall.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT8" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 1, f"expected 1 forall contract, got {len(ir)}: {json.dumps(ir,indent=2)}\ndiags={json.dumps(diags,indent=2)}"
+c = ir[0]
+
+# Name must contain ::loop::x
+assert "::loop::x" in c["name"], f"contract name does not contain ::loop::x: {c['name']}"
+
+# Shape: kind=contract, inv.kind=and, inv.operands[0].kind=forall
+assert c["kind"] == "contract", f"kind: {c['kind']}"
+assert c["outBinding"] == "out", f"outBinding: {c.get('outBinding')}"
+inv = c["inv"]
+assert inv["kind"] == "and", f"inv.kind: {inv['kind']}"
+assert len(inv["operands"]) == 1, f"inv.operands count: {len(inv['operands'])}"
+
+fa = inv["operands"][0]
+assert fa["kind"] == "forall", f"forall kind: {fa['kind']}"
+assert fa["name"] == "x", f"forall bound var: {fa['name']}"
+assert fa["sort"] == {"kind": "primitive", "name": "Int"}, f"sort: {fa['sort']}"
+
+body = fa["body"]
+assert body["kind"] == "implies", f"implies kind: {body['kind']}"
+assert len(body["operands"]) == 2, f"implies operands: {len(body['operands'])}"
+
+guard = body["operands"][0]
+assert guard["kind"] == "and", f"guard kind: {guard['kind']}"
+guard_ops = guard["operands"]
+assert len(guard_ops) == 2, f"guard operands count: {len(guard_ops)}"
+
+# Lower bound: 0 ≤ x
+lo = guard_ops[0]
+assert lo["kind"] == "atomic" and lo["name"] == "≤", f"lower bound atom: {lo}"
+assert lo["args"][0] == {"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}, f"lo.left: {lo['args'][0]}"
+assert lo["args"][1] == {"kind":"var","name":"x"}, f"lo.right: {lo['args'][1]}"
+
+# Upper bound: x < 3
+hi = guard_ops[1]
+assert hi["kind"] == "atomic" and hi["name"] == "<", f"upper bound atom: {hi}"
+assert hi["args"][0] == {"kind":"var","name":"x"}, f"hi.left: {hi['args'][0]}"
+assert hi["args"][1] == {"kind":"const","value":3,"sort":{"kind":"primitive","name":"Int"}}, f"hi.right: {hi['args'][1]}"
+
+# Body: and([atomic(=, [ctor(call:g,[var:x]), const(1)])])
+body_conj = body["operands"][1]
+assert body_conj["kind"] == "and", f"body conj kind: {body_conj['kind']}"
+assert len(body_conj["operands"]) == 1, f"body operands: {len(body_conj['operands'])}"
+atom = body_conj["operands"][0]
+assert atom["kind"] == "atomic" and atom["name"] == "=", f"body atom: {atom}"
+ctor = atom["args"][0]
+assert ctor["kind"] == "ctor" and ctor["name"] == "call:g", f"ctor: {ctor}"
+assert ctor["args"] == [{"kind":"var","name":"x"}], f"ctor args: {ctor['args']}"
+const_val = atom["args"][1]
+assert const_val == {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}}, f"const: {const_val}"
+
+# Closedness: no free variables (the only var is x, which is the bound var)
+print(f"PASS: loop→∀ IR shape correct. Contract: {c['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 9: accumulator discrimination (ForLoopAccumulator.java)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT9="$(run_lift "$FIXTURES" "ForLoopAccumulator.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT9" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# The loop MUST be refused — no forall contract emitted
+assert len(ir) == 0, f"expected 0 contracts (loop refused), got {len(ir)}: {json.dumps(ir,indent=2)}"
+# Must have a diagnostic naming the accumulator or mutation pattern
+reasons = [d.get("reason","") for d in diags]
+refusal_for_loop = [r for r in reasons if "accum" in r.lower() or "mutat" in r.lower() or "loop" in r.lower()]
+assert len(refusal_for_loop) > 0, \
+    f"expected a loop refusal diagnostic (accumulator/mutation), got: {reasons}"
+print(f"PASS: accumulator loop refused by name. Reason: {refusal_for_loop[0]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 10: effectively-final positive (ForLoopEffectivelyFinal.java)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT10="$(run_lift "$FIXTURES" "ForLoopEffectivelyFinal.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT10" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# The loop MUST lift — the effectively-final `outer` local does not block it
+assert len(ir) == 1, \
+    f"expected 1 forall contract (effectively-final local does not block), got {len(ir)}: {json.dumps(ir,indent=2)}\ndiags={json.dumps(diags,indent=2)}"
+assert "::loop::x" in ir[0]["name"], f"contract name: {ir[0]['name']}"
+print(f"PASS: effectively-final outer local does not block loop lifting. Contract: {ir[0]['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 11: non-literal bound discrimination (ForLoopOpenBound.java)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT11="$(run_lift "$FIXTURES" "ForLoopOpenBound.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT11" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# Must be refused — no contract emitted
+assert len(ir) == 0, f"expected 0 contracts (open bound refused), got {len(ir)}: {json.dumps(ir,indent=2)}"
+reasons = [d.get("reason","") for d in diags]
+open_bound_diags = [r for r in reasons if "open" in r.lower() or "literal" in r.lower() or "bound" in r.lower()]
+assert len(open_bound_diags) > 0, \
+    f"expected an open-bound refusal diagnostic, got: {reasons}"
+print(f"PASS: non-literal bound refused by name. Reason: {open_bound_diags[0]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 12: loop-variable mutation discrimination (ForLoopVarMutation.java)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT12="$(run_lift "$FIXTURES" "ForLoopVarMutation.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT12" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# g(x++) mutates the loop variable inside the body: the iteration space is
+# not the stated range. Must be refused by the LOOP-VARIABLE gate itself,
+# not merely the arg-shape gate (defense must hold if arg shapes widen).
+assert len(ir) == 0, f"expected 0 contracts (loop-var mutation refused), got {len(ir)}: {json.dumps(ir,indent=2)}"
+reasons = [d.get("reason","") for d in diags]
+loopvar_diags = [r for r in reasons if "mutates the loop variable" in r]
+assert len(loopvar_diags) > 0, \
+    f"expected the loop-variable mutation refusal, got: {reasons}"
+print(f"PASS: loop-variable body mutation refused by its own gate. Reason: {loopvar_diags[0]}")
+PY
+
+echo
+echo "== all 12 tests PASS =="

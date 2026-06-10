@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Java-native JUnit assertion lifter for the Sugar/ProvekIt substrate.
-// Phase 2: vocabulary is LEARNED from the assertion framework's OWN SOURCE
-// via JavacTask.parse() — no hardcoded assertion meanings in the lift path.
+// Phase 3: final-oracle (effective-finality via AST mutation scan) +
+// loop→∀ lifter (bounded for-loop emitted as guarded universal forall).
 //
 // THE LAW: every fact about Java source comes from a com.sun.source.tree.*
 // node. No regex, indexOf, split, or any string-scanning of Java source code
@@ -812,11 +812,420 @@ public final class JavaTestAssertionsRpc {
         BlockTree body = method.getBody();
         if (body == null) return;
 
+        // Compute the set of all locals mutated anywhere in this method body.
+        // This is the final-oracle: javac computes effective finality for lambda
+        // capture; we compute it for loop purity. A local not in this set is
+        // provably stable (effectively final) — a FREE AXIOM from the language.
+        Set<String> mutatedLocals = computeMutatedLocals(body);
+
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, vocab, hasJUnitImport, ir, diagnostics);
+            } else if (stmt instanceof ForLoopTree flt) {
+                liftForLoop(flt, scope, vocab, hasJUnitImport, mutatedLocals, ir, diagnostics);
             }
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Final-oracle: compute the set of locally-mutated variable names
+    // anywhere in the method body. Uses only com.sun.source.tree.* nodes.
+    // A local absent from this set is "effectively final" — a language axiom.
+    // ──────────────────────────────────────────────────────────────
+
+    private static Set<String> computeMutatedLocals(BlockTree body) {
+        Set<String> mutated = new HashSet<>();
+        scanForMutations(body.getStatements(), mutated);
+        return Collections.unmodifiableSet(mutated);
+    }
+
+    /** Recursively scan statement lists for mutation targets. */
+    private static void scanForMutations(Iterable<? extends StatementTree> stmts, Set<String> out) {
+        for (StatementTree stmt : stmts) {
+            scanStmtForMutations(stmt, out);
+        }
+    }
+
+    private static void scanStmtForMutations(StatementTree stmt, Set<String> out) {
+        if (stmt == null) return;
+        if (stmt instanceof ExpressionStatementTree est) {
+            scanExprForMutations(est.getExpression(), out);
+        } else if (stmt instanceof ForLoopTree flt) {
+            // init statements
+            for (StatementTree init : flt.getInitializer()) {
+                scanStmtForMutations(init, out);
+            }
+            // condition
+            scanExprForMutations(flt.getCondition(), out);
+            // update
+            for (ExpressionStatementTree upd : flt.getUpdate()) {
+                scanExprForMutations(upd.getExpression(), out);
+            }
+            // body
+            scanStmtForMutations(flt.getStatement(), out);
+        } else if (stmt instanceof BlockTree bt) {
+            scanForMutations(bt.getStatements(), out);
+        } else if (stmt instanceof VariableTree vt) {
+            // `int x = 0` — NOT a mutation (declaration, not reassignment)
+            // but scan the initializer for nested mutations
+            scanExprForMutations(vt.getInitializer(), out);
+        } else if (stmt instanceof IfTree it) {
+            scanExprForMutations(it.getCondition(), out);
+            scanStmtForMutations(it.getThenStatement(), out);
+            scanStmtForMutations(it.getElseStatement(), out);
+        } else if (stmt instanceof WhileLoopTree wlt) {
+            scanExprForMutations(wlt.getCondition(), out);
+            scanStmtForMutations(wlt.getStatement(), out);
+        } else if (stmt instanceof ReturnTree rt) {
+            scanExprForMutations(rt.getExpression(), out);
+        }
+    }
+
+    private static void scanExprForMutations(ExpressionTree expr, Set<String> out) {
+        if (expr == null) return;
+        if (expr instanceof AssignmentTree at) {
+            // x = ..., x += ..., etc.
+            ExpressionTree var = at.getVariable();
+            if (var instanceof IdentifierTree id) {
+                out.add(id.getName().toString());
+            }
+            scanExprForMutations(at.getExpression(), out);
+        } else if (expr instanceof CompoundAssignmentTree cat) {
+            // x += ..., x -= ..., x *= ..., etc.
+            ExpressionTree var = cat.getVariable();
+            if (var instanceof IdentifierTree id) {
+                out.add(id.getName().toString());
+            }
+            scanExprForMutations(cat.getExpression(), out);
+        } else if (expr instanceof UnaryTree ut) {
+            // x++, x--, ++x, --x
+            Tree.Kind kind = ut.getKind();
+            if (kind == Tree.Kind.PREFIX_INCREMENT || kind == Tree.Kind.PREFIX_DECREMENT
+                    || kind == Tree.Kind.POSTFIX_INCREMENT || kind == Tree.Kind.POSTFIX_DECREMENT) {
+                ExpressionTree operand = ut.getExpression();
+                if (operand instanceof IdentifierTree id) {
+                    out.add(id.getName().toString());
+                }
+            }
+            scanExprForMutations(ut.getExpression(), out);
+        } else if (expr instanceof MethodInvocationTree mit) {
+            for (ExpressionTree arg : mit.getArguments()) {
+                scanExprForMutations(arg, out);
+            }
+        } else if (expr instanceof BinaryTree bt2) {
+            scanExprForMutations(bt2.getLeftOperand(), out);
+            scanExprForMutations(bt2.getRightOperand(), out);
+        } else if (expr instanceof ParenthesizedTree pt) {
+            scanExprForMutations(pt.getExpression(), out);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Loop→∀ lifter: recognizes bounded for-loops and emits forall IR.
+    // Gate: loop var must be int, bounds must be int literals, body must
+    // contain ONLY liftable assertions, no accumulator mutations in body.
+    // ──────────────────────────────────────────────────────────────
+
+    private static void liftForLoop(
+            ForLoopTree flt,
+            String scope,
+            AssertionVocab vocab,
+            boolean hasJUnitImport,
+            Set<String> methodMutatedLocals,
+            List<String> ir,
+            List<String> diagnostics) {
+
+        // 1. Enhanced-for (for-each) is not this path — only classic for(...;...;...)
+        //    Java routes those to EnhancedForLoopTree, not ForLoopTree, so we're already safe.
+
+        // 2. The init must be a single `int <var> = <literal>` declaration.
+        List<? extends StatementTree> inits = flt.getInitializer();
+        if (inits.size() != 1 || !(inits.get(0) instanceof VariableTree vt)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: init is not a single variable declaration"));
+            return;
+        }
+        String loopVar = vt.getName().toString();
+        ExpressionTree initExpr = vt.getInitializer();
+        OptionalLong loStart = asIntLiteral(initExpr);
+        if (loStart.isEmpty()) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: loop init is not an int literal (open lower bound)"));
+            return;
+        }
+        long startVal = loStart.getAsLong();
+
+        // 3. Condition must be `<var> < <literal>` or `<var> <= <literal>`.
+        ExpressionTree cond = flt.getCondition();
+        if (!(cond instanceof BinaryTree bt)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: condition is not a binary comparison"));
+            return;
+        }
+        Tree.Kind condKind = bt.getKind();
+        if (condKind != Tree.Kind.LESS_THAN && condKind != Tree.Kind.LESS_THAN_EQUAL) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: condition operator is not < or <="));
+            return;
+        }
+        // Left side of condition must be the loop variable.
+        if (!(bt.getLeftOperand() instanceof IdentifierTree condId)
+                || !condId.getName().toString().equals(loopVar)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: condition left side is not the loop variable"));
+            return;
+        }
+        OptionalLong hiOpt = asIntLiteral(bt.getRightOperand());
+        if (hiOpt.isEmpty()) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: loop bound is not an int literal (open upper bound — would produce open forall)"));
+            return;
+        }
+        long endVal = hiOpt.getAsLong();
+        boolean inclusive = (condKind == Tree.Kind.LESS_THAN_EQUAL);
+
+        // 4. Update must be `<var>++` or `++<var>` or `<var> += 1`.
+        List<? extends ExpressionStatementTree> updates = flt.getUpdate();
+        if (updates.size() != 1) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: update clause must have exactly one expression"));
+            return;
+        }
+        ExpressionTree updateExpr = updates.get(0).getExpression();
+        if (!isSimpleIncrement(updateExpr, loopVar)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: update is not <var>++ / ++<var> / <var>+=1"));
+            return;
+        }
+
+        // 5. Body: must be a block (or single statement) of ONLY assert calls.
+        //    Collect all assert calls; any non-assert statement → refuse.
+        StatementTree bodyStmt = flt.getStatement();
+        List<MethodInvocationTree> bodyAsserts = new ArrayList<>();
+        if (!collectBodyAsserts(bodyStmt, loopVar, bodyAsserts)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: loop body contains non-assertion statements"));
+            return;
+        }
+        if (bodyAsserts.isEmpty()) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>", "loop→∀ refused: loop body has no assertions"));
+            return;
+        }
+
+        // 6. Purity gate (final-oracle): any local OTHER THAN the loop variable
+        //    itself that is mutated inside the body → accumulator pattern → refuse.
+        //    We scan ONLY the body, not the whole method.
+        Set<String> bodyMutated = new HashSet<>();
+        scanStmtForMutations(bodyStmt, bodyMutated);
+        // The update clause's increment is the ONLY sanctioned mutation of the
+        // loop variable; a body that mutates it (e.g. `g(x++)` inside an assert
+        // arg) changes the iteration space and the universal would be false.
+        // Refuse it directly rather than relying on the arg-shape gate alone --
+        // if a later phase widens arg shapes, this gate must already hold.
+        if (bodyMutated.contains(loopVar)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>",
+                "loop→∀ refused: body mutates the loop variable " + loopVar
+                    + " (iteration space not the stated range — universal would be false)"));
+            return;
+        }
+        if (!bodyMutated.isEmpty()) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>",
+                "loop→∀ refused: body mutates " + bodyMutated + " (accumulator pattern — universal would be false)"));
+            return;
+        }
+
+        // 7. Lift each body assertion with the loop var as a `{"kind":"var"}` term.
+        //    Every assertion must lift cleanly — all-or-nothing (truth-table-or-gutter).
+        List<String> bodyFormulas = new ArrayList<>();
+        for (MethodInvocationTree mit : bodyAsserts) {
+            String assertName = methodInvocationName(mit);
+            String category = vocab.classify(assertName);
+            String formula = tryLiftBodyAssertion(mit, assertName, category, loopVar, scope, diagnostics);
+            if (formula == null) {
+                // Refusal already emitted. Refuse the whole loop.
+                return;
+            }
+            bodyFormulas.add(formula);
+        }
+
+        // 8. Emit the forall contract.
+        String contractName = scope + "::loop::" + loopVar;
+        ir.add(buildForallContract(contractName, loopVar, startVal, endVal, inclusive, bodyFormulas));
+    }
+
+    /** Return true iff expr is <var>++ / ++<var> / <var>+=1 for the given varName. */
+    private static boolean isSimpleIncrement(ExpressionTree expr, String varName) {
+        if (expr instanceof UnaryTree ut) {
+            Tree.Kind k = ut.getKind();
+            if (k == Tree.Kind.POSTFIX_INCREMENT || k == Tree.Kind.PREFIX_INCREMENT) {
+                return (ut.getExpression() instanceof IdentifierTree id)
+                        && id.getName().toString().equals(varName);
+            }
+        }
+        if (expr instanceof CompoundAssignmentTree cat) {
+            if (cat.getKind() == Tree.Kind.PLUS_ASSIGNMENT) {
+                if (!(cat.getVariable() instanceof IdentifierTree id)
+                        || !id.getName().toString().equals(varName)) return false;
+                OptionalLong step = asIntLiteral(cat.getExpression());
+                return step.isPresent() && step.getAsLong() == 1L;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Collect all MethodInvocationTree nodes that are direct expression-statements
+     * in the loop body. Returns false if any statement is not a pure assertion call.
+     * Variable declarations (e.g. `int tmp = …`) in the body also cause refusal.
+     */
+    private static boolean collectBodyAsserts(StatementTree stmt, String loopVar,
+                                              List<MethodInvocationTree> out) {
+        if (stmt instanceof BlockTree bt) {
+            for (StatementTree s : bt.getStatements()) {
+                if (!collectBodyAsserts(s, loopVar, out)) return false;
+            }
+            return true;
+        }
+        if (stmt instanceof ExpressionStatementTree est) {
+            ExpressionTree expr = est.getExpression();
+            if (expr instanceof MethodInvocationTree mit) {
+                out.add(mit);
+                return true;
+            }
+            return false; // non-call expression statement (assignment, etc.)
+        }
+        return false; // variable declaration, control flow, etc.
+    }
+
+    /**
+     * Try to lift a single body assertion to its formula JSON, replacing the
+     * loop variable with {"kind":"var","name":"<loopVar>"}. Returns null and
+     * adds a diagnostic if the assertion cannot be lifted cleanly.
+     *
+     * Supported: equality (assertEquals) only — the loop var replaces any
+     * argument position where it appears. Both (expected, loopVar(…)) and
+     * (expected, someCall(loopVar)) patterns are handled.
+     */
+    private static String tryLiftBodyAssertion(
+            MethodInvocationTree mit,
+            String assertName,
+            String category,
+            String loopVar,
+            String scope,
+            List<String> diagnostics) {
+
+        if (!category.equals("equality")) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                assertName, "loop→∀ body assertion not liftable (only equality assertions supported in loop body): " + assertName));
+            return null;
+        }
+
+        List<? extends ExpressionTree> args = mit.getArguments();
+        if (args.size() < 2) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                assertName, "loop→∀ body: " + assertName + " arity " + args.size() + " < 2"));
+            return null;
+        }
+
+        // args[0] = expected (must be int literal)
+        // args[1] = actual (must be call with loopVar or int-literal args)
+        ExpressionTree constExpr = args.get(0);
+        ExpressionTree callExpr  = args.get(1);
+
+        OptionalLong constVal = asIntLiteral(constExpr);
+        if (constVal.isEmpty()) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                assertName, "loop→∀ body: first arg is not an int literal: " + constExpr));
+            return null;
+        }
+
+        if (!(callExpr instanceof MethodInvocationTree callMit)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                assertName, "loop→∀ body: second arg is not a method call: " + callExpr));
+            return null;
+        }
+
+        String callee = methodInvocationName(callMit);
+        if (callee.contains(".")) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                assertName, "loop→∀ body: callee is qualified (" + callee + "); only bare function names lifted"));
+            return null;
+        }
+
+        // Build the arg JSON nodes: each arg is either the loop var (→ var-node)
+        // or an int literal (→ const-node). Anything else → refuse.
+        List<? extends ExpressionTree> callArgs = callMit.getArguments();
+        List<String> argJsons = new ArrayList<>();
+        for (ExpressionTree a : callArgs) {
+            if (a instanceof IdentifierTree id && id.getName().toString().equals(loopVar)) {
+                argJsons.add("{\"kind\":\"var\",\"name\":\"" + esc(loopVar) + "\"}");
+            } else {
+                OptionalLong val = asIntLiteral(a);
+                if (val.isEmpty()) {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        assertName, "loop→∀ body: call arg is not the loop variable or an int literal: " + a));
+                    return null;
+                }
+                argJsons.add("{\"kind\":\"const\",\"value\":" + val.getAsLong()
+                        + ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}");
+            }
+        }
+
+        String ctorArgs = String.join(",", argJsons);
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + ctorArgs + "]}";
+        String constJson = "{\"kind\":\"const\",\"value\":" + constVal.getAsLong()
+                + ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
+        return "{\"kind\":\"atomic\",\"name\":\"=\",\"args\":[" + ctorJson + "," + constJson + "]}";
+    }
+
+    /**
+     * Build the forall contract JSON.
+     * Shape (mirrors Rust + Python):
+     * {"kind":"contract","name":"<scope>::loop::<var>","outBinding":"out",
+     *  "inv":{"kind":"and","operands":[
+     *    {"kind":"forall","name":"<var>","sort":{"kind":"primitive","name":"Int"},
+     *     "body":{"kind":"implies","operands":[
+     *       {"kind":"and","operands":[
+     *         {"kind":"atomic","name":"≤","args":[<start-const>,<var-ref>]},
+     *         {"kind":"atomic","name":"<","args":[<var-ref>,<end-const>]}]},
+     *       {"kind":"and","operands":[...body-formulas...]}]}}]}}
+     */
+    private static String buildForallContract(
+            String contractName,
+            String var,
+            long startVal,
+            long endVal,
+            boolean inclusive,
+            List<String> bodyFormulas) {
+
+        String varRef = "{\"kind\":\"var\",\"name\":\"" + esc(var) + "\"}";
+        String startConst = "{\"kind\":\"const\",\"value\":" + startVal
+                + ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
+        String endConst = "{\"kind\":\"const\",\"value\":" + endVal
+                + ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
+
+        // Lower bound: startVal ≤ var
+        String lowerAtom = "{\"kind\":\"atomic\",\"name\":\"≤\",\"args\":["
+                + startConst + "," + varRef + "]}";
+        // Upper bound: var < endVal  OR  var ≤ endVal
+        String upperOp = inclusive ? "≤" : "<";
+        String upperAtom = "{\"kind\":\"atomic\",\"name\":\"" + upperOp + "\",\"args\":["
+                + varRef + "," + endConst + "]}";
+
+        String guard = "{\"kind\":\"and\",\"operands\":[" + lowerAtom + "," + upperAtom + "]}";
+        String bodyConj = "{\"kind\":\"and\",\"operands\":[" + String.join(",", bodyFormulas) + "]}";
+        String implies = "{\"kind\":\"implies\",\"operands\":[" + guard + "," + bodyConj + "]}";
+        String forall = "{\"kind\":\"forall\",\"name\":\"" + esc(var)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":" + implies + "}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":[" + forall + "]}}";
     }
 
     // ──────────────────────────────────────────────────────────────
