@@ -1,0 +1,15 @@
+{
+  "comment": "Platform axioms for the Java test-assertions universe walker. Each entry declares a non-walked identity bridge: a method whose byte[]→String or String→String conversion is semantically transparent for the character-set universe, established by JDK specification rather than by walking the method's source (which is not vendored). An entry absent from this file will be refused by name if encountered as a chain-escape in the universe walk.",
+  "identity_bridges": [
+    {
+      "name": "newStringUsAscii",
+      "arity": 1,
+      "reason": "JDK US-ASCII decode of ASCII-range bytes is an identity on the char sequence: new String(bytes, StandardCharsets.US_ASCII) produces the same characters as the source byte literals when all byte values are in [0x20..0x7E]. StringUtils.newStringUsAscii is a thin JDK wrapper; no source is vendored. This is the only non-walked step in the universe chain."
+    },
+    {
+      "name": "getBytesUtf8",
+      "arity": 1,
+      "reason": "StringUtils.getBytesUtf8(s) is String.getBytes(StandardCharsets.UTF_8). For ASCII-range string literals (all code points <= 0x7F) UTF-8 encoding is the identity: each char produces exactly one byte equal to its code point. The argument must be a String literal for the callsite key to be sound; non-literal args are refused."
+    }
+  ]
+}

@@ -27,6 +27,9 @@
 #      (outer non-final but never-reassigned local does NOT block lifting)
 #  11. Non-literal bound discrimination: ForLoopOpenBound.java → loop REFUSED
 #      (x < n where n is a variable → open forall)
+#
+# Test suite (H1 — hardening rollup: discrimination fixtures for each fix):
+#  31. [A1] cross-class ambiguity: helperChk in 2 classes → UNLEARNED, not first-match
 set -euo pipefail
 
 command -v javac >/dev/null 2>&1 || { echo "SKIP: no JDK on PATH"; exit 0; }
@@ -1186,5 +1189,44 @@ assert named, f"expected the non-literal-arg refusal by name, got: {reasons}"
 print(f"PASS: string-literal args lift via both byte-bridge shapes; non-literal refused: {named[0][:80]}")
 PY
 
+# H1 tests (31+): hardening rollup — discrimination fixtures for each fix.
+# Each H1 test has a twin fixture that BREAKS the invariant on purpose, so
+# a regression (reverting the fix) turns the test red, not green.
+# ──────────────────────────────────────────────────────────────
 echo
-echo "== all 30 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 31: H1 [A1] cross-class ambiguity → UNLEARNED (not first-match)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT31="$(run_lift "$FIXTURES/cross-class-ambiguity" "CrossClassAmbiguity.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT31" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+# Must produce 0 contracts — checkEq is UNLEARNED due to ambiguous delegation.
+assert len(ir) == 0, (
+    f"FALSEPASS: cross-class ambiguity produced {len(ir)} contract(s) "
+    f"(first-match silently chose a class): {[c['name'] for c in ir]}"
+)
+# Must emit a named refusal citing ambiguous delegation.
+reasons = [d.get("reason", "") for d in diags]
+named = [r for r in reasons if "ambiguous" in r.lower()]
+assert named, (
+    f"expected a named refusal citing 'ambiguous delegation target', got: {reasons}"
+)
+# The refusal must NOT say "equality" or "inequality" — wrong classification guard.
+bad = [r for r in reasons if "equality" in r.lower() or "inequality" in r.lower()]
+assert not bad, f"refusal incorrectly reports equality/inequality: {bad}"
+print(f"PASS: cross-class ambiguity → 0 contracts, named UNLEARNED refusal: {named[0][:90]}")
+PY
+
+echo
+echo "== all 31 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 1 H1) =="
