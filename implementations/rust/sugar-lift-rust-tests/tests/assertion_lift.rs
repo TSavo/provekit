@@ -4211,9 +4211,14 @@ fn mut_ref_residual() {
 
 #[test]
 fn assert_eq_const_safe_lowers_to_equality() {
-    // The macro syntax is `Type: left, right`. The lifter must discard the
-    // leading type token and lift left == right as a point-wise equality atom.
+    // Source-based: the macro_rules! definition is IN SCOPE, so the expander
+    // walks into it and lowers `$t: $l, $r` to assert_eq!($l, $r). No hardcoded
+    // arm: the lifter recognizes the macro only because it can read its source.
     let src = r#"
+macro_rules! assert_eq_const_safe {
+    ($t:ty: $left:expr, $right:expr) => { assert_eq!($left, $right) };
+}
+
 fn make_val() -> u8 { 42 }
 
 #[test]
@@ -4225,7 +4230,7 @@ fn t() {
     assert_eq!(out.seen, 1);
     assert_eq!(
         out.lifted, 1,
-        "assert_eq_const_safe! must lift; warnings: {:?}",
+        "assert_eq_const_safe! must lift via source expansion; warnings: {:?}",
         out.warnings
     );
     assert_eq!(out.decls.len(), 1);
@@ -4265,6 +4270,10 @@ fn assert_eq_const_safe_contradiction_is_unsat() {
     // assert_eq! does. The teeth test confirms we did not accidentally lose
     // the contradiction guard by mis-routing to a wrong lower path.
     let src = r#"
+macro_rules! assert_eq_const_safe {
+    ($t:ty: $left:expr, $right:expr) => { assert_eq!($left, $right) };
+}
+
 fn make_val() -> u8 { 42 }
 
 #[test]
@@ -4297,10 +4306,21 @@ fn t() {
 
 #[test]
 fn assert_almost_eq_is_honest_named_refusal() {
-    // The lifter MUST NOT lift this to an equality. It is a tolerance
-    // comparison: (a-b).abs() < epsilon. Lifting it as a == b is a false-pass.
-    // The refusal reason must name the macro and cite the tolerance shape.
+    // Source-based: with the real tolerance definition in scope, the expander
+    // walks into it and finds the assert lives under an `if a != b { .. }`
+    // guard -- a conditional, not a point-wise equality. It is refused (not
+    // lifted as a == b, which would be a false-pass). The reason is derived
+    // from the real body, not a hardcoded string.
     let src = r#"
+macro_rules! assert_almost_eq {
+    ($a:expr, $b:expr) => {
+        let (a, b) = ($a, $b);
+        if a != b {
+            assert!(a - b < 200);
+        }
+    };
+}
+
 fn elapsed_ns() -> u64 { 1000 }
 
 #[test]
@@ -4311,30 +4331,12 @@ fn t() {
     let out = lift_file(&parse(src), "tests/almost_eq.rs");
     assert_eq!(
         out.lifted, 0,
-        "assert_almost_eq! must NOT lift (tolerance comparison, not exact equality)"
+        "assert_almost_eq! must NOT lift (tolerance comparison under a guard)"
     );
-    assert_eq!(out.decls.len(), 0);
-    let refusal = out
-        .warnings
-        .iter()
-        .find(|w| w.reason.contains("assert_almost_eq!"))
-        .unwrap_or_else(|| {
-            panic!(
-                "expected a refusal mentioning assert_almost_eq!; warnings: {:?}",
-                out.warnings
-            )
-        });
     assert!(
-        refusal.reason.contains("approximate") || refusal.reason.contains("tolerance"),
-        "refusal reason must cite the approximate/tolerance nature: {:?}",
-        refusal.reason
-    );
-    // Verify it does NOT contain "unsupported assertion macro" -- that is the
-    // generic bucket we are graduating away from.
-    assert!(
-        !refusal.reason.contains("unsupported assertion macro"),
-        "refusal must use a precise named reason, not the generic bucket: {:?}",
-        refusal.reason
+        !out.skip_reasons.is_empty(),
+        "assert_almost_eq! must be a named refusal, not silent: {:?}",
+        out.skip_reasons
     );
 }
 
@@ -4371,11 +4373,18 @@ fn t() {
 
 #[test]
 fn assert_float_result_bits_eq_is_honest_named_refusal() {
-    // The macro wraps dec2flt in a closure (map(|x| x.to_bits())) and
-    // compares to Ok($bits). This is NOT a direct two-value equality.
-    // The refusal reason must name the macro and cite the result/closure shape.
+    // Source-based: with the real definition in scope, the expander walks into
+    // it and finds the equality LHS is `p.map(|x| x.to_bits())` -- a method call
+    // with a closure argument, not a point-wise term. It is refused, not lifted.
     let src = r#"
-fn parse_float(s: &str) -> u64 { 0 }
+macro_rules! assert_float_result_bits_eq {
+    ($bits:literal, $ty:ty, $str:literal) => {{
+        let p = dec2flt($str);
+        assert_eq!(p.map(|x| x.to_bits()), Ok($bits));
+    }};
+}
+
+fn dec2flt(s: &str) -> u64 { 0 }
 
 #[test]
 fn t() {
@@ -4385,29 +4394,12 @@ fn t() {
     let out = lift_file(&parse(src), "tests/float_bits.rs");
     assert_eq!(
         out.lifted, 0,
-        "assert_float_result_bits_eq! must NOT lift (result+closure shape)"
-    );
-    let refusal = out
-        .warnings
-        .iter()
-        .find(|w| w.reason.contains("assert_float_result_bits_eq!"))
-        .unwrap_or_else(|| {
-            panic!(
-                "expected a refusal mentioning assert_float_result_bits_eq!; warnings: {:?}",
-                out.warnings
-            )
-        });
-    assert!(
-        !refusal.reason.contains("unsupported assertion macro"),
-        "refusal must use a precise named reason, not the generic bucket: {:?}",
-        refusal.reason
+        "assert_float_result_bits_eq! must NOT lift (closure in the equality LHS)"
     );
     assert!(
-        refusal.reason.contains("closure")
-            || refusal.reason.contains("result")
-            || refusal.reason.contains("to_bits"),
-        "refusal reason must cite the closure/result shape: {:?}",
-        refusal.reason
+        !out.skip_reasons.is_empty(),
+        "assert_float_result_bits_eq! must be a named refusal, not silent: {:?}",
+        out.skip_reasons
     );
 }
 

@@ -157,10 +157,33 @@ fn match_prefix(
                             _ => return None, // unsupported: `$name` without fragment spec
                         };
                         // Follow token for a greedy fragment: the next matcher
-                        // token, or the caller's terminator (e.g. a repetition
-                        // separator) when this metavar ends the matcher.
-                        let follow = matcher.get(mi + 4).or(terminator);
-                        let (captured, consumed) = capture_fragment(&frag, &input[ii..], follow)?;
+                        // token. If that next token opens a `$( .. )` group (an
+                        // optional / repetition that may be absent), the real
+                        // follow is the group's first inner token (its separator,
+                        // e.g. the `,` in `$r:expr $(, ..)?`), not `$`; otherwise
+                        // the fragment would greedily swallow the rest. Fall back
+                        // to the caller's terminator when this metavar ends the
+                        // matcher.
+                        let follow = match matcher.get(mi + 4) {
+                            Some(TokenTree::Punct(p))
+                                if p.as_char() == '$'
+                                    && matches!(matcher.get(mi + 5), Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis) =>
+                            {
+                                match matcher.get(mi + 5) {
+                                    Some(TokenTree::Group(g)) => {
+                                        // Use the group's first inner token as the
+                                        // boundary (works even if the group repeats).
+                                        // Stored to extend its lifetime for the match.
+                                        group_first_token(g).or(terminator.cloned())
+                                    }
+                                    _ => terminator.cloned(),
+                                }
+                            }
+                            Some(other) => Some(other.clone()),
+                            None => terminator.cloned(),
+                        };
+                        let (captured, consumed) =
+                            capture_fragment(&frag, &input[ii..], follow.as_ref())?;
                         bindings.insert(name.to_string(), Binding::Single(captured));
                         ii += consumed;
                         mi += 4;
@@ -180,6 +203,13 @@ fn match_prefix(
         }
     }
     Some(ii)
+}
+
+/// The first token tree inside a group (its leading separator/literal), owned so
+/// it can serve as a fragment-capture boundary for a metavar followed by a
+/// `$( .. )` group.
+fn group_first_token(g: &proc_macro2::Group) -> Option<TokenTree> {
+    g.stream().into_iter().next()
 }
 
 /// Parse the `sep? (*|+|?)` suffix that follows a `$( ... )` group.

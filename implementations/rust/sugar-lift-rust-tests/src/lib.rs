@@ -967,6 +967,42 @@ fn is_assert_macro_path(path: &syn::Path) -> bool {
 ///     await is the ordering we drop; the assertions inside still hold.
 /// A bare `async { .. }`, a closure, or a spawned future is NOT unconditional
 /// (it may never run, or runs per-iteration) and is not returned here.
+/// If `expr` is a call to the std intrinsic `const_eval_select((), ct, rt)`,
+/// return the runtime branch fn name (the third argument, an ident). At run
+/// time the intrinsic calls that fn, so its body is reached.
+fn const_eval_select_runtime_target(expr: &Expr) -> Option<String> {
+    let call = match expr {
+        Expr::Call(c) => c,
+        Expr::Paren(p) => return const_eval_select_runtime_target(&p.expr),
+        Expr::Group(g) => return const_eval_select_runtime_target(&g.expr),
+        _ => return None,
+    };
+    let Expr::Path(p) = &*call.func else {
+        return None;
+    };
+    if p.path.segments.last()?.ident != "const_eval_select" {
+        return None;
+    }
+    // The runtime fn is the last argument; accept the common 3-arg form.
+    match call.args.last()? {
+        Expr::Path(rt) => rt.path.get_ident().map(|i| i.to_string()),
+        _ => None,
+    }
+}
+
+/// All inner-fn names selected as a const_eval_select runtime branch in a block.
+fn const_eval_select_runtime_targets(stmts: &[Stmt]) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for stmt in stmts {
+        if let Stmt::Expr(e, _) = stmt {
+            if let Some(name) = const_eval_select_runtime_target(e) {
+                out.insert(name);
+            }
+        }
+    }
+    out
+}
+
 fn unconditional_block_stmts(expr: &Expr) -> Option<&[Stmt]> {
     match expr {
         Expr::Block(b) => Some(&b.block.stmts),
@@ -996,6 +1032,18 @@ fn collect_assertion_entries(
 ) {
     let temporal_plan = temporal_plan_for_stmts(stmts);
     let mut temporal_scope = TemporalScope::new(local_scope, temporal_plan);
+    // const_eval_select((), compiletime, runtime) is a std intrinsic that, at
+    // run time, calls its runtime fn. Find such calls in this block and the
+    // inner fns they select, so the runtime branch is inlined (its asserts
+    // lift) instead of refused as an unreachable inner fn.
+    let runtime_targets = const_eval_select_runtime_targets(stmts);
+    let local_fns: BTreeMap<String, &syn::ItemFn> = stmts
+        .iter()
+        .filter_map(|s| match s {
+            Stmt::Item(Item::Fn(f)) => Some((f.sig.ident.to_string(), f)),
+            _ => None,
+        })
+        .collect();
     for stmt in stmts {
         match stmt {
             Stmt::Local(local) => {
@@ -1279,6 +1327,12 @@ fn collect_assertion_entries(
             // reachable via a call inside the test body; refuse them.
             Stmt::Item(syn::Item::Fn(inner_fn)) => {
                 let fn_name = inner_fn.sig.ident.to_string();
+                // An inner fn selected as the runtime branch of const_eval_select
+                // is reached at run time; it is inlined where the call appears,
+                // so do not refuse it here (that would double-count).
+                if runtime_targets.contains(&fn_name) {
+                    continue;
+                }
                 let count = count_asserts_in_stmts(&inner_fn.block.stmts);
                 for _ in 0..count {
                     skipped.push(format!(
@@ -1298,7 +1352,25 @@ fn collect_assertion_entries(
                 // its asserts. The per-fn safety net accounts anything not
                 // reached, so no silent drop. Otherwise refuse.
                 let recursed = if let Stmt::Expr(e, _) = other {
-                    if let Some(stmts) = unconditional_block_stmts(e) {
+                    // const_eval_select((), compiletime, runtime): inline the
+                    // runtime branch (the fn called at run time).
+                    let select_target = const_eval_select_runtime_target(e)
+                        .filter(|name| local_fns.contains_key(name));
+                    if let Some(name) = select_target {
+                        collect_assertion_entries(
+                            &local_fns[&name].block.stmts,
+                            local_scope,
+                            options,
+                            reducer,
+                            float_widths,
+                            entries,
+                            skipped,
+                            macros_lifted,
+                            reduced_helpers,
+                            macro_depth,
+                        );
+                        true
+                    } else if let Some(stmts) = unconditional_block_stmts(e) {
                         collect_assertion_entries(
                             stmts,
                             local_scope,
@@ -2402,110 +2474,14 @@ fn assertions_from_macro_with_bindings(
                 .map(|entry| vec![entry])
                 .map_err(|e| format!("debug_assert_ne!: {e}"))
         }
-        // assert_eq_const_safe!($t:ty: $left:expr, $right:expr)
-        //
-        // Defined in coretests/tests/lib.rs (line ~137):
-        //   macro_rules! assert_eq_const_safe {
-        //     ($t:ty: $left:expr, $right:expr) => { ... assert_eq!($left, $right) ... }
-        //   }
-        //
-        // The macro dispatches to assert_eq! at runtime. The $t:ty type argument
-        // is const-eval scaffolding only; it carries no semantic content for the
-        // lifted FOL assertion. We parse and discard it, then lower the two
-        // value expressions as a point-wise equality -- identical to assert_eq!.
-        "assert_eq_const_safe" => {
-            let args = parse_const_safe_macro_args(tokens)
-                .map_err(|e| format!("assert_eq_const_safe!: {e}"))?;
-            if args.exprs.len() < 2 {
-                return Err(
-                    "assert_eq_const_safe!: expected at least 2 value arguments".to_string()
-                );
-            }
-            lower_assert_eq(&args.exprs[0], &args.exprs[1], scope, float_widths)
-                .map(|entry| vec![entry])
-                .map_err(|e| format!("assert_eq_const_safe!: {e}"))
-        }
-        // assert_almost_eq!(a, b) -- approximate / tolerance comparison.
-        //
-        // Defined in std/tests/time.rs (and similar):
-        //   macro_rules! assert_almost_eq { ($a:expr, $b:expr) => {
-        //     let (a, b) = ($a, $b);
-        //     if a != b { assert!((a-b).abs() < Duration::from_micros(200)); }
-        //   }}
-        //
-        // Decision: HONEST NAMED REFUSAL. The assertion is (a-b).abs() < epsilon,
-        // NOT a == b. Lifting it as equality would be a false-pass. The residual
-        // is placed in layer 0 with a precise reason so the histogram is auditable.
-        "assert_almost_eq" => Err(
-            "assert_almost_eq!: approximate (tolerance) comparison, not point-wise exact \
-             equality; released to layer 0"
-                .to_string(),
-        ),
-        // assert_float_result_bits_eq!($bits, $ty, $str)
-        //
-        // Defined in coretests/tests/num/dec2flt/parse.rs (line ~74):
-        //   macro_rules! assert_float_result_bits_eq {
-        //     ($bits:literal, $ty:ty, $str:literal) => {{
-        //       let p = dec2flt::<$ty>($str);
-        //       assert_eq!(p.map(|x| x.to_bits()), Ok($bits));
-        //     }};
-        //   }
-        //
-        // Decision: HONEST NAMED REFUSAL. The inner assert_eq! wraps a
-        // Result<$ty,_> via map(|x| x.to_bits()) and compares to Ok($bits).
-        // That is a compound expression involving a closure over the parser
-        // result -- not a direct two-value point-wise equality the current
-        // term translator can reduce. Forcing a lift would require the term
-        // translator to model dec2flt, Result, and x.to_bits() in context.
-        "assert_float_result_bits_eq" => Err("assert_float_result_bits_eq!: result+closure shape \
-             (map(|x| x.to_bits())), not a direct point-wise equality; \
-             released to layer 0"
-            .to_string()),
-        // assert_chunks!($string, ($valid, $invalid), ...)
-        //
-        // Defined in coretests/tests/str_lossy.rs (line ~3):
-        //   macro_rules! assert_chunks {
-        //     ($string:expr, $(($valid:expr, $invalid:expr)),* $(,)?) => {{
-        //       let mut iter = $string.utf8_chunks();
-        //       $( let chunk = iter.next().expect(...);
-        //          assert_eq!($valid, chunk.valid());
-        //          assert_eq!($invalid, chunk.invalid()); )*
-        //       assert_eq!(None, iter.next());
-        //     }};
-        //   }
-        //
-        // Decision: HONEST NAMED REFUSAL. The macro drives an iterator over
-        // variadic chunk pairs. Each iteration emits two assert_eq! calls on
-        // iterator state. This is an unbounded-arity multi-assertion loop --
-        // not a single point-wise fact reducible to one FOL atom.
-        "assert_chunks" => Err(
-            "assert_chunks!: iterator-walk multi-assertion (variadic chunk pairs), \
-             not a single point-wise fact; released to layer 0"
-                .to_string(),
-        ),
-        // assert_range_eq!($arr, $range, $expected)
-        //
-        // Defined in coretests/tests/slice.rs (line ~1242) and
-        // alloctests/tests/str.rs (line ~334):
-        //   macro_rules! assert_range_eq {
-        //     ($arr:expr, $range:expr, $expected:expr) => {
-        //       assert_eq!(&s[$range], expected);      // index
-        //       assert_eq!(s.get($range), Some(expected)); // get
-        //       assert_eq!(s.get_unchecked($range), expected); // get_unchecked (x2 mut/immut)
-        //       ...  (6 assert_eq! calls total)
-        //     }
-        //   }
-        //
-        // Decision: HONEST NAMED REFUSAL. The macro body is a fixed-arity
-        // expansion to 6 separate assert_eq! calls testing index/get/
-        // get_unchecked for both shared and mutable references. No single
-        // atom can represent this conjunction of API-surface assertions.
-        "assert_range_eq" => Err(
-            "assert_range_eq!: multi-API bounded expansion (6 assert_eq calls \
-             across index/get/get_unchecked, shared+mut), not a single \
-             point-wise fact; released to layer 0"
-                .to_string(),
-        ),
+        // The hardcoded per-macro arms for assert_eq_const_safe!,
+        // assert_almost_eq!, assert_float_result_bits_eq!, assert_chunks!, and
+        // assert_range_eq! were removed. Those were a hardcoded vocabulary --
+        // the sin. The macro_rules expander now walks into each macro's real
+        // definition (from source, in-crate or a dependency) and reduces the
+        // expansion: a clean equality discharges, a tolerance/iteration/effectful
+        // body becomes a named refusal derived from the actual body. The
+        // collector tries the expander when no tuned arm lifts a macro.
         other if other.starts_with("assert") || other.starts_with("debug_assert") => {
             Err(format!("{other}!: unsupported assertion macro"))
         }
