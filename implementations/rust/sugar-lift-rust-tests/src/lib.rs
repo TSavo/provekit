@@ -151,6 +151,8 @@ pub fn lift_file_with_options(
         source_path,
         &mut Vec::new(),
         &out.reduced_helpers.clone(),
+        &reducer,
+        options,
         &mut out,
     );
     out
@@ -215,6 +217,8 @@ fn walk_non_test_fns(
     source_path: &str,
     modules: &mut Vec<String>,
     reduced_helpers: &HashSet<String>,
+    reducer: &ReductionCtx<'_>,
+    options: &LiftOptions,
     out: &mut AdapterOutput,
 ) {
     for item in items {
@@ -227,8 +231,53 @@ fn walk_non_test_fns(
             Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
                     modules.push(m.ident.to_string());
-                    walk_non_test_fns(items, source_path, modules, reduced_helpers, out);
+                    walk_non_test_fns(
+                        items,
+                        source_path,
+                        modules,
+                        reduced_helpers,
+                        reducer,
+                        options,
+                        out,
+                    );
                     modules.pop();
+                }
+            }
+            // Item-level macro invocation (e.g. `assert_value!(...)` at module
+            // scope). Account assert-named invocations: walk into the definition
+            // if it is in-source, otherwise refuse by name. One invocation is one
+            // unit, matching the assertion-macro denominator.
+            Item::Macro(m) => {
+                if let Some(seg) = m.mac.path.segments.last() {
+                    let mname = seg.ident.to_string();
+                    if mname.starts_with("assert") || mname.starts_with("debug_assert") {
+                        let reason = match try_macro_expansion_entries(
+                            &m.mac.path,
+                            &m.mac.tokens,
+                            reducer,
+                            "item",
+                            options,
+                            &mut FloatWidthScope::new(),
+                            0,
+                        ) {
+                            Some(Ok(_)) => format!(
+                                "item-level macro `{mname}`: assertion content lifts only inside a test fn; released to layer 0"
+                            ),
+                            Some(Err(e)) => e,
+                            None => format!(
+                                "item-level assert macro `{mname}`: definition not visible; released to layer 0"
+                            ),
+                        };
+                        out.assertions_refused += 1;
+                        out.skip_reasons.push(reason.clone());
+                        out.warnings.push(LiftWarning {
+                            source_path: source_path.to_string(),
+                            item_name: scoped_test_name(source_path, modules, &mname),
+                            reason: format!(
+                                "rust test assertions: unsupported assertion surface; released to layer 0: {reason}"
+                            ),
+                        });
+                    }
                 }
             }
             // Asserts inside impl method bodies (e.g. an Iterator impl on a test
@@ -370,6 +419,7 @@ fn visit_test_fn(
         &mut skipped,
         &mut macros_lifted,
         &mut out.reduced_helpers,
+        0,
     );
     out.assertions_lifted += macros_lifted;
     out.assertions_refused += skipped.len();
@@ -461,6 +511,12 @@ struct AssertionEntry {
 struct ReductionCtx<'a> {
     functions: BTreeMap<String, &'a syn::ItemFn>,
     ambiguous_functions: BTreeSet<String>,
+    /// In-source `macro_rules!` definitions, by name, parsed into rules. These
+    /// are what lets the lifter walk into a macro's definition and expand it,
+    /// the same way it walks into a function. A name defined more than once is
+    /// ambiguous and not expanded.
+    macros: BTreeMap<String, std::rc::Rc<Vec<macro_expand::MacroRule>>>,
+    ambiguous_macros: BTreeSet<String>,
 }
 
 impl<'a> ReductionCtx<'a> {
@@ -468,6 +524,8 @@ impl<'a> ReductionCtx<'a> {
         let mut ctx = Self {
             functions: BTreeMap::new(),
             ambiguous_functions: BTreeSet::new(),
+            macros: BTreeMap::new(),
+            ambiguous_macros: BTreeSet::new(),
         };
         ctx.collect_items(items);
         ctx
@@ -477,6 +535,11 @@ impl<'a> ReductionCtx<'a> {
         for item in items {
             match item {
                 Item::Fn(f) if !has_test_attr(&f.attrs) => self.insert_function(f),
+                Item::Macro(m) if m.mac.path.is_ident("macro_rules") => {
+                    if let Some(ident) = &m.ident {
+                        self.insert_macro(&ident.to_string(), m.mac.tokens.clone());
+                    }
+                }
                 Item::Mod(m) => {
                     if let Some((_, items)) = &m.content {
                         self.collect_items(items);
@@ -498,6 +561,25 @@ impl<'a> ReductionCtx<'a> {
         }
     }
 
+    fn insert_macro(&mut self, name: &str, tokens: proc_macro2::TokenStream) {
+        if self.ambiguous_macros.contains(name) {
+            return;
+        }
+        // A macro whose rules we cannot even parse is not a usable definition;
+        // skip it (the caller falls back to refusal).
+        let Ok(rules) = macro_expand::parse_rules(tokens) else {
+            return;
+        };
+        if self
+            .macros
+            .insert(name.to_string(), std::rc::Rc::new(rules))
+            .is_some()
+        {
+            self.macros.remove(name);
+            self.ambiguous_macros.insert(name.to_string());
+        }
+    }
+
     fn function(&self, name: &str) -> Result<Option<&'a syn::ItemFn>, String> {
         if self.ambiguous_functions.contains(name) {
             return Err(format!(
@@ -506,9 +588,83 @@ impl<'a> ReductionCtx<'a> {
         }
         Ok(self.functions.get(name).copied())
     }
+
+    /// Look up an in-source `macro_rules!` definition by name for expansion.
+    fn macro_rules(&self, name: &str) -> Option<std::rc::Rc<Vec<macro_expand::MacroRule>>> {
+        if self.ambiguous_macros.contains(name) {
+            return None;
+        }
+        self.macros.get(name).cloned()
+    }
 }
 
 const MAX_ASSERTION_REDUCTION_DEPTH: usize = 8;
+
+/// Bound on nested macro_rules expansion (a macro whose body invokes another
+/// in-source macro). Prevents runaway expansion; assertion macros nest shallowly.
+const MAX_MACRO_EXPANSION_DEPTH: usize = 16;
+
+/// Walk into an in-source `macro_rules!` definition and reduce its expansion.
+/// Returns:
+///   - `None` if `path` is not an in-source macro we learned (caller falls back).
+///   - `Some(Ok(entries))` if expansion produced at least one liftable atom.
+///   - `Some(Err(reason))` if it expanded to no FOL content, the matcher was
+///     unsupported, no rule matched, or depth was exceeded. The macro is one
+///     accounting unit: one source invocation yields one outcome.
+#[allow(clippy::too_many_arguments)]
+fn try_macro_expansion_entries(
+    path: &syn::Path,
+    tokens: &proc_macro2::TokenStream,
+    reducer: &ReductionCtx<'_>,
+    local_scope: &str,
+    options: &LiftOptions,
+    float_widths: &mut FloatWidthScope,
+    macro_depth: usize,
+) -> Option<Result<Vec<AssertionEntry>, String>> {
+    let name = path.segments.last()?.ident.to_string();
+    let rules = reducer.macro_rules(&name)?;
+    if macro_depth >= MAX_MACRO_EXPANSION_DEPTH {
+        return Some(Err(format!(
+            "macro `{name}`: expansion depth exceeded; released to layer 0"
+        )));
+    }
+    let expanded = match macro_expand::expand(&rules, tokens.clone()) {
+        Ok(ts) => ts,
+        Err(e) => return Some(Err(format!("macro `{name}`: {e}; released to layer 0"))),
+    };
+    // Re-parse the expansion as a statement block, then reduce it like any body.
+    let block: syn::Block = match syn::parse2(quote::quote! { { #expanded } }) {
+        Ok(b) => b,
+        Err(_) => {
+            return Some(Err(format!(
+                "macro `{name}`: expansion did not parse as statements; released to layer 0"
+            )))
+        }
+    };
+    let mut temp_entries = Vec::new();
+    let mut temp_skipped = Vec::new();
+    let mut temp_lifted = 0usize;
+    let mut temp_helpers = HashSet::new();
+    collect_assertion_entries(
+        &block.stmts,
+        local_scope,
+        options,
+        reducer,
+        float_widths,
+        &mut temp_entries,
+        &mut temp_skipped,
+        &mut temp_lifted,
+        &mut temp_helpers,
+        macro_depth + 1,
+    );
+    if temp_entries.is_empty() {
+        Some(Err(format!(
+            "macro `{name}`: expansion yielded no liftable assertion (type-level or effectful body); released to layer 0"
+        )))
+    } else {
+        Some(Ok(temp_entries))
+    }
+}
 
 type ExprBindings = BTreeMap<String, Expr>;
 
@@ -638,6 +794,7 @@ fn is_assert_macro_path(path: &syn::Path) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_assertion_entries(
     stmts: &[Stmt],
     local_scope: &str,
@@ -648,6 +805,7 @@ fn collect_assertion_entries(
     skipped: &mut Vec<String>,
     macros_lifted: &mut usize,
     reduced_helpers: &mut HashSet<String>,
+    macro_depth: usize,
 ) {
     let temporal_plan = temporal_plan_for_stmts(stmts);
     let mut temporal_scope = TemporalScope::new(local_scope, temporal_plan);
@@ -673,18 +831,41 @@ fn collect_assertion_entries(
             }
             Stmt::Macro(m) => match cfg_eval_for_attrs(&m.attrs, options) {
                 CfgEval::Active => {
-                    let before = entries.len();
-                    collect_macro(
+                    // Walk into the definition: if this is an in-source
+                    // macro_rules!, expand it and reduce the expansion. One
+                    // source macro is one accounting unit (lifted if its
+                    // expansion yields any FOL atom, else one named refusal).
+                    match try_macro_expansion_entries(
                         &m.mac.path,
-                        m.mac.tokens.clone(),
-                        &temporal_scope,
-                        &*float_widths,
+                        &m.mac.tokens,
+                        reducer,
+                        local_scope,
                         options,
-                        entries,
-                        skipped,
-                    );
-                    if entries.len() > before {
-                        *macros_lifted += 1;
+                        float_widths,
+                        macro_depth,
+                    ) {
+                        Some(Ok(expanded_entries)) => {
+                            if !expanded_entries.is_empty() {
+                                *macros_lifted += 1;
+                            }
+                            entries.extend(expanded_entries);
+                        }
+                        Some(Err(reason)) => skipped.push(reason),
+                        None => {
+                            let before = entries.len();
+                            collect_macro(
+                                &m.mac.path,
+                                m.mac.tokens.clone(),
+                                &temporal_scope,
+                                &*float_widths,
+                                options,
+                                entries,
+                                skipped,
+                            );
+                            if entries.len() > before {
+                                *macros_lifted += 1;
+                            }
+                        }
                     }
                 }
                 CfgEval::Inactive(reason) => {
@@ -696,18 +877,41 @@ fn collect_assertion_entries(
             },
             Stmt::Expr(Expr::Macro(m), _) => match cfg_eval_for_attrs(&m.attrs, options) {
                 CfgEval::Active => {
-                    let before = entries.len();
-                    collect_macro(
+                    // Walk into the definition: if this is an in-source
+                    // macro_rules!, expand it and reduce the expansion. One
+                    // source macro is one accounting unit (lifted if its
+                    // expansion yields any FOL atom, else one named refusal).
+                    match try_macro_expansion_entries(
                         &m.mac.path,
-                        m.mac.tokens.clone(),
-                        &temporal_scope,
-                        &*float_widths,
+                        &m.mac.tokens,
+                        reducer,
+                        local_scope,
                         options,
-                        entries,
-                        skipped,
-                    );
-                    if entries.len() > before {
-                        *macros_lifted += 1;
+                        float_widths,
+                        macro_depth,
+                    ) {
+                        Some(Ok(expanded_entries)) => {
+                            if !expanded_entries.is_empty() {
+                                *macros_lifted += 1;
+                            }
+                            entries.extend(expanded_entries);
+                        }
+                        Some(Err(reason)) => skipped.push(reason),
+                        None => {
+                            let before = entries.len();
+                            collect_macro(
+                                &m.mac.path,
+                                m.mac.tokens.clone(),
+                                &temporal_scope,
+                                &*float_widths,
+                                options,
+                                entries,
+                                skipped,
+                            );
+                            if entries.len() > before {
+                                *macros_lifted += 1;
+                            }
+                        }
                     }
                 }
                 CfgEval::Inactive(reason) => {
@@ -748,6 +952,7 @@ fn collect_assertion_entries(
                     skipped,
                     macros_lifted,
                     reduced_helpers,
+                    macro_depth,
                 );
             }
             // Unconditional unsafe block: recurse and lift normally.
@@ -762,6 +967,7 @@ fn collect_assertion_entries(
                     skipped,
                     macros_lifted,
                     reduced_helpers,
+                    macro_depth,
                 );
             }
             // Control-flow contexts: asserts are conditional or parametric; refuse.
@@ -825,6 +1031,7 @@ fn collect_assertion_entries(
                     skipped,
                     macros_lifted,
                     reduced_helpers,
+                    macro_depth,
                 );
             }
             // Inner fn definitions inside a test fn: their asserts are only
