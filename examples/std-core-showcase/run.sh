@@ -11,7 +11,8 @@
 #       * tests/time.rs finite decimal float method-call equality rows and
 #         width-known NaN refinement predicate rows,
 #       * tests/fmt/mod.rs exact string method-call equality rows.
-#       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows.
+#       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows,
+#         including sound temporal receiver identity for selected range rows.
 #       * tests/time.rs direct call-result comparison rows.
 #       * tests/atomic.rs compound value rows with bitwise-expression RHS
 #         terms, limited to non-repeated stable keys.
@@ -32,7 +33,7 @@
 # Explicitly NOT claimed:
 #   - assertion macros requiring expansion,
 #   - float refinements such as infinity, ordered comparisons, signed zero,
-#   - chars, inactive or ambiguous cfg rows, stateful/reassigned receiver
+#   - chars, inactive or ambiguous cfg rows, ambiguous receiver identity
 #     method chains, and complex expression terms.
 set -euo pipefail
 
@@ -49,8 +50,8 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, width-known NaN float refinement rows from time.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
-echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, infinity/ordered/signed-zero float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, width-known NaN float refinement rows from time.rs, pure method-chain predicate rows from alloc.rs/ops.rs including selected temporal receiver identity rows, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
+echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, infinity/ordered/signed-zero float refinements, chars, inactive or ambiguous cfg rows, ambiguous receiver identity method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
 ensure_rust_src() {
@@ -347,6 +348,12 @@ chunks = [
     "",
     *extract("test_range_to_contains"),
     "",
+    *extract("test_range_bounds_contains"),
+    "",
+    *extract("test_range_inclusive_end_bound"),
+    "",
+    *extract("test_range_bounds"),
+    "",
 ]
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
 PY
@@ -609,7 +616,7 @@ needles = [
     "align_of::<u16>#euf#c:callresult_align_of___u16__a0()::assertion",
     "align_of::<usize>#euf#c:callresult_align_of___usize__a0()::assertion",
     "align_of::<* const usize>#euf#c:callresult_align_of_____const_usize__a0()::assertion",
-    "method:to_string#euf#c:callresult_method_to_string_a1(v:tests/fmt/mod.rs::test_lifetime::a)::assertion",
+    "method:to_string#euf#c:callresult_method_to_string_a1(v:tests/fmt/mod.rs::test_lifetime::a@def4)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::ZERO)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::NANOSECOND,v:Duration::MAX)::assertion",
@@ -623,6 +630,19 @@ needles = [
     "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:0))::assertion",
     "method:contains#euf#c:callresult_method_contains_a2(c:range(i:1,i:5),c:ref(i:1))::assertion",
     "method:contains#euf#c:callresult_method_contains_a2(c:range_incl(i:1,i:5),c:ref(i:5))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds_contains::r,c:ref(i:0))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds_contains::r,c:ref(i:1))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds_contains::r,c:ref(i:3))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds_contains::r,c:ref(i:5))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds_contains::r,c:ref(i:6))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_inclusive_end_bound::r@def2,c:ref(i:1))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds::r@def1,c:ref(i:0))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds::r@def1,c:ref(i:1))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds::r@def1,c:ref(i:3))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds::r@def1,c:ref(i:5))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds::r@def1,c:ref(i:6))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds::r@def2,c:ref(i:0))::assertion",
+    "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::test_range_bounds::r@def2,c:ref(v:u32::MAX))::assertion",
     "method:fetch_and#euf#c:callresult_method_fetch_and_a3(v:tests/atomic.rs::uint_and::x,i:4991,v:tests/atomic.rs::uint_and::SeqCst)::assertion",
     "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_and::x,v:tests/atomic.rs::uint_and::SeqCst)::assertion",
     "method:load#euf#c:callresult_method_load_a2(v:tests/atomic.rs::uint_nand::x,v:tests/atomic.rs::uint_nand::SeqCst)::assertion",
@@ -656,8 +676,8 @@ failed_type_id = [r for r in type_id_rows if r.get("status") != "discharged"]
 if not euf_rows:
     print("no #euf# consistency rows found", file=sys.stderr)
     raise SystemExit(1)
-if len(euf_rows) < 139:
-    print(f"expected at least 139 claimed #euf# rows after NaN float refinement lifts, got {len(euf_rows)}", file=sys.stderr)
+if len(euf_rows) < 152:
+    print(f"expected at least 152 claimed #euf# rows after cfg-sensitive mem, compound-term, const-block, option constructor, temporal receiver, and NaN float refinement lifts, got {len(euf_rows)}", file=sys.stderr)
     raise SystemExit(1)
 if missing:
     print("missing required claimed rows:", file=sys.stderr)
@@ -816,6 +836,21 @@ echo "== witness: rerun exact std/core vendor tests =="
 (
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests ops::test_range_bounds_contains -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests ops::test_range_inclusive_end_bound -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests ops::test_range_bounds -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --test coretests atomic::bool_and -- --exact --nocapture
 )
 (
@@ -870,6 +905,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
-echo "not-claimed: full std/coretests; macro surfaces outside this showcase/infinity-ordered-signed-zero-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure and temporal-identity method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
+echo "not-claimed: full std/coretests; macro surfaces outside this showcase/infinity-ordered-signed-zero-float-refinements/chars/inactive-or-ambiguous-cfg rows/ambiguous receiver identity method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

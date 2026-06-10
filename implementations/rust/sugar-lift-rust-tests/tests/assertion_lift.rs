@@ -1121,6 +1121,167 @@ fn layout_errors() {
 }
 
 #[test]
+fn reassigned_receiver_versions_method_chain_subjects_to_avoid_false_coalescing() {
+    let src = r#"
+#[test]
+fn range_rebinds() {
+    let r = 1u32..5;
+    assert!(!r.contains(&0));
+
+    let r = 0u32..=u32::MAX;
+    assert!(r.contains(&0));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ops.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 2);
+
+    let names = out
+        .decls
+        .iter()
+        .map(|decl| decl.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::range_rebinds::r@def1,c:ref(i:0))::assertion",
+            "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::range_rebinds::r@def2,c:ref(i:0))::assertion",
+        ]
+    );
+}
+
+#[test]
+fn post_reassignment_claims_within_one_receiver_version_still_coalesce() {
+    let src = r#"
+#[test]
+fn post_rebind_same_version() {
+    let mut r = 1u32..5;
+    r = 10u32..20;
+
+    assert!(r.contains(&11));
+    assert!(r.contains(&11));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ops.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::post_rebind_same_version::r@def2,c:ref(i:11))::assertion"
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 2);
+}
+
+#[test]
+fn standalone_receiver_mutation_boundary_versions_later_method_chain_subject() {
+    let src = r#"
+#[test]
+fn inclusive_range_after_next() {
+    let mut r = 1u32..=1;
+    r.next().unwrap();
+
+    assert!(!r.contains(&1));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ops.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "method:contains#euf#c:callresult_method_contains_a2(v:tests/ops.rs::inclusive_range_after_next::r@def2,c:ref(i:1))::assertion"
+    );
+}
+
+#[test]
+fn conditional_receiver_reassignment_is_ambiguous_and_skipped() {
+    let src = r#"
+fn coin() -> bool { true }
+
+#[test]
+fn conditional_rebind() {
+    let mut r = 1u32..5;
+    if coin() {
+        r = 10u32..20;
+    }
+
+    assert!(r.contains(&1));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ops.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0, "decls: {:?}", out.decls);
+    assert!(out.decls.is_empty(), "decls: {:?}", out.decls);
+    assert!(
+        out.warnings.iter().any(|warning| {
+            warning
+                .reason
+                .contains("ambiguous temporal identity for receiver `r`; skipped assertion")
+        }),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn loop_receiver_mutation_is_ambiguous_and_skipped() {
+    let src = r#"
+#[test]
+fn loop_rebind() {
+    let mut r = 1u32..=1;
+    for _ in 0..1 {
+        r.next().unwrap();
+    }
+
+    assert!(r.contains(&1));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ops.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0, "decls: {:?}", out.decls);
+    assert!(out.decls.is_empty(), "decls: {:?}", out.decls);
+    assert!(
+        out.warnings.iter().any(|warning| {
+            warning
+                .reason
+                .contains("ambiguous temporal identity for receiver `r`; skipped assertion")
+        }),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn alias_receiver_identity_is_ambiguous_and_skipped() {
+    let src = r#"
+#[test]
+fn alias_rebind() {
+    let mut r = 1u32..=1;
+    let alias = &mut r;
+    alias.next().unwrap();
+
+    assert!(r.contains(&1));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ops.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0, "decls: {:?}", out.decls);
+    assert!(out.decls.is_empty(), "decls: {:?}", out.decls);
+    assert!(
+        out.warnings.iter().any(|warning| {
+            warning
+                .reason
+                .contains("ambiguous temporal identity for receiver `r`; skipped assertion")
+        }),
+        "warnings: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
 fn method_chain_predicate_range_contains_keys_bounds_and_reference_arg() {
     let src = r#"
 #[test]

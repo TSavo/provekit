@@ -18,7 +18,7 @@ use sugar_ir_symbolic::{
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{BinOp, Expr, ExprLit, Item, Lit, Stmt, Token, UnOp};
+use syn::{BinOp, Expr, ExprLit, Item, Lit, Pat, Stmt, Token, UnOp};
 
 #[derive(Debug, Clone)]
 pub struct LiftWarning {
@@ -269,6 +269,64 @@ struct AssertionEntry {
     atom: Rc<Formula>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct TemporalPlan {
+    versioned: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TemporalScope {
+    local_scope: String,
+    plan: TemporalPlan,
+    versions: BTreeMap<String, usize>,
+    ambiguous: BTreeSet<String>,
+}
+
+impl TemporalScope {
+    fn new(local_scope: &str, plan: TemporalPlan) -> Self {
+        Self {
+            local_scope: local_scope.to_string(),
+            plan,
+            versions: BTreeMap::new(),
+            ambiguous: BTreeSet::new(),
+        }
+    }
+
+    fn local_scope(&self) -> &str {
+        &self.local_scope
+    }
+
+    fn define_local(&mut self, name: &str) {
+        if self.plan.versioned.contains(name) {
+            let next = self.versions.get(name).copied().unwrap_or(0) + 1;
+            self.versions.insert(name.to_string(), next);
+            self.ambiguous.remove(name);
+        }
+    }
+
+    fn mark_ambiguous(&mut self, name: &str) {
+        if self.plan.versioned.contains(name) {
+            self.ambiguous.insert(name.to_string());
+        }
+    }
+
+    fn path_name(&self, path: &syn::Path) -> Result<String, String> {
+        let name = path_to_name(path);
+        if !is_unqualified_local_name(&name) || !self.plan.versioned.contains(&name) {
+            return Ok(name);
+        }
+        if self.ambiguous.contains(&name) {
+            return Err(format!(
+                "ambiguous temporal identity for receiver `{name}`; skipped assertion"
+            ));
+        }
+        match self.versions.get(&name).copied() {
+            Some(version) => Ok(format!("{name}@def{version}")),
+            None => Ok(name),
+        }
+    }
+}
+
 fn group_assertions(
     entries: Vec<AssertionEntry>,
     fallback_name: &str,
@@ -295,13 +353,15 @@ fn collect_assertion_entries(
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
+    let temporal_plan = temporal_plan_for_stmts(stmts);
+    let mut temporal_scope = TemporalScope::new(local_scope, temporal_plan);
     for stmt in stmts {
         match stmt {
             Stmt::Macro(m) => match cfg_eval_for_attrs(&m.attrs, options) {
                 CfgEval::Active => collect_macro(
                     &m.mac.path,
                     m.mac.tokens.clone(),
-                    local_scope,
+                    &temporal_scope,
                     entries,
                     skipped,
                 ),
@@ -316,7 +376,7 @@ fn collect_assertion_entries(
                 CfgEval::Active => collect_macro(
                     &m.mac.path,
                     m.mac.tokens.clone(),
-                    local_scope,
+                    &temporal_scope,
                     entries,
                     skipped,
                 ),
@@ -329,7 +389,333 @@ fn collect_assertion_entries(
             },
             _ => {}
         }
+        advance_temporal_scope_for_stmt(stmt, &mut temporal_scope);
     }
+}
+
+fn temporal_plan_for_stmts(stmts: &[Stmt]) -> TemporalPlan {
+    let mut definitions = BTreeMap::<String, usize>::new();
+    let mut ambiguous = BTreeSet::<String>::new();
+    for stmt in stmts {
+        for name in deterministic_definition_names(stmt) {
+            *definitions.entry(name).or_insert(0) += 1;
+        }
+        for name in ambiguous_boundary_names_in_stmt(stmt) {
+            ambiguous.insert(name.clone());
+            *definitions.entry(name).or_insert(0) += 1;
+        }
+    }
+    let versioned = definitions
+        .into_iter()
+        .filter_map(|(name, count)| (count > 1 || ambiguous.contains(&name)).then_some(name))
+        .collect();
+    TemporalPlan { versioned }
+}
+
+fn advance_temporal_scope_for_stmt(stmt: &Stmt, scope: &mut TemporalScope) {
+    for name in deterministic_definition_names(stmt) {
+        scope.define_local(&name);
+    }
+    for name in ambiguous_boundary_names_in_stmt(stmt) {
+        scope.mark_ambiguous(&name);
+    }
+}
+
+fn deterministic_definition_names(stmt: &Stmt) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    match stmt {
+        Stmt::Local(local) if local.init.is_some() => {
+            for name in pat_idents(&local.pat) {
+                out.insert(name);
+            }
+        }
+        Stmt::Expr(expr, _) if !is_temporal_control_flow_expr(expr) => {
+            if let Some(name) = deterministic_assignment_name(expr) {
+                out.insert(name);
+            }
+            collect_method_receiver_names(expr, &mut out);
+        }
+        _ => {}
+    }
+    out.into_iter().collect()
+}
+
+fn deterministic_assignment_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Assign(assign) => simple_path_name(&assign.left),
+        Expr::Binary(binary) if is_assignment_binop(&binary.op) => simple_path_name(&binary.left),
+        Expr::Paren(paren) => deterministic_assignment_name(&paren.expr),
+        Expr::Group(group) => deterministic_assignment_name(&group.expr),
+        _ => None,
+    }
+}
+
+fn ambiguous_boundary_names_in_stmt(stmt: &Stmt) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    match stmt {
+        Stmt::Local(local) => {
+            if let Some(init) = &local.init {
+                collect_reference_alias_names_in_expr(&init.expr, &mut out);
+            }
+        }
+        Stmt::Expr(expr, _) => {
+            collect_reference_alias_names_in_expr(expr, &mut out);
+            collect_ambiguous_control_flow_names_in_expr(expr, &mut out);
+        }
+        _ => {}
+    }
+    out
+}
+
+fn collect_ambiguous_control_flow_names_in_expr(expr: &Expr, out: &mut BTreeSet<String>) {
+    match expr {
+        Expr::If(expr_if) => {
+            collect_ambiguous_boundary_names_in_block(&expr_if.then_branch, out);
+            if let Some((_, else_branch)) = &expr_if.else_branch {
+                collect_ambiguous_names_in_expr(else_branch, out);
+            }
+        }
+        Expr::ForLoop(expr_for) => collect_ambiguous_boundary_names_in_block(&expr_for.body, out),
+        Expr::Loop(expr_loop) => collect_ambiguous_boundary_names_in_block(&expr_loop.body, out),
+        Expr::While(expr_while) => collect_ambiguous_boundary_names_in_block(&expr_while.body, out),
+        Expr::Match(expr_match) => {
+            for arm in &expr_match.arms {
+                collect_ambiguous_names_in_expr(&arm.body, out);
+            }
+        }
+        Expr::Block(expr_block) => {
+            collect_ambiguous_boundary_names_in_block(&expr_block.block, out)
+        }
+        _ => {}
+    }
+}
+
+fn collect_ambiguous_boundary_names_in_block(block: &syn::Block, out: &mut BTreeSet<String>) {
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Local(local) if local.init.is_some() => {
+                for name in pat_idents(&local.pat) {
+                    out.insert(name);
+                }
+                if let Some(init) = &local.init {
+                    collect_reference_alias_names_in_expr(&init.expr, out);
+                }
+            }
+            Stmt::Expr(expr, _) => collect_ambiguous_names_in_expr(expr, out),
+            _ => {}
+        }
+    }
+}
+
+fn collect_ambiguous_names_in_expr(expr: &Expr, out: &mut BTreeSet<String>) {
+    if let Some(name) = deterministic_assignment_name(expr) {
+        out.insert(name);
+        return;
+    }
+    collect_reference_alias_names_in_expr(expr, out);
+    collect_method_receiver_names(expr, out);
+    match expr {
+        Expr::Block(expr_block) => {
+            collect_ambiguous_boundary_names_in_block(&expr_block.block, out)
+        }
+        Expr::If(expr_if) => {
+            collect_ambiguous_boundary_names_in_block(&expr_if.then_branch, out);
+            if let Some((_, else_branch)) = &expr_if.else_branch {
+                collect_ambiguous_names_in_expr(else_branch, out);
+            }
+        }
+        Expr::ForLoop(expr_for) => collect_ambiguous_boundary_names_in_block(&expr_for.body, out),
+        Expr::Loop(expr_loop) => collect_ambiguous_boundary_names_in_block(&expr_loop.body, out),
+        Expr::While(expr_while) => collect_ambiguous_boundary_names_in_block(&expr_while.body, out),
+        Expr::Match(expr_match) => {
+            for arm in &expr_match.arms {
+                collect_ambiguous_names_in_expr(&arm.body, out);
+            }
+        }
+        Expr::Paren(paren) => collect_ambiguous_names_in_expr(&paren.expr, out),
+        Expr::Group(group) => collect_ambiguous_names_in_expr(&group.expr, out),
+        _ => {}
+    }
+}
+
+fn collect_reference_alias_names_in_expr(expr: &Expr, out: &mut BTreeSet<String>) {
+    match expr {
+        Expr::Reference(reference) => {
+            if let Some(name) = simple_path_name(&reference.expr) {
+                out.insert(name);
+            } else {
+                collect_reference_alias_names_in_expr(&reference.expr, out);
+            }
+        }
+        Expr::MethodCall(call) => {
+            collect_reference_alias_names_in_expr(&call.receiver, out);
+            for arg in &call.args {
+                collect_reference_alias_names_in_expr(arg, out);
+            }
+        }
+        Expr::Call(call) => {
+            collect_reference_alias_names_in_expr(&call.func, out);
+            for arg in &call.args {
+                collect_reference_alias_names_in_expr(arg, out);
+            }
+        }
+        Expr::Await(await_expr) => collect_reference_alias_names_in_expr(&await_expr.base, out),
+        Expr::Cast(cast) => collect_reference_alias_names_in_expr(&cast.expr, out),
+        Expr::Field(field) => collect_reference_alias_names_in_expr(&field.base, out),
+        Expr::Binary(binary) => {
+            collect_reference_alias_names_in_expr(&binary.left, out);
+            collect_reference_alias_names_in_expr(&binary.right, out);
+        }
+        Expr::Array(array) => {
+            for elem in &array.elems {
+                collect_reference_alias_names_in_expr(elem, out);
+            }
+        }
+        Expr::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_reference_alias_names_in_expr(elem, out);
+            }
+        }
+        Expr::Range(range) => {
+            if let Some(start) = &range.start {
+                collect_reference_alias_names_in_expr(start, out);
+            }
+            if let Some(end) = &range.end {
+                collect_reference_alias_names_in_expr(end, out);
+            }
+        }
+        Expr::Assign(assign) => {
+            collect_reference_alias_names_in_expr(&assign.left, out);
+            collect_reference_alias_names_in_expr(&assign.right, out);
+        }
+        Expr::Paren(paren) => collect_reference_alias_names_in_expr(&paren.expr, out),
+        Expr::Group(group) => collect_reference_alias_names_in_expr(&group.expr, out),
+        _ => {}
+    }
+}
+
+fn pat_idents(pat: &Pat) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_pat_idents(pat, &mut out);
+    out
+}
+
+fn collect_pat_idents(pat: &Pat, out: &mut Vec<String>) {
+    match pat {
+        Pat::Ident(ident) => out.push(ident.ident.to_string()),
+        Pat::Reference(reference) => collect_pat_idents(&reference.pat, out),
+        Pat::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        Pat::TupleStruct(tuple) => {
+            for elem in &tuple.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        Pat::Struct(strukt) => {
+            for field in &strukt.fields {
+                collect_pat_idents(&field.pat, out);
+            }
+        }
+        Pat::Slice(slice) => {
+            for elem in &slice.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        Pat::Or(or_pat) => {
+            for case in &or_pat.cases {
+                collect_pat_idents(case, out);
+            }
+        }
+        Pat::Paren(paren) => collect_pat_idents(&paren.pat, out),
+        Pat::Type(ty) => collect_pat_idents(&ty.pat, out),
+        _ => {}
+    }
+}
+
+fn simple_path_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) if path.qself.is_none() => {
+            path.path.get_ident().map(|ident| ident.to_string())
+        }
+        Expr::Paren(paren) => simple_path_name(&paren.expr),
+        Expr::Group(group) => simple_path_name(&group.expr),
+        _ => None,
+    }
+}
+
+fn is_temporal_control_flow_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::If(_) | Expr::ForLoop(_) | Expr::Loop(_) | Expr::While(_) | Expr::Match(_)
+    )
+}
+
+fn collect_method_receiver_names(expr: &Expr, out: &mut BTreeSet<String>) {
+    match expr {
+        Expr::MethodCall(call) => {
+            if let Some(name) = simple_path_name(&call.receiver) {
+                out.insert(name);
+            } else {
+                collect_method_receiver_names(&call.receiver, out);
+            }
+            for arg in &call.args {
+                collect_method_receiver_names(arg, out);
+            }
+        }
+        Expr::Call(call) => {
+            for arg in &call.args {
+                collect_method_receiver_names(arg, out);
+            }
+        }
+        Expr::Await(await_expr) => collect_method_receiver_names(&await_expr.base, out),
+        Expr::Reference(reference) => collect_method_receiver_names(&reference.expr, out),
+        Expr::Cast(cast) => collect_method_receiver_names(&cast.expr, out),
+        Expr::Field(field) => collect_method_receiver_names(&field.base, out),
+        Expr::Binary(binary) => {
+            collect_method_receiver_names(&binary.left, out);
+            collect_method_receiver_names(&binary.right, out);
+        }
+        Expr::Array(array) => {
+            for elem in &array.elems {
+                collect_method_receiver_names(elem, out);
+            }
+        }
+        Expr::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_method_receiver_names(elem, out);
+            }
+        }
+        Expr::Range(range) => {
+            if let Some(start) = &range.start {
+                collect_method_receiver_names(start, out);
+            }
+            if let Some(end) = &range.end {
+                collect_method_receiver_names(end, out);
+            }
+        }
+        Expr::Paren(paren) => collect_method_receiver_names(&paren.expr, out),
+        Expr::Group(group) => collect_method_receiver_names(&group.expr, out),
+        _ => {}
+    }
+}
+
+fn is_assignment_binop(op: &BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::AddAssign(_)
+            | BinOp::SubAssign(_)
+            | BinOp::MulAssign(_)
+            | BinOp::DivAssign(_)
+            | BinOp::RemAssign(_)
+            | BinOp::BitXorAssign(_)
+            | BinOp::BitAndAssign(_)
+            | BinOp::BitOrAssign(_)
+            | BinOp::ShlAssign(_)
+            | BinOp::ShrAssign(_)
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -515,11 +901,11 @@ fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) 
 fn collect_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
-    local_scope: &str,
+    scope: &TemporalScope,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
-    match assertions_from_macro(path, tokens, local_scope) {
+    match assertions_from_macro(path, tokens, scope) {
         Ok(macro_entries) => entries.extend(macro_entries),
         Err(reason) => skipped.push(reason),
     }
@@ -528,7 +914,7 @@ fn collect_macro(
 fn assertions_from_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
-    local_scope: &str,
+    scope: &TemporalScope,
 ) -> Result<Vec<AssertionEntry>, String> {
     let Some(name) = path
         .segments
@@ -543,19 +929,19 @@ fn assertions_from_macro(
             if args.exprs.len() < 2 {
                 return Err("assert_eq!: expected at least 2 arguments".to_string());
             }
-            let lhs = translate_assertion_term(&args.exprs[0], local_scope)
+            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
                 .map_err(|e| format!("assert_eq!: {e}"))?;
-            let rhs = translate_assertion_term(&args.exprs[1], local_scope)
+            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
                 .map_err(|e| format!("assert_eq!: {e}"))?;
-            Ok(vec![assertion_entry_from_eq(lhs, rhs, local_scope)])
+            Ok(vec![assertion_entry_from_eq(lhs, rhs, scope)])
         }
         "assert" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("assert!: {e}"))?;
             let Some(first) = args.exprs.first() else {
                 return Err("assert!: expected a condition".to_string());
             };
-            let entry = translate_bool_assertion(first, local_scope)
-                .map_err(|e| format!("assert!: {e}"))?;
+            let entry =
+                translate_bool_assertion(first, scope).map_err(|e| format!("assert!: {e}"))?;
             Ok(vec![entry])
         }
         "assert_all" | "assert_none" => {
@@ -648,39 +1034,35 @@ fn parse_macro_args(tokens: proc_macro2::TokenStream) -> syn::Result<MacroArgs> 
     syn::parse2(tokens)
 }
 
-fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionEntry, String> {
-    if let Some(entry) = translate_string_predicate_assertion(expr, local_scope)? {
+fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<AssertionEntry, String> {
+    if let Some(entry) = translate_string_predicate_assertion(expr, scope)? {
         return Ok(entry);
     }
-    if let Some(entry) = translate_literal_iterator_assertion(expr, local_scope)? {
+    if let Some(entry) = translate_literal_iterator_assertion(expr, scope.local_scope())? {
         return Ok(entry);
     }
-    if let Some(entry) = translate_float_refinement_assertion(expr, local_scope)? {
+    if let Some(entry) = translate_float_refinement_assertion(expr, scope)? {
         return Ok(entry);
     }
     match expr {
-        Expr::Binary(binary) => translate_binary_bool_assertion(binary, local_scope),
+        Expr::Binary(binary) => translate_binary_bool_assertion(binary, scope),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
-            if let Some(entry) = translate_string_predicate_assertion(&unary.expr, local_scope)? {
+            if let Some(entry) = translate_string_predicate_assertion(&unary.expr, scope)? {
                 return Ok(AssertionEntry {
                     name: entry.name,
                     atom: not_(entry.atom),
                 });
             }
-            if let Some(entry) = translate_float_refinement_assertion(&unary.expr, local_scope)? {
+            if let Some(entry) = translate_float_refinement_assertion(&unary.expr, scope)? {
                 return Ok(AssertionEntry {
                     name: entry.name,
                     atom: not_(entry.atom),
                 });
             }
-            if let Ok(term) = translate_term(&unary.expr) {
-                Ok(assertion_entry_from_eq(
-                    term,
-                    bool_const(false),
-                    local_scope,
-                ))
+            if let Ok(term) = translate_term_in_scope(&unary.expr, scope) {
+                Ok(assertion_entry_from_eq(term, bool_const(false), scope))
             } else {
-                let entry = translate_bool_assertion(&unary.expr, local_scope)?;
+                let entry = translate_bool_assertion(&unary.expr, scope)?;
                 Ok(AssertionEntry {
                     name: entry.name,
                     atom: not_(entry.atom),
@@ -688,17 +1070,17 @@ fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionE
             }
         }
         Expr::Call(_) | Expr::MethodCall(_) | Expr::Await(_) | Expr::Field(_) => {
-            let term = translate_term(expr)?;
+            let term = translate_term_in_scope(expr, scope)?;
             if is_refinement_predicate_term(term.as_ref()) {
                 return Err(format!(
                     "refinement predicate remains out of this exact-value slice `{}`",
                     token_key(expr)
                 ));
             }
-            Ok(assertion_entry_from_eq(term, bool_const(true), local_scope))
+            Ok(assertion_entry_from_eq(term, bool_const(true), scope))
         }
-        Expr::Paren(paren) => translate_bool_assertion(&paren.expr, local_scope),
-        Expr::Group(group) => translate_bool_assertion(&group.expr, local_scope),
+        Expr::Paren(paren) => translate_bool_assertion(&paren.expr, scope),
+        Expr::Group(group) => translate_bool_assertion(&group.expr, scope),
         other => Err(format!(
             "only scalar equality is liftable, got `{}`",
             token_key(other)
@@ -708,7 +1090,7 @@ fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionE
 
 fn translate_float_refinement_assertion(
     expr: &Expr,
-    local_scope: &str,
+    scope: &TemporalScope,
 ) -> Result<Option<AssertionEntry>, String> {
     match expr {
         Expr::MethodCall(call) => {
@@ -728,15 +1110,15 @@ fn translate_float_refinement_assertion(
                     token_key(expr)
                 ));
             };
-            let receiver = translate_term(&call.receiver)?;
-            let name = callsite_assertion_name(receiver.as_ref(), local_scope);
+            let receiver = translate_term_in_scope(&call.receiver, scope)?;
+            let name = callsite_assertion_name(receiver.as_ref(), scope.local_scope());
             Ok(Some(AssertionEntry {
                 name,
                 atom: atomic_(format!("float.{width}.{method}"), vec![receiver]),
             }))
         }
-        Expr::Paren(paren) => translate_float_refinement_assertion(&paren.expr, local_scope),
-        Expr::Group(group) => translate_float_refinement_assertion(&group.expr, local_scope),
+        Expr::Paren(paren) => translate_float_refinement_assertion(&paren.expr, scope),
+        Expr::Group(group) => translate_float_refinement_assertion(&group.expr, scope),
         _ => Ok(None),
     }
 }
@@ -790,12 +1172,12 @@ fn float_width_from_suffix(suffix: &str) -> Option<&'static str> {
 
 fn translate_binary_bool_assertion(
     binary: &syn::ExprBinary,
-    local_scope: &str,
+    scope: &TemporalScope,
 ) -> Result<AssertionEntry, String> {
     match &binary.op {
         BinOp::And(_) | BinOp::Or(_) => {
-            let left = translate_bool_assertion(&binary.left, local_scope)?;
-            let right = translate_bool_assertion(&binary.right, local_scope)?;
+            let left = translate_bool_assertion(&binary.left, scope)?;
+            let right = translate_bool_assertion(&binary.right, scope)?;
             let name = common_assertion_name(&left.name, &right.name);
             let atom = if matches!(binary.op, BinOp::And(_)) {
                 and_(vec![left.atom, right.atom])
@@ -807,9 +1189,9 @@ fn translate_binary_bool_assertion(
         BinOp::Eq(_) | BinOp::Ne(_) | BinOp::Lt(_) | BinOp::Le(_) | BinOp::Gt(_) | BinOp::Ge(_) => {
             let op = relation_from_binop(&binary.op)
                 .expect("comparison op matched but did not map to relation");
-            let lhs = translate_assertion_term(&binary.left, local_scope)?;
-            let rhs = translate_assertion_term(&binary.right, local_scope)?;
-            Ok(assertion_entry_from_relation(lhs, rhs, op, local_scope))
+            let lhs = translate_assertion_term_in_scope(&binary.left, scope)?;
+            let rhs = translate_assertion_term_in_scope(&binary.right, scope)?;
+            Ok(assertion_entry_from_relation(lhs, rhs, op, scope))
         }
         _ => Err(format!(
             "only scalar comparison/connective assertions are liftable, got `{}`",
@@ -825,8 +1207,8 @@ fn common_assertion_name(left: &Option<String>, right: &Option<String>) -> Optio
     }
 }
 
-fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>, local_scope: &str) -> AssertionEntry {
-    assertion_entry_from_relation(lhs, rhs, RelationOp::Eq, local_scope)
+fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>, scope: &TemporalScope) -> AssertionEntry {
+    assertion_entry_from_relation(lhs, rhs, RelationOp::Eq, scope)
 }
 
 #[derive(Clone, Copy)]
@@ -869,11 +1251,11 @@ fn relation_from_binop(op: &BinOp) -> Option<RelationOp> {
 
 fn translate_string_predicate_assertion(
     expr: &Expr,
-    local_scope: &str,
+    scope: &TemporalScope,
 ) -> Result<Option<AssertionEntry>, String> {
     match expr {
-        Expr::Paren(paren) => translate_string_predicate_assertion(&paren.expr, local_scope),
-        Expr::Group(group) => translate_string_predicate_assertion(&group.expr, local_scope),
+        Expr::Paren(paren) => translate_string_predicate_assertion(&paren.expr, scope),
+        Expr::Group(group) => translate_string_predicate_assertion(&group.expr, scope),
         Expr::MethodCall(call) => {
             let method = call.method.to_string();
             match method.as_str() {
@@ -893,7 +1275,7 @@ fn translate_string_predicate_assertion(
                     let name = method_call_assertion_name(
                         "contains",
                         vec![receiver.clone(), pattern.clone()],
-                        local_scope,
+                        scope.local_scope(),
                     );
                     Ok(Some(AssertionEntry {
                         name,
@@ -916,7 +1298,7 @@ fn translate_string_predicate_assertion(
                     let name = method_call_assertion_name(
                         method.as_str(),
                         vec![receiver.clone(), pattern.clone()],
-                        local_scope,
+                        scope.local_scope(),
                     );
                     let atom_name = if method == "starts_with" {
                         "prefix-of"
@@ -936,7 +1318,7 @@ fn translate_string_predicate_assertion(
                         let name = method_call_assertion_name(
                             "is_ascii",
                             vec![receiver.clone()],
-                            local_scope,
+                            scope.local_scope(),
                         );
                         return Ok(Some(AssertionEntry {
                             name,
@@ -967,57 +1349,59 @@ fn translate_string_predicate_assertion(
                     let name = method_call_assertion_name(
                         "is_ascii_alphabetic",
                         vec![receiver.clone()],
-                        local_scope,
+                        scope.local_scope(),
                     );
                     Ok(Some(AssertionEntry {
                         name,
                         atom: atomic_("str.is_ascii_alphabetic", vec![receiver]),
                     }))
                 }
-                "is_ascii_digit" => ascii_char_class_assertion(call, local_scope, "str.is_ascii_digit"),
+                "is_ascii_digit" => {
+                    ascii_char_class_assertion(call, scope.local_scope(), "str.is_ascii_digit")
+                }
                 "is_ascii_alphanumeric" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_alphanumeric",
                 ),
                 "is_ascii_octdigit" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_octdigit",
                 ),
                 "is_ascii_lowercase" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_lowercase",
                 ),
                 "is_ascii_uppercase" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_uppercase",
                 ),
                 "is_ascii_hexdigit" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_hexdigit",
                 ),
                 "is_ascii_punctuation" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_punctuation",
                 ),
                 "is_ascii_graphic" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_graphic",
                 ),
                 "is_ascii_whitespace" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_whitespace",
                 ),
                 "is_ascii_control" => ascii_char_class_assertion(
                     call,
-                    local_scope,
+                    scope.local_scope(),
                     "str.is_ascii_control",
                 ),
                 "is_alphabetic" if char_literal_term(&call.receiver).is_some() => Err(
@@ -1302,7 +1686,7 @@ fn assertion_entry_from_relation(
     lhs: Rc<Term>,
     rhs: Rc<Term>,
     op: RelationOp,
-    local_scope: &str,
+    scope: &TemporalScope,
 ) -> AssertionEntry {
     if let Some(tag) =
         constructor_operator_tag(lhs.as_ref()).or_else(|| constructor_operator_tag(rhs.as_ref()))
@@ -1314,9 +1698,9 @@ fn assertion_entry_from_relation(
     }
 
     let name = if is_ground_value(lhs.as_ref()) {
-        callsite_assertion_name(rhs.as_ref(), local_scope)
+        callsite_assertion_name(rhs.as_ref(), scope.local_scope())
     } else if is_ground_value(rhs.as_ref()) {
-        callsite_assertion_name(lhs.as_ref(), local_scope)
+        callsite_assertion_name(lhs.as_ref(), scope.local_scope())
     } else {
         None
     };
@@ -1527,7 +1911,7 @@ fn term_key(term: &Term) -> String {
         .join(" ")
 }
 
-fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
+fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term>, String> {
     match expr {
         Expr::Lit(lit) => translate_lit(lit),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Neg(_)) => {
@@ -1550,24 +1934,32 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
         }
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => Ok(Rc::new(Term::Ctor {
             name: "bit-not".to_string(),
-            args: vec![translate_term(&unary.expr)?],
+            args: vec![translate_term_in_scope(&unary.expr, scope)?],
         })),
-        Expr::Path(path) => Ok(make_var(path_to_name(&path.path))),
+        Expr::Path(path) if path.path.is_ident("None") => Ok(Rc::new(Term::Ctor {
+            name: "call:None".to_string(),
+            args: Vec::new(),
+        })),
+        Expr::Path(path) => Ok(make_var(scope.path_name(&path.path)?)),
         Expr::Call(call) => {
             if let Some(term) = type_id_of_call_term(&call.func, call.args.len())? {
                 return Ok(term);
             }
             let mut args = Vec::new();
             for arg in &call.args {
-                args.push(translate_term(arg)?);
+                args.push(translate_term_in_scope(arg, scope)?);
             }
             Ok(Rc::new(Term::Ctor {
                 name: format!("call:{}", expr_head_key(&call.func)),
                 args,
             }))
         }
-        Expr::Array(array) => literal_aggregate_term("Array", array.elems.iter(), expr),
-        Expr::Tuple(tuple) => literal_aggregate_term("Tuple", tuple.elems.iter(), expr),
+        Expr::Array(array) => {
+            literal_aggregate_term_in_scope("Array", array.elems.iter(), expr, scope)
+        }
+        Expr::Tuple(tuple) => {
+            literal_aggregate_term_in_scope("Tuple", tuple.elems.iter(), expr, scope)
+        }
         Expr::MethodCall(call) => {
             if call.method == "len" && call.args.is_empty() {
                 if let Some(receiver) = string_or_char_literal_term(&call.receiver) {
@@ -1577,9 +1969,9 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
                     }));
                 }
             }
-            let mut args = vec![translate_term(&call.receiver)?];
+            let mut args = vec![translate_term_in_scope(&call.receiver, scope)?];
             for arg in &call.args {
-                args.push(translate_term(arg)?);
+                args.push(translate_term_in_scope(arg, scope)?);
             }
             let method = match &call.turbofish {
                 Some(args) => format!("{}{}", call.method, angle_args_key(args)),
@@ -1592,23 +1984,23 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
         }
         Expr::Await(await_expr) => Ok(Rc::new(Term::Ctor {
             name: "await".to_string(),
-            args: vec![translate_term(&await_expr.base)?],
+            args: vec![translate_term_in_scope(&await_expr.base, scope)?],
         })),
         Expr::Reference(reference) if reference.mutability.is_none() => Ok(Rc::new(Term::Ctor {
             name: "ref".to_string(),
-            args: vec![translate_term(&reference.expr)?],
+            args: vec![translate_term_in_scope(&reference.expr, scope)?],
         })),
         Expr::Cast(cast) if is_shared_dyn_any_type(&cast.ty) => Ok(Rc::new(Term::Ctor {
             name: format!("cast:{}", type_key(&cast.ty)),
-            args: vec![translate_term(&cast.expr)?],
+            args: vec![translate_term_in_scope(&cast.expr, scope)?],
         })),
         Expr::Range(range) => {
             let start = match &range.start {
-                Some(expr) => translate_term(expr)?,
+                Some(expr) => translate_term_in_scope(expr, scope)?,
                 None => make_var("_"),
             };
             let end = match &range.end {
-                Some(expr) => translate_term(expr)?,
+                Some(expr) => translate_term_in_scope(expr, scope)?,
                 None => make_var("_"),
             };
             let name = match range.limits {
@@ -1622,7 +2014,7 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
         }
         Expr::Field(field) => Ok(Rc::new(Term::Ctor {
             name: format!("field:{}", token_key(&field.member)),
-            args: vec![translate_term(&field.base)?],
+            args: vec![translate_term_in_scope(&field.base, scope)?],
         })),
         Expr::Binary(binary) => {
             let Some(op) = term_binop_name(&binary.op) else {
@@ -1631,30 +2023,34 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
             Ok(Rc::new(Term::Ctor {
                 name: op.to_string(),
                 args: vec![
-                    translate_term(&binary.left)?,
-                    translate_term(&binary.right)?,
+                    translate_term_in_scope(&binary.left, scope)?,
+                    translate_term_in_scope(&binary.right, scope)?,
                 ],
             }))
         }
-        Expr::Paren(paren) => translate_term(&paren.expr),
-        Expr::Group(group) => translate_term(&group.expr),
+        Expr::Paren(paren) => translate_term_in_scope(&paren.expr, scope),
+        Expr::Group(group) => translate_term_in_scope(&group.expr, scope),
         other => Err(format!("unsupported term `{}`", token_key(other))),
     }
 }
 
-fn translate_assertion_term(expr: &Expr, local_scope: &str) -> Result<Rc<Term>, String> {
+fn translate_assertion_term_in_scope(
+    expr: &Expr,
+    scope: &TemporalScope,
+) -> Result<Rc<Term>, String> {
     match expr {
         Expr::Const(const_block) => {
-            let term = translate_expression_only_block(&const_block.block, "const")?;
-            Ok(scope_const_block_locals(term, local_scope))
+            let term =
+                translate_expression_only_block_in_scope(&const_block.block, "const", scope)?;
+            Ok(scope_const_block_locals(term, scope.local_scope()))
         }
         Expr::Path(path) if path.path.is_ident("None") => Ok(Rc::new(Term::Ctor {
             name: "call:None".to_string(),
             args: Vec::new(),
         })),
-        Expr::Paren(paren) => translate_assertion_term(&paren.expr, local_scope),
-        Expr::Group(group) => translate_assertion_term(&group.expr, local_scope),
-        _ => translate_term(expr),
+        Expr::Paren(paren) => translate_assertion_term_in_scope(&paren.expr, scope),
+        Expr::Group(group) => translate_assertion_term_in_scope(&group.expr, scope),
+        _ => translate_term_in_scope(expr, scope),
     }
 }
 
@@ -1678,9 +2074,18 @@ fn should_scope_const_block_var(name: &str) -> bool {
     is_unqualified_local_name(name) && name != "_" && !name.starts_with("literal:")
 }
 
-fn translate_expression_only_block(block: &syn::Block, label: &str) -> Result<Rc<Term>, String> {
+fn translate_expression_only_block_in_scope(
+    block: &syn::Block,
+    label: &str,
+    scope: &TemporalScope,
+) -> Result<Rc<Term>, String> {
     match block.stmts.as_slice() {
-        [Stmt::Expr(expr, None)] => translate_term(expr),
+        [Stmt::Expr(expr, None)] => {
+            if let Some(nested_const) = find_const_expr(expr) {
+                return Err(format!("unsupported term `{}`", token_key(nested_const)));
+            }
+            translate_term_in_scope(expr, scope)
+        }
         _ => Err(format!(
             "{label} block is not an expression-only term `{}`",
             token_key(block)
@@ -1688,14 +2093,47 @@ fn translate_expression_only_block(block: &syn::Block, label: &str) -> Result<Rc
     }
 }
 
-fn literal_aggregate_term<'a>(
+fn find_const_expr(expr: &Expr) -> Option<&Expr> {
+    match expr {
+        Expr::Const(_) => Some(expr),
+        Expr::Unary(unary) => find_const_expr(&unary.expr),
+        Expr::Call(call) => call
+            .args
+            .iter()
+            .find_map(find_const_expr)
+            .or_else(|| find_const_expr(&call.func)),
+        Expr::Array(array) => array.elems.iter().find_map(find_const_expr),
+        Expr::Tuple(tuple) => tuple.elems.iter().find_map(find_const_expr),
+        Expr::MethodCall(call) => {
+            find_const_expr(&call.receiver).or_else(|| call.args.iter().find_map(find_const_expr))
+        }
+        Expr::Await(await_expr) => find_const_expr(&await_expr.base),
+        Expr::Reference(reference) => find_const_expr(&reference.expr),
+        Expr::Cast(cast) => find_const_expr(&cast.expr),
+        Expr::Range(range) => range
+            .start
+            .as_deref()
+            .and_then(find_const_expr)
+            .or_else(|| range.end.as_deref().and_then(find_const_expr)),
+        Expr::Field(field) => find_const_expr(&field.base),
+        Expr::Binary(binary) => {
+            find_const_expr(&binary.left).or_else(|| find_const_expr(&binary.right))
+        }
+        Expr::Paren(paren) => find_const_expr(&paren.expr),
+        Expr::Group(group) => find_const_expr(&group.expr),
+        _ => None,
+    }
+}
+
+fn literal_aggregate_term_in_scope<'a>(
     kind: &str,
     elems: impl Iterator<Item = &'a Expr>,
     source: &Expr,
+    scope: &TemporalScope,
 ) -> Result<Rc<Term>, String> {
     let mut args = Vec::new();
     for elem in elems {
-        let term = translate_term(elem)?;
+        let term = translate_term_in_scope(elem, scope)?;
         if !is_literal_identity_term(term.as_ref()) {
             return Err(format!(
                 "{kind} literal contains non-literal element `{}`",
