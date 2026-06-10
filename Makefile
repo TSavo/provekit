@@ -303,6 +303,7 @@ SHOWCASE_RUNS = \
 	examples/tokio-mutex-implication-edge/run.sh \
 	examples/polars-showcase/run.sh \
 	examples/numpy-attribute-safety-showcase/run.sh \
+	examples/numpy-vendor/run.sh \
 	examples/java-test-assertion-consistency/run.sh \
 	examples/java-implication-edge/run.sh \
 	examples/java-contract-breadth/run.sh \
