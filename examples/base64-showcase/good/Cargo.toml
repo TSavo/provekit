@@ -1,0 +1,9 @@
+[package]
+name = "base64-showcase-good"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+base64 = "=0.22.1"
