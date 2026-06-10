@@ -111,6 +111,8 @@ fn main() {
 
     let mut totals = Totals::default();
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
+    let mut reason_samples: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut all_reasons: Vec<String> = Vec::new();
     // Per-file rows: (path, asserts, atoms, warnings, unaccounted, parse_ok)
     let mut rows: Vec<(String, usize, usize, usize, i64, bool)> = Vec::new();
 
@@ -161,7 +163,13 @@ fn main() {
         totals.refused += refused;
 
         for reason in &out.skip_reasons {
-            *reasons.entry(bucket(reason)).or_insert(0) += 1;
+            let b = bucket(reason);
+            *reasons.entry(b.clone()).or_insert(0) += 1;
+            let samples = reason_samples.entry(b).or_default();
+            if samples.len() < 12 {
+                samples.push(format!("{}: {}", rel, reason));
+            }
+            all_reasons.push(reason.clone());
         }
 
         // Silent drop: a real assert macro the collector never reached (nested
@@ -248,6 +256,32 @@ fn main() {
             .map(|(k, v)| (k.clone(), serde_json::Value::from(*v)))
             .collect();
         obj.insert("reasons".into(), serde_json::Value::Object(reason_obj));
+        let sample_obj: serde_json::Map<String, serde_json::Value> = reason_samples
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    serde_json::Value::Array(
+                        v.iter()
+                            .map(|s| serde_json::Value::from(s.clone()))
+                            .collect(),
+                    ),
+                )
+            })
+            .collect();
+        obj.insert(
+            "reason_samples".into(),
+            serde_json::Value::Object(sample_obj),
+        );
+        obj.insert(
+            "all_reasons".into(),
+            serde_json::Value::Array(
+                all_reasons
+                    .iter()
+                    .map(|s| serde_json::Value::from(s.clone()))
+                    .collect(),
+            ),
+        );
         let file_arr: Vec<serde_json::Value> = rows
             .iter()
             .map(|(rel, asserts, discharged, refused, unacc, ok)| {
