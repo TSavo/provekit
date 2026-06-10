@@ -624,6 +624,137 @@ mod tests {
         );
     }
 
+    // ── G1: str.chars-in-set (universe membership over a walked charset) ──
+    // The Java kit's universe pass emits `str.chars-in-set(subject, set)`
+    // where `set` is the encode table walked from the vendor's static-final
+    // AST. Lowering: (str.in_re subject (re.* (re.union (str.to_re "c") ...))).
+
+    /// The G1 conjoin subject: a `callresult_*` ctor with a string-literal
+    /// arg, exactly the shape the Java kit's `buildUniverseContract` /
+    /// `buildStringContract` emit over the same `#euf#` contract name.
+    fn callresult(name: &str, str_arg: &str) -> serde_json::Value {
+        ctor(name, vec![string_const(str_arg)])
+    }
+
+    #[test]
+    fn chars_in_set_with_in_set_literal_is_sat() {
+        // POSITIVE: universe row + the vendor's sworn equality over the SAME
+        // callresult subject is consistent. "Zm9v" over a base64-table-shaped
+        // set — the GOOD-suite conjoin.
+        let z3 = which_z3().expect("z3 required for chars-in-set check");
+        let call = callresult("c:callresult_encodeBase64String_a1", "foo");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.chars-in-set",
+                    vec![call.clone(), string_const("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")],
+                ),
+                eq(call, string_const("Zm9v")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains("(re.* (re.union (str.to_re \"+\")"),
+            "chars-in-set must lower to re.* over str.to_re union (sorted+deduped):\n{script}"
+        );
+        assert!(
+            script.contains("(Int) String)"),
+            "the callresult subject must be declared with String return sort:\n{script}"
+        );
+        assert!(
+            script.contains("\"Zm9v\""),
+            "the string-routed equality must render a real String literal:\n{script}"
+        );
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "universe row + in-set sworn literal must be SAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn chars_in_set_with_out_of_set_char_is_unsat() {
+        // DISCRIMINATION: the BAD-twin shape. Universe = the URL_SAFE table
+        // (no '+', no '/'); the consumer's claimed equality over the same
+        // callresult contains '+' and '/'. The conjunction must be UNSAT —
+        // z3 string theory refutes an input the vendor never tested.
+        let z3 = which_z3().expect("z3 required for chars-in-set check");
+        let call = callresult("c:callresult_encodeBase64URLSafeString_a1", "bar");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.chars-in-set",
+                    vec![call.clone(), string_const("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")],
+                ),
+                eq(call, string_const("YmFy+/x=")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "universe row + out-of-set literal must be UNSAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn string_routed_equality_does_not_capture_legacy_var_regime() {
+        // GUARD: the legacy Python opaque-Int regime is byte-identical. A
+        // free-VAR equality (`r == "a"`) must NOT route to string theory —
+        // cross-type consistency (`r == "a" ∧ r == 1` UNSAT via distinctness)
+        // depends on it. Same for `None == "x"`.
+        let var_eq = compile_asserted_to_parts(&eq(var("r"), string_const("a"))).expect("compile");
+        let script = format!("{}{}", var_eq.preamble, var_eq.body);
+        assert!(
+            script.contains("strlit_") && script.contains("(declare-const r Int)"),
+            "var equality must stay in the opaque-Int regime:\n{script}"
+        );
+        let none_eq = compile_asserted_to_parts(&eq(
+            serde_json::json!({"kind":"ctor","name":"None","args":[]}),
+            string_const("x"),
+        ))
+        .expect("compile");
+        let script = format!("{}{}", none_eq.preamble, none_eq.body);
+        assert!(
+            script.contains("strlit_"),
+            "None equality must stay in the opaque-Int regime:\n{script}"
+        );
+    }
+
+    #[test]
+    fn chars_in_set_round_trips_through_emit_asserted() {
+        // STRUCTURAL: the predicate survives the asserted path end-to-end —
+        // no opaque strlit_ laundering of the set, no undeclared-predicate
+        // fallback, and the empty string is in the Kleene-star universe (SAT
+        // alone). Quote char in the set must be escaped SMT-style ("" not \").
+        let inv = string_theory_atom("str.chars-in-set", vec![var("r"), string_const("a\"b")]);
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains("(str.in_re r (re.* (re.union (str.to_re \"\"\"\") (re.union (str.to_re \"a\") (str.to_re \"b\")))))"),
+            "round-trip rendering wrong:\n{script}"
+        );
+        assert!(
+            !script.contains("strlit_"),
+            "the set must lower to string theory, not opaque literals:\n{script}"
+        );
+        assert!(
+            !script.contains("(declare-fun str.chars-in-set")
+                && !script.contains("(declare-fun |str.chars-in-set|"),
+            "chars-in-set must be a theory lowering, not an uninterpreted predicate:\n{script}"
+        );
+        if let Some(z3) = which_z3() {
+            let out = run_z3(&z3, &script);
+            assert_eq!(out.trim(), "sat", "lone universe row must be SAT: {out}");
+        }
+    }
+
     // ── Cross-type literal distinctness (Python `==` semantics) ───────────
     // Helpers for int / bool / None literal terms.
     fn int_const(n: i64) -> serde_json::Value {

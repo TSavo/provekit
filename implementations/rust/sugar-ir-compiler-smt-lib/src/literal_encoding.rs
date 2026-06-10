@@ -148,7 +148,25 @@ impl LiteralConstants {
     fn collect_formula_for_legacy_literals(&mut self, formula: &Formula) {
         match formula {
             Formula::Atomic { name, args } => {
-                if is_string_theory_atomic_predicate(name) {
+                if routes_to_string_theory(name, args) {
+                    // The atom's TOP-LEVEL string consts render as real SMT
+                    // String literals (no `strlit_*` declaration needed). But a
+                    // ctor argument (e.g. a `callresult_*` subject) still has
+                    // its OWN args rendered by the legacy `emit_term` path, so
+                    // any string const nested inside it IS emitted as a
+                    // `strlit_*` symbol and must be collected/declared here, or
+                    // the script references an undeclared constant.
+                    for a in args {
+                        if !matches!(
+                            a,
+                            Term::Const {
+                                value: serde_json::Value::String(_),
+                                ..
+                            }
+                        ) {
+                            self.collect_term_for_legacy_literals(a);
+                        }
+                    }
                     return;
                 }
                 for a in args {
@@ -318,6 +336,53 @@ impl LiteralConstants {
     }
 }
 
+/// True iff this atom is emitted through the z3 STRING-THEORY path (real
+/// `String`-sorted operands, real `"..."` literals) instead of the legacy
+/// opaque-Int regime.
+///
+/// Two cases:
+///   1. A named string-theory predicate (`contains`, `str.chars-in-set`, ...).
+///   2. STRING-ROUTED EQUALITY: `=` whose one side is a String-sorted string
+///      const and whose other side is a non-`None` ctor (a `callresult_*`
+///      subject) or another string const. This is the G1 conjoin shape: the
+///      universe row `str.chars-in-set(call, set)` forces the subject term to
+///      the SMT `String` sort, so the sworn equality over the SAME subject
+///      must also live in string theory or the two rows are ill-sorted
+///      against each other and z3 errors instead of refuting.
+///
+/// DELIBERATE EXCLUSIONS (the legacy Python regime is preserved bit-for-bit):
+///   - `=` over a free VAR (`r == "a"`) stays opaque-Int: the Python kit's
+///     cross-type consistency (`r == "a" ∧ r == 1` -> UNSAT via distinctness)
+///     depends on every literal living in the Int universe.
+///   - `=` against the `None` ctor stays opaque-Int: `None != "x"` is enforced
+///     by the distinctness axiom, which string theory cannot express over an
+///     uninterpreted String const (it would freely model `None == "x"`).
+///   - `=` between a string const and an int/bool const stays opaque-Int
+///     (cross-type distinctness is Python-semantics-critical).
+pub(crate) fn routes_to_string_theory(name: &str, args: &[Term]) -> bool {
+    if is_string_theory_atomic_predicate(name) {
+        return true;
+    }
+    if name != "=" || args.len() != 2 {
+        return false;
+    }
+    let is_string_const = |t: &Term| {
+        matches!(
+            t,
+            Term::Const {
+                value: serde_json::Value::String(_),
+                sort: Sort::Primitive { name },
+            } if name == "String"
+        )
+    };
+    let is_routable_subject = |t: &Term| {
+        matches!(t, Term::Ctor { name, args } if !(name == "None" && args.is_empty()))
+            || is_string_const(t)
+    };
+    (is_string_const(&args[0]) && is_routable_subject(&args[1]))
+        || (is_string_const(&args[1]) && is_routable_subject(&args[0]))
+}
+
 fn is_string_theory_atomic_predicate(name: &str) -> bool {
     matches!(
         name,
@@ -336,6 +401,7 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "str.is_ascii_graphic"
             | "str.is_ascii_whitespace"
             | "str.is_ascii_control"
+            | "str.chars-in-set"
     )
 }
 

@@ -305,6 +305,19 @@ pub fn emit_formula(formula: &Formula) -> String {
 }
 
 fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
+    // STRING-ROUTED EQUALITY (G1 conjoin shape): `=` over a string const and a
+    // callresult ctor lives in string theory so it stays sort-compatible with
+    // a `str.chars-in-set` universe row over the SAME subject. The gate
+    // (`routes_to_string_theory`) lives in the hand-maintained
+    // `literal_encoding` module; see its doc for the deliberate exclusions
+    // that keep the legacy Python opaque-Int regime byte-identical.
+    if name == "=" && crate::literal_encoding::routes_to_string_theory(name, args) {
+        return Some(format!(
+            "(= {} {})",
+            emit_string_term(&args[0]),
+            emit_string_term(&args[1])
+        ));
+    }
     match name {
         "contains" if args.len() == 2 => Some(format!(
             "(str.contains {} {})",
@@ -369,6 +382,56 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
             "(str.in_re {} (re.union (re.range \"\\u{{0}}\" \"\\u{{1f}}\") (re.range \"\\u{{7f}}\" \"\\u{{7f}}\")))",
             emit_string_term(&args[0])
         )),
+        // str.chars-in-set: arg[0] = subject (String-sorted term), arg[1] = charset constant.
+        // The charset is a String const whose value is the set of allowed characters.
+        // Renders as: (str.in_re <subject> (re.* (re.union (str.to_re "c1") (str.to_re "c2") ...)))
+        // Single-char set degenerates to: (str.in_re <subject> (re.* (str.to_re "c")))
+        "str.chars-in-set" if args.len() == 2 => {
+            let charset: Vec<char> = match &args[1] {
+                Term::Const { value, sort }
+                    if matches!(sort, Sort::Primitive { name } if name == "String") =>
+                {
+                    if let serde_json::Value::String(s) = value {
+                        let mut chars: Vec<char> = s.chars().collect();
+                        chars.sort_unstable();
+                        chars.dedup();
+                        chars
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            };
+            if charset.is_empty() {
+                return None;
+            }
+            // Build the RE union over individual chars using str.to_re.
+            // SMT-LIB string literals: '"' -> '""', control chars -> \u{xx}.
+            let char_re = |ch: char| -> String {
+                let esc = match ch {
+                    '"' => "\"\"".to_string(),
+                    '\u{0}'..='\u{1f}' | '\u{7f}' => format!("\\u{{{:x}}}", ch as u32),
+                    _ => ch.to_string(),
+                };
+                format!("(str.to_re \"{}\")", esc)
+            };
+            let inner = if charset.len() == 1 {
+                char_re(charset[0])
+            } else {
+                // Fold right into nested re.union pairs: (re.union c1 (re.union c2 ...))
+                let mut iter = charset.iter().rev();
+                let mut acc = char_re(*iter.next().unwrap());
+                for ch in iter {
+                    acc = format!("(re.union {} {})", char_re(*ch), acc);
+                }
+                acc
+            };
+            Some(format!(
+                "(str.in_re {} (re.* {}))",
+                emit_string_term(&args[0]),
+                inner
+            ))
+        }
         _ => None,
     }
 }
@@ -391,6 +454,7 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "str.is_ascii_graphic"
             | "str.is_ascii_whitespace"
             | "str.is_ascii_control"
+            | "str.chars-in-set"
     )
 }
 
@@ -678,7 +742,7 @@ pub fn collect_free_vars_formula(
 ) {
     match formula {
         Formula::Atomic { name, args } => {
-            if is_string_theory_atomic_predicate(name) {
+            if crate::literal_encoding::routes_to_string_theory(name, args) {
                 for a in args {
                     collect_free_vars_string_term(a, out, bound);
                 }
@@ -909,6 +973,12 @@ fn known_term_sort(term: &Term) -> Option<String> {
 fn expected_atomic_arg_sort(name: &str, args: &[Term]) -> Option<String> {
     if is_float_refinement_atomic_predicate(name) {
         return Some("Real".to_string());
+    }
+    // String-theory atoms (and string-routed `=`) render their operands via
+    // `emit_string_term`, so a ctor operand (`callresult_*`) must be DECLARED
+    // with a `String` return sort or the script is ill-sorted.
+    if crate::literal_encoding::routes_to_string_theory(name, args) {
+        return Some("String".to_string());
     }
     let smt_name = smt_atomic_name(name);
     if matches!(smt_name, "=" | "distinct" | "<" | "<=" | ">" | ">=") {

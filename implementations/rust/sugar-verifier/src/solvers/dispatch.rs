@@ -75,6 +75,7 @@ const STRING_OPS: &[&str] = &[
     "str.is_ascii_graphic",
     "str.is_ascii_whitespace",
     "str.is_ascii_control",
+    "str.chars-in-set",
 ];
 
 const BV_OPS: &[&str] = &[
@@ -242,6 +243,7 @@ mod tests {
             "str.is_ascii_graphic",
             "str.is_ascii_whitespace",
             "str.is_ascii_control",
+            "str.chars-in-set",
         ] {
             let f = json!({
                 "kind": "atomic",
