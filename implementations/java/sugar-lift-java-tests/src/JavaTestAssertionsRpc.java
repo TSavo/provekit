@@ -226,11 +226,36 @@ public final class JavaTestAssertionsRpc {
                     || arrayBody.charAt(i) == ',')) i++;
             if (i >= arrayBody.length()) break;
             char c = arrayBody.charAt(i);
-            if (c == '"' || c == '\'') {
-                char quote = c;
+            if (c == '"') {
+                // TOML basic string: backslash escapes apply. Unescape the
+                // common forms; an unescaped backslash before the closing
+                // quote must not terminate the string early.
                 StringBuilder sb = new StringBuilder();
                 i++;
-                while (i < arrayBody.length() && arrayBody.charAt(i) != quote) {
+                while (i < arrayBody.length() && arrayBody.charAt(i) != '"') {
+                    char ch = arrayBody.charAt(i++);
+                    if (ch == '\\' && i < arrayBody.length()) {
+                        char esc = arrayBody.charAt(i++);
+                        switch (esc) {
+                            case 'n' -> sb.append('\n');
+                            case 't' -> sb.append('\t');
+                            case 'r' -> sb.append('\r');
+                            case '"' -> sb.append('"');
+                            case '\\' -> sb.append('\\');
+                            default -> { sb.append('\\'); sb.append(esc); }
+                        }
+                    } else {
+                        sb.append(ch);
+                    }
+                }
+                i++; // consume closing quote
+                dirs.add(sb.toString());
+            } else if (c == '\'') {
+                // TOML literal string: NO escapes per spec — verbatim to the
+                // closing single quote.
+                StringBuilder sb = new StringBuilder();
+                i++;
+                while (i < arrayBody.length() && arrayBody.charAt(i) != '\'') {
                     sb.append(arrayBody.charAt(i++));
                 }
                 i++; // consume closing quote
