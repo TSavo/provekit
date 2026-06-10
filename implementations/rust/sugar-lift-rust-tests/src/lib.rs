@@ -1018,6 +1018,24 @@ fn reduce_assertion_expr(
     }
     match expr {
         Expr::Call(call) => {
+            // Base lowerer: ptr::eq / core::ptr::eq / std::ptr::eq is a primitive
+            // expression reducer. Dispatch it directly so helper bodies that call
+            // assert!(ptr::eq(a, b)) reduce through this path rather than requiring
+            // the dedicated translate_pointer_eq_assertion pre-filter arm.
+            let callee = expr_head_key(&call.func);
+            if matches!(
+                callee.as_str(),
+                "core::ptr::eq" | "ptr::eq" | "std::ptr::eq"
+            ) {
+                return translate_pointer_eq_assertion(expr, scope)?
+                    .ok_or_else(|| {
+                        format!(
+                            "ptr::eq call did not lower to an assertion at `{}`",
+                            token_key(expr)
+                        )
+                    })
+                    .map(|entry| vec![entry]);
+            }
             let name = simple_call_name(call).ok_or_else(|| {
                 format!(
                     "assertion call is not a simple visible helper `{}`",

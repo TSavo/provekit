@@ -3736,3 +3736,69 @@ fn t() { debug_assert_eq!(a(), 1); }
         debug_warn.reason
     );
 }
+
+// --- ptr::eq as a base lowerer in the reducer path ---
+//
+// The dedicated translate_pointer_eq_assertion arm fires for DIRECT assert!(ptr::eq(...))
+// calls in test bodies. The reducer path must also handle ptr::eq when it appears
+// inside an assertion helper body. This test proves that a transparent helper
+// wrapping assert!(ptr::eq(a, b)) reduces BYTE-IDENTICALLY through the unified
+// walk: the old hardcoded-arm-only path could NOT reduce through a helper call.
+#[test]
+fn ptr_eq_through_reducer_helper_produces_location_keyed_row() {
+    // The helper assert_same_ptr is a transparent wrapper: its body is a single
+    // assert!(ptr::eq(a, b)) statement. The reducer descends into the helper and
+    // encounters ptr::eq as a base lowerer, yielding the same location-keyed atom
+    // as a direct assert!(ptr::eq(a, b)) call at the test site.
+    let src = r#"
+fn assert_same_ptr(a: *const u8, b: *const u8) {
+    assert!(ptr::eq(a, b));
+}
+
+#[test]
+fn same_pointer_via_helper() {
+    let x: u8 = 42;
+    assert_same_ptr(&x, &x);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ptr_reducer.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(
+        out.lifted, 1,
+        "ptr::eq inside a helper body must reduce through the base lowerer path: {:?}",
+        out.warnings
+    );
+    assert!(
+        out.warnings.is_empty(),
+        "no warnings expected for transparent ptr::eq helper: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name,
+        "tests/ptr_reducer.rs::same_pointer_via_helper"
+    );
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            match args[0].as_ref() {
+                Term::Ctor {
+                    name,
+                    args: ctor_args,
+                } => {
+                    assert_eq!(
+                        name, "call:ptr::eq",
+                        "ptr::eq through reducer must remain location-keyed with the callee key"
+                    );
+                    assert_eq!(ctor_args.len(), 2);
+                }
+                other => panic!("expected ptr::eq call term, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
+        }
+        other => panic!("expected pointer equality atom from reducer path, got {other:?}"),
+    }
+}
