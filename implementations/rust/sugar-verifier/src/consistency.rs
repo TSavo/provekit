@@ -63,7 +63,7 @@ use std::process::{Command, Stdio};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rayon::prelude::*;
 use serde_json::{json, Value as Json};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::solvers::{run_plan, SolverHandle, SolverPlan};
 use crate::types::{memento_body, memento_kind, MementoPool, ObligationVerdict};
@@ -636,6 +636,48 @@ fn check_inv_consistency(
     }
 }
 
+/// Collect the universal-quantifier sub-formulas of an invariant. A lifted loop
+/// is emitted as a `forall`, but the lifter conjoins a contract's atoms, so the
+/// `inv` reaching here is typically `and([forall, ...])` rather than a bare
+/// `forall`. We pull the `forall` conjuncts out (top-level, or directly under a
+/// top-level `and`) so each can be asserted ambiently against point-claims. We
+/// deliberately do NOT descend into the `and`'s non-forall operands -- asserting
+/// a contract's point-claims into unrelated obligations would be unsound; only
+/// the closed universals (no free variable) are safe ambient context.
+fn collect_ambient_foralls(inv: &Json, out: &mut Vec<Json>) {
+    match inv.get("kind").and_then(|k| k.as_str()) {
+        Some("forall") => out.push(inv.clone()),
+        Some("and") => {
+            if let Some(ops) = inv.get("operands").and_then(|v| v.as_array()) {
+                for op in ops {
+                    if op.get("kind").and_then(|k| k.as_str()) == Some("forall") {
+                        out.push(op.clone());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Conjoin the ambient universal invariants into an obligation's inv so the
+/// solver can instantiate them against this obligation's point-claims. Empty
+/// ambient set leaves the inv untouched.
+fn with_ambient_foralls(inv: Json, property_name: &str, ambient: &[Json]) -> Json {
+    if ambient.is_empty() {
+        return inv;
+    }
+    debug!(
+        property = property_name,
+        ambient = ambient.len(),
+        "verifier/ambient: conjoining universals into obligation"
+    );
+    let mut operands = Vec::with_capacity(ambient.len() + 1);
+    operands.push(inv);
+    operands.extend(ambient.iter().cloned());
+    serde_json::json!({ "kind": "and", "operands": operands })
+}
+
 pub fn verify_consistency(
     pool: &MementoPool,
     plan: &SolverPlan,
@@ -648,6 +690,43 @@ pub fn verify_consistency(
         .filter_map(|(cid, env)| memento_body(env).map(|b| (cid, b)))
         .filter(|(_, body)| is_consistency_candidate(body))
         .collect();
+
+    // AMBIENT UNIVERSALS: a forall invariant (a lifted bounded loop, memento
+    // `<test>::loop::<var>`, from any language's lifter) constrains every claim
+    // about the functions it quantifies. Assert all forall invariants as
+    // background in every obligation so the solver instantiates them against
+    // point-claims -- `forall x. g(x)==1` refutes a sibling `g(2)==2`. This is
+    // the cross-proof conjoin extended to quantified contracts, sound by the
+    // same EUF purity (a pure `g(2)` has one value pool-wide). A bound-var
+    // quantifier carries no free variable, so this is distinct from the
+    // parametrize per-row hazard. Answered ONCE here, in the shared engine, not
+    // per-lifter.
+    let mut ambient_foralls: Vec<Json> = Vec::new();
+    for (cid, body) in &candidates {
+        if let Some(inv) = body.get("inv") {
+            let before = ambient_foralls.len();
+            collect_ambient_foralls(inv, &mut ambient_foralls);
+            let found = ambient_foralls.len() - before;
+            if found > 0 {
+                debug!(
+                    cid = cid.as_str(),
+                    contract = body
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| body.get("contractName").and_then(|v| v.as_str()))
+                        .unwrap_or("<unnamed>"),
+                    foralls = found,
+                    inv_kind = inv.get("kind").and_then(|k| k.as_str()).unwrap_or("?"),
+                    "verifier/ambient: collected universal(s) from contract inv"
+                );
+            }
+        }
+    }
+    info!(
+        candidates = candidates.len(),
+        ambient_foralls = ambient_foralls.len(),
+        "verifier/ambient: universals will be conjoined into every obligation"
+    );
 
     // CROSS-PROOF CONJOIN: group same-named contracts and conjoin their `inv`s
     // before the SAT check -- the cross-proof twin of mint's same-name coalesce
@@ -714,7 +793,7 @@ pub fn verify_consistency(
                 out.push(check_inv_consistency(
                     inv_cids[0].clone(),
                     property_name,
-                    inv,
+                    with_ambient_foralls(inv, property_name, &ambient_foralls),
                     plan,
                     registry,
                 ));
@@ -724,7 +803,7 @@ pub fn verify_consistency(
                     out.push(check_inv_consistency(
                         (*cid).clone(),
                         property_name,
-                        inv,
+                        with_ambient_foralls(inv, property_name, &ambient_foralls),
                         plan,
                         registry,
                     ));
@@ -1007,6 +1086,54 @@ mod tests {
             res[0].verdict,
             ObligationVerdict::Unsatisfied,
             "z3 must instantiate x=2 and refute f(2)==1 and f(2)==2: {res:?}"
+        );
+    }
+
+    /// THE REAL-PIPELINE SHAPE. The lifter emits the loop universal and the
+    /// point-claim as SEPARATE mementos with DIFFERENT names (`...::loop::x` vs
+    /// `g#euf#...::assertion`), and wraps each inv in `and([...])`. The earlier
+    /// hand-conjoined test masked the bug where the ambient pass only matched a
+    /// bare top-level `forall` (never `and([forall])`) and so never refuted. This
+    /// reproduces the forall-loop-showcase bad twin in-process: two mementos, the
+    /// universal must refute the in-range point-claim via the ambient rule alone.
+    #[test]
+    fn ambient_forall_refutes_separate_point_claim_memento() {
+        let (plan, reg) = z3_plan_and_registry();
+        let callg = |arg: Json| json!({"kind":"ctor","name":"call:g","args":[arg]});
+        // forall x. (0<=x<3 => g(x)==1), wrapped in `and([forall])` exactly as the
+        // lifter emits it.
+        let guard = json!({"kind":"and","operands":[
+            json!({"kind":"atomic","name":"\u{2264}","args":[int(0), var("x")]}),
+            json!({"kind":"atomic","name":"<","args":[var("x"), int(3)]}),
+        ]});
+        let forall = json!({
+            "kind":"forall","name":"x",
+            "sort":{"kind":"primitive","name":"Int"},
+            "body": json!({"kind":"implies","operands":[guard, eqf(callg(var("x")), int(1))]}),
+        });
+        let loop_inv = json!({"kind":"and","operands":[forall]});
+        // The in-range point-claim g(2)==2, a DIFFERENT name, also `and`-wrapped.
+        let point_inv = json!({"kind":"and","operands":[eqf(callg(int(2)), int(2))]});
+
+        let mut pool = MementoPool::default();
+        insert_contract(
+            &mut pool,
+            "blake3-512:loop",
+            "src/lib.rs::tests::t::loop::x",
+            loop_inv,
+        );
+        insert_contract(
+            &mut pool,
+            "blake3-512:point",
+            "g#euf#c:callresult_g_a1(i:2)::assertion",
+            point_inv,
+        );
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 2, "two separate obligations: {res:?}");
+        assert!(
+            res.iter()
+                .any(|r| r.verdict == ObligationVerdict::Unsatisfied),
+            "the ambient universal must refute the separate point-claim memento: {res:?}"
         );
     }
 

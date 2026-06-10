@@ -869,19 +869,14 @@ fn group_assertions(
     entries: Vec<AssertionEntry>,
     fallback_name: &str,
 ) -> Vec<(String, Vec<Rc<Formula>>)> {
-    // A universally-quantified atom (a lifted loop) is AMBIENT: it constrains
-    // every claim in the test fn's scope, so it must be conjoined into every
-    // per-callsite obligation, not isolated in its own. Otherwise the solver
-    // never sees the universal alongside a point-claim about the same function
-    // and cannot instantiate it to refute a contradiction (forall x. g(x)==1
-    // must refute a separate g(2)==2). Per-callsite names are preserved for
-    // cross-file federation; the ambient universals ride along in each group.
-    let (ambient, regular): (Vec<AssertionEntry>, Vec<AssertionEntry>) =
-        entries.into_iter().partition(|e| is_ambient_atom(&e.atom));
-    let ambient_atoms: Vec<Rc<Formula>> = ambient.into_iter().map(|e| e.atom).collect();
-
+    // Each entry joins the obligation named by its callsite (or the fn
+    // fallback). A lifted loop is a named `<test>::loop::<var>` memento with its
+    // own obligation here, mirroring the Python layer-2 lifter. Whether a
+    // universal refutes a sibling point-claim is answered ONCE in the shared
+    // consistency engine (which treats forall invariants as ambient), not in
+    // this per-language lifter.
     let mut groups: Vec<(String, Vec<Rc<Formula>>)> = Vec::new();
-    for entry in regular {
+    for entry in entries {
         let name = entry.name.unwrap_or_else(|| fallback_name.to_string());
         if let Some((_, atoms)) = groups
             .iter_mut()
@@ -892,23 +887,7 @@ fn group_assertions(
             groups.push((name, vec![entry.atom]));
         }
     }
-    if !ambient_atoms.is_empty() {
-        if groups.is_empty() {
-            // No point-claims: the universal stands alone (self-consistency).
-            groups.push((fallback_name.to_string(), ambient_atoms));
-        } else {
-            for (_, atoms) in groups.iter_mut() {
-                atoms.extend(ambient_atoms.iter().cloned());
-            }
-        }
-    }
     groups
-}
-
-/// A universally-quantified formula is ambient context for its whole scope and
-/// must be conjoined into every obligation so the solver can instantiate it.
-fn is_ambient_atom(atom: &Formula) -> bool {
-    matches!(atom, Formula::Quantifier { kind, .. } if kind == "forall")
 }
 
 /// Count assert macros reachable anywhere inside a statement list, including
@@ -1164,7 +1143,7 @@ fn try_lift_for_loop_forall(
     reducer: &ReductionCtx<'_>,
     float_widths: &mut FloatWidthScope,
     macro_depth: usize,
-) -> Option<(Rc<Formula>, usize)> {
+) -> Option<(Rc<Formula>, usize, String)> {
     // The loop variable must be a plain ident (the bound variable).
     let var = match &*f.pat {
         Pat::Ident(p) if p.subpat.is_none() => p.ident.to_string(),
@@ -1220,6 +1199,7 @@ fn try_lift_for_loop_forall(
     let body_conj = and_(body_entries.iter().map(|e| e.atom.clone()).collect());
 
     // forall x:Int. ( start <= x (< | <=) end ) => body[var := x]
+    let bound_var = var.clone();
     let quantified = forall(Sort::int(), move |x| {
         let lower = lte(start.clone(), x.clone());
         let upper = if inclusive {
@@ -1228,10 +1208,10 @@ fn try_lift_for_loop_forall(
             lt(x.clone(), end.clone())
         };
         let guard = and_(vec![lower, upper]);
-        let body = subst_var_in_formula(&body_conj, &var, &x);
+        let body = subst_var_in_formula(&body_conj, &bound_var, &x);
         implies(guard, body)
     });
-    Some((quantified, n_body))
+    Some((quantified, n_body, var))
 }
 
 fn unconditional_block_stmts(expr: &Expr) -> Option<&[Stmt]> {
@@ -1480,7 +1460,7 @@ fn collect_assertion_entries(
                 // A bounded loop is the universal it states: read the range as a
                 // guard and lift forall x. (guard => body). If the body does not
                 // wholly compute to truth values, gutter the loop (refuse).
-                if let Some((quantified, n)) = try_lift_for_loop_forall(
+                if let Some((quantified, n, var)) = try_lift_for_loop_forall(
                     f,
                     &temporal_scope,
                     options,
@@ -1488,8 +1468,11 @@ fn collect_assertion_entries(
                     float_widths,
                     macro_depth,
                 ) {
+                    // Name the loop memento `<test>::loop::<var>`, mirroring the
+                    // Python reference (layer2.py PATTERN 1). A named universal is
+                    // federatable and the engine conjoins it ambiently.
                     entries.push(AssertionEntry {
-                        name: None,
+                        name: Some(format!("{}::loop::{}", temporal_scope.local_scope(), var)),
                         atom: quantified,
                     });
                     *macros_lifted += n;
