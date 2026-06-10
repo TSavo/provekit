@@ -17,8 +17,16 @@ Sugar in, `.proof` out. CIDs are BLAKE3-512; signatures are Ed25519.
 
 ## The part that should keep you up at night
 
-A `.proof` is the easy half. The hard half — the half no other tool can
-print — is the **shape of what was never proven at all.**
+Invert how you read a proof. Your `.proof` is not your *score* — it is your
+**safe ground**. It is the one part of your system where things are not going to
+go wrong, because it is the one part that cannot lie about itself. Everything
+outside it is not "untested." It is a **crime scene waiting to happen**: the
+staked-out territory where the next breach, the next silent regression, the next
+poisoned dependency already lives, because nothing there is holding it back.
+
+So a `.proof` is the easy half. The hard half — the half no other tool can
+print — is the **shape of what was never proven at all**: the exact outline of
+the ground you are standing on that has nothing underneath it.
 
 Sort every fact in a program into two piles. *Right by construction*: the things
 something **stated** and staked its name on — a compiler axiom, a sworn test, a
