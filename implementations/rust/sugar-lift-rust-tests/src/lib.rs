@@ -3187,10 +3187,58 @@ fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {
         Lit::Str(s) => Ok(str_const(s.value())),
         Lit::Char(c) => Ok(str_const(c.value().to_string())),
         Lit::Bool(b) => Ok(bool_const(b.value)),
+        Lit::ByteStr(bs) => Ok(bytes_literal_term_from_bytes(&bs.value())),
         other => Err(format!(
             "only integer/string/char/finite decimal float scalar constants are liftable, got `{}`",
             token_key(other)
         )),
+    }
+}
+
+/// Encode a byte slice as a lower-hex string: each byte as exactly two hex
+/// digits, concatenated.  No external crate dependency required.
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .flat_map(|b| {
+            let hi = (b >> 4) & 0xf;
+            let lo = b & 0xf;
+            [
+                char::from_digit(u32::from(hi), 16).unwrap_or('0'),
+                char::from_digit(u32::from(lo), 16).unwrap_or('0'),
+            ]
+        })
+        .collect()
+}
+
+/// Produce an opaque content-keyed term for a byte-string literal.
+///
+/// The term is `Term::Var { name: "literal:bytes(<hex>)" }` where `<hex>` is
+/// the lower-hex encoding of the byte content.  This mirrors the
+/// `literal_aggregate_term_in_scope` convention: the `literal:` prefix marks
+/// the var as a ground identity value throughout the lifter.
+///
+/// Soundness: identical byte sequences produce identical names (congruence);
+/// distinct byte sequences produce distinct names, so any conjunction that
+/// equates a single call result to two different byte literals is
+/// internally contradictory and will be flagged UNSAT by the solver.
+fn bytes_literal_term_from_bytes(bytes: &[u8]) -> Rc<Term> {
+    make_var(format!("literal:bytes({})", bytes_to_hex(bytes)))
+}
+
+/// Extract a byte-string literal from `expr` as an opaque content-keyed
+/// Term::Var, if `expr` is exactly a `b"..."` literal (or a parenthesised /
+/// grouped wrapper around one).  Returns `None` for all other expression
+/// shapes.
+fn bytes_literal_term(expr: &Expr) -> Option<Rc<Term>> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::ByteStr(bs),
+            ..
+        }) => Some(bytes_literal_term_from_bytes(&bs.value())),
+        Expr::Paren(paren) => bytes_literal_term(&paren.expr),
+        Expr::Group(group) => bytes_literal_term(&group.expr),
+        _ => None,
     }
 }
 

@@ -3802,3 +3802,178 @@ fn same_pointer_via_helper() {
         other => panic!("expected pointer equality atom from reducer path, got {other:?}"),
     }
 }
+
+// RED-first: byte-string literal tests.  The first two assert CURRENT
+// behaviour (no row, warns "unsupported"), then are expected to FAIL once
+// translate_lit handles Lit::ByteStr.  They are marked #[should_panic] so
+// the suite stays green during the RED phase.  After the implementation the
+// #[should_panic] attribute is removed.
+
+/// Before the fix: assert_eq!(call(), b"abc") produces no row because
+/// translate_lit refuses Lit::ByteStr.  After the fix it lifts one row whose
+/// RHS is a literal:bytes(...) opaque var.
+#[test]
+fn bytestr_literal_rhs_lifts_content_keyed_opaque_term() {
+    let src = r#"
+fn encoded() -> Vec<u8> { vec![97, 98, 99] }
+
+#[test]
+fn encode_abc() {
+    assert_eq!(encoded(), b"abc");
+}
+"#;
+    let out = lift_file(&parse(src), "src/codec.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(
+        out.lifted, 1,
+        "byte-string literal must lift one row; warnings: {:?}",
+        out.warnings
+    );
+    assert!(
+        out.warnings.is_empty(),
+        "no warnings expected for byte-string literal assertion: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            // RHS must be an opaque literal:bytes(...) var
+            match args[1].as_ref() {
+                Term::Var { name } => {
+                    assert!(
+                        name.starts_with("literal:bytes("),
+                        "RHS must be a literal:bytes(...) opaque var, got `{name}`"
+                    );
+                    // b"abc" = 0x61 0x62 0x63
+                    assert!(
+                        name.contains("616263"),
+                        "literal:bytes key must contain hex 616263 for b\"abc\", got `{name}`"
+                    );
+                }
+                other => panic!("expected literal:bytes Var rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+/// Two DIFFERENT byte literals must produce distinct opaque terms.
+/// Congruence: two SAME byte literals must produce equal opaque terms.
+#[test]
+fn bytestr_discrimination_different_literals_produce_distinct_terms() {
+    let src_abc = r#"
+fn encoded() -> Vec<u8> { vec![97, 98, 99] }
+
+#[test]
+fn encode_abc() {
+    assert_eq!(encoded(), b"abc");
+}
+"#;
+    let src_abd = r#"
+fn encoded() -> Vec<u8> { vec![97, 98, 100] }
+
+#[test]
+fn encode_abd() {
+    assert_eq!(encoded(), b"abd");
+}
+"#;
+    let src_abc2 = r#"
+fn encoded() -> Vec<u8> { vec![97, 98, 99] }
+
+#[test]
+fn encode_abc_again() {
+    assert_eq!(encoded(), b"abc");
+}
+"#;
+
+    fn extract_bytestr_var_name(src: &str, fixture: &str) -> String {
+        let out = lift_file(&syn::parse_file(src).expect("fixture parses"), fixture);
+        assert_eq!(
+            out.lifted, 1,
+            "bytestr discrimination fixture must lift one row; warnings: {:?}",
+            out.warnings
+        );
+        let operands = inv_operands(&out.decls[0]);
+        match operands[0].as_ref() {
+            Formula::Atomic { args, .. } => match args[1].as_ref() {
+                Term::Var { name } => name.clone(),
+                other => panic!("expected Var rhs, got {other:?}"),
+            },
+            other => panic!("expected atom, got {other:?}"),
+        }
+    }
+
+    let name_abc = extract_bytestr_var_name(src_abc, "src/codec.rs");
+    let name_abd = extract_bytestr_var_name(src_abd, "src/codec.rs");
+    let name_abc2 = extract_bytestr_var_name(src_abc2, "src/codec2.rs");
+
+    // Congruence: same bytes -> same key
+    assert_eq!(
+        name_abc, name_abc2,
+        "same byte literal b\"abc\" must produce the same opaque term (congruence)"
+    );
+    // Discrimination: different bytes -> different key
+    assert_ne!(
+        name_abc, name_abd,
+        "different byte literals b\"abc\" vs b\"abd\" must produce distinct opaque terms"
+    );
+}
+
+/// Contradiction: same call asserted == b"abc" AND == b"abd" in one test.
+/// The lifted IR must contain TWO equality atoms whose RHS terms are distinct
+/// opaque literal:bytes vars.  The conjunction is z3-UNSAT (caught) because
+/// the two distinct vars are treated as unequal opaque constants.
+#[test]
+fn bytestr_contradiction_two_different_literals_are_distinct_in_ir() {
+    let src = r#"
+fn encoded() -> Vec<u8> { vec![] }
+
+#[test]
+fn contradictory_encode() {
+    assert_eq!(encoded(), b"abc");
+    assert_eq!(encoded(), b"abd");
+}
+"#;
+    let out = lift_file(&parse(src), "src/codec.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(
+        out.lifted, 1,
+        "contradictory byte-string literals must still lift one combined row; warnings: {:?}",
+        out.warnings
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(
+        operands.len(),
+        2,
+        "two contradictory assertions must produce two atoms"
+    );
+
+    let mut bytestr_vars: Vec<String> = operands
+        .iter()
+        .map(|op| match op.as_ref() {
+            Formula::Atomic { args, .. } => match args[1].as_ref() {
+                Term::Var { name } => {
+                    assert!(
+                        name.starts_with("literal:bytes("),
+                        "each RHS must be a literal:bytes var, got `{name}`"
+                    );
+                    name.clone()
+                }
+                other => panic!("expected literal:bytes Var rhs, got {other:?}"),
+            },
+            other => panic!("expected equality atom, got {other:?}"),
+        })
+        .collect();
+
+    bytestr_vars.sort();
+    bytestr_vars.dedup();
+    assert_eq!(
+        bytestr_vars.len(),
+        2,
+        "two different byte literals must produce two DISTINCT opaque vars (z3 would catch UNSAT)"
+    );
+}
