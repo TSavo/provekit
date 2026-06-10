@@ -1,0 +1,9 @@
+[package]
+name = "itertools-showcase-bad"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+itertools = "=0.14.0"
