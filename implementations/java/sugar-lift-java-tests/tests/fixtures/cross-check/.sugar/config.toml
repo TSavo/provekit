@@ -1,0 +1,5 @@
+# Guard-position vs param-name cross-check workspace (P4.5 test e).
+# DisagreeAssert.java: guard positions say expected-first, but param[0] is
+# named "actual" (actual-first). Disagreement → UNLEARNED + report.
+[java-test-assertions]
+assertion_source_dirs = ["framework"]

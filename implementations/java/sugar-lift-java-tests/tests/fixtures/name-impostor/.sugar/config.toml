@@ -1,0 +1,6 @@
+# Name-impostor discrimination workspace (P4.5 test c).
+# The framework dir holds FakeAssert.java: a method NAMED assertEquals whose
+# body is `return;` — no throw locus. It is NOT an assertion; a test using it
+# must get the named "no throw locus" refusal, never a lift (the falsePass).
+[java-test-assertions]
+assertion_source_dirs = ["framework"]
