@@ -2101,6 +2101,136 @@ fn indexed_value() {
 }
 
 #[test]
+fn std_ptr_eq_alias_stays_location_keyed_not_euf() {
+    let src = r#"
+#[test]
+fn std_ptr_eq_alias() {
+    let x = 1;
+    assert!(std::ptr::eq(&x, &x));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ptr.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name, "tests/ptr.rs::std_ptr_eq_alias",
+        "std::ptr::eq must remain location-keyed; cross-proof pointer equality is not federated"
+    );
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, "call:std::ptr::eq"),
+                other => panic!("expected std::ptr::eq call, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
+        }
+        other => panic!("expected pointer equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn waker_vtable_pointer_eq_vendor_shape_lifts_location_keyed() {
+    // Vendor shape: rust-src library/coretests/tests/waker.rs::test_waker_getters.
+    // The data() cast equality rows are intentionally unsupported, but the two
+    // ptr::eq(vtable, &WAKER_VTABLE) assertions survive per-assertion.
+    let src = r#"
+use std::ptr;
+use std::task::{RawWaker, RawWakerVTable, Waker};
+
+#[test]
+fn test_waker_getters() {
+    let raw_waker = RawWaker::new(ptr::without_provenance_mut(42usize), &WAKER_VTABLE);
+    let waker = unsafe { Waker::from_raw(raw_waker) };
+    assert_eq!(waker.data() as usize, 42);
+    assert!(ptr::eq(waker.vtable(), &WAKER_VTABLE));
+
+    let waker2 = waker.clone();
+    assert_eq!(waker2.data() as usize, 43);
+    assert!(ptr::eq(waker2.vtable(), &WAKER_VTABLE));
+}
+
+static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+    |data| RawWaker::new(ptr::without_provenance_mut(data as usize + 1), &WAKER_VTABLE),
+    |_| {},
+    |_| {},
+    |_| {},
+);
+"#;
+    let out = lift_file(&parse(src), "tests/waker.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(out.decls[0].name, "tests/waker.rs::test_waker_getters");
+    assert!(
+        out.warnings.iter().any(|warning| warning
+            .reason
+            .contains("unsupported term `waker . data () as usize`")),
+        "cast equality rows should stay residual while pointer rows survive: {:?}",
+        out.warnings
+    );
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 2);
+    for (idx, operand) in operands.iter().enumerate() {
+        match operand.as_ref() {
+            Formula::Atomic { name, args } => {
+                assert_eq!(name, "=");
+                match args[0].as_ref() {
+                    Term::Ctor { name, args } => {
+                        assert_eq!(name, "call:ptr::eq");
+                        assert_eq!(args.len(), 2);
+                        match args[0].as_ref() {
+                            Term::Ctor { name, args } => {
+                                assert_eq!(name, "method:vtable");
+                                assert_eq!(args.len(), 1);
+                            }
+                            other => panic!("expected vtable method call, got {other:?}"),
+                        }
+                        match args[1].as_ref() {
+                            Term::Ctor { name, args } => {
+                                assert_eq!(name, "ref");
+                                assert_eq!(args.len(), 1);
+                            }
+                            other => panic!("expected reference to WAKER_VTABLE, got {other:?}"),
+                        }
+                    }
+                    other => panic!("expected ptr::eq call, got {other:?}"),
+                }
+                assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
+            }
+            other => panic!("expected pointer equality atom {idx}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn mutable_reference_pointer_eq_stays_residual() {
+    let src = r#"
+#[test]
+fn mutable_pointer_identity() {
+    let mut x = 1;
+    assert!(std::ptr::eq(&mut x, &mut x));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/ptr.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(out.decls.is_empty());
+    assert!(
+        out.warnings
+            .iter()
+            .any(|warning| warning.reason.contains("unsupported term `& mut x`")),
+        "mutable pointer identity must stay residual: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
 fn vendor_string_predicates_lift_to_string_theory_atoms_under_euf_keys() {
     // Vendor source: rust-src library/alloctests/tests/str.rs contains these
     // point-wise assertions in test_starts_with, test_ends_with, and contains.

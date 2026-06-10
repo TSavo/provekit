@@ -45,6 +45,10 @@ Claimed slice:
     `coretests/tests/slice.rs::test_const_from_ref`: immutable index terms
     inside `core::ptr::eq` pointer-equality predicates, lifted as
     location-keyed claims.
+  - `coretests/tests/waker.rs::test_waker_getters`: `ptr::eq` predicates over
+    `Waker::vtable()` and a file-level static vtable reference, lifted as a
+    location-keyed claim. The casted `data()` equality rows in the same vendor
+    test remain residual.
   - `coretests/tests/option.rs::test_and`: nullary and variant constructor
     equality rows for immutable `Option` values, lifted as location-keyed
     operator-dispatch claims.
@@ -62,7 +66,8 @@ Claimed slice:
     call results.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
   emits `#euf#` call-result consistency rows, TypeId consistency rows, and the
-  `cmp_default`, pointer-index predicate, `option::test_and`,
+  `cmp_default`, pointer-index predicate, pointer-vtable predicate,
+  `option::test_and`,
   `option::const_get_or_insert_default`, `option::const_get_or_insert_with`,
   `result_try_trait_v2_branch`, and typed-local float refinement rows, and every
   claimed row discharges.
@@ -139,13 +144,17 @@ Named gaps toward full `coretests` coverage:
   with statements, control flow, or unsupported inner terms stay residual.
   Nested calls with non-value callees, stateful method chains, non-direct-call
   results, and unsupported expression forms stay out of the claimed slice.
+  Pointer-vtable equality over file-level static references is claimed only in
+  location-keyed rows; `std::ptr::eq` is kept out of federated `#euf#` keying
+  the same way as `ptr::eq` and `core::ptr::eq`.
 
 The run script requires representative integer, generic type-arg-keyed, active
 cfg pointer-width, TypeId comparison, finite-float, width-known NaN refinement,
 typed-local float refinement, parsed-NaN float refinement, string, pure
 method-chain predicate, stable-key compound RHS rows, literal array/tuple
 exact-value rows, expression-only const-block rows, pointer-index predicate
-rows, the `option::test_and` constructor operator-dispatch row, the
+rows, the `waker.rs::test_waker_getters` pointer-vtable predicate row, the
+`option::test_and` constructor operator-dispatch row, the
 `option::const_get_or_insert_default` and `option::const_get_or_insert_with`
 `is_some` predicate rows, the `result_try_trait_v2_branch` nested constructor
 operator-dispatch row, and the `cmp_default` user-type operator row, and rejects
@@ -177,7 +186,9 @@ constructor rows. The first float-refinement slice closed 2 width-known
 `ops.rs` range-bound rows by keying reassigned and standalone-mutated receiver
 subjects as distinct definition versions. The pointer-index predicate slice
 closes 2 `array.rs::array_from_ref` / `slice.rs::test_const_from_ref` rows, kept
-location-keyed. This follow-up float-refinement slice closes 4 parsed `NaN`
+location-keyed. This pointer-vtable predicate slice closes 2
+`waker.rs::test_waker_getters` `ptr::eq(waker.vtable(), &WAKER_VTABLE)` assertions
+as one location-keyed row. This follow-up float-refinement slice closes 4 parsed `NaN`
 `unwrap()` EUF rows plus one typed-local `num::test_f32f64` refinement row. The
 infinity-equality slice then closes 2 more `time.rs` `div_duration_f32`/`f64`
 by-zero rows (`== INFINITY` desugared to the `is_infinite` and
@@ -202,7 +213,7 @@ run.
 | Floats | 18 prior full lift+verify census, with 2 `time.rs` NaN rows, 4 parsed-NaN rows, 1 typed-local predicate row, and 2 `time.rs` infinity-equality rows now closed in the showcase | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Width-known infinity equality (`div_duration_* == INFINITY`) is now claimed; residual examples include infinity equality via cast or `Ok(...)` receivers, infinity as a method argument, ordered comparisons, signed zero as a value, generic-width float aliases, and aggregate literals containing NaN. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
-| Complex terms | 398 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, and pointer-index predicate slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, and 2 pointer-index predicate rows lift location-keyed. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
+| Complex terms | 396 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, pointer-index predicate, and pointer-vtable predicate slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, 2 pointer-index predicate rows lift location-keyed, and 2 `waker.rs` pointer-vtable predicate assertions lift as one location-keyed row. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
 | Other | 331 | `tests/alloc.rs::layout_round_up_to_align_edge_cases`: no liftable scalar assertion under the current surface. |
 
 ### Complex-Term Decomposition
@@ -219,7 +230,7 @@ The current complex-term residual sub-shapes include:
 | Array, slice, and tuple literals | 47 | Exact literal array/tuple identities are now claimed only when they sit on stable call-result rows. This slice also closes the expression-only const-block free-call row `tests/array.rs::const_array_ops`: `assert_eq!(const { std::array::from_fn::<_, 5, _>(doubler) }, [0, 2, 4, 6, 8])`. Direct aggregate comparisons and aggregate literals with non-literal elements remain residual, for example `tests/array.rs::array_from_ref`: `assert_eq!(&[*VALUE], ARR)`. |
 | Boolean operators / non-equality predicates | 25 | `tests/array.rs::array_mixed_equality_integers`: `assert!(array3 != slice3b)`. |
 | Nested calls / constructors | 6 | Closed 8 immutable `Option` constructor-dispatch rows from `tests/option.rs::test_and` and 6 nested variant constructor rows from `tests/result.rs::result_try_trait_v2_branch`; residual examples include `tests/async_iter/mod.rs::into_async_iter`: `assert_eq!(..., Poll::Ready(Some(0)))`, where the polled receiver is mutable and stateful. |
-| Boolean predicate residual | 11 | Closed the `core::ptr::eq(VALUE, &ARR[0])` and `core::ptr::eq(VALUE, &SLICE[0])` location-keyed predicate rows; residual boolean predicates remain outside this bounded index/reference slice. |
+| Boolean predicate residual | 9 | Closed the `core::ptr::eq(VALUE, &ARR[0])` and `core::ptr::eq(VALUE, &SLICE[0])` location-keyed predicate rows plus the two `ptr::eq(waker.vtable(), &WAKER_VTABLE)` pointer-vtable assertions from `tests/waker.rs::test_waker_getters`; residual boolean predicates remain outside this bounded pointer-identity slice. |
 
 ### Other / No-Liftable Decomposition
 

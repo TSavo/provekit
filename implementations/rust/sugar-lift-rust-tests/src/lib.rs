@@ -409,8 +409,7 @@ fn temporal_plan_for_stmts(stmts: &[Stmt]) -> TemporalPlan {
             *definitions.entry(name).or_insert(0) += 1;
         }
         for name in ambiguous_boundary_names_in_stmt(stmt) {
-            ambiguous.insert(name.clone());
-            *definitions.entry(name).or_insert(0) += 1;
+            ambiguous.insert(name);
         }
     }
     let versioned = definitions
@@ -1548,7 +1547,10 @@ fn translate_pointer_eq_assertion(
         Expr::Group(group) => translate_pointer_eq_assertion(&group.expr, scope),
         Expr::Call(call) => {
             let callee = expr_head_key(&call.func);
-            if !matches!(callee.as_str(), "core::ptr::eq" | "ptr::eq") {
+            if !matches!(
+                callee.as_str(),
+                "core::ptr::eq" | "ptr::eq" | "std::ptr::eq"
+            ) {
                 return Ok(None);
             }
             if call.args.len() != 2 {
@@ -2227,7 +2229,10 @@ fn callsite_assertion_name(term: &Term, local_scope: &str) -> Option<String> {
 }
 
 fn is_location_keyed_call_result(name: &str) -> bool {
-    matches!(name, "call:core::ptr::eq" | "call:ptr::eq")
+    matches!(
+        name,
+        "call:core::ptr::eq" | "call:ptr::eq" | "call:std::ptr::eq"
+    )
 }
 
 fn canonical_callsite_sig(term: &Term, local_scope: &str) -> String {
