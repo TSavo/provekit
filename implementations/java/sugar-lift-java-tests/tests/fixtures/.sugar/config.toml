@@ -1,0 +1,5 @@
+# .sugar/config.toml for test fixtures workspace.
+# assertion_source_dirs points at the vendored JUnit5 Assertions.java
+# (relative to this workspace root, which is tests/fixtures/).
+[java-test-assertions]
+assertion_source_dirs = ["vendor/junit5"]

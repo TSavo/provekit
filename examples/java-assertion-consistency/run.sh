@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
-# java-assertion-consistency showcase: Phase 1 of the Java-native lifter.
+# java-assertion-consistency showcase: Phase 2 of the Java-native lifter.
 #
-# Lifts assertEquals(<int-literal>, <method>(<int-literal-args>)) inside @Test
-# methods via javac's own com.sun.source tree API (no string-scanning).
+# Phase 2: assertion vocabulary LEARNED from the framework's own source
+# (org.junit.jupiter.api.Assertions) via JavacTask.parse(). No hardcoded meanings.
 #
-# GOOD: two tests both asserting g(2)==1 → consistent → discharged
-# BAD:  two tests asserting g(2)==1 AND g(2)==2 → contradiction → unsatisfied
+# The vendor/junit5/Assertions.java in each suite's workspace is the verbatim source
+# from which VocabDeriver learns assertEquals=equality, assertNotEquals=inequality,
+# assertEquals(float,float,float)=approximate (refused), etc.
+#
+# assertion_source_dirs in .sugar/config.toml points at vendor/junit5/.
+#
+# GOOD suite:
+#   - ConsistencyTest: assertEquals(1,g(2)) × 2 → consistent → discharged (P1 case)
+#   - VocabDrivenConsistencyTest: assertEquals(1,g(2)) ∧ assertNotEquals(2,g(2))
+#       → =(g(2),1) ∧ ≠(g(2),2) → consistent (g(2)=1 satisfies both) → discharged
+#
+# BAD suite:
+#   - ContradictionTest: assertEquals(1,g(2)) ∧ assertEquals(2,g(2)) → unsatisfied (P1 case)
+#   - VocabDrivenContradictionTest: assertEquals(1,g(2)) ∧ assertNotEquals(1,g(2))
+#       → =(g(2),1) ∧ ≠(g(2),1) → DIRECT =/≠ contradiction → unsatisfied
 #
 # Runs sugar mint -> sugar prove -> sugar verify and parses real JSON receipts.
 set -euo pipefail
@@ -22,10 +35,11 @@ BIN_DIR="$RUST/target/debug"
 SUGAR="$BIN_DIR/sugar"
 KIT_JAVA="$(which java)"
 
-echo "SCOPE: JUnit assertEquals(<int>, <method>(<int-args>)) lifted via javac com.sun.source tree API."
-echo "SCOPE: GOOD has two tests asserting g(2)==1 (consistent, discharged)."
-echo "SCOPE: BAD has two tests asserting g(2)==1 and g(2)==2 (contradiction, unsatisfied)."
-echo "SCOPE: Phase 1 only; no witness surface, no TestNG/Hamcrest/AssertJ, no loops."
+echo "SCOPE: Phase 2 Java-native lifter: vocab LEARNED from org.junit.jupiter.api.Assertions source."
+echo "SCOPE: assertEquals, assertNotEquals, assertNull, assertNotNull classified from framework source."
+echo "SCOPE: assertEquals(float,float,float) with delta REFUSED (approximate, not exact =)."
+echo "SCOPE: GOOD: assertEquals+assertNotEquals consistent; discharged."
+echo "SCOPE: BAD: assertEquals+assertNotEquals contradiction (same value); unsatisfied."
 
 echo
 echo "== build the sugar CLI =="
