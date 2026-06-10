@@ -132,9 +132,24 @@ pub fn lift_file_with_options(
     source_path: &str,
     options: &LiftOptions,
 ) -> AdapterOutput {
+    let empty = MacroRegistry::new();
+    lift_file_with_macro_imports(file, source_path, options, &empty)
+}
+
+/// Lift a file with an external macro registry in scope. The registry carries
+/// `macro_rules!` definitions gathered from the rest of the crate and its
+/// dependency SOURCE (we operate exclusively on source, never on a binary or an
+/// opaque macro we refuse to read). Any macro the lifter expands is expanded
+/// from a definition we hold.
+pub fn lift_file_with_macro_imports(
+    file: &syn::File,
+    source_path: &str,
+    options: &LiftOptions,
+    imported_macros: &MacroRegistry,
+) -> AdapterOutput {
     let mut out = AdapterOutput::default();
     let mut modules = Vec::new();
-    let reducer = ReductionCtx::from_items(&file.items);
+    let reducer = ReductionCtx::from_items_with_imports(&file.items, imported_macros);
     // Pass 1: walk test fns (and modules). Populates assertions_lifted, reduced_helpers.
     walk_items(
         &file.items,
@@ -517,15 +532,25 @@ struct ReductionCtx<'a> {
     /// ambiguous and not expanded.
     macros: BTreeMap<String, std::rc::Rc<Vec<macro_expand::MacroRule>>>,
     ambiguous_macros: BTreeSet<String>,
+    /// macro_rules! gathered from the rest of the crate and its dependency
+    /// SOURCE. In-file definitions take precedence; this is the fallback so a
+    /// macro defined in another file or crate (whose source we hold) is still
+    /// expanded from its definition rather than treated as opaque.
+    imported: MacroRegistry,
 }
 
 impl<'a> ReductionCtx<'a> {
     fn from_items(items: &'a [Item]) -> Self {
+        Self::from_items_with_imports(items, &MacroRegistry::new())
+    }
+
+    fn from_items_with_imports(items: &'a [Item], imported: &MacroRegistry) -> Self {
         let mut ctx = Self {
             functions: BTreeMap::new(),
             ambiguous_functions: BTreeSet::new(),
             macros: BTreeMap::new(),
             ambiguous_macros: BTreeSet::new(),
+            imported: imported.clone(),
         };
         ctx.collect_items(items);
         ctx
@@ -589,12 +614,106 @@ impl<'a> ReductionCtx<'a> {
         Ok(self.functions.get(name).copied())
     }
 
-    /// Look up an in-source `macro_rules!` definition by name for expansion.
+    /// Look up a `macro_rules!` definition by name for expansion: in-file first
+    /// (most specific), then the imported source-graph registry.
     fn macro_rules(&self, name: &str) -> Option<std::rc::Rc<Vec<macro_expand::MacroRule>>> {
         if self.ambiguous_macros.contains(name) {
             return None;
         }
+        if let Some(rules) = self.macros.get(name) {
+            return Some(rules.clone());
+        }
+        self.imported.lookup(name)
+    }
+}
+
+/// A registry of `macro_rules!` definitions gathered from source: the crate
+/// under analysis plus its dependency source trees. Our guarantee extends
+/// exactly as far as the source we hold; a macro absent here is out of scope
+/// (a named refusal), and the remedy is to add its source, never to reason
+/// about a binary.
+#[derive(Default, Clone)]
+pub struct MacroRegistry {
+    macros: BTreeMap<String, std::rc::Rc<Vec<macro_expand::MacroRule>>>,
+    ambiguous: BTreeSet<String>,
+}
+
+impl MacroRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Ingest every `macro_rules!` definition in a parsed source file (recursing
+    /// into inline modules). A name defined inconsistently across sources is
+    /// marked ambiguous and not expanded.
+    pub fn scan_file(&mut self, file: &syn::File) {
+        self.scan_items(&file.items);
+    }
+
+    /// Parse source text and ingest its macro definitions. Unparseable source is
+    /// skipped (it contributes no definitions).
+    pub fn scan_source(&mut self, src: &str) {
+        if let Ok(file) = syn::parse_file(src) {
+            self.scan_file(&file);
+        }
+    }
+
+    fn scan_items(&mut self, items: &[Item]) {
+        for item in items {
+            match item {
+                Item::Macro(m) if m.mac.path.is_ident("macro_rules") => {
+                    if let Some(ident) = &m.ident {
+                        self.insert(&ident.to_string(), m.mac.tokens.clone());
+                    }
+                }
+                Item::Mod(m) => {
+                    if let Some((_, items)) = &m.content {
+                        self.scan_items(items);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn insert(&mut self, name: &str, tokens: proc_macro2::TokenStream) {
+        if self.ambiguous.contains(name) {
+            return;
+        }
+        let Ok(rules) = macro_expand::parse_rules(tokens) else {
+            return;
+        };
+        match self.macros.get(name) {
+            // Re-seeing a byte-identical definition (the same crate scanned
+            // twice) is fine; a genuinely different one is ambiguous.
+            Some(existing)
+                if macro_expand::rules_signature(existing)
+                    == macro_expand::rules_signature(&rules) => {}
+            Some(_) => {
+                self.macros.remove(name);
+                self.ambiguous.insert(name.to_string());
+            }
+            None => {
+                self.macros
+                    .insert(name.to_string(), std::rc::Rc::new(rules));
+            }
+        }
+    }
+
+    fn lookup(&self, name: &str) -> Option<std::rc::Rc<Vec<macro_expand::MacroRule>>> {
+        if self.ambiguous.contains(name) {
+            return None;
+        }
         self.macros.get(name).cloned()
+    }
+
+    /// Number of distinct macro definitions held (for reporting).
+    pub fn len(&self) -> usize {
+        self.macros.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.macros.is_empty()
     }
 }
 
@@ -831,40 +950,45 @@ fn collect_assertion_entries(
             }
             Stmt::Macro(m) => match cfg_eval_for_attrs(&m.attrs, options) {
                 CfgEval::Active => {
-                    // Walk into the definition: if this is an in-source
-                    // macro_rules!, expand it and reduce the expansion. One
-                    // source macro is one accounting unit (lifted if its
-                    // expansion yields any FOL atom, else one named refusal).
-                    match try_macro_expansion_entries(
+                    // Known assertion macros are lowered by their tuned arm
+                    // first. If no arm lifts it, walk into the definition: when
+                    // we hold the macro's source, expand it and reduce the
+                    // expansion. One source macro is one accounting unit.
+                    let before_e = entries.len();
+                    let before_s = skipped.len();
+                    collect_macro(
                         &m.mac.path,
-                        &m.mac.tokens,
-                        reducer,
-                        local_scope,
+                        m.mac.tokens.clone(),
+                        &temporal_scope,
+                        &*float_widths,
                         options,
-                        float_widths,
-                        macro_depth,
-                    ) {
-                        Some(Ok(expanded_entries)) => {
-                            if !expanded_entries.is_empty() {
-                                *macros_lifted += 1;
+                        entries,
+                        skipped,
+                    );
+                    if entries.len() > before_e {
+                        *macros_lifted += 1;
+                    } else {
+                        match try_macro_expansion_entries(
+                            &m.mac.path,
+                            &m.mac.tokens,
+                            reducer,
+                            local_scope,
+                            options,
+                            float_widths,
+                            macro_depth,
+                        ) {
+                            Some(Ok(es)) => {
+                                skipped.truncate(before_s);
+                                if !es.is_empty() {
+                                    *macros_lifted += 1;
+                                }
+                                entries.extend(es);
                             }
-                            entries.extend(expanded_entries);
-                        }
-                        Some(Err(reason)) => skipped.push(reason),
-                        None => {
-                            let before = entries.len();
-                            collect_macro(
-                                &m.mac.path,
-                                m.mac.tokens.clone(),
-                                &temporal_scope,
-                                &*float_widths,
-                                options,
-                                entries,
-                                skipped,
-                            );
-                            if entries.len() > before {
-                                *macros_lifted += 1;
+                            Some(Err(reason)) => {
+                                skipped.truncate(before_s);
+                                skipped.push(reason);
                             }
+                            None => {}
                         }
                     }
                 }
@@ -877,40 +1001,45 @@ fn collect_assertion_entries(
             },
             Stmt::Expr(Expr::Macro(m), _) => match cfg_eval_for_attrs(&m.attrs, options) {
                 CfgEval::Active => {
-                    // Walk into the definition: if this is an in-source
-                    // macro_rules!, expand it and reduce the expansion. One
-                    // source macro is one accounting unit (lifted if its
-                    // expansion yields any FOL atom, else one named refusal).
-                    match try_macro_expansion_entries(
+                    // Known assertion macros are lowered by their tuned arm
+                    // first. If no arm lifts it, walk into the definition: when
+                    // we hold the macro's source, expand it and reduce the
+                    // expansion. One source macro is one accounting unit.
+                    let before_e = entries.len();
+                    let before_s = skipped.len();
+                    collect_macro(
                         &m.mac.path,
-                        &m.mac.tokens,
-                        reducer,
-                        local_scope,
+                        m.mac.tokens.clone(),
+                        &temporal_scope,
+                        &*float_widths,
                         options,
-                        float_widths,
-                        macro_depth,
-                    ) {
-                        Some(Ok(expanded_entries)) => {
-                            if !expanded_entries.is_empty() {
-                                *macros_lifted += 1;
+                        entries,
+                        skipped,
+                    );
+                    if entries.len() > before_e {
+                        *macros_lifted += 1;
+                    } else {
+                        match try_macro_expansion_entries(
+                            &m.mac.path,
+                            &m.mac.tokens,
+                            reducer,
+                            local_scope,
+                            options,
+                            float_widths,
+                            macro_depth,
+                        ) {
+                            Some(Ok(es)) => {
+                                skipped.truncate(before_s);
+                                if !es.is_empty() {
+                                    *macros_lifted += 1;
+                                }
+                                entries.extend(es);
                             }
-                            entries.extend(expanded_entries);
-                        }
-                        Some(Err(reason)) => skipped.push(reason),
-                        None => {
-                            let before = entries.len();
-                            collect_macro(
-                                &m.mac.path,
-                                m.mac.tokens.clone(),
-                                &temporal_scope,
-                                &*float_widths,
-                                options,
-                                entries,
-                                skipped,
-                            );
-                            if entries.len() > before {
-                                *macros_lifted += 1;
+                            Some(Err(reason)) => {
+                                skipped.truncate(before_s);
+                                skipped.push(reason);
                             }
+                            None => {}
                         }
                     }
                 }

@@ -76,6 +76,25 @@ pub(crate) fn parse_rules(tokens: TokenStream) -> Result<Vec<MacroRule>, String>
     Ok(rules)
 }
 
+/// A stable textual signature of a rule set, used to tell whether two scanned
+/// definitions of the same macro name are the same definition (the crate seen
+/// twice) or genuinely conflicting (ambiguous).
+pub(crate) fn rules_signature(rules: &[MacroRule]) -> String {
+    rules
+        .iter()
+        .map(|r| {
+            let matcher: String = r
+                .matcher
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("{matcher} => {{ {} }}", r.body)
+        })
+        .collect::<Vec<_>>()
+        .join(" ; ")
+}
+
 /// Expand an invocation `input` against a macro's rules. Tries each rule in
 /// order; the first whose matcher matches the entire input is transcribed.
 /// Returns `Err` if no rule matches or the matched rule uses grammar the

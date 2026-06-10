@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use sugar_lift_rust_tests::lift_file;
+use sugar_lift_rust_tests::{lift_file_with_macro_imports, LiftOptions, MacroRegistry};
 use syn::visit::{self, Visit};
 
 /// The lifter's assertion universe: any macro whose name starts with assert or
@@ -107,7 +107,40 @@ fn main() {
         .position(|a| a == "--json")
         .and_then(|i| args.get(i + 1))
         .cloned();
+    // `--deps dir1,dir2,...`: dependency SOURCE trees whose macro_rules! should
+    // be in scope when expanding (we operate exclusively on source).
+    let dep_dirs: Vec<String> = args
+        .iter()
+        .position(|a| a == "--deps")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.split(',').map(|p| p.to_string()).collect())
+        .unwrap_or_default();
 
+    // Build the source-graph macro registry: every macro_rules! in the corpus
+    // itself plus each dependency source tree.
+    let mut registry = MacroRegistry::new();
+    let mut scan_dirs: Vec<&str> = vec![corpus.as_str()];
+    scan_dirs.extend(dep_dirs.iter().map(|s| s.as_str()));
+    for dir in &scan_dirs {
+        for entry in walkdir::WalkDir::new(dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) == Some("rs") {
+                if let Ok(src) = std::fs::read_to_string(p) {
+                    registry.scan_source(&src);
+                }
+            }
+        }
+    }
+    eprintln!(
+        "macro registry: {} definitions from source ({} trees)",
+        registry.len(),
+        scan_dirs.len()
+    );
+
+    let options = LiftOptions::default();
     let mut totals = Totals::default();
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
     let mut reason_samples: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -151,7 +184,7 @@ fn main() {
         let mut counter = AssertCounter::default();
         counter.visit_file(&file);
 
-        let out = lift_file(&file, &rel);
+        let out = lift_file_with_macro_imports(&file, &rel, &options, &registry);
         let discharged = out.assertions_lifted;
         let refused = out.assertions_refused;
 
