@@ -993,9 +993,18 @@ public final class JavaTestAssertionsRpc {
         //    We scan ONLY the body, not the whole method.
         Set<String> bodyMutated = new HashSet<>();
         scanStmtForMutations(bodyStmt, bodyMutated);
-        // The loop variable being incremented by the update clause is handled
-        // above; the body must not mutate anything else.
-        bodyMutated.remove(loopVar); // update-clause var is the loop var itself (accounted)
+        // The update clause's increment is the ONLY sanctioned mutation of the
+        // loop variable; a body that mutates it (e.g. `g(x++)` inside an assert
+        // arg) changes the iteration space and the universal would be false.
+        // Refuse it directly rather than relying on the arg-shape gate alone --
+        // if a later phase widens arg shapes, this gate must already hold.
+        if (bodyMutated.contains(loopVar)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<loop>",
+                "loop→∀ refused: body mutates the loop variable " + loopVar
+                    + " (iteration space not the stated range — universal would be false)"));
+            return;
+        }
         if (!bodyMutated.isEmpty()) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
                 "<loop>",

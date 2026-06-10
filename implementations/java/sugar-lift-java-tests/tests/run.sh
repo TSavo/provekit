@@ -557,4 +557,34 @@ print(f"PASS: non-literal bound refused by name. Reason: {open_bound_diags[0]}")
 PY
 
 echo
-echo "== all 11 tests PASS =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 12: loop-variable mutation discrimination (ForLoopVarMutation.java)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT12="$(run_lift "$FIXTURES" "ForLoopVarMutation.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT12" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# g(x++) mutates the loop variable inside the body: the iteration space is
+# not the stated range. Must be refused by the LOOP-VARIABLE gate itself,
+# not merely the arg-shape gate (defense must hold if arg shapes widen).
+assert len(ir) == 0, f"expected 0 contracts (loop-var mutation refused), got {len(ir)}: {json.dumps(ir,indent=2)}"
+reasons = [d.get("reason","") for d in diags]
+loopvar_diags = [r for r in reasons if "mutates the loop variable" in r]
+assert len(loopvar_diags) > 0, \
+    f"expected the loop-variable mutation refusal, got: {reasons}"
+print(f"PASS: loop-variable body mutation refused by its own gate. Reason: {loopvar_diags[0]}")
+PY
+
+echo
+echo "== all 12 tests PASS =="
