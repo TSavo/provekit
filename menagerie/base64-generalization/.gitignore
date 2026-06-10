@@ -1,0 +1,5 @@
+# build + run artifacts — never committed
+*.class
+walker/*.class
+*.smt2
+walker.json
