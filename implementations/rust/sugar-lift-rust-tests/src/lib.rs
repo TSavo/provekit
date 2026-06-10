@@ -961,6 +961,26 @@ fn assertions_from_macro(
                 .map_err(|e| format!("assert!: {e}"))?;
             Ok(vec![entry])
         }
+        "assert_ne" => {
+            let args = parse_macro_args(tokens).map_err(|e| format!("assert_ne!: {e}"))?;
+            if args.exprs.len() < 2 {
+                return Err("assert_ne!: expected at least 2 arguments".to_string());
+            }
+            // assert_ne!(a, b) is sugar for assert!(a != b): route through the
+            // SAME relation path so the lifted atom is byte-identical to `a != b`
+            // (ne(a, b) for primitive terms, eq(call:eq:<Type>(a, b), false) for
+            // user-typed terms via operator dispatch, invariant 9x).
+            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
+                .map_err(|e| format!("assert_ne!: {e}"))?;
+            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
+                .map_err(|e| format!("assert_ne!: {e}"))?;
+            Ok(vec![assertion_entry_from_relation(
+                lhs,
+                rhs,
+                RelationOp::Ne,
+                scope,
+            )])
+        }
         "assert_all" | "assert_none" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("{name}!: {e}"))?;
             assertion_entries_from_ascii_macro(name.as_str(), &args.exprs)

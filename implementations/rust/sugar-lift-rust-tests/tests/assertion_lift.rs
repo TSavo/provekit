@@ -3001,3 +3001,121 @@ fn conditional_rebind_is_some() {
         "mutable conditionally-reassigned receiver must stay residual, got rows: {x_rows:?}"
     );
 }
+
+// --- assert_ne! macro lift tranche (sugar for a != b, federated to the != path) ---
+
+// The load-bearing property: assert_ne!(a, b) must lift to the BYTE-IDENTICAL
+// atom as assert!(a != b). Same logical claim -> same atom -> same CID. We prove
+// it by lifting both and comparing the inv structurally.
+fn single_inv_debug(src: &str) -> String {
+    let out = lift_file(&parse(src), "tests/macros.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    format!("{:?}", operands[0])
+}
+
+#[test]
+fn assert_ne_primitive_lifts_identically_to_not_equal_operator() {
+    // assert_ne!(a(), 1) must equal assert!(a() != 1): both -> ne(call:a(), 1).
+    let via_macro = single_inv_debug(
+        r#"
+fn a() -> i32 { 7 }
+#[test]
+fn t() { assert_ne!(a(), 1); }
+"#,
+    );
+    let via_operator = single_inv_debug(
+        r#"
+fn a() -> i32 { 7 }
+#[test]
+fn t() { assert!(a() != 1); }
+"#,
+    );
+    assert_eq!(
+        via_macro, via_operator,
+        "assert_ne! must lift byte-identically to the != operator"
+    );
+    assert!(
+        via_macro.contains('≠'),
+        "primitive assert_ne should produce the not-equal relation atom: {via_macro}"
+    );
+}
+
+#[test]
+fn assert_ne_user_type_lifts_identically_to_not_equal_operator_as_dispatch_false() {
+    // On user-typed (constructor) operands, != is sugar for !a.eq(b): both
+    // assert_ne!(Foo(1), Foo(2)) and assert!(Foo(1) != Foo(2)) must lift to the
+    // operator-dispatch atom eq(call:eq:Foo(..), false) -- invariant 9x.
+    let via_macro = single_inv_debug(
+        r#"
+#[test]
+fn t() { assert_ne!(Foo(1), Foo(2)); }
+"#,
+    );
+    let via_operator = single_inv_debug(
+        r#"
+#[test]
+fn t() { assert!(Foo(1) != Foo(2)); }
+"#,
+    );
+    assert_eq!(
+        via_macro, via_operator,
+        "assert_ne! on user types must federate to the same operator-dispatch atom as !="
+    );
+    assert!(
+        via_macro.contains("call:eq:Foo"),
+        "user-typed assert_ne should dispatch to call:eq:Foo, not FOL: {via_macro}"
+    );
+}
+
+#[test]
+fn assert_ne_does_not_reroute_assert_eq_rows() {
+    // Discrimination: a file with both assert_eq! and assert_ne! produces a
+    // positive equality atom AND a distinct ne atom, not two of the same.
+    let out = lift_file(
+        &parse(
+            r#"
+fn a() -> i32 { 1 }
+fn b() -> i32 { 2 }
+#[test]
+fn mixed_eq_ne() {
+    assert_eq!(a(), 1);
+    assert_ne!(b(), 1);
+}
+"#,
+        ),
+        "tests/macros.rs",
+    );
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    // Across all decls/atoms, assert_eq! contributes a positive equality and
+    // assert_ne! contributes a not-equal -- both present, regardless of how the
+    // two assertions are grouped into decls.
+    let all = format!("{:?}", out.decls);
+    assert!(
+        all.contains('≠'),
+        "expected a not-equal atom from assert_ne!: {all}"
+    );
+    assert!(
+        all.contains("\"=\""),
+        "expected a positive equality atom from assert_eq!: {all}"
+    );
+}
+
+#[test]
+fn assert_ne_trailing_comma_lifts() {
+    // assert_ne!(1, 2,) -- trailing comma is handled, lifts the ne(1,2) atom.
+    let out = lift_file(
+        &parse(
+            r#"
+#[test]
+fn t() { assert_ne!(1, 2,); }
+"#,
+        ),
+        "tests/macros.rs",
+    );
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+}
