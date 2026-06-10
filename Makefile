@@ -319,7 +319,8 @@ SHOWCASE_RUNS = \
 	examples/bitflags-showcase/run.sh \
 	examples/forall-loop-showcase/run.sh \
 	examples/java-assertion-consistency/run.sh \
-	examples/java-forall-loop/run.sh
+	examples/java-forall-loop/run.sh \
+	examples/java-testng-consistency/run.sh
 
 .PHONY: test-showcases
 test-showcases:

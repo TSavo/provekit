@@ -1,18 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Java-native JUnit assertion lifter for the Sugar/ProvekIt substrate.
-// Phase 3: final-oracle (effective-finality via AST mutation scan) +
-// loop→∀ lifter (bounded for-loop emitted as guarded universal forall).
+// Java-native JUnit/TestNG assertion lifter for the Sugar/ProvekIt substrate.
+// Phase 4: TestNG support — proof that assertion vocabulary must be learned
+// per-framework, never hardcoded.
 //
 // THE LAW: every fact about Java source comes from a com.sun.source.tree.*
 // node. No regex, indexOf, split, or any string-scanning of Java source code
 // is used here. JSON-RPC wire protocol codec uses indexOf/split on JSON bytes
 // only -- not on Java source.
 //
+// THE POINT OF PHASE 4:
+// TestNG's assertEquals(actual, expected) places ACTUAL FIRST — the reverse
+// of JUnit's assertEquals(expected, actual). Hardcode either order and the
+// other framework lifts every assertion backwards. The VocabDeriver reads
+// the parameter NAMES from the vendored framework source to learn which
+// argument carries the expected (constant) value: param[0]=="expected" →
+// JUnit order (expectedArgIndex=0); param[0]=="actual" → TestNG order
+// (expectedArgIndex=1). The lift path then uses this learned index — no
+// framework-specific code in the lift path itself.
+//
+// Framework detection: org.junit.* imports → JUnit vocab; org.testng.* →
+// TestNG vocab. File importing BOTH Assert classes → named refusal on
+// every assertion (ambiguous vocabulary).
+//
+// assertThat (Hamcrest/AssertJ): not in any vendored source → unlearned →
+// named refusal.
+//
 // The VocabDeriver reads each public static assert* method from the framework's
 // source (e.g. org.junit.jupiter.api.Assertions), classifies it by structure:
 //   - signature carries a `delta` / `tolerance` parameter  -> APPROXIMATE (refused)
-//   - assertEquals(expected, actual[, msg])                -> EQUALITY (expected-first)
+//   - assertEquals(expected, actual[, msg])                -> EQUALITY, expectedArgIndex=0
+//   - assertEquals(actual, expected[, msg]) [TestNG]       -> EQUALITY, expectedArgIndex=1
 //   - assertNotEquals(unexpected, actual[, msg])            -> INEQUALITY
 //   - assertTrue(condition[, msg])                          -> TRUTH
 //   - assertFalse(condition[, msg])                         -> NEGATED_TRUTH
@@ -41,7 +59,7 @@ import java.util.stream.*;
 public final class JavaTestAssertionsRpc {
 
     private static final String SURFACE = "java-test-assertions";
-    private static final String VERSION = "0.2.0";
+    private static final String VERSION = "0.4.0";
 
     // ──────────────────────────────────────────────────────────────
     // Entry point: JSON-RPC 2.0 over stdin/stdout, one object per line.
@@ -122,11 +140,11 @@ public final class JavaTestAssertionsRpc {
             return irDocument(ir, diagnostics);
         }
 
-        // Load the assertion vocabulary for this workspace.
-        // Vocabulary is derived from configured assertion source dirs (from
-        // .sugar/config.toml [java-test-assertions] assertion_source_dirs) plus
-        // the externalized exceptions overlay from .sugar/vocab-exceptions/.
-        AssertionVocab vocab = loadVocab(compiler, root, diagnostics);
+        // Load assertion vocabularies per framework for this workspace.
+        // Each source dir in assertion_source_dirs is parsed separately;
+        // the resulting vocab is stored in a MultiFrameworkVocab keyed by
+        // the detected framework package (e.g. "org.junit", "org.testng").
+        MultiFrameworkVocab multiVocab = loadMultiVocab(compiler, root, diagnostics);
 
         for (String rel : files) {
             Path abs = root.resolve(rel).normalize();
@@ -134,52 +152,123 @@ public final class JavaTestAssertionsRpc {
                 diagnostics.add(diagnostic(rel, null, null, "cannot read file"));
                 continue;
             }
-            liftFile(compiler, abs, rel, vocab, ir, diagnostics);
+            liftFile(compiler, abs, rel, multiVocab, ir, diagnostics);
         }
 
         return irDocument(ir, diagnostics);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Vocabulary loading: read .sugar/config.toml for assertion_source_dirs,
-    // derive vocab from each dir, overlay exceptions.
+    // MultiFrameworkVocab: holds one AssertionVocab per framework
     // ──────────────────────────────────────────────────────────────
 
     /**
-     * Load (or derive empty) AssertionVocab for this workspace.
+     * Holds the assertion vocabulary keyed by framework package prefix.
+     * Keys are framework-package strings: "org.junit", "org.testng".
+     * A key is present only if source was configured for that framework.
+     */
+    static final class MultiFrameworkVocab {
+        /** Map: framework-package prefix → AssertionVocab */
+        final Map<String, AssertionVocab> byFramework;
+
+        MultiFrameworkVocab(Map<String, AssertionVocab> byFramework) {
+            this.byFramework = Collections.unmodifiableMap(new HashMap<>(byFramework));
+        }
+
+        /** Return the vocab for an exact framework key, or empty vocab if not found. */
+        AssertionVocab forFramework(String frameworkKey) {
+            return byFramework.getOrDefault(frameworkKey, AssertionVocab.empty());
+        }
+
+        boolean hasFramework(String frameworkKey) {
+            return byFramework.containsKey(frameworkKey);
+        }
+
+        /** True iff at least one framework has been configured. */
+        boolean hasAnyVocab() {
+            return !byFramework.isEmpty();
+        }
+
+        /** Return the "legacy single-vocab" — only valid if there is exactly one framework. */
+        AssertionVocab singleOrEmpty() {
+            if (byFramework.size() == 1) return byFramework.values().iterator().next();
+            return AssertionVocab.empty();
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Vocabulary loading: derive per-framework vocab from source dirs
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Load (or derive empty) MultiFrameworkVocab for this workspace.
      * Source dirs come from .sugar/config.toml:
      *   [java-test-assertions]
-     *   assertion_source_dirs = ["path/to/junit5/src"]
-     * Paths are resolved relative to workspaceRoot.
+     *   assertion_source_dirs = ["path/to/junit5/src", "path/to/testng/src"]
+     * Each dir is parsed separately; framework is auto-detected from package names.
      */
-    private static AssertionVocab loadVocab(
+    private static MultiFrameworkVocab loadMultiVocab(
             JavaCompiler compiler,
             Path workspaceRoot,
             List<String> diagnostics) throws IOException {
 
-        // 1. Read assertion_source_dirs from .sugar/config.toml
         List<Path> sourceDirs = readAssertionSourceDirs(workspaceRoot);
+        Map<String, AssertionVocab> result = new HashMap<>();
 
-        // 2. Collect all .java files from those dirs
-        List<Path> frameworkSources = new ArrayList<>();
         for (Path dir : sourceDirs) {
             if (!Files.isDirectory(dir)) continue;
+            List<Path> frameworkSources = new ArrayList<>();
             try (Stream<Path> walk = Files.walk(dir)) {
                 walk.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".java"))
                     .sorted()
                     .forEach(frameworkSources::add);
             }
+            if (frameworkSources.isEmpty()) continue;
+
+            // Derive vocab + detect which framework it is
+            VocabDeriver.DeriveResult dr = VocabDeriver.deriveFromSourcesWithFramework(
+                    compiler, frameworkSources, diagnostics);
+            if (dr.frameworkPackage != null) {
+                // Merge into existing entry if same framework appears in multiple dirs
+                AssertionVocab existing = result.get(dr.frameworkPackage);
+                AssertionVocab merged = existing == null ? dr.vocab : mergeVocabs(existing, dr.vocab);
+                result.put(dr.frameworkPackage, merged);
+            }
         }
 
-        // 3. Derive vocab from those sources
-        AssertionVocab derived = VocabDeriver.deriveFromSources(compiler, frameworkSources, diagnostics);
-
-        // 4. Load exceptions overlay from .sugar/vocab-exceptions/
+        // For each framework, apply the exceptions overlay
         Path excDir = workspaceRoot.resolve(".sugar").resolve("vocab-exceptions");
-        derived = loadExceptionsOverlay(derived, excDir, diagnostics);
+        for (String fw : new ArrayList<>(result.keySet())) {
+            AssertionVocab overlaid = loadExceptionsOverlay(result.get(fw), excDir, diagnostics);
+            result.put(fw, overlaid);
+        }
 
-        return derived;
+        return new MultiFrameworkVocab(result);
+    }
+
+    /** Merge two AssertionVocabs (union of all sets, union of expectedArgIndex maps). */
+    private static AssertionVocab mergeVocabs(AssertionVocab a, AssertionVocab b) {
+        Set<String> eq = union(a.equality, b.equality);
+        Set<String> ineq = union(a.inequality, b.inequality);
+        Set<String> tr = union(a.truth, b.truth);
+        Set<String> negTr = union(a.negatedTruth, b.negatedTruth);
+        Set<String> nullS = union(a.nullSet, b.nullSet);
+        Set<String> notNull = union(a.notNullSet, b.notNullSet);
+        Set<String> approx = union(a.approx, b.approx);
+        Set<String> unl = union(a.unlearned, b.unlearned);
+        Map<String, Integer> idx = new HashMap<>(a.expectedArgIndex);
+        idx.putAll(b.expectedArgIndex);
+        return new AssertionVocab(
+            Collections.unmodifiableSet(eq), Collections.unmodifiableSet(ineq),
+            Collections.unmodifiableSet(tr), Collections.unmodifiableSet(negTr),
+            Collections.unmodifiableSet(nullS), Collections.unmodifiableSet(notNull),
+            Collections.unmodifiableSet(approx), Collections.unmodifiableSet(unl),
+            Collections.unmodifiableMap(idx));
+    }
+
+    private static <T> Set<T> union(Set<T> a, Set<T> b) {
+        Set<T> r = new HashSet<>(a); r.addAll(b); return r;
     }
 
     /**
@@ -351,6 +440,7 @@ public final class JavaTestAssertionsRpc {
             catEntry.getValue().addAll(names);
         }
 
+        // Preserve existing expectedArgIndex from base (overrides don't change order)
         return new AssertionVocab(
             Collections.unmodifiableSet(equality),
             Collections.unmodifiableSet(inequality),
@@ -359,7 +449,8 @@ public final class JavaTestAssertionsRpc {
             Collections.unmodifiableSet(nullSet),
             Collections.unmodifiableSet(notNullSet),
             Collections.unmodifiableSet(approx),
-            Collections.unmodifiableSet(unlearned)
+            Collections.unmodifiableSet(unlearned),
+            base.expectedArgIndex
         );
     }
 
@@ -394,7 +485,7 @@ public final class JavaTestAssertionsRpc {
      * The learned vocabulary table for one assertion framework.
      * All sets are method-name strings (bare, e.g. "assertEquals").
      * Categories:
-     *   equality    — assertEquals(expected, actual[, msg]); expected is arg[0]
+     *   equality    — assertEquals(expected, actual[, msg]); expectedArgIndex[method] says which arg is expected
      *   inequality  — assertNotEquals(unexpected, actual[, msg])
      *   truth       — assertTrue(condition[, msg])
      *   negatedTruth— assertFalse(condition[, msg])
@@ -402,6 +493,10 @@ public final class JavaTestAssertionsRpc {
      *   notNullSet  — assertNotNull(actual[, msg]) => ≠(actual, ctor None)
      *   approx      — REFUSED: carries delta/tolerance; lifting as = is a false-pass
      *   unlearned   — REFUSED: structure not understood; refuses by name
+     *
+     * expectedArgIndex: for each equality/inequality method, which argument index (0-based)
+     *   carries the expected/unexpected (constant) value. JUnit: 0. TestNG: 1.
+     *   Learned from parameter NAMES in the framework's own source.
      */
     static final class AssertionVocab {
         final Set<String> equality;
@@ -412,6 +507,8 @@ public final class JavaTestAssertionsRpc {
         final Set<String> notNullSet;
         final Set<String> approx;
         final Set<String> unlearned;
+        /** Maps method name → index of the expected/unexpected (constant) arg. Default: 0 (JUnit). */
+        final Map<String, Integer> expectedArgIndex;
 
         AssertionVocab(
                 Set<String> equality,
@@ -421,18 +518,21 @@ public final class JavaTestAssertionsRpc {
                 Set<String> nullSet,
                 Set<String> notNullSet,
                 Set<String> approx,
-                Set<String> unlearned) {
+                Set<String> unlearned,
+                Map<String, Integer> expectedArgIndex) {
             this.equality = equality; this.inequality = inequality;
             this.truth = truth; this.negatedTruth = negatedTruth;
             this.nullSet = nullSet; this.notNullSet = notNullSet;
             this.approx = approx; this.unlearned = unlearned;
+            this.expectedArgIndex = expectedArgIndex;
         }
 
         /** Empty vocab — every assertion will be loudly refused by name. */
         static AssertionVocab empty() {
             return new AssertionVocab(
                 Set.of(), Set.of(), Set.of(), Set.of(),
-                Set.of(), Set.of(), Set.of(), Set.of());
+                Set.of(), Set.of(), Set.of(), Set.of(),
+                Map.of());
         }
 
         /** Look up the category for a bare method name. Returns "unknown" if not classified. */
@@ -446,6 +546,15 @@ public final class JavaTestAssertionsRpc {
             if (approx.contains(name))      return "approx";
             if (unlearned.contains(name))   return "unlearned";
             return "unknown";
+        }
+
+        /**
+         * Return the index (0-based) of the expected/unexpected (constant) argument for
+         * this equality/inequality method. 0 = JUnit order (expected first); 1 = TestNG
+         * order (actual first). Defaults to 0 if not explicitly learned.
+         */
+        int getExpectedArgIndex(String methodName) {
+            return expectedArgIndex.getOrDefault(methodName, 0);
         }
 
         /** True iff this method name has at least one approximate (delta) overload.
@@ -474,22 +583,20 @@ public final class JavaTestAssertionsRpc {
      *      has ≥3 parameters where the third is a floating-point primitive (float/double)
      *      and the method name is assertEquals → APPROXIMATE (refused, no contract).
      *   2. If the method is assertEquals/assertArrayEquals with ≤3 params (no delta)
-     *      → EQUALITY (expected=param[0], actual=param[1]).
-     *   3. assertNotEquals → INEQUALITY.
+     *      → EQUALITY; expectedArgIndex learned from param[0] name:
+     *        - param[0] == "expected" → JUnit order (index 0)
+     *        - param[0] == "actual"   → TestNG order (index 1)
+     *   3. assertNotEquals → INEQUALITY (same expected-arg-index learning applies).
      *   4. assertTrue → TRUTH.
      *   5. assertFalse → NEGATED_TRUTH.
      *   6. assertNull → NULL.
      *   7. assertNotNull → NOT_NULL.
      *   8. Everything else → UNLEARNED.
      *
-     * The VocabDeriver's job is classification of what the source DECLARES — it is
-     * NOT in the lift path and does not key on the meaning of any assertion. It reads
-     * the parameter NAMES and TYPES of what the framework's own source says.
-     *
-     * NOTE: this class's classify* methods key on what the framework declares in its
-     * method signatures. When you see a name like "assertEquals" inside this class,
-     * it is a PATTERN BEING CLASSIFIED from source, not a hardcoded semantic meaning.
-     * The classification rules live here; the lift path consults the table they produce.
+     * Phase 4 addition: deriveFromSourcesWithFramework also detects which framework
+     * package the source belongs to (by reading the package declaration of the parsed
+     * compilation unit). This is returned alongside the vocab so the caller can key
+     * the vocab by framework (e.g. "org.junit", "org.testng").
      */
     static final class VocabDeriver {
 
@@ -499,16 +606,33 @@ public final class JavaTestAssertionsRpc {
             "delta", "tolerance", "offset", "ulps"
         );
 
+        /** Result of per-directory vocab derivation, including detected framework package. */
+        static final class DeriveResult {
+            /** The derived vocab (may be empty if nothing was learned). */
+            final AssertionVocab vocab;
+            /**
+             * The detected framework package prefix, e.g. "org.junit" or "org.testng".
+             * Null if no framework package was detected.
+             */
+            final String frameworkPackage;
+
+            DeriveResult(AssertionVocab vocab, String frameworkPackage) {
+                this.vocab = vocab;
+                this.frameworkPackage = frameworkPackage;
+            }
+        }
+
         /**
          * Derive vocabulary by parsing the given framework source files.
          * All parsing is done via JavacTask.parse() — no string scanning of source.
+         * Also detects the framework package from the compilation units' package name.
          */
-        static AssertionVocab deriveFromSources(
+        static DeriveResult deriveFromSourcesWithFramework(
                 JavaCompiler compiler,
                 List<Path> sourceFiles,
                 List<String> diagnostics) throws IOException {
 
-            if (sourceFiles.isEmpty()) return AssertionVocab.empty();
+            if (sourceFiles.isEmpty()) return new DeriveResult(AssertionVocab.empty(), null);
 
             Set<String> equality    = new HashSet<>();
             Set<String> inequality  = new HashSet<>();
@@ -518,6 +642,8 @@ public final class JavaTestAssertionsRpc {
             Set<String> notNullSet  = new HashSet<>();
             Set<String> approx      = new HashSet<>();
             Set<String> unlearned   = new HashSet<>();
+            Map<String, Integer> expectedArgIndex = new HashMap<>();
+            String detectedPackage = null;
 
             for (Path src : sourceFiles) {
                 if (!Files.isReadable(src)) continue;
@@ -532,11 +658,17 @@ public final class JavaTestAssertionsRpc {
                 try {
                     Iterable<? extends CompilationUnitTree> units = task.parse();
                     for (CompilationUnitTree unit : units) {
+                        // Detect framework package from the compilation unit
+                        String pkg = detectPackage(unit);
+                        if (pkg != null && detectedPackage == null) {
+                            detectedPackage = frameworkPackageKey(pkg);
+                        }
                         for (Tree decl : unit.getTypeDecls()) {
                             if (decl instanceof ClassTree ct) {
                                 classifyClassMembers(ct,
                                     equality, inequality, truth, negatedTruth,
-                                    nullSet, notNullSet, approx, unlearned);
+                                    nullSet, notNullSet, approx, unlearned,
+                                    expectedArgIndex);
                             }
                         }
                     }
@@ -548,7 +680,7 @@ public final class JavaTestAssertionsRpc {
                 }
             }
 
-            return new AssertionVocab(
+            AssertionVocab vocab = new AssertionVocab(
                 Collections.unmodifiableSet(equality),
                 Collections.unmodifiableSet(inequality),
                 Collections.unmodifiableSet(truth),
@@ -556,33 +688,65 @@ public final class JavaTestAssertionsRpc {
                 Collections.unmodifiableSet(nullSet),
                 Collections.unmodifiableSet(notNullSet),
                 Collections.unmodifiableSet(approx),
-                Collections.unmodifiableSet(unlearned)
-            );
+                Collections.unmodifiableSet(unlearned),
+                Collections.unmodifiableMap(expectedArgIndex));
+            return new DeriveResult(vocab, detectedPackage);
+        }
+
+        /**
+         * Legacy entry point: derive without framework detection.
+         * Kept for backward compatibility with tests that call this directly.
+         */
+        static AssertionVocab deriveFromSources(
+                JavaCompiler compiler,
+                List<Path> sourceFiles,
+                List<String> diagnostics) throws IOException {
+            return deriveFromSourcesWithFramework(compiler, sourceFiles, diagnostics).vocab;
+        }
+
+        /** Extract the package name string from a compilation unit tree. Returns null if none. */
+        private static String detectPackage(CompilationUnitTree unit) {
+            Tree pkgDecl = unit.getPackageName();
+            if (pkgDecl == null) return null;
+            return pkgDecl.toString();
+        }
+
+        /**
+         * Map a full package name to a framework key used as the vocab map key.
+         * "org.junit.*" → "org.junit"; "org.testng.*" → "org.testng".
+         * Everything else → the raw package string (used as-is for unknown frameworks).
+         */
+        private static String frameworkPackageKey(String pkg) {
+            if (pkg.startsWith("org.junit.")) return "org.junit";
+            if (pkg.equals("org.junit")) return "org.junit";
+            if (pkg.startsWith("org.testng.")) return "org.testng";
+            if (pkg.equals("org.testng")) return "org.testng";
+            return pkg;
         }
 
         /**
          * Walk a class's members and classify public static assert* methods.
          * This method operates purely on com.sun.source.tree.* nodes.
-         * When it checks a name like "assertEquals", it is pattern-matching
-         * what the framework source DECLARES — the classification rules, not
-         * the lift semantics.
          */
         private static void classifyClassMembers(
                 ClassTree classTree,
                 Set<String> equality, Set<String> inequality,
                 Set<String> truth, Set<String> negatedTruth,
                 Set<String> nullSet, Set<String> notNullSet,
-                Set<String> approx, Set<String> unlearned) {
+                Set<String> approx, Set<String> unlearned,
+                Map<String, Integer> expectedArgIndex) {
 
             for (Tree member : classTree.getMembers()) {
                 if (member instanceof MethodTree mt) {
                     classifyMethod(mt,
                         equality, inequality, truth, negatedTruth,
-                        nullSet, notNullSet, approx, unlearned);
+                        nullSet, notNullSet, approx, unlearned,
+                        expectedArgIndex);
                 } else if (member instanceof ClassTree nested) {
                     classifyClassMembers(nested,
                         equality, inequality, truth, negatedTruth,
-                        nullSet, notNullSet, approx, unlearned);
+                        nullSet, notNullSet, approx, unlearned,
+                        expectedArgIndex);
                 }
             }
         }
@@ -590,13 +754,20 @@ public final class JavaTestAssertionsRpc {
         /**
          * Classify one method. Structure-only: reads parameter names and types
          * from the tree, never from strings about Java semantics.
+         *
+         * Phase 4: also learns the expectedArgIndex by reading the NAME of the
+         * first parameter:
+         *   - param[0] name == "expected" → index 0 (JUnit order)
+         *   - param[0] name == "actual"   → index 1 (TestNG order: actual first, expected second)
+         *   - otherwise                   → index 0 (safe default)
          */
         private static void classifyMethod(
                 MethodTree mt,
                 Set<String> equality, Set<String> inequality,
                 Set<String> truth, Set<String> negatedTruth,
                 Set<String> nullSet, Set<String> notNullSet,
-                Set<String> approx, Set<String> unlearned) {
+                Set<String> approx, Set<String> unlearned,
+                Map<String, Integer> expectedArgIndex) {
 
             // Only classify public static assert* methods
             if (!isPublicStatic(mt)) return;
@@ -606,8 +777,6 @@ public final class JavaTestAssertionsRpc {
             List<? extends VariableTree> params = mt.getParameters();
 
             // SOUNDNESS-CRITICAL CHECK: does any parameter carry a tolerance name?
-            // The parameter name in the framework's source TELLS US if this is
-            // an approximate assertion. This is the fact we learn from the source.
             boolean hasDeltaParam = false;
             for (VariableTree p : params) {
                 String pname = p.getName().toString();
@@ -617,7 +786,6 @@ public final class JavaTestAssertionsRpc {
                 }
                 // Also detect the 3-arg assertEquals(expected, actual, delta) shape:
                 // the third parameter is a floating-point primitive (float/double).
-                // We learn this from the type tree, not from hardcoded knowledge.
                 if (params.indexOf(p) == 2 && isFloatType(p.getType())
                         && isAssertEqualsName(name)) {
                     hasDeltaParam = true;
@@ -626,19 +794,32 @@ public final class JavaTestAssertionsRpc {
             }
 
             if (hasDeltaParam) {
-                // This overload is APPROXIMATE — record it; it will be refused at lift time.
                 approx.add(name);
                 return;
             }
 
-            // The name-based classification: these are the RULES for what the
-            // VocabDeriver learns from the framework source. Each rule here is a
-            // pattern-match on what the source declares (via its method name and
-            // parameter structure), not a hardcoded meaning in the lift path.
+            // Name-based classification
             if (isAssertEqualsName(name)) {
                 equality.add(name);
+                // Learn the expected-arg index from the parameter name of the FIRST param.
+                // If param[0] name is "actual" → TestNG order → expected is at index 1.
+                // If param[0] name is "expected" (or anything else) → JUnit order → index 0.
+                // We only record if not already present (first overload wins for order learning;
+                // subsequent overloads for same name should agree if they're from one framework).
+                if (!expectedArgIndex.containsKey(name) && !params.isEmpty()) {
+                    String firstParamName = params.get(0).getName().toString();
+                    // "actual" as first param → TestNG order: const (expected) is at index 1
+                    int idx = firstParamName.equals("actual") ? 1 : 0;
+                    expectedArgIndex.put(name, idx);
+                }
             } else if (isAssertNotEqualsName(name)) {
                 inequality.add(name);
+                // Same learning for assertNotEquals: param[0]=="actual" → unexpected at index 1
+                if (!expectedArgIndex.containsKey(name) && !params.isEmpty()) {
+                    String firstParamName = params.get(0).getName().toString();
+                    int idx = firstParamName.equals("actual") ? 1 : 0;
+                    expectedArgIndex.put(name, idx);
+                }
             } else if (isAssertTrueName(name)) {
                 truth.add(name);
             } else if (isAssertFalseName(name)) {
@@ -648,19 +829,13 @@ public final class JavaTestAssertionsRpc {
             } else if (isAssertNotNullName(name)) {
                 notNullSet.add(name);
             } else {
-                // Structure not understood — will be loudly refused by name at lift time
                 unlearned.add(name);
             }
         }
 
         // ── classification pattern predicates ──────────────────────────────────
-        // These predicate methods check the method name against known patterns.
-        // They are used ONLY inside the VocabDeriver to classify what the source
-        // DECLARES — they never appear in the lift path.
 
         private static boolean isAssertEqualsName(String name) {
-            // Classifies: assertEquals, assertArrayEquals — equality assertions
-            // where learned param names tell us expected=arg[0], actual=arg[1].
             return name.equals("assertEquals") || name.equals("assertArrayEquals");
         }
 
@@ -689,10 +864,6 @@ public final class JavaTestAssertionsRpc {
             return mods.contains(Modifier.PUBLIC) && mods.contains(Modifier.STATIC);
         }
 
-        /**
-         * Determine if the type tree represents a float or double primitive.
-         * We read this from the source tree node — no string scanning.
-         */
         private static boolean isFloatType(Tree typeTree) {
             if (typeTree instanceof PrimitiveTypeTree ptt) {
                 TypeKind kind = ptt.getPrimitiveTypeKind();
@@ -703,6 +874,81 @@ public final class JavaTestAssertionsRpc {
     }
 
     // ──────────────────────────────────────────────────────────────
+    // Framework detection for a source file
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Result of framework detection for a single source file.
+     * Carries the resolved vocab to use (or null for ambiguity/no-vocab cases).
+     */
+    private enum FrameworkKind {
+        JUNIT,    // org.junit.* imports only
+        TESTNG,   // org.testng.* imports only
+        BOTH,     // both org.junit.Assert AND org.testng.Assert imported → ambiguous
+        NEITHER   // no assertion framework imports detected
+    }
+
+    /**
+     * Detect which assertion framework(s) a compilation unit imports.
+     * Rules (Phase 4):
+     *   - Import of org.junit.Assert or org.junit.jupiter.api.Assertions (direct or static)
+     *     → JUnit assertion class present
+     *   - Import of org.testng.Assert (direct or static)
+     *     → TestNG assertion class present
+     *   - BOTH Assert classes imported → BOTH (ambiguous)
+     *   - Only one → that framework
+     *   - @Test annotation from org.testng.annotations is a marker for TestNG @Test,
+     *     but does NOT by itself count as an assertion-vocab conflict (TestNG tests can
+     *     call JUnit assertions). The assertion class import is the discriminator.
+     */
+    private static FrameworkKind detectFrameworkKind(CompilationUnitTree unit) {
+        boolean hasJUnitAssert = false;
+        boolean hasTestNGAssert = false;
+        for (ImportTree imp : unit.getImports()) {
+            String name = imp.getQualifiedIdentifier().toString();
+            // JUnit assertion imports (direct or static)
+            if (name.equals("org.junit.Assert")
+                    || name.startsWith("org.junit.Assert.")
+                    || name.equals("org.junit.jupiter.api.Assertions")
+                    || name.startsWith("org.junit.jupiter.api.Assertions.")
+                    || name.startsWith("org.junit.Assert.*")) {
+                hasJUnitAssert = true;
+            }
+            // TestNG assertion imports (direct or static)
+            if (name.equals("org.testng.Assert")
+                    || name.startsWith("org.testng.Assert.")
+                    || name.startsWith("org.testng.Assert.*")) {
+                hasTestNGAssert = true;
+            }
+        }
+        if (hasJUnitAssert && hasTestNGAssert) return FrameworkKind.BOTH;
+        if (hasJUnitAssert) return FrameworkKind.JUNIT;
+        if (hasTestNGAssert) return FrameworkKind.TESTNG;
+        // Fallback: check for bare org.junit.* imports (covers JUnit 4 @Test + Assert usages)
+        for (ImportTree imp : unit.getImports()) {
+            String name = imp.getQualifiedIdentifier().toString();
+            if (name.startsWith("org.junit.")) return FrameworkKind.JUNIT;
+        }
+        return FrameworkKind.NEITHER;
+    }
+
+    /**
+     * Select the AssertionVocab to use for a file, given the detected framework.
+     * Returns null when the framework is BOTH (ambiguity → refuse all assertions by name).
+     * Returns empty vocab when framework is NEITHER or vocab is not configured.
+     */
+    private static AssertionVocab selectVocabForFramework(
+            FrameworkKind kind,
+            MultiFrameworkVocab multiVocab) {
+        return switch (kind) {
+            case JUNIT  -> multiVocab.forFramework("org.junit");
+            case TESTNG -> multiVocab.forFramework("org.testng");
+            case BOTH   -> null;  // ambiguous: refuse all assertions
+            case NEITHER -> AssertionVocab.empty(); // no vocab context
+        };
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // Per-file lift using javac parse-only tree walk
     // ──────────────────────────────────────────────────────────────
 
@@ -710,7 +956,7 @@ public final class JavaTestAssertionsRpc {
             JavaCompiler compiler,
             Path abs,
             String rel,
-            AssertionVocab vocab,
+            MultiFrameworkVocab multiVocab,
             List<String> ir,
             List<String> diagnostics) throws IOException {
 
@@ -735,23 +981,25 @@ public final class JavaTestAssertionsRpc {
 
         for (CompilationUnitTree unit : units) {
             Set<String> importedNames = collectImports(unit);
-            // Detect which framework(s) this file imports to see if we have vocab
-            boolean hasJUnitImport = hasJUnitImport(unit);
+            FrameworkKind frameworkKind = detectFrameworkKind(unit);
+            AssertionVocab vocab = selectVocabForFramework(frameworkKind, multiVocab);
+
+            // vocab == null means BOTH frameworks imported → ambiguous
+            boolean ambiguousFramework = (vocab == null);
+            if (ambiguousFramework) {
+                // We still need A vocab to walk the tree (so we can emit refusals per-method).
+                // Use empty vocab — the ambiguity flag will override all assertions.
+                vocab = AssertionVocab.empty();
+            }
+
             for (Tree decl : unit.getTypeDecls()) {
                 if (decl instanceof ClassTree ct) {
-                    walkClassMembers(ct, unit, rel, importedNames, vocab, hasJUnitImport, ir, diagnostics, null);
+                    walkClassMembers(ct, unit, rel, importedNames, vocab,
+                            frameworkKind, ambiguousFramework, ir, diagnostics, null);
                 }
             }
         }
         fm.close();
-    }
-
-    private static boolean hasJUnitImport(CompilationUnitTree unit) {
-        for (ImportTree imp : unit.getImports()) {
-            String name = imp.getQualifiedIdentifier().toString();
-            if (name.startsWith("org.junit.")) return true;
-        }
-        return false;
     }
 
     // Collect simple import names from the compilation unit
@@ -772,7 +1020,8 @@ public final class JavaTestAssertionsRpc {
             String rel,
             Set<String> importedNames,
             AssertionVocab vocab,
-            boolean hasJUnitImport,
+            FrameworkKind frameworkKind,
+            boolean ambiguousFramework,
             List<String> ir,
             List<String> diagnostics,
             String outerClassName) {
@@ -782,9 +1031,11 @@ public final class JavaTestAssertionsRpc {
 
         for (Tree member : classTree.getMembers()) {
             if (member instanceof MethodTree mt) {
-                liftMethod(mt, unit, rel, className, importedNames, vocab, hasJUnitImport, ir, diagnostics);
+                liftMethod(mt, unit, rel, className, importedNames, vocab,
+                        frameworkKind, ambiguousFramework, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
-                walkClassMembers(nested, unit, rel, importedNames, vocab, hasJUnitImport, ir, diagnostics, className);
+                walkClassMembers(nested, unit, rel, importedNames, vocab,
+                        frameworkKind, ambiguousFramework, ir, diagnostics, className);
             }
         }
     }
@@ -800,7 +1051,8 @@ public final class JavaTestAssertionsRpc {
             String className,
             Set<String> importedNames,
             AssertionVocab vocab,
-            boolean hasJUnitImport,
+            FrameworkKind frameworkKind,
+            boolean ambiguousFramework,
             List<String> ir,
             List<String> diagnostics) {
 
@@ -812,25 +1064,20 @@ public final class JavaTestAssertionsRpc {
         BlockTree body = method.getBody();
         if (body == null) return;
 
-        // Compute the set of all locals mutated anywhere in this method body.
-        // This is the final-oracle: javac computes effective finality for lambda
-        // capture; we compute it for loop purity. A local not in this set is
-        // provably stable (effectively final) — a FREE AXIOM from the language.
         Set<String> mutatedLocals = computeMutatedLocals(body);
 
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
-                liftStatement(est.getExpression(), scope, vocab, hasJUnitImport, ir, diagnostics);
+                liftStatement(est.getExpression(), scope, vocab, frameworkKind,
+                        ambiguousFramework, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
-                liftForLoop(flt, scope, vocab, hasJUnitImport, mutatedLocals, ir, diagnostics);
+                liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
             }
         }
     }
 
     // ──────────────────────────────────────────────────────────────
     // Final-oracle: compute the set of locally-mutated variable names
-    // anywhere in the method body. Uses only com.sun.source.tree.* nodes.
-    // A local absent from this set is "effectively final" — a language axiom.
     // ──────────────────────────────────────────────────────────────
 
     private static Set<String> computeMutatedLocals(BlockTree body) {
@@ -839,7 +1086,6 @@ public final class JavaTestAssertionsRpc {
         return Collections.unmodifiableSet(mutated);
     }
 
-    /** Recursively scan statement lists for mutation targets. */
     private static void scanForMutations(Iterable<? extends StatementTree> stmts, Set<String> out) {
         for (StatementTree stmt : stmts) {
             scanStmtForMutations(stmt, out);
@@ -851,23 +1097,17 @@ public final class JavaTestAssertionsRpc {
         if (stmt instanceof ExpressionStatementTree est) {
             scanExprForMutations(est.getExpression(), out);
         } else if (stmt instanceof ForLoopTree flt) {
-            // init statements
             for (StatementTree init : flt.getInitializer()) {
                 scanStmtForMutations(init, out);
             }
-            // condition
             scanExprForMutations(flt.getCondition(), out);
-            // update
             for (ExpressionStatementTree upd : flt.getUpdate()) {
                 scanExprForMutations(upd.getExpression(), out);
             }
-            // body
             scanStmtForMutations(flt.getStatement(), out);
         } else if (stmt instanceof BlockTree bt) {
             scanForMutations(bt.getStatements(), out);
         } else if (stmt instanceof VariableTree vt) {
-            // `int x = 0` — NOT a mutation (declaration, not reassignment)
-            // but scan the initializer for nested mutations
             scanExprForMutations(vt.getInitializer(), out);
         } else if (stmt instanceof IfTree it) {
             scanExprForMutations(it.getCondition(), out);
@@ -884,21 +1124,18 @@ public final class JavaTestAssertionsRpc {
     private static void scanExprForMutations(ExpressionTree expr, Set<String> out) {
         if (expr == null) return;
         if (expr instanceof AssignmentTree at) {
-            // x = ..., x += ..., etc.
             ExpressionTree var = at.getVariable();
             if (var instanceof IdentifierTree id) {
                 out.add(id.getName().toString());
             }
             scanExprForMutations(at.getExpression(), out);
         } else if (expr instanceof CompoundAssignmentTree cat) {
-            // x += ..., x -= ..., x *= ..., etc.
             ExpressionTree var = cat.getVariable();
             if (var instanceof IdentifierTree id) {
                 out.add(id.getName().toString());
             }
             scanExprForMutations(cat.getExpression(), out);
         } else if (expr instanceof UnaryTree ut) {
-            // x++, x--, ++x, --x
             Tree.Kind kind = ut.getKind();
             if (kind == Tree.Kind.PREFIX_INCREMENT || kind == Tree.Kind.PREFIX_DECREMENT
                     || kind == Tree.Kind.POSTFIX_INCREMENT || kind == Tree.Kind.POSTFIX_DECREMENT) {
@@ -921,24 +1158,18 @@ public final class JavaTestAssertionsRpc {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Loop→∀ lifter: recognizes bounded for-loops and emits forall IR.
-    // Gate: loop var must be int, bounds must be int literals, body must
-    // contain ONLY liftable assertions, no accumulator mutations in body.
+    // Loop→∀ lifter
     // ──────────────────────────────────────────────────────────────
 
     private static void liftForLoop(
             ForLoopTree flt,
             String scope,
             AssertionVocab vocab,
-            boolean hasJUnitImport,
+            boolean ambiguousFramework,
             Set<String> methodMutatedLocals,
             List<String> ir,
             List<String> diagnostics) {
 
-        // 1. Enhanced-for (for-each) is not this path — only classic for(...;...;...)
-        //    Java routes those to EnhancedForLoopTree, not ForLoopTree, so we're already safe.
-
-        // 2. The init must be a single `int <var> = <literal>` declaration.
         List<? extends StatementTree> inits = flt.getInitializer();
         if (inits.size() != 1 || !(inits.get(0) instanceof VariableTree vt)) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
@@ -955,7 +1186,6 @@ public final class JavaTestAssertionsRpc {
         }
         long startVal = loStart.getAsLong();
 
-        // 3. Condition must be `<var> < <literal>` or `<var> <= <literal>`.
         ExpressionTree cond = flt.getCondition();
         if (!(cond instanceof BinaryTree bt)) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
@@ -968,7 +1198,6 @@ public final class JavaTestAssertionsRpc {
                 "<loop>", "loop→∀ refused: condition operator is not < or <="));
             return;
         }
-        // Left side of condition must be the loop variable.
         if (!(bt.getLeftOperand() instanceof IdentifierTree condId)
                 || !condId.getName().toString().equals(loopVar)) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
@@ -984,7 +1213,6 @@ public final class JavaTestAssertionsRpc {
         long endVal = hiOpt.getAsLong();
         boolean inclusive = (condKind == Tree.Kind.LESS_THAN_EQUAL);
 
-        // 4. Update must be `<var>++` or `++<var>` or `<var> += 1`.
         List<? extends ExpressionStatementTree> updates = flt.getUpdate();
         if (updates.size() != 1) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
@@ -998,8 +1226,6 @@ public final class JavaTestAssertionsRpc {
             return;
         }
 
-        // 5. Body: must be a block (or single statement) of ONLY assert calls.
-        //    Collect all assert calls; any non-assert statement → refuse.
         StatementTree bodyStmt = flt.getStatement();
         List<MethodInvocationTree> bodyAsserts = new ArrayList<>();
         if (!collectBodyAsserts(bodyStmt, loopVar, bodyAsserts)) {
@@ -1013,16 +1239,8 @@ public final class JavaTestAssertionsRpc {
             return;
         }
 
-        // 6. Purity gate (final-oracle): any local OTHER THAN the loop variable
-        //    itself that is mutated inside the body → accumulator pattern → refuse.
-        //    We scan ONLY the body, not the whole method.
         Set<String> bodyMutated = new HashSet<>();
         scanStmtForMutations(bodyStmt, bodyMutated);
-        // The update clause's increment is the ONLY sanctioned mutation of the
-        // loop variable; a body that mutates it (e.g. `g(x++)` inside an assert
-        // arg) changes the iteration space and the universal would be false.
-        // Refuse it directly rather than relying on the arg-shape gate alone --
-        // if a later phase widens arg shapes, this gate must already hold.
         if (bodyMutated.contains(loopVar)) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
                 "<loop>",
@@ -1037,26 +1255,21 @@ public final class JavaTestAssertionsRpc {
             return;
         }
 
-        // 7. Lift each body assertion with the loop var as a `{"kind":"var"}` term.
-        //    Every assertion must lift cleanly — all-or-nothing (truth-table-or-gutter).
         List<String> bodyFormulas = new ArrayList<>();
         for (MethodInvocationTree mit : bodyAsserts) {
             String assertName = methodInvocationName(mit);
             String category = vocab.classify(assertName);
-            String formula = tryLiftBodyAssertion(mit, assertName, category, loopVar, scope, diagnostics);
+            String formula = tryLiftBodyAssertion(mit, assertName, category, loopVar, vocab, scope, diagnostics);
             if (formula == null) {
-                // Refusal already emitted. Refuse the whole loop.
                 return;
             }
             bodyFormulas.add(formula);
         }
 
-        // 8. Emit the forall contract.
         String contractName = scope + "::loop::" + loopVar;
         ir.add(buildForallContract(contractName, loopVar, startVal, endVal, inclusive, bodyFormulas));
     }
 
-    /** Return true iff expr is <var>++ / ++<var> / <var>+=1 for the given varName. */
     private static boolean isSimpleIncrement(ExpressionTree expr, String varName) {
         if (expr instanceof UnaryTree ut) {
             Tree.Kind k = ut.getKind();
@@ -1076,11 +1289,6 @@ public final class JavaTestAssertionsRpc {
         return false;
     }
 
-    /**
-     * Collect all MethodInvocationTree nodes that are direct expression-statements
-     * in the loop body. Returns false if any statement is not a pure assertion call.
-     * Variable declarations (e.g. `int tmp = …`) in the body also cause refusal.
-     */
     private static boolean collectBodyAsserts(StatementTree stmt, String loopVar,
                                               List<MethodInvocationTree> out) {
         if (stmt instanceof BlockTree bt) {
@@ -1095,25 +1303,17 @@ public final class JavaTestAssertionsRpc {
                 out.add(mit);
                 return true;
             }
-            return false; // non-call expression statement (assignment, etc.)
+            return false;
         }
-        return false; // variable declaration, control flow, etc.
+        return false;
     }
 
-    /**
-     * Try to lift a single body assertion to its formula JSON, replacing the
-     * loop variable with {"kind":"var","name":"<loopVar>"}. Returns null and
-     * adds a diagnostic if the assertion cannot be lifted cleanly.
-     *
-     * Supported: equality (assertEquals) only — the loop var replaces any
-     * argument position where it appears. Both (expected, loopVar(…)) and
-     * (expected, someCall(loopVar)) patterns are handled.
-     */
     private static String tryLiftBodyAssertion(
             MethodInvocationTree mit,
             String assertName,
             String category,
             String loopVar,
+            AssertionVocab vocab,
             String scope,
             List<String> diagnostics) {
 
@@ -1130,21 +1330,23 @@ public final class JavaTestAssertionsRpc {
             return null;
         }
 
-        // args[0] = expected (must be int literal)
-        // args[1] = actual (must be call with loopVar or int-literal args)
-        ExpressionTree constExpr = args.get(0);
-        ExpressionTree callExpr  = args.get(1);
+        // Use the learned expectedArgIndex to know which arg is the constant.
+        int constIdx = vocab.getExpectedArgIndex(assertName);
+        int callIdx = 1 - constIdx; // the other arg must be the call expression
+
+        ExpressionTree constExpr = args.get(constIdx);
+        ExpressionTree callExpr  = args.get(callIdx);
 
         OptionalLong constVal = asIntLiteral(constExpr);
         if (constVal.isEmpty()) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                assertName, "loop→∀ body: first arg is not an int literal: " + constExpr));
+                assertName, "loop→∀ body: expected (constant) arg[" + constIdx + "] is not an int literal: " + constExpr));
             return null;
         }
 
         if (!(callExpr instanceof MethodInvocationTree callMit)) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                assertName, "loop→∀ body: second arg is not a method call: " + callExpr));
+                assertName, "loop→∀ body: actual (call) arg[" + callIdx + "] is not a method call: " + callExpr));
             return null;
         }
 
@@ -1155,8 +1357,6 @@ public final class JavaTestAssertionsRpc {
             return null;
         }
 
-        // Build the arg JSON nodes: each arg is either the loop var (→ var-node)
-        // or an int literal (→ const-node). Anything else → refuse.
         List<? extends ExpressionTree> callArgs = callMit.getArguments();
         List<String> argJsons = new ArrayList<>();
         for (ExpressionTree a : callArgs) {
@@ -1182,18 +1382,6 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"atomic\",\"name\":\"=\",\"args\":[" + ctorJson + "," + constJson + "]}";
     }
 
-    /**
-     * Build the forall contract JSON.
-     * Shape (mirrors Rust + Python):
-     * {"kind":"contract","name":"<scope>::loop::<var>","outBinding":"out",
-     *  "inv":{"kind":"and","operands":[
-     *    {"kind":"forall","name":"<var>","sort":{"kind":"primitive","name":"Int"},
-     *     "body":{"kind":"implies","operands":[
-     *       {"kind":"and","operands":[
-     *         {"kind":"atomic","name":"≤","args":[<start-const>,<var-ref>]},
-     *         {"kind":"atomic","name":"<","args":[<var-ref>,<end-const>]}]},
-     *       {"kind":"and","operands":[...body-formulas...]}]}}]}}
-     */
     private static String buildForallContract(
             String contractName,
             String var,
@@ -1208,10 +1396,8 @@ public final class JavaTestAssertionsRpc {
         String endConst = "{\"kind\":\"const\",\"value\":" + endVal
                 + ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
 
-        // Lower bound: startVal ≤ var
         String lowerAtom = "{\"kind\":\"atomic\",\"name\":\"≤\",\"args\":["
                 + startConst + "," + varRef + "]}";
-        // Upper bound: var < endVal  OR  var ≤ endVal
         String upperOp = inclusive ? "≤" : "<";
         String upperAtom = "{\"kind\":\"atomic\",\"name\":\"" + upperOp + "\",\"args\":["
                 + varRef + "," + endConst + "]}";
@@ -1229,7 +1415,7 @@ public final class JavaTestAssertionsRpc {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Determine if a method has @Test (JUnit 4 or 5)
+    // Determine if a method has @Test (JUnit 4, JUnit 5, or TestNG)
     // ──────────────────────────────────────────────────────────────
 
     private static boolean hasTestAnnotation(MethodTree method, Set<String> importedNames) {
@@ -1237,7 +1423,8 @@ public final class JavaTestAssertionsRpc {
             String typeName = ann.getAnnotationType().toString();
             if (typeName.equals("Test")
                     || typeName.equals("org.junit.Test")
-                    || typeName.equals("org.junit.jupiter.api.Test")) {
+                    || typeName.equals("org.junit.jupiter.api.Test")
+                    || typeName.equals("org.testng.annotations.Test")) {
                 return true;
             }
         }
@@ -1245,49 +1432,49 @@ public final class JavaTestAssertionsRpc {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Lift or refuse a single expression statement — NO hardcoded meanings.
-    // All classification is through the learned vocab table.
+    // Lift or refuse a single expression statement
     // ──────────────────────────────────────────────────────────────
 
     private static void liftStatement(
             ExpressionTree expr,
             String scope,
             AssertionVocab vocab,
-            boolean hasJUnitImport,
+            FrameworkKind frameworkKind,
+            boolean ambiguousFramework,
             List<String> ir,
             List<String> diagnostics) {
 
         if (!(expr instanceof MethodInvocationTree mit)) return;
 
         String methodName = methodInvocationName(mit);
-
-        // If the file doesn't even import a JUnit framework, we have no vocab context.
-        // Silently skip non-assert calls; for assert* calls without a known framework,
-        // produce a named refusal.
         if (!methodName.startsWith("assert")) return;
 
-        // Consult the learned vocab table — this is the ONLY path.
+        // AMBIGUITY REFUSAL: both JUnit and TestNG Assert imported.
+        // The vocabulary order is undefined → refuse all assertions by name.
+        if (ambiguousFramework) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                methodName,
+                "ambiguous assertion vocabulary: file imports both org.junit.Assert and org.testng.Assert; "
+                + "argument order is undefined — refused to avoid mis-lift: " + methodName));
+            return;
+        }
+
         String category = vocab.classify(methodName);
 
         switch (category) {
             case "approx" -> {
-                // REFUSED: approximate assertion, lifting as = is a false-pass.
                 diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
                     methodName,
                     "approximate assertion (delta) is not exact equality; refused to avoid false-pass"));
             }
             case "unlearned" -> {
-                // REFUSED: structure not understood by VocabDeriver.
                 diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
                     methodName,
                     "assertion not in learned vocabulary; refused by name: " + methodName));
             }
             case "unknown" -> {
-                // Not in any category — either no vocab configured or an assertion
-                // the framework does not declare. Named refusal.
                 if (vocab.equality.isEmpty() && vocab.inequality.isEmpty()
                         && vocab.truth.isEmpty() && vocab.nullSet.isEmpty()) {
-                    // Empty vocab: no source was configured.
                     diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
                         methodName,
                         "no learned vocabulary for " + methodName
@@ -1299,7 +1486,7 @@ public final class JavaTestAssertionsRpc {
                 }
             }
             case "equality" -> liftEquality(mit, methodName, scope, vocab, ir, diagnostics);
-            case "inequality" -> liftInequality(mit, methodName, scope, ir, diagnostics);
+            case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, ir, diagnostics);
             case "null" -> liftNull(mit, methodName, scope, ir, diagnostics);
@@ -1311,7 +1498,13 @@ public final class JavaTestAssertionsRpc {
     // Category-specific lift methods
     // ──────────────────────────────────────────────────────────────
 
-    /** Lift assertEquals(expected, actual[, msg]) → =(callresult, expected) */
+    /**
+     * Lift assertEquals.
+     * Phase 4: uses vocab.getExpectedArgIndex(methodName) to determine which
+     * argument is the expected (constant) value. JUnit: index 0; TestNG: index 1.
+     * This is the ONLY place the argument order matters — learned from source,
+     * never hardcoded per-framework here.
+     */
     private static void liftEquality(
             MethodInvocationTree mit, String methodName, String scope,
             AssertionVocab vocab,
@@ -1324,31 +1517,53 @@ public final class JavaTestAssertionsRpc {
             return;
         }
 
-        ExpressionTree expectedExpr = args.get(0);
-        ExpressionTree actualExpr   = args.get(1);
+        // Learned: which argument index holds the expected/constant value
+        int constIdx = vocab.getExpectedArgIndex(methodName);
+        int callIdx  = 1 - constIdx;
+
+        ExpressionTree expectedExpr = args.get(constIdx);
+        ExpressionTree actualExpr   = args.get(callIdx);
+
         if (args.size() == 3) {
-            // 3-arg form. Possible shapes:
-            //   (message, expected, actual)   — message is a String literal
-            //   (expected, actual, delta)     — delta is a float/int literal, approximate
-            ExpressionTree arg0 = args.get(0);
-            ExpressionTree arg2 = args.get(2);
-            if (arg0 instanceof LiteralTree lt0 && lt0.getValue() instanceof String) {
-                // Message form: (String msg, expected, actual)
-                expectedExpr = args.get(1);
-                actualExpr   = args.get(2);
-            } else if (vocab.hasApproxOverload(methodName) && isNumericLiteral(arg2)) {
-                // SOUNDNESS: This looks like (expected, actual, delta/tolerance).
-                // The VocabDeriver learned that this method has a delta overload.
-                // Lifting this as exact = would be a false-pass — refuse by name.
-                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                    methodName,
-                    "approximate assertion (delta) is not exact equality; refused to avoid false-pass"));
-                return;
+            // 3-arg form. Possible shapes vary by framework:
+            // JUnit: (expected, actual, message[String]) or (expected, actual, delta[float])
+            // TestNG: (actual, expected, message[String]) or (actual, expected, delta[float])
+            // We handle message-first as a special case for JUnit (message is arg[0] when constIdx==0).
+            // For TestNG (constIdx==1), the message is arg[2].
+            if (constIdx == 0) {
+                // JUnit layout: args[0]=expected, args[1]=actual, args[2]=msg|delta
+                ExpressionTree arg0 = args.get(0);
+                ExpressionTree arg2 = args.get(2);
+                if (arg0 instanceof LiteralTree lt0 && lt0.getValue() instanceof String) {
+                    // (String msg, expected, actual)
+                    expectedExpr = args.get(1);
+                    actualExpr   = args.get(2);
+                } else if (vocab.hasApproxOverload(methodName) && isNumericLiteral(arg2)) {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName,
+                        "approximate assertion (delta) is not exact equality; refused to avoid false-pass"));
+                    return;
+                } else {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName, "3-arg " + methodName + " with non-string first arg not lifted"));
+                    return;
+                }
             } else {
-                // 3-arg, non-delta, non-string-first: refuse (structure unclear)
-                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                    methodName, "3-arg " + methodName + " with non-string first arg not lifted"));
-                return;
+                // TestNG layout: args[0]=actual, args[1]=expected, args[2]=msg|delta
+                ExpressionTree arg2 = args.get(2);
+                if (vocab.hasApproxOverload(methodName) && isNumericLiteral(arg2)) {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName,
+                        "approximate assertion (delta) is not exact equality; refused to avoid false-pass"));
+                    return;
+                } else if (arg2 instanceof LiteralTree lt2 && lt2.getValue() instanceof String) {
+                    // (actual, expected, String msg) — message last, keep current ordering
+                    // expectedExpr and actualExpr already set correctly above
+                } else {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName, "3-arg " + methodName + " not lifted (unknown 3-arg shape)"));
+                    return;
+                }
             }
         } else if (args.size() > 3) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
@@ -1359,7 +1574,6 @@ public final class JavaTestAssertionsRpc {
         liftBinaryIntContract(expectedExpr, actualExpr, "=", methodName, scope, ir, diagnostics);
     }
 
-    /** Return true if this expression is a numeric literal (int, long, float, or double). */
     private static boolean isNumericLiteral(ExpressionTree expr) {
         if (expr instanceof LiteralTree lt) {
             return lt.getValue() instanceof Number;
@@ -1367,9 +1581,13 @@ public final class JavaTestAssertionsRpc {
         return false;
     }
 
-    /** Lift assertNotEquals(unexpected, actual[, msg]) → ≠(callresult, unexpected) */
+    /**
+     * Lift assertNotEquals.
+     * Phase 4: uses vocab.getExpectedArgIndex to determine which arg is the unexpected constant.
+     */
     private static void liftInequality(
             MethodInvocationTree mit, String methodName, String scope,
+            AssertionVocab vocab,
             List<String> ir, List<String> diagnostics) {
 
         List<? extends ExpressionTree> args = mit.getArguments();
@@ -1378,16 +1596,31 @@ public final class JavaTestAssertionsRpc {
                 methodName, methodName + " arity " + args.size() + " < 2"));
             return;
         }
-        ExpressionTree unexpectedExpr = args.get(0);
-        ExpressionTree actualExpr     = args.get(1);
+
+        int constIdx = vocab.getExpectedArgIndex(methodName);
+        int callIdx  = 1 - constIdx;
+
+        ExpressionTree unexpectedExpr = args.get(constIdx);
+        ExpressionTree actualExpr     = args.get(callIdx);
+
         if (args.size() == 3) {
-            if (args.get(0) instanceof LiteralTree lt0 && lt0.getValue() instanceof String) {
-                unexpectedExpr = args.get(1);
-                actualExpr     = args.get(2);
+            if (constIdx == 0) {
+                if (args.get(0) instanceof LiteralTree lt0 && lt0.getValue() instanceof String) {
+                    unexpectedExpr = args.get(1);
+                    actualExpr     = args.get(2);
+                } else {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName, "3-arg " + methodName + " with non-string first arg not lifted"));
+                    return;
+                }
             } else {
-                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                    methodName, "3-arg " + methodName + " with non-string first arg not lifted"));
-                return;
+                // TestNG: (actual, unexpected, msg)
+                ExpressionTree arg2 = args.get(2);
+                if (!(arg2 instanceof LiteralTree lt2 && lt2.getValue() instanceof String)) {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName, "3-arg " + methodName + " not lifted (unknown 3-arg shape)"));
+                    return;
+                }
             }
         } else if (args.size() > 3) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
@@ -1398,11 +1631,6 @@ public final class JavaTestAssertionsRpc {
         liftBinaryIntContract(unexpectedExpr, actualExpr, "≠", methodName, scope, ir, diagnostics);
     }
 
-    /**
-     * Shared logic for equality/inequality: the first arg is the constant value
-     * (expected or unexpected), the second arg must be a method call with int-literal args.
-     * Emits a contract with the given relation (= or ≠).
-     */
     private static void liftBinaryIntContract(
             ExpressionTree constExpr, ExpressionTree callExpr,
             String relation, String methodName,
@@ -1443,7 +1671,6 @@ public final class JavaTestAssertionsRpc {
         ir.add(buildContractWithRelation(callee, argValues, constVal.getAsLong(), relation));
     }
 
-    /** Lift assertTrue(fn(ints)) → truth(callresult) — only bare fn call arg supported */
     private static void liftTruth(
             MethodInvocationTree mit, String methodName, String scope,
             List<String> ir, List<String> diagnostics) {
@@ -1455,12 +1682,10 @@ public final class JavaTestAssertionsRpc {
             return;
         }
         ExpressionTree condExpr = args.get(0);
-        // Skip if first arg is a string (message form with no condition arg visible)
         if (args.size() >= 2 && condExpr instanceof LiteralTree lt && lt.getValue() instanceof String) {
             condExpr = args.get(1);
         }
 
-        // We only lift assertTrue(fn(int-literals)) — not boolean expressions
         if (!(condExpr instanceof MethodInvocationTree callMit)) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
                 methodName, methodName + "(non-call condition) not lifted: " + condExpr));
@@ -1489,7 +1714,6 @@ public final class JavaTestAssertionsRpc {
         ir.add(buildTruthContract(callee, argValues, true));
     }
 
-    /** Lift assertFalse(fn(ints)) → ¬truth(callresult) */
     private static void liftNegatedTruth(
             MethodInvocationTree mit, String methodName, String scope,
             List<String> ir, List<String> diagnostics) {
@@ -1533,7 +1757,6 @@ public final class JavaTestAssertionsRpc {
         ir.add(buildTruthContract(callee, argValues, false));
     }
 
-    /** Lift assertNull(fn(ints)) → =(callresult, ctor None) */
     private static void liftNull(
             MethodInvocationTree mit, String methodName, String scope,
             List<String> ir, List<String> diagnostics) {
@@ -1545,7 +1768,6 @@ public final class JavaTestAssertionsRpc {
             return;
         }
         ExpressionTree actualExpr = args.get(0);
-        // message-first form: if arg[0] is a string literal, arg[1] is the actual
         if (args.size() >= 2 && actualExpr instanceof LiteralTree lt && lt.getValue() instanceof String) {
             actualExpr = args.get(1);
         }
@@ -1578,7 +1800,6 @@ public final class JavaTestAssertionsRpc {
         ir.add(buildNullContract(callee, argValues, "="));
     }
 
-    /** Lift assertNotNull(fn(ints)) → ≠(callresult, ctor None) */
     private static void liftNotNull(
             MethodInvocationTree mit, String methodName, String scope,
             List<String> ir, List<String> diagnostics) {
@@ -1662,11 +1883,6 @@ public final class JavaTestAssertionsRpc {
     // Contract IR builders
     // ──────────────────────────────────────────────────────────────
 
-    /**
-     * Build a binary integer contract (equality or inequality).
-     * Name: <callee>#euf#c:callresult_<safe>_a<arity>(i:<arg>[,i:<arg>...])::assertion
-     * Relation is "=" for assertEquals, "≠" for assertNotEquals.
-     */
     private static String buildContractWithRelation(
             String callee, List<Long> argValues, long constVal, String relation) {
 
@@ -1691,11 +1907,6 @@ public final class JavaTestAssertionsRpc {
              + "]}]}}";
     }
 
-    /**
-     * Build a truth/negated-truth contract.
-     * For assertTrue: {kind:atomic, name:"truth", args:[{kind:ctor, name:"call:f", args:[...]}]}
-     * For assertFalse: {kind:atomic, name:"¬", args:[{kind:atomic, name:"truth", args:[...]}]}
-     */
     private static String buildTruthContract(String callee, List<Long> argValues, boolean positive) {
         String safeName = toSafeName(callee);
         int arity = argValues.size();
@@ -1718,12 +1929,6 @@ public final class JavaTestAssertionsRpc {
              + "]}}";
     }
 
-    /**
-     * Build a null/not-null contract.
-     * assertNull  → =(callresult, {kind:ctor, name:"None", args:[]})
-     * assertNotNull → ≠(callresult, {kind:ctor, name:"None", args:[]})
-     * Mirror: json!({"kind":"ctor","name":"None","args":[]}) from the Rust verifier.
-     */
     private static String buildNullContract(String callee, List<Long> argValues, String relation) {
         String safeName = toSafeName(callee);
         int arity = argValues.size();
@@ -1746,7 +1951,7 @@ public final class JavaTestAssertionsRpc {
              + "]}]}}";
     }
 
-    /** Kept for backward compatibility with tests that call buildContract directly */
+    /** Kept for backward compatibility */
     private static String buildContract(String callee, List<Long> argValues, long expected) {
         return buildContractWithRelation(callee, argValues, expected, "=");
     }
@@ -1770,7 +1975,7 @@ public final class JavaTestAssertionsRpc {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // File enumeration: walks dirs, skips target/build/.git/...
+    // File enumeration
     // ──────────────────────────────────────────────────────────────
 
     private static List<String> enumerateJavaFiles(Path root, List<String> sourcePaths) throws IOException {
@@ -1843,8 +2048,7 @@ public final class JavaTestAssertionsRpc {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Minimal JSON-RPC wire codec (operates on JSON wire bytes only,
-    // NOT on Java source — this is correct and lawful).
+    // Minimal JSON-RPC wire codec (operates on JSON wire bytes only)
     // ──────────────────────────────────────────────────────────────
 
     private static Optional<String> jsonString(String json, String key) {

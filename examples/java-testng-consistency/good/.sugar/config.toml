@@ -1,0 +1,27 @@
+# Phase 4: TestNG assertion vocabulary learned from vendored TestNG Assert.java.
+# TestNG assertEquals(actual, expected) places actual FIRST — reversed from JUnit.
+# This is the standing proof that vocab must be learned per-framework.
+[java-test-assertions]
+assertion_source_dirs = ["vendor/testng"]
+
+[[plugins]]
+name = "java-test-assertions-lift"
+kind = "lift"
+surface = "java-test-assertions"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+
+[platform_profile]
+language = "java"
+library = "java-testng-consistency-good"
+version = "0.0.0"
