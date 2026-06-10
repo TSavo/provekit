@@ -984,4 +984,39 @@ print(f"      assertTrue entered the vocab ONLY through its `!condition` throw-g
 PY
 
 echo
-echo "== all 24 tests PASS (12 P1-P3 + 7 P4 + 5 P4.5) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 25: IDENTITY-GUARD discrimination — reference == is NOT value equality"
+echo "────────────────────────────────────────────────────────────────"
+# fixtures/identity-guard/framework/IdentityAssert.java: assertNotSame guards on
+# `expected == actual` over OBJECTS (reference identity — two .equals() values
+# can be distinct refs) → must be UNLEARNED, never lifted as value-≠. The SAME
+# guard shape over primitive ints (assertEqualsInt) must still classify and lift.
+# Every Java developer knows == vs .equals; so must the lifter.
+RESULT25="$(run_lift "$FIXTURES/identity-guard" "IdentityGuard.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT25" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# Exactly ONE contract: the primitive overload. The identity assert refuses.
+assert len(ir) == 1, \
+    f"IDENTITY FALSEPASS or over-refusal: expected exactly 1 contract (primitive), got {len(ir)}: {json.dumps(ir,indent=2)}\ndiags={json.dumps(diags,indent=2)}"
+assert "callresult_g" in ir[0]["name"], f"the lifted contract must be the primitive one: {ir[0]['name']}"
+reasons = [d.get("reason","") for d in diags]
+ident_diags = [r for r in reasons if "assertNotSame" in r or "unlearned" in r.lower() or "vocabulary" in r.lower()]
+assert len(ident_diags) >= 1, \
+    f"expected a named refusal for the reference-identity assert; got: {reasons}"
+print(f"PASS: IDENTITY-GUARD — reference == refused ({ident_diags[0][:80]}...); primitive != lifted ({ir[0]['name']})")
+PY
+
+echo
+echo "== all 25 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5) =="

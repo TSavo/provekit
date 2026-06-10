@@ -4,13 +4,15 @@
 //     expected slot → guard says expected-first
 //   - but param[0] is named "actual" → names say actual-first
 // The cross-check must fire: UNLEARNED + a disagreement diagnostic.
+// Params are PRIMITIVE ints so the ==-dispatch gate (reference identity is
+// not value equality) admits the guard and the disagreement check is reached.
 package org.junit.disagree;
 
 public final class DisagreeAssert {
 
     private DisagreeAssert() {}
 
-    public static void assertEquals(Object actual, Object other) {
+    public static void assertEquals(int actual, int other) {
         if (actual != other) {
             throw new AssertionError("not equal");
         }

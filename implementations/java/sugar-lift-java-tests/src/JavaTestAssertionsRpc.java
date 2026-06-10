@@ -1314,8 +1314,17 @@ public final class JavaTestAssertionsRpc {
                     }
                 }
                 // !(p_i != p_j) → INEQUALITY (double negation)
+                // DISPATCH GATE (same as the bare-binary arms): ==/!= is value
+                // equality on PRIMITIVES only; on references it is identity,
+                // outside the value algebra → unlearned.
                 if (inner instanceof BinaryTree bt2 && bt2.getKind() == Tree.Kind.NOT_EQUAL_TO) {
                     int[] pos = extractParamPositions2Binary(bt2, paramIndex);
+                    boolean bothPrimitiveParams = pos[0] >= 0 && pos[1] >= 0
+                            && isPrimitiveParam(params, pos[0])
+                            && isPrimitiveParam(params, pos[1]);
+                    if (!bothPrimitiveParams) {
+                        return new GuardResult("unlearned", -1);
+                    }
                     return new GuardResult("inequality", pos[0]);
                 }
                 // !(p_i == p_j) → EQUALITY
@@ -1331,6 +1340,12 @@ public final class JavaTestAssertionsRpc {
                         return new GuardResult("unlearned", -1);
                     }
                     int[] pos = extractParamPositions2Binary(bt2, paramIndex);
+                    boolean bothPrimitiveParams = pos[0] >= 0 && pos[1] >= 0
+                            && isPrimitiveParam(params, pos[0])
+                            && isPrimitiveParam(params, pos[1]);
+                    if (!bothPrimitiveParams) {
+                        return new GuardResult("unlearned", -1);
+                    }
                     return new GuardResult("equality", pos[0]);
                 }
                 return new GuardResult("unlearned", -1);
@@ -1388,14 +1403,27 @@ public final class JavaTestAssertionsRpc {
                     return new GuardResult("unlearned", -1);
                 }
                 // p_i != p_j → EQUALITY (throws when not equal = asserts equal)
-                if (kind == Tree.Kind.NOT_EQUAL_TO) {
-                    int[] pos = extractParamPositions2Binary(bt, paramIndex);
-                    return new GuardResult("equality", pos[0]);
-                }
                 // p_i == p_j → INEQUALITY (throws when equal = asserts not equal)
-                if (kind == Tree.Kind.EQUAL_TO) {
+                //
+                // DISPATCH GATE: what does `==` dispatch to? On PRIMITIVES it is
+                // value equality — in our algebra. On REFERENCES it is IDENTITY
+                // (same object), which is NOT value equality: lifting TestNG's
+                // assertNotSame (`expected == actual` over Objects) as value-≠
+                // would swear a value claim the vendor never made (two .equals()
+                // values can be distinct refs) — a falsePass/false-refusal pair.
+                // So a bare ==/!= guard classifies ONLY when both operands are
+                // primitive-typed parameters; reference identity → unlearned.
+                if (kind == Tree.Kind.NOT_EQUAL_TO || kind == Tree.Kind.EQUAL_TO) {
                     int[] pos = extractParamPositions2Binary(bt, paramIndex);
-                    return new GuardResult("inequality", pos[0]);
+                    boolean bothPrimitiveParams = pos[0] >= 0 && pos[1] >= 0
+                            && isPrimitiveParam(params, pos[0])
+                            && isPrimitiveParam(params, pos[1]);
+                    if (!bothPrimitiveParams) {
+                        return new GuardResult("unlearned", -1);
+                    }
+                    return new GuardResult(
+                            kind == Tree.Kind.NOT_EQUAL_TO ? "equality" : "inequality",
+                            pos[0]);
                 }
                 return new GuardResult("unlearned", -1);
             }
@@ -1425,6 +1453,20 @@ public final class JavaTestAssertionsRpc {
 
         private static boolean isNullLiteral(ExpressionTree e) {
             return e instanceof LiteralTree lt && lt.getKind() == Tree.Kind.NULL_LITERAL;
+        }
+
+        /**
+         * True iff the parameter's declared type is a Java PRIMITIVE (read from
+         * the PrimitiveTypeTree node). On primitives `==` is value equality; on
+         * references it is identity — every Java developer knows the difference,
+         * and so must the lifter. Boxed types are deliberately NOT accepted:
+         * `Integer == Integer` is reference identity (cache-dependent), not
+         * value equality.
+         */
+        private static boolean isPrimitiveParam(
+                List<? extends VariableTree> params, int idx) {
+            if (idx < 0 || idx >= params.size()) return false;
+            return params.get(idx).getType() instanceof PrimitiveTypeTree;
         }
 
         private static boolean isBooleanParam(
