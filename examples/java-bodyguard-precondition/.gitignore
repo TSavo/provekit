@@ -1,8 +1,0 @@
-*.proof
-.prove.json
-.verify.json
-**/.sugar/runs/
-**/.sugar/witnesses/
-**/.sugar/lift/*/manifest.toml
-**/target/
-**/*.class

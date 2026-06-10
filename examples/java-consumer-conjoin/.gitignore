@@ -1,9 +1,0 @@
-**/target/
-**/.sugar/runs/
-**/.sugar/witnesses/
-**/.sugar/imports/
-**/*.proof
-**/.verify.json
-**/.prove.json
-**/.verify_recompute.json
-**/.sugar/lift/*/manifest.toml
