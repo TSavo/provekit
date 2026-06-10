@@ -7,7 +7,7 @@
 // ContractDecls. The verifier's existing consistency pass checks those closed
 // invariants with raw SAT: SAT => consistent/discharged; UNSAT => refused.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
@@ -41,6 +41,11 @@ pub struct AdapterOutput {
     pub assertions_refused: usize,
     /// Every individual refusal reason, ungrouped, for the delta histogram.
     pub skip_reasons: Vec<String>,
+    /// Names of non-test helper fns that were successfully reduced (inlined) by
+    /// the reducer at least once. Used to avoid double-counting: asserts in these
+    /// fns are already credited under assertions_lifted and must not also appear
+    /// in assertions_refused.
+    pub(crate) reduced_helpers: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -128,12 +133,22 @@ pub fn lift_file_with_options(
     let mut out = AdapterOutput::default();
     let mut modules = Vec::new();
     let reducer = ReductionCtx::from_items(&file.items);
+    // Pass 1: walk test fns (and modules). Populates assertions_lifted, reduced_helpers.
     walk_items(
         &file.items,
         source_path,
         &mut modules,
         options,
         &reducer,
+        &mut out,
+    );
+    // Pass 2: walk non-test fns. Emit named refusals for asserts in helper fns
+    // that were NOT already credited via reducer inlining in Pass 1.
+    walk_non_test_fns(
+        &file.items,
+        source_path,
+        &mut Vec::new(),
+        &out.reduced_helpers.clone(),
         &mut out,
     );
     out
@@ -149,7 +164,12 @@ fn walk_items<'a>(
 ) {
     for item in items {
         match item {
-            Item::Fn(f) => visit_test_fn(f, source_path, modules, options, reducer, out),
+            Item::Fn(f) => {
+                if has_test_attr(&f.attrs) {
+                    visit_test_fn(f, source_path, modules, options, reducer, out);
+                }
+                // Non-test fns are handled in the second pass (walk_non_test_fns).
+            }
             Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
                     let module_name = scoped_test_name(source_path, modules, &m.ident.to_string());
@@ -186,6 +206,73 @@ fn walk_items<'a>(
     }
 }
 
+/// Walk items for Pass 2 (non-test fns). Emits named refusals for asserts in
+/// non-test fns that were NOT already credited via reducer inlining (Pass 1).
+fn walk_non_test_fns(
+    items: &[Item],
+    source_path: &str,
+    modules: &mut Vec<String>,
+    reduced_helpers: &HashSet<String>,
+    out: &mut AdapterOutput,
+) {
+    for item in items {
+        match item {
+            Item::Fn(f) => {
+                if !has_test_attr(&f.attrs) {
+                    visit_non_test_fn(f, source_path, modules, reduced_helpers, out);
+                }
+            }
+            Item::Mod(m) => {
+                if let Some((_, items)) = &m.content {
+                    modules.push(m.ident.to_string());
+                    walk_non_test_fns(items, source_path, modules, reduced_helpers, out);
+                    modules.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Emit named refusals for every assert macro in a non-`#[test]` fn.
+/// These assertions are only reachable via call-site inlining and depend on
+/// the fn's parameters: lifting them as unconditional facts would be a false-pass.
+/// Skips the fn if it was already successfully reduced by a test fn (Pass 1),
+/// because those asserts are already in assertions_lifted.
+fn visit_non_test_fn(
+    f: &syn::ItemFn,
+    source_path: &str,
+    modules: &[String],
+    reduced_helpers: &HashSet<String>,
+    out: &mut AdapterOutput,
+) {
+    let fn_name = f.sig.ident.to_string();
+    // If the reducer successfully inlined this fn's body during Pass 1, its
+    // asserts are already in assertions_lifted. Do not double-count.
+    if reduced_helpers.contains(&fn_name) {
+        return;
+    }
+    let scoped_name = scoped_test_name(source_path, modules, &fn_name);
+    let count = count_asserts_in_stmts(&f.block.stmts);
+    if count == 0 {
+        return;
+    }
+    let reason = format!(
+        "assertion in non-#[test] item {fn_name}: reachable only via call-site inlining; released to layer 0"
+    );
+    for _ in 0..count {
+        out.assertions_refused += 1;
+        out.skip_reasons.push(reason.clone());
+    }
+    out.warnings.push(LiftWarning {
+        source_path: source_path.to_string(),
+        item_name: scoped_name,
+        reason: format!(
+            "rust test assertions: unsupported assertion surface; released to layer 0: {reason}"
+        ),
+    });
+}
+
 fn visit_test_fn(
     f: &syn::ItemFn,
     source_path: &str,
@@ -194,14 +281,17 @@ fn visit_test_fn(
     reducer: &ReductionCtx<'_>,
     out: &mut AdapterOutput,
 ) {
-    if !has_test_attr(&f.attrs) {
-        return;
-    }
-
     let test_name = scoped_test_name(source_path, modules, &f.sig.ident.to_string());
     match cfg_eval_for_attrs(&f.attrs, options) {
         CfgEval::Active => {}
         CfgEval::Inactive(reason) => {
+            // Refuse every assert in the fn body so they are not silent drops.
+            let assert_count = count_asserts_in_stmts(&f.block.stmts);
+            let skip_reason = format!("inactive cfg on test fn; skipped: {reason}");
+            for _ in 0..assert_count {
+                out.assertions_refused += 1;
+                out.skip_reasons.push(skip_reason.clone());
+            }
             out.warnings.push(LiftWarning {
                 source_path: source_path.to_string(),
                 item_name: test_name,
@@ -210,6 +300,13 @@ fn visit_test_fn(
             return;
         }
         CfgEval::Ambiguous(reason) => {
+            // Refuse every assert in the fn body so they are not silent drops.
+            let assert_count = count_asserts_in_stmts(&f.block.stmts);
+            let skip_reason = format!("ambiguous cfg on test fn; skipped: {reason}");
+            for _ in 0..assert_count {
+                out.assertions_refused += 1;
+                out.skip_reasons.push(skip_reason.clone());
+            }
             out.warnings.push(LiftWarning {
                 source_path: source_path.to_string(),
                 item_name: test_name,
@@ -233,6 +330,7 @@ fn visit_test_fn(
         &mut entries,
         &mut skipped,
         &mut macros_lifted,
+        &mut out.reduced_helpers,
     );
     out.assertions_lifted += macros_lifted;
     out.assertions_refused += skipped.len();
@@ -426,6 +524,125 @@ fn group_assertions(
     groups
 }
 
+/// Count assert macros reachable anywhere inside a statement list, including
+/// nested in control flow, closures, and blocks. Used to produce named refusals
+/// for asserts that cannot be unconditionally lifted.
+fn count_asserts_in_stmts(stmts: &[Stmt]) -> usize {
+    let mut total = 0;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Macro(m) => {
+                if is_assert_macro_path(&m.mac.path) {
+                    total += 1;
+                }
+            }
+            Stmt::Expr(expr, _) => {
+                total += count_asserts_in_expr(expr);
+            }
+            Stmt::Local(local) => {
+                if let Some(init) = &local.init {
+                    total += count_asserts_in_expr(&init.expr);
+                    if let Some((_, diverge)) = &init.diverge {
+                        total += count_asserts_in_expr(diverge);
+                    }
+                }
+            }
+            Stmt::Item(syn::Item::Fn(f)) => {
+                total += count_asserts_in_stmts(&f.block.stmts);
+            }
+            Stmt::Item(_) => {}
+        }
+    }
+    total
+}
+
+fn count_asserts_in_expr(expr: &Expr) -> usize {
+    match expr {
+        Expr::Macro(m) => {
+            if is_assert_macro_path(&m.mac.path) {
+                1
+            } else {
+                0
+            }
+        }
+        Expr::Block(b) => count_asserts_in_stmts(&b.block.stmts),
+        Expr::Unsafe(u) => count_asserts_in_stmts(&u.block.stmts),
+        Expr::Const(c) => count_asserts_in_stmts(&c.block.stmts),
+        Expr::ForLoop(f) => count_asserts_in_stmts(&f.body.stmts),
+        Expr::While(w) => count_asserts_in_expr(&w.cond) + count_asserts_in_stmts(&w.body.stmts),
+        Expr::Loop(l) => count_asserts_in_stmts(&l.body.stmts),
+        Expr::If(i) => {
+            let mut n = count_asserts_in_stmts(&i.then_branch.stmts);
+            if let Some((_, else_branch)) = &i.else_branch {
+                n += count_asserts_in_expr(else_branch);
+            }
+            n
+        }
+        Expr::Match(m) => {
+            let mut n = 0;
+            for arm in &m.arms {
+                n += count_asserts_in_expr(&arm.body);
+            }
+            n
+        }
+        Expr::Closure(c) => count_asserts_in_expr(&c.body),
+        Expr::Call(c) => {
+            let mut n = 0;
+            for arg in &c.args {
+                n += count_asserts_in_expr(arg);
+            }
+            n
+        }
+        Expr::MethodCall(c) => {
+            let mut n = count_asserts_in_expr(&c.receiver);
+            for arg in &c.args {
+                n += count_asserts_in_expr(arg);
+            }
+            n
+        }
+        Expr::Paren(p) => count_asserts_in_expr(&p.expr),
+        Expr::Group(g) => count_asserts_in_expr(&g.expr),
+        Expr::Binary(b) => count_asserts_in_expr(&b.left) + count_asserts_in_expr(&b.right),
+        Expr::Unary(u) => count_asserts_in_expr(&u.expr),
+        Expr::Assign(a) => count_asserts_in_expr(&a.left) + count_asserts_in_expr(&a.right),
+        Expr::Reference(r) => count_asserts_in_expr(&r.expr),
+        Expr::Cast(c) => count_asserts_in_expr(&c.expr),
+        Expr::Field(f) => count_asserts_in_expr(&f.base),
+        Expr::Index(i) => count_asserts_in_expr(&i.expr) + count_asserts_in_expr(&i.index),
+        Expr::Return(r) => r.expr.as_deref().map_or(0, count_asserts_in_expr),
+        Expr::Await(a) => count_asserts_in_expr(&a.base),
+        Expr::Try(t) => count_asserts_in_expr(&t.expr),
+        Expr::Tuple(t) => t.elems.iter().map(count_asserts_in_expr).sum(),
+        Expr::Array(a) => a.elems.iter().map(count_asserts_in_expr).sum(),
+        Expr::Repeat(r) => count_asserts_in_expr(&r.expr),
+        Expr::Struct(s) => {
+            let mut n = 0;
+            for field in &s.fields {
+                n += count_asserts_in_expr(&field.expr);
+            }
+            if let Some(rest) = &s.rest {
+                n += count_asserts_in_expr(rest);
+            }
+            n
+        }
+        _ => 0,
+    }
+}
+
+fn is_assert_macro_path(path: &syn::Path) -> bool {
+    if let Some(seg) = path.segments.last() {
+        // The lifter treats any macro whose name starts with assert / debug_assert
+        // as an assertion (the standard six plus stdlib custom macros like
+        // assert_all!, assert_none!, assert_eq_const_safe!). The nested-assert
+        // counter must use the same universe as the sweep denominator so the
+        // discharged + refused + silent reconciliation is exact.
+        let name = seg.ident.to_string();
+        name.starts_with("assert") || name.starts_with("debug_assert")
+    } else {
+        false
+    }
+}
+
 fn collect_assertion_entries(
     stmts: &[Stmt],
     local_scope: &str,
@@ -435,6 +652,7 @@ fn collect_assertion_entries(
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
     macros_lifted: &mut usize,
+    reduced_helpers: &mut HashSet<String>,
 ) {
     let temporal_plan = temporal_plan_for_stmts(stmts);
     let mut temporal_scope = TemporalScope::new(local_scope, temporal_plan);
@@ -495,6 +713,7 @@ fn collect_assertion_entries(
                     &*float_widths,
                     options,
                     MAX_ASSERTION_REDUCTION_DEPTH,
+                    reduced_helpers,
                 ) {
                     Ok(reduced_entries) => {
                         if !reduced_entries.is_empty() {
@@ -505,9 +724,120 @@ fn collect_assertion_entries(
                     Err(reason) => skipped.push(reason),
                 }
             }
+            // Unconditional plain block: recurse and lift normally.
+            Stmt::Expr(Expr::Block(b), _) => {
+                collect_assertion_entries(
+                    &b.block.stmts,
+                    local_scope,
+                    options,
+                    reducer,
+                    float_widths,
+                    entries,
+                    skipped,
+                    macros_lifted,
+                    reduced_helpers,
+                );
+            }
+            // Unconditional unsafe block: recurse and lift normally.
+            Stmt::Expr(Expr::Unsafe(u), _) => {
+                collect_assertion_entries(
+                    &u.block.stmts,
+                    local_scope,
+                    options,
+                    reducer,
+                    float_widths,
+                    entries,
+                    skipped,
+                    macros_lifted,
+                    reduced_helpers,
+                );
+            }
+            // Control-flow contexts: asserts are conditional or parametric; refuse.
+            Stmt::Expr(Expr::ForLoop(f), _) => {
+                refuse_nested_asserts_in_stmts(&f.body.stmts, "for", skipped);
+            }
+            Stmt::Expr(Expr::While(w), _) => {
+                let body_count = count_asserts_in_stmts(&w.body.stmts);
+                let cond_count = count_asserts_in_expr(&w.cond);
+                let total = body_count + cond_count;
+                for _ in 0..total {
+                    skipped.push(
+                        "assertion under while context: not unconditional point-wise; released to layer 0"
+                            .to_string(),
+                    );
+                }
+            }
+            Stmt::Expr(Expr::Loop(l), _) => {
+                refuse_nested_asserts_in_stmts(&l.body.stmts, "loop", skipped);
+            }
+            Stmt::Expr(Expr::If(i), _) => {
+                let count = count_asserts_in_stmts(&i.then_branch.stmts)
+                    + i.else_branch
+                        .as_ref()
+                        .map_or(0, |(_, e)| count_asserts_in_expr(e));
+                for _ in 0..count {
+                    skipped.push(
+                        "assertion under if context: not unconditional point-wise; released to layer 0"
+                            .to_string(),
+                    );
+                }
+            }
+            Stmt::Expr(Expr::Match(m), _) => {
+                let count: usize = m.arms.iter().map(|a| count_asserts_in_expr(&a.body)).sum();
+                for _ in 0..count {
+                    skipped.push(
+                        "assertion under match context: not unconditional point-wise; released to layer 0"
+                            .to_string(),
+                    );
+                }
+            }
+            Stmt::Expr(Expr::Closure(c), _) => {
+                let count = count_asserts_in_expr(&c.body);
+                for _ in 0..count {
+                    skipped.push(
+                        "assertion under closure context: not unconditional point-wise; released to layer 0"
+                            .to_string(),
+                    );
+                }
+            }
+            // Unconditional const block: recurse and lift normally.
+            // const { ... } is always evaluated; lifting its asserts is sound.
+            Stmt::Expr(Expr::Const(c), _) => {
+                collect_assertion_entries(
+                    &c.block.stmts,
+                    local_scope,
+                    options,
+                    reducer,
+                    float_widths,
+                    entries,
+                    skipped,
+                    macros_lifted,
+                    reduced_helpers,
+                );
+            }
+            // Inner fn definitions inside a test fn: their asserts are only
+            // reachable via a call inside the test body; refuse them.
+            Stmt::Item(syn::Item::Fn(inner_fn)) => {
+                let fn_name = inner_fn.sig.ident.to_string();
+                let count = count_asserts_in_stmts(&inner_fn.block.stmts);
+                for _ in 0..count {
+                    skipped.push(format!(
+                        "assertion in non-#[test] item {fn_name}: reachable only via call-site inlining; released to layer 0"
+                    ));
+                }
+            }
             _ => {}
         }
         advance_temporal_scope_for_stmt(stmt, &mut temporal_scope);
+    }
+}
+
+fn refuse_nested_asserts_in_stmts(stmts: &[Stmt], context: &str, skipped: &mut Vec<String>) {
+    let count = count_asserts_in_stmts(stmts);
+    for _ in 0..count {
+        skipped.push(format!(
+            "assertion under {context} context: not unconditional point-wise; released to layer 0"
+        ));
     }
 }
 
@@ -1040,6 +1370,7 @@ fn reduce_assertion_expr(
     float_widths: &FloatWidthScope,
     options: &LiftOptions,
     depth: usize,
+    reduced_helpers: &mut HashSet<String>,
 ) -> Result<Vec<AssertionEntry>, String> {
     if depth == 0 {
         return Err(format!(
@@ -1106,7 +1437,7 @@ fn reduce_assertion_expr(
             for (param, arg) in params.into_iter().zip(call.args.iter()) {
                 bindings.insert(param, arg.clone());
             }
-            reduce_assertion_stmts(
+            let result = reduce_assertion_stmts(
                 &helper.block.stmts,
                 &bindings,
                 reducer,
@@ -1114,15 +1445,35 @@ fn reduce_assertion_expr(
                 float_widths,
                 options,
                 depth - 1,
+                reduced_helpers,
             )
-            .map_err(|e| format!("{name}: {e}"))
+            .map_err(|e| format!("{name}: {e}"));
+            // Record the helper fn name as successfully reduced so Pass 2
+            // does not also emit refusals for its asserts (which are already
+            // in assertions_lifted).
+            if result.is_ok() {
+                reduced_helpers.insert(name);
+            }
+            result
         }
-        Expr::Paren(paren) => {
-            reduce_assertion_expr(&paren.expr, reducer, scope, float_widths, options, depth)
-        }
-        Expr::Group(group) => {
-            reduce_assertion_expr(&group.expr, reducer, scope, float_widths, options, depth)
-        }
+        Expr::Paren(paren) => reduce_assertion_expr(
+            &paren.expr,
+            reducer,
+            scope,
+            float_widths,
+            options,
+            depth,
+            reduced_helpers,
+        ),
+        Expr::Group(group) => reduce_assertion_expr(
+            &group.expr,
+            reducer,
+            scope,
+            float_widths,
+            options,
+            depth,
+            reduced_helpers,
+        ),
         other => Err(format!(
             "assertion expression is not structurally reducible `{}`",
             token_key(other)
@@ -1138,6 +1489,7 @@ fn reduce_assertion_stmts(
     float_widths: &FloatWidthScope,
     options: &LiftOptions,
     depth: usize,
+    reduced_helpers: &mut HashSet<String>,
 ) -> Result<Vec<AssertionEntry>, String> {
     let mut entries = Vec::new();
     for stmt in stmts {
@@ -1171,6 +1523,7 @@ fn reduce_assertion_stmts(
                     float_widths,
                     options,
                     depth,
+                    reduced_helpers,
                 )?);
             }
             other => {

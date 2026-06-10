@@ -4410,3 +4410,145 @@ fn t() {
         refusal.reason
     );
 }
+
+// --- collector totality / named-refusal tranche (T-SILENT) ---
+
+fn refusal_reasons(out: &sugar_lift_rust_tests::AdapterOutput) -> Vec<String> {
+    out.skip_reasons.clone()
+}
+
+#[test]
+fn assert_in_for_loop_is_named_refusal_not_silent() {
+    // RED before: an assert nested in a for loop was never reached (silent).
+    // GREEN after: it is counted and refused with a "for context" reason, and
+    // NOT lifted as an unconditional row.
+    let src = r#"
+#[test]
+fn loop_test() {
+    for i in 0..3 {
+        assert_eq!(i, i);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/iter.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.assertions_lifted, 0, "loop body assert must not lift");
+    assert!(
+        refusal_reasons(&out)
+            .iter()
+            .any(|r| r.contains("for context")),
+        "for-loop assert must be a named refusal: {:?}",
+        refusal_reasons(&out)
+    );
+}
+
+#[test]
+fn assert_in_if_branch_is_refused_not_lifted() {
+    // Soundness: a conditional assert only holds under the guard; lifting it
+    // unconditionally would be a false-pass. It must be refused.
+    let src = r#"
+#[test]
+fn cond_test() {
+    let c = true;
+    if c {
+        assert_eq!(1, 2);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/cond.rs");
+    assert_eq!(out.assertions_lifted, 0, "conditional assert must not lift");
+    assert!(
+        out.decls.is_empty(),
+        "no discharged row for a conditional assert"
+    );
+    assert!(
+        refusal_reasons(&out)
+            .iter()
+            .any(|r| r.contains("if context")),
+        "if-branch assert must be a named refusal: {:?}",
+        refusal_reasons(&out)
+    );
+}
+
+#[test]
+fn assert_in_match_arm_is_refused() {
+    let src = r#"
+#[test]
+fn match_test() {
+    let n = 1;
+    match n {
+        1 => assert_eq!(n, 1),
+        _ => assert_eq!(n, 0),
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/m.rs");
+    assert_eq!(out.assertions_lifted, 0);
+    assert!(
+        refusal_reasons(&out)
+            .iter()
+            .any(|r| r.contains("match context")),
+        "match-arm assert must be a named refusal: {:?}",
+        refusal_reasons(&out)
+    );
+}
+
+#[test]
+fn assert_in_non_test_helper_fn_is_refused() {
+    // A non-#[test] helper's assert is reachable only via call-site inlining.
+    // When the reducer cannot inline it, it must be a named refusal, not silent.
+    let src = r#"
+fn helper() {
+    assert_eq!(some_runtime_value(), 7);
+}
+
+#[test]
+fn the_test() {
+    assert_eq!(1, 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/h.rs");
+    assert!(
+        refusal_reasons(&out)
+            .iter()
+            .any(|r| r.contains("non-#[test] item")),
+        "helper-fn assert must be a named refusal: {:?}",
+        refusal_reasons(&out)
+    );
+}
+
+#[test]
+fn assert_in_unconditional_block_still_lifts() {
+    // Discrimination: an unconditional plain block is point-wise; recurse + lift.
+    let src = r#"
+#[test]
+fn block_test() {
+    {
+        assert_eq!(1, 1);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/b.rs");
+    assert_eq!(
+        out.assertions_lifted, 1,
+        "unconditional block assert must lift"
+    );
+    assert_eq!(out.decls.len(), 1);
+}
+
+#[test]
+fn top_level_assert_unchanged_after_totality() {
+    // Regression: a plain top-level assert lifts exactly as before.
+    let src = r#"
+#[test]
+fn plain_test() {
+    let a = 1;
+    assert_eq!(a, 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/p.rs");
+    assert_eq!(out.assertions_lifted, 1);
+    assert_eq!(out.decls.len(), 1);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+}

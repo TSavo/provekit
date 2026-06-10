@@ -20,14 +20,14 @@ use std::collections::BTreeMap;
 use sugar_lift_rust_tests::lift_file;
 use syn::visit::{self, Visit};
 
-const ASSERT_MACROS: &[&str] = &[
-    "assert",
-    "assert_eq",
-    "assert_ne",
-    "debug_assert",
-    "debug_assert_eq",
-    "debug_assert_ne",
-];
+/// The lifter's assertion universe: any macro whose name starts with assert or
+/// debug_assert. This covers the standard six plus stdlib custom macros
+/// (assert_all!, assert_none!, assert_eq_const_safe!, ...) that the lifter
+/// lifts or refuses. The independent denominator must match this universe or
+/// discharged would exceed it and unaccounted would go negative.
+fn is_assert_macro_name(name: &str) -> bool {
+    name.starts_with("assert") || name.starts_with("debug_assert")
+}
 
 /// Counts assertion-macro invocations independently of the lifter, so we can
 /// reconcile against the lifter's own accounting and surface silent drops.
@@ -39,8 +39,7 @@ struct AssertCounter {
 impl<'ast> Visit<'ast> for AssertCounter {
     fn visit_macro(&mut self, m: &'ast syn::Macro) {
         if let Some(seg) = m.path.segments.last() {
-            let name = seg.ident.to_string();
-            if ASSERT_MACROS.contains(&name.as_str()) {
+            if is_assert_macro_name(&seg.ident.to_string()) {
                 self.total += 1;
             }
         }
