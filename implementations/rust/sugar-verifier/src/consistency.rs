@@ -642,21 +642,83 @@ fn check_inv_consistency(
 /// `forall`. We pull the `forall` conjuncts out (top-level, or directly under a
 /// top-level `and`) so each can be asserted ambiently against point-claims. We
 /// deliberately do NOT descend into the `and`'s non-forall operands -- asserting
-/// a contract's point-claims into unrelated obligations would be unsound; only
-/// the closed universals (no free variable) are safe ambient context.
+/// a contract's point-claims into unrelated obligations would be unsound.
+///
+/// CLOSEDNESS GATE. The pool's shared vocabulary is CALLSITES (`call:*` ctors,
+/// the `#euf#` names) -- that is what every lifter elides to, and it is the only
+/// vocabulary with pool-wide meaning. A universal earns ambient status because
+/// it quantifies over a callsite, instantiable at any point-claim. A forall
+/// still carrying a FREE variable (an un-elided test-local, e.g. a symbolic
+/// range bound `n`) is a fact about THAT TEST's locals, not about a callsite:
+/// two tests' unrelated locals can share a spelling, and conjoining the open
+/// formula would couple them through name capture. Open universals stay home
+/// (their own obligation still checks them); only closed ones travel.
 fn collect_ambient_foralls(inv: &Json, out: &mut Vec<Json>) {
+    let mut consider = |op: &Json| {
+        if op.get("kind").and_then(|k| k.as_str()) != Some("forall") {
+            return;
+        }
+        if formula_is_closed(op, &mut Vec::new()) {
+            out.push(op.clone());
+        } else {
+            debug!(
+                "verifier/ambient: open universal (free test-local variable) excluded from ambient set"
+            );
+        }
+    };
     match inv.get("kind").and_then(|k| k.as_str()) {
-        Some("forall") => out.push(inv.clone()),
+        Some("forall") => consider(inv),
         Some("and") => {
             if let Some(ops) = inv.get("operands").and_then(|v| v.as_array()) {
                 for op in ops {
-                    if op.get("kind").and_then(|k| k.as_str()) == Some("forall") {
-                        out.push(op.clone());
-                    }
+                    consider(op);
                 }
             }
         }
         _ => {}
+    }
+}
+
+/// True if every `var` occurrence in the formula/term tree is bound by an
+/// enclosing quantifier. Walks `operands`/`args`/`body` recursively; `forall`
+/// and `exists` extend the bound set for their body. Any binder shape we do
+/// not understand (e.g. `lambda`) fails CLOSED -- excluding a universal from
+/// the ambient set only loses refutation power, never soundness, so unknown
+/// structure is treated as not-closed.
+fn formula_is_closed(node: &Json, bound: &mut Vec<String>) -> bool {
+    match node.get("kind").and_then(|k| k.as_str()) {
+        Some("var") => {
+            let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            bound.iter().any(|b| b == name)
+        }
+        Some("const") => true,
+        Some("forall") | Some("exists") => {
+            let Some(name) = node.get("name").and_then(|v| v.as_str()) else {
+                return false;
+            };
+            bound.push(name.to_string());
+            let ok = node
+                .get("body")
+                .map(|b| formula_is_closed(b, bound))
+                .unwrap_or(false);
+            bound.pop();
+            ok
+        }
+        Some("lambda") => false,
+        _ => {
+            let mut ok = true;
+            for key in ["operands", "args"] {
+                if let Some(arr) = node.get(key).and_then(|v| v.as_array()) {
+                    for child in arr {
+                        ok = ok && formula_is_closed(child, bound);
+                    }
+                }
+            }
+            if let Some(b) = node.get("body") {
+                ok = ok && formula_is_closed(b, bound);
+            }
+            ok
+        }
     }
 }
 
@@ -693,16 +755,22 @@ pub fn verify_consistency(
 
     // AMBIENT UNIVERSALS: a forall invariant (a lifted bounded loop, memento
     // `<test>::loop::<var>`, from any language's lifter) constrains every claim
-    // about the functions it quantifies. Assert all forall invariants as
-    // background in every obligation so the solver instantiates them against
+    // about the callsites it quantifies. Assert each CLOSED, NON-WITNESS forall
+    // as background in every obligation so the solver instantiates it against
     // point-claims -- `forall x. g(x)==1` refutes a sibling `g(2)==2`. This is
     // the cross-proof conjoin extended to quantified contracts, sound by the
-    // same EUF purity (a pure `g(2)` has one value pool-wide). A bound-var
-    // quantifier carries no free variable, so this is distinct from the
-    // parametrize per-row hazard. Answered ONCE here, in the shared engine, not
-    // per-lifter.
+    // same EUF purity (a pure `g(2)` has one value pool-wide): callsites are
+    // the pool's shared vocabulary, so a closed universal over them is a
+    // pool-wide fact, while an OPEN one (free test-local variable) is not (see
+    // `collect_ambient_foralls`). WITNESS members are settled by recompute, per
+    // member, and are never folded into the symbolic conjunction -- so their
+    // invs are likewise never ambient-collected. Answered ONCE here, in the
+    // shared engine, not per-lifter.
     let mut ambient_foralls: Vec<Json> = Vec::new();
     for (cid, body) in &candidates {
+        if is_witness_member(body) {
+            continue;
+        }
         if let Some(inv) = body.get("inv") {
             let before = ambient_foralls.len();
             collect_ambient_foralls(inv, &mut ambient_foralls);
@@ -1130,10 +1198,121 @@ mod tests {
         );
         let res = verify_consistency(&pool, &plan, &reg);
         assert_eq!(res.len(), 2, "two separate obligations: {res:?}");
-        assert!(
-            res.iter()
-                .any(|r| r.verdict == ObligationVerdict::Unsatisfied),
+        // Pin WHICH row refutes: the point-claim must be the Unsatisfied one and
+        // the loop universal itself must stay internally consistent. An any()
+        // over both rows would stay green if a regression flipped the wrong row.
+        let point = res
+            .iter()
+            .find(|r| r.contract_cid == "blake3-512:point")
+            .expect("point-claim row present");
+        assert_eq!(
+            point.verdict,
+            ObligationVerdict::Unsatisfied,
             "the ambient universal must refute the separate point-claim memento: {res:?}"
+        );
+        let loop_row = res
+            .iter()
+            .find(|r| r.contract_cid == "blake3-512:loop")
+            .expect("loop row present");
+        assert_eq!(
+            loop_row.verdict,
+            ObligationVerdict::Discharged,
+            "the loop universal alone is consistent: {res:?}"
+        );
+    }
+
+    /// CLOSEDNESS DISCRIMINATION. A forall whose range bound is a FREE variable
+    /// (an un-elided test-local `n`) is a fact about that test's locals, not
+    /// about a callsite, and must NOT travel ambiently: two tests' unrelated
+    /// locals can share a spelling and would couple through name capture. The
+    /// open universal stays home; the separate in-range-looking point-claim
+    /// stays Discharged.
+    #[test]
+    fn open_forall_is_not_ambient() {
+        let (plan, reg) = z3_plan_and_registry();
+        let callg = |arg: Json| json!({"kind":"ctor","name":"call:g","args":[arg]});
+        // forall x. (0<=x<n => g(x)==1) -- `n` is FREE (test-local bound).
+        let guard = json!({"kind":"and","operands":[
+            json!({"kind":"atomic","name":"\u{2264}","args":[int(0), var("x")]}),
+            json!({"kind":"atomic","name":"<","args":[var("x"), var("n")]}),
+        ]});
+        let open_forall = json!({
+            "kind":"forall","name":"x",
+            "sort":{"kind":"primitive","name":"Int"},
+            "body": json!({"kind":"implies","operands":[guard, eqf(callg(var("x")), int(1))]}),
+        });
+        let loop_inv = json!({"kind":"and","operands":[open_forall]});
+        let point_inv = json!({"kind":"and","operands":[eqf(callg(int(2)), int(2))]});
+
+        let mut pool = MementoPool::default();
+        insert_contract(
+            &mut pool,
+            "blake3-512:openloop",
+            "src/lib.rs::tests::t::loop::x",
+            loop_inv,
+        );
+        insert_contract(
+            &mut pool,
+            "blake3-512:openpoint",
+            "g#euf#c:callresult_g_a1(i:2)::assertion",
+            point_inv,
+        );
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 2, "two separate obligations: {res:?}");
+        let point = res
+            .iter()
+            .find(|r| r.contract_cid == "blake3-512:openpoint")
+            .expect("point-claim row present");
+        assert_eq!(
+            point.verdict,
+            ObligationVerdict::Discharged,
+            "an OPEN universal must not refute anything ambiently: {res:?}"
+        );
+    }
+
+    /// WITNESS DISCRIMINATION. A witness member is settled by recompute, per
+    /// member; its inv is never folded into the symbolic conjunction, so a
+    /// closed forall riding in a witness member must NOT be ambient-collected
+    /// against the symbolic point-claims.
+    #[test]
+    fn witness_member_forall_is_not_ambient() {
+        let _env = witness_env_lock();
+        std::env::remove_var("SUGAR_WITNESS_PROJECT_DIR");
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE");
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE_PYTEST");
+        let (plan, reg) = z3_plan_and_registry();
+        let callg = |arg: Json| json!({"kind":"ctor","name":"call:g","args":[arg]});
+        let guard = json!({"kind":"and","operands":[
+            json!({"kind":"atomic","name":"\u{2264}","args":[int(0), var("x")]}),
+            json!({"kind":"atomic","name":"<","args":[var("x"), int(3)]}),
+        ]});
+        let closed_forall = json!({
+            "kind":"forall","name":"x",
+            "sort":{"kind":"primitive","name":"Int"},
+            "body": json!({"kind":"implies","operands":[guard, eqf(callg(var("x")), int(1))]}),
+        });
+        let witness_member = json!({"envelope":{"header":{
+            "kind":"contract","contractName":"src/lib.rs::tests::t::loop::x",
+            "inv": json!({"kind":"and","operands":[closed_forall]}),
+            "evidence":{"proofType":"custom","certificate":
+                {"tool":"pytest","version":"x","formulaHash":"x","proofData":"{}"}}}}});
+        let mut pool = MementoPool::default();
+        pool.insert("blake3-512:witnessloop".to_string(), witness_member);
+        insert_contract(
+            &mut pool,
+            "blake3-512:wpoint",
+            "g#euf#c:callresult_g_a1(i:2)::assertion",
+            json!({"kind":"and","operands":[eqf(callg(int(2)), int(2))]}),
+        );
+        let res = verify_consistency(&pool, &plan, &reg);
+        let point = res
+            .iter()
+            .find(|r| r.contract_cid == "blake3-512:wpoint")
+            .expect("point-claim row present");
+        assert_eq!(
+            point.verdict,
+            ObligationVerdict::Discharged,
+            "a witness member's forall must not leak into symbolic checks: {res:?}"
         );
     }
 
