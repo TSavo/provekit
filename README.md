@@ -1,8 +1,6 @@
 # Sugar
 **Makes software honest.**
 
-*The Correctness Suite.*
-
 > **Sugar in, `.proof` out.**
 
 Nobody depends on your code. They depend on what your code *does*. Sugar takes
@@ -16,6 +14,38 @@ re-running your proof. It never asks anyone to rewrite code in a proof language.
 where correctness turns out to live.
 
 Sugar in, `.proof` out. CIDs are BLAKE3-512; signatures are Ed25519.
+
+## The part that should keep you up at night
+
+A `.proof` is the easy half. The hard half — the half no other tool can
+print — is the **shape of what was never proven at all.**
+
+Sort every fact in a program into two piles. *Right by construction*: the things
+something **stated** and staked its name on — a compiler axiom, a sworn test, a
+walked implementation. These are recomputable, signed, and yours to check.
+*Right by convention*: everything else. The code that is "right" the way an
+unmarked intersection is "safe" — nothing certifies it, nothing contradicts it,
+and everyone drives through because driving-through is the convention. **It is
+right because nothing says it shouldn't be.** And almost all of the software
+running the banks, the hospitals, and the grid is this second kind: a tower of
+hot promises, twenty layers deep, with nothing tying any floor to the next.
+
+Because Sugar accounts for *everything* it reads — every statement lifted or
+refused **by name**, never silently — the unsworn remainder stops being a blur
+and acquires a perimeter. A coverage tool tells you 78% of your lines ran. Sugar
+tells you the one thing nobody has ever been able to print: **here is the exact
+list of behaviors no one ever promised you** — per dependency, drawn by the
+proofs around it. The empty set is an artifact too; it gets a hash.
+
+So the alarm inverts. Everyone else fires when something makes a noise. Sugar
+fires when something that should have testified, *didn't* — when a dependency
+updates and its entire behavioral delta lands in territory no one ever swore to.
+Not detection of the backdoor. Detection of the conditions that make backdoors
+the rational move. The dog that didn't bark — with a signature on the silence.
+
+That is the vision. Not "we prove your code is correct." **We make software
+honest** — it can no longer claim more than it can prove, and it can no longer
+hide what it never swore.
 
 ## Why it matters: the version lied, the behavior moved, Sugar saw it
 
