@@ -19,3 +19,8 @@ flags = ["-smt2", "-in"]
 language = "java"
 library = "java-assertion-consistency-good"
 version = "0.0.0"
+
+# Phase 2: assertion vocabulary is learned from the framework's own source.
+# assertion_source_dirs is relative to the workspace root (this directory).
+[java-test-assertions]
+assertion_source_dirs = ["vendor/junit5"]
