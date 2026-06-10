@@ -4599,22 +4599,24 @@ fn the_test() {
 
 #[test]
 fn assert_in_let_initializer_is_refused_not_silent() {
+    // A CONDITIONAL let-initializer (assert inside a closure) is not a top-level
+    // point-wise assertion: it stays a named refusal, not silent. An
+    // unconditional value-block let-init is lifted instead (see
+    // value_block_let_init_asserts_are_lifted).
     let src = r#"
 #[test]
 fn let_init_test() {
-    let _x = {
-        assert_eq!(1, 2);
-        5
-    };
+    let _x = (0..2).map(|i| { assert_eq!(i, 1); i }).count();
 }
 "#;
     let out = lift_file(&parse(src), "tests/m.rs");
-    assert_eq!(out.assertions_lifted, 0, "let-init assert must not lift");
+    assert_eq!(
+        out.assertions_lifted, 0,
+        "conditional let-init assert must not lift"
+    );
     assert!(
-        out.skip_reasons
-            .iter()
-            .any(|r| r.contains("let-initializer")),
-        "let-init assert must be a named refusal: {:?}",
+        !out.skip_reasons.is_empty(),
+        "conditional let-init assert must be a named refusal: {:?}",
         out.skip_reasons
     );
 }
@@ -4842,4 +4844,73 @@ fn iflet() {
     let (lhs, rhs) = panic_locus_lhs_rhs(&out);
     assert!(lhs.contains("variant_of"), "lhs: {lhs}");
     assert!(rhs.contains("Ok"), "rhs must tag Ok: {rhs}");
+}
+
+// --- unconditional-block recursion (block_on / value-block) tranche ---
+
+#[test]
+fn block_on_async_asserts_are_lifted() {
+    // rt.block_on(async { .. }) runs the future to completion once; its
+    // top-level asserts are unconditional and lift.
+    let src = r#"
+#[test]
+fn t() {
+    rt.block_on(async {
+        assert_eq!(compute(), 1);
+    });
+}
+"#;
+    let out = lift_file(&parse(src), "tests/rt.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+}
+
+#[test]
+fn value_block_let_init_asserts_are_lifted() {
+    let src = r#"
+#[test]
+fn t() {
+    let _x = {
+        assert_eq!(compute(), 1);
+        5
+    };
+}
+"#;
+    let out = lift_file(&parse(src), "tests/v.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+}
+
+#[test]
+fn spawned_async_assert_stays_refused() {
+    // A spawned future may never run: its asserts are NOT unconditional and
+    // must stay refused, not lifted (false-pass guard).
+    let src = r#"
+#[test]
+fn t() {
+    tokio::spawn(async {
+        assert_eq!(compute(), 1);
+    });
+}
+"#;
+    let out = lift_file(&parse(src), "tests/s.rs");
+    assert_eq!(
+        out.assertions_lifted, 0,
+        "spawned async assert must not lift"
+    );
+    assert!(
+        !out.skip_reasons.is_empty(),
+        "spawned async assert must be accounted (refused): {:?}",
+        out.skip_reasons
+    );
+}
+
+#[test]
+fn closure_arg_assert_stays_refused() {
+    let src = r#"
+#[test]
+fn t() {
+    let _x = (0..3).map(|i| { assert_eq!(i, i); i }).count();
+}
+"#;
+    let out = lift_file(&parse(src), "tests/c.rs");
+    assert_eq!(out.assertions_lifted, 0, "closure assert must not lift");
 }

@@ -957,6 +957,30 @@ fn is_assert_macro_path(path: &syn::Path) -> bool {
     }
 }
 
+/// If an expression is an UNCONDITIONALLY-evaluated block, return its statements
+/// so the collector can recurse and lift the asserts inside (the per-fn safety
+/// net still accounts anything not reached, so this never reintroduces a silent
+/// drop). Sound contexts:
+///   - a plain value block `{ .. }` and `unsafe { .. }` (evaluated once here)
+///   - `rt.block_on(async { .. })`: block_on drives the future to completion
+///     synchronously, so its top-level statements run exactly once. The async /
+///     await is the ordering we drop; the assertions inside still hold.
+/// A bare `async { .. }`, a closure, or a spawned future is NOT unconditional
+/// (it may never run, or runs per-iteration) and is not returned here.
+fn unconditional_block_stmts(expr: &Expr) -> Option<&[Stmt]> {
+    match expr {
+        Expr::Block(b) => Some(&b.block.stmts),
+        Expr::Unsafe(u) => Some(&u.block.stmts),
+        Expr::Paren(p) => unconditional_block_stmts(&p.expr),
+        Expr::Group(g) => unconditional_block_stmts(&g.expr),
+        Expr::MethodCall(c) if c.method == "block_on" && c.args.len() == 1 => match &c.args[0] {
+            Expr::Async(a) => Some(&a.block.stmts),
+            other => unconditional_block_stmts(other),
+        },
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_assertion_entries(
     stmts: &[Stmt],
@@ -976,19 +1000,36 @@ fn collect_assertion_entries(
         match stmt {
             Stmt::Local(local) => {
                 update_float_width_scope_for_pat(&local.pat, float_widths);
-                // An assert inside a let-initializer (e.g. `let x = { assert!(..); v };`
-                // or a closure passed to an iterator adapter) is not a top-level
-                // point-wise assertion. Count and refuse so it is not dropped.
                 if let Some(init) = &local.init {
-                    let mut count = count_asserts_in_expr(&init.expr);
-                    if let Some((_, diverge)) = &init.diverge {
-                        count += count_asserts_in_expr(diverge);
-                    }
-                    for _ in 0..count {
-                        skipped.push(
-                            "assertion inside a let-initializer expression: not a top-level point-wise assertion; released to layer 0"
-                                .to_string(),
+                    // If the initializer is an unconditional block (a plain block
+                    // or a block_on(async {..})), recurse and lift its asserts;
+                    // the per-fn safety net accounts anything not reached, so no
+                    // silent drop. Otherwise the asserts (closures, conditionals)
+                    // are not top-level point-wise: refuse them.
+                    if let Some(stmts) = unconditional_block_stmts(&init.expr) {
+                        collect_assertion_entries(
+                            stmts,
+                            local_scope,
+                            options,
+                            reducer,
+                            float_widths,
+                            entries,
+                            skipped,
+                            macros_lifted,
+                            reduced_helpers,
+                            macro_depth,
                         );
+                    } else {
+                        let mut count = count_asserts_in_expr(&init.expr);
+                        if let Some((_, diverge)) = &init.diverge {
+                            count += count_asserts_in_expr(diverge);
+                        }
+                        for _ in 0..count {
+                            skipped.push(
+                                "assertion inside a let-initializer expression: not a top-level point-wise assertion; released to layer 0"
+                                    .to_string(),
+                            );
+                        }
                     }
                 }
             }
@@ -1252,12 +1293,39 @@ fn collect_assertion_entries(
             // runs here for statements no specific arm matched, so there is no
             // double counting.
             other => {
-                let count = count_asserts_in_stmts(std::slice::from_ref(other));
-                for _ in 0..count {
-                    skipped.push(
-                        "assertion nested in an unlifted expression statement: not a top-level point-wise assertion; released to layer 0"
-                            .to_string(),
-                    );
+                // A bare expression statement that is an unconditional block
+                // (e.g. `rt.block_on(async { .. })`) runs once: recurse and lift
+                // its asserts. The per-fn safety net accounts anything not
+                // reached, so no silent drop. Otherwise refuse.
+                let recursed = if let Stmt::Expr(e, _) = other {
+                    if let Some(stmts) = unconditional_block_stmts(e) {
+                        collect_assertion_entries(
+                            stmts,
+                            local_scope,
+                            options,
+                            reducer,
+                            float_widths,
+                            entries,
+                            skipped,
+                            macros_lifted,
+                            reduced_helpers,
+                            macro_depth,
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if !recursed {
+                    let count = count_asserts_in_stmts(std::slice::from_ref(other));
+                    for _ in 0..count {
+                        skipped.push(
+                            "assertion nested in an unlifted expression statement: not a top-level point-wise assertion; released to layer 0"
+                                .to_string(),
+                        );
+                    }
                 }
             }
         }
