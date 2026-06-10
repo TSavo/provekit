@@ -1,0 +1,8 @@
+.sugar/runs/
+.sugar/witnesses/
+target/
+blake3-512:*.proof
+.prove*.json
+.verify*.json
+.sugar/lift/rust-cargo-test-witness/manifest.toml
+.sugar/lift/rust-test-assertions/manifest.toml

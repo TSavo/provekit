@@ -291,6 +291,7 @@ SHOWCASE_RUNS = \
 	examples/numpy-showcase/run.sh \
 	examples/pandas-showcase/run.sh \
 	examples/sklearn-showcase/run.sh \
+	examples/serde-json-showcase/run.sh \
 	examples/build-witness-showcase/run.sh \
 	examples/rust-boundary-showcase/run.sh \
 	examples/rust-witness-showcase/run.sh \
