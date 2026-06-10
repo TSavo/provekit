@@ -285,6 +285,22 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     describes its own hash. We do not have to be right about the width forever — only honest about
     which width a given CID used, which the CID already states.
 
+    And this is not special to hashes: **every cryptographic value in the substrate is
+    scheme-prefixed and read prefix-first.** A CID is `blake3-512:<digest>` and the parse gates on
+    the scheme (`provekit-ir-types`: `s.strip_prefix("blake3-512:")` — a bare digest does not
+    parse); a signature and a signer key are `ed25519:<bytes>` (`provekit-verifier`). No
+    cryptographic value is ever a bare blob; every reader strips the scheme before it touches a
+    byte of payload. So crypto-agility is not a feature anyone maintains — it is structurally
+    impossible to violate, because the format rejects an un-named algorithm at parse. Migrating
+    blake3-512 -> blake3-1024 or ed25519 -> a post-quantum signature is adding a prefix arm at read
+    sites that *already* dispatch on prefix; there is no flag day, because there was never a
+    hardcoded assumption, only data that names its own algorithm. Even `memcmp(64)` does not
+    hardcode the 64 — the width is read from the prefix. **The artifact tells the verifier how to
+    check it**, so a verifier a century out reads the scheme and knows exactly how to recompute.
+    This is the mirror of "function names are sugar" (VI): incidental names are *stripped* because
+    they do not matter, algorithm names are *always present and never stripped* because they do.
+    The system erases exactly what is incidental and self-names exactly what is essential.
+
     This is *why* we are not a vendor (the no-vendor axiom): **you cannot solve a supply-chain
     attack by adding another vendor to the supply chain**, because trust does not compose, it
     accumulates attack surface — the xz maintainer *was* trusted; trust was the surface. We add no
