@@ -3977,3 +3977,138 @@ fn contradictory_encode() {
         "two different byte literals must produce two DISTINCT opaque vars (z3 would catch UNSAT)"
     );
 }
+
+// --- macro-invocation-as-EUF-term tranche (T-FORMAT) ---
+
+fn eq_lhs_name(formula: &Formula) -> String {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            match args[0].as_ref() {
+                Term::Var { name } => name.clone(),
+                other => panic!("expected Var lhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn format_roundtrip_lifts_as_macro_term() {
+    // RED before: format!(..) in term position is "unsupported term"; lifted=0.
+    // GREEN after: it lifts as an uninterpreted macro: term equal to the literal.
+    let src = r#"
+#[test]
+fn fmt_roundtrip() {
+    let x = 5;
+    assert_eq!(format!("{x:?}"), "5");
+}
+"#;
+    let out = lift_file(&parse(src), "tests/fmt.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+    let lhs = eq_lhs_name(&ops[0]);
+    assert!(
+        lhs.starts_with("macro:") && lhs.contains("format"),
+        "lhs must be a macro term naming format, got {lhs}"
+    );
+}
+
+#[test]
+fn identical_format_calls_coalesce_congruence() {
+    // Teeth: two identical format! calls must produce the SAME term, so a
+    // contradiction over them is UNSAT. This is the non-vacuity guarantee.
+    let src = r#"
+#[test]
+fn fmt_twice() {
+    let x = 5;
+    assert_eq!(format!("{x:?}"), "a");
+    assert_eq!(format!("{x:?}"), "b");
+}
+"#;
+    let out = lift_file(&parse(src), "tests/fmt.rs");
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    assert_eq!(
+        eq_lhs_name(&ops[0]),
+        eq_lhs_name(&ops[1]),
+        "identical format! calls must coalesce to one term (consistency teeth)"
+    );
+}
+
+#[test]
+fn distinct_format_calls_do_not_coalesce() {
+    // Distinctness: different macro source must produce different terms.
+    let src = r#"
+#[test]
+fn fmt_distinct() {
+    let x = 5;
+    let y = 5;
+    assert_eq!(format!("{x:?}"), "a");
+    assert_eq!(format!("{y:?}"), "a");
+}
+"#;
+    let out = lift_file(&parse(src), "tests/fmt.rs");
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    assert_ne!(
+        eq_lhs_name(&ops[0]),
+        eq_lhs_name(&ops[1]),
+        "distinct format! calls must not coalesce"
+    );
+}
+
+#[test]
+fn vec_and_offset_of_lift_as_macro_terms() {
+    // Generality: the arm is not format-specific; any macro in term position lifts.
+    let src = r#"
+#[test]
+fn other_macros() {
+    assert_eq!(vec![1, 2, 3], vec![1, 2, 3]);
+    assert_eq!(offset_of!(Foo, x), 0);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/fmt.rs");
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    // vec! == vec! is reflexive over one coalesced term.
+    assert_eq!(eq_lhs_name(&ops[0]), {
+        match ops[0].as_ref() {
+            Formula::Atomic { args, .. } => match args[1].as_ref() {
+                Term::Var { name } => name.clone(),
+                other => panic!("expected Var rhs for vec! == vec!, got {other:?}"),
+            },
+            other => panic!("expected equality, got {other:?}"),
+        }
+    });
+    let off = eq_lhs_name(&ops[1]);
+    assert!(
+        off.starts_with("macro:") && off.contains("offset_of"),
+        "offset_of! must lift as a macro term, got {off}"
+    );
+}
+
+#[test]
+fn non_macro_terms_unchanged_discrimination() {
+    // The new arm must not perturb ordinary term lifting.
+    let src = r#"
+#[test]
+fn plain() {
+    let a = 1;
+    assert_eq!(a, 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/fmt.rs");
+    assert_eq!(out.lifted, 1);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+    let lhs = eq_lhs_name(&ops[0]);
+    assert!(
+        !lhs.starts_with("macro:"),
+        "plain local must not be a macro term, got {lhs}"
+    );
+}

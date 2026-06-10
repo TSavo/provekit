@@ -2924,6 +2924,13 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
         }
         Expr::Paren(paren) => translate_term_in_scope(&paren.expr, scope),
         Expr::Group(group) => translate_term_in_scope(&group.expr, scope),
+        // A macro invocation in term position (format!, vec!, offset_of!, ...)
+        // is desugared to an uninterpreted function term keyed by its canonical
+        // source tokens. Identical macro calls map to the same term (congruence),
+        // so a contradiction like `format!(a) == "p" && format!(a) == "q"` stays
+        // UNSAT; distinct calls map to distinct terms. The witness re-run proves
+        // the actual runtime value; consistency only checks non-contradiction.
+        Expr::Macro(_) => Ok(make_var(format!("macro:{}", token_key(expr)))),
         other => Err(format!("unsupported term `{}`", token_key(other))),
     }
 }
