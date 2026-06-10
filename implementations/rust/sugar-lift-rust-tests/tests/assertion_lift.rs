@@ -902,6 +902,52 @@ fn any_fixed_vec_type_id() {
 }
 
 #[test]
+fn any_is_positive_and_negative_share_the_same_call_result_key() {
+    let src = r#"
+use core::any::*;
+
+#[test]
+fn any_referenced() {
+    let a = &5 as &dyn Any;
+    assert!(a.is::<i32>());
+    assert!(!a.is::<i32>());
+}
+"#;
+    let out = lift_file(&parse(src), "coretests/tests/any.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(
+        out.warnings.is_empty(),
+        "unexpected lift warnings: {:?}",
+        out.warnings
+    );
+    assert_eq!(
+        out.decls.len(),
+        1,
+        "positive and negated Any::is on the same receiver/type must coalesce"
+    );
+
+    let decl = &out.decls[0];
+    assert!(
+        decl.name.starts_with("method:is::<i32>#euf#"),
+        "Any::is should be keyed as a method call result, got {}",
+        decl.name
+    );
+    assert!(
+        decl.name.contains("tests/any.rs::any_referenced::a"),
+        "Any::is receiver should keep test-local identity in key, got {}",
+        decl.name
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    let rendered = format!("{operands:?}");
+    assert!(
+        rendered.contains("Bool(true)") && rendered.contains("Bool(false)"),
+        "expected positive and negated Any::is atoms in one row, got {rendered}"
+    );
+}
+
+#[test]
 fn direct_method_call_result_string_assertion_uses_euf_callsite_key() {
     let src = r#"
 struct Name;

@@ -128,9 +128,13 @@ Named gaps toward full `coretests` coverage:
   under the explicitly pinned Rust target are claimed. Inactive and ambiguous
   cfg predicates remain named residuals.
 - Type identity: direct `TypeId::of::<T>()` comparisons from current
-  `coretests/tests/intrinsics.rs` are claimed. Dynamic `Any::is::<T>()`
-  predicates remain in the no-scalar assertion bucket until that predicate form
-  is lifted explicitly.
+  `coretests/tests/intrinsics.rs` are claimed. Direct `Any::is::<T>()`
+  method-call result rows from `coretests/tests/any.rs::any_referenced` and
+  `coretests/tests/any.rs::any_owning` are claimed as ordinary `#euf#`
+  call-result assertions keyed by receiver identity and type argument.
+  `any_fixed_vec` remains residual because its receiver is rebound through a
+  reference cast; lifting it without stronger temporal identity would risk
+  over-claiming the subject.
 - Complex terms: closed bitwise-expression RHS terms, exact literal array/tuple
   value identities, and expression-only `const { expr }` wrappers are claimed
   where the call-result key is stable. Nullary/variant constructor expected
@@ -160,9 +164,10 @@ exact-value rows, expression-only const-block rows, pointer-index predicate
 rows, the `waker.rs::test_waker_getters` cast-and-pointer row, the
 `option::test_and` constructor operator-dispatch row, the
 `option::const_get_or_insert_default` and `option::const_get_or_insert_with`
-`is_some` predicate rows, the `result_try_trait_v2_branch` nested constructor
-operator-dispatch row, and the `cmp_default` user-type operator row, and rejects
-any non-discharged claimed row. It is intentionally not a full-`std` claim.
+`is_some` predicate rows, direct `any.rs` `Any::is::<T>()` method-call result
+rows, the `result_try_trait_v2_branch` nested constructor operator-dispatch row,
+and the `cmp_default` user-type operator row, and rejects any non-discharged
+claimed row. It is intentionally not a full-`std` claim.
 
 ## Grounded Full-Coretests Gap Census
 
@@ -214,10 +219,15 @@ tranche then adds 2 EUF rows from `option.rs::const_get_or_insert_default` and
 with the generic method-chain term translation and the stable const-path key,
 moving the combined showcase to 160 EUF rows. These rows were always liftable
 by the existing machinery; this tranche adds them to the claimed showcase scope
-and confirms the two vendor test functions as witnesses. A fresh full lift-only
-census for the prior float lever emitted 1,771 IR declarations and 1,075 lift
-diagnostics; the full lift+verify backlog was not recomputed in this showcase
-run.
+and confirms the two vendor test functions as witnesses. This `Any::is` tranche
+adds 18 EUF rows from `any.rs::any_referenced` and `any.rs::any_owning`,
+keyed by receiver identity and type argument as ordinary method-call result
+claims, moving the combined showcase to 178 EUF rows. These rows were already
+representable by the generic method-call result machinery; this tranche adds
+them to the claimed showcase scope and confirms the two vendor test functions
+as witnesses. A fresh full lift-only census for the prior float lever emitted
+1,771 IR declarations and 1,075 lift diagnostics; the full lift+verify backlog
+was not recomputed in this showcase run.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
@@ -227,7 +237,7 @@ run.
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
 | Complex terms | 388 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, pointer-index predicate, pointer-vtable predicate, casted-data, and const-index slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, 2 pointer-index predicate rows lift location-keyed, 4 `waker.rs` cast-and-pointer assertions lift as one location-keyed row, and 6 `intrinsics.rs::test_write_bytes_in_const_contexts` const-index assertions lift as one location-keyed row. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
-| Other | 331 | `tests/alloc.rs::layout_round_up_to_align_edge_cases`: no liftable scalar assertion under the current surface. |
+| Other | 313 | Residual after closing 18 direct `Any::is::<T>()` method-call result rows; `tests/alloc.rs::layout_round_up_to_align_edge_cases` remains a setup-heavy no-scalar assertion example. |
 
 ### Complex-Term Decomposition
 
@@ -247,7 +257,7 @@ The current complex-term residual sub-shapes include:
 
 ### Other / No-Liftable Decomposition
 
-The 331 no-liftable bucket breaks down as:
+The 313 no-liftable bucket breaks down as:
 
 | Sub-shape | Count | Representative std test/assertion |
 | --- | ---: | --- |
@@ -256,7 +266,7 @@ The 331 no-liftable bucket breaks down as:
 | Unsafe, pointer, memory, and atomic behavior | 46 | `tests/atomic.rs::bool_`: `compare_exchange` result rows over `Ok`/`Err` values. |
 | Iterator / range behavior and setup-only tests | 40 | `tests/async_iter/mod.rs::into_async_iter`: pinned async iterator polling sequence. |
 | Numeric property loops / tables | 39 | `tests/num/bignum.rs::test_from_u64_overflow`: table-driven bignum behavior. |
-| Miscellaneous no-scalar assertion tests | 38 | `tests/any.rs::any_referenced`: type identity predicates via `Any::is::<T>()`. |
+| Miscellaneous no-scalar assertion tests | 20 | Closed 18 `Any::is::<T>()` rows from `tests/any.rs::any_referenced` and `tests/any.rs::any_owning`; `tests/any.rs::any_fixed_vec` remains residual because the receiver is rebound through a reference cast. |
 | Protocol / runtime behavior | 27 | `tests/bool.rs::test_bool_not`: boolean runtime behavior outside direct call-result equality. |
 | Panic / `should_panic` tests | 18 | `tests/array.rs::array_map_drops_unmapped_elements_on_panic`: panic/drop behavior, not scalar equality. |
 | Macro-only / setup-only tests | 5 | `tests/macros.rs::assert_escape`: macro behavior with no liftable row under this surface. |

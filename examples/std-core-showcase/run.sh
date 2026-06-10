@@ -367,6 +367,49 @@ chunks = [
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
 PY
 
+python3 - "$STDROOT/coretests/tests/any.rs" "$PROJECT/tests/any.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    "use core::any::*;",
+    "",
+    "#[derive(PartialEq, Debug)]",
+    "struct Test;",
+    "",
+    "static TEST: &'static str = \"Test\";",
+    "",
+    *extract("any_referenced"),
+    "",
+    *extract("any_owning"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
+
 python3 - "$STDROOT/coretests/tests/alloc.rs" "$PROJECT/tests/alloc.rs" <<'PY'
 import sys
 
@@ -761,6 +804,11 @@ typed_float_refinement_rows = [
     r for r in rows
     if (r.get("property") or "") == "consistency:tests/num/mod.rs::test_f32f64"
 ]
+any_is_rows = [
+    r for r in euf_rows
+    if "method:is::<" in (r.get("property") or "")
+    and "tests/any.rs::any_" in (r.get("property") or "")
+]
 needles = [
     "cmp::max_by#euf#c:callresult_cmp__max_by_a3(i:1,i:-1,v:f)::assertion",
     "size_of::<u8>#euf#c:callresult_size_of___u8__a0()::assertion",
@@ -930,6 +978,20 @@ if typed_float_refinement_row.get("status") != "discharged":
     print("claimed num::test_f32f64 typed float refinement row did not discharge:", file=sys.stderr)
     print(f"{typed_float_refinement_row.get('status')} {typed_float_refinement_row.get('property')} {typed_float_refinement_row.get('reason')}", file=sys.stderr)
     raise SystemExit(1)
+if len(any_is_rows) != 18:
+    print(f"expected 18 claimed Any::is rows, got {len(any_is_rows)}", file=sys.stderr)
+    for row in any_is_rows:
+        print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
+failed_any_is = [
+    r for r in any_is_rows
+    if r.get("status") != "discharged"
+]
+if failed_any_is:
+    print("non-discharged Any::is rows in claimed slice:", file=sys.stderr)
+    for row in failed_any_is:
+        print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
 if failed:
     print("non-discharged #euf# rows in claimed slice:", file=sys.stderr)
     for row in failed:
@@ -962,6 +1024,7 @@ print("claimed-pointer-index-predicate-rows=2 discharged=2 failed=0 assertions=2
 print("claimed-waker-cast-and-pointer-row=1 discharged=1 failed=0 assertions=4")
 print("claimed-typed-float-refinement-row=1 discharged=1 failed=0")
 print("claimed-is_some-predicate-rows=2 discharged=2 failed=0")
+print("claimed-any-is-rows=18 discharged=18 failed=0")
 print(
     f"cfg-active-pointer-width={target_pointer_width} "
     f"cfg-active-pointer-bytes={target_pointer_bytes} "
@@ -980,6 +1043,8 @@ for row in pointer_index_rows:
 for row in pointer_vtable_rows:
     print(f"waker-cast-and-pointer-row: {row.get('property')} status={row.get('status')}")
 print(f"float-refinement-row: {typed_float_refinement_row.get('property')} status={typed_float_refinement_row.get('status')}")
+for row in any_is_rows:
+    print(f"any-is-row: {row.get('property')} status={row.get('status')}")
 PY
 
 echo "== witness: rerun exact std/core vendor tests =="
@@ -1027,6 +1092,16 @@ echo "== witness: rerun exact std/core vendor tests =="
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests intrinsics::test_typeid_unsized_types -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests any::any_referenced -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests any::any_owning -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
@@ -1180,6 +1255,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, active pinned-target mem cfg rows, direct TypeId comparison rows and const-index rows from intrinsics.rs, pure and temporal-identity method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs, casted-data and pointer-vtable row from waker.rs, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, active pinned-target mem cfg rows, direct TypeId comparison rows and const-index rows from intrinsics.rs, direct Any::is::<T>() method-call result rows from any.rs, pure and temporal-identity method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs, casted-data and pointer-vtable row from waker.rs, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macro surfaces outside this showcase/infinity-equality-via-cast-or-Ok-or-method-arg/ordered-and-signed-zero-float-refinements/chars/inactive-or-ambiguous-cfg rows/ambiguous receiver identity method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"
