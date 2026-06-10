@@ -1,5 +1,7 @@
 # Sugar
-**The Correctness Suite**
+**Makes software honest.**
+
+*The Correctness Suite.*
 
 > **Sugar in, `.proof` out.**
 
