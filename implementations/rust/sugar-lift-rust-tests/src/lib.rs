@@ -1157,7 +1157,12 @@ fn translate_float_refinement_assertion(
 fn is_liftable_float_refinement_method(method: &str) -> bool {
     matches!(
         method,
-        "is_nan" | "is_infinite" | "is_normal" | "is_sign_positive" | "is_sign_negative"
+        "is_nan"
+            | "is_infinite"
+            | "is_finite"
+            | "is_normal"
+            | "is_sign_positive"
+            | "is_sign_negative"
     )
 }
 

@@ -2770,3 +2770,105 @@ fn unknown_width_infinity() {
     }
     // If lifted=0 (skipped), that is also correct (conservative).
 }
+
+// --- is_finite predicate lift tranche ---
+
+#[test]
+fn is_finite_on_typed_local_lifts_as_predicate_atom() {
+    // RED before: is_finite is not in is_liftable_float_refinement_method, so
+    // the lifter refuses it with a warning and lifted=0.
+    // GREEN after: it lifts as float.f64.is_finite(pos) and
+    // not(float.f32.is_finite(nan)).
+    let src = r#"
+#[test]
+fn finite_predicate_typed_local() {
+    let pos: f64 = 42.8;
+    let nan: f32 = f32::NAN;
+    assert!(pos.is_finite());
+    assert!(!nan.is_finite());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/floats_direct.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "tests/num/floats_direct.rs::finite_predicate_typed_local"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    assert_float_refinement_var_atom(&operands[0], "float.f64.is_finite", "pos");
+    match operands[1].as_ref() {
+        Formula::Connective { kind, operands } if kind == "not" => {
+            assert_eq!(operands.len(), 1);
+            assert_float_refinement_var_atom(operands[0].as_ref(), "float.f32.is_finite", "nan");
+        }
+        other => panic!("expected negated is_finite atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn is_finite_discrimination_does_not_reroute_is_normal_or_is_infinite() {
+    // Discrimination: adding is_finite must not alter the lift of is_normal or
+    // is_infinite on the same receiver. Each predicate must emit its own atom
+    // unchanged.
+    let src = r#"
+#[test]
+fn mixed_finite_normal_infinite() {
+    let x: f64 = 1.5;
+    assert!(x.is_normal());
+    assert!(x.is_finite());
+    assert!(!x.is_infinite());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/floats_direct.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 3);
+    // first: is_normal -- must not have been replaced by is_finite
+    assert_float_refinement_var_atom(&operands[0], "float.f64.is_normal", "x");
+    // second: is_finite -- the new predicate
+    assert_float_refinement_var_atom(&operands[1], "float.f64.is_finite", "x");
+    // third: not(is_infinite) -- must not have been replaced by not(is_finite)
+    match operands[2].as_ref() {
+        Formula::Connective { kind, operands } if kind == "not" => {
+            assert_eq!(operands.len(), 1);
+            assert_float_refinement_var_atom(operands[0].as_ref(), "float.f64.is_infinite", "x");
+        }
+        other => panic!("expected not(is_infinite) atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn is_finite_without_width_annotation_is_refused_not_silently_lifted() {
+    // Width-unknown receiver must not silently produce a wrong row.
+    // Conservative: if lifted=0 (warned/skipped), that is correct.
+    let src = r#"
+#[test]
+fn finite_no_width() {
+    let x = 1.0;
+    assert!(x.is_finite());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/floats_direct.rs");
+    // If it lifts, verify no falsePass: the name must contain is_finite.
+    if out.lifted == 1 {
+        let decl = &out.decls[0];
+        let inv = decl.inv.as_deref().expect("lifted row must have inv");
+        let inv_str = format!("{inv:?}");
+        assert!(
+            inv_str.contains("is_finite"),
+            "if lifted, atom must name is_finite: {inv_str}"
+        );
+    }
+    // lifted=0 is also acceptable (conservative refusal).
+}

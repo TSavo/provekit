@@ -1045,6 +1045,8 @@ fn is_float_refinement_atomic_predicate(name: &str) -> bool {
             | "float.f64.is_nan"
             | "float.f32.is_infinite"
             | "float.f64.is_infinite"
+            | "float.f32.is_finite"
+            | "float.f64.is_finite"
             | "float.f32.is_normal"
             | "float.f64.is_normal"
             | "float.f32.is_sign_positive"
