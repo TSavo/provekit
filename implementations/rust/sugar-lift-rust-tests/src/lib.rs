@@ -797,6 +797,13 @@ type ExprBindings = BTreeMap<String, Expr>;
 #[derive(Debug, Clone, Default)]
 struct TemporalPlan {
     versioned: BTreeSet<String>,
+    /// Locals bound with `let mut` anywhere in the scope. Rust's `mut` keyword
+    /// is the mutability oracle: a non-mut local cannot be reassigned,
+    /// &mut-borrowed, index-assigned, or have an &mut-self method called on it,
+    /// so it is provably temporally stable. A `mut` local is conservatively
+    /// treated as unstable (it may be mutated in a way the syntactic tracker
+    /// cannot follow, e.g. `xs[i] = v` or `xs.push(..)`).
+    mut_locals: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -819,6 +826,12 @@ impl TemporalScope {
 
     fn local_scope(&self) -> &str {
         &self.local_scope
+    }
+
+    /// Whether `name` is a `let mut` local in this scope (conservatively
+    /// unstable). A non-mut local is provably immutable and stable.
+    fn is_mut_local(&self, name: &str) -> bool {
+        self.plan.mut_locals.contains(name)
     }
 
     fn define_local(&mut self, name: &str) {
@@ -1445,6 +1458,7 @@ fn refuse_item_assertions(
 fn temporal_plan_for_stmts(stmts: &[Stmt]) -> TemporalPlan {
     let mut definitions = BTreeMap::<String, usize>::new();
     let mut ambiguous = BTreeSet::<String>::new();
+    let mut mut_locals = BTreeSet::<String>::new();
     for stmt in stmts {
         for name in deterministic_definition_names(stmt) {
             *definitions.entry(name).or_insert(0) += 1;
@@ -1452,12 +1466,43 @@ fn temporal_plan_for_stmts(stmts: &[Stmt]) -> TemporalPlan {
         for name in ambiguous_boundary_names_in_stmt(stmt) {
             ambiguous.insert(name);
         }
+        collect_mut_binding_names_in_stmt(stmt, &mut mut_locals);
     }
     let versioned = definitions
         .into_iter()
         .filter_map(|(name, count)| (count > 1 || ambiguous.contains(&name)).then_some(name))
         .collect();
-    TemporalPlan { versioned }
+    TemporalPlan {
+        versioned,
+        mut_locals,
+    }
+}
+
+/// Collect `let mut <name>` binding names in a statement (recursing into nested
+/// blocks/control-flow). These are the conservatively-unstable locals.
+fn collect_mut_binding_names_in_stmt(stmt: &Stmt, out: &mut BTreeSet<String>) {
+    if let Stmt::Local(local) = stmt {
+        collect_mut_pat_idents(&local.pat, out);
+    }
+}
+
+fn collect_mut_pat_idents(pat: &Pat, out: &mut BTreeSet<String>) {
+    match pat {
+        Pat::Ident(ident) => {
+            if ident.mutability.is_some() {
+                out.insert(ident.ident.to_string());
+            }
+            if let Some((_, sub)) = &ident.subpat {
+                collect_mut_pat_idents(sub, out);
+            }
+        }
+        Pat::Reference(r) => collect_mut_pat_idents(&r.pat, out),
+        Pat::Tuple(t) => t.elems.iter().for_each(|e| collect_mut_pat_idents(e, out)),
+        Pat::TupleStruct(t) => t.elems.iter().for_each(|e| collect_mut_pat_idents(e, out)),
+        Pat::Paren(p) => collect_mut_pat_idents(&p.pat, out),
+        Pat::Type(t) => collect_mut_pat_idents(&t.pat, out),
+        _ => {}
+    }
 }
 
 fn advance_temporal_scope_for_stmt(stmt: &Stmt, scope: &mut TemporalScope) {
@@ -4030,7 +4075,26 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
             if let Some(term) = const_index_term_in_scope(index, scope)? {
                 return Ok(term);
             }
-            Err(format!("unsupported term `{}`", token_key(expr)))
+            // General a[i] is the IR term index(a, i). Sound iff the container is
+            // temporally stable. The `mut` oracle (L4) decides: a non-`mut` local
+            // is provably immutable, so index(a, i) is a stable term; a `mut`
+            // local may be index-assigned or method-mutated in ways the tracker
+            // cannot follow, so it stays residual. Non-local containers (a call
+            // result, a field) translate through their own EUF terms.
+            if let Some(name) = simple_path_name(&index.expr) {
+                if scope.is_mut_local(&name) {
+                    return Err(format!(
+                        "unsupported term `{}`: mutable container is not temporally stable",
+                        token_key(expr)
+                    ));
+                }
+            }
+            let container = translate_term_in_scope(&index.expr, scope)?;
+            let idx = translate_term_in_scope(&index.index, scope)?;
+            Ok(Rc::new(Term::Ctor {
+                name: "index".to_string(),
+                args: vec![container, idx],
+            }))
         }
         Expr::Binary(binary) => {
             let Some(op) = term_binop_name(&binary.op) else {

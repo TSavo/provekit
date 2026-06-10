@@ -2245,7 +2245,9 @@ fn array_from_ref() {
 }
 
 #[test]
-fn non_pointer_index_equality_stays_residual() {
+fn immutable_index_equality_lifts() {
+    // An immutable (non-mut) container's index equality lifts as
+    // index(xs, 0) == 1.
     let src = r#"
 #[test]
 fn indexed_value() {
@@ -2255,15 +2257,23 @@ fn indexed_value() {
 "#;
     let out = lift_file(&parse(src), "tests/index.rs");
     assert_eq!(out.seen, 1);
-    assert_eq!(out.lifted, 0);
-    assert!(out.decls.is_empty());
-    assert!(
-        out.warnings
-            .iter()
-            .any(|warning| warning.reason.contains("unsupported term `xs [0]`")),
-        "indexed equality outside pointer identity stays residual: {:?}",
+    assert_eq!(
+        out.lifted, 1,
+        "immutable index equality must lift: {:?}",
         out.warnings
     );
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+    match ops[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, "index"),
+                other => panic!("expected index ctor lhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality, got {other:?}"),
+    }
 }
 
 #[test]
@@ -2500,7 +2510,9 @@ const fn test_write_bytes_in_const_contexts() {
 }
 
 #[test]
-fn lowercase_local_index_stays_residual() {
+fn immutable_local_index_lifts_as_index_term() {
+    // `let xs` (non-mut) is provably immutable by the compiler (free axiom), so
+    // xs[0] is a temporally-stable index term and lifts as index(xs, 0).
     let src = r#"
 #[test]
 fn local_index() {
@@ -2510,15 +2522,38 @@ fn local_index() {
 "#;
     let out = lift_file(&parse(src), "tests/index.rs");
     assert_eq!(out.seen, 1);
-    assert_eq!(out.lifted, 0);
-    assert!(out.decls.is_empty());
-    assert!(
-        out.warnings
-            .iter()
-            .any(|warning| warning.reason.contains("unsupported term `xs [0]`")),
-        "lowercase local indexing must stay residual: {:?}",
+    assert_eq!(
+        out.lifted, 1,
+        "immutable index must lift: {:?}",
         out.warnings
     );
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+    match ops[0].as_ref() {
+        Formula::Atomic { args, .. } => match args[0].as_ref() {
+            Term::Ctor { name, .. } => assert_eq!(name, "index"),
+            other => panic!("expected index ctor, got {other:?}"),
+        },
+        other => panic!("expected equality, got {other:?}"),
+    }
+}
+
+#[test]
+fn mutable_local_index_stays_residual() {
+    // `let mut xs` is conservatively unstable: it may be index-assigned or
+    // method-mutated in ways the syntactic tracker cannot follow, so xs[0]
+    // stays residual (sound refusal).
+    let src = r#"
+#[test]
+fn local_index() {
+    let mut xs = [1, 2, 3];
+    assert!(xs[0] == 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/index.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0, "mutable container index must stay residual");
+    assert!(out.decls.is_empty());
 }
 
 #[test]
