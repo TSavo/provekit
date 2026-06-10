@@ -326,7 +326,8 @@ SHOWCASE_RUNS = \
 	examples/semver-showcase/run.sh \
 	examples/base64-showcase/run.sh \
 	examples/uuid-showcase/run.sh \
-	examples/itertools-showcase/run.sh
+	examples/itertools-showcase/run.sh \
+	examples/bitflags-showcase/run.sh
 
 .PHONY: test-showcases
 test-showcases:
