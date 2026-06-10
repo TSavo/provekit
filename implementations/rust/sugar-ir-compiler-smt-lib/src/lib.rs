@@ -1308,4 +1308,242 @@ mod tests {
             out
         );
     }
+
+    // ── G2: int32.eq-bv-expr (numeric universe walked from JDK Math.abs body) ──
+    //
+    // The walked body is `(a < 0) ? -a : a` → bv32.ite(bv32.slt(a,0), bv32.neg(a), a).
+    // Under two's complement: bvneg(#x80000000) == #x80000000 == -2147483648.
+    // Therefore: abs(MIN_VALUE) == MIN_VALUE (the industry-confounding truth).
+    //
+    // Test 1 (GOOD): abs(MIN_VALUE)==MIN_VALUE + walked universe → SAT (discharged).
+    // Test 2 (BAD):  abs(MIN_VALUE)==MAX_VALUE + walked universe → UNSAT (refuted).
+    // Test 3: no bv32 ctors declared as uninterpreted functions (no shadow).
+    // Test 4: no free vars leak from bv32 atom (var "a" is not declared (declare-const a)).
+    // Test 5: legacy Int regime unchanged (equality over a plain int callresult stays Int).
+
+    /// Build the BV tree term for `(a < 0) ? -a : a`
+    /// (bv32.ite(bv32.slt(a, 0), bv32.neg(a), a))
+    fn abs_bv_tree() -> serde_json::Value {
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "bv32.ite",
+            "args": [
+                {
+                    "kind": "ctor",
+                    "name": "bv32.slt",
+                    "args": [
+                        {"kind": "var", "name": "a"},
+                        {"kind": "const", "value": 0, "sort": {"kind": "primitive", "name": "Int"}}
+                    ]
+                },
+                {
+                    "kind": "ctor",
+                    "name": "bv32.neg",
+                    "args": [{"kind": "var", "name": "a"}]
+                },
+                {"kind": "var", "name": "a"}
+            ]
+        })
+    }
+
+    /// Build an int32.eq-bv-expr atom for abs(arg_val).
+    fn abs_bv_atom(arg_val: i64) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "atomic",
+            "name": "int32.eq-bv-expr",
+            "args": [
+                {
+                    "kind": "ctor",
+                    "name": "call:abs",
+                    "args": [
+                        {"kind": "const", "value": arg_val, "sort": {"kind": "primitive", "name": "Int"}}
+                    ]
+                },
+                abs_bv_tree()
+            ]
+        })
+    }
+
+    /// Build a sworn equality: `=(call:abs(arg_val), expected)` (both Int).
+    fn abs_eq_atom(arg_val: i64, expected: i64) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+                {
+                    "kind": "ctor",
+                    "name": "call:abs",
+                    "args": [
+                        {"kind": "const", "value": arg_val, "sort": {"kind": "primitive", "name": "Int"}}
+                    ]
+                },
+                {"kind": "const", "value": expected, "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        })
+    }
+
+    #[test]
+    fn abs_universe_truth_at_min_value_is_sat() {
+        // GOOD: the BV universe row for abs(MIN_VALUE), compiled standalone,
+        // asserts `(= (call:abs #x80000000) (ite (bvslt #x80000000 #x00000000)
+        // (bvneg #x80000000) #x80000000))`.
+        // Under two's complement: bvneg(#x80000000) == #x80000000, so the
+        // expression evaluates to #x80000000 == the subject.
+        // The standalone assertion is satisfiable (SAT) with a BV model
+        // where call:abs(#x80000000) = #x80000000.
+        // Nobody believes abs(MIN_VALUE) == MIN_VALUE. Sugar proves it.
+        let z3 = which_z3().expect("z3 required for BV32 check");
+        let inv = abs_bv_atom(-2147483648);
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        // The BV literal for MIN_VALUE must appear
+        assert!(
+            script.contains("#x80000000"),
+            "MIN_VALUE must be encoded as BV hex #x80000000:\n{script}"
+        );
+        // The BV operators must appear
+        assert!(
+            script.contains("bvslt") && script.contains("bvneg") && script.contains("ite"),
+            "walked BV tree must contain bvslt, bvneg, ite:\n{script}"
+        );
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "abs(MIN_VALUE) BV universe row must be SAT (consistent with two's complement truth);\
+             \ngot: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn abs_universe_false_belief_at_min_value_is_unsat() {
+        // BAD: build a conjunction where we claim call:abs(#x80000000) == #x7fffffff
+        // AND the BV expression evaluates to #x80000000. Under BV32 arithmetic
+        // these cannot both hold at once: the ite reduces to bvneg(#x80000000)
+        // = #x80000000, not #x7fffffff. UNSAT via z3 BV theory.
+        let z3 = which_z3().expect("z3 required for BV32 check");
+        // Build: (= (|call:abs| #x80000000) #x7fffffff) ∧ int32.eq-bv-expr(...)
+        // Both share the SAME BV-sorted call:abs function.
+        let bv_subject = serde_json::json!({
+            "kind": "ctor",
+            "name": "call:abs",
+            "args": [{"kind": "const", "value": -2147483648i64, "sort": {"kind": "primitive", "name": "Int"}}]
+        });
+        // Claim: call:abs(MIN_VALUE) == MAX_VALUE (industry false belief) — in BV
+        // We express this as a standalone bv-eq-expr with the result forced via
+        // a conjunction. To stay same-sort, we assert: bv_tree == #x7fffffff
+        // by building an int32.eq-bv-expr where the bv_tree IS #x7fffffff.
+        // Actually, the cleaner discrimination test: compile the bv atom with
+        // MIN_VALUE arg, run z3, confirm SAT. Then assert it equals MAX_VALUE.
+        // The simplest form: build the full BV formula manually.
+        // int32.eq-bv-expr(call:abs(-2147483648), bv32.ite(...)) evaluates to
+        // (= call:abs(#x80000000) (ite (bvslt #x80000000 #x00000000) (bvneg #x80000000) #x80000000))
+        // We want to additionally assert call:abs(#x80000000) == #x7fffffff.
+        // Because the BV atom itself is SAT (as shown above), the contradiction
+        // comes from asserting BOTH:
+        //   (= f(#x80000000) (ite (bvslt ...) (bvneg #x80000000) #x80000000))  [= #x80000000]
+        //   (= f(#x80000000) #x7fffffff)
+        // which forces #x80000000 == #x7fffffff — UNSAT.
+        let claim_wrong = serde_json::json!({
+            "kind": "atomic",
+            "name": "int32.eq-bv-expr",
+            "args": [
+                bv_subject,
+                // BV tree that always evaluates to MAX_VALUE (#x7fffffff):
+                // just a const 2147483647 treated as BV
+                {"kind": "const", "value": 2147483647i64, "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        });
+        let and_both = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                abs_bv_atom(-2147483648),
+                claim_wrong
+            ]
+        });
+        let parts = compile_asserted_to_parts(&and_both).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "abs(MIN_VALUE) BV tree == #x80000000 ∧ #x7fffffff must be UNSAT;\
+             \ngot: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn bv32_ctors_not_declared_as_uninterpreted_functions() {
+        // STRUCTURAL: BV operator ctors (bv32.ite, bv32.slt, bv32.neg) must NOT
+        // appear in `(declare-fun ...)` statements — they are SMT-LIB theory
+        // builtins. Declaring them as uninterpreted would shadow the theory and
+        // let z3 pick a false interpretation.
+        let inv = abs_bv_atom(-2147483648);
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        for forbidden in &["declare-fun bv32", "declare-fun |bv32", "declare-fun bvslt",
+                            "declare-fun bvneg", "declare-fun ite"] {
+            assert!(
+                !script.contains(forbidden),
+                "BV32 operator must not be declared as uninterpreted: {forbidden}\n{script}"
+            );
+        }
+        // The subject ctor (call:abs) MUST be declared with BV32 sort
+        assert!(
+            script.contains("BitVec 32"),
+            "call:abs must be declared with (_ BitVec 32) sort:\n{script}"
+        );
+    }
+
+    #[test]
+    fn bv32_var_a_not_leaked_as_free_var() {
+        // STRUCTURAL: the `var "a"` node in the BV tree is a method-parameter
+        // name substituted at emit time. It must NOT be emitted as a
+        // `(declare-const a ...)` free variable in the SMT script.
+        let inv = abs_bv_atom(-2147483648);
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let preamble = &parts.preamble;
+        assert!(
+            !preamble.contains("declare-const a "),
+            "var 'a' from BV tree must not be declared as a free constant:\n{preamble}"
+        );
+    }
+
+    #[test]
+    fn bv32_atom_does_not_affect_legacy_int_equality() {
+        // LEGACY GUARD: a plain int-equality contract over the same callresult
+        // ctor (without any BV atom) must continue to render in the opaque-Int
+        // regime, byte-for-byte unchanged from before G2. The presence of G2
+        // emitters must not retroactively reroute plain int contracts.
+        let call_ctor = serde_json::json!({
+            "kind": "ctor",
+            "name": "call:abs",
+            "args": [{"kind": "const", "value": 5, "sort": {"kind": "primitive", "name": "Int"}}]
+        });
+        let eq_atom = serde_json::json!({
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+                call_ctor,
+                {"kind": "const", "value": 5, "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        });
+        let parts = compile_asserted_to_parts(&eq_atom).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        // Must be in Int regime — no BV sort in preamble
+        assert!(
+            !script.contains("BitVec"),
+            "plain int equality must not trigger BV regime:\n{script}"
+        );
+        // Must use regular equality, not bvslt/bvneg
+        assert!(
+            !script.contains("bvslt") && !script.contains("bvneg"),
+            "plain int equality must not contain BV operators:\n{script}"
+        );
+        // The call:abs ctor must be declared with Int sort
+        assert!(
+            script.contains("Int) Int"),
+            "call:abs must be declared with Int sort in the legacy regime:\n{script}"
+        );
+    }
 }

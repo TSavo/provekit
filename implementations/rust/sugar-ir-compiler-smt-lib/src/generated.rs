@@ -214,6 +214,9 @@ pub fn emit_formula(formula: &Formula) -> String {
             if let Some(rendered) = emit_string_theory_atomic(name, args) {
                 return rendered;
             }
+            if let Some(rendered) = emit_bv32_theory_atomic(name, args) {
+                return rendered;
+            }
             let smt_name = smt_atomic_name(name);
             if args.is_empty() {
                 return smt_name.to_string();
@@ -456,6 +459,166 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "str.is_ascii_control"
             | "str.chars-in-set"
     )
+}
+
+// ── G2: BV32 theory emitter ───────────────────────────────────────────────
+//
+// `int32.eq-bv-expr(subject_ctor, bv_tree)` asserts that the result of the
+// subject call equals the BV expression tree evaluated at the subject's args.
+//
+// The BV tree uses `var` nodes whose names are the method parameter names from
+// the vendor source. The subject ctor's args carry the call-site int literals
+// in parameter order. We build a substitution: param_name → i32 literal.
+//
+// The rendered SMT-LIB:
+//   (= (|call:abs| #x80000000) (ite (bvslt #x80000000 #x00000000) (bvneg #x80000000) #x80000000))
+//
+// BV operator mapping:
+//   bv32.ite  → ite          (standard ternary; condition is Bool-sorted bvslt)
+//   bv32.slt  → bvslt        (signed less-than; yields Bool in SMT-LIB)
+//   bv32.neg  → bvneg        (two's-complement negation)
+//   bv32.and  → bvand        (bitwise AND)
+
+/// Render an i64 (interpreted as i32 for BV32) as an SMT-LIB bitvector hex literal.
+/// `#x` followed by exactly 8 hex digits (32-bit two's complement).
+fn i32_to_bv32_hex(v: i64) -> String {
+    let bits = v as i32 as u32;
+    format!("#x{:08x}", bits)
+}
+
+/// Render a BV32 expression tree, substituting var nodes from `subst`.
+/// Returns None if the tree contains an unrecognised node shape.
+fn emit_bv32_term(term: &Term, subst: &std::collections::HashMap<String, String>) -> Option<String> {
+    match term {
+        Term::Var { name } => subst.get(name.as_str()).cloned(),
+        Term::Const { value, .. } => {
+            let v = match value {
+                serde_json::Value::Number(n) => n.as_i64()?,
+                _ => return None,
+            };
+            Some(i32_to_bv32_hex(v))
+        }
+        Term::Ctor { name, args } => match name.as_str() {
+            "bv32.ite" if args.len() == 3 => {
+                // condition (Bool-sorted bvslt), true-branch, false-branch
+                let cond  = emit_bv32_bool_term(&args[0], subst)?;
+                let tb    = emit_bv32_term(&args[1], subst)?;
+                let fb    = emit_bv32_term(&args[2], subst)?;
+                Some(format!("(ite {} {} {})", cond, tb, fb))
+            }
+            "bv32.neg" if args.len() == 1 => {
+                let inner = emit_bv32_term(&args[0], subst)?;
+                Some(format!("(bvneg {})", inner))
+            }
+            "bv32.and" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvand {} {})", l, r))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Render a BV32 Bool-sorted sub-expression (comparison operators).
+fn emit_bv32_bool_term(term: &Term, subst: &std::collections::HashMap<String, String>) -> Option<String> {
+    match term {
+        Term::Ctor { name, args } => match name.as_str() {
+            "bv32.slt" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvslt {} {})", l, r))
+            }
+            "bv32.ule" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvule {} {})", l, r))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Collect unique var names from a BV term in DFS pre-order.
+fn collect_bv32_vars(term: &Term, out: &mut Vec<String>) {
+    match term {
+        Term::Var { name } => {
+            let s = name.to_string();
+            if !out.contains(&s) {
+                out.push(s);
+            }
+        }
+        Term::Ctor { args, .. } => {
+            for a in args {
+                collect_bv32_vars(a, out);
+            }
+        }
+        Term::Const { .. } => {}
+        _ => {}
+    }
+}
+
+/// G2: `int32.eq-bv-expr` atom emitter.
+///
+/// `args[0]` = subject ctor (`call:abs(i:-2147483648)`)
+/// `args[1]` = BV expression tree (`bv32.ite(bv32.slt(a, 0), bv32.neg(a), a)`)
+///
+/// Builds substitution: param_name[i] → BV32 hex of subject.args[i].
+/// Renders: `(= subject_bv bv_expr)`
+fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
+    if !crate::literal_encoding::routes_to_bv32_theory(name) {
+        return None;
+    }
+    if name == "int32.eq-bv-expr" && args.len() == 2 {
+        let subject = &args[0];
+        let bv_tree = &args[1];
+        // subject must be a ctor
+        let (subj_name, subj_args) = match subject {
+            Term::Ctor { name, args } => (name.as_str(), args.as_slice()),
+            _ => return None,
+        };
+        // Collect var names from the BV tree in DFS order — these are the
+        // method parameter names, in the same order as the subject's args.
+        let mut var_names: Vec<String> = Vec::new();
+        collect_bv32_vars(bv_tree, &mut var_names);
+        // Build substitution map
+        let mut subst: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for (i, vname) in var_names.iter().enumerate() {
+            if i >= subj_args.len() {
+                break;
+            }
+            let bv_lit = match &subj_args[i] {
+                Term::Const { value, .. } => {
+                    if let Some(v) = value.as_i64() {
+                        i32_to_bv32_hex(v)
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            };
+            subst.insert(vname.clone(), bv_lit);
+        }
+        // Render subject as a BV32 application: (|call:abs| #x80000000)
+        let subj_bv_args: Vec<String> = subj_args
+            .iter()
+            .map(|a| match a {
+                Term::Const { value, .. } => value.as_i64().map(i32_to_bv32_hex),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let subj_rendered = if subj_bv_args.is_empty() {
+            smt_quote(subj_name).to_string()
+        } else {
+            format!("({} {})", smt_quote(subj_name), subj_bv_args.join(" "))
+        };
+        // Render the BV expression tree
+        let bv_rendered = emit_bv32_term(bv_tree, &subst)?;
+        return Some(format!("(= {} {})", subj_rendered, bv_rendered));
+    }
+    None
 }
 
 fn emit_string_term(term: &Term) -> String {
@@ -748,6 +911,12 @@ pub fn collect_free_vars_formula(
                 }
                 return;
             }
+            // G2: BV32 atoms — var nodes in the BV tree are method-parameter
+            // names substituted at emit time from the subject ctor's int args.
+            // They are NOT free vars in the SMT sense; skip this atom entirely.
+            if crate::literal_encoding::routes_to_bv32_theory(name) {
+                return;
+            }
             if is_float_refinement_atomic_predicate(name) {
                 for a in args {
                     collect_free_vars_term_ctx(a, out, bound, true);
@@ -980,6 +1149,13 @@ fn expected_atomic_arg_sort(name: &str, args: &[Term]) -> Option<String> {
     if crate::literal_encoding::routes_to_string_theory(name, args) {
         return Some("String".to_string());
     }
+    // G2: BV32 atoms — the subject ctor is declared with `(_ BitVec 32)` sort.
+    // The BV tree (args[1]) contains BV-operator ctors which must NOT be
+    // declared as uninterpreted functions; they are handled in
+    // `emit_bv32_theory_atomic` and are excluded from ctor-decl collection.
+    if crate::literal_encoding::routes_to_bv32_theory(name) {
+        return Some("(_ BitVec 32)".to_string());
+    }
     let smt_name = smt_atomic_name(name);
     if matches!(smt_name, "=" | "distinct" | "<" | "<=" | ">" | ">=") {
         return args
@@ -993,6 +1169,32 @@ fn expected_atomic_arg_sort(name: &str, args: &[Term]) -> Option<String> {
 fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, CtorSignature>) {
     match formula {
         Formula::Atomic { name, args } => {
+            // G2: BV32 atoms — declare the subject ctor (args[0]) with ALL sorts
+            // as `(_ BitVec 32)`: the arg sorts AND the return sort. Skip args[1]
+            // (the BV expression tree) entirely: its operator ctors (bv32.ite,
+            // bv32.slt, bv32.neg, ...) are SMT-LIB bitvector theory builtins and
+            // must NOT be declared as uninterpreted functions (that would shadow
+            // the theory and cause false results).
+            if crate::literal_encoding::routes_to_bv32_theory(name) {
+                let bv32_sort = "(_ BitVec 32)";
+                if !args.is_empty() {
+                    // Manually declare the subject ctor with all-BV32 signature.
+                    // args[0] must be a Ctor; its args (the int literals at the
+                    // call-site) are rendered as BV32 hex by emit_bv32_theory_atomic,
+                    // so we must declare the ctor with BV32 argument sorts too.
+                    if let Term::Ctor { name: subj_name, args: subj_args } = &args[0] {
+                        let arity = subj_args.len();
+                        let arg_sorts: Vec<String> = (0..arity)
+                            .map(|_| bv32_sort.to_string())
+                            .collect();
+                        out.entry(subj_name.clone()).or_insert_with(|| CtorSignature {
+                            args: arg_sorts,
+                            ret: bv32_sort.to_string(),
+                        });
+                    }
+                }
+                return;
+            }
             let expected = expected_atomic_arg_sort(name, args);
             for arg in args {
                 collect_ctor_decls_term(arg, expected.as_deref(), out);
@@ -1143,6 +1345,11 @@ fn is_float_refinement_atomic_predicate(name: &str) -> bool {
 fn collect_predicate_decls_formula(formula: &Formula, out: &mut BTreeMap<String, CtorSignature>) {
     match formula {
         Formula::Atomic { name, args } => {
+            // G2: BV32 atoms are emitted as theory expressions — do not declare
+            // them as uninterpreted predicates.
+            if crate::literal_encoding::routes_to_bv32_theory(name) {
+                return;
+            }
             if !args.is_empty() && !is_builtin_atomic_predicate(name) {
                 let expected = expected_atomic_arg_sort(name, args);
                 let arg_sorts: Vec<String> = args
