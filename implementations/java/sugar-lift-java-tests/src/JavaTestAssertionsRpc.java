@@ -2404,6 +2404,23 @@ public final class JavaTestAssertionsRpc {
         }
         boolean isBareFrameworkBound = assertionBoundNames.contains(methodName);
 
+        // H1 [A2]: if an unvendored wildcard static import is present, bare calls to
+        // vocab-known names produce a named refusal (not a silent skip) because the
+        // wildcard says "this name should come from the framework" but the class is not
+        // in the vendored corpus so we cannot verify the semantics.
+        if (!isBareFrameworkBound && !isQualifiedFrameworkCall) {
+            for (String sentinel : assertionBoundNames) {
+                if (sentinel.startsWith("__wildcard_unvendored__:") && vocab.isKnown(methodName)) {
+                    String classPath = sentinel.substring("__wildcard_unvendored__:".length());
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName,
+                        "static wildcard import of unvendored class " + classPath
+                        + " — cannot verify semantics of " + methodName + "; refused by name"));
+                    return;
+                }
+            }
+        }
+
         // H1 [A3]: a bare call is only structurally bound to the framework if:
         //   (a) it has a static import from a framework package (isBareFrameworkBound), or
         //   (b) the framework has BOTH JUnit and TestNG imports — ambiguous, but we still
