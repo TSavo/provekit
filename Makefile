@@ -324,7 +324,8 @@ SHOWCASE_RUNS = \
 	examples/forall-vampire-showcase/run.sh \
 	examples/url-showcase/run.sh \
 	examples/semver-showcase/run.sh \
-	examples/base64-showcase/run.sh
+	examples/base64-showcase/run.sh \
+	examples/uuid-showcase/run.sh
 
 .PHONY: test-showcases
 test-showcases:
