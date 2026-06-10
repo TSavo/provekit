@@ -1118,24 +1118,39 @@ fn collect_assertion_entries(
                 refuse_nested_asserts_in_stmts(&l.body.stmts, "loop", skipped);
             }
             Stmt::Expr(Expr::If(i), _) => {
-                let count = count_asserts_in_stmts(&i.then_branch.stmts)
-                    + i.else_branch
-                        .as_ref()
-                        .map_or(0, |(_, e)| count_asserts_in_expr(e));
-                for _ in 0..count {
-                    skipped.push(
-                        "assertion under if context: not unconditional point-wise; released to layer 0"
-                            .to_string(),
-                    );
+                // Panic locus: `if let PAT = e { .. } else { panic!() }` asserts
+                // e matches PAT. Lift it; otherwise refuse the conditional.
+                if let Some(entry) = panic_locus_if_entry(i, &temporal_scope) {
+                    entries.push(entry);
+                    *macros_lifted += 1;
+                } else {
+                    let count = count_asserts_in_stmts(&i.then_branch.stmts)
+                        + i.else_branch
+                            .as_ref()
+                            .map_or(0, |(_, e)| count_asserts_in_expr(e));
+                    for _ in 0..count {
+                        skipped.push(
+                            "assertion under if context: not unconditional point-wise; released to layer 0"
+                                .to_string(),
+                        );
+                    }
                 }
             }
             Stmt::Expr(Expr::Match(m), _) => {
-                let count: usize = m.arms.iter().map(|a| count_asserts_in_expr(&a.body)).sum();
-                for _ in 0..count {
-                    skipped.push(
-                        "assertion under match context: not unconditional point-wise; released to layer 0"
-                            .to_string(),
-                    );
+                // Panic locus: a match whose every arm but one diverges asserts
+                // the scrutinee matches the surviving arm. Lift it; otherwise
+                // refuse the conditional.
+                if let Some(entry) = panic_locus_match_entry(m, &temporal_scope) {
+                    entries.push(entry);
+                    *macros_lifted += 1;
+                } else {
+                    let count: usize = m.arms.iter().map(|a| count_asserts_in_expr(&a.body)).sum();
+                    for _ in 0..count {
+                        skipped.push(
+                            "assertion under match context: not unconditional point-wise; released to layer 0"
+                                .to_string(),
+                        );
+                    }
                 }
             }
             Stmt::Expr(Expr::Closure(c), _) => {
@@ -2952,6 +2967,126 @@ fn common_assertion_name(left: &Option<String>, right: &Option<String>) -> Optio
 
 fn assertion_entry_from_eq(lhs: Rc<Term>, rhs: Rc<Term>, scope: &TemporalScope) -> AssertionEntry {
     assertion_entry_from_relation(lhs, rhs, RelationOp::Eq, scope)
+}
+
+/// An expression that diverges: its value is never produced because control
+/// panics/aborts/returns. As a match or if arm, it is the panic locus -- the
+/// test passing proves control did NOT reach it.
+fn expr_diverges(expr: &Expr) -> bool {
+    match expr {
+        Expr::Macro(m) => m.mac.path.segments.last().is_some_and(|s| {
+            matches!(
+                s.ident.to_string().as_str(),
+                "panic" | "unreachable" | "todo" | "unimplemented"
+            )
+        }),
+        Expr::Block(b) => b.block.stmts.last().is_some_and(stmt_diverges),
+        Expr::Unsafe(u) => u.block.stmts.last().is_some_and(stmt_diverges),
+        Expr::Return(_) => true,
+        Expr::Paren(p) => expr_diverges(&p.expr),
+        Expr::Group(g) => expr_diverges(&g.expr),
+        Expr::Call(c) => {
+            if let Expr::Path(p) = &*c.func {
+                let last = p.path.segments.last().map(|s| s.ident.to_string());
+                matches!(last.as_deref(), Some("exit") | Some("abort"))
+                    && p.path.segments.iter().any(|s| s.ident == "process")
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+fn stmt_diverges(s: &Stmt) -> bool {
+    match s {
+        Stmt::Expr(e, _) => expr_diverges(e),
+        Stmt::Macro(m) => m.mac.path.segments.last().is_some_and(|seg| {
+            matches!(
+                seg.ident.to_string().as_str(),
+                "panic" | "unreachable" | "todo" | "unimplemented"
+            )
+        }),
+        _ => false,
+    }
+}
+
+fn path_to_variant_string(p: &syn::Path) -> String {
+    p.segments
+        .iter()
+        .map(|s| s.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::")
+}
+
+/// The variant a surviving match/if-let arm pattern identifies, as a tag string.
+fn pattern_variant_path(pat: &syn::Pat) -> Option<String> {
+    match pat {
+        syn::Pat::TupleStruct(ts) => Some(path_to_variant_string(&ts.path)),
+        syn::Pat::Path(p) => Some(path_to_variant_string(&p.path)),
+        syn::Pat::Struct(s) => Some(path_to_variant_string(&s.path)),
+        syn::Pat::Ident(id) if id.subpat.is_none() => Some(id.ident.to_string()),
+        syn::Pat::Reference(r) => pattern_variant_path(&r.pat),
+        _ => None,
+    }
+}
+
+/// Build the panic-locus atom: `variant_of(subject) == "variant::<tag>"`. The
+/// tag is a string literal, so two different variants of the same subject are
+/// distinct constants -- asserting both is UNSAT (the teeth).
+fn panic_locus_entry(
+    subject: &Expr,
+    variant: &str,
+    scope: &TemporalScope,
+) -> Option<AssertionEntry> {
+    let subject_term = translate_term_in_scope(subject, scope).ok()?;
+    let variant_of = Rc::new(Term::Ctor {
+        name: "variant_of".to_string(),
+        args: vec![subject_term],
+    });
+    Some(assertion_entry_from_eq(
+        variant_of,
+        str_const(format!("variant::{variant}")),
+        scope,
+    ))
+}
+
+/// Panic-locus lifting for a `match`: if every arm but one diverges (panics),
+/// the test passing proves the scrutinee matches the surviving arm's pattern.
+fn panic_locus_match_entry(m: &syn::ExprMatch, scope: &TemporalScope) -> Option<AssertionEntry> {
+    if m.arms.len() < 2 {
+        return None;
+    }
+    let mut surviving = Vec::new();
+    let mut diverging = 0usize;
+    for arm in &m.arms {
+        if arm.guard.is_some() {
+            return None; // a guard changes which values reach the arm
+        }
+        if expr_diverges(&arm.body) {
+            diverging += 1;
+        } else {
+            surviving.push(arm);
+        }
+    }
+    if diverging == 0 || surviving.len() != 1 {
+        return None;
+    }
+    let variant = pattern_variant_path(&surviving[0].pat)?;
+    panic_locus_entry(&m.expr, &variant, scope)
+}
+
+/// Panic-locus lifting for `if let PAT = SUBJ { .. } else { panic!() }`.
+fn panic_locus_if_entry(i: &syn::ExprIf, scope: &TemporalScope) -> Option<AssertionEntry> {
+    let Expr::Let(cond) = &*i.cond else {
+        return None;
+    };
+    let (_, else_expr) = i.else_branch.as_ref()?;
+    if !expr_diverges(else_expr) {
+        return None;
+    }
+    let variant = pattern_variant_path(&cond.pat)?;
+    panic_locus_entry(&cond.expr, &variant, scope)
 }
 
 #[derive(Clone, Copy)]

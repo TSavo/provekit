@@ -4727,3 +4727,119 @@ fn nested() {
         out.skip_reasons
     );
 }
+
+// --- panic-locus lifting tranche ---
+
+fn panic_locus_lhs_rhs(out: &sugar_lift_rust_tests::AdapterOutput) -> (String, String) {
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+    match ops[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            (format!("{:?}", args[0]), format!("{:?}", args[1]))
+        }
+        other => panic!("expected equality, got {other:?}"),
+    }
+}
+
+#[test]
+fn panic_guarded_match_lifts_variant_predicate() {
+    // RED before: a match with a panic arm was refused "under match context".
+    // GREEN after: it lifts variant_of(subject) == "variant::Poll::Ready".
+    let src = r#"
+#[test]
+fn ready() {
+    let p = poll_it();
+    match p {
+        Poll::Ready(v) => v,
+        Poll::Pending => panic!("pending"),
+    };
+}
+"#;
+    let out = lift_file(&parse(src), "tests/poll.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let (lhs, rhs) = panic_locus_lhs_rhs(&out);
+    assert!(
+        lhs.contains("variant_of"),
+        "lhs must be variant_of(..): {lhs}"
+    );
+    assert!(
+        rhs.contains("Poll::Ready"),
+        "rhs must tag Poll::Ready: {rhs}"
+    );
+}
+
+#[test]
+fn panic_locus_ready_vs_pending_same_subject_is_contradiction() {
+    // Teeth: asserting the same subject is both Ready and Pending must produce
+    // two atoms over the same variant_of(subject) equal to distinct string tags
+    // (UNSAT). We verify the shared LHS and the distinct RHS tags.
+    let src = r#"
+#[test]
+fn both() {
+    let p = poll_it();
+    match p { Poll::Ready(v) => v, Poll::Pending => panic!() };
+    match p { Poll::Pending => {}, Poll::Ready(v) => panic!() };
+}
+"#;
+    let out = lift_file(&parse(src), "tests/poll.rs");
+    assert_eq!(out.assertions_lifted, 2, "warnings: {:?}", out.skip_reasons);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    let lhs = |f: &Formula| match f {
+        Formula::Atomic { args, .. } => format!("{:?}", args[0]),
+        other => panic!("{other:?}"),
+    };
+    let rhs = |f: &Formula| match f {
+        Formula::Atomic { args, .. } => format!("{:?}", args[1]),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        lhs(&ops[0]),
+        lhs(&ops[1]),
+        "same subject -> same variant_of term"
+    );
+    assert_ne!(
+        rhs(&ops[0]),
+        rhs(&ops[1]),
+        "Ready vs Pending tags must differ (teeth)"
+    );
+}
+
+#[test]
+fn ordinary_match_without_panic_arm_stays_refused() {
+    // Discrimination: a match whose arms do NOT diverge is not a panic-locus
+    // assertion; it stays a named refusal, not a (wrong) lift.
+    let src = r#"
+#[test]
+fn plain() {
+    let p = thing();
+    match p {
+        A => do_a(),
+        B => do_b(),
+    };
+}
+"#;
+    let out = lift_file(&parse(src), "tests/m.rs");
+    assert_eq!(out.assertions_lifted, 0, "non-panic match must not lift");
+}
+
+#[test]
+fn if_let_else_panic_lifts_variant_predicate() {
+    let src = r#"
+#[test]
+fn iflet() {
+    let r = compute();
+    if let Ok(v) = r {
+        let _ = v;
+    } else {
+        panic!("not ok");
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/r.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let (lhs, rhs) = panic_locus_lhs_rhs(&out);
+    assert!(lhs.contains("variant_of"), "lhs: {lhs}");
+    assert!(rhs.contains("Ok"), "rhs must tag Ok: {rhs}");
+}
