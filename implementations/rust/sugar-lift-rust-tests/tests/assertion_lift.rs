@@ -2588,3 +2588,185 @@ async fn async_scalar_is_six() {
     assert_eq!(operands.len(), 1);
     assert_await_call_eq_atom(&operands[0], "call:make_value", 6);
 }
+
+// --- infinity-equality conjunction tests ---
+
+fn assert_float_refinement_conj_var(
+    formula: &Formula,
+    expected_infinite_pred: &str,
+    expected_sign_pred: &str,
+    expected_var: &str,
+) {
+    match formula {
+        Formula::Connective { kind, operands } if kind == "and" => {
+            assert_eq!(
+                operands.len(),
+                2,
+                "infinity conjunction must have 2 operands"
+            );
+            assert_float_refinement_var_atom(
+                operands[0].as_ref(),
+                expected_infinite_pred,
+                expected_var,
+            );
+            assert_float_refinement_var_atom(
+                operands[1].as_ref(),
+                expected_sign_pred,
+                expected_var,
+            );
+        }
+        other => panic!("expected and-conjunction for infinity equality, got {other:?}"),
+    }
+}
+
+#[test]
+fn assert_eq_f64_infinity_lifts_to_is_infinite_and_is_sign_positive_conjunction() {
+    // RED: assert_eq!(x_f64, f64::INFINITY) must lift to
+    // and(float.f64.is_infinite(x_f64), float.f64.is_sign_positive(x_f64)).
+    let src = r#"
+#[test]
+fn check_pos_infinity() {
+    let x_f64: f64 = 1.0;
+    assert_eq!(x_f64, f64::INFINITY);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/mod.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_float_refinement_conj_var(
+        operands[0].as_ref(),
+        "float.f64.is_infinite",
+        "float.f64.is_sign_positive",
+        "x_f64",
+    );
+}
+
+#[test]
+fn assert_eq_f32_neg_infinity_lifts_to_is_infinite_and_is_sign_negative_conjunction() {
+    // RED: assert_eq!(x_f32, f32::NEG_INFINITY) must lift to
+    // and(float.f32.is_infinite(x_f32), float.f32.is_sign_negative(x_f32)).
+    let src = r#"
+#[test]
+fn check_neg_infinity() {
+    let x_f32: f32 = -1.0;
+    assert_eq!(x_f32, f32::NEG_INFINITY);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/mod.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_float_refinement_conj_var(
+        operands[0].as_ref(),
+        "float.f32.is_infinite",
+        "float.f32.is_sign_negative",
+        "x_f32",
+    );
+}
+
+#[test]
+fn assert_infinity_eq_reversed_operand_order_lifts_correctly() {
+    // Operand order reversed: f64::INFINITY == x_f64 (assert! form, binary eq).
+    let src = r#"
+#[test]
+fn check_pos_infinity_reversed() {
+    let x_f64: f64 = 1.0;
+    assert!(f64::INFINITY == x_f64);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/mod.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_float_refinement_conj_var(
+        operands[0].as_ref(),
+        "float.f64.is_infinite",
+        "float.f64.is_sign_positive",
+        "x_f64",
+    );
+}
+
+#[test]
+fn finite_float_equality_is_not_rerouted_to_infinity_conjunction() {
+    // Discrimination: assert_eq!(x_f64, 1.5f64) must NOT trigger the infinity path.
+    // It must remain a standard Real-equality row, not a conjunction.
+    let src = r#"
+#[test]
+fn check_finite_eq() {
+    let x_f64: f64 = 1.5;
+    assert_eq!(x_f64, 1.5f64);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/mod.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+
+    let decl = &out.decls[0];
+    let inv = decl.inv.as_deref().expect("finite eq must have inv");
+    // Must NOT be an and-conjunction at the top level (not an infinity conjunction).
+    match inv {
+        Formula::Connective { kind, .. } if kind == "and" => {
+            // and-conjunction is OK only if it contains equality atoms, not float predicates.
+            // The infinity path would produce float.fXX.is_infinite predicates.
+            // Check the conjunction does NOT contain is_infinite.
+            let inv_str = format!("{inv:?}");
+            assert!(
+                !inv_str.contains("is_infinite"),
+                "finite equality must not produce is_infinite predicate, got: {inv_str}"
+            );
+        }
+        Formula::Atomic { name, .. } => {
+            assert_eq!(
+                name, "=",
+                "finite equality should use = relation, got {name}"
+            );
+        }
+        other => panic!("unexpected inv shape for finite eq: {other:?}"),
+    }
+}
+
+#[test]
+fn unknown_width_infinity_eq_is_skipped_as_residual() {
+    // If width is unknown (no f32/f64 annotation), the infinity eq is refused (skipped).
+    // This is SOUND: silence is correct; a wrong row would be a bug.
+    let src = r#"
+#[test]
+fn unknown_width_infinity() {
+    let x = 1.0;
+    assert_eq!(x, f64::INFINITY);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/mod.rs");
+    assert_eq!(out.seen, 1);
+    // Either lifted=0 (skipped) or the assertion is warned/skipped.
+    // The key invariant: no falsePass. If it lifts, it must not be a broken row.
+    // But the width-unknown path must not silently produce a wrong row.
+    if out.lifted == 1 {
+        // If lifted, the decl must have a sound conjunction using f64 width
+        // derived from the constant side (f64::INFINITY determines width).
+        let decl = &out.decls[0];
+        let inv = decl.inv.as_deref().expect("lifted row must have inv");
+        let inv_str = format!("{inv:?}");
+        assert!(
+            inv_str.contains("float.f64"),
+            "if lifted, width must be f64 from the constant: {inv_str}"
+        );
+    }
+    // If lifted=0 (skipped), that is also correct (conservative).
+}

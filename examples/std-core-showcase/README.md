@@ -79,11 +79,25 @@ Named gaps toward full `coretests` coverage:
   `Duration::div_duration_f{32,64}`, typed-local `is_normal()`,
   `is_infinite()`, `is_sign_positive()`, `is_sign_negative()`, and
   `parse::<f32/f64>().unwrap().is_nan()` rows are claimed as kit refinement
-  atoms over Real-sorted terms. Infinity constants/equality, ordered
-  comparisons, signed zero as a value, width-unknown generic aliases, and
-  approximate/tolerance assertions remain residual. Exact finite exponent-form
-  literals now normalize to Real constants when they appear in the scalar
-  lifter surface.
+  atoms over Real-sorted terms. Exact finite exponent-form literals now
+  normalize to Real constants when they appear in the scalar lifter surface.
+  Infinity-constant equality (`assert_eq!(x, f32::INFINITY)` and
+  `assert!(x == f64::NEG_INFINITY)`) now lifts to the sound predicate
+  conjunction `and(float.{w}.is_infinite(x), float.{w}.is_sign_{pos/neg}(x))`
+  when the width is known from the constant side; the existing float predicate
+  declarations in the SMT compiler cover both atoms without change. This claims
+  2 real vendor rows: the `time.rs` `div_duration_f32`/`div_duration_f64`
+  by-zero assertions (`Duration::MAX.div_duration_f32(Duration::ZERO) ==
+  f32::INFINITY`, which is +infinity), each lifted as the conjunction over the
+  call result and discharged, taking the showcase from 156 to 158 EUF rows. The
+  unit tests in `sugar-lift-rust-tests/tests/assertion_lift.rs` carry the
+  RED-first evidence (before the change, `f32::INFINITY` lifted as a Real
+  variable, an unsound row). Infinity equality whose receiver is a
+  cast-expression (`infinity as f32`) or an `Ok(...)` wrapper, infinity used as
+  a method argument (the `duration_fp_boundaries` row keeps it as an
+  uninterpreted constant), ordered comparisons, signed zero as a value,
+  width-unknown generic aliases, and approximate/tolerance assertions remain
+  residual.
 - Strings/chars: exact string equality is claimed here where it is a direct
   call-result value. Richer point-wise string predicates and ASCII char
   predicates are covered by the sibling `std-core-string-predicates`
@@ -153,18 +167,21 @@ constructor rows. The first float-refinement slice closed 2 width-known
 subjects as distinct definition versions. The pointer-index predicate slice
 closes 2 `array.rs::array_from_ref` / `slice.rs::test_const_from_ref` rows, kept
 location-keyed. This follow-up float-refinement slice closes 4 parsed `NaN`
-`unwrap()` EUF rows plus one typed-local `num::test_f32f64` refinement row,
-moving the combined showcase to 156 EUF rows plus 2 pointer-index predicate
-rows, TypeId(2), option(8), result(6), `cmp_default`, and the
-typed-float-refinement row. A fresh full lift-only census for this lever emitted
-1,771 IR declarations and 1,075 lift diagnostics; the full lift+verify backlog
-was not recomputed in this showcase run.
+`unwrap()` EUF rows plus one typed-local `num::test_f32f64` refinement row. The
+infinity-equality slice then closes 2 more `time.rs` `div_duration_f32`/`f64`
+by-zero rows (`== INFINITY` desugared to the `is_infinite` and
+`is_sign_positive` conjunction), moving the combined showcase to 158 EUF rows
+plus 2 pointer-index predicate rows, TypeId(2), option(8), result(6),
+`cmp_default`, and the typed-float-refinement row. A fresh full lift-only census
+for the prior float lever emitted 1,771 IR declarations and 1,075 lift
+diagnostics; the full lift+verify backlog was not recomputed in this showcase
+run.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
 | Generics | 30 | Closed for direct generic call-result identity in this slice by carrying type args in the `#euf#` key; active cfg-sensitive pointer-width variants are tracked under CFG-sensitive. |
 | Macros | 40 | Broad macro surfaces remain residual here; bounded ASCII `assert_all!` / `assert_none!` expansion is handled by the lifter but is outside this showcase's claimed scalar slice. |
-| Floats | 18 prior full lift+verify census, with 2 `time.rs` NaN rows, 4 parsed-NaN rows, and 1 typed-local predicate row now closed in the showcase | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Other residual examples include infinity constants/equality, ordered comparisons, signed zero as a value, generic-width float aliases, and aggregate literals containing NaN. |
+| Floats | 18 prior full lift+verify census, with 2 `time.rs` NaN rows, 4 parsed-NaN rows, 1 typed-local predicate row, and 2 `time.rs` infinity-equality rows now closed in the showcase | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Width-known infinity equality (`div_duration_* == INFINITY`) is now claimed; residual examples include infinity equality via cast or `Ok(...)` receivers, infinity as a method argument, ordered comparisons, signed zero as a value, generic-width float aliases, and aggregate literals containing NaN. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
 | Complex terms | 398 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, and pointer-index predicate slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, and 2 pointer-index predicate rows lift location-keyed. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
