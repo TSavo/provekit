@@ -20,6 +20,9 @@
 #         call-result terms.
 #       * tests/option.rs::test_and nullary/variant constructor equality rows,
 #         kept as location-keyed operator-dispatch claims.
+#       * tests/result.rs::result_try_trait_v2_branch nested variant
+#         constructor equality rows, kept as location-keyed
+#         operator-dispatch claims.
 #       * tests/cmp.rs::cmp_default user-type operator-dispatch row.
 #   - `sugar mint` + `sugar verify` must produce only discharged claimed
 #     consistency rows for that slice.
@@ -45,7 +48,7 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
 echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
@@ -147,6 +150,41 @@ chunks = [
     "use core::option::*;",
     "",
     *extract("test_and"),
+    "",
+]
+open(dest, "w", encoding="utf-8").write("\n".join(chunks))
+PY
+
+python3 - "$STDROOT/coretests/tests/result.rs" "$PROJECT/tests/result.rs" <<'PY'
+import sys
+
+source, dest = sys.argv[1:]
+lines = open(source, encoding="utf-8").read().splitlines()
+
+def extract(fn_name: str) -> list[str]:
+    fn_idx = next(
+        i for i, line in enumerate(lines)
+        if line.startswith(f"fn {fn_name}(")
+    )
+    start = fn_idx
+    while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
+        start -= 1
+    out = []
+    depth = 0
+    seen_open = False
+    for line in lines[start:]:
+        out.append(line)
+        depth += line.count("{")
+        if "{" in line:
+            seen_open = True
+        depth -= line.count("}")
+        if seen_open and depth == 0:
+            return out
+    raise RuntimeError(f"unterminated function {fn_name}")
+
+chunks = [
+    "",
+    *extract("result_try_trait_v2_branch"),
     "",
 ]
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
@@ -556,6 +594,10 @@ option_test_and_rows = [
     r for r in rows
     if (r.get("property") or "") == "consistency:tests/option.rs::test_and"
 ]
+result_try_trait_rows = [
+    r for r in rows
+    if (r.get("property") or "") == "consistency:tests/result.rs::result_try_trait_v2_branch"
+]
 needles = [
     "cmp::max_by#euf#c:callresult_cmp__max_by_a3(i:1,i:-1,v:f)::assertion",
     "size_of::<u8>#euf#c:callresult_size_of___u8__a0()::assertion",
@@ -643,6 +685,16 @@ if option_test_and_row.get("status") != "discharged":
     print("claimed option::test_and row did not discharge:", file=sys.stderr)
     print(f"{option_test_and_row.get('status')} {option_test_and_row.get('property')} {option_test_and_row.get('reason')}", file=sys.stderr)
     raise SystemExit(1)
+if len(result_try_trait_rows) != 1:
+    print(f"expected exactly one claimed result::result_try_trait_v2_branch row, got {len(result_try_trait_rows)}", file=sys.stderr)
+    for row in result_try_trait_rows:
+        print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
+result_try_trait_row = result_try_trait_rows[0]
+if result_try_trait_row.get("status") != "discharged":
+    print("claimed result::result_try_trait_v2_branch row did not discharge:", file=sys.stderr)
+    print(f"{result_try_trait_row.get('status')} {result_try_trait_row.get('property')} {result_try_trait_row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
 if failed:
     print("non-discharged #euf# rows in claimed slice:", file=sys.stderr)
     for row in failed:
@@ -658,6 +710,7 @@ print(f"claimed-euf-rows={len(euf_rows)} discharged={len(euf_rows)} failed=0")
 print(f"typeid-rows={len(type_id_rows)} discharged={len(type_id_rows)} failed=0")
 print("claimed-cmp-default-row=1 discharged=1 failed=0")
 print("claimed-option-constructor-dispatch-row=1 discharged=1 failed=0 assertions=8")
+print("claimed-result-nested-constructor-dispatch-row=1 discharged=1 failed=0 assertions=6")
 print(
     f"cfg-active-pointer-width={target_pointer_width} "
     f"cfg-active-pointer-bytes={target_pointer_bytes} "
@@ -668,6 +721,7 @@ for row in euf_rows:
 for row in type_id_rows:
     print(f"typeid-row: {row.get('property')} status={row.get('status')}")
 print(f"operator-dispatch-row: {option_test_and_row.get('property')} status={option_test_and_row.get('status')}")
+print(f"operator-dispatch-row: {result_try_trait_row.get('property')} status={result_try_trait_row.get('status')}")
 PY
 
 echo "== witness: rerun exact std/core vendor tests =="
@@ -725,6 +779,11 @@ echo "== witness: rerun exact std/core vendor tests =="
   cd "$STDROOT/coretests"
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests option::test_and -- --exact --nocapture
+)
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests result::result_try_trait_v2_branch -- --exact --nocapture
 )
 (
   cd "$STDROOT/coretests"
@@ -808,6 +867,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macro surfaces outside this showcase/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"
