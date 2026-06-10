@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # The rust cargo-test WITNESS showcase: the pytest-witness story, in Rust.
 #
-#   lift/mint — `cargo test` runs the crate's suite; each test's pass/fail is
+#   lift/mint - `cargo test` runs the crate's suite; each test's pass/fail is
 #               content-addressed into ONE witness package (bundle cid =
 #               blake3(bundle bytes)). One .proof carries the witness-package
 #               CONTRACT (custom evidence, tool="cargo-test") + the signed
 #               WitnessPackageMemento (64-byte pointer + signature over the cid).
-#   prove     — the custom evidence discharges by RECOMPUTE: the kit re-runs the
-#               suite, rebuilds the bundle, confirms the pinned package cid
-#               reproduces AND every per-test witness passed (`discharge_bundle`).
-#   verify    — the witness axis: rust asks the kit oracle to RESOLVE the bundle
+#   prove     - the custom evidence is settled by the rust verifier: the kit
+#               resolves bundle bytes, then rust recomputes the pinned package
+#               cid and reads every committed per-test outcome from the body.
+#   verify    - the witness axis: rust asks the kit oracle to RESOLVE the bundle
 #               body (package file, or re-run), blake3's the bytes ITSELF, and
 #               compares to the pinned witness_cid. The oracle is untrusted.
 #
 # Two suites, because the witness package is whole-suite:
-#   good/ — all tests pass  -> the package DISCHARGES.
-#   bad/  — one test fails   -> the bundle still reproduces (honest run), but
+#   good/ - all tests pass  -> the package DISCHARGES.
+#   bad/  - one test fails   -> the bundle still reproduces (honest run), but
 #           discharge REFUSES on the all-passed check. You cannot witness a suite
 #           right that runs wrong.
 #
@@ -56,6 +56,15 @@ done
 
 # json_field <json-file> <python-expr-over-`d`> : parse a CLI --json report.
 pyget() { python3 -c "import sys,json; d=json.load(open(sys.argv[1])); print($2)" "$1"; }
+
+write_lying_discharge() {
+  local script="$1"
+  cat > "$script" <<'SH'
+#!/usr/bin/env sh
+echo '{"verdict":"DISCHARGED","reason":"lying discharge regression"}'
+SH
+  chmod +x "$script"
+}
 
 run_suite() {
   local suite="$1" expect="$2"  # expect = DISCHARGE | REFUSE
@@ -146,6 +155,20 @@ next((r.get('status') for r in d.get('rows',[]) if 'witness-package' in (r.get('
     fi
     if [ "$status" = "MISSING" ]; then
       echo "FAIL[$suite]: no witness-package row found in the prove report"
+      exit 1
+    fi
+    echo "-- prove (LYING DISCHARGE): stdout says DISCHARGED, package body still has a failed outcome --"
+    local lie="$dir/.sugar/lying-discharge.sh"
+    write_lying_discharge "$lie"
+    local lie_json="$dir/.prove_lie.json"
+    ( cd "$dir" && SUGAR_WITNESS_DISCHARGE_CARGO_TEST="$lie" "$SUGAR" prove . --json ) > "$lie_json" 2>/dev/null || true
+    local lie_status
+    lie_status="$(pyget "$lie_json" "
+next((r.get('status') for r in d.get('rows',[]) if 'witness-package' in (r.get('property','') or '')), 'MISSING')
+")"
+    echo "   lying-discharge witness-package row status: $lie_status"
+    if [ "$lie_status" = "discharged" ]; then
+      echo "FAIL[$suite]: lying discharge stdout flipped a failing witness package to discharged"
       exit 1
     fi
     echo "OK[$suite]: a failing test refuses the witness package (status=$status, not discharged)."

@@ -63,4 +63,35 @@ print("\nPASS: 2x4 guard-shape matrix -- one package cid, every guarded case pas
 PY
 
 echo "== prove: the verifier asks the oracle to reproduce the package (one cid) =="
-PATH="$VENV/bin:$PATH" "$BIN" prove . 2>/dev/null | grep -iE 'reproduced|failed:|package' | head -3 || true
+PATH="$VENV/bin:$PATH" "$BIN" prove . --json > .prove.json 2>/dev/null || true
+"$VENV/bin/python" - <<'PY'
+import json, sys
+d = json.load(open(".prove.json"))
+status = next((r.get("status") for r in d.get("rows", [])
+               if "witness-package" in (r.get("property") or "")), "MISSING")
+print(f"  witness-package row status: {status}")
+if status == "discharged" or status == "MISSING":
+    print("FAIL: guard-shapes package must refuse because 8 cells failed")
+    sys.exit(1)
+PY
+
+cat > .sugar/lying-discharge.sh <<'SH'
+#!/usr/bin/env sh
+echo '{"verdict":"DISCHARGED","reason":"lying discharge regression"}'
+SH
+chmod +x .sugar/lying-discharge.sh
+
+echo "== prove (LYING DISCHARGE): stdout says DISCHARGED, package body still has failed outcomes =="
+PATH="$VENV/bin:$PATH" \
+  SUGAR_WITNESS_DISCHARGE_PYTEST="$HERE/.sugar/lying-discharge.sh" \
+  "$BIN" prove . --json > .prove_lie.json 2>/dev/null || true
+"$VENV/bin/python" - <<'PY'
+import json, sys
+d = json.load(open(".prove_lie.json"))
+status = next((r.get("status") for r in d.get("rows", [])
+               if "witness-package" in (r.get("property") or "")), "MISSING")
+print(f"  lying-discharge witness-package row status: {status}")
+if status == "discharged" or status == "MISSING":
+    print("FAIL: lying discharge stdout flipped guard-shapes to discharged")
+    sys.exit(1)
+PY

@@ -56,13 +56,18 @@
 // here.
 
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rayon::prelude::*;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use tracing::{info, warn};
 
 use crate::solvers::{run_plan, SolverHandle, SolverPlan};
 use crate::types::{memento_body, memento_kind, MementoPool, ObligationVerdict};
+use sugar_canonicalizer::blake3_512_of;
 use sugar_ir_compiler_smt_lib::emit_asserted;
 
 /// Outcome of a single contract's consistency check.
@@ -147,13 +152,38 @@ fn consistency_verdict(raw: ObligationVerdict) -> (ObligationVerdict, &'static s
     }
 }
 
-/// Settle a contract carrying a `custom` execution-witness EvidenceTerm by
-/// RECOMPUTE: write the EvidenceTerm to a temp `.proof` and spawn the kit's
-/// discharge command (`$SUGAR_WITNESS_DISCHARGE <witness.proof> <project>`),
-/// which re-runs the pinned test. The verifier stays language-blind; the kit
-/// owns recompute. Returns None when there is no custom witness (caller falls
-/// through to symbolic solving). FAIL-CLOSED: missing config / spawn error /
-/// unparseable output is Undecidable, never Discharged.
+#[derive(Debug, Clone)]
+struct WitnessResolver {
+    argv: Vec<String>,
+    working_dir: PathBuf,
+    method: String,
+}
+
+#[derive(Debug, Clone)]
+struct WitnessPackageClaim {
+    package_cid: String,
+    witness_kind: String,
+    test_files: Vec<String>,
+    code_files: Vec<String>,
+    expected_count: usize,
+    expected_passed: usize,
+}
+
+#[derive(Debug, Clone)]
+struct WitnessPackageOutcome {
+    resolved_by: String,
+    count: usize,
+    failed: usize,
+    failed_tests: Vec<String>,
+}
+
+/// Settle a contract carrying a `custom` execution-witness EvidenceTerm from
+/// authenticated package bytes, not from the kit's verdict string. The kit is
+/// allowed to RESOLVE bytes over RPC. Rust recomputes the package CID, parses the
+/// committed per-test `outcome` facts, and derives Discharged or Unsatisfied
+/// from those facts. Returns None when there is no custom witness (caller falls
+/// through to symbolic solving). FAIL-CLOSED: missing config / malformed schema /
+/// unparseable bytes is Undecidable or Unsatisfied, never Discharged.
 fn try_witness_discharge(
     body: &Json,
     contract_cid: String,
@@ -170,37 +200,11 @@ fn try_witness_discharge(
         reason,
         witnessed: false,
     };
-    // Route to the TOOL-specific discharge command (federation): the certificate
-    // names its `tool`; the kit's manifest declared the matching command, which
-    // `cmd_prove` exported as SUGAR_WITNESS_DISCHARGE_<TOOL>. Fall back to the
-    // generic SUGAR_WITNESS_DISCHARGE (manual override). Fail-closed if neither.
     let tool = evidence
         .get("certificate")
         .and_then(|c| c.get("tool"))
         .and_then(|t| t.as_str())
         .unwrap_or("");
-    let tool_key = format!(
-        "SUGAR_WITNESS_DISCHARGE_{}",
-        tool.to_uppercase()
-            .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
-    );
-    let cmd = match std::env::var(&tool_key)
-        .ok()
-        .filter(|c| !c.trim().is_empty())
-        .or_else(|| {
-            std::env::var("SUGAR_WITNESS_DISCHARGE")
-                .ok()
-                .filter(|c| !c.trim().is_empty())
-        }) {
-        Some(c) => c,
-        None => {
-            return Some(undecidable(format!(
-                "custom witness (tool={tool:?}) present but no discharge command \
-                 configured (declare `discharge_command` + `witness_tool` in the \
-                 kit's lift manifest) (fail-closed)"
-            )))
-        }
-    };
     let project = match std::env::var("SUGAR_WITNESS_PROJECT_DIR") {
         Ok(p) if !p.trim().is_empty() => p,
         _ => {
@@ -209,65 +213,375 @@ fn try_witness_discharge(
             ))
         }
     };
-    let tmp = std::env::temp_dir().join(format!(
-        "{}.witness.proof",
-        contract_cid.replace([':', '/'], "_")
-    ));
-    if let Err(e) = std::fs::write(&tmp, evidence.to_string()) {
-        return Some(undecidable(format!("witness temp write failed: {e}")));
+
+    let claim = match witness_package_claim(evidence, tool) {
+        Ok(c) => c,
+        Err(e) => return Some(undecidable(e)),
+    };
+    let resolvers = find_witness_resolvers(Path::new(&project));
+    if resolvers.is_empty() {
+        return Some(undecidable(
+            "custom witness package present but no resolve_witness_command configured \
+             (fail-closed)"
+                .to_string(),
+        ));
     }
-    let mut parts = cmd.split_whitespace();
-    let prog = match parts.next() {
-        Some(p) => p,
-        None => return Some(undecidable("empty SUGAR_WITNESS_DISCHARGE".into())),
-    };
-    // Spawn with cwd = the project root so a manifest's RELATIVE discharge
-    // command (e.g. `PYTHONPATH=../../implementations/...`) resolves the same
-    // way the lift command does from its working_dir.
-    let output = std::process::Command::new(prog)
-        .args(parts)
-        .arg(&tmp)
-        .arg(&project)
-        .current_dir(&project)
-        .output();
-    let out = match output {
+    let outcome = match resolve_witness_package(&resolvers, Path::new(&project), &claim) {
         Ok(o) => o,
-        Err(e) => return Some(undecidable(format!("witness discharge spawn failed: {e}"))),
-    };
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let parsed: Json = match serde_json::from_str(stdout.lines().last().unwrap_or("")) {
-        Ok(j) => j,
         Err(e) => {
-            return Some(undecidable(format!(
-                "witness discharge output unparseable: {e}"
-            )))
+            return Some(ConsistencyResult {
+                contract_cid,
+                property_name,
+                verdict: ObligationVerdict::Unsatisfied,
+                reason: format!("witness REFUSED by rust package recompute: {e}"),
+                witnessed: false,
+            })
         }
     };
-    let verdict_str = parsed
-        .get("verdict")
-        .and_then(|v| v.as_str())
-        .unwrap_or("REFUSED");
-    let reason = parsed
-        .get("reason")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    Some(if verdict_str == "DISCHARGED" {
+    Some(if outcome.failed == 0 {
         ConsistencyResult {
             contract_cid,
             property_name,
             verdict: ObligationVerdict::Discharged,
-            reason: format!("witnessed by recompute (kit): {reason}"),
+            reason: format!(
+                "witness package verified by rust via {}; all {} outcomes passed",
+                outcome.resolved_by, outcome.count
+            ),
             witnessed: true,
         }
     } else {
+        let shown = outcome
+            .failed_tests
+            .iter()
+            .take(6)
+            .cloned()
+            .collect::<Vec<_>>();
+        let more = if outcome.failed_tests.len() > shown.len() {
+            format!(" (+{} more)", outcome.failed_tests.len() - shown.len())
+        } else {
+            String::new()
+        };
         ConsistencyResult {
             contract_cid,
             property_name,
             verdict: ObligationVerdict::Unsatisfied,
-            reason: format!("witness REFUSED by recompute: {reason}"),
+            reason: format!(
+                "witness REFUSED by rust package body: bundle reproduced via {}; \
+                 {}/{} outcomes failed: {}{}",
+                outcome.resolved_by,
+                outcome.failed,
+                outcome.count,
+                shown.join(", "),
+                more
+            ),
             witnessed: false,
         }
+    })
+}
+
+fn witness_package_claim(evidence: &Json, tool: &str) -> Result<WitnessPackageClaim, String> {
+    let proof_data = evidence
+        .get("certificate")
+        .and_then(|c| c.get("proofData"))
+        .and_then(|v| v.as_str())
+        .ok_or("custom witness evidence missing certificate.proofData (fail-closed)")?;
+    let data: Json = serde_json::from_str(proof_data)
+        .map_err(|e| format!("custom witness proofData unparseable: {e}"))?;
+    if data.get("kind").and_then(|v| v.as_str()) != Some("witness-package") {
+        return Err(
+            "custom witness proofData is not a witness-package committed-outcome schema \
+             (fail-closed)"
+                .to_string(),
+        );
+    }
+    let package_cid = data
+        .get("packageCid")
+        .and_then(|v| v.as_str())
+        .ok_or("witness-package proofData missing packageCid")?
+        .to_string();
+    let expected_count =
+        data.get("count")
+            .and_then(|v| v.as_u64())
+            .ok_or("witness-package proofData missing numeric count")? as usize;
+    let expected_passed =
+        data.get("passed")
+            .and_then(|v| v.as_u64())
+            .ok_or("witness-package proofData missing numeric passed")? as usize;
+    let witness_kind = match tool {
+        "pytest" => "pytest-witness-package",
+        "cargo-test" => "cargo-test-witness-package",
+        "junit" => "junit-test-witness-package",
+        "testng" => "testng-test-witness-package",
+        other => {
+            return Err(format!(
+                "custom witness tool {other:?} has no rust-side package outcome mapping \
+                 (fail-closed)"
+            ))
+        }
+    }
+    .to_string();
+    Ok(WitnessPackageClaim {
+        package_cid,
+        witness_kind,
+        test_files: json_str_list(&data, "testFiles"),
+        code_files: json_str_list(&data, "codeFiles"),
+        expected_count,
+        expected_passed,
+    })
+}
+
+fn json_str_list(data: &Json, key: &str) -> Vec<String> {
+    data.get(key)
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn find_witness_resolvers(project_root: &Path) -> Vec<WitnessResolver> {
+    let lift_dir = project_root.join(".sugar").join("lift");
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&lift_dir) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let manifest = entry.path().join("manifest.toml");
+        if let Some(resolver) = parse_witness_resolver(&manifest, project_root) {
+            found.push(resolver);
+        }
+    }
+    found
+}
+
+fn parse_witness_resolver(manifest: &Path, project_root: &Path) -> Option<WitnessResolver> {
+    let text = std::fs::read_to_string(manifest).ok()?;
+    let value: toml::Value = toml::from_str(&text).ok()?;
+    let argv: Vec<String> = value
+        .get("resolve_witness_command")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+    if argv.is_empty() {
+        return None;
+    }
+    let working_dir = value
+        .get("working_dir")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from)
+        .map(|p| {
+            if p.is_absolute() {
+                p
+            } else {
+                project_root.join(p)
+            }
+        })
+        .unwrap_or_else(|| project_root.to_path_buf());
+    let method = value
+        .get("resolve_witness_method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("sugar.plugin.resolve_witness")
+        .to_string();
+    Some(WitnessResolver {
+        argv,
+        working_dir,
+        method,
+    })
+}
+
+fn resolve_witness_package(
+    resolvers: &[WitnessResolver],
+    project_root: &Path,
+    claim: &WitnessPackageClaim,
+) -> Result<WitnessPackageOutcome, String> {
+    let mut mismatches = Vec::new();
+    let mut errors = Vec::new();
+    let memento = json!({
+        "kind": "witness-memento",
+        "witness_cid": claim.package_cid,
+        "witness_kind": claim.witness_kind,
+        "test_files": claim.test_files,
+        "code_files": claim.code_files,
+        "count": claim.expected_count,
+        "passed": claim.expected_passed,
+    });
+    for resolver in resolvers {
+        match resolve_witness_body(resolver, project_root, &memento) {
+            Ok((resolved_by, bytes)) => match package_outcome(&bytes, &resolved_by, claim) {
+                Ok(outcome) => return Ok(outcome),
+                Err(e) => mismatches.push(e),
+            },
+            Err(e) => errors.push(e),
+        }
+    }
+    if !mismatches.is_empty() {
+        Err(mismatches.join("; "))
+    } else {
+        Err(format!(
+            "could not resolve witness package body: {}",
+            errors.join("; ")
+        ))
+    }
+}
+
+fn resolve_witness_body(
+    resolver: &WitnessResolver,
+    project_root: &Path,
+    memento: &Json,
+) -> Result<(String, Vec<u8>), String> {
+    if resolver.argv.is_empty() {
+        return Err("empty resolver argv".to_string());
+    }
+    let abs_root = std::fs::canonicalize(project_root)
+        .unwrap_or_else(|_| project_root.to_path_buf())
+        .display()
+        .to_string();
+    let package_dir = project_root.join(".sugar").join("witnesses");
+    let mut params = json!({
+        "memento": memento,
+        "workspace_root": abs_root,
+    });
+    if package_dir.exists() {
+        params["package_dir"] = json!(package_dir.display().to_string());
+    }
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": resolver.method,
+        "params": params,
+    });
+
+    let mut cmd = Command::new(&resolver.argv[0]);
+    cmd.args(&resolver.argv[1..]);
+    cmd.arg("--rpc");
+    cmd.current_dir(&resolver.working_dir);
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::null());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("spawn resolver {}: {e}", resolver.argv[0]))?;
+    {
+        let mut stdin = child.stdin.take().ok_or("resolver stdin unavailable")?;
+        let line = serde_json::to_string(&req).map_err(|e| e.to_string())?;
+        stdin
+            .write_all(line.as_bytes())
+            .and_then(|_| stdin.write_all(b"\n"))
+            .map_err(|e| format!("write resolver stdin: {e}"))?;
+    }
+
+    let stdout = child.stdout.take().ok_or("resolver stdout unavailable")?;
+    let (tx, rx) = std::sync::mpsc::channel::<Option<Json>>();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut last_reply: Option<Json> = None;
+        for line in reader.lines().map_while(Result::ok) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<Json>(trimmed) {
+                if v.get("result").is_some() || v.get("error").is_some() {
+                    last_reply = Some(v);
+                }
+            }
+        }
+        let _ = tx.send(last_reply);
+    });
+    const RESOLVER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+    let reply = match rx.recv_timeout(RESOLVER_TIMEOUT) {
+        Ok(r) => r,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "resolver `{}` timed out after {}s",
+                resolver.argv[0],
+                RESOLVER_TIMEOUT.as_secs()
+            ));
+        }
+    };
+    let _ = child.wait();
+    let reply = reply.ok_or("resolver produced no JSON-RPC reply")?;
+    if let Some(err) = reply.get("error") {
+        let msg = err
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        return Err(format!("oracle refused resolution: {msg}"));
+    }
+    let result = reply.get("result").ok_or("reply missing result")?;
+    let body_b64 = result
+        .get("body_b64")
+        .and_then(|v| v.as_str())
+        .ok_or("resolve_witness result missing body_b64")?;
+    let resolved_by = result
+        .get("resolved_by")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let bytes = B64
+        .decode(body_b64)
+        .map_err(|e| format!("decode body_b64: {e}"))?;
+    Ok((resolved_by, bytes))
+}
+
+fn package_outcome(
+    bytes: &[u8],
+    resolved_by: &str,
+    claim: &WitnessPackageClaim,
+) -> Result<WitnessPackageOutcome, String> {
+    let computed = blake3_512_of(bytes);
+    if computed != claim.package_cid {
+        return Err(format!(
+            "package content computes to {computed}, not pinned {}",
+            claim.package_cid
+        ));
+    }
+    let mut count = 0usize;
+    let mut passed = 0usize;
+    let mut failed_tests = Vec::new();
+    for (idx, raw) in bytes.split(|b| *b == b'\n').enumerate() {
+        let raw = raw.strip_suffix(b"\r").unwrap_or(raw);
+        if raw.is_empty() {
+            continue;
+        }
+        let line: Json = serde_json::from_slice(raw)
+            .map_err(|e| format!("package line {} is not JSON: {e}", idx + 1))?;
+        count += 1;
+        match line.get("outcome").and_then(|v| v.as_str()) {
+            Some("passed") => passed += 1,
+            Some(other) => failed_tests.push(
+                line.get("test")
+                    .or_else(|| line.get("test_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(other)
+                    .to_string(),
+            ),
+            None => {
+                return Err(format!(
+                    "package line {} missing committed outcome field",
+                    idx + 1
+                ))
+            }
+        }
+    }
+    if count != claim.expected_count || passed != claim.expected_passed {
+        return Err(format!(
+            "package body count/passed mismatch: proofData committed count={} passed={}, \
+             body has count={count} passed={passed}",
+            claim.expected_count, claim.expected_passed
+        ));
+    }
+    Ok(WitnessPackageOutcome {
+        resolved_by: resolved_by.to_string(),
+        count,
+        failed: count.saturating_sub(passed),
+        failed_tests,
     })
 }
 
@@ -362,10 +676,10 @@ pub fn verify_consistency(
         .flat_map(|(property_name, members)| {
             let mut out: Vec<ConsistencyResult> = Vec::new();
 
-            // WITNESS members are settled BY RECOMPUTE, PER MEMBER (the kit's
-            // discharge command; the verifier stays language-blind). They are
-            // NEVER folded into the symbolic conjunction AND never short-circuit
-            // the group: a witness member must not mask a contradictory inv group.
+            // WITNESS members are settled from the rust-recomputed package body,
+            // PER MEMBER. They are NEVER folded into the symbolic conjunction
+            // AND never short-circuit the group: a witness member must not mask
+            // a contradictory inv group.
             let mut inv_cids: Vec<&String> = Vec::new();
             let mut inv_bodies: Vec<&Json> = Vec::new();
             for (m_cid, body) in members {
@@ -446,6 +760,16 @@ mod tests {
     use super::*;
     use crate::solvers::registry;
     use serde_json::json;
+    use std::sync::{Mutex, OnceLock};
+
+    static WITNESS_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn witness_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        WITNESS_ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap()
+    }
 
     fn pool_with_contract(name: &str, inv: Json) -> MementoPool {
         let mut pool = MementoPool::default();
@@ -492,6 +816,96 @@ mod tests {
             "envelope": { "header": { "kind": "contract", "contractName": name, "inv": inv } }
         });
         pool.insert(cid.to_string(), env);
+    }
+
+    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "sugar-verifier-{label}-{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn set_executable(path: &std::path::Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    fn package_contract(tool: &str, package_cid: &str, count: usize, passed: usize) -> Json {
+        let proof_data = json!({
+            "kind": "witness-package",
+            "packageCid": package_cid,
+            "testFiles": ["tests/failing.rs"],
+            "codeFiles": ["src/lib.rs"],
+            "count": count,
+            "passed": passed,
+        })
+        .to_string();
+        json!({
+            "kind": "contract",
+            "contractName": format!("{tool}:witness-package"),
+            "inv": {"kind":"atomic","name":"witnessed","args":[]},
+            "evidence": {"kind":"evidence","proofType":"custom",
+                         "certificate":{"tool":tool,"proofData":proof_data}},
+        })
+    }
+
+    fn write_resolver_manifest(project: &std::path::Path, package_bytes: &[u8]) {
+        let manifest_dir = project.join(".sugar").join("lift").join("fake-witness");
+        std::fs::create_dir_all(&manifest_dir).unwrap();
+        let script = manifest_dir.join("resolve.sh");
+        let reply = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "resolved_by": "package",
+                "body_b64": B64.encode(package_bytes),
+            }
+        })
+        .to_string();
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", reply),
+        )
+        .unwrap();
+        set_executable(&script);
+        let manifest = format!(
+            "name = \"fake-witness\"\n\
+             working_dir = \".\"\n\
+             resolve_witness_command = [\"{}\"]\n\
+             resolve_witness_method = \"sugar.plugin.resolve_witness\"\n",
+            script.display()
+        );
+        std::fs::write(manifest_dir.join("manifest.toml"), manifest).unwrap();
+    }
+
+    fn write_discharge_stdout(project: &std::path::Path, verdict: &str) -> std::path::PathBuf {
+        let script = project.join("lie-discharge.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\necho '{{\"verdict\":\"{verdict}\",\"reason\":\"lying oracle\"}}'\n"
+            ),
+        )
+        .unwrap();
+        set_executable(&script);
+        script
+    }
+
+    fn tool_env_key(tool: &str) -> String {
+        format!(
+            "SUGAR_WITNESS_DISCHARGE_{}",
+            tool.to_uppercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        )
     }
 
     /// CROSS-PROOF CONJOIN: two contracts sharing a callsite name -- a consumer's
@@ -552,10 +966,14 @@ mod tests {
     /// Critical / Codex P1 on the first-witnessed-member return.)
     #[test]
     fn witness_member_does_not_mask_a_contradictory_group() {
+        let _env = witness_env_lock();
+        std::env::remove_var("SUGAR_WITNESS_PROJECT_DIR");
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE");
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE_PYTEST");
         let (plan, reg) = z3_plan_and_registry();
         let name = "numpy.add#euf#c:callresult_numpy_add_a2(i:2,i:3)::assertion";
         let mut pool = MementoPool::default();
-        // a custom-witness member sharing the callsite name (no discharge command
+        // a custom-witness member sharing the callsite name (no project resolver
         // configured -> Undecidable, fail-closed; the point is it must not swallow
         // the group's contradiction).
         let witness = json!({"envelope":{"header":{
@@ -608,58 +1026,71 @@ mod tests {
         );
     }
 
-    /// The witness-discharge arm: a contract carrying a `custom` EvidenceTerm is
-    /// settled by spawning the tool's discharge command (here a stub), routed by
-    /// the certificate's `tool`. Discharge -> Witnessed; refuse -> Unsatisfied;
-    /// no command -> Undecidable (fail-closed). Hermetic: no python.
+    /// A lying discharge command cannot turn a failed witness package into a
+    /// discharge. The row verdict must be derived from the resolved package
+    /// bytes, whose CID is recomputed rust-side and whose per-test bodies commit
+    /// their real `outcome`.
     #[test]
-    fn witness_arm_routes_by_tool_and_fails_closed() {
-        let dir = std::env::temp_dir();
-        let script = dir.join("sugar_test_witness_discharge.sh");
-        let write_stub = |verdict: &str| {
-            std::fs::write(
-                &script,
-                format!("#!/bin/sh\necho '{{\"verdict\":\"{verdict}\",\"reason\":\"stub\"}}'\n"),
-            )
-            .unwrap();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-            }
-        };
-        let body = json!({
-            "kind": "contract",
-            "contractName": "test_x",
-            "inv": {"kind":"atomic","name":"witnessed","args":[]},
-            "evidence": {"kind":"evidence","proofType":"custom",
-                         "certificate":{"tool":"stubtool","proofData":"{}"}},
-        });
-        let call =
-            || try_witness_discharge(&body, "blake3-512:cid".into(), "test_x".into()).unwrap();
+    fn lying_discharge_cannot_pass_failed_package_for_any_witness_kind() {
+        let _env = witness_env_lock();
+        let package_bytes = b"{\"outcome\":\"passed\",\"test\":\"good\"}\n{\"outcome\":\"failed\",\"test\":\"bad\"}\n";
+        let package_cid = blake3_512_of(package_bytes);
 
-        std::env::set_var("SUGAR_WITNESS_PROJECT_DIR", &dir);
-        // routed to SUGAR_WITNESS_DISCHARGE_STUBTOOL (tool="stubtool")
-        write_stub("DISCHARGED");
-        std::env::set_var("SUGAR_WITNESS_DISCHARGE_STUBTOOL", &script);
-        let r = call();
-        assert_eq!(r.verdict, ObligationVerdict::Discharged);
-        assert!(r.witnessed, "discharge must be flagged witnessed");
+        for tool in ["pytest", "cargo-test", "junit", "testng"] {
+            let project = unique_temp_dir(tool);
+            write_resolver_manifest(&project, package_bytes);
+            let lie = write_discharge_stdout(&project, "DISCHARGED");
+            let env_key = tool_env_key(tool);
+            std::env::set_var("SUGAR_WITNESS_PROJECT_DIR", &project);
+            std::env::remove_var("SUGAR_WITNESS_DISCHARGE");
+            std::env::set_var(&env_key, &lie);
 
-        write_stub("REFUSED");
-        let r = call();
-        assert_eq!(r.verdict, ObligationVerdict::Unsatisfied);
-        assert!(!r.witnessed);
+            let body = package_contract(tool, &package_cid, 2, 1);
+            let result =
+                try_witness_discharge(&body, "blake3-512:cid".into(), "test_x".into()).unwrap();
+            assert_eq!(
+                result.verdict,
+                ObligationVerdict::Unsatisfied,
+                "tool={tool} must refuse the failed package despite a DISCHARGED stdout lie: {result:?}"
+            );
+            assert!(
+                !result.witnessed,
+                "failed package is not a witness discharge"
+            );
 
-        // fail-closed: no command for this tool, no generic fallback
-        std::env::remove_var("SUGAR_WITNESS_DISCHARGE_STUBTOOL");
-        std::env::remove_var("SUGAR_WITNESS_DISCHARGE");
-        let r = call();
-        assert_eq!(r.verdict, ObligationVerdict::Undecidable);
-        assert!(!r.witnessed);
+            std::env::remove_var(&env_key);
+            let _ = std::fs::remove_dir_all(&project);
+        }
 
         std::env::remove_var("SUGAR_WITNESS_PROJECT_DIR");
-        let _ = std::fs::remove_file(&script);
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE");
+    }
+
+    #[test]
+    fn all_passed_package_discharges_from_body_not_stdout() {
+        let _env = witness_env_lock();
+        let package_bytes =
+            b"{\"outcome\":\"passed\",\"test\":\"one\"}\n{\"outcome\":\"passed\",\"test\":\"two\"}\n";
+        let package_cid = blake3_512_of(package_bytes);
+        let project = unique_temp_dir("all-passed-package");
+        write_resolver_manifest(&project, package_bytes);
+        let lie = write_discharge_stdout(&project, "REFUSED");
+        std::env::set_var("SUGAR_WITNESS_PROJECT_DIR", &project);
+        std::env::set_var("SUGAR_WITNESS_DISCHARGE_PYTEST", &lie);
+
+        let body = package_contract("pytest", &package_cid, 2, 2);
+        let result =
+            try_witness_discharge(&body, "blake3-512:cid".into(), "test_x".into()).unwrap();
+        assert_eq!(result.verdict, ObligationVerdict::Discharged);
+        assert!(
+            result.reason.contains("all 2 outcomes passed"),
+            "reason must cite rust-side package outcome: {result:?}"
+        );
+        assert!(result.witnessed);
+
+        std::env::remove_var("SUGAR_WITNESS_PROJECT_DIR");
+        std::env::remove_var("SUGAR_WITNESS_DISCHARGE_PYTEST");
+        let _ = std::fs::remove_dir_all(&project);
     }
 
     /// A contract WITHOUT a custom witness is untouched by the arm (falls through

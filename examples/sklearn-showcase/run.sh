@@ -46,7 +46,7 @@ check "consistency REFUSES the contradiction"               "contradictory about
 # Witness axis: one WitnessPackageMemento over the suite. The package refuses
 # because it includes the deliberately failing contradictory twin, and the
 # witness package records the good rows as passed.
-check "witness package reproduces"                          "bundle reproduced"
+check "witness package refused from package body"            "witness REFUSED by rust package body"
 check "witness package names the failing test"              "test_multilabel_accuracy_score_contradiction"
 "$VENV/bin/python" - <<'PY' || fail=1
 import json, glob, sys

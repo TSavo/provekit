@@ -125,8 +125,8 @@ check() { check_text "$report" "$1" "$2"; }
 # Consistency axis: the good rot90 element facts discharge; the contradiction is UNSAT.
 check "consistency discharges rot90 element facts"  "consistent about callsite .test_rot90_quarter_turn"
 check "consistency REFUSES the contradiction"       "contradictory about callsite .test_rot90_contradiction"
-# Witness axis: the package reproduces; the good test passed in it, the degenerate failed.
-check "witness REFUSES the degenerate by recompute" "witness REFUSED by recompute"
+# Witness axis: rust parses the package body; the good test passed in it, the degenerate failed.
+check "witness REFUSES the degenerate from package body" "witness REFUSED by rust package body"
 check "witness names the failing degenerate test"   "test_rot90_contradiction"
 
 echo ""

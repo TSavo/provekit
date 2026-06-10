@@ -60,10 +60,11 @@ check() { check_text "$report" "$1" "$2"; }
 check "consistency discharges Series.sum == 6"      "consistent about callsite .test_column_sum_is_six"
 check "consistency discharges frame round-trip"     "consistent about callsite .test_frame_round_trips_exactly"
 check "consistency REFUSES the contradiction"       "contradictory about callsite .test_column_sum_contradiction"
-# Witness axis: ONE WitnessPackageMemento over the suite. The package reproduces;
-# the good tests passed IN it, the contradictory test failed -- so the package is
-# refused, naming the failing test. The per-test facts live in the package.
-check "witness package reproduces"                  "bundle reproduced"
+# Witness axis: ONE WitnessPackageMemento over the suite. Rust parses the
+# package body: the good tests passed IN it, the contradictory test failed, so
+# the package is refused, naming the failing test. The per-test facts live in
+# the package.
+check "witness package refused from package body"   "witness REFUSED by rust package body"
 check "witness package names the failing test"      "test_column_sum_contradiction"
 # read the per-test outcomes straight from the content-addressed package
 "$VENV/bin/python" - <<'PY' || fail=1
