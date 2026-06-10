@@ -2813,6 +2813,13 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
             name: "bit-not".to_string(),
             args: vec![translate_term_in_scope(&unary.expr, scope)?],
         })),
+        // Dereference: *p is a function of the pointer/reference term, the same
+        // EUF shape as the immutable-reference arm below. `*a == *b` reasons
+        // structurally and a contradiction over one dereferenced term is UNSAT.
+        Expr::Unary(unary) if matches!(unary.op, UnOp::Deref(_)) => Ok(Rc::new(Term::Ctor {
+            name: "deref".to_string(),
+            args: vec![translate_term_in_scope(&unary.expr, scope)?],
+        })),
         Expr::Path(path) if path.path.is_ident("None") => Ok(Rc::new(Term::Ctor {
             name: "call:None".to_string(),
             args: Vec::new(),
@@ -2863,6 +2870,10 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
             name: "await".to_string(),
             args: vec![translate_term_in_scope(&await_expr.base, scope)?],
         })),
+        // Only the immutable borrow is a stable term. `&mut x` stays residual:
+        // a mutable referent can change between observations (temporal identity),
+        // so coalescing two `&mut x` terms would be unsound. See the
+        // mutable_reference_pointer_eq_stays_residual guard test.
         Expr::Reference(reference) if reference.mutability.is_none() => Ok(Rc::new(Term::Ctor {
             name: "ref".to_string(),
             args: vec![translate_term_in_scope(&reference.expr, scope)?],

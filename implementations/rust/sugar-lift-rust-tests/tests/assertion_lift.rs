@@ -4112,3 +4112,81 @@ fn plain() {
         "plain local must not be a macro term, got {lhs}"
     );
 }
+
+// --- deref and reference structural terms tranche (T-DEREF) ---
+
+#[test]
+fn deref_lifts_as_deref_term() {
+    // RED before: *b is an unsupported unary term; lifted=0.
+    // GREEN after: *b lifts as deref(b).
+    let src = r#"
+#[test]
+fn deref_eq() {
+    let b = 5;
+    assert_eq!(*b, 5);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/clone.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+    match ops[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "deref");
+                    assert_eq!(args.len(), 1);
+                }
+                other => panic!("expected deref ctor lhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality, got {other:?}"),
+    }
+}
+
+#[test]
+fn deref_congruence_same_pointer_coalesces() {
+    // Teeth: *b used twice is the same term, so a contradiction is UNSAT.
+    let src = r#"
+#[test]
+fn deref_twice() {
+    let b = 5;
+    assert_eq!(*b, 1);
+    assert_eq!(*b, 2);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/clone.rs");
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    let lhs = |f: &Formula| match f {
+        Formula::Atomic { args, .. } => format!("{:?}", args[0]),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(lhs(&ops[0]), lhs(&ops[1]), "*b must coalesce (teeth)");
+}
+
+#[test]
+fn deref_does_not_enable_mut_ref_lifting() {
+    // Soundness boundary: adding deref must NOT make `&mut x` liftable. A
+    // mutable referent can change between observations (temporal identity), so
+    // it stays residual, consistent with mutable_reference_pointer_eq_stays_residual.
+    let src = r#"
+#[test]
+fn mut_ref_residual() {
+    let mut x = 1;
+    assert_eq!(&mut x, &mut x);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/clone.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0, "&mut must stay residual: {:?}", out.warnings);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.reason.contains("unsupported term `& mut x`")),
+        "mut ref must be a named refusal: {:?}",
+        out.warnings
+    );
+}
