@@ -254,6 +254,9 @@ mod tests {
         for (predicate, call_name) in [
             ("float.f64.is_nan", "method:div_duration_f64"),
             ("float.f32.is_infinite", "method:div_duration_f32"),
+            ("float.f64.is_normal", "method:normal_value_f64"),
+            ("float.f64.is_sign_positive", "method:positive_value_f64"),
+            ("float.f64.is_sign_negative", "method:negative_value_f64"),
         ] {
             let call = ctor(call_name, vec![]);
             let atom = atomic(predicate, vec![call.clone()]);

@@ -21,6 +21,10 @@ Claimed slice:
     `test_typeid_unsized_types`.
   - `coretests/tests/time.rs`: finite decimal float rows and width-known
     NaN refinement predicate rows for `Duration::div_duration_f{32,64}`.
+  - `coretests/tests/num/mod.rs` and
+    `coretests/tests/num/dec2flt/mod.rs`: width-known float refinement
+    predicate rows for typed `f64` locals and
+    `parse::<f32/f64>().unwrap().is_nan()`.
   - `coretests/tests/fmt/mod.rs`: exact string rows for `to_string()`.
   - `coretests/tests/alloc.rs` and `coretests/tests/ops.rs`: pure
     method-chain predicate rows such as `layout.align_to(3).is_err()` and
@@ -52,9 +56,9 @@ Claimed slice:
     call results.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
   emits `#euf#` call-result consistency rows, TypeId consistency rows, and the
-  `cmp_default`, pointer-index predicate, `option::test_and`, and
-  `result_try_trait_v2_branch` location-keyed rows, and every claimed row
-  discharges.
+  `cmp_default`, pointer-index predicate, `option::test_and`,
+  `result_try_trait_v2_branch`, and typed-local float refinement rows, and every
+  claimed row discharges.
 - Witness axis: the exact std vendor tests rerun with `cargo test --test
   coretests ... -- --exact`.
 
@@ -72,11 +76,14 @@ Named gaps toward full `coretests` coverage:
   lifter, but this scalar std-core showcase does not claim broader macro
   surfaces.
 - Float refinements: direct width-known `is_nan()` rows over
-  `Duration::div_duration_f{32,64}` are claimed. Infinity constants,
-  ordered comparisons, signed zero, width-unknown NaN predicates, and
-  approximate/tolerance assertions remain residual. Exact finite
-  exponent-form literals now normalize to Real constants when they appear in
-  the scalar lifter surface.
+  `Duration::div_duration_f{32,64}`, typed-local `is_normal()`,
+  `is_infinite()`, `is_sign_positive()`, `is_sign_negative()`, and
+  `parse::<f32/f64>().unwrap().is_nan()` rows are claimed as kit refinement
+  atoms over Real-sorted terms. Infinity constants/equality, ordered
+  comparisons, signed zero as a value, width-unknown generic aliases, and
+  approximate/tolerance assertions remain residual. Exact finite exponent-form
+  literals now normalize to Real constants when they appear in the scalar
+  lifter surface.
 - Strings/chars: exact string equality is claimed here where it is a direct
   call-result value. Richer point-wise string predicates and ASCII char
   predicates are covered by the sibling `std-core-string-predicates`
@@ -111,10 +118,10 @@ Named gaps toward full `coretests` coverage:
 
 The run script requires representative integer, generic type-arg-keyed, active
 cfg pointer-width, TypeId comparison, finite-float, width-known NaN refinement,
-string, pure method-chain predicate, stable-key compound RHS rows, literal
-array/tuple exact-value rows, expression-only const-block rows, pointer-index
-predicate rows, the
-`option::test_and` constructor operator-dispatch row, the
+typed-local float refinement, parsed-NaN float refinement, string, pure
+method-chain predicate, stable-key compound RHS rows, literal array/tuple
+exact-value rows, expression-only const-block rows, pointer-index predicate
+rows, the `option::test_and` constructor operator-dispatch row, the
 `result_try_trait_v2_branch` nested constructor operator-dispatch row, and the
 `cmp_default` user-type operator row, and rejects any non-discharged claimed
 row. It is intentionally not a full-`std` claim.
@@ -140,22 +147,24 @@ method-chain slice closes 13 additional stable-key `iter/range.rs` rows. This
 scoped local-function identity. The first constructor-dispatch slice closes 8
 `option.rs::test_and` nullary/variant constructor rows. This nested-constructor
 slice closes 6 `result.rs::result_try_trait_v2_branch` nested variant
-constructor rows. This float-refinement slice closes 2 width-known `time.rs` NaN
-rows, moving the combined std-core showcase count from `137+2+1` to `139+2+1`; a
-fresh full lift-only census for that lever emitted 1,703 IR declarations and
-1,031 lift diagnostics. This temporal receiver identity slice closes 13
-selected `ops.rs` range-bound rows by keying reassigned and standalone-mutated
-receiver subjects as distinct definition versions. The current known backlog is
-1,032 items for that target. This pointer-index predicate slice closes 2
-`array.rs::array_from_ref` / `slice.rs::test_const_from_ref` rows. The rebased
-showcase run reports 152 claimed `#euf#` rows plus 2 pointer-index predicate
-rows. The current known backlog is 1,030 items for that target.
+constructor rows. The first float-refinement slice closed 2 width-known
+`time.rs` NaN rows. This temporal receiver identity slice closes 13 selected
+`ops.rs` range-bound rows by keying reassigned and standalone-mutated receiver
+subjects as distinct definition versions. The pointer-index predicate slice
+closes 2 `array.rs::array_from_ref` / `slice.rs::test_const_from_ref` rows, kept
+location-keyed. This follow-up float-refinement slice closes 4 parsed `NaN`
+`unwrap()` EUF rows plus one typed-local `num::test_f32f64` refinement row,
+moving the combined showcase to 156 EUF rows plus 2 pointer-index predicate
+rows, TypeId(2), option(8), result(6), `cmp_default`, and the
+typed-float-refinement row. A fresh full lift-only census for this lever emitted
+1,771 IR declarations and 1,075 lift diagnostics; the full lift+verify backlog
+was not recomputed in this showcase run.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
 | Generics | 30 | Closed for direct generic call-result identity in this slice by carrying type args in the `#euf#` key; active cfg-sensitive pointer-width variants are tracked under CFG-sensitive. |
 | Macros | 40 | Broad macro surfaces remain residual here; bounded ASCII `assert_all!` / `assert_none!` expansion is handled by the lifter but is outside this showcase's claimed scalar slice. |
-| Floats | 18 prior full lift+verify census, with 2 NaN showcase rows now closed | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Other residual examples include infinity constants/equality, ordered comparisons, signed zero, width-unknown parsed NaN predicates, and aggregate literals containing NaN. |
+| Floats | 18 prior full lift+verify census, with 2 `time.rs` NaN rows, 4 parsed-NaN rows, and 1 typed-local predicate row now closed in the showcase | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Other residual examples include infinity constants/equality, ordered comparisons, signed zero as a value, generic-width float aliases, and aggregate literals containing NaN. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
 | Complex terms | 398 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, and pointer-index predicate slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, and 2 pointer-index predicate rows lift location-keyed. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |

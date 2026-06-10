@@ -148,6 +148,20 @@ fn assert_float_refinement_atom(formula: &Formula, expected_name: &str, expected
     }
 }
 
+fn assert_float_refinement_var_atom(formula: &Formula, expected_name: &str, expected_var: &str) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, expected_name);
+            assert_eq!(args.len(), 1);
+            match args[0].as_ref() {
+                Term::Var { name } => assert_eq!(name, expected_var),
+                other => panic!("expected refined var term, got {other:?}"),
+            }
+        }
+        other => panic!("expected float refinement atom, got {other:?}"),
+    }
+}
+
 fn assert_int_call_cmp_atom(
     formula: &Formula,
     expected_op: &str,
@@ -1026,6 +1040,91 @@ fn float_infinite_refinement() {
         "float.f32.is_infinite",
         "method:div_duration_f32",
     );
+}
+
+#[test]
+fn typed_float_locals_lift_sign_and_normal_refinements_as_predicate_atoms() {
+    let src = r#"
+#[test]
+fn typed_float_refinements() {
+    let max: f64 = f32::MAX.into();
+    assert!(max.is_normal());
+    assert!(max.is_sign_positive());
+    assert!(!max.is_sign_negative());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/mod.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(decl.name, "tests/num/mod.rs::typed_float_refinements");
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 3);
+    assert_float_refinement_var_atom(&operands[0], "float.f64.is_normal", "max");
+    assert_float_refinement_var_atom(&operands[1], "float.f64.is_sign_positive", "max");
+    match operands[2].as_ref() {
+        Formula::Connective { kind, operands } if kind == "not" => {
+            assert_eq!(operands.len(), 1);
+            assert_float_refinement_var_atom(
+                operands[0].as_ref(),
+                "float.f64.is_sign_negative",
+                "max",
+            );
+        }
+        other => panic!("expected negated float sign refinement atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn typed_float_width_scope_follows_statement_order_across_shadowing() {
+    let src = r#"
+#[test]
+fn typed_float_shadowing() {
+    let value: f64 = 1.0;
+    assert!(value.is_sign_positive());
+    let value: f32 = 1.0;
+    assert!(value.is_sign_positive());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/mod.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(decl.name, "tests/num/mod.rs::typed_float_shadowing");
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    assert_float_refinement_var_atom(&operands[0], "float.f64.is_sign_positive", "value@def1");
+    assert_float_refinement_var_atom(&operands[1], "float.f32.is_sign_positive", "value@def2");
+}
+
+#[test]
+fn parse_unwrap_float_receiver_recovers_turbofish_width_for_nan_predicate() {
+    let src = r#"
+#[test]
+fn parsed_nan_refinement() {
+    assert!("NaN".parse::<f32>().unwrap().is_nan());
+    assert!("-NaN".parse::<f64>().unwrap().is_nan());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/dec2flt/mod.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 2);
+
+    let f32_operands = inv_operands(&out.decls[0]);
+    assert_eq!(f32_operands.len(), 1);
+    assert_float_refinement_atom(&f32_operands[0], "float.f32.is_nan", "method:unwrap");
+
+    let f64_operands = inv_operands(&out.decls[1]);
+    assert_eq!(f64_operands.len(), 1);
+    assert_float_refinement_atom(&f64_operands[0], "float.f64.is_nan", "method:unwrap");
 }
 
 #[test]

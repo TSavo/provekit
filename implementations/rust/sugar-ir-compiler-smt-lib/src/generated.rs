@@ -1041,7 +1041,16 @@ fn is_builtin_atomic_predicate(name: &str) -> bool {
 fn is_float_refinement_atomic_predicate(name: &str) -> bool {
     matches!(
         name,
-        "float.f32.is_nan" | "float.f64.is_nan" | "float.f32.is_infinite" | "float.f64.is_infinite"
+        "float.f32.is_nan"
+            | "float.f64.is_nan"
+            | "float.f32.is_infinite"
+            | "float.f64.is_infinite"
+            | "float.f32.is_normal"
+            | "float.f64.is_normal"
+            | "float.f32.is_sign_positive"
+            | "float.f64.is_sign_positive"
+            | "float.f32.is_sign_negative"
+            | "float.f64.is_sign_negative"
     )
 }
 

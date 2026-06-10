@@ -18,7 +18,7 @@ use sugar_ir_symbolic::{
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{BinOp, Expr, ExprLit, Item, Lit, Pat, Stmt, Token, UnOp};
+use syn::{BinOp, Expr, ExprLit, Item, Lit, Pat, Stmt, Token, Type, UnOp};
 
 #[derive(Debug, Clone)]
 pub struct LiftWarning {
@@ -204,10 +204,12 @@ fn visit_test_fn(
 
     let mut entries = Vec::new();
     let mut skipped = Vec::new();
+    let mut float_widths = FloatWidthScope::new();
     collect_assertion_entries(
         &f.block.stmts,
         &test_name,
         options,
+        &mut float_widths,
         &mut entries,
         &mut skipped,
     );
@@ -350,6 +352,7 @@ fn collect_assertion_entries(
     stmts: &[Stmt],
     local_scope: &str,
     options: &LiftOptions,
+    float_widths: &mut FloatWidthScope,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
@@ -357,11 +360,13 @@ fn collect_assertion_entries(
     let mut temporal_scope = TemporalScope::new(local_scope, temporal_plan);
     for stmt in stmts {
         match stmt {
+            Stmt::Local(local) => update_float_width_scope_for_pat(&local.pat, float_widths),
             Stmt::Macro(m) => match cfg_eval_for_attrs(&m.attrs, options) {
                 CfgEval::Active => collect_macro(
                     &m.mac.path,
                     m.mac.tokens.clone(),
                     &temporal_scope,
+                    &*float_widths,
                     entries,
                     skipped,
                 ),
@@ -377,6 +382,7 @@ fn collect_assertion_entries(
                     &m.mac.path,
                     m.mac.tokens.clone(),
                     &temporal_scope,
+                    &*float_widths,
                     entries,
                     skipped,
                 ),
@@ -902,10 +908,11 @@ fn collect_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
     scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
-    match assertions_from_macro(path, tokens, scope) {
+    match assertions_from_macro(path, tokens, scope, float_widths) {
         Ok(macro_entries) => entries.extend(macro_entries),
         Err(reason) => skipped.push(reason),
     }
@@ -915,6 +922,7 @@ fn assertions_from_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
     scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
 ) -> Result<Vec<AssertionEntry>, String> {
     let Some(name) = path
         .segments
@@ -940,8 +948,8 @@ fn assertions_from_macro(
             let Some(first) = args.exprs.first() else {
                 return Err("assert!: expected a condition".to_string());
             };
-            let entry =
-                translate_bool_assertion(first, scope).map_err(|e| format!("assert!: {e}"))?;
+            let entry = translate_bool_assertion(first, scope, float_widths)
+                .map_err(|e| format!("assert!: {e}"))?;
             Ok(vec![entry])
         }
         "assert_all" | "assert_none" => {
@@ -1034,7 +1042,11 @@ fn parse_macro_args(tokens: proc_macro2::TokenStream) -> syn::Result<MacroArgs> 
     syn::parse2(tokens)
 }
 
-fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<AssertionEntry, String> {
+fn translate_bool_assertion(
+    expr: &Expr,
+    scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
+) -> Result<AssertionEntry, String> {
     if let Some(entry) = translate_pointer_eq_assertion(expr, scope)? {
         return Ok(entry);
     }
@@ -1044,11 +1056,11 @@ fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<Assert
     if let Some(entry) = translate_literal_iterator_assertion(expr, scope.local_scope())? {
         return Ok(entry);
     }
-    if let Some(entry) = translate_float_refinement_assertion(expr, scope)? {
+    if let Some(entry) = translate_float_refinement_assertion(expr, scope, float_widths)? {
         return Ok(entry);
     }
     match expr {
-        Expr::Binary(binary) => translate_binary_bool_assertion(binary, scope),
+        Expr::Binary(binary) => translate_binary_bool_assertion(binary, scope, float_widths),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
             if let Some(entry) = translate_string_predicate_assertion(&unary.expr, scope)? {
                 return Ok(AssertionEntry {
@@ -1056,7 +1068,9 @@ fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<Assert
                     atom: not_(entry.atom),
                 });
             }
-            if let Some(entry) = translate_float_refinement_assertion(&unary.expr, scope)? {
+            if let Some(entry) =
+                translate_float_refinement_assertion(&unary.expr, scope, float_widths)?
+            {
                 return Ok(AssertionEntry {
                     name: entry.name,
                     atom: not_(entry.atom),
@@ -1065,7 +1079,7 @@ fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<Assert
             if let Ok(term) = translate_term_in_scope(&unary.expr, scope) {
                 Ok(assertion_entry_from_eq(term, bool_const(false), scope))
             } else {
-                let entry = translate_bool_assertion(&unary.expr, scope)?;
+                let entry = translate_bool_assertion(&unary.expr, scope, float_widths)?;
                 Ok(AssertionEntry {
                     name: entry.name,
                     atom: not_(entry.atom),
@@ -1082,8 +1096,8 @@ fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<Assert
             }
             Ok(assertion_entry_from_eq(term, bool_const(true), scope))
         }
-        Expr::Paren(paren) => translate_bool_assertion(&paren.expr, scope),
-        Expr::Group(group) => translate_bool_assertion(&group.expr, scope),
+        Expr::Paren(paren) => translate_bool_assertion(&paren.expr, scope, float_widths),
+        Expr::Group(group) => translate_bool_assertion(&group.expr, scope, float_widths),
         other => Err(format!(
             "only scalar equality is liftable, got `{}`",
             token_key(other)
@@ -1094,6 +1108,7 @@ fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<Assert
 fn translate_float_refinement_assertion(
     expr: &Expr,
     scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
 ) -> Result<Option<AssertionEntry>, String> {
     match expr {
         Expr::MethodCall(call) => {
@@ -1107,7 +1122,7 @@ fn translate_float_refinement_assertion(
                     token_key(expr)
                 ));
             }
-            let Some(width) = float_refinement_receiver_width(&call.receiver) else {
+            let Some(width) = float_refinement_receiver_width(&call.receiver, float_widths) else {
                 return Err(format!(
                     "float refinement predicate `{method}` requires known f32/f64 receiver width `{}`",
                     token_key(expr)
@@ -1120,28 +1135,144 @@ fn translate_float_refinement_assertion(
                 atom: atomic_(format!("float.{width}.{method}"), vec![receiver]),
             }))
         }
-        Expr::Paren(paren) => translate_float_refinement_assertion(&paren.expr, scope),
-        Expr::Group(group) => translate_float_refinement_assertion(&group.expr, scope),
+        Expr::Paren(paren) => {
+            translate_float_refinement_assertion(&paren.expr, scope, float_widths)
+        }
+        Expr::Group(group) => {
+            translate_float_refinement_assertion(&group.expr, scope, float_widths)
+        }
         _ => Ok(None),
     }
 }
 
 fn is_liftable_float_refinement_method(method: &str) -> bool {
-    matches!(method, "is_nan" | "is_infinite")
+    matches!(
+        method,
+        "is_nan" | "is_infinite" | "is_normal" | "is_sign_positive" | "is_sign_negative"
+    )
 }
 
-fn float_refinement_receiver_width(expr: &Expr) -> Option<&'static str> {
+type FloatWidthScope = BTreeMap<String, &'static str>;
+
+fn update_float_width_scope_for_pat(pat: &Pat, out: &mut FloatWidthScope) {
+    remove_float_width_idents(pat, out);
+    match pat {
+        Pat::Type(pat_type) => {
+            if let Some(width) = float_width_from_type(&pat_type.ty) {
+                collect_float_width_ident_pat(&pat_type.pat, width, out);
+            }
+        }
+        Pat::Paren(paren) => update_float_width_scope_for_pat(&paren.pat, out),
+        _ => {}
+    }
+}
+
+fn remove_float_width_idents(pat: &Pat, out: &mut FloatWidthScope) {
+    match pat {
+        Pat::Ident(ident) => {
+            out.remove(&ident.ident.to_string());
+            if let Some((_, subpat)) = &ident.subpat {
+                remove_float_width_idents(subpat, out);
+            }
+        }
+        Pat::Or(or) => {
+            for case in &or.cases {
+                remove_float_width_idents(case, out);
+            }
+        }
+        Pat::Paren(paren) => remove_float_width_idents(&paren.pat, out),
+        Pat::Reference(reference) => remove_float_width_idents(&reference.pat, out),
+        Pat::Slice(slice) => {
+            for elem in &slice.elems {
+                remove_float_width_idents(elem, out);
+            }
+        }
+        Pat::Struct(pat_struct) => {
+            for field in &pat_struct.fields {
+                remove_float_width_idents(&field.pat, out);
+            }
+        }
+        Pat::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                remove_float_width_idents(elem, out);
+            }
+        }
+        Pat::TupleStruct(tuple_struct) => {
+            for elem in &tuple_struct.elems {
+                remove_float_width_idents(elem, out);
+            }
+        }
+        Pat::Type(pat_type) => remove_float_width_idents(&pat_type.pat, out),
+        _ => {}
+    }
+}
+
+fn collect_float_width_ident_pat(pat: &Pat, width: &'static str, out: &mut FloatWidthScope) {
+    match pat {
+        Pat::Ident(ident) if ident.subpat.is_none() => {
+            out.insert(ident.ident.to_string(), width);
+        }
+        Pat::Paren(paren) => collect_float_width_ident_pat(&paren.pat, width, out),
+        _ => {}
+    }
+}
+
+fn float_width_from_type(ty: &Type) -> Option<&'static str> {
+    match ty {
+        Type::Path(path) => float_width_from_path(&path.path),
+        Type::Paren(paren) => float_width_from_type(&paren.elem),
+        Type::Group(group) => float_width_from_type(&group.elem),
+        _ => None,
+    }
+}
+
+fn float_refinement_receiver_width(
+    expr: &Expr,
+    float_widths: &FloatWidthScope,
+) -> Option<&'static str> {
     match expr {
-        Expr::MethodCall(call) => float_width_from_method_name(&call.method.to_string()),
-        Expr::Path(path) => float_width_from_path(&path.path),
+        Expr::MethodCall(call) => float_width_from_method_name(&call.method.to_string())
+            .or_else(|| float_width_from_method_turbofish(call))
+            .or_else(|| {
+                if call.method == "unwrap" {
+                    float_refinement_receiver_width(&call.receiver, float_widths)
+                } else {
+                    None
+                }
+            }),
+        Expr::Path(path) => {
+            let name = path_to_name(&path.path);
+            float_widths
+                .get(&name)
+                .copied()
+                .or_else(|| float_width_from_path(&path.path))
+        }
         Expr::Lit(ExprLit {
             lit: Lit::Float(lit),
             ..
         }) => float_width_from_suffix(lit.suffix()),
-        Expr::Paren(paren) => float_refinement_receiver_width(&paren.expr),
-        Expr::Group(group) => float_refinement_receiver_width(&group.expr),
+        Expr::Paren(paren) => float_refinement_receiver_width(&paren.expr, float_widths),
+        Expr::Group(group) => float_refinement_receiver_width(&group.expr, float_widths),
         _ => None,
     }
+}
+
+fn float_width_from_method_turbofish(call: &syn::ExprMethodCall) -> Option<&'static str> {
+    if call.method != "parse" {
+        return None;
+    }
+    let args = call.turbofish.as_ref()?;
+    float_width_from_angle_args(args)
+}
+
+fn float_width_from_angle_args(args: &syn::AngleBracketedGenericArguments) -> Option<&'static str> {
+    if args.args.len() != 1 {
+        return None;
+    }
+    let Some(syn::GenericArgument::Type(ty)) = args.args.first() else {
+        return None;
+    };
+    float_width_from_type(ty)
 }
 
 fn float_width_from_method_name(method: &str) -> Option<&'static str> {
@@ -1224,11 +1355,12 @@ fn translate_pointer_identity_term(expr: &Expr, scope: &TemporalScope) -> Result
 fn translate_binary_bool_assertion(
     binary: &syn::ExprBinary,
     scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
 ) -> Result<AssertionEntry, String> {
     match &binary.op {
         BinOp::And(_) | BinOp::Or(_) => {
-            let left = translate_bool_assertion(&binary.left, scope)?;
-            let right = translate_bool_assertion(&binary.right, scope)?;
+            let left = translate_bool_assertion(&binary.left, scope, float_widths)?;
+            let right = translate_bool_assertion(&binary.right, scope, float_widths)?;
             let name = common_assertion_name(&left.name, &right.name);
             let atom = if matches!(binary.op, BinOp::And(_)) {
                 and_(vec![left.atom, right.atom])
