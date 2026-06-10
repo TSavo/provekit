@@ -270,6 +270,21 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     answer. We chose 512 bits, not 256, so that one comparison is unimpeachable enough to carry
     an unbounded DAG.
 
+    The width is a *parameter*, not a *ceiling* — and that distinction is load-bearing. "512 bits
+    ought to be enough" stated as an eternal law would be the 640K mistake: an engineering limit
+    baked into the architecture that the future bumps into and cannot route around. We did not
+    bake it in. The bit-length is named *inside the address* (`blake3-512:…`, multihash-style: the
+    algorithm and width are part of the CID), so the hash is migratable by construction. If 512
+    ever weakens — quantum pulls blake3-512's collision resistance toward ~170 bits, which is
+    *why* we took the margin, or blake3 itself breaks — new proofs mint under `blake3-1024:` or a
+    PQ-hash prefix while old proofs keep their `blake3-512:` CIDs, still valid for the claim they
+    pinned at the time they pinned it (a proof pins a specific claim at a specific moment, not
+    eternal security). Gates put the number in the memory map; we put it in the name. So the law
+    is **"trust closes to one content-address comparison,"** algorithm-agnostic; `memcmp(64)` is
+    its current instantiation, chosen with deliberate margin and swappable because the address
+    describes its own hash. We do not have to be right about the width forever — only honest about
+    which width a given CID used, which the CID already states.
+
     This is *why* we are not a vendor (the no-vendor axiom): **you cannot solve a supply-chain
     attack by adding another vendor to the supply chain**, because trust does not compose, it
     accumulates attack surface — the xz maintainer *was* trusted; trust was the surface. We add no
