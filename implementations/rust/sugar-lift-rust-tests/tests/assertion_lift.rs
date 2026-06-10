@@ -2872,3 +2872,132 @@ fn finite_no_width() {
     }
     // lifted=0 is also acceptable (conservative refusal).
 }
+
+#[test]
+fn is_some_predicate_on_const_path_lifts_with_euf_key() {
+    // Vendor shape: option.rs::const_get_or_insert_default
+    // assert!(OPT_DEFAULT.is_some()) where OPT_DEFAULT is a const item.
+    // Receiver is an immutable constant; no mutation or alias possible.
+    let src = r#"
+#[test]
+fn const_get_or_insert_default() {
+    const OPT_DEFAULT: Option<Vec<bool>> = {
+        let mut x = None;
+        x
+    };
+    assert!(OPT_DEFAULT.is_some());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/option.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:is_some#euf#c:callresult_method_is_some_a1(v:tests/option.rs::const_get_or_insert_default::OPT_DEFAULT)::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, "method:is_some"),
+                other => panic!("expected method:is_some ctor, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Bool(value),
+                    ..
+                } => assert!(*value, "expected bool true rhs"),
+                other => panic!("expected bool true rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn is_none_predicate_on_call_result_lifts_with_euf_key() {
+    // Vendor shape: is_none() on a direct call-result receiver.
+    // The receiver is a call result of an immutable method call: stable key.
+    let src = r#"
+struct Opt;
+
+impl Opt {
+    fn get(&self) -> Option<i32> { None }
+}
+
+#[test]
+fn call_result_is_none() {
+    let obj = Opt;
+    assert!(obj.get().is_none());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/option.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:is_none#euf#c:callresult_method_is_none_a1(c:method:get(v:tests/option.rs::call_result_is_none::obj))::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, "method:is_none"),
+                other => panic!("expected method:is_none ctor, got {other:?}"),
+            }
+            match args[1].as_ref() {
+                Term::Const {
+                    value: ConstValue::Bool(value),
+                    ..
+                } => assert!(*value, "expected bool true rhs"),
+                other => panic!("expected bool true rhs, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn mutable_receiver_is_some_stays_residual_via_temporal_guard() {
+    // Discrimination test: a reassigned mutable local whose new value is
+    // conditionally set must stay residual (ambiguous temporal identity).
+    // This is the exact shape that would falsePass if the temporal guard
+    // did not apply to is_some/is_none as it does to contains.
+    let src = r#"
+fn maybe_none() -> Option<i32> { None }
+
+#[test]
+fn conditional_rebind_is_some() {
+    let mut x: Option<i32> = Some(1);
+    if maybe_none().is_some() {
+        x = None;
+    }
+    assert!(x.is_some());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/option.rs");
+    assert_eq!(out.seen, 1);
+    // The assertion on x (which may have been conditionally reassigned)
+    // must be skipped; only the is_some() call inside the if-condition
+    // might lift (it is on a direct call result, not x).
+    // Crucially: x.is_some() at the end must NOT produce a lifted row.
+    let x_rows: Vec<_> = out
+        .decls
+        .iter()
+        .filter(|d| d.name.contains("::x"))
+        .collect();
+    assert!(
+        x_rows.is_empty(),
+        "mutable conditionally-reassigned receiver must stay residual, got rows: {x_rows:?}"
+    );
+}

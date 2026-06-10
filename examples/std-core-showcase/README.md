@@ -48,6 +48,12 @@ Claimed slice:
   - `coretests/tests/option.rs::test_and`: nullary and variant constructor
     equality rows for immutable `Option` values, lifted as location-keyed
     operator-dispatch claims.
+  - `coretests/tests/option.rs::const_get_or_insert_default` and
+    `coretests/tests/option.rs::const_get_or_insert_with`: `is_some()` boolean
+    predicate rows on const-path receivers (`OPT_DEFAULT` and `OPT_WITH`),
+    lifted as EUF call-result equality claims. The receiver is an immutable
+    `const` item defined in the function body, which is not tracked by the
+    temporal mutation guard and has a stable, unambiguous identity.
   - `coretests/tests/result.rs::result_try_trait_v2_branch`: nested variant
     constructor equality rows such as `Break(Err(4))`, lifted as
     location-keyed operator-dispatch claims.
@@ -57,6 +63,7 @@ Claimed slice:
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
   emits `#euf#` call-result consistency rows, TypeId consistency rows, and the
   `cmp_default`, pointer-index predicate, `option::test_and`,
+  `option::const_get_or_insert_default`, `option::const_get_or_insert_with`,
   `result_try_trait_v2_branch`, and typed-local float refinement rows, and every
   claimed row discharges.
 - Witness axis: the exact std vendor tests rerun with `cargo test --test
@@ -90,6 +97,9 @@ Named gaps toward full `coretests` coverage:
   by-zero assertions (`Duration::MAX.div_duration_f32(Duration::ZERO) ==
   f32::INFINITY`, which is +infinity), each lifted as the conjunction over the
   call result and discharged, taking the showcase from 156 to 158 EUF rows. The
+  subsequent `is_some` predicate tranche adds 2 more EUF rows from
+  `option.rs::const_get_or_insert_default` and `option.rs::const_get_or_insert_with`,
+  taking the total to 160. The
   unit tests in `sugar-lift-rust-tests/tests/assertion_lift.rs` carry the
   RED-first evidence (before the change, `f32::INFINITY` lifted as a Real
   variable, an unsound row). Infinity equality whose receiver is a
@@ -136,9 +146,10 @@ typed-local float refinement, parsed-NaN float refinement, string, pure
 method-chain predicate, stable-key compound RHS rows, literal array/tuple
 exact-value rows, expression-only const-block rows, pointer-index predicate
 rows, the `option::test_and` constructor operator-dispatch row, the
-`result_try_trait_v2_branch` nested constructor operator-dispatch row, and the
-`cmp_default` user-type operator row, and rejects any non-discharged claimed
-row. It is intentionally not a full-`std` claim.
+`option::const_get_or_insert_default` and `option::const_get_or_insert_with`
+`is_some` predicate rows, the `result_try_trait_v2_branch` nested constructor
+operator-dispatch row, and the `cmp_default` user-type operator row, and rejects
+any non-discharged claimed row. It is intentionally not a full-`std` claim.
 
 ## Grounded Full-Coretests Gap Census
 
@@ -172,8 +183,15 @@ infinity-equality slice then closes 2 more `time.rs` `div_duration_f32`/`f64`
 by-zero rows (`== INFINITY` desugared to the `is_infinite` and
 `is_sign_positive` conjunction), moving the combined showcase to 158 EUF rows
 plus 2 pointer-index predicate rows, TypeId(2), option(8), result(6),
-`cmp_default`, and the typed-float-refinement row. A fresh full lift-only census
-for the prior float lever emitted 1,771 IR declarations and 1,075 lift
+`cmp_default`, and the typed-float-refinement row. The `is_some` predicate
+tranche then adds 2 EUF rows from `option.rs::const_get_or_insert_default` and
+`option.rs::const_get_or_insert_with` (`assert!(OPT_DEFAULT.is_some())` and
+`assert!(OPT_WITH.is_some())` on immutable `const`-item receivers), lifting
+with the generic method-chain term translation and the stable const-path key,
+moving the combined showcase to 160 EUF rows. These rows were always liftable
+by the existing machinery; this tranche adds them to the claimed showcase scope
+and confirms the two vendor test functions as witnesses. A fresh full lift-only
+census for the prior float lever emitted 1,771 IR declarations and 1,075 lift
 diagnostics; the full lift+verify backlog was not recomputed in this showcase
 run.
 
