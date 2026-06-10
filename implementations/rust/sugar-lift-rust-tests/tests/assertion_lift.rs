@@ -2136,8 +2136,8 @@ fn std_ptr_eq_alias() {
 #[test]
 fn waker_vtable_pointer_eq_vendor_shape_lifts_location_keyed() {
     // Vendor shape: rust-src library/coretests/tests/waker.rs::test_waker_getters.
-    // The data() cast equality rows are intentionally unsupported, but the two
-    // ptr::eq(vtable, &WAKER_VTABLE) assertions survive per-assertion.
+    // The casted data() rows and the two ptr::eq(vtable, &WAKER_VTABLE)
+    // assertions survive per-assertion under the same location-keyed claim.
     let src = r#"
 use std::ptr;
 use std::task::{RawWaker, RawWakerVTable, Waker};
@@ -2166,46 +2166,132 @@ static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
     assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
     assert_eq!(out.decls.len(), 1);
     assert_eq!(out.decls[0].name, "tests/waker.rs::test_waker_getters");
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 4);
+    let mut cast_values = Vec::new();
+    let mut pointer_atoms = 0;
+    for operand in operands {
+        match operand.as_ref() {
+            Formula::Atomic {
+                name,
+                args: eq_args,
+            } => {
+                assert_eq!(name, "=");
+                match eq_args[0].as_ref() {
+                    Term::Ctor {
+                        name,
+                        args: term_args,
+                    } => {
+                        if name == "cast:usize" {
+                            assert_eq!(term_args.len(), 1);
+                            match term_args[0].as_ref() {
+                                Term::Ctor { name, args } => {
+                                    assert_eq!(name, "method:data");
+                                    assert_eq!(args.len(), 1);
+                                }
+                                other => panic!("expected data method call, got {other:?}"),
+                            }
+                            match eq_args[1].as_ref() {
+                                Term::Const {
+                                    value: ConstValue::Int(value),
+                                    ..
+                                } => cast_values.push(*value),
+                                other => panic!("expected cast rhs int, got {other:?}"),
+                            }
+                        } else {
+                            assert_eq!(name, "call:ptr::eq");
+                            assert_eq!(term_args.len(), 2);
+                            match term_args[0].as_ref() {
+                                Term::Ctor { name, args } => {
+                                    assert_eq!(name, "method:vtable");
+                                    assert_eq!(args.len(), 1);
+                                }
+                                other => panic!("expected vtable method call, got {other:?}"),
+                            }
+                            match term_args[1].as_ref() {
+                                Term::Ctor { name, args } => {
+                                    assert_eq!(name, "ref");
+                                    assert_eq!(args.len(), 1);
+                                }
+                                other => {
+                                    panic!("expected reference to WAKER_VTABLE, got {other:?}")
+                                }
+                            }
+                            pointer_atoms += 1;
+                        }
+                    }
+                    other => panic!("expected casted data or ptr::eq call, got {other:?}"),
+                }
+            }
+            other => panic!("expected waker getter atom, got {other:?}"),
+        }
+    }
+    cast_values.sort_unstable();
+    assert_eq!(cast_values, vec![42, 43]);
+    assert_eq!(pointer_atoms, 2);
+}
+
+#[test]
+fn scalar_integer_cast_call_result_stays_location_keyed_not_euf() {
+    let src = r#"
+#[test]
+fn cast_result() {
+    assert_eq!(source() as usize, 42);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/cast.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name, "tests/cast.rs::cast_result",
+        "casted call-result claims stay location-keyed; cast semantics are not federated"
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "cast:usize");
+                    assert_eq!(args.len(), 1);
+                    match args[0].as_ref() {
+                        Term::Ctor { name, args } => {
+                            assert_eq!(name, "call:source");
+                            assert!(args.is_empty());
+                        }
+                        other => panic!("expected source call under cast, got {other:?}"),
+                    }
+                }
+                other => panic!("expected scalar cast lhs, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Int(42));
+        }
+        other => panic!("expected cast equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn pointer_target_cast_stays_residual() {
+    let src = r#"
+#[test]
+fn pointer_cast_result() {
+    assert_eq!(source() as *const u8, source());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/cast.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(out.decls.is_empty());
     assert!(
         out.warnings.iter().any(|warning| warning
             .reason
-            .contains("unsupported term `waker . data () as usize`")),
-        "cast equality rows should stay residual while pointer rows survive: {:?}",
+            .contains("unsupported term `source () as * const u8`")),
+        "pointer-target casts must stay residual: {:?}",
         out.warnings
     );
-
-    let operands = inv_operands(&out.decls[0]);
-    assert_eq!(operands.len(), 2);
-    for (idx, operand) in operands.iter().enumerate() {
-        match operand.as_ref() {
-            Formula::Atomic { name, args } => {
-                assert_eq!(name, "=");
-                match args[0].as_ref() {
-                    Term::Ctor { name, args } => {
-                        assert_eq!(name, "call:ptr::eq");
-                        assert_eq!(args.len(), 2);
-                        match args[0].as_ref() {
-                            Term::Ctor { name, args } => {
-                                assert_eq!(name, "method:vtable");
-                                assert_eq!(args.len(), 1);
-                            }
-                            other => panic!("expected vtable method call, got {other:?}"),
-                        }
-                        match args[1].as_ref() {
-                            Term::Ctor { name, args } => {
-                                assert_eq!(name, "ref");
-                                assert_eq!(args.len(), 1);
-                            }
-                            other => panic!("expected reference to WAKER_VTABLE, got {other:?}"),
-                        }
-                    }
-                    other => panic!("expected ptr::eq call, got {other:?}"),
-                }
-                assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
-            }
-            other => panic!("expected pointer equality atom {idx}, got {other:?}"),
-        }
-    }
 }
 
 #[test]

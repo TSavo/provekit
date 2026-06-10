@@ -25,8 +25,9 @@
 #       * tests/array.rs::array_from_ref and
 #         tests/slice.rs::test_const_from_ref immutable index terms inside
 #         pointer-equality predicates, kept as location-keyed claims.
-#       * tests/waker.rs::test_waker_getters pointer equality over Waker
-#         vtable references, kept as a location-keyed claim.
+#       * tests/waker.rs::test_waker_getters casted Waker data equality and
+#         pointer equality over Waker vtable references, kept as one
+#         location-keyed claim.
 #       * tests/option.rs::test_and nullary/variant constructor equality rows,
 #         kept as location-keyed operator-dispatch claims.
 #       * tests/result.rs::result_try_trait_v2_branch nested variant
@@ -58,7 +59,7 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, width-known NaN float refinement rows from time.rs, width-known infinity-equality float refinement rows from time.rs (div_duration_f32/f64 by-zero asserting equality to f32/f64 INFINITY, lifted as the is_infinite and is_sign_positive conjunction), width-known typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs including selected temporal receiver identity rows, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs kept location-keyed, pointer-vtable predicate row from waker.rs kept location-keyed, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers (const_get_or_insert_default and const_get_or_insert_with), result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, width-known NaN float refinement rows from time.rs, width-known infinity-equality float refinement rows from time.rs (div_duration_f32/f64 by-zero asserting equality to f32/f64 INFINITY, lifted as the is_infinite and is_sign_positive conjunction), width-known typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs including selected temporal receiver identity rows, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs kept location-keyed, casted-data and pointer-vtable row from waker.rs kept location-keyed, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers (const_get_or_insert_default and const_get_or_insert_with), result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
 echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, infinity equality via cast-expression or Ok-wrapper receivers, infinity used as a method argument, ordered and signed-zero float refinements, chars, inactive or ambiguous cfg rows, ambiguous receiver identity method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
@@ -931,7 +932,7 @@ print("claimed-cmp-default-row=1 discharged=1 failed=0")
 print("claimed-option-constructor-dispatch-row=1 discharged=1 failed=0 assertions=8")
 print("claimed-result-nested-constructor-dispatch-row=1 discharged=1 failed=0 assertions=6")
 print("claimed-pointer-index-predicate-rows=2 discharged=2 failed=0 assertions=2")
-print("claimed-pointer-vtable-predicate-row=1 discharged=1 failed=0 assertions=2")
+print("claimed-waker-cast-and-pointer-row=1 discharged=1 failed=0 assertions=4")
 print("claimed-typed-float-refinement-row=1 discharged=1 failed=0")
 print("claimed-is_some-predicate-rows=2 discharged=2 failed=0")
 print(
@@ -948,7 +949,7 @@ print(f"operator-dispatch-row: {result_try_trait_row.get('property')} status={re
 for row in pointer_index_rows:
     print(f"pointer-index-row: {row.get('property')} status={row.get('status')}")
 for row in pointer_vtable_rows:
-    print(f"pointer-vtable-row: {row.get('property')} status={row.get('status')}")
+    print(f"waker-cast-and-pointer-row: {row.get('property')} status={row.get('status')}")
 print(f"float-refinement-row: {typed_float_refinement_row.get('property')} status={typed_float_refinement_row.get('status')}")
 PY
 
@@ -1145,6 +1146,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure and temporal-identity method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs, pointer-vtable predicate row from waker.rs, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure and temporal-identity method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs, casted-data and pointer-vtable row from waker.rs, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macro surfaces outside this showcase/infinity-equality-via-cast-or-Ok-or-method-arg/ordered-and-signed-zero-float-refinements/chars/inactive-or-ambiguous-cfg rows/ambiguous receiver identity method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

@@ -2432,10 +2432,21 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
             name: "ref".to_string(),
             args: vec![translate_term_in_scope(&reference.expr, scope)?],
         })),
-        Expr::Cast(cast) if is_shared_dyn_any_type(&cast.ty) => Ok(Rc::new(Term::Ctor {
-            name: format!("cast:{}", type_key(&cast.ty)),
-            args: vec![translate_term_in_scope(&cast.expr, scope)?],
-        })),
+        Expr::Cast(cast) => {
+            if is_shared_dyn_any_type(&cast.ty) {
+                return Ok(Rc::new(Term::Ctor {
+                    name: format!("cast:{}", type_key(&cast.ty)),
+                    args: vec![translate_term_in_scope(&cast.expr, scope)?],
+                }));
+            }
+            if let Some(cast_type) = integer_scalar_cast_type_key(&cast.ty) {
+                return Ok(Rc::new(Term::Ctor {
+                    name: format!("cast:{cast_type}"),
+                    args: vec![translate_term_in_scope(&cast.expr, scope)?],
+                }));
+            }
+            Err(format!("unsupported term `{}`", token_key(expr)))
+        }
         Expr::Range(range) => {
             let start = match &range.start {
                 Some(expr) => translate_term_in_scope(expr, scope)?,
@@ -2660,6 +2671,34 @@ fn is_shared_dyn_any_type(ty: &syn::Type) -> bool {
             .last()
             .is_some_and(|segment| segment.ident == "Any")
     })
+}
+
+fn integer_scalar_cast_type_key(ty: &syn::Type) -> Option<&'static str> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    if path.qself.is_some() || path.path.segments.len() != 1 {
+        return None;
+    }
+    let segment = path.path.segments.first()?;
+    if !matches!(segment.arguments, syn::PathArguments::None) {
+        return None;
+    }
+    match segment.ident.to_string().as_str() {
+        "i8" => Some("i8"),
+        "i16" => Some("i16"),
+        "i32" => Some("i32"),
+        "i64" => Some("i64"),
+        "i128" => Some("i128"),
+        "isize" => Some("isize"),
+        "u8" => Some("u8"),
+        "u16" => Some("u16"),
+        "u32" => Some("u32"),
+        "u64" => Some("u64"),
+        "u128" => Some("u128"),
+        "usize" => Some("usize"),
+        _ => None,
+    }
 }
 
 fn translate_lit(lit: &ExprLit) -> Result<Rc<Term>, String> {

@@ -45,10 +45,9 @@ Claimed slice:
     `coretests/tests/slice.rs::test_const_from_ref`: immutable index terms
     inside `core::ptr::eq` pointer-equality predicates, lifted as
     location-keyed claims.
-  - `coretests/tests/waker.rs::test_waker_getters`: `ptr::eq` predicates over
-    `Waker::vtable()` and a file-level static vtable reference, lifted as a
-    location-keyed claim. The casted `data()` equality rows in the same vendor
-    test remain residual.
+  - `coretests/tests/waker.rs::test_waker_getters`: casted `Waker::data() as
+    usize` equality rows plus `ptr::eq` predicates over `Waker::vtable()` and a
+    file-level static vtable reference, lifted as one location-keyed claim.
   - `coretests/tests/option.rs::test_and`: nullary and variant constructor
     equality rows for immutable `Option` values, lifted as location-keyed
     operator-dispatch claims.
@@ -66,7 +65,7 @@ Claimed slice:
     call results.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
   emits `#euf#` call-result consistency rows, TypeId consistency rows, and the
-  `cmp_default`, pointer-index predicate, pointer-vtable predicate,
+  `cmp_default`, pointer-index predicate, waker cast-and-pointer predicate,
   `option::test_and`,
   `option::const_get_or_insert_default`, `option::const_get_or_insert_with`,
   `result_try_trait_v2_branch`, and typed-local float refinement rows, and every
@@ -144,16 +143,18 @@ Named gaps toward full `coretests` coverage:
   with statements, control flow, or unsupported inner terms stay residual.
   Nested calls with non-value callees, stateful method chains, non-direct-call
   results, and unsupported expression forms stay out of the claimed slice.
-  Pointer-vtable equality over file-level static references is claimed only in
-  location-keyed rows; `std::ptr::eq` is kept out of federated `#euf#` keying
-  the same way as `ptr::eq` and `core::ptr::eq`.
+  Waker cast-and-pointer equality over file-level static references is claimed
+  only in location-keyed rows; `std::ptr::eq` is kept out of federated `#euf#`
+  keying the same way as `ptr::eq` and `core::ptr::eq`. Integer scalar cast
+  expressions are exact expression terms only; pointer-target casts stay
+  residual.
 
 The run script requires representative integer, generic type-arg-keyed, active
 cfg pointer-width, TypeId comparison, finite-float, width-known NaN refinement,
 typed-local float refinement, parsed-NaN float refinement, string, pure
 method-chain predicate, stable-key compound RHS rows, literal array/tuple
 exact-value rows, expression-only const-block rows, pointer-index predicate
-rows, the `waker.rs::test_waker_getters` pointer-vtable predicate row, the
+rows, the `waker.rs::test_waker_getters` cast-and-pointer row, the
 `option::test_and` constructor operator-dispatch row, the
 `option::const_get_or_insert_default` and `option::const_get_or_insert_with`
 `is_some` predicate rows, the `result_try_trait_v2_branch` nested constructor
@@ -186,9 +187,13 @@ constructor rows. The first float-refinement slice closed 2 width-known
 `ops.rs` range-bound rows by keying reassigned and standalone-mutated receiver
 subjects as distinct definition versions. The pointer-index predicate slice
 closes 2 `array.rs::array_from_ref` / `slice.rs::test_const_from_ref` rows, kept
-location-keyed. This pointer-vtable predicate slice closes 2
+location-keyed. The pointer-vtable predicate slice closes 2
 `waker.rs::test_waker_getters` `ptr::eq(waker.vtable(), &WAKER_VTABLE)` assertions
-as one location-keyed row. This follow-up float-refinement slice closes 4 parsed `NaN`
+as one location-keyed row. This casted-data slice closes 2 more assertions in
+the same vendor row, `assert_eq!(waker.data() as usize, 42)` and
+`assert_eq!(waker2.data() as usize, 43)`, by representing primitive integer
+casts as exact expression terms and keeping them location-keyed. This follow-up
+float-refinement slice closes 4 parsed `NaN`
 `unwrap()` EUF rows plus one typed-local `num::test_f32f64` refinement row. The
 infinity-equality slice then closes 2 more `time.rs` `div_duration_f32`/`f64`
 by-zero rows (`== INFINITY` desugared to the `is_infinite` and
@@ -213,7 +218,7 @@ run.
 | Floats | 18 prior full lift+verify census, with 2 `time.rs` NaN rows, 4 parsed-NaN rows, 1 typed-local predicate row, and 2 `time.rs` infinity-equality rows now closed in the showcase | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Width-known infinity equality (`div_duration_* == INFINITY`) is now claimed; residual examples include infinity equality via cast or `Ok(...)` receivers, infinity as a method argument, ordered comparisons, signed zero as a value, generic-width float aliases, and aggregate literals containing NaN. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
-| Complex terms | 396 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, pointer-index predicate, and pointer-vtable predicate slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, 2 pointer-index predicate rows lift location-keyed, and 2 `waker.rs` pointer-vtable predicate assertions lift as one location-keyed row. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
+| Complex terms | 394 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, pointer-index predicate, pointer-vtable predicate, and casted-data slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, 2 pointer-index predicate rows lift location-keyed, and 4 `waker.rs` cast-and-pointer assertions lift as one location-keyed row. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
 | Other | 331 | `tests/alloc.rs::layout_round_up_to_align_edge_cases`: no liftable scalar assertion under the current surface. |
 
 ### Complex-Term Decomposition
@@ -223,7 +228,7 @@ The current complex-term residual sub-shapes include:
 | Sub-shape | Count | Representative std test/assertion |
 | --- | ---: | --- |
 | Method-chain predicates | 77 | Closed 17 pure rows and 13 temporal receiver rows in this slice; remaining examples require ambiguous control-flow, loop, alias, or unsupported receiver-version evidence and stay fail-closed. |
-| References, derefs, casts, unsafe blocks | 79 | Closed 2 immutable index/reference rows in pointer-equality predicates from `tests/array.rs::array_from_ref` and `tests/slice.rs::test_const_from_ref`; residual examples include `tests/array.rs::array_from_mut`: `assert_eq!(&value, "Hello World!")`. |
+| References, derefs, casts, unsafe blocks | 77 | Closed 2 immutable index/reference rows in pointer-equality predicates from `tests/array.rs::array_from_ref` and `tests/slice.rs::test_const_from_ref`, plus the two primitive integer cast rows in `tests/waker.rs::test_waker_getters`; residual examples include `tests/array.rs::array_from_mut`: `assert_eq!(&value, "Hello World!")`. |
 | Method chains returning compared values | 54 | Closed 13 stable `tests/iter/range.rs::test_range` rows and the expression-only const-block method-chain row `tests/array.rs::const_array_ops`: `assert_eq!(const { [5, 6, 1, 2].map(doubler) }, [10, 12, 2, 4])`; residual examples include `tests/array.rs::iterator_nth`: `assert_eq!(IntoIterator::into_iter(v.clone()).nth(i).unwrap(), v[i])`. |
 | Residual unsupported term shapes | 59 | Closed current direct `TypeId::of::<T>()` comparison rows from `tests/intrinsics.rs`; remaining term-shape residuals exclude the stale `tests/any.rs::any_fixed_vec` TypeId example, which is now an `Any::is::<T>()` predicate in the pinned source. |
 | Operator / expression RHS | 48 | This slice closes stable-key atomic bitwise RHS rows such as `tests/atomic.rs::uint_and`: `assert_eq!(x.load(SeqCst), 0xf731 & 0x137f)`; residual rows include stateful/repeated receiver and pointer arithmetic forms needing temporal identity. |
