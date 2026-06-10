@@ -256,6 +256,39 @@ verifies (recompute, signature, solver) — invariant 6. The kit proposes; rust 
     the thing the proxy stood in for, recomputable. SemVer says "minor, trust me"; we discharge
     `post |= pre` at the seam and hand over the math.
 
+12b. **The whole `.proof` DAG closes to a `memcmp(64)`, and we sit at its head and its root.**
+    Every `.proof` is a Merkle node: its CID is the blake3-512 (64 bytes) of canonical content
+    that *includes the CIDs of its children* — a composition names its components by CID, a
+    witness names its resolved bytes by CID, `k(I)=t` pins all three. So verifying an arbitrarily
+    deep tower — a proof of a proof of a lifted contract over a witnessed build over a
+    content-addressed source tree — reduces to recomputing the root and comparing 64 bytes.
+    Collision resistance makes that single comparison transitively certify every node beneath it:
+    you never walk the DAG, you recompute its head and `memcmp` 512 bits. **The total trust
+    surface of the entire substrate is 64 bytes wide.** Not a signature (which trusts a key), not
+    a verdict (which trusts an oracle), not a quorum (which trusts a majority) — byte equality,
+    the one primitive that needs no trust because anyone can perform it and there is exactly one
+    answer. We chose 512 bits, not 256, so that one comparison is unimpeachable enough to carry
+    an unbounded DAG.
+
+    This is *why* we are not a vendor (the no-vendor axiom): **you cannot solve a supply-chain
+    attack by adding another vendor to the supply chain**, because trust does not compose, it
+    accumulates attack surface — the xz maintainer *was* trusted; trust was the surface. We add no
+    trust, only a recomputation, all the way down, including over our own witness (IVb). z3 and
+    blake3 are not parties you trust; they are recomputations anyone re-runs. The day our own
+    witness is trusted rather than recomputed is the day we *become* the attack — self-application
+    is the whole proof.
+
+    We sit at both ends, and the ends are the same kind of thing. We mint the leaves (the
+    **root**: the lifters author the canonical bytes, so we decide what the CIDs *are*) and we
+    perform the closing comparison (the **head**: the CLI recomputes and `memcmp`s, IVb). Because
+    the output is itself a CID, the head of one chain is the root of the next composition (10) —
+    head and root are not two ends of a line but a fixed point, the thing we produce and the thing
+    we check meeting at `memcmp(64)`. Every soundness hole is exactly a place where some chain
+    tried to close to something *other* than that comparison: a trusted discharge verdict instead
+    of a recomputed CID, a merge waved through on "looks clean" instead of recomputed bytes. The
+    entire job is keeping every chain closing to the 64 bytes, and refusing every shortcut that
+    would close it to a trust instead.
+
 ## IX. How we work on it
 
 13. **Lift changes are shared substrate: additive and backward-compatible.** Preserve existing
