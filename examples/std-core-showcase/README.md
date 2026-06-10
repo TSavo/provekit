@@ -37,6 +37,10 @@ Claimed slice:
     around stable call-result rows from `const_array_ops`, including
     `std::array::from_fn::<_, 5, _>(doubler)` and
     `[5, 6, 1, 2].map(doubler)`.
+  - `coretests/tests/array.rs::array_from_ref` and
+    `coretests/tests/slice.rs::test_const_from_ref`: immutable index terms
+    inside `core::ptr::eq` pointer-equality predicates, lifted as
+    location-keyed claims.
   - `coretests/tests/option.rs::test_and`: nullary and variant constructor
     equality rows for immutable `Option` values, lifted as location-keyed
     operator-dispatch claims.
@@ -48,8 +52,9 @@ Claimed slice:
     call results.
 - Proof axis: `sugar mint` + `sugar verify` through `rust-test-assertions`
   emits `#euf#` call-result consistency rows, TypeId consistency rows, and the
-  `cmp_default`, `option::test_and`, and `result_try_trait_v2_branch`
-  operator-dispatch rows, and every claimed row discharges.
+  `cmp_default`, pointer-index predicate, `option::test_and`, and
+  `result_try_trait_v2_branch` location-keyed rows, and every claimed row
+  discharges.
 - Witness axis: the exact std vendor tests rerun with `cargo test --test
   coretests ... -- --exact`.
 
@@ -94,18 +99,21 @@ Named gaps toward full `coretests` coverage:
   values are claimed through operator dispatch on immutable inputs, such as
   `option::test_and`, and one-level nested variant constructors are claimed
   where the inner constructor is an exact value term, such as
-  `result_try_trait_v2_branch`; arrays and tuples are opaque exact values in
-  ProofIR, and aggregate literals containing non-literal elements are
-  conservatively skipped. Direct aggregate constructor reasoning beyond those
-  bounded operator-dispatch shapes stays residual. Const blocks with statements,
-  control flow, or unsupported inner terms stay residual. Nested calls with
-  non-value callees, stateful method chains, non-direct-call results, and
-  unsupported expression forms stay out of the claimed slice.
+  `result_try_trait_v2_branch`. Immutable index terms are claimed only as
+  identity syntax inside location-keyed pointer-equality predicates; pointer
+  equality itself is not a federated `#euf#` key. Arrays and tuples are opaque
+  exact values in ProofIR, and aggregate literals containing non-literal
+  elements are conservatively skipped. Direct aggregate constructor reasoning
+  beyond those bounded operator-dispatch shapes stays residual. Const blocks
+  with statements, control flow, or unsupported inner terms stay residual.
+  Nested calls with non-value callees, stateful method chains, non-direct-call
+  results, and unsupported expression forms stay out of the claimed slice.
 
 The run script requires representative integer, generic type-arg-keyed, active
 cfg pointer-width, TypeId comparison, finite-float, width-known NaN refinement,
 string, pure method-chain predicate, stable-key compound RHS rows, literal
-array/tuple exact-value rows, expression-only const-block rows, the
+array/tuple exact-value rows, expression-only const-block rows, pointer-index
+predicate rows, the
 `option::test_and` constructor operator-dispatch row, the
 `result_try_trait_v2_branch` nested constructor operator-dispatch row, and the
 `cmp_default` user-type operator row, and rejects any non-discharged claimed
@@ -138,7 +146,10 @@ fresh full lift-only census for that lever emitted 1,703 IR declarations and
 1,031 lift diagnostics. This temporal receiver identity slice closes 13
 selected `ops.rs` range-bound rows by keying reassigned and standalone-mutated
 receiver subjects as distinct definition versions. The current known backlog is
-1,032 items for that target.
+1,032 items for that target. This pointer-index predicate slice closes 2
+`array.rs::array_from_ref` / `slice.rs::test_const_from_ref` rows. The rebased
+showcase run reports 152 claimed `#euf#` rows plus 2 pointer-index predicate
+rows. The current known backlog is 1,030 items for that target.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
@@ -147,7 +158,7 @@ receiver subjects as distinct definition versions. The current known backlog is
 | Floats | 18 prior full lift+verify census, with 2 NaN showcase rows now closed | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Other residual examples include infinity constants/equality, ordered comparisons, signed zero, width-unknown parsed NaN predicates, and aggregate literals containing NaN. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
-| Complex terms | 400 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, and temporal receiver identity slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, and 13 selected `ops.rs` receiver-version rows lift with temporal subject keys. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
+| Complex terms | 398 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, constructor-dispatch, nested-constructor, temporal receiver identity, and pointer-index predicate slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch, 13 selected `ops.rs` receiver-version rows lift with temporal subject keys, and 2 pointer-index predicate rows lift location-keyed. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |
 | Other | 331 | `tests/alloc.rs::layout_round_up_to_align_edge_cases`: no liftable scalar assertion under the current surface. |
 
 ### Complex-Term Decomposition
@@ -157,14 +168,14 @@ The current complex-term residual sub-shapes include:
 | Sub-shape | Count | Representative std test/assertion |
 | --- | ---: | --- |
 | Method-chain predicates | 77 | Closed 17 pure rows and 13 temporal receiver rows in this slice; remaining examples require ambiguous control-flow, loop, alias, or unsupported receiver-version evidence and stay fail-closed. |
-| References, derefs, casts, unsafe blocks | 81 | `tests/array.rs::array_from_mut`: `assert_eq!(&value, "Hello World!")`. |
+| References, derefs, casts, unsafe blocks | 79 | Closed 2 immutable index/reference rows in pointer-equality predicates from `tests/array.rs::array_from_ref` and `tests/slice.rs::test_const_from_ref`; residual examples include `tests/array.rs::array_from_mut`: `assert_eq!(&value, "Hello World!")`. |
 | Method chains returning compared values | 54 | Closed 13 stable `tests/iter/range.rs::test_range` rows and the expression-only const-block method-chain row `tests/array.rs::const_array_ops`: `assert_eq!(const { [5, 6, 1, 2].map(doubler) }, [10, 12, 2, 4])`; residual examples include `tests/array.rs::iterator_nth`: `assert_eq!(IntoIterator::into_iter(v.clone()).nth(i).unwrap(), v[i])`. |
 | Residual unsupported term shapes | 59 | Closed current direct `TypeId::of::<T>()` comparison rows from `tests/intrinsics.rs`; remaining term-shape residuals exclude the stale `tests/any.rs::any_fixed_vec` TypeId example, which is now an `Any::is::<T>()` predicate in the pinned source. |
 | Operator / expression RHS | 48 | This slice closes stable-key atomic bitwise RHS rows such as `tests/atomic.rs::uint_and`: `assert_eq!(x.load(SeqCst), 0xf731 & 0x137f)`; residual rows include stateful/repeated receiver and pointer arithmetic forms needing temporal identity. |
 | Array, slice, and tuple literals | 47 | Exact literal array/tuple identities are now claimed only when they sit on stable call-result rows. This slice also closes the expression-only const-block free-call row `tests/array.rs::const_array_ops`: `assert_eq!(const { std::array::from_fn::<_, 5, _>(doubler) }, [0, 2, 4, 6, 8])`. Direct aggregate comparisons and aggregate literals with non-literal elements remain residual, for example `tests/array.rs::array_from_ref`: `assert_eq!(&[*VALUE], ARR)`. |
 | Boolean operators / non-equality predicates | 25 | `tests/array.rs::array_mixed_equality_integers`: `assert!(array3 != slice3b)`. |
 | Nested calls / constructors | 6 | Closed 8 immutable `Option` constructor-dispatch rows from `tests/option.rs::test_and` and 6 nested variant constructor rows from `tests/result.rs::result_try_trait_v2_branch`; residual examples include `tests/async_iter/mod.rs::into_async_iter`: `assert_eq!(..., Poll::Ready(Some(0)))`, where the polled receiver is mutable and stateful. |
-| Boolean predicate residual | 13 | `tests/array.rs::array_from_ref`: `assert!(core::ptr::eq(VALUE, &ARR[0]))`. |
+| Boolean predicate residual | 11 | Closed the `core::ptr::eq(VALUE, &ARR[0])` and `core::ptr::eq(VALUE, &SLICE[0])` location-keyed predicate rows; residual boolean predicates remain outside this bounded index/reference slice. |
 
 ### Other / No-Liftable Decomposition
 

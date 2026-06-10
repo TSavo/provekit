@@ -1035,6 +1035,9 @@ fn parse_macro_args(tokens: proc_macro2::TokenStream) -> syn::Result<MacroArgs> 
 }
 
 fn translate_bool_assertion(expr: &Expr, scope: &TemporalScope) -> Result<AssertionEntry, String> {
+    if let Some(entry) = translate_pointer_eq_assertion(expr, scope)? {
+        return Ok(entry);
+    }
     if let Some(entry) = translate_string_predicate_assertion(expr, scope)? {
         return Ok(entry);
     }
@@ -1167,6 +1170,54 @@ fn float_width_from_suffix(suffix: &str) -> Option<&'static str> {
         "f32" => Some("f32"),
         "f64" => Some("f64"),
         _ => None,
+    }
+}
+
+fn translate_pointer_eq_assertion(
+    expr: &Expr,
+    scope: &TemporalScope,
+) -> Result<Option<AssertionEntry>, String> {
+    match expr {
+        Expr::Paren(paren) => translate_pointer_eq_assertion(&paren.expr, scope),
+        Expr::Group(group) => translate_pointer_eq_assertion(&group.expr, scope),
+        Expr::Call(call) => {
+            let callee = expr_head_key(&call.func);
+            if !matches!(callee.as_str(), "core::ptr::eq" | "ptr::eq") {
+                return Ok(None);
+            }
+            if call.args.len() != 2 {
+                return Err("ptr::eq expects two arguments".to_string());
+            }
+            let mut args = Vec::new();
+            for arg in &call.args {
+                args.push(translate_pointer_identity_term(arg, scope)?);
+            }
+            let term = Rc::new(Term::Ctor {
+                name: format!("call:{callee}"),
+                args,
+            });
+            Ok(Some(assertion_entry_from_eq(term, bool_const(true), scope)))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn translate_pointer_identity_term(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term>, String> {
+    match expr {
+        Expr::Reference(reference) if reference.mutability.is_none() => Ok(Rc::new(Term::Ctor {
+            name: "ref".to_string(),
+            args: vec![translate_pointer_identity_term(&reference.expr, scope)?],
+        })),
+        Expr::Index(index) => Ok(Rc::new(Term::Ctor {
+            name: "index".to_string(),
+            args: vec![
+                translate_pointer_identity_term(&index.expr, scope)?,
+                translate_pointer_identity_term(&index.index, scope)?,
+            ],
+        })),
+        Expr::Paren(paren) => translate_pointer_identity_term(&paren.expr, scope),
+        Expr::Group(group) => translate_pointer_identity_term(&group.expr, scope),
+        other => translate_term_in_scope(other, scope),
     }
 }
 
@@ -1786,11 +1837,18 @@ fn callsite_assertion_name(term: &Term, local_scope: &str) -> Option<String> {
     let Term::Ctor { name, .. } = term else {
         return None;
     };
+    if is_location_keyed_call_result(name) {
+        return None;
+    }
     let callee = callsite_callee_name(name)?;
     Some(format!(
         "{callee}#euf#{}::assertion",
         canonical_callsite_sig(term, local_scope)
     ))
+}
+
+fn is_location_keyed_call_result(name: &str) -> bool {
+    matches!(name, "call:core::ptr::eq" | "call:ptr::eq")
 }
 
 fn canonical_callsite_sig(term: &Term, local_scope: &str) -> String {

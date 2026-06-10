@@ -1922,6 +1922,86 @@ fn nested_const_arg() {
 }
 
 #[test]
+fn immutable_index_in_pointer_eq_predicate_stays_location_keyed() {
+    // Vendor shape: rust-src library/coretests/tests/array.rs::array_from_ref.
+    // The index expression is pure identity syntax here, but pointer equality is
+    // only claimed at the test locus. Cross-proof pointer identity is not a
+    // federated call-result key.
+    let src = r#"
+#[test]
+fn array_from_ref() {
+    const VALUE: &&str = &"Hello World!";
+    const ARR: &[&str; 1] = core::array::from_ref(VALUE);
+    assert!(core::ptr::eq(VALUE, &ARR[0]));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/array.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert!(
+        out.warnings.is_empty(),
+        "immutable index inside pointer equality should lift: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(out.decls[0].name, "tests/array.rs::array_from_ref");
+
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    match operands[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "call:core::ptr::eq");
+                    assert_eq!(args.len(), 2);
+                    match args[1].as_ref() {
+                        Term::Ctor { name, args } => {
+                            assert_eq!(name, "ref");
+                            assert_eq!(args.len(), 1);
+                            match args[0].as_ref() {
+                                Term::Ctor { name, args } => {
+                                    assert_eq!(name, "index");
+                                    assert_eq!(args.len(), 2);
+                                }
+                                other => panic!("expected index term, got {other:?}"),
+                            }
+                        }
+                        other => panic!("expected ref indexed argument, got {other:?}"),
+                    }
+                }
+                other => panic!("expected ptr::eq call lhs, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Bool(true));
+        }
+        other => panic!("expected pointer equality atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn non_pointer_index_equality_stays_residual() {
+    let src = r#"
+#[test]
+fn indexed_value() {
+    let xs = [1, 2, 3];
+    assert_eq!(xs[0], 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/index.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(out.decls.is_empty());
+    assert!(
+        out.warnings
+            .iter()
+            .any(|warning| warning.reason.contains("unsupported term `xs [0]`")),
+        "indexed equality outside pointer identity stays residual: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
 fn vendor_string_predicates_lift_to_string_theory_atoms_under_euf_keys() {
     // Vendor source: rust-src library/alloctests/tests/str.rs contains these
     // point-wise assertions in test_starts_with, test_ends_with, and contains.
