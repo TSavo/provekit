@@ -180,6 +180,14 @@ fn main() {
     // Headline reconciliation at macro granularity.
     let unaccounted =
         totals.assert_macros as i64 - totals.discharged as i64 - totals.refused as i64;
+    // Per-file split. A positive per-file residual is a genuinely unreached
+    // assertion (the true silent drop). A negative per-file residual is
+    // inlining inflation: the reducer inlined a helper called from several
+    // sites, lifting one textual assert as several point-wise instances, so
+    // discharged exceeds the textual count. The net headline mixes the two, so
+    // we report the genuinely-unreached sum separately as the real delta.
+    let genuinely_unreached: i64 = rows.iter().map(|r| r.4.max(0)).sum();
+    let inlining_inflation: i64 = rows.iter().map(|r| (-r.4).max(0)).sum();
     let pct = |n: usize| {
         if totals.assert_macros == 0 {
             0.0
@@ -206,9 +214,18 @@ fn main() {
         pct(totals.refused)
     );
     println!(
-        "  unaccounted (SILENT DROP):   {:>6}  ({:.1}%)   <-- delta target = 0",
+        "  unaccounted (net):           {:>6}  ({:.1}%)",
         unaccounted,
         pct(unaccounted.max(0) as usize)
+    );
+    println!(
+        "  genuinely unreached (SILENT):{:>6}  ({:.1}%)   <-- delta target = 0",
+        genuinely_unreached,
+        pct(genuinely_unreached.max(0) as usize)
+    );
+    println!(
+        "  inlining inflation:          {:>6}   (helper inlined at N call sites)",
+        inlining_inflation
     );
     println!(
         "test fns: seen {} / lifted {}",

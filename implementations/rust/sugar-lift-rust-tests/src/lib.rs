@@ -229,6 +229,43 @@ fn walk_non_test_fns(
                     modules.pop();
                 }
             }
+            // Asserts inside impl method bodies (e.g. an Iterator impl on a test
+            // helper struct) are reachable only when the method runs, with the
+            // receiver's runtime state. Refuse them so they are not silent.
+            Item::Impl(imp) => {
+                for impl_item in &imp.items {
+                    if let syn::ImplItem::Fn(method) = impl_item {
+                        let method_name = method.sig.ident.to_string();
+                        let count = count_asserts_in_stmts(&method.block.stmts);
+                        if count == 0 {
+                            continue;
+                        }
+                        let reason = format!(
+                            "assertion in impl method {method_name}: reachable only when the method runs; released to layer 0"
+                        );
+                        for _ in 0..count {
+                            out.assertions_refused += 1;
+                            out.skip_reasons.push(reason.clone());
+                        }
+                        out.warnings.push(LiftWarning {
+                            source_path: source_path.to_string(),
+                            item_name: scoped_test_name(source_path, modules, &method_name),
+                            reason: format!(
+                                "rust test assertions: unsupported assertion surface; released to layer 0: {reason}"
+                            ),
+                        });
+                    }
+                }
+            }
+            // Item-level const/static initializers can hold compile-time asserts
+            // (e.g. `const _: () = assert!(S(1) == S(1));`). Count and refuse them
+            // so they are accounted, not silently dropped.
+            Item::Const(c) => {
+                refuse_item_assertions(&c.expr, "const-item", source_path, modules, out);
+            }
+            Item::Static(s) => {
+                refuse_item_assertions(&s.expr, "static-item", source_path, modules, out);
+            }
             _ => {}
         }
     }
@@ -335,6 +372,32 @@ fn visit_test_fn(
     out.assertions_lifted += macros_lifted;
     out.assertions_refused += skipped.len();
     out.skip_reasons.extend(skipped.iter().cloned());
+
+    // Totality safety net: every assert macro textually present in this test fn
+    // body must be accounted for (lifted or refused). The syntactic count is the
+    // ground truth; if the structured walk enumerated fewer (an assert in an AST
+    // position no arm handles), refuse the remainder by name so nothing is
+    // silently dropped. When helper inlining makes accounted exceed the textual
+    // count, the gap is zero and no refusal is added.
+    let textual_total = count_asserts_in_stmts(&f.block.stmts);
+    let accounted = macros_lifted + skipped.len();
+    if textual_total > accounted {
+        let gap = textual_total - accounted;
+        let reason =
+            "assertion in an unenumerated statement position within the test fn; released to layer 0"
+                .to_string();
+        for _ in 0..gap {
+            out.assertions_refused += 1;
+            out.skip_reasons.push(reason.clone());
+        }
+        out.warnings.push(LiftWarning {
+            source_path: source_path.to_string(),
+            item_name: test_name.clone(),
+            reason: format!(
+                "rust test assertions: {gap} assertion(s) in unenumerated positions; released to layer 0"
+            ),
+        });
+    }
 
     if !skipped.is_empty() {
         out.warnings.push(LiftWarning {
@@ -527,106 +590,36 @@ fn group_assertions(
 /// Count assert macros reachable anywhere inside a statement list, including
 /// nested in control flow, closures, and blocks. Used to produce named refusals
 /// for asserts that cannot be unconditionally lifted.
-fn count_asserts_in_stmts(stmts: &[Stmt]) -> usize {
-    let mut total = 0;
-    for stmt in stmts {
-        match stmt {
-            Stmt::Macro(m) => {
-                if is_assert_macro_path(&m.mac.path) {
-                    total += 1;
-                }
-            }
-            Stmt::Expr(expr, _) => {
-                total += count_asserts_in_expr(expr);
-            }
-            Stmt::Local(local) => {
-                if let Some(init) = &local.init {
-                    total += count_asserts_in_expr(&init.expr);
-                    if let Some((_, diverge)) = &init.diverge {
-                        total += count_asserts_in_expr(diverge);
-                    }
-                }
-            }
-            Stmt::Item(syn::Item::Fn(f)) => {
-                total += count_asserts_in_stmts(&f.block.stmts);
-            }
-            Stmt::Item(_) => {}
+/// Exhaustively counts assert-family macro invocations anywhere in a subtree,
+/// using the same syn visitor the sweep uses as its denominator. Counting must
+/// match that denominator exactly, otherwise the totality safety net cannot
+/// detect an assert in an AST position the structured walk does not enumerate.
+#[derive(Default)]
+struct NestedAssertCounter {
+    total: usize,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for NestedAssertCounter {
+    fn visit_macro(&mut self, m: &'ast syn::Macro) {
+        if is_assert_macro_path(&m.path) {
+            self.total += 1;
         }
+        syn::visit::visit_macro(self, m);
     }
-    total
+}
+
+fn count_asserts_in_stmts(stmts: &[Stmt]) -> usize {
+    let mut counter = NestedAssertCounter::default();
+    for stmt in stmts {
+        syn::visit::Visit::visit_stmt(&mut counter, stmt);
+    }
+    counter.total
 }
 
 fn count_asserts_in_expr(expr: &Expr) -> usize {
-    match expr {
-        Expr::Macro(m) => {
-            if is_assert_macro_path(&m.mac.path) {
-                1
-            } else {
-                0
-            }
-        }
-        Expr::Block(b) => count_asserts_in_stmts(&b.block.stmts),
-        Expr::Unsafe(u) => count_asserts_in_stmts(&u.block.stmts),
-        Expr::Const(c) => count_asserts_in_stmts(&c.block.stmts),
-        Expr::ForLoop(f) => count_asserts_in_stmts(&f.body.stmts),
-        Expr::While(w) => count_asserts_in_expr(&w.cond) + count_asserts_in_stmts(&w.body.stmts),
-        Expr::Loop(l) => count_asserts_in_stmts(&l.body.stmts),
-        Expr::If(i) => {
-            let mut n = count_asserts_in_stmts(&i.then_branch.stmts);
-            if let Some((_, else_branch)) = &i.else_branch {
-                n += count_asserts_in_expr(else_branch);
-            }
-            n
-        }
-        Expr::Match(m) => {
-            let mut n = 0;
-            for arm in &m.arms {
-                n += count_asserts_in_expr(&arm.body);
-            }
-            n
-        }
-        Expr::Closure(c) => count_asserts_in_expr(&c.body),
-        Expr::Call(c) => {
-            let mut n = 0;
-            for arg in &c.args {
-                n += count_asserts_in_expr(arg);
-            }
-            n
-        }
-        Expr::MethodCall(c) => {
-            let mut n = count_asserts_in_expr(&c.receiver);
-            for arg in &c.args {
-                n += count_asserts_in_expr(arg);
-            }
-            n
-        }
-        Expr::Paren(p) => count_asserts_in_expr(&p.expr),
-        Expr::Group(g) => count_asserts_in_expr(&g.expr),
-        Expr::Binary(b) => count_asserts_in_expr(&b.left) + count_asserts_in_expr(&b.right),
-        Expr::Unary(u) => count_asserts_in_expr(&u.expr),
-        Expr::Assign(a) => count_asserts_in_expr(&a.left) + count_asserts_in_expr(&a.right),
-        Expr::Reference(r) => count_asserts_in_expr(&r.expr),
-        Expr::Cast(c) => count_asserts_in_expr(&c.expr),
-        Expr::Field(f) => count_asserts_in_expr(&f.base),
-        Expr::Index(i) => count_asserts_in_expr(&i.expr) + count_asserts_in_expr(&i.index),
-        Expr::Return(r) => r.expr.as_deref().map_or(0, count_asserts_in_expr),
-        Expr::Await(a) => count_asserts_in_expr(&a.base),
-        Expr::Try(t) => count_asserts_in_expr(&t.expr),
-        Expr::Tuple(t) => t.elems.iter().map(count_asserts_in_expr).sum(),
-        Expr::Array(a) => a.elems.iter().map(count_asserts_in_expr).sum(),
-        Expr::Repeat(r) => count_asserts_in_expr(&r.expr),
-        Expr::Struct(s) => {
-            let mut n = 0;
-            for field in &s.fields {
-                n += count_asserts_in_expr(&field.expr);
-            }
-            if let Some(rest) = &s.rest {
-                n += count_asserts_in_expr(rest);
-            }
-            n
-        }
-        _ => 0,
-    }
+    let mut counter = NestedAssertCounter::default();
+    syn::visit::Visit::visit_expr(&mut counter, expr);
+    counter.total
 }
 
 fn is_assert_macro_path(path: &syn::Path) -> bool {
@@ -658,7 +651,24 @@ fn collect_assertion_entries(
     let mut temporal_scope = TemporalScope::new(local_scope, temporal_plan);
     for stmt in stmts {
         match stmt {
-            Stmt::Local(local) => update_float_width_scope_for_pat(&local.pat, float_widths),
+            Stmt::Local(local) => {
+                update_float_width_scope_for_pat(&local.pat, float_widths);
+                // An assert inside a let-initializer (e.g. `let x = { assert!(..); v };`
+                // or a closure passed to an iterator adapter) is not a top-level
+                // point-wise assertion. Count and refuse so it is not dropped.
+                if let Some(init) = &local.init {
+                    let mut count = count_asserts_in_expr(&init.expr);
+                    if let Some((_, diverge)) = &init.diverge {
+                        count += count_asserts_in_expr(diverge);
+                    }
+                    for _ in 0..count {
+                        skipped.push(
+                            "assertion inside a let-initializer expression: not a top-level point-wise assertion; released to layer 0"
+                                .to_string(),
+                        );
+                    }
+                }
+            }
             Stmt::Macro(m) => match cfg_eval_for_attrs(&m.attrs, options) {
                 CfgEval::Active => {
                     let before = entries.len();
@@ -826,7 +836,21 @@ fn collect_assertion_entries(
                     ));
                 }
             }
-            _ => {}
+            // Totality fallback: any other statement shape (a bare method-call
+            // statement with a closure argument, an expression statement we do
+            // not lift, etc.) may still contain nested asserts. Count and refuse
+            // them so nothing is silently dropped. count_asserts_in_stmts only
+            // runs here for statements no specific arm matched, so there is no
+            // double counting.
+            other => {
+                let count = count_asserts_in_stmts(std::slice::from_ref(other));
+                for _ in 0..count {
+                    skipped.push(
+                        "assertion nested in an unlifted expression statement: not a top-level point-wise assertion; released to layer 0"
+                            .to_string(),
+                    );
+                }
+            }
         }
         advance_temporal_scope_for_stmt(stmt, &mut temporal_scope);
     }
@@ -839,6 +863,34 @@ fn refuse_nested_asserts_in_stmts(stmts: &[Stmt], context: &str, skipped: &mut V
             "assertion under {context} context: not unconditional point-wise; released to layer 0"
         ));
     }
+}
+
+/// Account for assert macros inside an item-level const/static initializer by
+/// emitting one named refusal per assert. Keeps the totality invariant for
+/// compile-time asserts written as `const _: () = assert!(...)`.
+fn refuse_item_assertions(
+    expr: &Expr,
+    kind: &str,
+    source_path: &str,
+    modules: &[String],
+    out: &mut AdapterOutput,
+) {
+    let count = count_asserts_in_expr(expr);
+    if count == 0 {
+        return;
+    }
+    let reason = format!("{kind} assertion: compile-time const/static assert; released to layer 0");
+    for _ in 0..count {
+        out.assertions_refused += 1;
+        out.skip_reasons.push(reason.clone());
+    }
+    out.warnings.push(LiftWarning {
+        source_path: source_path.to_string(),
+        item_name: scoped_test_name(source_path, modules, kind),
+        reason: format!(
+            "rust test assertions: unsupported assertion surface; released to layer 0: {reason}"
+        ),
+    });
 }
 
 fn temporal_plan_for_stmts(stmts: &[Stmt]) -> TemporalPlan {
@@ -3567,14 +3619,16 @@ fn literal_aggregate_term_in_scope<'a>(
     source: &Expr,
     scope: &TemporalScope,
 ) -> Result<Rc<Term>, String> {
+    let _ = source;
     let mut args = Vec::new();
+    let mut all_literal = true;
     for elem in elems {
+        // Each element is translated through the same sound term path. An
+        // element that cannot be translated (e.g. a &mut borrow) propagates its
+        // refusal via `?`, so the aggregate is only built from accountable terms.
         let term = translate_term_in_scope(elem, scope)?;
         if !is_literal_identity_term(term.as_ref()) {
-            return Err(format!(
-                "{kind} literal contains non-literal element `{}`",
-                token_key(source)
-            ));
+            all_literal = false;
         }
         args.push(term);
     }
@@ -3583,7 +3637,11 @@ fn literal_aggregate_term_in_scope<'a>(
         .map(|arg| canonical_term_sig(arg))
         .collect::<Vec<_>>()
         .join(",");
-    Ok(make_var(format!("literal:{kind}({inner})")))
+    // All-literal aggregates keep the literal: key (byte-identical to before).
+    // Aggregates with non-literal elements are an uninterpreted constructor over
+    // their element terms (agg:), congruence-keyed so contradictions are caught.
+    let prefix = if all_literal { "literal" } else { "agg" };
+    Ok(make_var(format!("{prefix}:{kind}({inner})")))
 }
 
 fn is_literal_identity_term(term: &Term) -> bool {

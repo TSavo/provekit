@@ -4552,3 +4552,178 @@ fn plain_test() {
     let ops = inv_operands(&out.decls[0]);
     assert_eq!(ops.len(), 1);
 }
+
+// --- totality finalization: async / impl-method / let-init refusals ---
+
+#[test]
+fn assert_in_async_block_is_refused_not_silent() {
+    let src = r#"
+#[test]
+fn async_test() {
+    let _f = async {
+        assert_eq!(1, 2);
+    };
+}
+"#;
+    let out = lift_file(&parse(src), "tests/future.rs");
+    assert_eq!(out.assertions_lifted, 0, "async-block assert must not lift");
+    assert!(
+        !out.skip_reasons.is_empty(),
+        "async-block assert must be accounted (refused), not silent: {:?}",
+        out.skip_reasons
+    );
+}
+
+#[test]
+fn assert_in_impl_method_is_refused_not_silent() {
+    let src = r#"
+struct Helper { done: bool }
+impl Helper {
+    fn step(&self) {
+        assert!(!self.done, "already done");
+    }
+}
+
+#[test]
+fn the_test() {
+    assert_eq!(1, 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/iter.rs");
+    assert!(
+        out.skip_reasons.iter().any(|r| r.contains("impl method")),
+        "impl-method assert must be a named refusal: {:?}",
+        out.skip_reasons
+    );
+}
+
+#[test]
+fn assert_in_let_initializer_is_refused_not_silent() {
+    let src = r#"
+#[test]
+fn let_init_test() {
+    let _x = {
+        assert_eq!(1, 2);
+        5
+    };
+}
+"#;
+    let out = lift_file(&parse(src), "tests/m.rs");
+    assert_eq!(out.assertions_lifted, 0, "let-init assert must not lift");
+    assert!(
+        out.skip_reasons
+            .iter()
+            .any(|r| r.contains("let-initializer")),
+        "let-init assert must be a named refusal: {:?}",
+        out.skip_reasons
+    );
+}
+
+// --- aggregate element-wise lift tranche (T-AGGREGATE) ---
+
+#[test]
+fn tuple_with_non_literal_elements_lifts_as_agg_term() {
+    // RED before: a tuple with a call element was refused ("contains non-literal
+    // element"). GREEN after: it lifts as agg:Tuple(<element terms>).
+    let src = r#"
+fn f() -> i32 { 1 }
+fn g() -> i32 { 2 }
+
+#[test]
+fn tup() {
+    assert_eq!((f(), g()), (1, 2));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/t.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 1);
+    match ops[0].as_ref() {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            match args[0].as_ref() {
+                Term::Var { name } => assert!(
+                    name.starts_with("agg:Tuple("),
+                    "non-literal tuple must be an agg term, got {name}"
+                ),
+                other => panic!("expected agg Var, got {other:?}"),
+            }
+        }
+        other => panic!("expected equality, got {other:?}"),
+    }
+}
+
+#[test]
+fn all_literal_tuple_keeps_literal_key_discrimination() {
+    // No regression: an all-literal aggregate keeps the literal: key.
+    let src = r#"
+#[test]
+fn lit_tup() {
+    assert_eq!((1, 2), (1, 2));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/t.rs");
+    assert_eq!(out.assertions_lifted, 1);
+    let ops = inv_operands(&out.decls[0]);
+    match ops[0].as_ref() {
+        Formula::Atomic { args, .. } => match args[0].as_ref() {
+            Term::Var { name } => assert!(
+                name.starts_with("literal:Tuple("),
+                "all-literal tuple must keep literal key, got {name}"
+            ),
+            other => panic!("got {other:?}"),
+        },
+        other => panic!("got {other:?}"),
+    }
+}
+
+// --- item-level const assertion accounting (totality to zero) ---
+
+#[test]
+fn const_item_assertion_is_refused_not_silent() {
+    // A compile-time `const _: () = assert!(...)` at item level (inside a module)
+    // must be accounted, not silently dropped. This was the last silent-drop
+    // class in coretests cmp.rs (mod const_cmp).
+    let src = r#"
+mod const_cmp {
+    struct S(i32);
+    const _: () = assert!(1 == 1);
+    const _: () = assert!(0 != 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/cmp.rs");
+    let refused: Vec<_> = out
+        .skip_reasons
+        .iter()
+        .filter(|r| r.contains("const-item assertion"))
+        .collect();
+    assert_eq!(
+        refused.len(),
+        2,
+        "both const-item asserts must be named refusals: {:?}",
+        out.skip_reasons
+    );
+}
+
+#[test]
+fn deeply_nested_assert_is_accounted_by_safety_net() {
+    // An assert in an AST position no specific arm enumerates (here, inside a
+    // method-call closure argument as a statement) must still be accounted via
+    // the exhaustive counter + totality safety net, never silent.
+    let src = r#"
+#[test]
+fn nested() {
+    (0..3).for_each(|i| { assert_eq!(i, i); });
+}
+"#;
+    let out = lift_file(&parse(src), "tests/iter.rs");
+    assert_eq!(
+        out.assertions_lifted, 0,
+        "nested closure assert must not lift"
+    );
+    assert!(
+        !out.skip_reasons.is_empty(),
+        "nested closure assert must be accounted (refused), not silent: {:?}",
+        out.skip_reasons
+    );
+}
