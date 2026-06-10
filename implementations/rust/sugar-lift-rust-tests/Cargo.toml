@@ -21,3 +21,7 @@ walkdir = { workspace = true }
 [[bin]]
 name = "rust_test_assertions_rpc"
 path = "src/bin/rust_test_assertions_rpc.rs"
+
+[[bin]]
+name = "coretests_sweep"
+path = "src/bin/coretests_sweep.rs"

@@ -33,6 +33,14 @@ pub struct AdapterOutput {
     pub warnings: Vec<LiftWarning>,
     pub seen: usize,
     pub lifted: usize,
+    /// Assertion-macro invocations the collector reached and lifted to at least
+    /// one FOL atom (counted at macro granularity, not atom granularity).
+    pub assertions_lifted: usize,
+    /// Assertion-macro invocations the collector reached but refused, each with
+    /// a named reason (the loudly-bounded-lossy outcome).
+    pub assertions_refused: usize,
+    /// Every individual refusal reason, ungrouped, for the delta histogram.
+    pub skip_reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -215,6 +223,7 @@ fn visit_test_fn(
     let mut entries = Vec::new();
     let mut skipped = Vec::new();
     let mut float_widths = FloatWidthScope::new();
+    let mut macros_lifted = 0usize;
     collect_assertion_entries(
         &f.block.stmts,
         &test_name,
@@ -223,7 +232,11 @@ fn visit_test_fn(
         &mut float_widths,
         &mut entries,
         &mut skipped,
+        &mut macros_lifted,
     );
+    out.assertions_lifted += macros_lifted;
+    out.assertions_refused += skipped.len();
+    out.skip_reasons.extend(skipped.iter().cloned());
 
     if !skipped.is_empty() {
         out.warnings.push(LiftWarning {
@@ -421,6 +434,7 @@ fn collect_assertion_entries(
     float_widths: &mut FloatWidthScope,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
+    macros_lifted: &mut usize,
 ) {
     let temporal_plan = temporal_plan_for_stmts(stmts);
     let mut temporal_scope = TemporalScope::new(local_scope, temporal_plan);
@@ -428,15 +442,21 @@ fn collect_assertion_entries(
         match stmt {
             Stmt::Local(local) => update_float_width_scope_for_pat(&local.pat, float_widths),
             Stmt::Macro(m) => match cfg_eval_for_attrs(&m.attrs, options) {
-                CfgEval::Active => collect_macro(
-                    &m.mac.path,
-                    m.mac.tokens.clone(),
-                    &temporal_scope,
-                    &*float_widths,
-                    options,
-                    entries,
-                    skipped,
-                ),
+                CfgEval::Active => {
+                    let before = entries.len();
+                    collect_macro(
+                        &m.mac.path,
+                        m.mac.tokens.clone(),
+                        &temporal_scope,
+                        &*float_widths,
+                        options,
+                        entries,
+                        skipped,
+                    );
+                    if entries.len() > before {
+                        *macros_lifted += 1;
+                    }
+                }
                 CfgEval::Inactive(reason) => {
                     skipped.push(format!("inactive cfg on assertion; skipped: {reason}"));
                 }
@@ -445,15 +465,21 @@ fn collect_assertion_entries(
                 }
             },
             Stmt::Expr(Expr::Macro(m), _) => match cfg_eval_for_attrs(&m.attrs, options) {
-                CfgEval::Active => collect_macro(
-                    &m.mac.path,
-                    m.mac.tokens.clone(),
-                    &temporal_scope,
-                    &*float_widths,
-                    options,
-                    entries,
-                    skipped,
-                ),
+                CfgEval::Active => {
+                    let before = entries.len();
+                    collect_macro(
+                        &m.mac.path,
+                        m.mac.tokens.clone(),
+                        &temporal_scope,
+                        &*float_widths,
+                        options,
+                        entries,
+                        skipped,
+                    );
+                    if entries.len() > before {
+                        *macros_lifted += 1;
+                    }
+                }
                 CfgEval::Inactive(reason) => {
                     skipped.push(format!("inactive cfg on assertion; skipped: {reason}"));
                 }
@@ -470,7 +496,12 @@ fn collect_assertion_entries(
                     options,
                     MAX_ASSERTION_REDUCTION_DEPTH,
                 ) {
-                    Ok(reduced_entries) => entries.extend(reduced_entries),
+                    Ok(reduced_entries) => {
+                        if !reduced_entries.is_empty() {
+                            *macros_lifted += 1;
+                        }
+                        entries.extend(reduced_entries);
+                    }
                     Err(reason) => skipped.push(reason),
                 }
             }
