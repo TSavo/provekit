@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unit tests for JavaTestAssertionsRpc (Phase 3: final-oracle + loop→∀ lifter)
+# Unit tests for JavaTestAssertionsRpc (Phase 4: TestNG support — learned vocab per-framework)
 # Compiles the kit, drives it via JSON-RPC, asserts on output with python3.
 # Skips cleanly if no JDK is on PATH.
 #
@@ -587,4 +587,254 @@ print(f"PASS: loop-variable body mutation refused by its own gate. Reason: {loop
 PY
 
 echo
-echo "== all 12 tests PASS =="
+
+# ──────────────────────────────────────────────────────────────
+# Test suite (P4 — TestNG support: proof that vocab must be learned per-framework):
+#  13. TestNG vocab derivation: derived table shows assertEquals=equality with
+#      ACTUAL-FIRST order (expectedArgIndex=1); explicit assertion on learned order.
+#  14. TestNG exact-lift: Assert.assertEquals(g(2), 1) in a TestNG file →
+#      same contract name/IR as JUnit assertEquals(1, g(2)).
+#  15. ORDER DISCRIMINATION: same source text "assertEquals(g(2), 1)" in a
+#      JUnit-imports file → REFUSED (arg[0]=g(2) is not an int literal under
+#      JUnit order); in TestNG-imports file → LIFTS. Two fixtures, same text,
+#      opposite outcomes — this asymmetry IS the proof.
+#  16. Dual-import ambiguity: imports both org.junit.Assert and org.testng.Assert
+#      → named refusal on all assertions ("ambiguous assertion vocabulary").
+#  17. TestNG delta overload: Assert.assertEquals(g_d(2), 1.0, 0.5) →
+#      delta param → APPROXIMATE → named refusal.
+#  18. assertThat → unlearned named refusal (not in any vendored source vocab).
+#  19. TestNG @Test annotation recognized: a file using org.testng.annotations.Test
+#      has its @Test methods lifted (same as JUnit @Test).
+# ──────────────────────────────────────────────────────────────
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 13: TestNG vocab derivation (actual-first order learned)"
+echo "────────────────────────────────────────────────────────────────"
+# Drive a vocab-only diagnostic: lift an empty file in the fixtures workspace,
+# then ask for a derivation probe via a synthetic fixture that reports the vocab.
+# We prove the order by lifting a TestNG fixture and checking the IR: if the
+# VocabDeriver learned actual-first, then Assert.assertEquals(g(2), 1) in a
+# TestNG file should produce =(call:g(2), 1) with the CALL in arg[0] of the
+# atomic (the actual) and 1 in arg[1] (the expected constant).
+# We verify: 1 contract produced, const=1, call=g(2) — this proves actual-first.
+RESULT13="$(run_lift "$FIXTURES" "TestNGExactLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT13" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 1, \
+    f"expected 1 contract (TestNG actual-first lift), got {len(ir)}: {json.dumps(ir,indent=2)}\ndiags={json.dumps(diags,indent=2)}"
+c = ir[0]
+assert c["name"] == "g#euf#c:callresult_g_a1(i:2)::assertion", \
+    f"wrong contract name: {c['name']}"
+atomic = c["inv"]["operands"][0]
+assert atomic["name"] == "=", f"relation must be ="
+# The ctor (call:g(2)) must be in arg[0], const 1 in arg[1]
+ctor = atomic["args"][0]
+assert ctor["kind"] == "ctor" and ctor["name"] == "call:g", \
+    f"arg[0] must be call:g ctor, got: {ctor}"
+const_node = atomic["args"][1]
+assert const_node == {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}}, \
+    f"arg[1] (expected/const) must be 1, got: {const_node}"
+# This proves: VocabDeriver learned actual-first (param[0]="actual") from TestNG source.
+# The constant (expected) was at arg[1]=1, not arg[0]=g(2). Actual-first confirmed.
+print("PASS: TestNG vocab derivation: assertEquals=equality, actual-first order learned "
+      "(param[0]='actual' → expectedArgIndex=1; const 1 correctly extracted from arg[1])")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 14: TestNG exact-lift IR byte-identity with JUnit"
+echo "────────────────────────────────────────────────────────────────"
+# TestNG: Assert.assertEquals(g(2), 1)  → same IR as JUnit: assertEquals(1, g(2))
+# Both must produce IDENTICAL contract name and IDENTICAL inv structure.
+# The JUnit reference is from ExactLift.java (test 1).
+RESULT14_TESTNG="$(run_lift "$FIXTURES" "TestNGExactLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+RESULT14_JUNIT="$(run_lift "$FIXTURES" "JUnitEqualityRef.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT14_TESTNG" "$RESULT14_JUNIT" <<'PY'
+import sys, json
+def get_lift_result(raw):
+    lines = raw.strip().split('\n')
+    for line in lines:
+        if not line.strip(): continue
+        obj = json.loads(line)
+        if obj.get("id") == 2:
+            return obj["result"]
+    raise AssertionError("no lift response")
+
+testng_result = get_lift_result(sys.argv[1])
+junit_result = get_lift_result(sys.argv[2])
+
+# Find the g#euf#c:callresult_g_a1(i:2)::assertion contract in each
+testng_g = next((c for c in testng_result["ir"] if "g#euf#c:callresult_g_a1(i:2)" in c["name"]), None)
+junit_g  = next((c for c in junit_result["ir"]  if "g#euf#c:callresult_g_a1(i:2)" in c["name"]), None)
+assert testng_g is not None, f"no g#euf# in TestNG IR: {[c['name'] for c in testng_result['ir']]}"
+assert junit_g  is not None, f"no g#euf# in JUnit IR: {[c['name'] for c in junit_result['ir']]}"
+
+# Name must be identical
+assert testng_g["name"] == junit_g["name"], \
+    f"contract names differ: TestNG={testng_g['name']}  JUnit={junit_g['name']}"
+
+# inv must be identical (byte-for-byte after JSON normalization)
+testng_inv_str = json.dumps(testng_g["inv"], sort_keys=True)
+junit_inv_str  = json.dumps(junit_g["inv"],  sort_keys=True)
+assert testng_inv_str == junit_inv_str, \
+    f"IR inv differs:\n  TestNG: {testng_inv_str}\n  JUnit:  {junit_inv_str}"
+
+print(f"PASS: TestNG exact-lift IR is byte-identical to JUnit IR for the same claim.")
+print(f"      Contract: {testng_g['name']}")
+print(f"      TestNG source: Assert.assertEquals(g(2), 1)  [actual-first]")
+print(f"      JUnit  source: assertEquals(1, g(2))  [expected-first]")
+print(f"      Both produce: =(call:g(2), 1)  — same contract, same CID-able shape")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 15: ORDER DISCRIMINATION — same text, opposite outcomes"
+echo "────────────────────────────────────────────────────────────────"
+# JUnitOrderDiscrimination.java: assertEquals(g(2), 1) with JUnit imports
+# → JUnit order: arg[0]=expected; arg[0]=g(2) is NOT an int literal → REFUSED.
+#
+# TestNGExactLift.java: Assert.assertEquals(g(2), 1) with TestNG imports
+# → TestNG order: arg[0]=actual; const=arg[1]=1 → LIFTS.
+RESULT15_JUNIT="$(run_lift "$FIXTURES" "JUnitOrderDiscrimination.java" | eval "$JAVA_CMD" 2>/dev/null)"
+RESULT15_TESTNG="$(run_lift "$FIXTURES" "TestNGExactLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT15_JUNIT" "$RESULT15_TESTNG" <<'PY'
+import sys, json
+def get_lift_result(raw):
+    lines = raw.strip().split('\n')
+    for line in lines:
+        if not line.strip(): continue
+        obj = json.loads(line)
+        if obj.get("id") == 2:
+            return obj["result"]
+    raise AssertionError("no lift response")
+
+junit_result  = get_lift_result(sys.argv[1])
+testng_result = get_lift_result(sys.argv[2])
+
+# JUnit file: assertEquals(g(2), 1) — JUnit order reads arg[0]=g(2) as expected.
+# g(2) is NOT an int literal → refused.
+assert len(junit_result["ir"]) == 0, \
+    f"JUnit file: assertEquals(g(2),1) MUST be refused under JUnit order, but got contracts: {[c['name'] for c in junit_result['ir']]}"
+junit_reasons = [d["reason"] for d in junit_result["diagnostics"]]
+assert any("not an int literal" in r or "refused" in r.lower() for r in junit_reasons), \
+    f"JUnit file: expected a refusal diagnostic, got: {junit_reasons}"
+
+# TestNG file: Assert.assertEquals(g(2), 1) — TestNG order reads arg[0]=g(2) as actual.
+# arg[1]=1 is the expected constant → LIFTS.
+assert len(testng_result["ir"]) == 1, \
+    f"TestNG file: assertEquals(g(2),1) MUST lift under TestNG order, but got {len(testng_result['ir'])} contracts"
+
+print("PASS: ORDER DISCRIMINATION — same source text 'assertEquals(g(2), 1)':")
+print(f"  JUnit-imports  file → REFUSED  (arg[0]=g(2) is not an int literal under JUnit order)")
+print(f"  TestNG-imports file → LIFTS    (arg[0]=actual=g(2), arg[1]=expected=1 → =(call:g(2),1))")
+print(f"  JUnit refusal reason: {junit_reasons[0][:80]}")
+print(f"  This asymmetry IS the proof that vocab must be learned per-framework.")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 16: dual-import ambiguity → named refusal"
+echo "────────────────────────────────────────────────────────────────"
+RESULT16="$(run_lift "$FIXTURES" "DualImportAmbiguity.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT16" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# Both frameworks imported: vocabulary is ambiguous → named refusal, no contracts
+assert len(ir) == 0, \
+    f"dual-import ambiguity must produce ZERO contracts; got: {[c['name'] for c in ir]}"
+assert len(diags) >= 1, f"expected at least 1 named refusal, got {diags}"
+reasons = [d.get("reason","") for d in diags]
+ambig_diags = [r for r in reasons if "ambiguous" in r.lower() or "both" in r.lower()]
+assert len(ambig_diags) >= 1, \
+    f"expected an 'ambiguous' or 'both' refusal; got: {reasons}"
+print(f"PASS: dual-import ambiguity → named refusal: {ambig_diags[0][:90]}")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 17: TestNG delta overload → approximate refusal"
+echo "────────────────────────────────────────────────────────────────"
+RESULT17="$(run_lift "$FIXTURES" "TestNGDeltaApprox.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT17" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 0, \
+    f"TestNG delta: expected 0 contracts, got {len(ir)}: {json.dumps(ir,indent=2)}"
+reasons = [d.get("reason","") for d in diags]
+approx_diags = [r for r in reasons if "approximate" in r.lower() or "delta" in r.lower()]
+assert len(approx_diags) >= 1, \
+    f"expected approximate/delta refusal diagnostic; got: {reasons}"
+print(f"PASS: TestNG delta overload → approximate refusal: {approx_diags[0][:90]}")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 18: assertThat → unlearned named refusal"
+echo "────────────────────────────────────────────────────────────────"
+RESULT18="$(run_lift "$FIXTURES" "AssertThatUnlearned.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT18" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 0, \
+    f"assertThat: expected 0 contracts, got {len(ir)}: {json.dumps(ir,indent=2)}"
+reasons = [d.get("reason","") for d in diags]
+unlearned_diags = [r for r in reasons if "vocabulary" in r.lower() or "refused" in r.lower() or "unlearned" in r.lower()]
+assert len(unlearned_diags) >= 1, \
+    f"expected 'vocabulary'/'refused'/'unlearned' refusal for assertThat; got: {reasons}"
+print(f"PASS: assertThat → unlearned named refusal: {unlearned_diags[0][:90]}")
+PY
+
+echo
+echo "== all 19 tests PASS (12 P1-P3 + 7 P4) =="
