@@ -34,6 +34,7 @@
 #  32b. [A2] non-framework wildcard: import static com.example.* → silent skip (not bound)
 #  33. [A3] user-scope impostor: assertEquals without static import → silent skip (not lift)
 #  34. [C8] TestNG assertNotEquals 2-arg: INEQUALITY, not APPROX (delta overload blocked)
+#  35. [B6] lineLength=0 → encodeNoChunk universe registered; lineLength=76 → refused
 set -euo pipefail
 
 command -v javac >/dev/null 2>&1 || { echo "SKIP: no JDK on PATH"; exit 0; }
@@ -1363,4 +1364,49 @@ print(f"PASS: TestNG assertNotEquals 2-arg → 1 inequality contract (not approx
 PY
 
 echo
-echo "== all 34 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 4 H1) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 35: H1 [B6] lineLength=0 sound; lineLength=76 refused (chunking guard)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT35="$(run_lift "$FIXTURES/universe-chunked" "ChunkedLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT35" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+names = [c["name"] for c in ir]
+# encodeNoChunk (lineLength=0) must register and produce a universe contract.
+no_chunk_universe = [c for c in ir
+    if "encodeNoChunk" in c["name"]
+    and c["inv"]["operands"][0]["name"] == "str.chars-in-set"]
+assert no_chunk_universe, (
+    f"MISSING: encodeNoChunk universe row not found. Contracts: {names}\ndiags={[d.get('reason','') for d in diags]}"
+)
+# encodeChunked (lineLength=76) must be REFUSED by the universe walker.
+# No universe row for encodeChunked must appear.
+chunked_universe = [c for c in ir
+    if "encodeChunked" in c["name"]
+    and c["inv"]["operands"][0]["name"] == "str.chars-in-set"]
+assert not chunked_universe, (
+    f"FALSEPASS: encodeChunked universe row was registered (lineLength=76 not detected): "
+    f"{[c['name'] for c in chunked_universe]}"
+)
+# The universe walker must emit a named refusal for encodeChunked.
+reasons = [d.get("reason", "") for d in diags]
+chunked_refusal = [r for r in reasons if "encodeChunked" in r or "chunking" in r.lower() or "lineLength" in r]
+assert chunked_refusal, (
+    f"expected a named refusal for encodeChunked (lineLength=76), got: {reasons}"
+)
+print(f"PASS: lineLength=0 → encodeNoChunk universe registered; "
+      f"lineLength=76 → encodeChunked refused: {chunked_refusal[0][:80]}")
+PY
+
+echo
+echo "== all 35 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1) =="

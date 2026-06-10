@@ -4121,6 +4121,43 @@ public final class JavaTestAssertionsRpc {
             private String resolveCtor(MethodTree ctor, String className, Map<String, Object> bindings,
                     List<Selector> selectors, int depth, List<String> notes) {
                 if (depth > 12 || ctor.getBody() == null) return null;
+
+                // H1 [B6]: scan for non-zero integer field stores before following the chain.
+                // A ctor that stores a non-zero int from bindings into a field (e.g.
+                // `this.lineLength = 76`) signals a chunking parameter: lineLength > 0 means
+                // the instance method injects line separators into the output. Those separator
+                // chars are NOT in the static encode table, so the str.chars-in-set contract
+                // would be unsound. Refuse the entry point with a named reason.
+                for (StatementTree st : ctor.getBody().getStatements()) {
+                    if (!(st instanceof ExpressionStatementTree est)) continue;
+                    ExpressionTree e = stripParens(est.getExpression());
+                    if (e instanceof AssignmentTree at) {
+                        ExpressionTree rhs = stripParens(at.getExpression());
+                        // Simple assignment: `this.field = paramName` (not a ternary)
+                        if (rhs instanceof IdentifierTree rhsId
+                                && !(rhs instanceof ConditionalExpressionTree)) {
+                            Object v = bindings.get(rhsId.getName().toString());
+                            if (v instanceof Number n && n.intValue() != 0) {
+                                notes.add("chunking parameter non-zero: "
+                                    + rhsId.getName() + "=" + n.intValue()
+                                    + " — entry point injects line separators; "
+                                    + "str.chars-in-set would be unsound (lineLength=0 required)");
+                                return null;
+                            }
+                        }
+                        // Direct int literal: `this.field = 76` (unrelated to bindings)
+                        if (rhs instanceof LiteralTree lt
+                                && lt.getValue() instanceof Number n && n.intValue() != 0) {
+                            // A literal non-zero int stored in a field: same concern.
+                            notes.add("chunking parameter non-zero (literal): "
+                                + at.getVariable() + "=" + n.intValue()
+                                + " — entry point injects line separators; "
+                                + "str.chars-in-set would be unsound (lineLength=0 required)");
+                            return null;
+                        }
+                    }
+                }
+
                 for (StatementTree st : ctor.getBody().getStatements()) {
                     if (!(st instanceof ExpressionStatementTree est)) continue;
                     ExpressionTree e = stripParens(est.getExpression());
