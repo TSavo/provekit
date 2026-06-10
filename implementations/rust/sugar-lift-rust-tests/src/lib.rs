@@ -2469,6 +2469,12 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
             name: format!("field:{}", token_key(&field.member)),
             args: vec![translate_term_in_scope(&field.base, scope)?],
         })),
+        Expr::Index(index) => {
+            if let Some(term) = const_index_term_in_scope(index, scope)? {
+                return Ok(term);
+            }
+            Err(format!("unsupported term `{}`", token_key(expr)))
+        }
         Expr::Binary(binary) => {
             let Some(op) = term_binop_name(&binary.op) else {
                 return Err(format!("unsupported term operator `{}`", token_key(expr)));
@@ -2485,6 +2491,44 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
         Expr::Group(group) => translate_term_in_scope(&group.expr, scope),
         other => Err(format!("unsupported term `{}`", token_key(other))),
     }
+}
+
+fn const_index_term_in_scope(
+    index: &syn::ExprIndex,
+    scope: &TemporalScope,
+) -> Result<Option<Rc<Term>>, String> {
+    let Some(index_value) = const_int(&index.index) else {
+        return Ok(None);
+    };
+    let Some(base_name) = const_index_base_name(&index.expr, scope)? else {
+        return Ok(None);
+    };
+    Ok(Some(Rc::new(Term::Ctor {
+        name: "index".to_string(),
+        args: vec![make_var(base_name), num(index_value)],
+    })))
+}
+
+fn const_index_base_name(expr: &Expr, scope: &TemporalScope) -> Result<Option<String>, String> {
+    match expr {
+        Expr::Path(path) if path.qself.is_none() && is_const_like_path(&path.path) => {
+            scope.path_name(&path.path).map(Some)
+        }
+        Expr::Paren(paren) => const_index_base_name(&paren.expr, scope),
+        Expr::Group(group) => const_index_base_name(&group.expr, scope),
+        _ => Ok(None),
+    }
+}
+
+fn is_const_like_path(path: &syn::Path) -> bool {
+    let Some(final_segment) = path.segments.last() else {
+        return false;
+    };
+    let ident = final_segment.ident.to_string();
+    ident.chars().any(|ch| ch.is_ascii_uppercase())
+        && ident
+            .chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
 }
 
 fn translate_assertion_term_in_scope(

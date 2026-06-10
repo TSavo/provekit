@@ -8,6 +8,8 @@
 #       * tests/mem.rs generic type-arg-keyed size_of/align_of rows,
 #         including active pinned-target pointer-width cfg rows,
 #       * tests/intrinsics.rs direct TypeId comparison rows,
+#       * tests/intrinsics.rs const-path integer index value rows, kept as a
+#         location-keyed claim,
 #       * tests/time.rs finite decimal float method-call equality rows and
 #         width-known NaN refinement predicate rows,
 #       * tests/num/{mod.rs,dec2flt/mod.rs} width-known float refinement
@@ -59,7 +61,7 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, width-known NaN float refinement rows from time.rs, width-known infinity-equality float refinement rows from time.rs (div_duration_f32/f64 by-zero asserting equality to f32/f64 INFINITY, lifted as the is_infinite and is_sign_positive conjunction), width-known typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs including selected temporal receiver identity rows, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs kept location-keyed, casted-data and pointer-vtable row from waker.rs kept location-keyed, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers (const_get_or_insert_default and const_get_or_insert_with), result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows and const-path integer index value rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, width-known NaN float refinement rows from time.rs, width-known infinity-equality float refinement rows from time.rs (div_duration_f32/f64 by-zero asserting equality to f32/f64 INFINITY, lifted as the is_infinite and is_sign_positive conjunction), width-known typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs including selected temporal receiver identity rows, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs kept location-keyed, casted-data and pointer-vtable row from waker.rs kept location-keyed, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers (const_get_or_insert_default and const_get_or_insert_with), result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
 echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, infinity equality via cast-expression or Ok-wrapper receivers, infinity used as a method argument, ordered and signed-zero float refinements, chars, inactive or ambiguous cfg rows, ambiguous receiver identity method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
@@ -334,7 +336,7 @@ lines = open(source, encoding="utf-8").read().splitlines()
 def extract(fn_name: str) -> list[str]:
     fn_idx = next(
         i for i, line in enumerate(lines)
-        if line.startswith(f"fn {fn_name}(")
+        if line.startswith(f"fn {fn_name}(") or line.startswith(f"const fn {fn_name}(")
     )
     start = fn_idx
     while start > 0 and (lines[start - 1].startswith("#[") or lines[start - 1] == ""):
@@ -358,6 +360,8 @@ chunks = [
     *extract("test_typeid_sized_types"),
     "",
     *extract("test_typeid_unsized_types"),
+    "",
+    *extract("test_write_bytes_in_const_contexts"),
     "",
 ]
 open(dest, "w", encoding="utf-8").write("\n".join(chunks))
@@ -829,6 +833,17 @@ type_id_rows = [
     if (r.get("property") or "") in type_id_needles
 ]
 failed_type_id = [r for r in type_id_rows if r.get("status") != "discharged"]
+const_index_properties = {
+    "consistency:tests/intrinsics.rs::test_write_bytes_in_const_contexts",
+}
+const_index_rows = [
+    r for r in rows
+    if (r.get("property") or "") in const_index_properties
+]
+failed_const_index = [
+    r for r in const_index_rows
+    if r.get("status") != "discharged"
+]
 
 if not euf_rows:
     print("no #euf# consistency rows found", file=sys.stderr)
@@ -925,9 +940,21 @@ if failed_type_id:
     for row in failed_type_id:
         print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
     raise SystemExit(1)
+if len(const_index_rows) != len(const_index_properties):
+    present = {r.get("property") for r in const_index_rows}
+    print("missing claimed const-index rows:", file=sys.stderr)
+    for property_name in sorted(const_index_properties - present):
+        print(property_name, file=sys.stderr)
+    raise SystemExit(1)
+if failed_const_index:
+    print("non-discharged const-index rows in claimed slice:", file=sys.stderr)
+    for row in failed_const_index:
+        print(f"{row.get('status')} {row.get('property')} {row.get('reason')}", file=sys.stderr)
+    raise SystemExit(1)
 
 print(f"claimed-euf-rows={len(euf_rows)} discharged={len(euf_rows)} failed=0")
 print(f"typeid-rows={len(type_id_rows)} discharged={len(type_id_rows)} failed=0")
+print("claimed-const-index-row=1 discharged=1 failed=0 assertions=6")
 print("claimed-cmp-default-row=1 discharged=1 failed=0")
 print("claimed-option-constructor-dispatch-row=1 discharged=1 failed=0 assertions=8")
 print("claimed-result-nested-constructor-dispatch-row=1 discharged=1 failed=0 assertions=6")
@@ -944,6 +971,8 @@ for row in euf_rows:
     print(f"row: {row.get('property')} status={row.get('status')}")
 for row in type_id_rows:
     print(f"typeid-row: {row.get('property')} status={row.get('status')}")
+for row in const_index_rows:
+    print(f"const-index-row: {row.get('property')} status={row.get('status')}")
 print(f"operator-dispatch-row: {option_test_and_row.get('property')} status={option_test_and_row.get('status')}")
 print(f"operator-dispatch-row: {result_try_trait_row.get('property')} status={result_try_trait_row.get('status')}")
 for row in pointer_index_rows:
@@ -1144,8 +1173,13 @@ echo "== witness: rerun exact std/core vendor tests =="
   CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
     cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests waker::test_waker_getters -- --exact --nocapture
 )
+(
+  cd "$STDROOT/coretests"
+  CARGO_TARGET_DIR="$WITNESS_TARGET" RUSTC_BOOTSTRAP=1 \
+    cargo "+$STD_CORE_RUST_TOOLCHAIN" test --target "$STD_CORE_RUST_TARGET" --test coretests intrinsics::test_write_bytes_in_const_contexts -- --exact --nocapture
+)
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure and temporal-identity method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs, casted-data and pointer-vtable row from waker.rs, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, typed-local and parse/unwrap float refinement rows from num/mod.rs and num/dec2flt/mod.rs, active pinned-target mem cfg rows, direct TypeId comparison rows and const-index rows from intrinsics.rs, pure and temporal-identity method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, pointer-index predicate rows from array.rs/slice.rs, casted-data and pointer-vtable row from waker.rs, option.rs nullary/variant constructor operator-dispatch rows, option.rs is_some predicate rows on const-path receivers, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
 echo "not-claimed: full std/coretests; macro surfaces outside this showcase/infinity-equality-via-cast-or-Ok-or-method-arg/ordered-and-signed-zero-float-refinements/chars/inactive-or-ambiguous-cfg rows/ambiguous receiver identity method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

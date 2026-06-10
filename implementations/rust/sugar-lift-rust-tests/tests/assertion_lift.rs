@@ -369,6 +369,34 @@ fn assert_scalar_const(term: &Term, expected: ExpectedScalar) {
     }
 }
 
+fn assert_const_index_eq(
+    formula: &Formula,
+    expected_base: &str,
+    expected_index: i64,
+    expected: i64,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, "=");
+            assert_eq!(args.len(), 2);
+            match args[0].as_ref() {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "index");
+                    assert_eq!(args.len(), 2);
+                    match args[0].as_ref() {
+                        Term::Var { name } => assert_eq!(name, expected_base),
+                        other => panic!("expected const index base, got {other:?}"),
+                    }
+                    assert_scalar_const(&args[1], ExpectedScalar::Int(expected_index));
+                }
+                other => panic!("expected index term lhs, got {other:?}"),
+            }
+            assert_scalar_const(&args[1], ExpectedScalar::Int(expected));
+        }
+        other => panic!("expected const-index equality atom, got {other:?}"),
+    }
+}
+
 fn assert_operator_arg(term: &Term, expected: &ExpectedOperatorArg) {
     match expected {
         ExpectedOperatorArg::Constructor(expected_name, expected_arg) => match term {
@@ -2290,6 +2318,67 @@ fn pointer_cast_result() {
             .reason
             .contains("unsupported term `source () as * const u8`")),
         "pointer-target casts must stay residual: {:?}",
+        out.warnings
+    );
+}
+
+#[test]
+fn const_index_value_assertions_lift_location_keyed() {
+    // Vendor shape: coretests/tests/intrinsics.rs::test_write_bytes_in_const_contexts.
+    // These are exact expression claims about a const path indexed by integer
+    // literals. They stay location-keyed; the lifter does not add index
+    // semantics or federate them as call results.
+    let src = r#"
+#[test]
+const fn test_write_bytes_in_const_contexts() {
+    const TEST: [u32; 3] = [0, 0, 3];
+    assert!(TEST[0] == 0);
+    assert!(TEST[1] == 0);
+    assert!(TEST[2] == 3);
+
+    const TEST2: [u32; 3] = [16843009, 16843009, 3];
+    assert!(TEST2[0] == 16843009);
+    assert!(TEST2[1] == 16843009);
+    assert!(TEST2[2] == 3);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/intrinsics.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+    assert_eq!(
+        out.decls[0].name, "tests/intrinsics.rs::test_write_bytes_in_const_contexts",
+        "const-index rows stay location-keyed"
+    );
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 6);
+    assert_const_index_eq(&operands[0], "TEST", 0, 0);
+    assert_const_index_eq(&operands[1], "TEST", 1, 0);
+    assert_const_index_eq(&operands[2], "TEST", 2, 3);
+    assert_const_index_eq(&operands[3], "TEST2", 0, 16843009);
+    assert_const_index_eq(&operands[4], "TEST2", 1, 16843009);
+    assert_const_index_eq(&operands[5], "TEST2", 2, 3);
+}
+
+#[test]
+fn lowercase_local_index_stays_residual() {
+    let src = r#"
+#[test]
+fn local_index() {
+    let xs = [1, 2, 3];
+    assert!(xs[0] == 1);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/index.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 0);
+    assert!(out.decls.is_empty());
+    assert!(
+        out.warnings
+            .iter()
+            .any(|warning| warning.reason.contains("unsupported term `xs [0]`")),
+        "lowercase local indexing must stay residual: {:?}",
         out.warnings
     );
 }
