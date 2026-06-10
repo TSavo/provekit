@@ -1,0 +1,24 @@
+{
+  "command": [
+    "{python}",
+    "distributed/configure.py",
+    "src/message.txt",
+    "src/version.txt",
+    ".build/libdemo.txt"
+  ],
+  "distributedScript": "distributed/configure.py",
+  "kind": "build-witness",
+  "outputs": [
+    {
+      "distributed": "distributed/libdemo.txt",
+      "rebuilt": ".build/libdemo.txt"
+    }
+  ],
+  "repoScript": "repo/configure.py",
+  "sources": [
+    "src/message.txt",
+    "src/version.txt"
+  ],
+  "timeoutSeconds": 30,
+  "toolchain": "python-script"
+}

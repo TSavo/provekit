@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sugar-build-witness"
+version = "0.1.0"
+description = "build script witness lifter for reproducible build executions"
+requires-python = ">=3.10"
+dependencies = ["sugar-lift-py-tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

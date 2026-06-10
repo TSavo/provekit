@@ -35,6 +35,7 @@ PYTHON_KIT_EDITABLES = \
 	-e implementations/python/sugar-emit-python-hypothesis \
 	-e implementations/python/sugar-emit-python-pytest \
 	-e implementations/python/sugar-emit-python-unittest \
+	-e implementations/python/sugar-build-witness \
 	-e implementations/python/sugar-lift-py-pytest-witness \
 	-e implementations/python/sugar-lift-py-tests \
 	-e implementations/python/sugar-lift-python-source
@@ -130,6 +131,7 @@ build-python:
 	# (python3 -m sugar_lift_py_tests...). Install the lift packages into the
 	# same interpreter so those cross-language tests find it.
 	$(PYTHON_KIT_PIP) install --quiet --no-cache-dir \
+		-e implementations/python/sugar-build-witness \
 		-e implementations/python/sugar-lift-py-tests \
 		-e implementations/python/sugar-lift-python-source \
 		-e implementations/python/sugar-lift-py-pytest-witness
@@ -247,6 +249,11 @@ test-python: build-python
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e ../sugar-lift-py-tests -e . pytest pynacl blake3 cbor2 && \
 		pytest) || failed="$$failed sugar-lift-py-pytest-witness"; \
+	(cd implementations/python/sugar-build-witness && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e ../sugar-lift-py-tests -e . pytest pynacl blake3 cbor2 && \
+		pytest) || failed="$$failed sugar-build-witness"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-php
@@ -284,6 +291,7 @@ SHOWCASE_RUNS = \
 	examples/numpy-showcase/run.sh \
 	examples/pandas-showcase/run.sh \
 	examples/sklearn-showcase/run.sh \
+	examples/build-witness-showcase/run.sh \
 	examples/rust-boundary-showcase/run.sh \
 	examples/rust-witness-showcase/run.sh \
 	examples/rust-test-assertion-consistency/run.sh \
