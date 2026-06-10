@@ -116,7 +116,9 @@ FOL ProofIR (invariant 8). Their roles are distinct and map onto the four parts 
 
 - **Contract lifter** — reads the vendor's own tests/source and lifts the *claims* into contract
   rows (the `#euf#` atoms, pre/post). The spec originates here (invariant 7). Correctness #1
-  (a spec exists). [`sugar-lift-rust-tests`, `sugar-lift-java-tests`, `sugar-lift-python-source`]
+  (a spec exists). [`sugar-lift-rust-tests`, `sugar-lift-python-source`; the Java seat is being
+  rebuilt as a Java-native kit on `com.sun.source` — the prior `sugar-lift-java-tests` was a Rust
+  crate hand-scanning Java text (a bespoke Java grammar), torn down for that reason]
 - **Implication lifter** — lifts the seam obligations: the producer's post conjoined as
   antecedent against the consumer's pre (`post |= pre`), at every call / `.await` / channel /
   lock boundary. Correctness #3 (the program satisfies the spec). [the handshake /
@@ -124,14 +126,16 @@ FOL ProofIR (invariant 8). Their roles are distinct and map onto the four parts 
 - **Bridge lifter** — lifts a cross-language / FFI call edge into a `CallEdgeDecl`
   (`sourceContractCid` -> `targetSymbol`/`targetContractCid`), keying the caller's callsite to
   the callee's contract by symbol-CID so the conjoiner binds them across `.proof`s. Makes
-  cross-language correctness work — the symbol-CID is the identity, no hub (invariant 10). [the
-  Panama lifter, `cpython_ctypes_resolver`, the go cgo resolver]
+  cross-language correctness work — the symbol-CID is the identity, no hub (invariant 10).
+  [`cpython_ctypes_resolver`, the go cgo resolver; the Java Panama bridge lifter was torn down
+  with the rest of the Java seat and will be rebuilt Java-native]
 - **Witness lifter (kit oracle)** — WITNESSES THE PROGRAM: it resolves the witness body — the
   run that *demonstrates the program satisfies its spec* — over `sugar.plugin.resolve_witness`
   (from the package, or by re-running). This is correctness #4, and it is what **completes the
   correctness tuple** (spec exists, coherent, satisfied, *witnessed*) for *any* program. It has
   nothing to do with cross-language — every proof's tuple is completed by its witness. The kit
-  is UNTRUSTED and only hands back bytes. [`java_junit_witness_rpc`, the pytest witness]
+  is UNTRUSTED and only hands back bytes. [the rust cargo-test witness, the pytest witness; the
+  Java junit/testng witness will return with the Java-native kit]
 
 Verification of the witness lives in the **rust CLI** (`witness_verify`), never the kit: rust
 checks the ed25519 signature over the witness CID with its *own* primitive, and **recomputes**

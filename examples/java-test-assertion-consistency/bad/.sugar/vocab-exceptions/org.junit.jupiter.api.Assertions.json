@@ -1,6 +1,0 @@
-{
-  "overrides": {
-    "equality": ["assertEquals"],
-    "truth": ["assertTrue"]
-  }
-}

@@ -306,21 +306,9 @@ SHOWCASE_RUNS = \
 	examples/polars-showcase/run.sh \
 	examples/numpy-attribute-safety-showcase/run.sh \
 	examples/numpy-vendor/run.sh \
-	examples/java-test-assertion-consistency/run.sh \
-	examples/java-implication-edge/run.sh \
-	examples/java-contract-breadth/run.sh \
-	examples/java-real-lib-capstone/run.sh \
-	examples/java-real-lib-commons-lang3/run.sh \
-	examples/java-real-lib-commons-io/run.sh \
-	examples/java-real-lib-commons-text/run.sh \
-	examples/java-real-lib-gson/run.sh \
-	examples/java-consumer-conjoin/run.sh \
-	examples/java-panama-ffm-conjoin/run.sh \
-	examples/testng-assertion-consistency/run.sh \
 	examples/std-core-string-predicates/run.sh \
 	examples/python-bodyguard-precondition/run.sh \
 	examples/python-guard-shapes/run.sh \
-	examples/java-bodyguard-precondition/run.sh \
 	examples/forall-vampire-showcase/run.sh \
 	examples/url-showcase/run.sh \
 	examples/semver-showcase/run.sh \
@@ -341,20 +329,13 @@ test-showcases:
 	    -p sugar-walk --bin sugar-walk-rpc \
 	    -p sugar-lift-rust-cargo-test-witness --bin witness_rpc \
 	    -p sugar-lift-rust-cargo-test-witness --bin discharge_cli \
-	    -p sugar-lift-rust-tests --bin rust_test_assertions_rpc \
-	    -p sugar-lift-java-tests --bin java_test_assertions_rpc \
-	    -p sugar-lift-java-tests --bin java_jsr380_contracts_rpc \
-	    -p sugar-lift-java-tests --bin java_implications_rpc \
-	    -p sugar-lift-java-tests --bin java_junit_witness_rpc \
-	    -p sugar-lift-java-tests --bin java_junit_discharge_cli \
-	    -p sugar-lift-java-tests --bin java_testng_witness_rpc \
-	    -p sugar-lift-java-tests --bin java_testng_discharge_cli >/dev/null || exit $$?; \
+	    -p sugar-lift-rust-tests --bin rust_test_assertions_rpc >/dev/null || exit $$?; \
 	  remote_host="$${BCARGO_REMOTE_HOST:-battleaxe}"; \
 	  remote_tag="$$(printf '%s' "$$(pwd -P)" | shasum 2>/dev/null | cut -c1-12)"; \
 	  remote_tag="$${remote_tag:-default}"; \
 	  remote_root="$${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/sugar-bcargo-$$remote_tag}"; \
 	  remote_repo="$$remote_root/sugar"; \
-	  remote_cmd="cd $$(printf '%q' "$$remote_repo") && SHOWCASES_ON_REMOTE=1 POLARS_SHOWCASE_ON_REMOTE=1 POLARS_SHOWCASE_SKIP_LOCAL_BUILD=1 NUMPY_ATTR_SHOWCASE_ON_REMOTE=1 NUMPY_ATTR_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_ASSERT_SHOWCASE_ON_REMOTE=1 JAVA_ASSERT_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_EDGE_SHOWCASE_ON_REMOTE=1 JAVA_EDGE_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_CONTRACT_BREADTH_SHOWCASE_ON_REMOTE=1 JAVA_CONTRACT_BREADTH_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_REAL_LIB_CAPSTONE_ON_REMOTE=1 JAVA_REAL_LIB_CAPSTONE_SKIP_LOCAL_BUILD=1 JAVA_REAL_LIB_COMMONS_LANG3_ON_REMOTE=1 JAVA_REAL_LIB_COMMONS_LANG3_SKIP_LOCAL_BUILD=1 JAVA_REAL_LIB_COMMONS_IO_ON_REMOTE=1 JAVA_REAL_LIB_COMMONS_IO_SKIP_LOCAL_BUILD=1 JAVA_REAL_LIB_COMMONS_TEXT_ON_REMOTE=1 JAVA_REAL_LIB_COMMONS_TEXT_SKIP_LOCAL_BUILD=1 JAVA_REAL_LIB_GSON_ON_REMOTE=1 JAVA_REAL_LIB_GSON_SKIP_LOCAL_BUILD=1 JAVA_CONJOIN_SHOWCASE_ON_REMOTE=1 JAVA_CONJOIN_SHOWCASE_SKIP_LOCAL_BUILD=1 JAVA_PANAMA_SHOWCASE_ON_REMOTE=1 JAVA_PANAMA_SHOWCASE_SKIP_LOCAL_BUILD=1 TESTNG_ASSERT_SHOWCASE_ON_REMOTE=1 TESTNG_ASSERT_SHOWCASE_SKIP_LOCAL_BUILD=1 make test-showcases"; \
+	  remote_cmd="cd $$(printf '%q' "$$remote_repo") && SHOWCASES_ON_REMOTE=1 POLARS_SHOWCASE_ON_REMOTE=1 POLARS_SHOWCASE_SKIP_LOCAL_BUILD=1 NUMPY_ATTR_SHOWCASE_ON_REMOTE=1 NUMPY_ATTR_SHOWCASE_SKIP_LOCAL_BUILD=1 make test-showcases"; \
 	  ssh -o BatchMode=yes "$$remote_host" "bash -lc $$(printf '%q' "$$remote_cmd")"; \
 	  exit $$?; \
 	fi; \
