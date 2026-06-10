@@ -1,0 +1,10 @@
+*/.sugar/runs/
+*/.sugar/witnesses/
+*/.sugar/lying-discharge.sh
+*/.sugar/lift/rust-cargo-test-witness/manifest.toml
+*/.sugar/lift/rust-test-assertions/manifest.toml
+*/target/
+*/Cargo.lock
+*/blake3-512:*.proof
+*/.prove*.json
+*/.verify*.json

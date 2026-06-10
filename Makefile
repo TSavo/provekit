@@ -328,7 +328,8 @@ SHOWCASE_RUNS = \
 	examples/uuid-showcase/run.sh \
 	examples/itertools-showcase/run.sh \
 	examples/num-integer-showcase/run.sh \
-	examples/bitflags-showcase/run.sh
+	examples/bitflags-showcase/run.sh \
+	examples/forall-loop-showcase/run.sh
 
 .PHONY: test-showcases
 test-showcases:

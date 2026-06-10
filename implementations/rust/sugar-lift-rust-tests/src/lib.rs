@@ -869,8 +869,19 @@ fn group_assertions(
     entries: Vec<AssertionEntry>,
     fallback_name: &str,
 ) -> Vec<(String, Vec<Rc<Formula>>)> {
+    // A universally-quantified atom (a lifted loop) is AMBIENT: it constrains
+    // every claim in the test fn's scope, so it must be conjoined into every
+    // per-callsite obligation, not isolated in its own. Otherwise the solver
+    // never sees the universal alongside a point-claim about the same function
+    // and cannot instantiate it to refute a contradiction (forall x. g(x)==1
+    // must refute a separate g(2)==2). Per-callsite names are preserved for
+    // cross-file federation; the ambient universals ride along in each group.
+    let (ambient, regular): (Vec<AssertionEntry>, Vec<AssertionEntry>) =
+        entries.into_iter().partition(|e| is_ambient_atom(&e.atom));
+    let ambient_atoms: Vec<Rc<Formula>> = ambient.into_iter().map(|e| e.atom).collect();
+
     let mut groups: Vec<(String, Vec<Rc<Formula>>)> = Vec::new();
-    for entry in entries {
+    for entry in regular {
         let name = entry.name.unwrap_or_else(|| fallback_name.to_string());
         if let Some((_, atoms)) = groups
             .iter_mut()
@@ -881,7 +892,23 @@ fn group_assertions(
             groups.push((name, vec![entry.atom]));
         }
     }
+    if !ambient_atoms.is_empty() {
+        if groups.is_empty() {
+            // No point-claims: the universal stands alone (self-consistency).
+            groups.push((fallback_name.to_string(), ambient_atoms));
+        } else {
+            for (_, atoms) in groups.iter_mut() {
+                atoms.extend(ambient_atoms.iter().cloned());
+            }
+        }
+    }
     groups
+}
+
+/// A universally-quantified formula is ambient context for its whole scope and
+/// must be conjoined into every obligation so the solver can instantiate it.
+fn is_ambient_atom(atom: &Formula) -> bool {
+    matches!(atom, Formula::Quantifier { kind, .. } if kind == "forall")
 }
 
 /// Count assert macros reachable anywhere inside a statement list, including
