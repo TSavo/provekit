@@ -1544,6 +1544,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sugar-lift-java-tests"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde_json",
+ "sugar-canonicalizer",
+ "sugar-ir-symbolic",
+ "sugar-ir-types",
+ "sugar-lift-rust-tests",
+ "sugar-proof-envelope",
+ "sugar-walk",
+ "syn",
+ "tempfile",
+ "walkdir",
+]
+
+[[package]]
 name = "sugar-lift-rpc-client"
 version = "0.1.0"
 dependencies = [

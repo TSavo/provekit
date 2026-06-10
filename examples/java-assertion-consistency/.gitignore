@@ -1,7 +1,7 @@
-blake3-512:*.proof
-.prove*.json
-.verify*.json
-.sugar/runs/
-.sugar/witnesses/
-.sugar/lift/*/manifest.toml
-.sugar/plugin-registry-memento.json
+*/.sugar/runs/
+*/.sugar/witnesses/
+*/.sugar/lift/java-test-assertions/manifest.toml
+*/blake3-512:*.proof
+*/.prove*.json
+*/.verify*.json
+*/out/
