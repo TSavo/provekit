@@ -19,8 +19,8 @@ Claimed slice:
   - `coretests/tests/intrinsics.rs`: direct `TypeId::of::<T>()` equality and
     inequality rows from `test_typeid_sized_types` and
     `test_typeid_unsized_types`.
-  - `coretests/tests/time.rs`: finite decimal float rows for
-    `Duration::div_duration_f{32,64}`.
+  - `coretests/tests/time.rs`: finite decimal float rows and width-known
+    NaN refinement predicate rows for `Duration::div_duration_f{32,64}`.
   - `coretests/tests/fmt/mod.rs`: exact string rows for `to_string()`.
   - `coretests/tests/alloc.rs` and `coretests/tests/ops.rs`: pure
     method-chain predicate rows such as `layout.align_to(3).is_err()` and
@@ -65,8 +65,12 @@ Named gaps toward full `coretests` coverage:
 - Macros: bounded ASCII `assert_all!` / `assert_none!` expansion lives in the
   lifter, but this scalar std-core showcase does not claim broader macro
   surfaces.
-- Float refinements: NaN, infinity, ordering, `-0.0`, and exponent-form
-  literals stay out of this exact finite-value slice.
+- Float refinements: direct width-known `is_nan()` rows over
+  `Duration::div_duration_f{32,64}` are claimed. Infinity constants,
+  ordered comparisons, signed zero, width-unknown NaN predicates, and
+  approximate/tolerance assertions remain residual. Exact finite
+  exponent-form literals now normalize to Real constants when they appear in
+  the scalar lifter surface.
 - Strings/chars: exact string equality is claimed here where it is a direct
   call-result value. Richer point-wise string predicates and ASCII char
   predicates are covered by the sibling `std-core-string-predicates`
@@ -97,12 +101,13 @@ Named gaps toward full `coretests` coverage:
   unsupported expression forms stay out of the claimed slice.
 
 The run script requires representative integer, generic type-arg-keyed, active
-cfg pointer-width, TypeId comparison, finite-float, string, pure method-chain
-predicate, stable-key compound RHS rows, literal array/tuple exact-value rows,
-expression-only const-block rows, the `option::test_and` constructor
-operator-dispatch row, the `result_try_trait_v2_branch` nested constructor
-operator-dispatch row, and the `cmp_default` user-type operator row, and rejects
-any non-discharged claimed row. It is intentionally not a full-`std` claim.
+cfg pointer-width, TypeId comparison, finite-float, width-known NaN refinement,
+string, pure method-chain predicate, stable-key compound RHS rows, literal
+array/tuple exact-value rows, expression-only const-block rows, the
+`option::test_and` constructor operator-dispatch row, the
+`result_try_trait_v2_branch` nested constructor operator-dispatch row, and the
+`cmp_default` user-type operator row, and rejects any non-discharged claimed
+row. It is intentionally not a full-`std` claim.
 
 ## Grounded Full-Coretests Gap Census
 
@@ -122,17 +127,20 @@ which close operator-expression RHS complex terms. The TypeId comparison slice
 closes 2 current `intrinsics.rs` diagnostic items. The operator-dispatch slice
 closes the pre-existing `cmp_default` over-refusal. This literal aggregate
 method-chain slice closes 13 additional stable-key `iter/range.rs` rows. This
-expression-only const-block slice closes 2 `array.rs::const_array_ops` rows with
 scoped local-function identity. The first constructor-dispatch slice closes 8
 `option.rs::test_and` nullary/variant constructor rows. This nested-constructor
 slice closes 6 `result.rs::result_try_trait_v2_branch` nested variant
-constructor rows. The current known backlog is 1,045 items for that target.
+constructor rows. This float-refinement slice closes 2 width-known `time.rs` NaN
+rows, moving the combined std-core showcase count from `137+2+1` to `139+2+1`; a
+fresh full lift-only census for that lever emitted 1,703 IR declarations and
+1,031 lift diagnostics. The current known backlog is 1,045 items for that
+target.
 
 | Gap type | Count | Representative std test/assertion |
 | --- | ---: | --- |
 | Generics | 30 | Closed for direct generic call-result identity in this slice by carrying type args in the `#euf#` key; active cfg-sensitive pointer-width variants are tracked under CFG-sensitive. |
 | Macros | 40 | Broad macro surfaces remain residual here; bounded ASCII `assert_all!` / `assert_none!` expansion is handled by the lifter but is outside this showcase's claimed scalar slice. |
-| Floats | 18 | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. |
+| Floats | 18 prior full lift+verify census, with 2 NaN showcase rows now closed | `tests/num/const_from.rs`: `assert_eq!(FROM_F64, 42f64)` remains outside the exact finite direct call-result slice. Other residual examples include infinity constants/equality, ordered comparisons, signed zero, width-unknown parsed NaN predicates, and aggregate literals containing NaN. |
 | Strings/chars | 183 | `tests/alloc.rs::layout_debug_shows_log2_of_alignment`: expected string literal for `Layout` debug output; not a direct call-result equality row. |
 | CFG-sensitive | 61 | Residual after 4 closed: active `tests/mem.rs` `#[cfg(target_pointer_width = "64")]` rows for `size_of::<usize>()`, `size_of::<*const usize>()`, `align_of::<usize>()`, and `align_of::<*const usize>()` are claimed when the pinned target cfg facts say `target_pointer_width = "64"`; inactive widths and other cfg-sensitive tests remain residuals. |
 | Complex terms | 413 | Residual after the complex-term, TypeId, literal aggregate method-chain, expression-only const-block, and constructor-dispatch slices: current `tests/intrinsics.rs::{test_typeid_sized_types,test_typeid_unsized_types}` direct `TypeId::of::<T>()` comparison rows are claimed, 13 stable `iter/range.rs` method-chain rows lift with opaque exact array/tuple literal identities, 2 `array.rs::const_array_ops` rows lift through expression-only const blocks with scoped local-function identity, and 8 `option.rs::test_and` constructor rows plus 6 `result.rs::result_try_trait_v2_branch` nested constructor rows lift through operator dispatch. Remaining term shapes are outside these bounded slices or belong to expression-structure work. |

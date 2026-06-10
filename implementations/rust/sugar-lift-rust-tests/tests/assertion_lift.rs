@@ -134,6 +134,20 @@ fn assert_real_call_eq_atom(formula: &Formula, expected_call: &str, expected_rhs
     }
 }
 
+fn assert_float_refinement_atom(formula: &Formula, expected_name: &str, expected_call: &str) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            assert_eq!(name, expected_name);
+            assert_eq!(args.len(), 1);
+            match args[0].as_ref() {
+                Term::Ctor { name, .. } => assert_eq!(name, expected_call),
+                other => panic!("expected refined call term, got {other:?}"),
+            }
+        }
+        other => panic!("expected float refinement atom, got {other:?}"),
+    }
+}
+
 fn assert_int_call_cmp_atom(
     formula: &Formula,
     expected_op: &str,
@@ -919,6 +933,7 @@ fn float_mixed_refinement_gap() {
     let d = Duration;
     assert_eq!(d.div_duration_f64(Duration), 2.0);
     assert!(d.div_duration_f64(Duration).is_nan());
+    assert!(!d.div_duration_f64(Duration).is_nan());
 }
 "#;
     let out = lift_file(&parse(src), "tests/time.rs");
@@ -926,8 +941,8 @@ fn float_mixed_refinement_gap() {
     assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
     assert_eq!(
         out.warnings.len(),
-        1,
-        "unsupported refinement assertion should stay loud"
+        0,
+        "width-known NaN refinements over method float results are liftable"
     );
     assert_eq!(out.decls.len(), 1);
 
@@ -937,8 +952,80 @@ fn float_mixed_refinement_gap() {
         "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:tests/time.rs::float_mixed_refinement_gap::d,v:tests/time.rs::float_mixed_refinement_gap::Duration)::assertion"
     );
     let operands = inv_operands(decl);
-    assert_eq!(operands.len(), 1);
+    assert_eq!(operands.len(), 3);
     assert_real_call_eq_atom(&operands[0], "method:div_duration_f64", "2.0");
+    assert_float_refinement_atom(&operands[1], "float.f64.is_nan", "method:div_duration_f64");
+    match operands[2].as_ref() {
+        Formula::Connective { kind, operands } if kind == "not" => {
+            assert_eq!(operands.len(), 1);
+            assert_float_refinement_atom(
+                operands[0].as_ref(),
+                "float.f64.is_nan",
+                "method:div_duration_f64",
+            );
+        }
+        other => panic!("expected negated float refinement atom, got {other:?}"),
+    }
+}
+
+#[test]
+fn exponent_float_literals_normalize_to_exact_real_constants() {
+    let src = r#"
+fn value() -> f64 { 0.001 }
+
+#[test]
+fn exponent_float_literal() {
+    assert_eq!(value(), 1e-3);
+    assert_eq!(value(), 12.50e+2);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/num/floats.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(decl.name, "value#euf#c:callresult_value_a0()::assertion");
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    assert_real_call_eq_atom(&operands[0], "call:value", "0.001");
+    assert_real_call_eq_atom(&operands[1], "call:value", "1250");
+}
+
+#[test]
+fn width_known_infinite_refinement_lifts_as_predicate_atom() {
+    let src = r#"
+struct Duration;
+
+impl Duration {
+    fn div_duration_f32(&self, _other: Duration) -> f32 { f32::INFINITY }
+}
+
+#[test]
+fn float_infinite_refinement() {
+    let d = Duration;
+    assert!(d.div_duration_f32(Duration).is_infinite());
+}
+"#;
+    let out = lift_file(&parse(src), "tests/time.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:tests/time.rs::float_infinite_refinement::d,v:tests/time.rs::float_infinite_refinement::Duration)::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_float_refinement_atom(
+        &operands[0],
+        "float.f32.is_infinite",
+        "method:div_duration_f32",
+    );
 }
 
 #[test]

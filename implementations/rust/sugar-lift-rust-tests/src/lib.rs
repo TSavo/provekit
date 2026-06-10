@@ -655,10 +655,19 @@ fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionE
     if let Some(entry) = translate_literal_iterator_assertion(expr, local_scope)? {
         return Ok(entry);
     }
+    if let Some(entry) = translate_float_refinement_assertion(expr, local_scope)? {
+        return Ok(entry);
+    }
     match expr {
         Expr::Binary(binary) => translate_binary_bool_assertion(binary, local_scope),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
             if let Some(entry) = translate_string_predicate_assertion(&unary.expr, local_scope)? {
+                return Ok(AssertionEntry {
+                    name: entry.name,
+                    atom: not_(entry.atom),
+                });
+            }
+            if let Some(entry) = translate_float_refinement_assertion(&unary.expr, local_scope)? {
                 return Ok(AssertionEntry {
                     name: entry.name,
                     atom: not_(entry.atom),
@@ -694,6 +703,88 @@ fn translate_bool_assertion(expr: &Expr, local_scope: &str) -> Result<AssertionE
             "only scalar equality is liftable, got `{}`",
             token_key(other)
         )),
+    }
+}
+
+fn translate_float_refinement_assertion(
+    expr: &Expr,
+    local_scope: &str,
+) -> Result<Option<AssertionEntry>, String> {
+    match expr {
+        Expr::MethodCall(call) => {
+            let method = call.method.to_string();
+            if !is_liftable_float_refinement_method(&method) {
+                return Ok(None);
+            }
+            if !call.args.is_empty() {
+                return Err(format!(
+                    "float refinement predicate takes no arguments `{}`",
+                    token_key(expr)
+                ));
+            }
+            let Some(width) = float_refinement_receiver_width(&call.receiver) else {
+                return Err(format!(
+                    "float refinement predicate `{method}` requires known f32/f64 receiver width `{}`",
+                    token_key(expr)
+                ));
+            };
+            let receiver = translate_term(&call.receiver)?;
+            let name = callsite_assertion_name(receiver.as_ref(), local_scope);
+            Ok(Some(AssertionEntry {
+                name,
+                atom: atomic_(format!("float.{width}.{method}"), vec![receiver]),
+            }))
+        }
+        Expr::Paren(paren) => translate_float_refinement_assertion(&paren.expr, local_scope),
+        Expr::Group(group) => translate_float_refinement_assertion(&group.expr, local_scope),
+        _ => Ok(None),
+    }
+}
+
+fn is_liftable_float_refinement_method(method: &str) -> bool {
+    matches!(method, "is_nan" | "is_infinite")
+}
+
+fn float_refinement_receiver_width(expr: &Expr) -> Option<&'static str> {
+    match expr {
+        Expr::MethodCall(call) => float_width_from_method_name(&call.method.to_string()),
+        Expr::Path(path) => float_width_from_path(&path.path),
+        Expr::Lit(ExprLit {
+            lit: Lit::Float(lit),
+            ..
+        }) => float_width_from_suffix(lit.suffix()),
+        Expr::Paren(paren) => float_refinement_receiver_width(&paren.expr),
+        Expr::Group(group) => float_refinement_receiver_width(&group.expr),
+        _ => None,
+    }
+}
+
+fn float_width_from_method_name(method: &str) -> Option<&'static str> {
+    if method.ends_with("_f32") {
+        Some("f32")
+    } else if method.ends_with("_f64") {
+        Some("f64")
+    } else {
+        None
+    }
+}
+
+fn float_width_from_path(path: &syn::Path) -> Option<&'static str> {
+    for segment in &path.segments {
+        match segment.ident.to_string().as_str() {
+            "f32" => return Some("f32"),
+            "f64" => return Some("f64"),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn float_width_from_suffix(suffix: &str) -> Option<&'static str> {
+    match suffix {
+        "f32" => Some("f32"),
+        "f64" => Some("f64"),
+        _ => None,
     }
 }
 
@@ -1440,9 +1531,22 @@ fn translate_term(expr: &Expr) -> Result<Rc<Term>, String> {
     match expr {
         Expr::Lit(lit) => translate_lit(lit),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Neg(_)) => {
-            let value = const_int(&unary.expr)
-                .ok_or_else(|| format!("unsupported negative literal `{}`", token_key(expr)))?;
-            Ok(num(-value))
+            if let Some(value) = const_int(&unary.expr) {
+                return Ok(num(-value));
+            }
+            if let Some(value) = const_float(&unary.expr)? {
+                if real_literal_is_zero(&value) {
+                    return Err(format!(
+                        "signed zero float literal remains an IEEE refinement `{}`",
+                        token_key(expr)
+                    ));
+                }
+                return Ok(real_const(format!("-{value}")));
+            }
+            Err(format!(
+                "unsupported negative literal `{}`",
+                token_key(expr)
+            ))
         }
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => Ok(Rc::new(Term::Ctor {
             name: "bit-not".to_string(),
@@ -1739,16 +1843,125 @@ fn char_literal_term(expr: &Expr) -> Option<Rc<Term>> {
 
 fn canonical_float_literal(lit: &syn::LitFloat) -> Result<String, String> {
     let digits = lit.base10_digits().replace('_', "");
-    if digits.contains('e') || digits.contains('E') {
-        return Err(format!(
-            "float literal with exponent is a refinement gap `{}`",
-            lit.to_token_stream()
-        ));
-    }
     if digits.is_empty() {
         return Err("empty float literal".to_string());
     }
+    if digits.contains('e') || digits.contains('E') {
+        return normalize_decimal_exponent_literal(&digits).map_err(|e| {
+            format!(
+                "float literal with exponent is not exact decimal syntax `{}`: {e}",
+                lit.to_token_stream()
+            )
+        });
+    }
     Ok(digits)
+}
+
+fn normalize_decimal_exponent_literal(text: &str) -> Result<String, String> {
+    let lower = text.to_ascii_lowercase();
+    let (mantissa, exponent) = lower
+        .split_once('e')
+        .ok_or_else(|| "missing exponent marker".to_string())?;
+    if exponent.contains('e') {
+        return Err("multiple exponent markers".to_string());
+    }
+    let exponent: i64 = exponent
+        .parse()
+        .map_err(|e| format!("invalid exponent: {e}"))?;
+    if exponent.unsigned_abs() > 10_000 {
+        return Err("exponent is too large to normalize safely".to_string());
+    }
+
+    let mut digits = String::new();
+    let mut fractional_digits = 0i64;
+    let mut seen_dot = false;
+    for ch in mantissa.chars() {
+        match ch {
+            '.' if !seen_dot => seen_dot = true,
+            '.' => return Err("multiple decimal points".to_string()),
+            ch if ch.is_ascii_digit() => {
+                digits.push(ch);
+                if seen_dot {
+                    fractional_digits += 1;
+                }
+            }
+            _ => return Err(format!("invalid mantissa character `{ch}`")),
+        }
+    }
+    if digits.is_empty() {
+        return Err("empty mantissa".to_string());
+    }
+
+    let scale = fractional_digits - exponent;
+    if scale <= 0 {
+        let zeros = usize::try_from(-scale).map_err(|_| "invalid exponent scale".to_string())?;
+        digits.extend(std::iter::repeat_n('0', zeros));
+        return Ok(normalize_integer_digits(&digits));
+    }
+
+    let scale = usize::try_from(scale).map_err(|_| "invalid exponent scale".to_string())?;
+    if digits.len() <= scale {
+        let zeros = scale - digits.len();
+        let mut out = String::from("0.");
+        out.extend(std::iter::repeat_n('0', zeros));
+        out.push_str(&digits);
+        return Ok(normalize_decimal_digits(&out));
+    }
+
+    let split = digits.len() - scale;
+    let mut out = digits[..split].to_string();
+    out.push('.');
+    out.push_str(&digits[split..]);
+    Ok(normalize_decimal_digits(&out))
+}
+
+fn normalize_integer_digits(text: &str) -> String {
+    let trimmed = text.trim_start_matches('0');
+    if trimmed.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn normalize_decimal_digits(text: &str) -> String {
+    let (int_part, frac_part) = text
+        .split_once('.')
+        .expect("normalizer calls this only for decimal text");
+    let int_part = normalize_integer_digits(int_part);
+    let frac_part = frac_part.trim_end_matches('0');
+    if frac_part.is_empty() {
+        int_part
+    } else {
+        format!("{int_part}.{frac_part}")
+    }
+}
+
+fn const_float(expr: &Expr) -> Result<Option<String>, String> {
+    match expr {
+        Expr::Lit(ExprLit {
+            lit: Lit::Float(lit),
+            ..
+        }) => Ok(Some(canonical_float_literal(lit)?)),
+        Expr::Paren(paren) => const_float(&paren.expr),
+        Expr::Group(group) => const_float(&group.expr),
+        _ => Ok(None),
+    }
+}
+
+fn real_literal_is_zero(text: &str) -> bool {
+    let text = text.strip_prefix('-').unwrap_or(text);
+    let mut saw_digit = false;
+    for ch in text.chars() {
+        if ch == '.' {
+            continue;
+        }
+        saw_digit = true;
+        if ch != '0' {
+            return false;
+        }
+    }
+    saw_digit
 }
 
 fn const_int(expr: &Expr) -> Option<i64> {

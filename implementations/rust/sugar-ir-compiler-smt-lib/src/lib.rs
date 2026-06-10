@@ -249,6 +249,48 @@ mod tests {
     }
 
     #[test]
+    fn float_refinement_predicate_uses_real_call_result_sort_and_has_unsat_teeth() {
+        let z3 = which_z3().expect("z3 required for float refinement predicate check");
+        for (predicate, call_name) in [
+            ("float.f64.is_nan", "method:div_duration_f64"),
+            ("float.f32.is_infinite", "method:div_duration_f32"),
+        ] {
+            let call = ctor(call_name, vec![]);
+            let atom = atomic(predicate, vec![call.clone()]);
+            let inv = serde_json::json!({
+                "kind": "and",
+                "operands": [
+                    atom.clone(),
+                    {"kind": "not", "operands": [atom]},
+                ]
+            });
+            let parts = compile_asserted_to_parts(&inv).expect("compile");
+            assert!(
+                parts
+                    .preamble
+                    .contains(&format!("(declare-fun |{call_name}| () Real)")),
+                "float call result must be declared Real: {}",
+                parts.preamble
+            );
+            assert!(
+                parts
+                    .preamble
+                    .contains(&format!("(declare-fun {predicate} (Real) Bool)")),
+                "float refinement predicate must accept Real: {}",
+                parts.preamble
+            );
+
+            let script = format!("{}{}", parts.preamble, parts.body);
+            let out = run_z3(&z3, &script);
+            assert_eq!(
+                out.trim(),
+                "unsat",
+                "P(call) and not P(call) must be UNSAT, got: {out}\nscript:\n{script}"
+            );
+        }
+    }
+
+    #[test]
     fn builtin_atomic_predicates_are_not_declared() {
         // DISCRIMINATION: builtin/theory predicates (`=`, `<`, ...) must NOT be
         // declared (they are SMT-LIB primitives). Declaring them would be a

@@ -8,7 +8,8 @@
 #       * tests/mem.rs generic type-arg-keyed size_of/align_of rows,
 #         including active pinned-target pointer-width cfg rows,
 #       * tests/intrinsics.rs direct TypeId comparison rows,
-#       * tests/time.rs finite decimal float method-call equality rows,
+#       * tests/time.rs finite decimal float method-call equality rows and
+#         width-known NaN refinement predicate rows,
 #       * tests/fmt/mod.rs exact string method-call equality rows.
 #       * tests/alloc.rs and tests/ops.rs pure method-chain predicate rows.
 #       * tests/time.rs direct call-result comparison rows.
@@ -30,7 +31,7 @@
 #
 # Explicitly NOT claimed:
 #   - assertion macros requiring expansion,
-#   - float refinements such as NaN/infinity/ordered comparisons,
+#   - float refinements such as infinity, ordered comparisons, signed zero,
 #   - chars, inactive or ambiguous cfg rows, stateful/reassigned receiver
 #     method chains, and complex expression terms.
 set -euo pipefail
@@ -48,8 +49,8 @@ STD_CORE_RUST_TOOLCHAIN="${STD_CORE_RUST_TOOLCHAIN:-1.96.0}"
 STD_CORE_RUST_TARGET="${STD_CORE_RUST_TARGET:-}"
 
 echo "SCOPE: Rust std/core own tests, zero std source changes."
-echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
-echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, NaN/infinity/ordered float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
+echo "SCOPE: claimed slice = scalar direct call-result equality assertions from cmp.rs, type-arg-keyed generic rows from mem.rs including active pinned-target cfg rows, direct TypeId comparison rows from intrinsics.rs, finite float/string rows from time.rs/fmt/mod.rs, width-known NaN float refinement rows from time.rs, pure method-chain predicate rows from alloc.rs/ops.rs, direct call-result comparison FOL rows from time.rs, atomic.rs compound bitwise-expression RHS rows with stable keys, iter/range.rs literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp.rs::cmp_default user-type operator dispatch."
+echo "SCOPE: excluded gaps = macro surfaces not included in this showcase, infinity/ordered/signed-zero float refinements, chars, inactive or ambiguous cfg rows, stateful/reassigned receiver method chains, and complex terms whose identity cannot yet be keyed soundly."
 echo "SCOPE: pinned Rust toolchain = $STD_CORE_RUST_TOOLCHAIN (std source is not taken from CI's active default)."
 
 ensure_rust_src() {
@@ -610,9 +611,11 @@ needles = [
     "align_of::<* const usize>#euf#c:callresult_align_of_____const_usize__a0()::assertion",
     "method:to_string#euf#c:callresult_method_to_string_a1(v:tests/fmt/mod.rs::test_lifetime::a)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
+    "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::ZERO,v:Duration::ZERO)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(v:Duration::NANOSECOND,v:Duration::MAX)::assertion",
     "method:div_duration_f32#euf#c:callresult_method_div_duration_f32_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:Duration::ZERO,v:Duration::MAX)::assertion",
+    "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:Duration::ZERO,v:Duration::ZERO)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(v:Duration::NANOSECOND,v:Duration::MAX)::assertion",
     "method:div_duration_f64#euf#c:callresult_method_div_duration_f64_a2(c:*(v:Duration::SECOND,i:2),v:Duration::SECOND)::assertion",
     "method:is_err#euf#c:callresult_method_is_err_a1(c:method:align_to(v:tests/alloc.rs::layout_errors::layout,i:3))::assertion",
@@ -653,8 +656,8 @@ failed_type_id = [r for r in type_id_rows if r.get("status") != "discharged"]
 if not euf_rows:
     print("no #euf# consistency rows found", file=sys.stderr)
     raise SystemExit(1)
-if len(euf_rows) < 122:
-    print(f"expected at least 122 claimed #euf# rows after cfg-sensitive mem and compound-term lifts, got {len(euf_rows)}", file=sys.stderr)
+if len(euf_rows) < 139:
+    print(f"expected at least 139 claimed #euf# rows after NaN float refinement lifts, got {len(euf_rows)}", file=sys.stderr)
     raise SystemExit(1)
 if missing:
     print("missing required claimed rows:", file=sys.stderr)
@@ -867,6 +870,6 @@ echo "== witness: rerun exact std/core vendor tests =="
 )
 
 echo "std/core showcase self-check passed"
-echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
-echo "not-claimed: full std/coretests; macro surfaces outside this showcase/NaN-infinity-ordered-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
+echo "scope: scalar call-result equality rows from coretests/tests/{cmp.rs,mem.rs,time.rs,fmt/mod.rs}, width-known NaN float refinement rows from time.rs, active pinned-target mem cfg rows, direct TypeId comparison rows from intrinsics.rs, pure method-chain predicates from alloc.rs/ops.rs, direct comparison FOL rows from time.rs, stable-key atomic compound bitwise-expression RHS rows, iter/range literal array/tuple exact-value rows, array.rs expression-only const-block call-result rows, option.rs nullary/variant constructor operator-dispatch rows, result.rs nested variant constructor operator-dispatch rows, and cmp_default operator-dispatch row discharged; exact vendor tests reran."
+echo "not-claimed: full std/coretests; macro surfaces outside this showcase/infinity-ordered-signed-zero-float-refinements/chars/inactive-or-ambiguous-cfg rows/stateful-reassigned-receiver method chains/complex terms without sound keying remain gap census items."
 echo "toolchain-detail: $RUSTC_VERBOSE"

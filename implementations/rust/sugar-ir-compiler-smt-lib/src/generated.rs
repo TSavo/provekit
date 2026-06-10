@@ -684,6 +684,12 @@ pub fn collect_free_vars_formula(
                 }
                 return;
             }
+            if is_float_refinement_atomic_predicate(name) {
+                for a in args {
+                    collect_free_vars_term_ctx(a, out, bound, true);
+                }
+                return;
+            }
             // A var in an atom that carries a `Real` const is a real-arithmetic
             // operand (e.g. `(< (- a b) 0.00000015)`): declare it `Real`, not
             // `Int`. Atoms with no Real const collect exactly as before, so all
@@ -901,6 +907,9 @@ fn known_term_sort(term: &Term) -> Option<String> {
 }
 
 fn expected_atomic_arg_sort(name: &str, args: &[Term]) -> Option<String> {
+    if is_float_refinement_atomic_predicate(name) {
+        return Some("Real".to_string());
+    }
     let smt_name = smt_atomic_name(name);
     if matches!(smt_name, "=" | "distinct" | "<" | "<=" | ">" | ">=") {
         return args
@@ -1029,6 +1038,13 @@ fn is_builtin_atomic_predicate(name: &str) -> bool {
     )
 }
 
+fn is_float_refinement_atomic_predicate(name: &str) -> bool {
+    matches!(
+        name,
+        "float.f32.is_nan" | "float.f64.is_nan" | "float.f32.is_infinite" | "float.f64.is_infinite"
+    )
+}
+
 /// Collect every NON-BUILTIN atomic predicate that appears in boolean
 /// position, mapped to its declared signature (`(argSorts) Bool`).
 ///
@@ -1047,9 +1063,14 @@ fn collect_predicate_decls_formula(formula: &Formula, out: &mut BTreeMap<String,
     match formula {
         Formula::Atomic { name, args } => {
             if !args.is_empty() && !is_builtin_atomic_predicate(name) {
+                let expected = expected_atomic_arg_sort(name, args);
                 let arg_sorts: Vec<String> = args
                     .iter()
-                    .map(|arg| known_term_sort(arg).unwrap_or_else(|| "Int".to_string()))
+                    .map(|arg| {
+                        known_term_sort(arg)
+                            .or_else(|| expected.clone())
+                            .unwrap_or_else(|| "Int".to_string())
+                    })
                     .collect();
                 out.entry(smt_atomic_name(name).to_string())
                     .or_insert_with(|| CtorSignature {
