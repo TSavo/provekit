@@ -195,23 +195,25 @@ fn walk_items<'a>(
                     match cfg_eval_for_attrs(&m.attrs, options) {
                         CfgEval::Active => {}
                         CfgEval::Inactive(reason) => {
-                            out.warnings.push(LiftWarning {
-                                source_path: source_path.to_string(),
-                                item_name: module_name,
-                                reason: format!(
-                                    "rust test assertions: inactive cfg; skipped module: {reason}"
-                                ),
-                            });
+                            account_skipped_module(
+                                items,
+                                &module_name,
+                                "inactive",
+                                &reason,
+                                source_path,
+                                out,
+                            );
                             continue;
                         }
                         CfgEval::Ambiguous(reason) => {
-                            out.warnings.push(LiftWarning {
-                                source_path: source_path.to_string(),
-                                item_name: module_name,
-                                reason: format!(
-                                    "rust test assertions: ambiguous cfg; skipped module: {reason}"
-                                ),
-                            });
+                            account_skipped_module(
+                                items,
+                                &module_name,
+                                "ambiguous",
+                                &reason,
+                                source_path,
+                                out,
+                            );
                             continue;
                         }
                     }
@@ -245,6 +247,11 @@ fn walk_non_test_fns(
             }
             Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
+                    // A cfg-skipped module was fully accounted in pass 1; do not
+                    // recurse here or its non-test asserts would be double-counted.
+                    if !matches!(cfg_eval_for_attrs(&m.attrs, options), CfgEval::Active) {
+                        continue;
+                    }
                     modules.push(m.ident.to_string());
                     walk_non_test_fns(
                         items,
@@ -891,6 +898,43 @@ fn count_asserts_in_stmts(stmts: &[Stmt]) -> usize {
         syn::visit::Visit::visit_stmt(&mut counter, stmt);
     }
     counter.total
+}
+
+/// Exhaustively count assert-family macros across a set of items (a whole
+/// module subtree). Used to account a cfg-skipped module per assertion so the
+/// walk logs a reason for every assert it drops, leaving no silent drop.
+fn count_asserts_in_items(items: &[Item]) -> usize {
+    let mut counter = NestedAssertCounter::default();
+    for item in items {
+        syn::visit::Visit::visit_item(&mut counter, item);
+    }
+    counter.total
+}
+
+/// A cfg-gated module (e.g. `#[cfg(all(test, target_has_atomic = "64"))]`) whose
+/// predicate we cannot resolve is skipped, but every assertion inside it must
+/// still be accounted: refuse one per assert with the cfg reason so nothing is
+/// silently dropped. The remedy to discharge them is to resolve the cfg (feed
+/// the build configuration), not to ignore them.
+fn account_skipped_module(
+    items: &[Item],
+    module_name: &str,
+    kind: &str,
+    reason: &str,
+    source_path: &str,
+    out: &mut AdapterOutput,
+) {
+    let count = count_asserts_in_items(items);
+    let skip = format!("{kind} cfg on module; skipped: {reason}");
+    for _ in 0..count {
+        out.assertions_refused += 1;
+        out.skip_reasons.push(skip.clone());
+    }
+    out.warnings.push(LiftWarning {
+        source_path: source_path.to_string(),
+        item_name: module_name.to_string(),
+        reason: format!("rust test assertions: {kind} cfg; skipped module: {reason}"),
+    });
 }
 
 fn count_asserts_in_expr(expr: &Expr) -> usize {
