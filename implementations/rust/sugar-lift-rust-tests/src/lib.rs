@@ -119,20 +119,29 @@ pub fn lift_file_with_options(
 ) -> AdapterOutput {
     let mut out = AdapterOutput::default();
     let mut modules = Vec::new();
-    walk_items(&file.items, source_path, &mut modules, options, &mut out);
+    let reducer = ReductionCtx::from_items(&file.items);
+    walk_items(
+        &file.items,
+        source_path,
+        &mut modules,
+        options,
+        &reducer,
+        &mut out,
+    );
     out
 }
 
-fn walk_items(
+fn walk_items<'a>(
     items: &[Item],
     source_path: &str,
     modules: &mut Vec<String>,
     options: &LiftOptions,
+    reducer: &ReductionCtx<'a>,
     out: &mut AdapterOutput,
 ) {
     for item in items {
         match item {
-            Item::Fn(f) => visit_test_fn(f, source_path, modules, options, out),
+            Item::Fn(f) => visit_test_fn(f, source_path, modules, options, reducer, out),
             Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
                     let module_name = scoped_test_name(source_path, modules, &m.ident.to_string());
@@ -160,7 +169,7 @@ fn walk_items(
                         }
                     }
                     modules.push(m.ident.to_string());
-                    walk_items(items, source_path, modules, options, out);
+                    walk_items(items, source_path, modules, options, reducer, out);
                     modules.pop();
                 }
             }
@@ -174,6 +183,7 @@ fn visit_test_fn(
     source_path: &str,
     modules: &[String],
     options: &LiftOptions,
+    reducer: &ReductionCtx<'_>,
     out: &mut AdapterOutput,
 ) {
     if !has_test_attr(&f.attrs) {
@@ -209,6 +219,7 @@ fn visit_test_fn(
         &f.block.stmts,
         &test_name,
         options,
+        reducer,
         &mut float_widths,
         &mut entries,
         &mut skipped,
@@ -270,6 +281,60 @@ struct AssertionEntry {
     name: Option<String>,
     atom: Rc<Formula>,
 }
+
+struct ReductionCtx<'a> {
+    functions: BTreeMap<String, &'a syn::ItemFn>,
+    ambiguous_functions: BTreeSet<String>,
+}
+
+impl<'a> ReductionCtx<'a> {
+    fn from_items(items: &'a [Item]) -> Self {
+        let mut ctx = Self {
+            functions: BTreeMap::new(),
+            ambiguous_functions: BTreeSet::new(),
+        };
+        ctx.collect_items(items);
+        ctx
+    }
+
+    fn collect_items(&mut self, items: &'a [Item]) {
+        for item in items {
+            match item {
+                Item::Fn(f) if !has_test_attr(&f.attrs) => self.insert_function(f),
+                Item::Mod(m) => {
+                    if let Some((_, items)) = &m.content {
+                        self.collect_items(items);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn insert_function(&mut self, f: &'a syn::ItemFn) {
+        let name = f.sig.ident.to_string();
+        if self.ambiguous_functions.contains(&name) {
+            return;
+        }
+        if self.functions.insert(name.clone(), f).is_some() {
+            self.functions.remove(&name);
+            self.ambiguous_functions.insert(name);
+        }
+    }
+
+    fn function(&self, name: &str) -> Result<Option<&'a syn::ItemFn>, String> {
+        if self.ambiguous_functions.contains(name) {
+            return Err(format!(
+                "assertion helper `{name}` is ambiguous in visible source"
+            ));
+        }
+        Ok(self.functions.get(name).copied())
+    }
+}
+
+const MAX_ASSERTION_REDUCTION_DEPTH: usize = 8;
+
+type ExprBindings = BTreeMap<String, Expr>;
 
 #[derive(Debug, Clone, Default)]
 struct TemporalPlan {
@@ -352,6 +417,7 @@ fn collect_assertion_entries(
     stmts: &[Stmt],
     local_scope: &str,
     options: &LiftOptions,
+    reducer: &ReductionCtx<'_>,
     float_widths: &mut FloatWidthScope,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
@@ -395,6 +461,19 @@ fn collect_assertion_entries(
                     skipped.push(format!("ambiguous cfg on assertion; skipped: {reason}"));
                 }
             },
+            Stmt::Expr(expr, _) if assertion_call_name(expr).is_some() => {
+                match reduce_assertion_expr(
+                    expr,
+                    reducer,
+                    &temporal_scope,
+                    &*float_widths,
+                    options,
+                    MAX_ASSERTION_REDUCTION_DEPTH,
+                ) {
+                    Ok(reduced_entries) => entries.extend(reduced_entries),
+                    Err(reason) => skipped.push(reason),
+                }
+            }
             _ => {}
         }
         advance_temporal_scope_for_stmt(stmt, &mut temporal_scope);
@@ -905,6 +984,189 @@ fn cfg_eval_predicate(predicate: &CfgPredicate, target_cfg: Option<&TargetCfg>) 
     }
 }
 
+fn assertion_call_name(expr: &Expr) -> Option<String> {
+    let Expr::Call(call) = expr else {
+        return None;
+    };
+    let name = simple_call_name(call)?;
+    name.starts_with("assert").then_some(name)
+}
+
+fn simple_call_name(call: &syn::ExprCall) -> Option<String> {
+    let Expr::Path(path) = call.func.as_ref() else {
+        return None;
+    };
+    if path.qself.is_some() {
+        return None;
+    }
+    path.path.get_ident().map(|ident| ident.to_string())
+}
+
+fn reduce_assertion_expr(
+    expr: &Expr,
+    reducer: &ReductionCtx<'_>,
+    scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
+    options: &LiftOptions,
+    depth: usize,
+) -> Result<Vec<AssertionEntry>, String> {
+    if depth == 0 {
+        return Err(format!(
+            "assertion reduction depth exhausted at `{}`; skipped assertion",
+            token_key(expr)
+        ));
+    }
+    match expr {
+        Expr::Call(call) => {
+            let name = simple_call_name(call).ok_or_else(|| {
+                format!(
+                    "assertion call is not a simple visible helper `{}`",
+                    token_key(expr)
+                )
+            })?;
+            if !name.starts_with("assert") {
+                return Err(format!(
+                    "non-assertion helper call `{name}` is not reducible"
+                ));
+            }
+            let helper = reducer.function(&name)?.ok_or_else(|| {
+                format!("assertion helper `{name}` has no visible source; skipped assertion")
+            })?;
+            match cfg_eval_for_attrs(&helper.attrs, options) {
+                CfgEval::Active => {}
+                CfgEval::Inactive(reason) => {
+                    return Err(format!(
+                        "assertion helper `{name}` inactive cfg; skipped: {reason}"
+                    ));
+                }
+                CfgEval::Ambiguous(reason) => {
+                    return Err(format!(
+                        "assertion helper `{name}` ambiguous cfg; skipped: {reason}"
+                    ));
+                }
+            }
+            let params = helper_param_names(helper)?;
+            if params.len() != call.args.len() {
+                return Err(format!(
+                    "assertion helper `{name}` arity mismatch: expected {}, got {}",
+                    params.len(),
+                    call.args.len()
+                ));
+            }
+            let mut bindings = ExprBindings::new();
+            for (param, arg) in params.into_iter().zip(call.args.iter()) {
+                bindings.insert(param, arg.clone());
+            }
+            reduce_assertion_stmts(
+                &helper.block.stmts,
+                &bindings,
+                reducer,
+                scope,
+                float_widths,
+                options,
+                depth - 1,
+            )
+            .map_err(|e| format!("{name}: {e}"))
+        }
+        Expr::Paren(paren) => {
+            reduce_assertion_expr(&paren.expr, reducer, scope, float_widths, options, depth)
+        }
+        Expr::Group(group) => {
+            reduce_assertion_expr(&group.expr, reducer, scope, float_widths, options, depth)
+        }
+        other => Err(format!(
+            "assertion expression is not structurally reducible `{}`",
+            token_key(other)
+        )),
+    }
+}
+
+fn reduce_assertion_stmts(
+    stmts: &[Stmt],
+    bindings: &ExprBindings,
+    reducer: &ReductionCtx<'_>,
+    scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
+    options: &LiftOptions,
+    depth: usize,
+) -> Result<Vec<AssertionEntry>, String> {
+    let mut entries = Vec::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::Macro(m) => {
+                entries.extend(assertions_from_macro_with_bindings(
+                    &m.mac.path,
+                    m.mac.tokens.clone(),
+                    scope,
+                    float_widths,
+                    options,
+                    bindings,
+                )?);
+            }
+            Stmt::Expr(Expr::Macro(m), _) => {
+                entries.extend(assertions_from_macro_with_bindings(
+                    &m.mac.path,
+                    m.mac.tokens.clone(),
+                    scope,
+                    float_widths,
+                    options,
+                    bindings,
+                )?);
+            }
+            Stmt::Expr(expr, _) => {
+                let expr = substitute_expr(expr, bindings);
+                entries.extend(reduce_assertion_expr(
+                    &expr,
+                    reducer,
+                    scope,
+                    float_widths,
+                    options,
+                    depth,
+                )?);
+            }
+            other => {
+                return Err(format!(
+                    "helper body is not a static assertion reduction `{}`",
+                    token_key(other)
+                ));
+            }
+        }
+    }
+    if entries.is_empty() {
+        return Err("helper body reduced to no FOL assertions".to_string());
+    }
+    Ok(entries)
+}
+
+fn helper_param_names(f: &syn::ItemFn) -> Result<Vec<String>, String> {
+    let mut params = Vec::new();
+    for input in &f.sig.inputs {
+        let syn::FnArg::Typed(pat_type) = input else {
+            return Err(
+                "assertion helper methods with self receivers are not reducible".to_string(),
+            );
+        };
+        let name = simple_pat_name(&pat_type.pat).ok_or_else(|| {
+            format!(
+                "assertion helper `{}` has non-simple parameter `{}`",
+                f.sig.ident,
+                token_key(&pat_type.pat)
+            )
+        })?;
+        params.push(name);
+    }
+    Ok(params)
+}
+
+fn simple_pat_name(pat: &Pat) -> Option<String> {
+    match pat {
+        Pat::Ident(ident) if ident.subpat.is_none() => Some(ident.ident.to_string()),
+        Pat::Type(pat_type) => simple_pat_name(&pat_type.pat),
+        Pat::Paren(paren) => simple_pat_name(&paren.pat),
+        _ => None,
+    }
+}
+
 fn collect_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
@@ -920,12 +1182,166 @@ fn collect_macro(
     }
 }
 
+fn lower_assert_eq(
+    lhs_expr: &Expr,
+    rhs_expr: &Expr,
+    scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
+) -> Result<AssertionEntry, String> {
+    // Intercept infinity-constant equality before falling through to the
+    // Real-equality path. f32/f64 infinity is not a Real value; IEEE exactness
+    // gives the sound conjunction instead.
+    if let Some(entry) = translate_infinity_eq_assertion(lhs_expr, rhs_expr, scope, float_widths)? {
+        return Ok(entry);
+    }
+    let lhs = translate_assertion_term_in_scope(lhs_expr, scope)?;
+    let rhs = translate_assertion_term_in_scope(rhs_expr, scope)?;
+    Ok(assertion_entry_from_eq(lhs, rhs, scope))
+}
+
+fn lower_assert_ne(
+    lhs_expr: &Expr,
+    rhs_expr: &Expr,
+    scope: &TemporalScope,
+) -> Result<AssertionEntry, String> {
+    // assert_ne!(a, b) is sugar for assert!(a != b): route through the same
+    // relation path so the lifted atom is byte-identical to `a != b`.
+    let lhs = translate_assertion_term_in_scope(lhs_expr, scope)?;
+    let rhs = translate_assertion_term_in_scope(rhs_expr, scope)?;
+    Ok(assertion_entry_from_relation(
+        lhs,
+        rhs,
+        RelationOp::Ne,
+        scope,
+    ))
+}
+
+fn lower_assert_condition(
+    expr: &Expr,
+    scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
+) -> Result<AssertionEntry, String> {
+    translate_bool_assertion(expr, scope, float_widths)
+}
+
+fn substitute_exprs(exprs: &[Expr], bindings: &ExprBindings) -> Vec<Expr> {
+    exprs
+        .iter()
+        .map(|expr| substitute_expr(expr, bindings))
+        .collect()
+}
+
+fn substitute_expr(expr: &Expr, bindings: &ExprBindings) -> Expr {
+    match expr {
+        Expr::Path(path) if path.qself.is_none() => {
+            if let Some(ident) = path.path.get_ident() {
+                if let Some(bound) = bindings.get(&ident.to_string()) {
+                    return bound.clone();
+                }
+            }
+            expr.clone()
+        }
+        Expr::Paren(paren) => {
+            let mut out = paren.clone();
+            out.expr = Box::new(substitute_expr(&paren.expr, bindings));
+            Expr::Paren(out)
+        }
+        Expr::Group(group) => {
+            let mut out = group.clone();
+            out.expr = Box::new(substitute_expr(&group.expr, bindings));
+            Expr::Group(out)
+        }
+        Expr::Binary(binary) => {
+            let mut out = binary.clone();
+            out.left = Box::new(substitute_expr(&binary.left, bindings));
+            out.right = Box::new(substitute_expr(&binary.right, bindings));
+            Expr::Binary(out)
+        }
+        Expr::Unary(unary) => {
+            let mut out = unary.clone();
+            out.expr = Box::new(substitute_expr(&unary.expr, bindings));
+            Expr::Unary(out)
+        }
+        Expr::Call(call) => {
+            let mut out = call.clone();
+            out.func = Box::new(substitute_expr(&call.func, bindings));
+            out.args = call
+                .args
+                .iter()
+                .map(|arg| substitute_expr(arg, bindings))
+                .collect();
+            Expr::Call(out)
+        }
+        Expr::MethodCall(call) => {
+            let mut out = call.clone();
+            out.receiver = Box::new(substitute_expr(&call.receiver, bindings));
+            out.args = call
+                .args
+                .iter()
+                .map(|arg| substitute_expr(arg, bindings))
+                .collect();
+            Expr::MethodCall(out)
+        }
+        Expr::Await(await_expr) => {
+            let mut out = await_expr.clone();
+            out.base = Box::new(substitute_expr(&await_expr.base, bindings));
+            Expr::Await(out)
+        }
+        Expr::Reference(reference) => {
+            let mut out = reference.clone();
+            out.expr = Box::new(substitute_expr(&reference.expr, bindings));
+            Expr::Reference(out)
+        }
+        Expr::Field(field) => {
+            let mut out = field.clone();
+            out.base = Box::new(substitute_expr(&field.base, bindings));
+            Expr::Field(out)
+        }
+        Expr::Cast(cast) => {
+            let mut out = cast.clone();
+            out.expr = Box::new(substitute_expr(&cast.expr, bindings));
+            Expr::Cast(out)
+        }
+        Expr::Array(array) => {
+            let mut out = array.clone();
+            out.elems = array
+                .elems
+                .iter()
+                .map(|elem| substitute_expr(elem, bindings))
+                .collect();
+            Expr::Array(out)
+        }
+        Expr::Tuple(tuple) => {
+            let mut out = tuple.clone();
+            out.elems = tuple
+                .elems
+                .iter()
+                .map(|elem| substitute_expr(elem, bindings))
+                .collect();
+            Expr::Tuple(out)
+        }
+        _ => expr.clone(),
+    }
+}
+
 fn assertions_from_macro(
     path: &syn::Path,
     tokens: proc_macro2::TokenStream,
     scope: &TemporalScope,
     float_widths: &FloatWidthScope,
     options: &LiftOptions,
+) -> Result<Vec<AssertionEntry>, String> {
+    let bindings = ExprBindings::new();
+    assertions_from_macro_with_bindings(path, tokens, scope, float_widths, options, &bindings)
+}
+
+fn assertions_from_macro_with_bindings(
+    path: &syn::Path,
+    tokens: proc_macro2::TokenStream,
+    scope: &TemporalScope,
+    float_widths: &FloatWidthScope,
+    options: &LiftOptions,
+    bindings: &ExprBindings,
 ) -> Result<Vec<AssertionEntry>, String> {
     let Some(name) = path
         .segments
@@ -937,56 +1353,38 @@ fn assertions_from_macro(
     match name.as_str() {
         "assert_eq" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("assert_eq!: {e}"))?;
-            if args.exprs.len() < 2 {
+            let exprs = substitute_exprs(&args.exprs, bindings);
+            if exprs.len() < 2 {
                 return Err("assert_eq!: expected at least 2 arguments".to_string());
             }
-            // Intercept infinity-constant equality before falling through to the
-            // Real-equality path. f32/f64 infinity is not a Real value; IEEE
-            // exactness gives the sound conjunction instead.
-            if let Some(entry) =
-                translate_infinity_eq_assertion(&args.exprs[0], &args.exprs[1], scope, float_widths)
-                    .map_err(|e| format!("assert_eq!: {e}"))?
-            {
-                return Ok(vec![entry]);
-            }
-            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
-                .map_err(|e| format!("assert_eq!: {e}"))?;
-            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
-                .map_err(|e| format!("assert_eq!: {e}"))?;
-            Ok(vec![assertion_entry_from_eq(lhs, rhs, scope)])
+            lower_assert_eq(&exprs[0], &exprs[1], scope, float_widths)
+                .map(|entry| vec![entry])
+                .map_err(|e| format!("assert_eq!: {e}"))
         }
         "assert" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("assert!: {e}"))?;
-            let Some(first) = args.exprs.first() else {
+            let exprs = substitute_exprs(&args.exprs, bindings);
+            let Some(first) = exprs.first() else {
                 return Err("assert!: expected a condition".to_string());
             };
-            let entry = translate_bool_assertion(first, scope, float_widths)
-                .map_err(|e| format!("assert!: {e}"))?;
-            Ok(vec![entry])
+            lower_assert_condition(first, scope, float_widths)
+                .map(|entry| vec![entry])
+                .map_err(|e| format!("assert!: {e}"))
         }
         "assert_ne" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("assert_ne!: {e}"))?;
-            if args.exprs.len() < 2 {
+            let exprs = substitute_exprs(&args.exprs, bindings);
+            if exprs.len() < 2 {
                 return Err("assert_ne!: expected at least 2 arguments".to_string());
             }
-            // assert_ne!(a, b) is sugar for assert!(a != b): route through the
-            // SAME relation path so the lifted atom is byte-identical to `a != b`
-            // (ne(a, b) for primitive terms, eq(call:eq:<Type>(a, b), false) for
-            // user-typed terms via operator dispatch, invariant 9x).
-            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
-                .map_err(|e| format!("assert_ne!: {e}"))?;
-            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
-                .map_err(|e| format!("assert_ne!: {e}"))?;
-            Ok(vec![assertion_entry_from_relation(
-                lhs,
-                rhs,
-                RelationOp::Ne,
-                scope,
-            )])
+            lower_assert_ne(&exprs[0], &exprs[1], scope)
+                .map(|entry| vec![entry])
+                .map_err(|e| format!("assert_ne!: {e}"))
         }
         "assert_all" | "assert_none" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("{name}!: {e}"))?;
-            assertion_entries_from_ascii_macro(name.as_str(), &args.exprs)
+            let exprs = substitute_exprs(&args.exprs, bindings);
+            assertion_entries_from_ascii_macro(name.as_str(), &exprs)
         }
         // debug_assert*(a, b) is cfg(debug_assertions)-gated sugar: the CLAIM is
         // identical to the non-debug twin, but it is only asserted when
@@ -1013,20 +1411,13 @@ fn assertions_from_macro(
                 }
             }
             let args = parse_macro_args(tokens).map_err(|e| format!("debug_assert_eq!: {e}"))?;
-            if args.exprs.len() < 2 {
+            let exprs = substitute_exprs(&args.exprs, bindings);
+            if exprs.len() < 2 {
                 return Err("debug_assert_eq!: expected at least 2 arguments".to_string());
             }
-            if let Some(entry) =
-                translate_infinity_eq_assertion(&args.exprs[0], &args.exprs[1], scope, float_widths)
-                    .map_err(|e| format!("debug_assert_eq!: {e}"))?
-            {
-                return Ok(vec![entry]);
-            }
-            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
-                .map_err(|e| format!("debug_assert_eq!: {e}"))?;
-            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
-                .map_err(|e| format!("debug_assert_eq!: {e}"))?;
-            Ok(vec![assertion_entry_from_eq(lhs, rhs, scope)])
+            lower_assert_eq(&exprs[0], &exprs[1], scope, float_widths)
+                .map(|entry| vec![entry])
+                .map_err(|e| format!("debug_assert_eq!: {e}"))
         }
         "debug_assert" => {
             match cfg_eval_predicate(
@@ -1046,12 +1437,13 @@ fn assertions_from_macro(
                 }
             }
             let args = parse_macro_args(tokens).map_err(|e| format!("debug_assert!: {e}"))?;
-            let Some(first) = args.exprs.first() else {
+            let exprs = substitute_exprs(&args.exprs, bindings);
+            let Some(first) = exprs.first() else {
                 return Err("debug_assert!: expected a condition".to_string());
             };
-            let entry = translate_bool_assertion(first, scope, float_widths)
-                .map_err(|e| format!("debug_assert!: {e}"))?;
-            Ok(vec![entry])
+            lower_assert_condition(first, scope, float_widths)
+                .map(|entry| vec![entry])
+                .map_err(|e| format!("debug_assert!: {e}"))
         }
         "debug_assert_ne" => {
             match cfg_eval_predicate(
@@ -1071,19 +1463,13 @@ fn assertions_from_macro(
                 }
             }
             let args = parse_macro_args(tokens).map_err(|e| format!("debug_assert_ne!: {e}"))?;
-            if args.exprs.len() < 2 {
+            let exprs = substitute_exprs(&args.exprs, bindings);
+            if exprs.len() < 2 {
                 return Err("debug_assert_ne!: expected at least 2 arguments".to_string());
             }
-            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
-                .map_err(|e| format!("debug_assert_ne!: {e}"))?;
-            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
-                .map_err(|e| format!("debug_assert_ne!: {e}"))?;
-            Ok(vec![assertion_entry_from_relation(
-                lhs,
-                rhs,
-                RelationOp::Ne,
-                scope,
-            )])
+            lower_assert_ne(&exprs[0], &exprs[1], scope)
+                .map(|entry| vec![entry])
+                .map_err(|e| format!("debug_assert_ne!: {e}"))
         }
         other if other.starts_with("assert") || other.starts_with("debug_assert") => {
             Err(format!("{other}!: unsupported assertion macro"))

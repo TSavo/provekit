@@ -571,6 +571,98 @@ fn scalar_contradiction() {
 }
 
 #[test]
+fn transparent_assert_helper_reduces_to_assert_eq_base_lifter() {
+    let src = r#"
+fn assert_same(actual: i32, expected: i32) {
+    assert_eq!(actual, expected);
+}
+
+fn make_value() -> i32 { 6 }
+
+#[test]
+fn scalar_is_six() {
+    assert_same(make_value(), 6);
+}
+"#;
+    let out = lift_file(&parse(src), "src/lib.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "make_value#euf#c:callresult_make_value_a0()::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 1);
+    assert_eq_atom(&operands[0], 6);
+}
+
+#[test]
+fn transparent_assert_helper_preserves_same_subject_contradiction() {
+    let src = r#"
+fn assert_same(actual: i32, expected: i32) {
+    assert_eq!(actual, expected);
+}
+
+fn make_value() -> i32 { 6 }
+
+#[test]
+fn scalar_contradiction() {
+    assert_same(make_value(), 6);
+    assert_same(make_value(), 7);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/contradiction.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 1);
+
+    let decl = &out.decls[0];
+    assert_eq!(
+        decl.name,
+        "make_value#euf#c:callresult_make_value_a0()::assertion"
+    );
+    let operands = inv_operands(decl);
+    assert_eq!(operands.len(), 2);
+    assert_eq_atom(&operands[0], 6);
+    assert_eq_atom(&operands[1], 7);
+}
+
+#[test]
+fn transparent_assert_helper_keys_subjects_to_callsite_actuals_not_helper_params() {
+    let src = r#"
+fn assert_same(actual: i32, expected: i32) {
+    assert_eq!(actual, expected);
+}
+
+fn first_value() -> i32 { 6 }
+fn second_value() -> i32 { 7 }
+
+#[test]
+fn distinct_calls() {
+    assert_same(first_value(), 6);
+    assert_same(second_value(), 7);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/helpers.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.decls.len(), 2, "decls: {:?}", out.decls);
+    assert_eq!(
+        out.decls[0].name,
+        "first_value#euf#c:callresult_first_value_a0()::assertion"
+    );
+    assert_eq!(
+        out.decls[1].name,
+        "second_value#euf#c:callresult_second_value_a0()::assertion"
+    );
+    assert_eq_atom(&inv_operands(&out.decls[0])[0], 6);
+    assert_eq_atom(&inv_operands(&out.decls[1])[0], 7);
+}
+
+#[test]
 fn lifts_assert_binary_equality() {
     let src = r#"
 fn make_value() -> i32 { 6 }
