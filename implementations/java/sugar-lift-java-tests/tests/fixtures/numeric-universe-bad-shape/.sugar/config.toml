@@ -1,0 +1,6 @@
+# Fixture: numeric universe with a vendor method whose body is NOT the
+# supported ternary shape.  The walker must refuse by name.
+
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor/mylib"]

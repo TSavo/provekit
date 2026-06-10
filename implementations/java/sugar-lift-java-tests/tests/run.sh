@@ -1409,4 +1409,191 @@ print(f"PASS: lineLength=0 → encodeNoChunk universe registered; "
 PY
 
 echo
-echo "== all 35 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 36: G2 abs truth — equality + int32.eq-bv-expr row under SAME #euf# name"
+echo "────────────────────────────────────────────────────────────────"
+RESULT36="$(run_lift "$FIXTURES/numeric-universe" "NumericUniverseLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT36" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# testAbsTruth: assertEquals(-2147483648, abs(-2147483648))
+# int arg → argSig = "i:-2147483648"
+name = "abs#euf#c:callresult_abs_a1(i:-2147483648)::assertion"
+eq_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == "="]
+bv_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == "int32.eq-bv-expr"]
+assert len(eq_rows) == 1, (
+    f"expected 1 equality row for abs(-2147483648), got {len(eq_rows)}. "
+    f"All contracts: {[c['name'] for c in ir]}\ndiags={[d.get('reason','') for d in diags]}"
+)
+assert len(bv_rows) == 1, (
+    f"expected 1 int32.eq-bv-expr row for abs(-2147483648), got {len(bv_rows)}. "
+    f"All contracts: {[c['name'] for c in ir]}\ndiags={[d.get('reason','') for d in diags]}"
+)
+print(f"PASS: G2 abs truth — equality + int32.eq-bv-expr row, both named: {name[:80]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 37: G2 bv-expr structure — bv32.ite(bv32.slt(a,0), bv32.neg(a), a)"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT36" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+
+name = "abs#euf#c:callresult_abs_a1(i:-2147483648)::assertion"
+bv_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == "int32.eq-bv-expr"]
+assert len(bv_rows) == 1, f"no int32.eq-bv-expr row: {[c['name'] for c in ir]}"
+
+atom = bv_rows[0]["inv"]["operands"][0]
+assert atom["name"] == "int32.eq-bv-expr", f"atom name wrong: {atom['name']}"
+assert len(atom["args"]) == 2, f"expected 2 args, got {len(atom['args'])}"
+
+# args[0]: call:abs ctor
+subj = atom["args"][0]
+assert subj["kind"] == "ctor" and subj["name"] == "call:abs", f"subject wrong: {subj}"
+assert subj["args"][0] == {"kind":"const","value":-2147483648,"sort":{"kind":"primitive","name":"Int"}}, \
+    f"subject arg wrong: {subj['args']}"
+
+# args[1]: the BV expression tree — bv32.ite
+bv = atom["args"][1]
+assert bv["kind"] == "ctor" and bv["name"] == "bv32.ite", f"bv root wrong: {bv}"
+slt, neg, var = bv["args"]
+assert slt["kind"] == "ctor" and slt["name"] == "bv32.slt", f"slt wrong: {slt}"
+assert neg["kind"] == "ctor" and neg["name"] == "bv32.neg", f"neg wrong: {neg}"
+assert var["kind"] == "var" and var["name"] == "a", f"false-branch var wrong: {var}"
+# slt args: var a, const 0
+slt_lhs, slt_rhs = slt["args"]
+assert slt_lhs["kind"] == "var" and slt_lhs["name"] == "a", f"slt lhs wrong: {slt_lhs}"
+assert slt_rhs["kind"] == "const" and slt_rhs["value"] == 0, f"slt rhs wrong: {slt_rhs}"
+# neg arg: var a
+neg_arg = neg["args"][0]
+assert neg_arg["kind"] == "var" and neg_arg["name"] == "a", f"neg arg wrong: {neg_arg}"
+
+print("PASS: G2 bv-expr structure — bv32.ite(bv32.slt(a,0), bv32.neg(a), a) confirmed")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 38: G2 positive/negative abs cases also emit universe rows"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT36" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# testAbsPositive: assertEquals(5, abs(5))  → argSig i:5
+# testAbsNegative: assertEquals(5, abs(-5)) → argSig i:-5
+for arg, desc in [("5", "abs(5)"), ("-5", "abs(-5)")]:
+    name = f"abs#euf#c:callresult_abs_a1(i:{arg})::assertion"
+    eq_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == "="]
+    bv_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == "int32.eq-bv-expr"]
+    assert len(eq_rows) == 1, f"missing equality row for {desc}: {[c['name'] for c in ir]}"
+    assert len(bv_rows) == 1, (
+        f"missing int32.eq-bv-expr row for {desc}: {[c['name'] for c in ir]}\n"
+        f"diags={[d.get('reason','') for d in diags]}"
+    )
+print("PASS: G2 positive/negative abs cases — both emit equality + universe row pairs")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 39: G2 bad-shape discrimination — non-ternary body refused by name; equality still lifts"
+echo "────────────────────────────────────────────────────────────────"
+RESULT39="$(run_lift "$FIXTURES/numeric-universe-bad-shape" "NumericBadShapeLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT39" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# The equality contract must still lift
+eq_rows = [c for c in ir if c["inv"]["operands"][0]["name"] == "="]
+assert len(eq_rows) >= 1, (
+    f"equality contract missing even though clamp(0)==0 should lift: "
+    f"{[c['name'] for c in ir]}\ndiags={[d.get('reason','') for d in diags]}"
+)
+# No int32.eq-bv-expr row must be emitted
+bv_rows = [c for c in ir if c["inv"]["operands"][0]["name"] == "int32.eq-bv-expr"]
+assert len(bv_rows) == 0, (
+    f"FALSEPASS: int32.eq-bv-expr row emitted for unsupported shape: {json.dumps(bv_rows,indent=2)}"
+)
+# The walker must have emitted a named refusal for the unsupported shape
+reasons = [d.get("reason", "") for d in diags]
+refused = [r for r in reasons if "numeric universe walk refused" in r or "shape" in r.lower() or "not supported" in r.lower() or "not a ternary" in r.lower()]
+assert refused, (
+    f"expected a named refusal for unsupported shape, got no matching diagnostic: {reasons}"
+)
+print(f"PASS: G2 bad-shape discrimination — equality lifts, bv-expr refused: {refused[0][:80]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 40: G2 no-vendor-dir — equality lifts, no universe row (numeric registry empty)"
+echo "────────────────────────────────────────────────────────────────"
+# Use the no-vocab fixture (has no vendor_source_dirs) — assertEquals is unlearned there.
+# Instead use the fixtures root (which has junit5 vendor but no numeric vendor_source_dirs).
+# The base FIXTURES/.sugar/config.toml has no vendor_source_dirs key → numericRegistry = EMPTY.
+python3 - "$RESULT1" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+
+# Equality contracts must be present (this fixture always lifts them)
+eq_rows = [c for c in ir if c["inv"]["operands"][0]["name"] == "="]
+assert len(eq_rows) >= 1, f"expected equality contracts: {[c['name'] for c in ir]}"
+# No int32.eq-bv-expr rows (no vendor_source_dirs → no numeric universe)
+bv_rows = [c for c in ir if c["inv"]["operands"][0]["name"] == "int32.eq-bv-expr"]
+assert len(bv_rows) == 0, (
+    f"FALSEPASS: int32.eq-bv-expr row emitted without a vendor_source_dirs config: "
+    f"{json.dumps(bv_rows,indent=2)}"
+)
+print("PASS: G2 no-vendor-dir — equality lifts; numeric registry empty, no int32.eq-bv-expr row")
+PY
+
+echo
+echo "== all 40 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2) =="
