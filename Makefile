@@ -316,6 +316,7 @@ SHOWCASE_RUNS = \
 	examples/testng-assertion-consistency/run.sh \
 	examples/std-core-string-predicates/run.sh \
 	examples/python-bodyguard-precondition/run.sh \
+	examples/python-guard-shapes/run.sh \
 	examples/java-bodyguard-precondition/run.sh \
 	examples/forall-vampire-showcase/run.sh
 
