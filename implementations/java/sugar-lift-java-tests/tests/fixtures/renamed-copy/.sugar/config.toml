@@ -1,0 +1,6 @@
+# Renamed-copy discrimination workspace (P4.5 test b).
+# The framework dir holds CheckAssert.java: a method named `check` whose body
+# is assertEquals's body shape (guarded throw). The throw-locus deriver must
+# classify it EQUALITY — the spelling never mattered.
+[java-test-assertions]
+assertion_source_dirs = ["framework"]

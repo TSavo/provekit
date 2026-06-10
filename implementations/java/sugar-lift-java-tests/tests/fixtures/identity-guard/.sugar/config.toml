@@ -1,0 +1,2 @@
+[java-test-assertions]
+assertion_source_dirs = ["framework"]

@@ -836,5 +836,187 @@ assert len(unlearned_diags) >= 1, \
 print(f"PASS: assertThat → unlearned named refusal: {unlearned_diags[0][:90]}")
 PY
 
+# ──────────────────────────────────────────────────────────────
+# Test suite (P4.5 — throw-locus derivation: the name never enters into it)
+# ──────────────────────────────────────────────────────────────
+
+# ──────────────────────────────────────────────────────────────
 echo
-echo "== all 19 tests PASS (12 P1-P3 + 7 P4) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 20: DELETE-THE-KEYS — no name-keyed classification in the deriver"
+echo "────────────────────────────────────────────────────────────────"
+if grep -rn "isAssertEqualsName\|isAssertTrueName\|isAssertNullName\|isAssertNotEqualsName\|isAssertFalseName\|isAssertNotNullName" "$KIT/src/"; then
+  echo "FAIL: name-keyed classification predicates still present in src/"
+  exit 1
+fi
+echo "PASS: delete-the-keys — grep for name-keyed predicates returns nothing"
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 21: RENAMED-COPY discrimination — assertEquals's body under the name 'check' LIFTS"
+echo "────────────────────────────────────────────────────────────────"
+# fixtures/renamed-copy/framework/CheckAssert.java: method `check(expected, actual)`
+# with assertEquals's guarded-throw body. Throw-locus derivation must classify
+# EQUALITY; check(1, g(2)) must LIFT. The spelling never mattered.
+RESULT21="$(run_lift "$FIXTURES/renamed-copy" "RenamedCopy.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT21" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 1, \
+    f"renamed-copy: expected 1 contract from check(1, g(2)), got {len(ir)}: {json.dumps(ir,indent=2)}\ndiags={json.dumps(diags,indent=2)}"
+c = ir[0]
+inv = c["inv"]
+atomic = inv["operands"][0] if inv.get("kind") == "and" else inv
+assert atomic["kind"] == "atomic" and atomic["name"] == "=", \
+    f"expected = atomic, got {json.dumps(atomic)[:120]}"
+print(f"PASS: RENAMED-COPY — `check` (assertEquals's body, different name) classified EQUALITY and LIFTED.")
+print(f"      Contract: {c['name']}")
+print(f"      The name never entered into it: classification came from the throw-guard.")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 22: NAME-IMPOSTOR discrimination — assertEquals with 'return;' body REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+# fixtures/name-impostor/framework/FakeAssert.java: method NAMED assertEquals
+# whose body is `return;` — no throw locus → NOT an assertion. A lift here
+# would be the falsePass.
+RESULT22="$(run_lift "$FIXTURES/name-impostor" "NameImpostor.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT22" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 0, \
+    f"NAME-IMPOSTOR FALSEPASS: assertEquals with `return;` body LIFTED {len(ir)} contract(s): {json.dumps(ir,indent=2)}"
+reasons = [d.get("reason","") for d in diags]
+locus_diags = [r for r in reasons if "no throw locus" in r.lower()]
+assert len(locus_diags) >= 1, \
+    f"expected named 'no throw locus' refusal; got: {reasons}"
+print(f"PASS: NAME-IMPOSTOR — assertEquals with `return;` body is NOT an assertion.")
+print(f"      Refusal: {locus_diags[0]}")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 23: guard-position vs param-name CROSS-CHECK disagreement → unlearned"
+echo "────────────────────────────────────────────────────────────────"
+# fixtures/cross-check/framework/DisagreeAssert.java: guard says expected-first
+# (left operand of `actual != other`), param names say actual-first → UNLEARNED.
+RESULT23="$(run_lift "$FIXTURES/cross-check" "CrossCheck.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT23" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 0, \
+    f"cross-check: expected 0 contracts (order untrustworthy), got {len(ir)}: {json.dumps(ir,indent=2)}"
+reasons = [d.get("reason","") for d in diags]
+disagree_diags = [r for r in reasons if "disagreement" in r.lower()]
+assert len(disagree_diags) >= 1, \
+    f"expected guard-position vs param-name disagreement diagnostic; got: {reasons}"
+refusals = [r for r in reasons if "not in learned vocabulary" in r.lower() or "unlearned" in r.lower()]
+assert len(refusals) >= 1, \
+    f"expected unlearned refusal for the call site; got: {reasons}"
+print(f"PASS: CROSS-CHECK — guard/param-name disagreement → UNLEARNED + report.")
+print(f"      Report: {disagree_diags[0][:120]}")
+print(f"      Call-site refusal: {refusals[0][:90]}")
+PY
+
+# ──────────────────────────────────────────────────────────────
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 24: TRUTH classification from the guard — assertTrue(p(2)) lifts"
+echo "────────────────────────────────────────────────────────────────"
+# assertTrue can ONLY be in the vocab via its guard `if (!condition) failNotTrue(...)`
+# in vendored AssertTrue.java — every name rule is deleted (test 20).
+RESULT24="$(run_lift "$FIXTURES" "TruthLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT24" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+assert len(ir) == 1, \
+    f"truth: expected 1 contract from assertTrue(p(2)), got {len(ir)}: {json.dumps(ir,indent=2)}\ndiags={json.dumps(diags,indent=2)}"
+print(f"PASS: TRUTH via guard — assertTrue(p(2)) lifted: {ir[0]['name']}")
+print(f"      assertTrue entered the vocab ONLY through its `!condition` throw-guard.")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 25: IDENTITY-GUARD discrimination — reference == is NOT value equality"
+echo "────────────────────────────────────────────────────────────────"
+# fixtures/identity-guard/framework/IdentityAssert.java: assertNotSame guards on
+# `expected == actual` over OBJECTS (reference identity — two .equals() values
+# can be distinct refs) → must be UNLEARNED, never lifted as value-≠. The SAME
+# guard shape over primitive ints (assertEqualsInt) must still classify and lift.
+# Every Java developer knows == vs .equals; so must the lifter.
+RESULT25="$(run_lift "$FIXTURES/identity-guard" "IdentityGuard.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT25" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+lift_resp = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        lift_resp = obj
+        break
+assert lift_resp is not None, "no lift response"
+result = lift_resp["result"]
+ir = result["ir"]
+diags = result["diagnostics"]
+# Exactly ONE contract: the primitive overload. The identity assert refuses.
+assert len(ir) == 1, \
+    f"IDENTITY FALSEPASS or over-refusal: expected exactly 1 contract (primitive), got {len(ir)}: {json.dumps(ir,indent=2)}\ndiags={json.dumps(diags,indent=2)}"
+assert "callresult_g" in ir[0]["name"], f"the lifted contract must be the primitive one: {ir[0]['name']}"
+reasons = [d.get("reason","") for d in diags]
+ident_diags = [r for r in reasons if "assertNotSame" in r or "unlearned" in r.lower() or "vocabulary" in r.lower()]
+assert len(ident_diags) >= 1, \
+    f"expected a named refusal for the reference-identity assert; got: {reasons}"
+print(f"PASS: IDENTITY-GUARD — reference == refused ({ident_diags[0][:80]}...); primitive != lifted ({ir[0]['name']})")
+PY
+
+echo
+echo "== all 25 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5) =="
