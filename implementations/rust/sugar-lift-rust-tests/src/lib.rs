@@ -1520,11 +1520,144 @@ fn assertions_from_macro_with_bindings(
                 .map(|entry| vec![entry])
                 .map_err(|e| format!("debug_assert_ne!: {e}"))
         }
+        // assert_eq_const_safe!($t:ty: $left:expr, $right:expr)
+        //
+        // Defined in coretests/tests/lib.rs (line ~137):
+        //   macro_rules! assert_eq_const_safe {
+        //     ($t:ty: $left:expr, $right:expr) => { ... assert_eq!($left, $right) ... }
+        //   }
+        //
+        // The macro dispatches to assert_eq! at runtime. The $t:ty type argument
+        // is const-eval scaffolding only; it carries no semantic content for the
+        // lifted FOL assertion. We parse and discard it, then lower the two
+        // value expressions as a point-wise equality -- identical to assert_eq!.
+        "assert_eq_const_safe" => {
+            let args = parse_const_safe_macro_args(tokens)
+                .map_err(|e| format!("assert_eq_const_safe!: {e}"))?;
+            if args.exprs.len() < 2 {
+                return Err(
+                    "assert_eq_const_safe!: expected at least 2 value arguments".to_string()
+                );
+            }
+            lower_assert_eq(&args.exprs[0], &args.exprs[1], scope, float_widths)
+                .map(|entry| vec![entry])
+                .map_err(|e| format!("assert_eq_const_safe!: {e}"))
+        }
+        // assert_almost_eq!(a, b) -- approximate / tolerance comparison.
+        //
+        // Defined in std/tests/time.rs (and similar):
+        //   macro_rules! assert_almost_eq { ($a:expr, $b:expr) => {
+        //     let (a, b) = ($a, $b);
+        //     if a != b { assert!((a-b).abs() < Duration::from_micros(200)); }
+        //   }}
+        //
+        // Decision: HONEST NAMED REFUSAL. The assertion is (a-b).abs() < epsilon,
+        // NOT a == b. Lifting it as equality would be a false-pass. The residual
+        // is placed in layer 0 with a precise reason so the histogram is auditable.
+        "assert_almost_eq" => Err(
+            "assert_almost_eq!: approximate (tolerance) comparison, not point-wise exact \
+             equality; released to layer 0"
+                .to_string(),
+        ),
+        // assert_float_result_bits_eq!($bits, $ty, $str)
+        //
+        // Defined in coretests/tests/num/dec2flt/parse.rs (line ~74):
+        //   macro_rules! assert_float_result_bits_eq {
+        //     ($bits:literal, $ty:ty, $str:literal) => {{
+        //       let p = dec2flt::<$ty>($str);
+        //       assert_eq!(p.map(|x| x.to_bits()), Ok($bits));
+        //     }};
+        //   }
+        //
+        // Decision: HONEST NAMED REFUSAL. The inner assert_eq! wraps a
+        // Result<$ty,_> via map(|x| x.to_bits()) and compares to Ok($bits).
+        // That is a compound expression involving a closure over the parser
+        // result -- not a direct two-value point-wise equality the current
+        // term translator can reduce. Forcing a lift would require the term
+        // translator to model dec2flt, Result, and x.to_bits() in context.
+        "assert_float_result_bits_eq" => Err("assert_float_result_bits_eq!: result+closure shape \
+             (map(|x| x.to_bits())), not a direct point-wise equality; \
+             released to layer 0"
+            .to_string()),
+        // assert_chunks!($string, ($valid, $invalid), ...)
+        //
+        // Defined in coretests/tests/str_lossy.rs (line ~3):
+        //   macro_rules! assert_chunks {
+        //     ($string:expr, $(($valid:expr, $invalid:expr)),* $(,)?) => {{
+        //       let mut iter = $string.utf8_chunks();
+        //       $( let chunk = iter.next().expect(...);
+        //          assert_eq!($valid, chunk.valid());
+        //          assert_eq!($invalid, chunk.invalid()); )*
+        //       assert_eq!(None, iter.next());
+        //     }};
+        //   }
+        //
+        // Decision: HONEST NAMED REFUSAL. The macro drives an iterator over
+        // variadic chunk pairs. Each iteration emits two assert_eq! calls on
+        // iterator state. This is an unbounded-arity multi-assertion loop --
+        // not a single point-wise fact reducible to one FOL atom.
+        "assert_chunks" => Err(
+            "assert_chunks!: iterator-walk multi-assertion (variadic chunk pairs), \
+             not a single point-wise fact; released to layer 0"
+                .to_string(),
+        ),
+        // assert_range_eq!($arr, $range, $expected)
+        //
+        // Defined in coretests/tests/slice.rs (line ~1242) and
+        // alloctests/tests/str.rs (line ~334):
+        //   macro_rules! assert_range_eq {
+        //     ($arr:expr, $range:expr, $expected:expr) => {
+        //       assert_eq!(&s[$range], expected);      // index
+        //       assert_eq!(s.get($range), Some(expected)); // get
+        //       assert_eq!(s.get_unchecked($range), expected); // get_unchecked (x2 mut/immut)
+        //       ...  (6 assert_eq! calls total)
+        //     }
+        //   }
+        //
+        // Decision: HONEST NAMED REFUSAL. The macro body is a fixed-arity
+        // expansion to 6 separate assert_eq! calls testing index/get/
+        // get_unchecked for both shared and mutable references. No single
+        // atom can represent this conjunction of API-surface assertions.
+        "assert_range_eq" => Err(
+            "assert_range_eq!: multi-API bounded expansion (6 assert_eq calls \
+             across index/get/get_unchecked, shared+mut), not a single \
+             point-wise fact; released to layer 0"
+                .to_string(),
+        ),
         other if other.starts_with("assert") || other.starts_with("debug_assert") => {
             Err(format!("{other}!: unsupported assertion macro"))
         }
         _ => Ok(Vec::new()),
     }
+}
+
+// Parser for assert_eq_const_safe!($t:ty: $left:expr, $right:expr).
+//
+// The macro prefixes the two value expressions with a type annotation and a
+// colon: `u8: left, right`. Standard parse_macro_args (comma-only) cannot
+// split this because the colon is not a comma. We consume the Type and the
+// colon token explicitly, then collect the remaining expressions normally.
+struct ConstSafeMacroArgs {
+    exprs: Vec<Expr>,
+}
+
+impl Parse for ConstSafeMacroArgs {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        // Consume the leading type argument ($t:ty) and the colon separator.
+        let _ty: Type = input.parse()?;
+        let _colon: Token![:] = input.parse()?;
+        // The rest is a comma-separated list of expressions.
+        let exprs = Punctuated::<Expr, Token![,]>::parse_terminated(input)?
+            .into_iter()
+            .collect();
+        Ok(Self { exprs })
+    }
+}
+
+fn parse_const_safe_macro_args(
+    tokens: proc_macro2::TokenStream,
+) -> syn::Result<ConstSafeMacroArgs> {
+    syn::parse2(tokens)
 }
 
 fn assertion_entries_from_ascii_macro(

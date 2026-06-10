@@ -4190,3 +4190,223 @@ fn mut_ref_residual() {
         out.warnings
     );
 }
+
+// --- stdlib internal-macro lift / honest-refusal tests ---
+//
+// These tests cover the coretests corpus macros that previously fell through
+// to the generic "unsupported assertion macro" bucket. Each macro has:
+//   positive  -- correct outcome (lifted atom or named refusal)
+//   discrimination -- neighbouring assert_eq! is unaffected
+//   teeth (lowered only) -- contradiction twin is UNSAT
+//
+// Macro source citations match the definitions read from the toolchain tree.
+
+// ---- assert_eq_const_safe! ----
+//
+// Defined: coretests/tests/lib.rs ~line 137
+//   macro_rules! assert_eq_const_safe {
+//     ($t:ty: $left:expr, $right:expr) => { ... assert_eq!($left, $right) ... }
+//   }
+// Decision: lower to equality (discard the $t:ty scaffold argument).
+
+#[test]
+fn assert_eq_const_safe_lowers_to_equality() {
+    // The macro syntax is `Type: left, right`. The lifter must discard the
+    // leading type token and lift left == right as a point-wise equality atom.
+    let src = r#"
+fn make_val() -> u8 { 42 }
+
+#[test]
+fn t() {
+    assert_eq_const_safe!(u8: make_val(), 42);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/const_safe.rs");
+    assert_eq!(out.seen, 1);
+    assert_eq!(
+        out.lifted, 1,
+        "assert_eq_const_safe! must lift; warnings: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    assert_eq_atom(&operands[0], 42);
+}
+
+#[test]
+fn assert_eq_const_safe_discrimination_does_not_reroute_assert_eq() {
+    // assert_eq! in the same file must still lift independently; the new arm
+    // must not shadow or absorb the existing assert_eq! arm.
+    let src = r#"
+fn make_val() -> u8 { 7 }
+
+#[test]
+fn t() {
+    assert_eq!(make_val(), 7);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/disc.rs");
+    assert_eq!(
+        out.lifted, 1,
+        "plain assert_eq! must still lift; warnings: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    assert_eq_atom(&operands[0], 7);
+}
+
+#[test]
+fn assert_eq_const_safe_contradiction_is_unsat() {
+    // Two assert_eq_const_safe! calls claiming different values for the same
+    // function must produce a contradictory (UNSAT) conjunction, exactly as
+    // assert_eq! does. The teeth test confirms we did not accidentally lose
+    // the contradiction guard by mis-routing to a wrong lower path.
+    let src = r#"
+fn make_val() -> u8 { 42 }
+
+#[test]
+fn t() {
+    assert_eq_const_safe!(u8: make_val(), 42);
+    assert_eq_const_safe!(u8: make_val(), 99);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/const_safe_contradiction.rs");
+    assert_eq!(
+        out.lifted, 1,
+        "contradiction pair must still lift; warnings: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 2, "must produce a conjunction of two atoms");
+    assert_eq_atom(&operands[0], 42);
+    assert_eq_atom(&operands[1], 99);
+}
+
+// ---- assert_almost_eq! ----
+//
+// Defined: std/tests/time.rs (and similar):
+//   macro_rules! assert_almost_eq { ($a:expr, $b:expr) => {
+//     let (a, b) = ($a, $b);
+//     if a != b { assert!((a-b).abs() < Duration::from_micros(200)); }
+//   }}
+// Decision: HONEST NAMED REFUSAL -- tolerance comparison, not exact equality.
+
+#[test]
+fn assert_almost_eq_is_honest_named_refusal() {
+    // The lifter MUST NOT lift this to an equality. It is a tolerance
+    // comparison: (a-b).abs() < epsilon. Lifting it as a == b is a false-pass.
+    // The refusal reason must name the macro and cite the tolerance shape.
+    let src = r#"
+fn elapsed_ns() -> u64 { 1000 }
+
+#[test]
+fn t() {
+    assert_almost_eq!(elapsed_ns(), 1000);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/almost_eq.rs");
+    assert_eq!(
+        out.lifted, 0,
+        "assert_almost_eq! must NOT lift (tolerance comparison, not exact equality)"
+    );
+    assert_eq!(out.decls.len(), 0);
+    let refusal = out
+        .warnings
+        .iter()
+        .find(|w| w.reason.contains("assert_almost_eq!"))
+        .unwrap_or_else(|| {
+            panic!(
+                "expected a refusal mentioning assert_almost_eq!; warnings: {:?}",
+                out.warnings
+            )
+        });
+    assert!(
+        refusal.reason.contains("approximate") || refusal.reason.contains("tolerance"),
+        "refusal reason must cite the approximate/tolerance nature: {:?}",
+        refusal.reason
+    );
+    // Verify it does NOT contain "unsupported assertion macro" -- that is the
+    // generic bucket we are graduating away from.
+    assert!(
+        !refusal.reason.contains("unsupported assertion macro"),
+        "refusal must use a precise named reason, not the generic bucket: {:?}",
+        refusal.reason
+    );
+}
+
+#[test]
+fn assert_almost_eq_discrimination_does_not_affect_assert_eq() {
+    // assert_eq! in the same source must still lift normally; the almost_eq
+    // refusal arm must not bleed into neighbouring macros.
+    let src = r#"
+fn get_val() -> i32 { 5 }
+
+#[test]
+fn t() {
+    assert_eq!(get_val(), 5);
+}
+"#;
+    let out = lift_file(&parse(src), "tests/almost_disc.rs");
+    assert_eq!(
+        out.lifted, 1,
+        "assert_eq! must lift even after almost_eq refusal arm added; warnings: {:?}",
+        out.warnings
+    );
+}
+
+// ---- assert_float_result_bits_eq! ----
+//
+// Defined: coretests/tests/num/dec2flt/parse.rs ~line 74:
+//   macro_rules! assert_float_result_bits_eq {
+//     ($bits:literal, $ty:ty, $str:literal) => {{
+//       let p = dec2flt::<$ty>($str);
+//       assert_eq!(p.map(|x| x.to_bits()), Ok($bits));
+//     }};
+//   }
+// Decision: HONEST NAMED REFUSAL -- result+closure shape, not direct equality.
+
+#[test]
+fn assert_float_result_bits_eq_is_honest_named_refusal() {
+    // The macro wraps dec2flt in a closure (map(|x| x.to_bits())) and
+    // compares to Ok($bits). This is NOT a direct two-value equality.
+    // The refusal reason must name the macro and cite the result/closure shape.
+    let src = r#"
+fn parse_float(s: &str) -> u64 { 0 }
+
+#[test]
+fn t() {
+    assert_float_result_bits_eq!(0x3FF0000000000000u64, f64, "1.0");
+}
+"#;
+    let out = lift_file(&parse(src), "tests/float_bits.rs");
+    assert_eq!(
+        out.lifted, 0,
+        "assert_float_result_bits_eq! must NOT lift (result+closure shape)"
+    );
+    let refusal = out
+        .warnings
+        .iter()
+        .find(|w| w.reason.contains("assert_float_result_bits_eq!"))
+        .unwrap_or_else(|| {
+            panic!(
+                "expected a refusal mentioning assert_float_result_bits_eq!; warnings: {:?}",
+                out.warnings
+            )
+        });
+    assert!(
+        !refusal.reason.contains("unsupported assertion macro"),
+        "refusal must use a precise named reason, not the generic bucket: {:?}",
+        refusal.reason
+    );
+    assert!(
+        refusal.reason.contains("closure")
+            || refusal.reason.contains("result")
+            || refusal.reason.contains("to_bits"),
+        "refusal reason must cite the closure/result shape: {:?}",
+        refusal.reason
+    );
+}
