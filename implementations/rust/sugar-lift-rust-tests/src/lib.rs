@@ -986,7 +986,13 @@ fn collect_assertion_entries(
                             }
                             Some(Err(reason)) => {
                                 skipped.truncate(before_s);
-                                skipped.push(reason);
+                                // Account a refusal only for assertion macros. A
+                                // non-assertion macro (task_local!, pin!, ...)
+                                // that does not expand to FOL is not an assertion
+                                // and is ignored, not refused.
+                                if is_assert_macro_path(&m.mac.path) {
+                                    skipped.push(reason);
+                                }
                             }
                             None => {}
                         }
@@ -1037,7 +1043,13 @@ fn collect_assertion_entries(
                             }
                             Some(Err(reason)) => {
                                 skipped.truncate(before_s);
-                                skipped.push(reason);
+                                // Account a refusal only for assertion macros. A
+                                // non-assertion macro (task_local!, pin!, ...)
+                                // that does not expand to FOL is not an assertion
+                                // and is ignored, not refused.
+                                if is_assert_macro_path(&m.mac.path) {
+                                    skipped.push(reason);
+                                }
                             }
                             None => {}
                         }

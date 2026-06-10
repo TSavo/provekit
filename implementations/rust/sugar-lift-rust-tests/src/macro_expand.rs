@@ -346,6 +346,20 @@ fn transcribe(body: TokenStream, bindings: &Bindings) -> Result<TokenStream, Str
                     i += 2 + advance;
                 }
                 Some(TokenTree::Ident(name)) => {
+                    // `$crate` is the special metavariable for the defining
+                    // crate. We resolve macros and calls by their last path
+                    // segment, so it carries no information here: drop it (and a
+                    // following `::`), turning `$crate::assert_ready!` into
+                    // `assert_ready!`.
+                    if name == "crate" {
+                        i += 2;
+                        if matches!(trees.get(i), Some(TokenTree::Punct(p)) if p.as_char() == ':')
+                            && matches!(trees.get(i + 1), Some(TokenTree::Punct(p)) if p.as_char() == ':')
+                        {
+                            i += 2;
+                        }
+                        continue;
+                    }
                     match bindings.get(&name.to_string()) {
                         Some(Binding::Single(ts)) => out.extend(ts.clone()),
                         Some(Binding::Repeated(_)) => {
@@ -522,5 +536,14 @@ mod tests {
         let def = quote! { ($e:expr) => { assert!($e) }; };
         // `+ +` is not a valid expression.
         assert!(expand(&rules_of(def), quote! { + + }).is_err());
+    }
+
+    #[test]
+    fn strips_dollar_crate_in_transcription() {
+        // assert_ready_eq!($e:expr, $expect:expr) => { $crate::assert_ready!($e) ... }
+        let def = quote! { ($e:expr) => { $crate::assert_ready!($e) }; };
+        let out = expand(&rules_of(def), quote! { foo() }).expect("expand");
+        // $crate:: is stripped entirely; the macro resolves by name.
+        assert_eq!(out.to_string(), quote! { assert_ready!(foo()) }.to_string());
     }
 }
