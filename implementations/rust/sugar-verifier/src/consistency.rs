@@ -1107,6 +1107,52 @@ mod tests {
         assert_eq!(res[0].verdict, ObligationVerdict::Discharged);
     }
 
+    /// H1 [B7]: MIXED-SORT CONJUNCTION is a NAMED Undecidable, not a parse error.
+    /// Two same-named contracts equate the same `call:f` ctor to a String literal
+    /// (String-theory regime: String return sort) and to an Int literal (legacy
+    /// regime: Int return sort). One declare-fun cannot carry both return sorts;
+    /// before the fix the conjoined emit produced an ill-sorted script -> z3
+    /// parse error -> an OPAQUE undecidable. Now the emitter refuses by name and
+    /// the verifier surfaces the reason in the ConsistencyResult.
+    #[test]
+    fn mixed_sort_conjunction_is_named_undecidable() {
+        let (plan, reg) = z3_plan_and_registry();
+        let name = "f#euf#callresult_f_a1(i:1)::assertion";
+        let callf = json!({"kind":"ctor","name":"call:f","args":[int(1)]});
+        let str_lit =
+            json!({"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"abc"});
+
+        let mut pool = MementoPool::default();
+        insert_contract(
+            &mut pool,
+            "blake3-512:strrow",
+            name,
+            eqf(callf.clone(), str_lit),
+        );
+        insert_contract(&mut pool, "blake3-512:introw", name, eqf(callf, int(7)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(
+            res.len(),
+            1,
+            "same-named contracts collapse to one obligation: {res:?}"
+        );
+        assert_eq!(
+            res[0].verdict,
+            ObligationVerdict::Undecidable,
+            "mixed-sort conjunction must be a LOUD Undecidable: {res:?}"
+        );
+        assert!(
+            res[0].reason.contains("mixed-sort conjunction on call:f"),
+            "reason must name the conflict and the ctor: {}",
+            res[0].reason
+        );
+        assert!(
+            res[0].reason.contains("String vs Int"),
+            "reason must name both regimes: {}",
+            res[0].reason
+        );
+    }
+
     /// A bounded loop lifts to a guarded universal `forall x. (0<=x<3 => f(x)==1)`.
     /// The verifier must REFUTE a claim that contradicts it at an in-range point:
     /// conjoined with `f(2)==2`, z3 instantiates x=2 and the conjunction is UNSAT.

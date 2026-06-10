@@ -3495,6 +3495,23 @@ public final class JavaTestAssertionsRpc {
                 if (res != null) axiomFile = Path.of(res.toURI());
             } catch (Exception ignored) {}
 
+            // Kit-adjacent: the kit's class dir (out/) sits inside the kit root,
+            // where platform-axioms.json lives. This works from ANY workspace
+            // (showcases run with workspace roots far from the kit tree).
+            if (axiomFile == null) {
+                try {
+                    java.net.URL loc = JavaTestAssertionsRpc.class
+                            .getProtectionDomain().getCodeSource().getLocation();
+                    Path classDir = Path.of(loc.toURI());
+                    Path dir = Files.isDirectory(classDir) ? classDir : classDir.getParent();
+                    for (int i = 0; i < 3 && dir != null; i++) {
+                        Path candidate = dir.resolve("platform-axioms.json");
+                        if (Files.isReadable(candidate)) { axiomFile = candidate; break; }
+                        dir = dir.getParent();
+                    }
+                } catch (Exception ignored) {}
+            }
+
             // Fallback: scan upward from workspaceRoot for the kit dir marker
             if (axiomFile == null) {
                 // The kit root is sugar-lift-java-tests/; look for platform-axioms.json
