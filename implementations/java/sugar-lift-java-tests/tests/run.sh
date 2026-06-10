@@ -1018,5 +1018,173 @@ assert len(ident_diags) >= 1, \
 print(f"PASS: IDENTITY-GUARD — reference == refused ({ident_diags[0][:80]}...); primitive != lifted ({ir[0]['name']})")
 PY
 
+# ──────────────────────────────────────────────────────────────
+# G1 tests (26-30): universe-walk — the implementation body, walked through
+# its own grammar, defines the valid universe of the output.
+# Fixture workspaces: fixtures/universe{,-mutable,-escape}/ each carry their
+# own .sugar/config.toml with vendor_source_dirs.
+# ──────────────────────────────────────────────────────────────
 echo
-echo "== all 25 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 26: universe row — walked table + pad for the false-branch chain"
+echo "────────────────────────────────────────────────────────────────"
+RESULT26="$(run_lift "$FIXTURES/universe" "UniverseLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT26" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+
+def atoms(c):
+    return c["inv"]["operands"]
+
+# encodeUpper("x") callsite: equality + universe under the SAME #euf# name.
+name_x = "encodeUpper#euf#c:callresult_encodeUpper_a1(s:x)::assertion"
+eq_x = [c for c in ir if c["name"] == name_x and atoms(c)[0]["name"] == "="]
+un_x = [c for c in ir if c["name"] == name_x and atoms(c)[0]["name"] == "str.chars-in-set"]
+assert len(eq_x) == 1, f"expected 1 equality contract named {name_x}: {[c['name'] for c in ir]}\ndiags={json.dumps(diags,indent=2)}"
+assert len(un_x) == 1, f"expected 1 universe contract named {name_x}: {[c['name'] for c in ir]}\ndiags={json.dumps(diags,indent=2)}"
+
+# The universe set: UPPER_TABLE chars + the pad char the vendor's own
+# `if (outTable == UPPER_TABLE)` guard attributes — sorted+deduped "=ABC".
+atom = atoms(un_x[0])[0]
+subject, charset = atom["args"]
+assert subject["kind"] == "ctor" and subject["name"] == "call:encodeUpper", f"bad subject: {subject}"
+assert subject["args"][0] == {"kind":"const","value":"x","sort":{"kind":"primitive","name":"String"}}, \
+    f"subject arg must be the String literal callsite key: {subject['args']}"
+assert charset == {"kind":"const","value":"=ABC","sort":{"kind":"primitive","name":"String"}}, \
+    f"walked charset wrong (want '=ABC' = UPPER_TABLE + pad, sorted): {charset}"
+
+# The equality contract is String-sorted on the same subject.
+eq_atom = atoms(eq_x[0])[0]
+assert eq_atom["args"][0] == subject, "equality and universe must share the SAME subject term"
+assert eq_atom["args"][1] == {"kind":"const","value":"AB=","sort":{"kind":"primitive","name":"String"}}, \
+    f"sworn equality const wrong: {eq_atom['args'][1]}"
+print("PASS: universe row — set '=ABC' walked (table literals + ==-guard pad), same #euf# name as the sworn equality")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 27: table discrimination — true-branch chain gets the OTHER table, no pad"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT26" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+name_y = "encodeLower#euf#c:callresult_encodeLower_a1(s:y)::assertion"
+un_y = [c for c in ir if c["name"] == name_y and c["inv"]["operands"][0]["name"] == "str.chars-in-set"]
+assert len(un_y) == 1, f"expected 1 universe contract for encodeLower: {[c['name'] for c in ir]}"
+charset = un_y[0]["inv"]["operands"][0]["args"][1]
+# LOWER_TABLE only: the vendor's pad guard names UPPER_TABLE, so the lower
+# universe must NOT contain '=' — pad attribution is walked, not assumed.
+assert charset == {"kind":"const","value":"abc","sort":{"kind":"primitive","name":"String"}}, \
+    f"walked charset wrong (want 'abc', NO pad): {charset}"
+print("PASS: table discrimination — encodeLower universe is 'abc' (true branch, pad NOT attributed)")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 28: mutable-table discrimination — non-static-final table refused by name"
+echo "────────────────────────────────────────────────────────────────"
+RESULT28="$(run_lift "$FIXTURES/universe-mutable" "MutableLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT28" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+diags = result["diagnostics"]
+universe = [c for c in ir if c["inv"]["operands"][0]["name"] == "str.chars-in-set"]
+assert len(universe) == 0, f"MUTABLE FALSEPASS: universe row emitted over a non-final table: {json.dumps(universe,indent=2)}"
+# The sworn equality itself still lifts (it is the consumer's claim, not the universe).
+eqs = [c for c in ir if c["inv"]["operands"][0]["name"] == "="]
+assert len(eqs) == 1, f"expected the equality contract to still lift: {[c['name'] for c in ir]}"
+reasons = [d.get("reason","") for d in diags]
+named = [r for r in reasons if "mutable table is no axiom" in r]
+assert named, f"expected the mutable-table refusal by name, got: {reasons}"
+print(f"PASS: mutable-table discrimination — no universe row; named refusal: {named[0][:90]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 29: chain-escape discrimination — delegation leaves vendored source"
+echo "────────────────────────────────────────────────────────────────"
+RESULT29="$(run_lift "$FIXTURES/universe-escape" "EscapeLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT29" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+diags = result["diagnostics"]
+universe = [c for c in ir if c["inv"]["operands"][0]["name"] == "str.chars-in-set"]
+assert len(universe) == 0, f"ESCAPE FALSEPASS: universe row emitted across a chain escape: {json.dumps(universe,indent=2)}"
+eqs = [c for c in ir if c["inv"]["operands"][0]["name"] == "="]
+assert len(eqs) == 1, f"expected the equality contract to still lift: {[c['name'] for c in ir]}"
+reasons = [d.get("reason","") for d in diags]
+named = [r for r in reasons if "chain escapes vendored source" in r]
+assert named, f"expected the chain-escape refusal by name, got: {reasons}"
+print(f"PASS: chain-escape discrimination — no universe row; named refusal: {named[0][:90]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 30: string-literal args lift (getBytes + getBytesUtf8 shapes); non-literal still refused"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT26" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+diags = result["diagnostics"]
+names = [c["name"] for c in ir]
+# getBytesUtf8("z") shape lifts with arg-sig s:z (and its universe twin).
+name_z = "encodeUpper#euf#c:callresult_encodeUpper_a1(s:z)::assertion"
+assert names.count(name_z) == 2, f"getBytesUtf8 shape must lift equality+universe under {name_z}: {names}"
+# "x".getBytes() shape lifted in TEST 26 (s:x). Total: 3 callsites x 2 rows.
+assert len(ir) == 6, f"expected 6 contracts (3 string callsites x equality+universe), got {len(ir)}: {names}"
+# The non-literal arg (variable `data`) is REFUSED by name — no s:w contract.
+assert not any("s:w" in n for n in names), f"non-literal arg was lifted (falsePass): {names}"
+reasons = [d.get("reason","") for d in diags]
+named = [r for r in reasons if "is not an int literal or getBytesUtf8/getBytes" in r]
+assert named, f"expected the non-literal-arg refusal by name, got: {reasons}"
+print(f"PASS: string-literal args lift via both byte-bridge shapes; non-literal refused: {named[0][:80]}")
+PY
+
+echo
+echo "== all 30 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1) =="

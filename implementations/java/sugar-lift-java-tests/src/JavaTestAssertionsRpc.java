@@ -65,7 +65,7 @@ import java.util.stream.*;
 public final class JavaTestAssertionsRpc {
 
     private static final String SURFACE = "java-test-assertions";
-    private static final String VERSION = "0.4.5";
+    private static final String VERSION = "0.5.0"; // G1: universe-walk pass
 
     // ──────────────────────────────────────────────────────────────
     // Entry point: JSON-RPC 2.0 over stdin/stdout, one object per line.
@@ -152,13 +152,19 @@ public final class JavaTestAssertionsRpc {
         // the detected framework package (e.g. "org.junit", "org.testng").
         MultiFrameworkVocab multiVocab = loadMultiVocab(compiler, root, diagnostics);
 
+        // G1: Load universe registry from vendor_source_dirs (implementation-contract pass).
+        // vendor_source_dirs in [java-test-assertions] config.toml points at vendor implementation
+        // source trees. The UniverseWalker walks static final byte[] encode tables and registers
+        // universe contracts (str.chars-in-set) per entry-point method name.
+        UniverseRegistry universeRegistry = UniverseWalker.loadRegistry(compiler, root, diagnostics);
+
         for (String rel : files) {
             Path abs = root.resolve(rel).normalize();
             if (!Files.isReadable(abs)) {
                 diagnostics.add(diagnostic(rel, null, null, "cannot read file"));
                 continue;
             }
-            liftFile(compiler, abs, rel, multiVocab, ir, diagnostics);
+            liftFile(compiler, abs, rel, multiVocab, universeRegistry, ir, diagnostics);
         }
 
         return irDocument(ir, diagnostics);
@@ -1682,6 +1688,7 @@ public final class JavaTestAssertionsRpc {
             Path abs,
             String rel,
             MultiFrameworkVocab multiVocab,
+            UniverseRegistry universeRegistry,
             List<String> ir,
             List<String> diagnostics) throws IOException {
 
@@ -1729,7 +1736,8 @@ public final class JavaTestAssertionsRpc {
             for (Tree decl : unit.getTypeDecls()) {
                 if (decl instanceof ClassTree ct) {
                     walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
-                            vocab, frameworkKind, ambiguousFramework, ir, diagnostics, null);
+                            vocab, frameworkKind, ambiguousFramework,
+                            universeRegistry, ir, diagnostics, null);
                 }
             }
         }
@@ -1757,6 +1765,7 @@ public final class JavaTestAssertionsRpc {
             AssertionVocab vocab,
             FrameworkKind frameworkKind,
             boolean ambiguousFramework,
+            UniverseRegistry universeRegistry,
             List<String> ir,
             List<String> diagnostics,
             String outerClassName) {
@@ -1767,10 +1776,11 @@ public final class JavaTestAssertionsRpc {
         for (Tree member : classTree.getMembers()) {
             if (member instanceof MethodTree mt) {
                 liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, ir, diagnostics);
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
                 walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, ir, diagnostics, className);
+                        vocab, frameworkKind, ambiguousFramework,
+                        universeRegistry, ir, diagnostics, className);
             }
         }
     }
@@ -1789,6 +1799,7 @@ public final class JavaTestAssertionsRpc {
             AssertionVocab vocab,
             FrameworkKind frameworkKind,
             boolean ambiguousFramework,
+            UniverseRegistry universeRegistry,
             List<String> ir,
             List<String> diagnostics) {
 
@@ -1805,7 +1816,7 @@ public final class JavaTestAssertionsRpc {
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, ir, diagnostics);
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
             }
@@ -2178,6 +2189,7 @@ public final class JavaTestAssertionsRpc {
             AssertionVocab vocab,
             FrameworkKind frameworkKind,
             boolean ambiguousFramework,
+            UniverseRegistry universeRegistry,
             List<String> ir,
             List<String> diagnostics) {
 
@@ -2239,7 +2251,7 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, ir, diagnostics);
@@ -2258,10 +2270,15 @@ public final class JavaTestAssertionsRpc {
      * argument is the expected (constant) value. JUnit: index 0; TestNG: index 1.
      * This is the ONLY place the argument order matters — learned from source,
      * never hardcoded per-framework here.
+     *
+     * G1 extension: if the expected value is a String literal AND the callee is a
+     * universe-registered method, ALSO emit a str.chars-in-set universe contract
+     * with the same #euf# contract name. The conjoin then folds both contracts.
      */
     private static void liftEquality(
             MethodInvocationTree mit, String methodName, String scope,
             AssertionVocab vocab,
+            UniverseRegistry universeRegistry,
             List<String> ir, List<String> diagnostics) {
 
         List<? extends ExpressionTree> args = mit.getArguments();
@@ -2325,7 +2342,8 @@ public final class JavaTestAssertionsRpc {
             return;
         }
 
-        liftBinaryIntContract(expectedExpr, actualExpr, "=", methodName, scope, ir, diagnostics);
+        liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
+                universeRegistry, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -2389,11 +2407,34 @@ public final class JavaTestAssertionsRpc {
             ExpressionTree constExpr, ExpressionTree callExpr,
             String relation, String methodName,
             String scope, List<String> ir, List<String> diagnostics) {
+        liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
+                UniverseRegistry.EMPTY, ir, diagnostics);
+    }
 
-        OptionalLong constVal = asIntLiteral(constExpr);
-        if (constVal.isEmpty()) {
+    /**
+     * G1: Extended binary contract lifter that handles both int and String literal
+     * expected values. When the expected is a String literal AND the callee is
+     * universe-registered, ALSO emits a str.chars-in-set universe contract.
+     *
+     * String-literal args are accepted for the call's own args only when the call
+     * receives them via StringUtils.getBytesUtf8("lit") or "lit".getBytes(...).
+     * In those shapes the LITERAL is lifted (the callsite identity keys on the literal).
+     * Non-literal args are still refused.
+     */
+    private static void liftBinaryContract(
+            ExpressionTree constExpr, ExpressionTree callExpr,
+            String relation, String methodName,
+            String scope, UniverseRegistry universeRegistry,
+            List<String> ir, List<String> diagnostics) {
+
+        // Try int literal first (existing path)
+        OptionalLong intVal = asIntLiteral(constExpr);
+        // Try string literal (G1 path)
+        Optional<String> strVal = intVal.isEmpty() ? asStringLiteral(constExpr) : Optional.empty();
+
+        if (intVal.isEmpty() && strVal.isEmpty()) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                methodName, "first arg is not an int literal: " + constExpr));
+                methodName, "expected arg is not an int literal or String literal: " + constExpr));
             return;
         }
 
@@ -2410,19 +2451,83 @@ public final class JavaTestAssertionsRpc {
             return;
         }
 
+        // Collect call arguments — int literals OR string literals via getBytesUtf8/getBytes shape.
+        // Both lift to the same String sort when the callee is universe-registered.
         List<? extends ExpressionTree> callArgs = callMit.getArguments();
-        List<Long> argValues = new ArrayList<>();
+        List<Long> intArgValues = new ArrayList<>();
+        List<String> strArgValues = new ArrayList<>(); // parallel list; null = int arg
+        boolean argsAreStrings = false;
         for (ExpressionTree a : callArgs) {
-            OptionalLong val = asIntLiteral(a);
-            if (val.isEmpty()) {
-                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                    methodName, "call arg to " + callee + "(...) is not an int literal: " + a));
-                return;
+            OptionalLong iv = asIntLiteral(a);
+            if (iv.isPresent()) {
+                intArgValues.add(iv.getAsLong());
+                strArgValues.add(null);
+            } else {
+                // G1: accept StringUtils.getBytesUtf8("lit") or "lit".getBytes(...) as string literal.
+                // The callsite identity keys on the literal; note equivalence in diagnostics.
+                Optional<String> sv = asBytesStringLiteral(a);
+                if (sv.isPresent()) {
+                    intArgValues.add(0L); // placeholder (unused in string path)
+                    strArgValues.add(sv.get());
+                    argsAreStrings = true;
+                } else {
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName, "call arg to " + callee + "(...) is not an int literal or "
+                        + "getBytesUtf8/getBytes(String literal): " + a));
+                    return;
+                }
             }
-            argValues.add(val.getAsLong());
         }
 
-        ir.add(buildContractWithRelation(callee, argValues, constVal.getAsLong(), relation));
+        if (strVal.isPresent()) {
+            // String expected — emit string-sort equality contract
+            ir.add(buildStringContract(callee, intArgValues, strArgValues, argsAreStrings,
+                    strVal.get(), relation));
+            // G1: ALSO emit universe contract if callee is registered
+            String universeSet = universeRegistry.getCharSet(callee);
+            if (universeSet != null) {
+                ir.add(buildUniverseContract(callee, intArgValues, strArgValues, argsAreStrings,
+                        universeSet));
+            }
+        } else {
+            // Int expected — original path
+            ir.add(buildContractWithRelation(callee, intArgValues, intVal.getAsLong(), relation));
+        }
+    }
+
+    /**
+     * Try to extract a String literal from a StringUtils.getBytesUtf8("lit") or
+     * "lit".getBytes(...) invocation. These are the canonical patterns in commons-codec
+     * tests for turning string literals into byte arrays.
+     * Returns the string literal value if recognized, empty otherwise.
+     */
+    private static Optional<String> asBytesStringLiteral(ExpressionTree expr) {
+        if (!(expr instanceof MethodInvocationTree mit)) return Optional.empty();
+        String name = methodInvocationName(mit);
+        List<? extends ExpressionTree> args = mit.getArguments();
+        // StringUtils.getBytesUtf8("lit") — one String literal arg
+        if (name.equals("getBytesUtf8") && args.size() == 1) {
+            Optional<String> sv = asStringLiteral(args.get(0));
+            if (sv.isPresent()) return sv;
+        }
+        // "lit".getBytes() or "lit".getBytes(charset) — receiver is String literal
+        if (name.equals("getBytes")) {
+            ExpressionTree sel = mit.getMethodSelect();
+            if (sel instanceof MemberSelectTree ms) {
+                Optional<String> sv = asStringLiteral(ms.getExpression());
+                if (sv.isPresent()) return sv;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Try to extract a String literal value from an expression tree. */
+    private static Optional<String> asStringLiteral(ExpressionTree expr) {
+        if (expr instanceof ParenthesizedTree pt) return asStringLiteral(pt.getExpression());
+        if (expr instanceof LiteralTree lt && lt.getValue() instanceof String s) {
+            return Optional.of(s);
+        }
+        return Optional.empty();
     }
 
     private static void liftTruth(
@@ -2728,6 +2833,116 @@ public final class JavaTestAssertionsRpc {
         return sb.toString();
     }
 
+    /**
+     * Build ctor args that may include String-sort arguments.
+     * strArgValues[i] != null means that arg is a String literal; intArgValues[i] is unused.
+     */
+    private static String buildCtorArgsWithStrings(
+            List<Long> intArgValues, List<String> strArgValues) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < intArgValues.size(); i++) {
+            if (i > 0) sb.append(',');
+            String sv = strArgValues.get(i);
+            if (sv != null) {
+                sb.append("{\"kind\":\"const\",\"value\":\"").append(esc(sv))
+                  .append("\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}");
+            } else {
+                sb.append("{\"kind\":\"const\",\"value\":")
+                  .append(intArgValues.get(i))
+                  .append(",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Compact arg-signature for contract naming: String args use s:<literal>, int args use i:<n>.
+     */
+    private static String buildArgSigMixed(List<Long> intArgValues, List<String> strArgValues) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < intArgValues.size(); i++) {
+            if (i > 0) sb.append(',');
+            String sv = strArgValues.get(i);
+            if (sv != null) {
+                sb.append("s:").append(sv);
+            } else {
+                sb.append("i:").append(intArgValues.get(i));
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * G1: Build a string-sort equality contract.
+     * The callresult term gets the String sort; the expected is a String literal.
+     * Contract name uses the same #euf# schema so the conjoin folds it with
+     * any universe contract on the same callsite.
+     */
+    private static String buildStringContract(
+            String callee, List<Long> intArgValues, List<String> strArgValues,
+            boolean argsAreStrings, String expectedStr, String relation) {
+
+        String safeName = toSafeName(callee);
+        int arity = intArgValues.size();
+        String argSig = argsAreStrings
+                ? buildArgSigMixed(intArgValues, strArgValues)
+                : intArgValues.stream().map(v -> "i:" + v).collect(Collectors.joining(","));
+        String contractName = callee + "#euf#c:callresult_" + safeName + "_a" + arity
+                + "(" + argSig + ")::assertion";
+
+        String ctorArgs = argsAreStrings
+                ? buildCtorArgsWithStrings(intArgValues, strArgValues)
+                : buildCtorArgs(intArgValues);
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + ctorArgs + "]}";
+        String constJson = "{\"kind\":\"const\",\"value\":\"" + esc(expectedStr)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":["
+             + "{\"kind\":\"atomic\",\"name\":\"" + relation + "\",\"args\":["
+             + ctorJson + "," + constJson + "]}]}}";
+    }
+
+    /**
+     * G1: Build a universe membership contract (str.chars-in-set).
+     * The atom asserts the callresult is a member of the walked character set.
+     * Same #euf# contract name as the equality contract → conjoined automatically.
+     *
+     * AST provenance: charSet was derived from walking static final byte[] literals
+     * in the vendor's source (Base64.java/BaseNCodec.java). Every character in the
+     * set traces to a LiteralTree node in the vendor's VariableTree initializer.
+     */
+    private static String buildUniverseContract(
+            String callee, List<Long> intArgValues, List<String> strArgValues,
+            boolean argsAreStrings, String charSet) {
+
+        String safeName = toSafeName(callee);
+        int arity = intArgValues.size();
+        String argSig = argsAreStrings
+                ? buildArgSigMixed(intArgValues, strArgValues)
+                : intArgValues.stream().map(v -> "i:" + v).collect(Collectors.joining(","));
+        String contractName = callee + "#euf#c:callresult_" + safeName + "_a" + arity
+                + "(" + argSig + ")::assertion";
+
+        String ctorArgs = argsAreStrings
+                ? buildCtorArgsWithStrings(intArgValues, strArgValues)
+                : buildCtorArgs(intArgValues);
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + ctorArgs + "]}";
+        String setJson = "{\"kind\":\"const\",\"value\":\"" + esc(charSet)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":["
+             + "{\"kind\":\"atomic\",\"name\":\"str.chars-in-set\",\"args\":["
+             + ctorJson + "," + setJson + "]}]}}";
+    }
+
     // ──────────────────────────────────────────────────────────────
     // File enumeration
     // ──────────────────────────────────────────────────────────────
@@ -2910,6 +3125,731 @@ public final class JavaTestAssertionsRpc {
     private static String esc(String s) {
         return s.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // G1: UniverseRegistry — maps bare method name → walked char set
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Immutable mapping from bare callee name → universe char-set string
+     * (chars sorted+deduped, pad included if applicable).
+     *
+     * Built by UniverseWalker from vendor source. An entry is present ONLY
+     * when the walk succeeded (static final table, chain stays in vendored source).
+     * No entry = universe walk refused for that callee.
+     */
+    static final class UniverseRegistry {
+        static final UniverseRegistry EMPTY = new UniverseRegistry(Map.of());
+
+        private final Map<String, String> charSets; // callee simple-name → sorted charset
+
+        UniverseRegistry(Map<String, String> charSets) {
+            this.charSets = Map.copyOf(charSets);
+        }
+
+        /** Return the universe char-set for a callee, or null if not registered. */
+        String getCharSet(String callee) { return charSets.get(callee); }
+        boolean isEmpty() { return charSets.isEmpty(); }
+        Map<String, String> all() { return charSets; }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // G1: UniverseWalker — walk static final byte[] tables from vendor source
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * THE LAW: every constraint emitted by this walker must trace to an AST node
+     * of the vendored source (com.sun.source.tree.*). No hand-authored domain
+     * knowledge. If it is not in the tree, it is not in the universe. In
+     * particular: NO table names, NO method names, NO urlSafe defaults, NO pad
+     * policy live in this kit — all of them are DISCOVERED by the walk below.
+     *
+     * Scope: WEAK TIER. The universe is: every output character is a member of
+     * the static final encode table (∪ the pad char when the vendor's own guard
+     * attributes it). Nothing else (no length formula, no bit-equation).
+     *
+     * The walk (all facts from tree nodes):
+     *   1. TABLE SELECTOR: find an assignment whose RHS is a ternary over two
+     *      identifiers naming static final array fields with all-literal
+     *      initializers — `this.encodeTable = urlSafe ? A : B`. The condition
+     *      identifier is the selector parameter; A/B are the tables.
+     *      Mutable table guard: a branch field missing static OR final is no
+     *      axiom — named refusal, selector dropped.
+     *   2. PAD ATTRIBUTION: a table T gains the pad char iff the vendor's own
+     *      source guards a pad write with `if (<selectorField> == T)`; the pad
+     *      identifier's VALUE is walked: field literal, or field ← ctor param ←
+     *      cross-class super(...) arg ← static final literal field.
+     *   3. ENTRY POINTS: every public static String-returning method is walked
+     *      by LITERAL PROPAGATION: boolean/int literal arguments bind to the
+     *      callee's parameter names and propagate through the static overload
+     *      chain, ctor invocations, and this(...) ctor chains until the
+     *      selector assignment is reached and its condition evaluates to a
+     *      bound literal. An unbound selector condition = ambiguous = refusal.
+     *      A ternary callsite with an unbound condition resolves only if BOTH
+     *      branches resolve to the SAME table.
+     *
+     * Chain escape: a call that leaves vendored source is a named refusal —
+     * with ONE declared seam: a 1-arg `newStringUsAscii(...)` wrapper is
+     * unwrapped. That is an AXIOM, not a walked fact (StringUtils is not
+     * vendored; byte[]→String US-ASCII conversion is charset-transparent by
+     * JDK semantics, which no syntax walk can establish). It is the only
+     * non-walked step and it is name-gated and documented here.
+     *
+     * Honest gap (declared, not walked): the registered entry points propagate
+     * isChunked=false / lineLength=0 literals, and with lineLength=0 the
+     * vendor's encode path emits no line separator — that last implication is
+     * value-flow the weak tier does not walk. Chunked entry points are never
+     * registered (they return byte[], not String).
+     */
+    static final class UniverseWalker {
+
+        static UniverseRegistry loadRegistry(
+                JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
+            List<Path> vendorDirs;
+            try {
+                vendorDirs = readVendorSourceDirs(workspaceRoot);
+            } catch (IOException e) {
+                diagnostics.add(diagnostic("<universe-walker>", "<universe-walker>",
+                    "<universe-walker>", "config read error: " + e.getMessage()));
+                return UniverseRegistry.EMPTY;
+            }
+            if (vendorDirs.isEmpty()) return UniverseRegistry.EMPTY;
+
+            // Collect all vendor Java files
+            List<Path> vendorFiles = new ArrayList<>();
+            for (Path dir : vendorDirs) {
+                if (!Files.isDirectory(dir)) continue;
+                try (Stream<Path> walk = Files.walk(dir)) {
+                    walk.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .forEach(vendorFiles::add);
+                } catch (IOException e) {
+                    diagnostics.add(diagnostic("<universe-walker>", "<universe-walker>",
+                        dir.toString(), "vendor dir walk error: " + e.getMessage()));
+                }
+            }
+            if (vendorFiles.isEmpty()) return UniverseRegistry.EMPTY;
+
+            return buildRegistry(compiler, vendorFiles, workspaceRoot, diagnostics);
+        }
+
+        /**
+         * Read vendor_source_dirs from [java-test-assertions] in .sugar/config.toml.
+         * Uses the same TOML-lite codec as readAssertionSourceDirs — no string scanning
+         * of Java source, only TOML bytes.
+         */
+        static List<Path> readVendorSourceDirs(Path workspaceRoot) throws IOException {
+            Path configPath = workspaceRoot.resolve(".sugar").resolve("config.toml");
+            if (!Files.isReadable(configPath)) return List.of();
+
+            String toml = Files.readString(configPath, StandardCharsets.UTF_8);
+            int sectionIdx = toml.indexOf("[java-test-assertions]");
+            if (sectionIdx < 0) return List.of();
+
+            int fromIdx = sectionIdx + "[java-test-assertions]".length();
+            int nextSection = -1;
+            for (int i = fromIdx; i < toml.length(); i++) {
+                if (toml.charAt(i) == '[' && (i == 0 || toml.charAt(i - 1) == '\n')) {
+                    nextSection = i;
+                    break;
+                }
+            }
+            String section = nextSection >= 0 ? toml.substring(fromIdx, nextSection) : toml.substring(fromIdx);
+
+            int keyIdx = section.indexOf("vendor_source_dirs");
+            if (keyIdx < 0) return List.of();
+            int bracketOpen = section.indexOf('[', keyIdx);
+            if (bracketOpen < 0) return List.of();
+            int bracketClose = matchingBracket(section, bracketOpen, '[', ']');
+            if (bracketClose < 0) return List.of();
+
+            String arrayBody = section.substring(bracketOpen + 1, bracketClose);
+            List<String> dirs = new ArrayList<>();
+            int i = 0;
+            while (i < arrayBody.length()) {
+                while (i < arrayBody.length() && (arrayBody.charAt(i) == ' ' || arrayBody.charAt(i) == '\t'
+                        || arrayBody.charAt(i) == '\n' || arrayBody.charAt(i) == '\r'
+                        || arrayBody.charAt(i) == ',')) i++;
+                if (i >= arrayBody.length()) break;
+                char c = arrayBody.charAt(i);
+                if (c == '"') {
+                    StringBuilder sb = new StringBuilder();
+                    i++;
+                    while (i < arrayBody.length() && arrayBody.charAt(i) != '"') {
+                        char ch = arrayBody.charAt(i++);
+                        if (ch == '\\' && i < arrayBody.length()) {
+                            char esc = arrayBody.charAt(i++);
+                            switch (esc) {
+                                case 'n' -> sb.append('\n'); case 't' -> sb.append('\t');
+                                case 'r' -> sb.append('\r'); case '"' -> sb.append('"');
+                                case '\\' -> sb.append('\\');
+                                default -> { sb.append('\\'); sb.append(esc); }
+                            }
+                        } else sb.append(ch);
+                    }
+                    i++;
+                    dirs.add(sb.toString());
+                } else if (c == '\'') {
+                    StringBuilder sb = new StringBuilder();
+                    i++;
+                    while (i < arrayBody.length() && arrayBody.charAt(i) != '\'')
+                        sb.append(arrayBody.charAt(i++));
+                    i++;
+                    dirs.add(sb.toString());
+                } else i++;
+            }
+
+            List<Path> result = new ArrayList<>();
+            for (String d : dirs) result.add(workspaceRoot.resolve(d).normalize());
+            return result;
+        }
+
+        /**
+         * Parse vendor source files, build a class corpus, walk Base64.java's
+         * entry-point static methods to determine table assignments, extract table
+         * literals, and return a UniverseRegistry.
+         *
+         * All facts trace to AST nodes (VariableTree, LiteralTree, MethodTree,
+         * ReturnTree, MethodInvocationTree). No string scanning.
+         */
+        private static UniverseRegistry buildRegistry(
+                JavaCompiler compiler, List<Path> vendorFiles,
+                Path workspaceRoot, List<String> diagnostics) {
+
+            // ── Step 1: parse all vendor files into AST units ──────────────
+            // Map: simple class name → (compilationUnit, classTree)
+            Map<String, CompilationUnitTree> unitByClass = new LinkedHashMap<>();
+            Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
+
+            for (Path src : vendorFiles) {
+                try {
+                    String source = Files.readString(src, StandardCharsets.UTF_8);
+                    JavaFileObject fo = new StringJavaFileObject(src.toString(), source);
+                    StandardJavaFileManager fm = compiler.getStandardFileManager(
+                            null, null, StandardCharsets.UTF_8);
+                    JavacTask task = (JavacTask) compiler.getTask(
+                            null, fm, d -> {}, List.of("--release", "21"),
+                            null, List.of(fo));
+                    for (CompilationUnitTree cu : task.parse()) {
+                        for (Tree decl : cu.getTypeDecls()) {
+                            if (decl instanceof ClassTree ct) {
+                                String name = ct.getSimpleName().toString();
+                                unitByClass.put(name, cu);
+                                classTreeByName.put(name, ct);
+                            }
+                        }
+                    }
+                    fm.close();
+                } catch (IOException e) {
+                    diagnostics.add(diagnostic("<universe-walker>", "<universe-walker>",
+                        src.toString(), "parse error: " + e.getMessage()));
+                }
+            }
+
+            if (classTreeByName.isEmpty()) return UniverseRegistry.EMPTY;
+
+            Corpus corpus = new Corpus(classTreeByName);
+
+            // ── Step 2: discover table selectors from the vendor's own AST ──
+            // A selector is `<field> = <condIdent> ? <tableIdentA> : <tableIdentB>`
+            // where A and B name static final array fields with all-literal
+            // initializers. Nothing about the field NAMES is known to this kit.
+            List<Selector> selectors = findSelectors(corpus, diagnostics);
+            if (selectors.isEmpty()) return UniverseRegistry.EMPTY;
+
+            // ── Step 3: extract per-table charsets (walked literals only) ───
+            Map<String, java.util.TreeSet<Character>> tableChars = new LinkedHashMap<>();
+            for (Selector sel : selectors) {
+                for (String tbl : List.of(sel.trueTable, sel.falseTable)) {
+                    if (tableChars.containsKey(tbl)) continue;
+                    List<Integer> bytes = corpus.literalArrayValues(tbl);
+                    if (bytes == null || bytes.isEmpty()) {
+                        diagnostics.add(diagnostic("<universe-walker>", corpus.ownerOf(tbl), tbl,
+                            "universe walk refused: table " + tbl + " contains non-literal entries"));
+                        continue;
+                    }
+                    java.util.TreeSet<Character> cs = new java.util.TreeSet<>();
+                    for (int b : bytes) cs.add((char) b);
+                    tableChars.put(tbl, cs);
+                }
+            }
+
+            // ── Step 4: pad attribution — the vendor's own `==`-guarded write ──
+            // `if (<selectorField> == T) { ... = pad; }` attributes the pad char
+            // to T. The pad identifier's VALUE is walked (field literal, or
+            // field ← ctor param ← super(...) arg ← static final literal field).
+            for (Selector sel : selectors) {
+                Map<String, String> padIdentByTable = corpus.findPadGuards(sel.lhsField);
+                for (Map.Entry<String, String> e : padIdentByTable.entrySet()) {
+                    String tbl = e.getKey();
+                    java.util.TreeSet<Character> cs = tableChars.get(tbl);
+                    if (cs == null) continue;
+                    Integer padVal = corpus.resolveFieldValue(e.getValue(), 0);
+                    if (padVal == null) {
+                        diagnostics.add(diagnostic("<universe-walker>", corpus.ownerOf(tbl), tbl,
+                            "universe walk refused: pad write guarded on " + tbl
+                            + " but pad identifier '" + e.getValue() + "' has no walkable literal value"));
+                        tableChars.remove(tbl); // wrong universe is worse than none
+                        continue;
+                    }
+                    cs.add((char) (int) padVal);
+                }
+            }
+
+            // ── Step 5: resolve entry points by literal propagation ─────────
+            // Every public static String-returning method is walked; boolean/int
+            // literals bind to parameter names and propagate through the static
+            // overload chain, ctor calls and this(...) chains until a selector
+            // condition evaluates. byte[]-returning methods are never registered:
+            // str.chars-in-set is a String-sorted predicate.
+            Map<String, String> registry = new LinkedHashMap<>();
+            Set<String> ambiguous = new HashSet<>();
+            for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
+                for (Tree m : ce.getValue().getMembers()) {
+                    if (!(m instanceof MethodTree mt)) continue;
+                    Set<Modifier> mmods = mt.getModifiers().getFlags();
+                    if (!mmods.contains(Modifier.PUBLIC) || !mmods.contains(Modifier.STATIC)) continue;
+                    String retType = mt.getReturnType() != null ? mt.getReturnType().toString() : "";
+                    if (!retType.equals("String")) continue;
+                    if (mt.getBody() == null || mt.getBody().getStatements().isEmpty()) continue;
+
+                    String mName = mt.getName().toString();
+                    List<String> notes = new ArrayList<>();
+                    String tbl = corpus.resolveStaticMethod(mt, Map.of(), selectors, 0, notes);
+                    if (tbl == null) {
+                        if (!notes.isEmpty()) {
+                            diagnostics.add(diagnostic("<universe-walker>", ce.getKey(), mName,
+                                "universe walk refused: " + String.join("; ", notes)));
+                        }
+                        continue;
+                    }
+                    java.util.TreeSet<Character> cs = tableChars.get(tbl);
+                    if (cs == null) continue; // table refused upstream (named there)
+                    StringBuilder sb = new StringBuilder();
+                    for (char c : cs) sb.append(c);
+                    String charSet = sb.toString();
+                    String prev = registry.get(mName);
+                    if (prev != null && !prev.equals(charSet)) {
+                        // Overloads resolving to DIFFERENT tables: callsite naming
+                        // is simple-name keyed, so this would be ambiguous. Refuse.
+                        diagnostics.add(diagnostic("<universe-walker>", ce.getKey(), mName,
+                            "universe walk refused: overloads of " + mName
+                            + " resolve to different tables; simple-name callsite is ambiguous"));
+                        ambiguous.add(mName);
+                        continue;
+                    }
+                    registry.put(mName, charSet);
+                }
+            }
+            for (String a : ambiguous) registry.remove(a);
+
+            return new UniverseRegistry(registry);
+        }
+
+        /** A walked table selector: `<lhsField> = <condParam> ? <trueTable> : <falseTable>`. */
+        record Selector(String lhsField, String condName, String trueTable, String falseTable) {}
+
+        /**
+         * Discover selectors by scanning every method/ctor body for an
+         * assignment whose RHS is a ternary over two identifiers that name
+         * static final array fields. The mutable-table gate fires HERE: a
+         * branch field missing static or final is a named refusal and the
+         * selector is dropped (a mutable table is no axiom).
+         */
+        private static List<Selector> findSelectors(Corpus corpus, List<String> diagnostics) {
+            List<Selector> selectors = new ArrayList<>();
+            for (Map.Entry<String, ClassTree> ce : corpus.classes.entrySet()) {
+                String className = ce.getKey();
+                for (Tree m : ce.getValue().getMembers()) {
+                    if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                    new TreeScanner<Void, Void>() {
+                        @Override public Void visitAssignment(AssignmentTree at, Void p) {
+                            ExpressionTree rhs = stripParens(at.getExpression());
+                            if (rhs instanceof ConditionalExpressionTree cet) {
+                                String cond = identName(cet.getCondition());
+                                String t = identName(cet.getTrueExpression());
+                                String f = identName(cet.getFalseExpression());
+                                String lhs = identName(at.getVariable());
+                                if (cond != null && t != null && f != null && lhs != null
+                                        && corpus.isArrayField(t) && corpus.isArrayField(f)) {
+                                    boolean ok = true;
+                                    for (String tbl : List.of(t, f)) {
+                                        if (!corpus.isStaticFinal(tbl)) {
+                                            diagnostics.add(diagnostic("<universe-walker>",
+                                                className, tbl,
+                                                "universe walk refused: table field " + tbl
+                                                + " is not static final; mutable table is no axiom"));
+                                            ok = false;
+                                        }
+                                    }
+                                    if (ok) selectors.add(new Selector(lhs, cond, t, f));
+                                }
+                            }
+                            return super.visitAssignment(at, p);
+                        }
+                    }.scan(mt.getBody(), null);
+                }
+            }
+            return selectors;
+        }
+
+        /** Identifier simple name from `x` or `this.x`; null for anything else. */
+        private static String identName(ExpressionTree e) {
+            e = stripParens(e);
+            if (e instanceof IdentifierTree it) return it.getName().toString();
+            if (e instanceof MemberSelectTree ms
+                    && ms.getExpression() instanceof IdentifierTree base
+                    && base.getName().contentEquals("this")) {
+                return ms.getIdentifier().toString();
+            }
+            return null;
+        }
+
+        private static ExpressionTree stripParens(ExpressionTree e) {
+            while (e instanceof ParenthesizedTree pt) e = pt.getExpression();
+            return e;
+        }
+
+        /**
+         * The parsed vendor corpus: classes, fields, static methods by
+         * name/arity, ctors by class — plus the literal-propagation resolver.
+         */
+        private static final class Corpus {
+            final Map<String, ClassTree> classes;
+            final Map<String, VariableTree> fields = new LinkedHashMap<>();      // simple name → tree
+            final Map<String, String> fieldOwner = new LinkedHashMap<>();        // simple name → class
+            final Map<String, MethodTree> statics = new LinkedHashMap<>();       // name/arity → tree
+            final Map<String, List<MethodTree>> ctors = new LinkedHashMap<>();   // class → ctors
+
+            Corpus(Map<String, ClassTree> classes) {
+                this.classes = classes;
+                for (Map.Entry<String, ClassTree> ce : classes.entrySet()) {
+                    for (Tree m : ce.getValue().getMembers()) {
+                        if (m instanceof VariableTree vt) {
+                            fields.putIfAbsent(vt.getName().toString(), vt);
+                            fieldOwner.putIfAbsent(vt.getName().toString(), ce.getKey());
+                        } else if (m instanceof MethodTree mt) {
+                            String n = mt.getName().toString();
+                            if (n.equals("<init>")) {
+                                ctors.computeIfAbsent(ce.getKey(), k -> new ArrayList<>()).add(mt);
+                            } else if (mt.getModifiers().getFlags().contains(Modifier.STATIC)) {
+                                statics.putIfAbsent(n + "/" + mt.getParameters().size(), mt);
+                            }
+                        }
+                    }
+                }
+            }
+
+            String ownerOf(String field) {
+                return fieldOwner.getOrDefault(field, "<vendor>");
+            }
+
+            boolean isArrayField(String name) {
+                VariableTree vt = fields.get(name);
+                return vt != null && vt.getInitializer() instanceof NewArrayTree;
+            }
+
+            boolean isStaticFinal(String name) {
+                VariableTree vt = fields.get(name);
+                if (vt == null) return false;
+                Set<Modifier> mods = vt.getModifiers().getFlags();
+                return mods.contains(Modifier.STATIC) && mods.contains(Modifier.FINAL);
+            }
+
+            /** All-literal array initializer values, or null if any entry is non-literal. */
+            List<Integer> literalArrayValues(String fieldName) {
+                VariableTree vt = fields.get(fieldName);
+                if (vt == null || !(vt.getInitializer() instanceof NewArrayTree nat)) return null;
+                List<Integer> out = new ArrayList<>();
+                for (ExpressionTree e : nat.getInitializers()) {
+                    Integer v = literalCharOrInt(stripParens(e));
+                    if (v == null) return null;
+                    out.add(v);
+                }
+                return out;
+            }
+
+            private static Integer literalCharOrInt(ExpressionTree e) {
+                if (e instanceof LiteralTree lt) {
+                    Object v = lt.getValue();
+                    if (v instanceof Character c) return (int) (char) c;
+                    if (v instanceof Number n) return n.intValue();
+                }
+                return null;
+            }
+
+            /**
+             * Find pad-write guards: `if (<selectorField> == T)` whose then-branch
+             * contains an assignment from a bare identifier. Returns table → pad
+             * identifier name. Both sides of the `==` are tried.
+             */
+            Map<String, String> findPadGuards(String selectorField) {
+                Map<String, String> out = new LinkedHashMap<>();
+                for (ClassTree ct : classes.values()) {
+                    for (Tree m : ct.getMembers()) {
+                        if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                        new TreeScanner<Void, Void>() {
+                            @Override public Void visitIf(IfTree it, Void p) {
+                                ExpressionTree cond = stripParens(it.getCondition());
+                                if (cond instanceof BinaryTree bt
+                                        && bt.getKind() == Tree.Kind.EQUAL_TO) {
+                                    String l = identName(bt.getLeftOperand());
+                                    String r = identName(bt.getRightOperand());
+                                    String table = null;
+                                    if (selectorField.equals(l) && r != null && isArrayField(r)) table = r;
+                                    if (selectorField.equals(r) && l != null && isArrayField(l)) table = l;
+                                    if (table != null) {
+                                        String padIdent = findAssignedIdent(it.getThenStatement());
+                                        if (padIdent != null) out.putIfAbsent(table, padIdent);
+                                    }
+                                }
+                                return super.visitIf(it, p);
+                            }
+                        }.scan(mt.getBody(), null);
+                    }
+                }
+                return out;
+            }
+
+            /** First assignment RHS that is a bare identifier inside a statement subtree. */
+            private static String findAssignedIdent(StatementTree st) {
+                final String[] found = {null};
+                new TreeScanner<Void, Void>() {
+                    @Override public Void visitAssignment(AssignmentTree at, Void p) {
+                        if (found[0] == null) {
+                            ExpressionTree rhs = stripParens(at.getExpression());
+                            if (rhs instanceof IdentifierTree id) {
+                                found[0] = id.getName().toString();
+                            }
+                        }
+                        return super.visitAssignment(at, p);
+                    }
+                }.scan(st, null);
+                return found[0];
+            }
+
+            /**
+             * Walk a field identifier to its literal value:
+             *   1. field with a literal initializer → value.
+             *   2. field initialized from another identifier → one more hop.
+             *   3. blank final field assigned `this.f = <param>` in a ctor →
+             *      find a cross-class super(...) call with matching arity, take
+             *      the arg at the param's index, resolve it (literal or field).
+             */
+            Integer resolveFieldValue(String name, int depth) {
+                if (depth > 4) return null;
+                VariableTree vt = fields.get(name);
+                if (vt == null) return null;
+                ExpressionTree init = vt.getInitializer();
+                if (init != null) {
+                    Integer v = literalCharOrInt(stripParens(init));
+                    if (v != null) return v;
+                    String ident = identName(init);
+                    if (ident != null && !ident.equals(name)) {
+                        return resolveFieldValue(ident, depth + 1);
+                    }
+                    return null;
+                }
+                // Blank final: find ctor with `this.<name> = <param>` and the
+                // param's index, then a super(...) call of that ctor's arity.
+                String ownerClass = fieldOwner.get(name);
+                for (MethodTree ctor : ctors.getOrDefault(ownerClass, List.of())) {
+                    Integer paramIdx = paramIndexAssignedToField(ctor, name);
+                    if (paramIdx == null) continue;
+                    int arity = ctor.getParameters().size();
+                    ExpressionTree arg = findSuperCallArg(ownerClass, arity, paramIdx);
+                    if (arg == null) continue;
+                    arg = stripParens(arg);
+                    Integer v = literalCharOrInt(arg);
+                    if (v != null) return v;
+                    String ident = identName(arg);
+                    if (ident != null) return resolveFieldValue(ident, depth + 1);
+                }
+                return null;
+            }
+
+            /** If ctor body contains `this.<field> = <param>`, return the param index. */
+            private static Integer paramIndexAssignedToField(MethodTree ctor, String field) {
+                if (ctor.getBody() == null) return null;
+                for (StatementTree st : ctor.getBody().getStatements()) {
+                    if (st instanceof ExpressionStatementTree est
+                            && est.getExpression() instanceof AssignmentTree at
+                            && field.equals(identName(at.getVariable()))
+                            && stripParens(at.getExpression()) instanceof IdentifierTree rhs) {
+                        String paramName = rhs.getName().toString();
+                        List<? extends VariableTree> params = ctor.getParameters();
+                        for (int i = 0; i < params.size(); i++) {
+                            if (params.get(i).getName().contentEquals(paramName)) return i;
+                        }
+                    }
+                }
+                return null;
+            }
+
+            /** Find `super(...)` with the given arity in any OTHER class's ctors; return arg i. */
+            private ExpressionTree findSuperCallArg(String superOwner, int arity, int argIdx) {
+                for (Map.Entry<String, List<MethodTree>> ce : ctors.entrySet()) {
+                    if (ce.getKey().equals(superOwner)) continue;
+                    for (MethodTree ctor : ce.getValue()) {
+                        if (ctor.getBody() == null) continue;
+                        for (StatementTree st : ctor.getBody().getStatements()) {
+                            if (st instanceof ExpressionStatementTree est
+                                    && est.getExpression() instanceof MethodInvocationTree mi
+                                    && mi.getMethodSelect() instanceof IdentifierTree id
+                                    && id.getName().contentEquals("super")
+                                    && mi.getArguments().size() == arity
+                                    && argIdx < arity) {
+                                return mi.getArguments().get(argIdx);
+                            }
+                        }
+                    }
+                }
+                return null;
+            }
+
+            // ── Literal-propagation entry resolution ─────────────────────────
+
+            /**
+             * Resolve which table a static method's String result is encoded
+             * from, by propagating literal argument bindings down the chain.
+             * `bindings` maps parameter names to Boolean/Integer literal values
+             * known at this call depth.
+             */
+            String resolveStaticMethod(MethodTree mt, Map<String, Object> bindings,
+                    List<Selector> selectors, int depth, List<String> notes) {
+                if (depth > 12) { notes.add("delegation chain deeper than 12"); return null; }
+                if (mt.getBody() == null) return null;
+                Map<String, String> localTables = new LinkedHashMap<>();
+                for (StatementTree st : mt.getBody().getStatements()) {
+                    if (st instanceof VariableTree v && v.getInitializer() != null) {
+                        String t = resolveExpr(v.getInitializer(), bindings, selectors, depth, notes);
+                        if (t != null) localTables.put(v.getName().toString(), t);
+                    } else if (st instanceof ReturnTree rt && rt.getExpression() != null) {
+                        ExpressionTree re = stripParens(rt.getExpression());
+                        String t = resolveExpr(re, bindings, selectors, depth, notes);
+                        if (t != null) return t;
+                        // `return local.member(args)` where local resolved to a table
+                        if (re instanceof MethodInvocationTree mi
+                                && mi.getMethodSelect() instanceof MemberSelectTree ms
+                                && ms.getExpression() instanceof IdentifierTree recv) {
+                            String lt = localTables.get(recv.getName().toString());
+                            if (lt != null) return lt;
+                        }
+                    }
+                }
+                return null;
+            }
+
+            private String resolveExpr(ExpressionTree expr, Map<String, Object> bindings,
+                    List<Selector> selectors, int depth, List<String> notes) {
+                expr = stripParens(expr);
+                if (expr instanceof ConditionalExpressionTree cet) {
+                    Boolean cond = evalBool(cet.getCondition(), bindings);
+                    if (cond != null) {
+                        return resolveExpr(cond ? cet.getTrueExpression() : cet.getFalseExpression(),
+                                bindings, selectors, depth, notes);
+                    }
+                    String t = resolveExpr(cet.getTrueExpression(), bindings, selectors, depth, notes);
+                    String f = resolveExpr(cet.getFalseExpression(), bindings, selectors, depth, notes);
+                    if (t != null && t.equals(f)) return t; // both branches agree
+                    if (t != null || f != null) notes.add("ternary branches resolve to different tables");
+                    return null;
+                }
+                if (expr instanceof MethodInvocationTree mi) {
+                    String name = methodInvocationName(mi);
+                    // DECLARED AXIOM SEAM (the only non-walked step): a 1-arg
+                    // newStringUsAscii(...) wrapper is charset-transparent
+                    // byte[]→String per JDK US-ASCII semantics. StringUtils is
+                    // not vendored; no syntax walk can establish this. Name-gated.
+                    if (name.equals("newStringUsAscii") && mi.getArguments().size() == 1) {
+                        return resolveExpr(mi.getArguments().get(0), bindings, selectors, depth, notes);
+                    }
+                    MethodTree target = statics.get(name + "/" + mi.getArguments().size());
+                    if (target == null) {
+                        notes.add("chain escapes vendored source at " + name
+                                + "/" + mi.getArguments().size());
+                        return null;
+                    }
+                    Map<String, Object> child = bindArgs(target.getParameters(), mi.getArguments(), bindings);
+                    return resolveStaticMethod(target, child, selectors, depth + 1, notes);
+                }
+                if (expr instanceof NewClassTree nct) {
+                    String className = nct.getIdentifier().toString();
+                    for (MethodTree ctor : ctors.getOrDefault(className, List.of())) {
+                        if (ctor.getParameters().size() != nct.getArguments().size()) continue;
+                        Map<String, Object> child = bindArgs(ctor.getParameters(), nct.getArguments(), bindings);
+                        return resolveCtor(ctor, className, child, selectors, depth + 1, notes);
+                    }
+                    return null;
+                }
+                return null;
+            }
+
+            /** Walk a ctor body: follow this(...) chains; evaluate the selector condition. */
+            private String resolveCtor(MethodTree ctor, String className, Map<String, Object> bindings,
+                    List<Selector> selectors, int depth, List<String> notes) {
+                if (depth > 12 || ctor.getBody() == null) return null;
+                for (StatementTree st : ctor.getBody().getStatements()) {
+                    if (!(st instanceof ExpressionStatementTree est)) continue;
+                    ExpressionTree e = stripParens(est.getExpression());
+                    if (e instanceof MethodInvocationTree mi
+                            && mi.getMethodSelect() instanceof IdentifierTree id
+                            && id.getName().contentEquals("this")) {
+                        for (MethodTree next : ctors.getOrDefault(className, List.of())) {
+                            if (next.getParameters().size() != mi.getArguments().size()) continue;
+                            Map<String, Object> child = bindArgs(next.getParameters(), mi.getArguments(), bindings);
+                            return resolveCtor(next, className, child, selectors, depth + 1, notes);
+                        }
+                        return null;
+                    }
+                    if (e instanceof AssignmentTree at
+                            && stripParens(at.getExpression()) instanceof ConditionalExpressionTree cet) {
+                        String lhs = identName(at.getVariable());
+                        for (Selector sel : selectors) {
+                            if (!sel.lhsField.equals(lhs)) continue;
+                            Boolean cond = evalBool(cet.getCondition(), bindings);
+                            if (cond == null) {
+                                notes.add("selector condition '" + sel.condName
+                                        + "' is not literal-determined at this callsite");
+                                return null;
+                            }
+                            String t = identName(cond ? cet.getTrueExpression() : cet.getFalseExpression());
+                            return t;
+                        }
+                    }
+                }
+                return null;
+            }
+
+            private static Map<String, Object> bindArgs(List<? extends VariableTree> params,
+                    List<? extends ExpressionTree> args, Map<String, Object> outer) {
+                Map<String, Object> child = new LinkedHashMap<>();
+                for (int i = 0; i < params.size() && i < args.size(); i++) {
+                    ExpressionTree a = stripParens(args.get(i));
+                    String pname = params.get(i).getName().toString();
+                    if (a instanceof LiteralTree lt) {
+                        Object v = lt.getValue();
+                        if (v instanceof Boolean || v instanceof Number) child.put(pname, v);
+                    } else if (a instanceof IdentifierTree id) {
+                        Object v = outer.get(id.getName().toString());
+                        if (v != null) child.put(pname, v);
+                    }
+                }
+                return child;
+            }
+
+            private static Boolean evalBool(ExpressionTree e, Map<String, Object> bindings) {
+                e = stripParens(e);
+                if (e instanceof LiteralTree lt && lt.getValue() instanceof Boolean b) return b;
+                if (e instanceof IdentifierTree id) {
+                    Object v = bindings.get(id.getName().toString());
+                    if (v instanceof Boolean b) return b;
+                }
+                return null;
+            }
+        }
     }
 
     // ──────────────────────────────────────────────────────────────

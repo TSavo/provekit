@@ -320,7 +320,8 @@ SHOWCASE_RUNS = \
 	examples/forall-loop-showcase/run.sh \
 	examples/java-assertion-consistency/run.sh \
 	examples/java-forall-loop/run.sh \
-	examples/java-testng-consistency/run.sh
+	examples/java-testng-consistency/run.sh \
+	examples/java-codec-universe/run.sh
 
 .PHONY: test-showcases
 test-showcases:
