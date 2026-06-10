@@ -322,7 +322,8 @@ SHOWCASE_RUNS = \
 	examples/python-guard-shapes/run.sh \
 	examples/java-bodyguard-precondition/run.sh \
 	examples/forall-vampire-showcase/run.sh \
-	examples/url-showcase/run.sh
+	examples/url-showcase/run.sh \
+	examples/semver-showcase/run.sh
 
 .PHONY: test-showcases
 test-showcases:

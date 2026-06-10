@@ -1,0 +1,9 @@
+[package]
+name = "semver-showcase-good"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+semver = "=1.0.28"
