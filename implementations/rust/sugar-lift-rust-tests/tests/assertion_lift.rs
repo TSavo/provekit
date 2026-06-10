@@ -3119,3 +3119,177 @@ fn t() { assert_ne!(1, 2,); }
     assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
     assert_eq!(out.warnings.len(), 0);
 }
+
+// ---- debug_assert* family ----
+//
+// RED-FIRST: before the cfg-gated routing was added, debug_assert_eq! hit the
+// catch-all arm and returned Err("debug_assert_eq!: unsupported assertion
+// macro"), which caused the row to be skipped (lifted=0, 1 warning). The
+// tests below capture the new correct behaviour (lifted=1 when
+// debug_assertions is Active) and the discrimination case (skipped when
+// debug_assertions is not Active).
+
+fn options_with_debug_assertions() -> LiftOptions {
+    LiftOptions::for_target_cfg(
+        TargetCfg::from_rustc_cfg_facts(["debug_assertions"]).expect("valid cfg fact"),
+    )
+}
+
+/// Lift with debug_assertions=Active and return the single invariant operand
+/// debug string, mirroring single_inv_debug for the debug_assert* family.
+fn single_inv_debug_with_da(src: &str) -> String {
+    let opts = options_with_debug_assertions();
+    let out = lift_file_with_options(&parse(src), "tests/macros.rs", &opts);
+    assert_eq!(out.seen, 1, "expected 1 test fn seen");
+    assert_eq!(
+        out.lifted, 1,
+        "expected 1 lifted row; warnings: {:?}",
+        out.warnings
+    );
+    assert_eq!(out.decls.len(), 1);
+    let operands = inv_operands(&out.decls[0]);
+    assert_eq!(operands.len(), 1);
+    format!("{:?}", operands[0])
+}
+
+// --- RED-first regression: debug_assert_eq! previously errored as unsupported
+//
+// This test would have FAILED before the routing change with:
+//   thread '...' panicked at 'assertion failed: `(left == right)`
+//   left: `0`, right: `1`: expected 1 lifted row; warnings: [LiftWarning {
+//   ... reason: "debug_assert_eq!: unsupported assertion macro" }]'
+//
+// After the change it lifts exactly one row when debug_assertions is Active.
+#[test]
+fn debug_assert_eq_lifts_when_debug_assertions_active() {
+    let opts = options_with_debug_assertions();
+    let out = lift_file_with_options(
+        &parse(
+            r#"
+fn a() -> i32 { 1 }
+#[test]
+fn t() { debug_assert_eq!(a(), 1); }
+"#,
+        ),
+        "tests/macros.rs",
+        &opts,
+    );
+    assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+    assert_eq!(out.warnings.len(), 0);
+}
+
+// --- Federation: debug_assert_eq! atom is byte-identical to assert_eq! atom
+//
+// Soundness: the CLAIM asserted by debug_assert_eq!(a, b) when
+// debug_assertions is Active is identical to the claim of assert_eq!(a, b).
+// The only difference (compiling out in release) is an effect invisible to
+// the lifter. The atoms must be byte-identical.
+#[test]
+fn debug_assert_eq_lifts_byte_identically_to_assert_eq() {
+    let via_debug = single_inv_debug_with_da(
+        r#"
+fn a() -> i32 { 7 }
+#[test]
+fn t() { debug_assert_eq!(a(), 1); }
+"#,
+    );
+    let via_plain = single_inv_debug(
+        r#"
+fn a() -> i32 { 7 }
+#[test]
+fn t() { assert_eq!(a(), 1); }
+"#,
+    );
+    assert_eq!(
+        via_debug, via_plain,
+        "debug_assert_eq! must lift byte-identically to assert_eq! when debug_assertions is Active"
+    );
+}
+
+// --- Federation: debug_assert! atom is byte-identical to assert! atom
+#[test]
+fn debug_assert_lifts_byte_identically_to_assert() {
+    let via_debug = single_inv_debug_with_da(
+        r#"
+fn a() -> bool { true }
+#[test]
+fn t() { debug_assert!(a()); }
+"#,
+    );
+    let via_plain = single_inv_debug(
+        r#"
+fn a() -> bool { true }
+#[test]
+fn t() { assert!(a()); }
+"#,
+    );
+    assert_eq!(
+        via_debug, via_plain,
+        "debug_assert! must lift byte-identically to assert! when debug_assertions is Active"
+    );
+}
+
+// --- Federation: debug_assert_ne! atom is byte-identical to assert_ne! atom
+#[test]
+fn debug_assert_ne_lifts_byte_identically_to_assert_ne() {
+    let via_debug = single_inv_debug_with_da(
+        r#"
+fn a() -> i32 { 7 }
+#[test]
+fn t() { debug_assert_ne!(a(), 1); }
+"#,
+    );
+    let via_plain = single_inv_debug(
+        r#"
+fn a() -> i32 { 7 }
+#[test]
+fn t() { assert_ne!(a(), 1); }
+"#,
+    );
+    assert_eq!(
+        via_debug, via_plain,
+        "debug_assert_ne! must lift byte-identically to assert_ne! when debug_assertions is Active"
+    );
+    assert!(
+        via_debug.contains('≠'),
+        "debug_assert_ne! should produce the not-equal relation atom: {via_debug}"
+    );
+}
+
+// --- Discrimination: debug_assert_eq! is REFUSED when debug_assertions is not Active
+//
+// Without a target_cfg that confirms debug_assertions, the macro expands to a
+// no-op in release builds. Lifting it unconditionally would overclaim
+// (falsePass). The lifter must skip the row and record a warning.
+#[test]
+fn debug_assert_eq_refused_when_debug_assertions_not_active() {
+    // lift_file has no target_cfg -> debug_assertions is Ambiguous -> refused
+    let out = lift_file(
+        &parse(
+            r#"
+fn a() -> i32 { 1 }
+#[test]
+fn t() { debug_assert_eq!(a(), 1); }
+"#,
+        ),
+        "tests/macros.rs",
+    );
+    assert_eq!(
+        out.lifted, 0,
+        "debug_assert_eq! must NOT lift when debug_assertions is not confirmed Active"
+    );
+    assert!(
+        !out.warnings.is_empty(),
+        "expected at least one warning when debug_assertions is not Active"
+    );
+    let debug_warn = out
+        .warnings
+        .iter()
+        .find(|w| w.reason.contains("debug_assert_eq!"))
+        .unwrap_or_else(|| panic!("no warning mentioning debug_assert_eq!: {:?}", out.warnings));
+    assert!(
+        debug_warn.reason.contains("ambiguous"),
+        "warning should cite ambiguous cfg(debug_assertions): {:?}",
+        debug_warn.reason
+    );
+}

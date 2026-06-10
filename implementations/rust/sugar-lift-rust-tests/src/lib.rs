@@ -367,6 +367,7 @@ fn collect_assertion_entries(
                     m.mac.tokens.clone(),
                     &temporal_scope,
                     &*float_widths,
+                    options,
                     entries,
                     skipped,
                 ),
@@ -383,6 +384,7 @@ fn collect_assertion_entries(
                     m.mac.tokens.clone(),
                     &temporal_scope,
                     &*float_widths,
+                    options,
                     entries,
                     skipped,
                 ),
@@ -909,10 +911,11 @@ fn collect_macro(
     tokens: proc_macro2::TokenStream,
     scope: &TemporalScope,
     float_widths: &FloatWidthScope,
+    options: &LiftOptions,
     entries: &mut Vec<AssertionEntry>,
     skipped: &mut Vec<String>,
 ) {
-    match assertions_from_macro(path, tokens, scope, float_widths) {
+    match assertions_from_macro(path, tokens, scope, float_widths, options) {
         Ok(macro_entries) => entries.extend(macro_entries),
         Err(reason) => skipped.push(reason),
     }
@@ -923,6 +926,7 @@ fn assertions_from_macro(
     tokens: proc_macro2::TokenStream,
     scope: &TemporalScope,
     float_widths: &FloatWidthScope,
+    options: &LiftOptions,
 ) -> Result<Vec<AssertionEntry>, String> {
     let Some(name) = path
         .segments
@@ -984,6 +988,103 @@ fn assertions_from_macro(
         "assert_all" | "assert_none" => {
             let args = parse_macro_args(tokens).map_err(|e| format!("{name}!: {e}"))?;
             assertion_entries_from_ascii_macro(name.as_str(), &args.exprs)
+        }
+        // debug_assert*(a, b) is cfg(debug_assertions)-gated sugar: the CLAIM is
+        // identical to the non-debug twin, but it is only asserted when
+        // debug_assertions is Active (i.e. debug/test builds). In the witnessed test
+        // profile (cargo test) debug_assertions is always on, so if the supplied
+        // target_cfg confirms it Active we lift the same atom as the twin. If
+        // debug_assertions is NOT confirmed Active we refuse -- overclaiming on a
+        // macro that compiles out in release would be a falsePass.
+        "debug_assert_eq" => {
+            match cfg_eval_predicate(
+                &CfgPredicate::Name("debug_assertions".to_string()),
+                options.target_cfg.as_ref(),
+            ) {
+                CfgEval::Active => {}
+                CfgEval::Inactive(reason) => {
+                    return Err(format!(
+                        "debug_assert_eq!: cfg(debug_assertions) not active; skipped: {reason}"
+                    ));
+                }
+                CfgEval::Ambiguous(reason) => {
+                    return Err(format!(
+                        "debug_assert_eq!: cfg(debug_assertions) ambiguous; skipped: {reason}"
+                    ));
+                }
+            }
+            let args = parse_macro_args(tokens).map_err(|e| format!("debug_assert_eq!: {e}"))?;
+            if args.exprs.len() < 2 {
+                return Err("debug_assert_eq!: expected at least 2 arguments".to_string());
+            }
+            if let Some(entry) =
+                translate_infinity_eq_assertion(&args.exprs[0], &args.exprs[1], scope, float_widths)
+                    .map_err(|e| format!("debug_assert_eq!: {e}"))?
+            {
+                return Ok(vec![entry]);
+            }
+            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
+                .map_err(|e| format!("debug_assert_eq!: {e}"))?;
+            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
+                .map_err(|e| format!("debug_assert_eq!: {e}"))?;
+            Ok(vec![assertion_entry_from_eq(lhs, rhs, scope)])
+        }
+        "debug_assert" => {
+            match cfg_eval_predicate(
+                &CfgPredicate::Name("debug_assertions".to_string()),
+                options.target_cfg.as_ref(),
+            ) {
+                CfgEval::Active => {}
+                CfgEval::Inactive(reason) => {
+                    return Err(format!(
+                        "debug_assert!: cfg(debug_assertions) not active; skipped: {reason}"
+                    ));
+                }
+                CfgEval::Ambiguous(reason) => {
+                    return Err(format!(
+                        "debug_assert!: cfg(debug_assertions) ambiguous; skipped: {reason}"
+                    ));
+                }
+            }
+            let args = parse_macro_args(tokens).map_err(|e| format!("debug_assert!: {e}"))?;
+            let Some(first) = args.exprs.first() else {
+                return Err("debug_assert!: expected a condition".to_string());
+            };
+            let entry = translate_bool_assertion(first, scope, float_widths)
+                .map_err(|e| format!("debug_assert!: {e}"))?;
+            Ok(vec![entry])
+        }
+        "debug_assert_ne" => {
+            match cfg_eval_predicate(
+                &CfgPredicate::Name("debug_assertions".to_string()),
+                options.target_cfg.as_ref(),
+            ) {
+                CfgEval::Active => {}
+                CfgEval::Inactive(reason) => {
+                    return Err(format!(
+                        "debug_assert_ne!: cfg(debug_assertions) not active; skipped: {reason}"
+                    ));
+                }
+                CfgEval::Ambiguous(reason) => {
+                    return Err(format!(
+                        "debug_assert_ne!: cfg(debug_assertions) ambiguous; skipped: {reason}"
+                    ));
+                }
+            }
+            let args = parse_macro_args(tokens).map_err(|e| format!("debug_assert_ne!: {e}"))?;
+            if args.exprs.len() < 2 {
+                return Err("debug_assert_ne!: expected at least 2 arguments".to_string());
+            }
+            let lhs = translate_assertion_term_in_scope(&args.exprs[0], scope)
+                .map_err(|e| format!("debug_assert_ne!: {e}"))?;
+            let rhs = translate_assertion_term_in_scope(&args.exprs[1], scope)
+                .map_err(|e| format!("debug_assert_ne!: {e}"))?;
+            Ok(vec![assertion_entry_from_relation(
+                lhs,
+                rhs,
+                RelationOp::Ne,
+                scope,
+            )])
         }
         other if other.starts_with("assert") || other.starts_with("debug_assert") => {
             Err(format!("{other}!: unsupported assertion macro"))
