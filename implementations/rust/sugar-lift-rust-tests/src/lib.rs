@@ -11,6 +11,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
+mod macro_expand;
+
 use quote::ToTokens;
 use sugar_ir_symbolic::{
     and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, not_, num, or_, real_const, str_const,
