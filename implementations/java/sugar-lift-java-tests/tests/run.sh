@@ -27,6 +27,14 @@
 #      (outer non-final but never-reassigned local does NOT block lifting)
 #  11. Non-literal bound discrimination: ForLoopOpenBound.java → loop REFUSED
 #      (x < n where n is a variable → open forall)
+#
+# Test suite (H1 — hardening rollup: discrimination fixtures for each fix):
+#  31. [A1] cross-class ambiguity: helperChk in 2 classes → UNLEARNED, not first-match
+#  32a. [A2] wildcard static import: import static org.junit.Assert.* → assertEquals lifts
+#  32b. [A2] non-framework wildcard: import static com.example.* → silent skip (not bound)
+#  33. [A3] user-scope impostor: assertEquals without static import → silent skip (not lift)
+#  34. [C8] TestNG assertNotEquals 2-arg: INEQUALITY, not APPROX (delta overload blocked)
+#  35. [B6] lineLength=0 → encodeNoChunk universe registered; lineLength=76 → refused
 set -euo pipefail
 
 command -v javac >/dev/null 2>&1 || { echo "SKIP: no JDK on PATH"; exit 0; }
@@ -1186,5 +1194,219 @@ assert named, f"expected the non-literal-arg refusal by name, got: {reasons}"
 print(f"PASS: string-literal args lift via both byte-bridge shapes; non-literal refused: {named[0][:80]}")
 PY
 
+# H1 tests (31+): hardening rollup — discrimination fixtures for each fix.
+# Each H1 test has a twin fixture that BREAKS the invariant on purpose, so
+# a regression (reverting the fix) turns the test red, not green.
+# ──────────────────────────────────────────────────────────────
 echo
-echo "== all 30 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 31: H1 [A1] cross-class ambiguity → UNLEARNED (not first-match)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT31="$(run_lift "$FIXTURES/cross-class-ambiguity" "CrossClassAmbiguity.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT31" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+# Must produce 0 contracts — checkEq is UNLEARNED due to ambiguous delegation.
+assert len(ir) == 0, (
+    f"FALSEPASS: cross-class ambiguity produced {len(ir)} contract(s) "
+    f"(first-match silently chose a class): {[c['name'] for c in ir]}"
+)
+# Must emit a named refusal citing ambiguous delegation.
+reasons = [d.get("reason", "") for d in diags]
+named = [r for r in reasons if "ambiguous" in r.lower()]
+assert named, (
+    f"expected a named refusal citing 'ambiguous delegation target', got: {reasons}"
+)
+# The refusal must NOT say "equality" or "inequality" — wrong classification guard.
+bad = [r for r in reasons if "equality" in r.lower() or "inequality" in r.lower()]
+assert not bad, f"refusal incorrectly reports equality/inequality: {bad}"
+print(f"PASS: cross-class ambiguity → 0 contracts, named UNLEARNED refusal: {named[0][:90]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 32a: H1 [A2] wildcard static import expands to all vendored vocab names"
+echo "────────────────────────────────────────────────────────────────"
+RESULT32A="$(run_lift "$FIXTURES" "WildcardImportLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT32A" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+# Wildcard import must expand assertEquals so it lifts exactly as named-import twin.
+assert len(ir) == 1, (
+    f"FALSEPASS: wildcard import produced {len(ir)} contract(s) "
+    f"(expected 1 for assertEquals/equality): {[c['name'] for c in ir]}\ndiags={diags}"
+)
+c = ir[0]
+inv = c["inv"]
+atomic = inv["operands"][0]
+assert atomic["kind"] == "atomic" and atomic["name"] == "=", (
+    f"expected '=' relation (equality), got: {atomic['name']}"
+)
+print(f"PASS: wildcard static import → assertEquals expanded, 1 equality contract lifted: {c['name'][:80]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 32b: H1 [A2] non-framework wildcard import → not bound, silent skip"
+echo "────────────────────────────────────────────────────────────────"
+RESULT32B="$(run_lift "$FIXTURES" "WildcardUnvendoredRefusal.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT32B" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+# Non-framework wildcard (com.example.*) not processed by import scanner.
+# The bare assertEquals is not framework-bound → silent skip: 0 contracts, 0 diagnostics.
+assert len(ir) == 0, (
+    f"FALSEPASS: non-framework wildcard produced {len(ir)} contract(s): {[c['name'] for c in ir]}"
+)
+# No diagnostic: the call is silently not-framework-bound (not an error, just not ours).
+bad_diags = [d for d in diags if "assertEquals" in d.get("reason","").lower()]
+assert not bad_diags, (
+    f"unexpected diagnostic about assertEquals from non-framework wildcard: {bad_diags}"
+)
+print(f"PASS: non-framework wildcard import → assertEquals not bound, silent skip (0 contracts)")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 33: H1 [A3] user-scope impostor assertEquals (no static import) → silent skip"
+echo "────────────────────────────────────────────────────────────────"
+RESULT33="$(run_lift "$FIXTURES" "UserScopeImpostor.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT33" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+# User-scope impostor: 0 contracts (silent skip — not framework-bound).
+# Must NOT produce an equality lift (falsePass) or a false refusal.
+assert len(ir) == 0, (
+    f"FALSEPASS: user-scope assertEquals was lifted as a framework assertion: "
+    f"{[c['name'] for c in ir]}"
+)
+# The import-edge guard silently skips — no diagnostic expected.
+bad_lift = [d for d in diags if "equality" in d.get("reason","").lower()
+            and "impostor" not in d.get("reason","").lower()]
+assert not bad_lift, f"unexpected equality-related diagnostic: {bad_lift}"
+print(f"PASS: user-scope impostor assertEquals silently skipped (0 contracts, import-edge guard)")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 34: H1 [C8] TestNG assertNotEquals 2-arg form → INEQUALITY (not APPROX)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT34="$(run_lift "$FIXTURES" "TestNGAssertNotEquals.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT34" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+# 2-arg assertNotEquals must lift as INEQUALITY, NOT as "approx" refusal.
+approx = [d for d in diags if "approximate" in d.get("reason","").lower()]
+assert not approx, (
+    f"REGRESSION: 2-arg assertNotEquals classified as APPROX (delta overload wins): {approx}"
+)
+assert len(ir) == 1, (
+    f"expected 1 INEQUALITY contract from assertNotEquals(g(2), 3), got {len(ir)}: "
+    f"{[c['name'] for c in ir]}\ndiags={[d.get('reason','') for d in diags]}"
+)
+c = ir[0]
+inv = c["inv"]
+atomic = inv["operands"][0]
+assert atomic["name"] in ("!=", "≠"), (
+    f"expected inequality relation ('!=' or '≠'), got: {atomic['name']}"
+)
+print(f"PASS: TestNG assertNotEquals 2-arg → 1 inequality contract (not approx): {c['name'][:80]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 35: H1 [B6] lineLength=0 sound; lineLength=76 refused (chunking guard)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT35="$(run_lift "$FIXTURES/universe-chunked" "ChunkedLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT35" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+names = [c["name"] for c in ir]
+# encodeNoChunk (lineLength=0) must register and produce a universe contract.
+no_chunk_universe = [c for c in ir
+    if "encodeNoChunk" in c["name"]
+    and c["inv"]["operands"][0]["name"] == "str.chars-in-set"]
+assert no_chunk_universe, (
+    f"MISSING: encodeNoChunk universe row not found. Contracts: {names}\ndiags={[d.get('reason','') for d in diags]}"
+)
+# encodeChunked (lineLength=76) must be REFUSED by the universe walker.
+# No universe row for encodeChunked must appear.
+chunked_universe = [c for c in ir
+    if "encodeChunked" in c["name"]
+    and c["inv"]["operands"][0]["name"] == "str.chars-in-set"]
+assert not chunked_universe, (
+    f"FALSEPASS: encodeChunked universe row was registered (lineLength=76 not detected): "
+    f"{[c['name'] for c in chunked_universe]}"
+)
+# The universe walker must emit a named refusal for encodeChunked.
+reasons = [d.get("reason", "") for d in diags]
+chunked_refusal = [r for r in reasons if "encodeChunked" in r or "chunking" in r.lower() or "lineLength" in r]
+assert chunked_refusal, (
+    f"expected a named refusal for encodeChunked (lineLength=76), got: {reasons}"
+)
+print(f"PASS: lineLength=0 → encodeNoChunk universe registered; "
+      f"lineLength=76 → encodeChunked refused: {chunked_refusal[0][:80]}")
+PY
+
+echo
+echo "== all 35 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1) =="

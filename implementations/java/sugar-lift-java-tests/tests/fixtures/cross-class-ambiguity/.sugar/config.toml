@@ -1,0 +1,8 @@
+# Cross-class ambiguity workspace (H1 [A1] test 31).
+# helperChk exists in BOTH AssertA and AssertB with same arity but OPPOSITE
+# guard semantics. An unqualified delegation from Assertions.checkEq to
+# helperChk is ambiguous — VocabDeriver MUST classify checkEq as UNLEARNED
+# (countMatchesInCorpus > 1 → ambiguous delegation target). First-match would
+# silently pick one class and yield a wrong EQUALITY or INEQUALITY result.
+[java-test-assertions]
+assertion_source_dirs = ["framework"]

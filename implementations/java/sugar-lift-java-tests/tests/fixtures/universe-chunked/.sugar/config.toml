@@ -1,0 +1,9 @@
+# Universe-chunked fixture workspace (H1 [B6] test 35).
+# The vendor codec has a lineLength parameter. Entry points that pass lineLength>0
+# inject line separators (\r\n) into the output — those chars are NOT in the static
+# table. The universe walk must REFUSE those entry points: the str.chars-in-set
+# contract would be wrong (output contains separator chars outside the table).
+# Only the lineLength=0 entry point (no chunking) may be registered.
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor"]

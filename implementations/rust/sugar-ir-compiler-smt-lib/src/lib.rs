@@ -103,6 +103,110 @@ fn validate_term(term: &sugar_ir_types::IrTerm) -> Result<(), String> {
     }
 }
 
+/// H1 [B7]: mixed-sort conjunction detection.
+///
+/// A conjoined formula can equate the SAME `#euf#` ctor term to a String
+/// literal in one row (String-theory regime: the ctor's return sort is SMT
+/// `String`) and to an Int/Bool literal in another row (legacy opaque-Int
+/// regime: return sort `Int`). One `(declare-fun ...)` cannot carry both
+/// return sorts, so the emitted script would be ill-sorted -> z3 parse
+/// error -> an OPAQUE Undecidable. Detect the conflict at emit time and
+/// return a NAMED error instead, which the verifier surfaces as a loud
+/// Undecidable with the reason intact.
+///
+/// Regime attribution mirrors `literal_encoding::routes_to_string_theory`
+/// exactly (same gate the emitter uses to pick the encoding), so detection
+/// can never disagree with emission.
+fn check_mixed_sort_conjunction(formula: &sugar_ir_types::IrFormula) -> Result<(), String> {
+    use std::collections::BTreeMap;
+    let mut regimes: BTreeMap<String, &'static str> = BTreeMap::new();
+    walk_mixed_sort(formula, &mut regimes)
+}
+
+fn mark_regime(
+    name: &str,
+    regime: &'static str,
+    regimes: &mut std::collections::BTreeMap<String, &'static str>,
+) -> Result<(), String> {
+    if let Some(prev) = regimes.get(name) {
+        if *prev != regime {
+            return Err(format!(
+                "mixed-sort conjunction on {name}: String vs Int \
+                 (same ctor equated to a String literal in one row and an \
+                 Int/Bool literal in another; one declare-fun cannot carry \
+                 both return sorts)"
+            ));
+        }
+    } else {
+        regimes.insert(name.to_string(), regime);
+    }
+    Ok(())
+}
+
+fn walk_mixed_sort(
+    formula: &sugar_ir_types::IrFormula,
+    regimes: &mut std::collections::BTreeMap<String, &'static str>,
+) -> Result<(), String> {
+    use sugar_ir_types::{IrFormula, IrTerm};
+    match formula {
+        IrFormula::Atomic { name, args } => {
+            let is_real_ctor = |t: &IrTerm| {
+                matches!(t, IrTerm::Ctor { name, args } if !(name == "None" && args.is_empty()))
+            };
+            if literal_encoding::routes_to_string_theory(name, args) {
+                // String regime: every non-None ctor in this atom gets SMT
+                // `String` return sort from the string-theory emitter.
+                for a in args {
+                    if let IrTerm::Ctor { name: cn, .. } = a {
+                        if is_real_ctor(a) {
+                            mark_regime(cn, "String", regimes)?;
+                        }
+                    }
+                }
+            } else if name == "=" && args.len() == 2 {
+                // Legacy regime: a ctor equated to an Int/Bool literal (or a
+                // String literal NOT carrying the String sort -- the opaque
+                // strlit_ Int encoding) is declared with Int return sort.
+                let is_legacy_const = |t: &IrTerm| {
+                    matches!(
+                        t,
+                        IrTerm::Const {
+                            value: serde_json::Value::Number(_) | serde_json::Value::Bool(_),
+                            ..
+                        }
+                    ) || matches!(
+                        t,
+                        IrTerm::Const {
+                            value: serde_json::Value::String(_),
+                            sort,
+                        } if !matches!(sort, sugar_ir_types::Sort::Primitive { name } if name == "String")
+                    )
+                };
+                for (i, j) in [(0usize, 1usize), (1, 0)] {
+                    if is_real_ctor(&args[i]) && is_legacy_const(&args[j]) {
+                        if let IrTerm::Ctor { name: cn, .. } = &args[i] {
+                            mark_regime(cn, "Int", regimes)?;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        IrFormula::And { operands }
+        | IrFormula::Or { operands }
+        | IrFormula::Not { operands }
+        | IrFormula::Implies { operands } => {
+            operands.iter().try_for_each(|o| walk_mixed_sort(o, regimes))
+        }
+        IrFormula::Forall { body, .. }
+        | IrFormula::Exists { body, .. }
+        | IrFormula::Choice { body, .. } => walk_mixed_sort(body, regimes),
+        IrFormula::Substitute { .. }
+        | IrFormula::Apply { .. }
+        | IrFormula::DivergenceBetween { .. } => Ok(()),
+    }
+}
+
 fn validate_formula(formula: &sugar_ir_types::IrFormula) -> Result<(), String> {
     match formula {
         sugar_ir_types::IrFormula::Atomic { args, .. } => args.iter().try_for_each(validate_term),
@@ -164,6 +268,7 @@ pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileErr
     let formula: sugar_ir_types::Formula = serde_json::from_value(ir_formula.clone())
         .map_err(|e| CompileError::MalformedIr(e.to_string()))?;
     validate_formula(&formula).map_err(CompileError::MalformedIr)?;
+    check_mixed_sort_conjunction(&formula).map_err(CompileError::UnsupportedSort)?;
     Ok(generated::compile_formula(&formula))
 }
 
@@ -171,6 +276,7 @@ pub fn compile_asserted_to_parts(ir_formula: &Json) -> Result<CompiledFormula, C
     let formula: sugar_ir_types::Formula = serde_json::from_value(ir_formula.clone())
         .map_err(|e| CompileError::MalformedIr(e.to_string()))?;
     validate_formula(&formula).map_err(CompileError::MalformedIr)?;
+    check_mixed_sort_conjunction(&formula).map_err(CompileError::UnsupportedSort)?;
     Ok(generated::compile_asserted_formula(&formula))
 }
 
@@ -196,6 +302,68 @@ mod tests {
     }
     fn var(name: &str) -> serde_json::Value {
         serde_json::json!({"kind": "var", "name": name})
+    }
+
+    #[test]
+    fn mixed_sort_conjunction_is_named_error_not_ill_sorted_script() {
+        // H1 [B7]: the same `call:f` ctor equated to a String literal in one
+        // row (String-theory regime -> String return sort) and an Int literal
+        // in another row (legacy regime -> Int return sort). One declare-fun
+        // cannot carry both; emitting would produce an ill-sorted script ->
+        // z3 parse error -> OPAQUE undecidable. The compiler must instead
+        // return a NAMED error at emit time.
+        let subject = ctor("call:f", vec![serde_json::json!(
+            {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}})]);
+        let string_row = eq(
+            subject.clone(),
+            serde_json::json!({"kind":"const","value":"abc","sort":{"kind":"primitive","name":"String"}}),
+        );
+        let int_row = eq(
+            subject,
+            serde_json::json!({"kind":"const","value":7,"sort":{"kind":"primitive","name":"Int"}}),
+        );
+        let ir = serde_json::json!({"kind":"and","operands":[string_row, int_row]});
+
+        for result in [compile_to_parts(&ir), compile_asserted_to_parts(&ir)] {
+            let err = result.expect_err("mixed-sort conjunction must be refused, not emitted");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("mixed-sort conjunction on call:f"),
+                "error must name the conflict and the ctor: {msg}"
+            );
+            assert!(
+                msg.contains("String vs Int"),
+                "error must name both regimes: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn same_regime_conjunction_still_compiles() {
+        // Discrimination twin for B7: two rows equating the same ctor to TWO
+        // DIFFERENT Int literals are contradictory but NOT mixed-sort -- the
+        // conjunction must still compile (the solver, not the emitter, rules
+        // on satisfiability). The detector must not over-trigger.
+        let mk = |v: i64| {
+            eq(
+                ctor("call:f", vec![serde_json::json!(
+                    {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}})]),
+                serde_json::json!({"kind":"const","value":v,"sort":{"kind":"primitive","name":"Int"}}),
+            )
+        };
+        let ir = serde_json::json!({"kind":"and","operands":[mk(7), mk(8)]});
+        compile_to_parts(&ir).expect("same-regime conjunction must compile");
+
+        // And the all-String twin: same ctor equated to two String literals.
+        let mks = |s: &str| {
+            eq(
+                ctor("call:g", vec![serde_json::json!(
+                    {"kind":"const","value":"x","sort":{"kind":"primitive","name":"String"}})]),
+                serde_json::json!({"kind":"const","value":s,"sort":{"kind":"primitive","name":"String"}}),
+            )
+        };
+        let ir2 = serde_json::json!({"kind":"and","operands":[mks("a"), mks("b")]});
+        compile_to_parts(&ir2).expect("all-String conjunction must compile");
     }
 
     #[test]

@@ -638,6 +638,16 @@ public final class JavaTestAssertionsRpc {
             "floatsAreEqual", "doublesAreEqual"
         );
 
+        // Method names that are NOT-EQUAL predicate sentinels: they return true
+        // when the arguments are NOT equal (semantic inverse of EQUAL_PREDICATE_METHODS).
+        // e.g. TestNG's areNotEqualImpl(actual, expected) returns true when actual != expected.
+        // In a guard: !areNotEqualImpl(a,b) → throws when NOT (a!=b) = throws when a==b → INEQUALITY
+        //             areNotEqualImpl(a,b)  → throws when a!=b → EQUALITY
+        // H1: added to fix TestNG assertNotEquals 2-arg classification (per-overload C8 fix).
+        private static final Set<String> NOT_EQUAL_PREDICATE_METHODS = Set.of(
+            "areNotEqualImpl", "areNotEqual", "objectsAreNotEqual"
+        );
+
         /** Result of per-directory vocab derivation, including detected framework package. */
         static final class DeriveResult {
             /** The derived vocab (may be empty if nothing was learned). */
@@ -872,7 +882,7 @@ public final class JavaTestAssertionsRpc {
             // reduced guard classifies as APPROXIMATE below.
 
             // Reduce body to find the throw locus, inlining up to depth 8.
-            GuardResult gr = findThrowGuard(mt, params, corpus, 8, new HashSet<>());
+            GuardResult gr = findThrowGuard(mt, params, corpus, 8, new HashSet<>(), ownerClass);
             if (gr == null) {
                 // No reachable throw locus → NOT an assertion. Recorded so that a
                 // test calling it gets the named "no throw locus" refusal at lift time
@@ -887,6 +897,11 @@ public final class JavaTestAssertionsRpc {
             }
             if (gr.kind.equals("unlearned")) {
                 unlearned.add(name);
+                // H1 [A1]: emit a named diagnostic when the reason is known (e.g. cross-class ambiguity).
+                if (gr.reason != null) {
+                    diagnostics.add(diagnostic("<vendor>", ownerClass + "." + name, "<vocab>",
+                        "VocabDeriver: " + gr.reason + " — " + name + " classified UNLEARNED"));
+                }
                 return;
             }
 
@@ -958,19 +973,26 @@ public final class JavaTestAssertionsRpc {
         private static final class GuardResult {
             final String kind;
             final int expectedPos; // -1 = N/A
+            final String reason;   // non-null for named UNLEARNED (e.g. ambiguous delegation)
             GuardResult(String kind, int expectedPos) {
-                this.kind = kind; this.expectedPos = expectedPos;
+                this.kind = kind; this.expectedPos = expectedPos; this.reason = null;
+            }
+            GuardResult(String kind, int expectedPos, String reason) {
+                this.kind = kind; this.expectedPos = expectedPos; this.reason = reason;
             }
         }
 
         /**
          * Find the throw guard in a method body, inlining delegation into the corpus.
          *
-         * @param mt         the method to analyse
+         * @param mt          the method to analyse
          * @param outerParams the ORIGINAL public method's parameter list (for position mapping)
-         * @param corpus     all vendored method trees by class name
-         * @param depth      remaining inlining depth (stop at 0 → UNLEARNED)
-         * @param visited    set of "ClassName.methodName" already in the inlining stack
+         * @param corpus      all vendored method trees by class name
+         * @param depth       remaining inlining depth (stop at 0 → UNLEARNED)
+         * @param visited     set of "ClassName.methodName" already in the inlining stack
+         * @param callerClass the simple class name that owns the top-level entry-point being
+         *                    classified; excluded from cross-class ambiguity counts so that
+         *                    self-delegation (Assertions→Assertions overload) is not flagged.
          * @return GuardResult, or null if no throw locus found (→ skip, not an assertion)
          */
         private static GuardResult findThrowGuard(
@@ -978,7 +1000,8 @@ public final class JavaTestAssertionsRpc {
                 List<? extends VariableTree> outerParams,
                 Map<String, ClassCorpus> corpus,
                 int depth,
-                Set<String> visited) {
+                Set<String> visited,
+                String callerClass) {
 
             BlockTree body = mt.getBody();
             if (body == null) return null;
@@ -997,7 +1020,7 @@ public final class JavaTestAssertionsRpc {
                     expr = rt.getExpression();
                 }
                 if (expr instanceof MethodInvocationTree mit) {
-                    GuardResult delegated = tryInlineCall(mit, outerParams, corpus, depth, visited);
+                    GuardResult delegated = tryInlineCall(mit, outerParams, corpus, depth, visited, callerClass);
                     if (delegated != null) return delegated;
                 }
             }
@@ -1020,7 +1043,7 @@ public final class JavaTestAssertionsRpc {
             // can be resolved back to their initializers.
             for (StatementTree s : stmts) {
                 GuardResult gr = extractGuardFromStatement(
-                        s, outerParams, localVars, corpus, depth, visited);
+                        s, outerParams, localVars, corpus, depth, visited, callerClass);
                 if (gr != null) return gr;
             }
 
@@ -1030,22 +1053,47 @@ public final class JavaTestAssertionsRpc {
         /**
          * Try to inline a delegation call into the corpus.
          * Returns the GuardResult of the callee, or null if the callee is not in corpus.
+         *
+         * H1 [A1]: resolution is now class-qualified.
+         * - A qualified call `Foo.bar(...)` resolves ONLY in class Foo.
+         * - An unqualified call resolves in the current class first; if found only once
+         *   across all classes, that match is used; if found in two or more classes with
+         *   the same name+arity (ambiguous), returns UNLEARNED with reason.
          */
         private static GuardResult tryInlineCall(
                 MethodInvocationTree mit,
                 List<? extends VariableTree> outerParams,
                 Map<String, ClassCorpus> corpus,
                 int depth,
-                Set<String> visited) {
+                Set<String> visited,
+                String callerClass) {
 
             if (depth <= 0) return new GuardResult("unlearned", -1);
 
             String calleeName = extractSimpleMethodName(mit);
             if (calleeName == null) return null;
 
-            // Find the callee in the corpus by method name (arity-aware best-effort).
-            MethodTree callee = findInCorpus(corpus, calleeName, mit.getArguments().size());
+            // H1 [A1]: extract qualifier class from a qualified call (Foo.bar(..)).
+            String qualifierClass = extractQualifierClass(mit);
+
+            // Find the callee in the corpus — qualifier-aware to prevent cross-class
+            // name collision from inlining the wrong body (falsePass-in-principle).
+            MethodTree callee = findInCorpusQualified(corpus, calleeName,
+                    mit.getArguments().size(), qualifierClass);
             if (callee == null) return null;
+
+            // H1 [A1]: if qualifierClass is null (unqualified call) and the same
+            // name+arity exists in two or more classes OTHER than the caller class,
+            // the delegation target is ambiguous — return UNLEARNED rather than first-match.
+            // We exclude callerClass because it is the public entry-point being classified,
+            // not a helper; self-overload-delegation (Assertions→Assertions) is not ambiguous.
+            if (qualifierClass == null
+                    && countMatchesInCorpus(corpus, calleeName, mit.getArguments().size(),
+                                            callerClass) > 1) {
+                return new GuardResult("unlearned", -1,
+                    "ambiguous delegation target: " + calleeName
+                    + " exists in multiple vendor classes with same arity");
+            }
 
             // Check parameter count matches (the call might have fewer args than the callee
             // when trailing message params are absent).
@@ -1076,7 +1124,7 @@ public final class JavaTestAssertionsRpc {
             }
 
             GuardResult raw = findThrowGuard(callee, callee.getParameters(), corpus,
-                    depth - 1, newVisited);
+                    depth - 1, newVisited, callerClass);
             if (raw == null) return null;
 
             // Remap positions through paramMap
@@ -1121,7 +1169,8 @@ public final class JavaTestAssertionsRpc {
                 Map<String, ExpressionTree> localVars,
                 Map<String, ClassCorpus> corpus,
                 int depth,
-                Set<String> visited) {
+                Set<String> visited,
+                String callerClass) {
 
             if (s instanceof IfTree it) {
                 ExpressionTree cond = it.getCondition();
@@ -1134,7 +1183,7 @@ public final class JavaTestAssertionsRpc {
             } else if (s instanceof BlockTree bt) {
                 for (StatementTree inner : bt.getStatements()) {
                     GuardResult gr = extractGuardFromStatement(
-                            inner, outerParams, localVars, corpus, depth, visited);
+                            inner, outerParams, localVars, corpus, depth, visited, callerClass);
                     if (gr != null) return gr;
                 }
             } else if (s instanceof ExpressionStatementTree est) {
@@ -1142,7 +1191,7 @@ public final class JavaTestAssertionsRpc {
                 // e.g. assertEqualsImpl(actual, expected, message)
                 ExpressionTree e = est.getExpression();
                 if (e instanceof MethodInvocationTree mit) {
-                    GuardResult delegated = tryInlineCall(mit, outerParams, corpus, depth, visited);
+                    GuardResult delegated = tryInlineCall(mit, outerParams, corpus, depth, visited, callerClass);
                     if (delegated != null) return delegated;
                 }
             }
@@ -1297,6 +1346,13 @@ public final class JavaTestAssertionsRpc {
                                 int[] pos = extractParamPositions2(mit2.getArguments(), paramIndex);
                                 return new GuardResult("equality", expectedPosFromArgs(pos, params));
                             }
+                            // H1 [C8]: !notEqual where notEqual = areNotEqualImpl(actual, expected)
+                            // → throws when NOT (a!=b) = throws when a==b → INEQUALITY
+                            if (mn2 != null && NOT_EQUAL_PREDICATE_METHODS.contains(mn2)) {
+                                if (mit2.getArguments().size() >= 3) return new GuardResult("approx", -1);
+                                int[] pos = extractParamPositions2(mit2.getArguments(), paramIndex);
+                                return new GuardResult("inequality", expectedPosFromArgs(pos, params));
+                            }
                         }
                         // Resolved to something else: fall through to !booleanParam check
                     }
@@ -1317,6 +1373,14 @@ public final class JavaTestAssertionsRpc {
                         }
                         int[] pos = extractParamPositions2(mit.getArguments(), paramIndex);
                         return new GuardResult("equality", expectedPosFromArgs(pos, params));
+                    }
+                    // H1 [C8]: !areNotEqualImpl(p_i, p_j) → throws when NOT (a!=b) = INEQUALITY
+                    if (mn != null && NOT_EQUAL_PREDICATE_METHODS.contains(mn)) {
+                        if (mit.getArguments().size() >= 3) {
+                            return new GuardResult("approx", -1);
+                        }
+                        int[] pos = extractParamPositions2(mit.getArguments(), paramIndex);
+                        return new GuardResult("inequality", expectedPosFromArgs(pos, params));
                     }
                 }
                 // !(p_i != p_j) → INEQUALITY (double negation)
@@ -1371,6 +1435,13 @@ public final class JavaTestAssertionsRpc {
                             if (mit2.getArguments().size() >= 3) return new GuardResult("approx", -1);
                             int[] pos = extractParamPositions2(mit2.getArguments(), paramIndex);
                             return new GuardResult("inequality", expectedPosFromArgs(pos, params));
+                        }
+                        // H1 [C8]: notEqualVar = areNotEqualImpl(a,b), guard = notEqualVar (no negation)
+                        // → throws when a!=b → EQUALITY
+                        if (mn2 != null && NOT_EQUAL_PREDICATE_METHODS.contains(mn2)) {
+                            if (mit2.getArguments().size() >= 3) return new GuardResult("approx", -1);
+                            int[] pos = extractParamPositions2(mit2.getArguments(), paramIndex);
+                            return new GuardResult("equality", expectedPosFromArgs(pos, params));
                         }
                     }
                 }
@@ -1574,6 +1645,9 @@ public final class JavaTestAssertionsRpc {
          * Find a method in the corpus by simple name and argument count.
          * If arity is -1, returns the first match by name.
          * Prefers exact arity match; falls back to any match if no exact match.
+         * NOTE: this is the legacy unqualified search used by isThrowTerminal and
+         * other helpers that don't have a class qualifier. Call findInCorpusQualified
+         * for all delegation-chain inlining (H1 [A1]).
          */
         private static MethodTree findInCorpus(
                 Map<String, ClassCorpus> corpus, String methodName, int arity) {
@@ -1590,6 +1664,80 @@ public final class JavaTestAssertionsRpc {
                 }
             }
             return fallback;
+        }
+
+        /**
+         * H1 [A1]: Qualified corpus lookup.
+         * If qualifierClass is non-null, restrict to that class only.
+         * If qualifierClass is null (unqualified call), fall back to the legacy
+         * first-match (callers are responsible for checking ambiguity separately).
+         */
+        private static MethodTree findInCorpusQualified(
+                Map<String, ClassCorpus> corpus, String methodName, int arity,
+                String qualifierClass) {
+            if (qualifierClass != null) {
+                // Qualified call: resolve ONLY in the named class.
+                ClassCorpus cc = corpus.get(qualifierClass);
+                if (cc == null) return null; // class not in vendored corpus → chain escapes
+                MethodTree fallback = null;
+                for (MethodTree mt : cc.methods) {
+                    if (!mt.getName().toString().equals(methodName)) continue;
+                    if (arity < 0) return mt;
+                    int paramCount = mt.getParameters().size();
+                    if (paramCount == arity) return mt;
+                    if (paramCount == arity + 1 && fallback == null) fallback = mt;
+                    if (fallback == null) fallback = mt;
+                }
+                return fallback;
+            }
+            // Unqualified: legacy search (ambiguity checked by caller via countMatchesInCorpus).
+            return findInCorpus(corpus, methodName, arity);
+        }
+
+        /**
+         * H1 [A1]: Count how many distinct classes in the corpus declare a method
+         * with the given name and arity (exact match or arity+1 trailing-message match),
+         * excluding the class named excludeClass (the calling/owning class, which is the
+         * entry-point and not a valid delegation target for disambiguation).
+         * Used to detect ambiguous unqualified delegation: if the same helper name+arity
+         * appears in 2+ classes OTHER than the caller, the target is ambiguous.
+         */
+        private static int countMatchesInCorpus(
+                Map<String, ClassCorpus> corpus, String methodName, int arity,
+                String excludeClass) {
+            int count = 0;
+            for (Map.Entry<String, ClassCorpus> e : corpus.entrySet()) {
+                if (excludeClass != null && e.getKey().equals(excludeClass)) continue;
+                ClassCorpus cc = e.getValue();
+                for (MethodTree mt : cc.methods) {
+                    if (!mt.getName().toString().equals(methodName)) continue;
+                    int paramCount = mt.getParameters().size();
+                    if (arity < 0 || paramCount == arity || paramCount == arity + 1) {
+                        count++;
+                        break; // count once per class
+                    }
+                }
+            }
+            return count;
+        }
+
+        /**
+         * H1 [A1]: Extract the simple class name from the qualifier of a qualified call.
+         * For `Foo.bar(...)` returns "Foo"; for `this.bar(...)` or bare `bar(...)` returns null.
+         */
+        private static String extractQualifierClass(MethodInvocationTree mit) {
+            ExpressionTree sel = mit.getMethodSelect();
+            if (sel instanceof MemberSelectTree mst) {
+                ExpressionTree expr = mst.getExpression();
+                // strip parens
+                while (expr instanceof ParenthesizedTree pt) expr = pt.getExpression();
+                if (expr instanceof IdentifierTree id) {
+                    String name = id.getName().toString();
+                    // "this" and "super" are not class qualifiers
+                    if (!name.equals("this") && !name.equals("super")) return name;
+                }
+            }
+            return null;
         }
 
         // ── structural helpers ─────────────────────────────────────────────────
@@ -1723,13 +1871,45 @@ public final class JavaTestAssertionsRpc {
             // how the no-vocab / assertThat cases still get loud named refusals
             // instead of silent skips. This replaces the old hardcoded
             // startsWith("assert") candidate filter in the lift path.
+            //
+            // H1 [A2]: wildcard static imports (import static org.junit.Assert.*)
+            // bind ALL public static methods of the named class. For a vendored
+            // framework class we expand the wildcard to the learned vocab's method
+            // names so that assertEquals, assertNotNull, etc. are structurally bound
+            // without requiring a per-name named import. For an unvendored class the
+            // wildcard import produces a named refusal ("static wildcard import of
+            // unvendored class") for any call whose name we otherwise know.
             Set<String> assertionBoundNames = new HashSet<>();
             for (ImportTree imp : unit.getImports()) {
                 if (!imp.isStatic()) continue;
                 String qn = imp.getQualifiedIdentifier().toString();
                 if (qn.startsWith("org.junit.") || qn.startsWith("org.testng.")) {
-                    int dot = qn.lastIndexOf('.');
-                    if (dot >= 0) assertionBoundNames.add(qn.substring(dot + 1));
+                    if (qn.endsWith(".*")) {
+                        // H1 [A2]: wildcard — determine framework key and expand to all
+                        // known vocab method names for that framework.
+                        String classPath = qn.substring(0, qn.length() - 2); // strip .*
+                        String fwKey = classPath.startsWith("org.testng.") ? "org.testng" : "org.junit";
+                        AssertionVocab fwVocab = multiVocab.forFramework(fwKey);
+                        // Expand to all names the vocab knows (equality, inequality, truth, etc.)
+                        // so that any call to a vocab-known name is structurally bound.
+                        assertionBoundNames.addAll(fwVocab.equality);
+                        assertionBoundNames.addAll(fwVocab.inequality);
+                        assertionBoundNames.addAll(fwVocab.truth);
+                        assertionBoundNames.addAll(fwVocab.negatedTruth);
+                        assertionBoundNames.addAll(fwVocab.nullSet);
+                        assertionBoundNames.addAll(fwVocab.notNullSet);
+                        assertionBoundNames.addAll(fwVocab.approx);
+                        assertionBoundNames.addAll(fwVocab.unlearned);
+                        assertionBoundNames.addAll(fwVocab.noThrowLocus);
+                        if (fwVocab.equality.isEmpty() && fwVocab.inequality.isEmpty()) {
+                            // Unvendored class wildcard: mark with sentinel so liftStatement
+                            // can produce a named refusal for any call it processes.
+                            assertionBoundNames.add("__wildcard_unvendored__:" + classPath);
+                        }
+                    } else {
+                        int dot = qn.lastIndexOf('.');
+                        if (dot >= 0) assertionBoundNames.add(qn.substring(dot + 1));
+                    }
                 }
             }
 
@@ -2197,15 +2377,65 @@ public final class JavaTestAssertionsRpc {
 
         String methodName = methodInvocationName(mit);
 
-        // CANDIDATE SELECTION (Phase 4.5): no name prefix. A call is an assertion
-        // candidate iff
-        //   (a) the learned vocab knows the name (any category, including the
-        //       no-throw-locus and unlearned ones — those get loud refusals), or
-        //   (b) the name is bound by a static import from an assertion-framework
-        //       package (a CLAIMED assertion we learned nothing about → loud
-        //       refusal, never a silent skip).
-        // Everything else (helper calls like g(2)) is not an assertion claim.
-        if (!vocab.isKnown(methodName) && !assertionBoundNames.contains(methodName)) {
+        // CANDIDATE SELECTION (Phase 4.5 / H1 [A3]): an invocation is an assertion
+        // candidate iff it is STRUCTURALLY BOUND to the framework via an import edge:
+        //
+        //   (a) QUALIFIED call `Assert.assertEquals(...)` — the qualifier names an
+        //       imported framework class (detected via frameworkKind != NEITHER). The
+        //       method name is then looked up in the vocab for that framework.
+        //   (b) BARE call `assertEquals(...)` — only if the name is in assertionBoundNames,
+        //       which is populated EXCLUSIVELY from static imports of framework packages
+        //       (named or wildcard, H1 [A2]). A user-scope method with the same name
+        //       but no framework static import MUST NOT bind to the framework vocab — it
+        //       is either a user-defined helper or a local override. Lifting it would be
+        //       a falsePass.
+        //
+        // Everything else (helper calls like g(2), user-scope assertEquals without a
+        // static import) is not an assertion claim → silently skipped.
+        boolean isQualifiedFrameworkCall = false;
+        if (expr instanceof MethodInvocationTree mitCheck) {
+            ExpressionTree sel = mitCheck.getMethodSelect();
+            if (sel instanceof MemberSelectTree) {
+                // Qualified call: the frameworkKind for this compilation unit already tells
+                // us whether the qualifier class belongs to a framework. If the framework
+                // is known (not NEITHER), any qualified call to a vocab-known name is bound.
+                isQualifiedFrameworkCall = (frameworkKind != FrameworkKind.NEITHER);
+            }
+        }
+        boolean isBareFrameworkBound = assertionBoundNames.contains(methodName);
+
+        // H1 [A2]: if an unvendored wildcard static import is present, bare calls to
+        // vocab-known names produce a named refusal (not a silent skip) because the
+        // wildcard says "this name should come from the framework" but the class is not
+        // in the vendored corpus so we cannot verify the semantics.
+        if (!isBareFrameworkBound && !isQualifiedFrameworkCall) {
+            for (String sentinel : assertionBoundNames) {
+                if (sentinel.startsWith("__wildcard_unvendored__:") && vocab.isKnown(methodName)) {
+                    String classPath = sentinel.substring("__wildcard_unvendored__:".length());
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName,
+                        "static wildcard import of unvendored class " + classPath
+                        + " — cannot verify semantics of " + methodName + "; refused by name"));
+                    return;
+                }
+            }
+        }
+
+        // H1 [A3]: a bare call is only structurally bound to the framework if:
+        //   (a) it has a static import from a framework package (isBareFrameworkBound), or
+        //   (b) the framework has BOTH JUnit and TestNG imports — ambiguous, but we still
+        //       want to fire the AMBIGUITY REFUSAL rather than silently skipping the call
+        //       (the ambiguity is itself a structural fact about this file), or
+        //   (c) it is a qualified call (isQualifiedFrameworkCall).
+        // A bare call with vocab.isKnown() but no static import and no BOTH-ambiguity
+        // is a user-scope method — skip silently to avoid falsePass.
+        boolean ambiguousBothFrameworks = (frameworkKind == FrameworkKind.BOTH);
+        if (!isQualifiedFrameworkCall && !isBareFrameworkBound && !ambiguousBothFrameworks) {
+            return;
+        }
+
+        if (!vocab.isKnown(methodName) && !assertionBoundNames.contains(methodName)
+                && !ambiguousBothFrameworks) {
             return;
         }
 
@@ -3216,6 +3446,12 @@ public final class JavaTestAssertionsRpc {
             }
             if (vendorDirs.isEmpty()) return UniverseRegistry.EMPTY;
 
+            // H1 [B4/B5]: Load the externalized platform axioms (identity bridges).
+            // kit-adjacent platform-axioms.json declares name+arity bridges that are
+            // charset-transparent by JDK spec, not by source walk. A bridge absent
+            // from this file is refused by name if encountered as a chain-escape.
+            Set<String> identityBridges = loadPlatformAxioms(workspaceRoot, diagnostics);
+
             // Collect all vendor Java files
             List<Path> vendorFiles = new ArrayList<>();
             for (Path dir : vendorDirs) {
@@ -3232,7 +3468,108 @@ public final class JavaTestAssertionsRpc {
             }
             if (vendorFiles.isEmpty()) return UniverseRegistry.EMPTY;
 
-            return buildRegistry(compiler, vendorFiles, workspaceRoot, diagnostics);
+            return buildRegistry(compiler, vendorFiles, workspaceRoot, identityBridges, diagnostics);
+        }
+
+        /**
+         * H1 [B4/B5]: Load identity-bridge names from platform-axioms.json.
+         * The file lives adjacent to the kit jar/class dir: resolved from the
+         * classloader resource root, or from the workspace root (for in-tree use).
+         * Returns the set of method names declared as identity bridges.
+         * Missing file → empty set (no bridges = every chain-escape is refused).
+         */
+        static Set<String> loadPlatformAxioms(Path workspaceRoot, List<String> diagnostics) {
+            // Look for platform-axioms.json in two locations:
+            // 1. Next to the kit's .class files (classloader resource)
+            // 2. In the kit source root (implementations/java/sugar-lift-java-tests/)
+            //    which we locate by scanning upward from workspaceRoot for the marker file.
+            // For robustness, try the kit dir relative to the JAR/classdir first via
+            // ClassLoader.getSystemResource, then fall back to a fixed relative path
+            // from the workspaceRoot (useful in tests that run from the workspace).
+            Path axiomFile = null;
+
+            // Try classloader resource
+            try {
+                java.net.URL res = JavaTestAssertionsRpc.class.getClassLoader()
+                        .getResource("platform-axioms.json");
+                if (res != null) axiomFile = Path.of(res.toURI());
+            } catch (Exception ignored) {}
+
+            // Kit-adjacent: the kit's class dir (out/) sits inside the kit root,
+            // where platform-axioms.json lives. This works from ANY workspace
+            // (showcases run with workspace roots far from the kit tree).
+            if (axiomFile == null) {
+                try {
+                    java.net.URL loc = JavaTestAssertionsRpc.class
+                            .getProtectionDomain().getCodeSource().getLocation();
+                    Path classDir = Path.of(loc.toURI());
+                    Path dir = Files.isDirectory(classDir) ? classDir : classDir.getParent();
+                    for (int i = 0; i < 3 && dir != null; i++) {
+                        Path candidate = dir.resolve("platform-axioms.json");
+                        if (Files.isReadable(candidate)) { axiomFile = candidate; break; }
+                        dir = dir.getParent();
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // Fallback: scan upward from workspaceRoot for the kit dir marker
+            if (axiomFile == null) {
+                // The kit root is sugar-lift-java-tests/; look for platform-axioms.json
+                // by walking up from workspaceRoot up to 6 levels.
+                Path dir = workspaceRoot;
+                for (int i = 0; i < 6; i++) {
+                    Path candidate = dir.resolve("platform-axioms.json");
+                    if (Files.isReadable(candidate)) { axiomFile = candidate; break; }
+                    Path parent = dir.getParent();
+                    if (parent == null) break;
+                    dir = parent;
+                }
+            }
+
+            if (axiomFile == null || !Files.isReadable(axiomFile)) {
+                // No axiom file found: no bridges declared. All chain-escapes refused.
+                return Set.of();
+            }
+
+            try {
+                String json = Files.readString(axiomFile, StandardCharsets.UTF_8);
+                // Parse "identity_bridges": [{"name": "...", "arity": N, ...}, ...]
+                int bridgesIdx = json.indexOf("\"identity_bridges\"");
+                if (bridgesIdx < 0) return Set.of();
+                int arrOpen = json.indexOf('[', bridgesIdx);
+                if (arrOpen < 0) return Set.of();
+                int arrClose = matchingBracket(json, arrOpen, '[', ']');
+                if (arrClose < 0) return Set.of();
+                String arrBody = json.substring(arrOpen + 1, arrClose);
+
+                Set<String> bridges = new HashSet<>();
+                // Each element is a JSON object; extract "name" from each
+                int pos = 0;
+                while (pos < arrBody.length()) {
+                    int objOpen = arrBody.indexOf('{', pos);
+                    if (objOpen < 0) break;
+                    int objClose = matchingBracket(arrBody, objOpen, '{', '}');
+                    if (objClose < 0) break;
+                    String obj = arrBody.substring(objOpen, objClose + 1);
+                    int nameIdx = obj.indexOf("\"name\"");
+                    if (nameIdx >= 0) {
+                        int colon = obj.indexOf(':', nameIdx + 6);
+                        if (colon >= 0) {
+                            int q1 = obj.indexOf('"', colon + 1);
+                            int q2 = q1 >= 0 ? obj.indexOf('"', q1 + 1) : -1;
+                            if (q1 >= 0 && q2 > q1) {
+                                bridges.add(obj.substring(q1 + 1, q2));
+                            }
+                        }
+                    }
+                    pos = objClose + 1;
+                }
+                return Collections.unmodifiableSet(bridges);
+            } catch (IOException e) {
+                diagnostics.add(diagnostic("<universe-walker>", "<universe-walker>",
+                    "platform-axioms.json", "read error: " + e.getMessage()));
+                return Set.of();
+            }
         }
 
         /**
@@ -3316,7 +3653,7 @@ public final class JavaTestAssertionsRpc {
          */
         private static UniverseRegistry buildRegistry(
                 JavaCompiler compiler, List<Path> vendorFiles,
-                Path workspaceRoot, List<String> diagnostics) {
+                Path workspaceRoot, Set<String> identityBridges, List<String> diagnostics) {
 
             // ── Step 1: parse all vendor files into AST units ──────────────
             // Map: simple class name → (compilationUnit, classTree)
@@ -3350,7 +3687,7 @@ public final class JavaTestAssertionsRpc {
 
             if (classTreeByName.isEmpty()) return UniverseRegistry.EMPTY;
 
-            Corpus corpus = new Corpus(classTreeByName);
+            Corpus corpus = new Corpus(classTreeByName, identityBridges);
 
             // ── Step 2: discover table selectors from the vendor's own AST ──
             // A selector is `<field> = <condIdent> ? <tableIdentA> : <tableIdentB>`
@@ -3515,6 +3852,11 @@ public final class JavaTestAssertionsRpc {
         /**
          * The parsed vendor corpus: classes, fields, static methods by
          * name/arity, ctors by class — plus the literal-propagation resolver.
+         *
+         * H1 [B4/B5]: identityBridges is the set of method names (from
+         * platform-axioms.json) that are declared charset-transparent by JDK spec.
+         * These are the only non-walked steps; a name NOT in this set that escapes
+         * the vendored source is refused by name.
          */
         private static final class Corpus {
             final Map<String, ClassTree> classes;
@@ -3522,9 +3864,12 @@ public final class JavaTestAssertionsRpc {
             final Map<String, String> fieldOwner = new LinkedHashMap<>();        // simple name → class
             final Map<String, MethodTree> statics = new LinkedHashMap<>();       // name/arity → tree
             final Map<String, List<MethodTree>> ctors = new LinkedHashMap<>();   // class → ctors
+            /** H1 [B4/B5]: method names declared as identity bridges in platform-axioms.json */
+            final Set<String> identityBridges;
 
-            Corpus(Map<String, ClassTree> classes) {
+            Corpus(Map<String, ClassTree> classes, Set<String> identityBridges) {
                 this.classes = classes;
+                this.identityBridges = identityBridges;
                 for (Map.Entry<String, ClassTree> ce : classes.entrySet()) {
                     for (Tree m : ce.getValue().getMembers()) {
                         if (m instanceof VariableTree vt) {
@@ -3759,11 +4104,13 @@ public final class JavaTestAssertionsRpc {
                 }
                 if (expr instanceof MethodInvocationTree mi) {
                     String name = methodInvocationName(mi);
-                    // DECLARED AXIOM SEAM (the only non-walked step): a 1-arg
-                    // newStringUsAscii(...) wrapper is charset-transparent
-                    // byte[]→String per JDK US-ASCII semantics. StringUtils is
-                    // not vendored; no syntax walk can establish this. Name-gated.
-                    if (name.equals("newStringUsAscii") && mi.getArguments().size() == 1) {
+                    // H1 [B4/B5]: DECLARED AXIOM SEAM — consult platform-axioms.json.
+                    // A name in identityBridges is charset-transparent by JDK spec
+                    // (not walkable syntax). Its single argument propagates through.
+                    // A name NOT in this set that escapes the vendored source is refused.
+                    // Previously this was a hardcoded `name.equals("newStringUsAscii")`
+                    // check; the check is now driven by the externalized axiom file.
+                    if (identityBridges.contains(name) && mi.getArguments().size() == 1) {
                         return resolveExpr(mi.getArguments().get(0), bindings, selectors, depth, notes);
                     }
                     MethodTree target = statics.get(name + "/" + mi.getArguments().size());
@@ -3791,6 +4138,43 @@ public final class JavaTestAssertionsRpc {
             private String resolveCtor(MethodTree ctor, String className, Map<String, Object> bindings,
                     List<Selector> selectors, int depth, List<String> notes) {
                 if (depth > 12 || ctor.getBody() == null) return null;
+
+                // H1 [B6]: scan for non-zero integer field stores before following the chain.
+                // A ctor that stores a non-zero int from bindings into a field (e.g.
+                // `this.lineLength = 76`) signals a chunking parameter: lineLength > 0 means
+                // the instance method injects line separators into the output. Those separator
+                // chars are NOT in the static encode table, so the str.chars-in-set contract
+                // would be unsound. Refuse the entry point with a named reason.
+                for (StatementTree st : ctor.getBody().getStatements()) {
+                    if (!(st instanceof ExpressionStatementTree est)) continue;
+                    ExpressionTree e = stripParens(est.getExpression());
+                    if (e instanceof AssignmentTree at) {
+                        ExpressionTree rhs = stripParens(at.getExpression());
+                        // Simple assignment: `this.field = paramName` (not a ternary)
+                        if (rhs instanceof IdentifierTree rhsId
+                                && !(rhs instanceof ConditionalExpressionTree)) {
+                            Object v = bindings.get(rhsId.getName().toString());
+                            if (v instanceof Number n && n.intValue() != 0) {
+                                notes.add("chunking parameter non-zero: "
+                                    + rhsId.getName() + "=" + n.intValue()
+                                    + " — entry point injects line separators; "
+                                    + "str.chars-in-set would be unsound (lineLength=0 required)");
+                                return null;
+                            }
+                        }
+                        // Direct int literal: `this.field = 76` (unrelated to bindings)
+                        if (rhs instanceof LiteralTree lt
+                                && lt.getValue() instanceof Number n && n.intValue() != 0) {
+                            // A literal non-zero int stored in a field: same concern.
+                            notes.add("chunking parameter non-zero (literal): "
+                                + at.getVariable() + "=" + n.intValue()
+                                + " — entry point injects line separators; "
+                                + "str.chars-in-set would be unsound (lineLength=0 required)");
+                            return null;
+                        }
+                    }
+                }
+
                 for (StatementTree st : ctor.getBody().getStatements()) {
                     if (!(st instanceof ExpressionStatementTree est)) continue;
                     ExpressionTree e = stripParens(est.getExpression());
