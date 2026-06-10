@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use sugar_lift_rust_tests::{lift_file_with_macro_imports, LiftOptions, MacroRegistry};
+use sugar_lift_rust_tests::{lift_file_with_macro_imports, LiftOptions, MacroRegistry, TargetCfg};
 use syn::visit::{self, Visit};
 
 /// The lifter's assertion universe: any macro whose name starts with assert or
@@ -140,7 +140,49 @@ fn main() {
         scan_dirs.len()
     );
 
-    let options = LiftOptions::default();
+    // `--rustc-cfg`: resolve target cfgs (target_has_atomic, target_family,
+    // absence of loom/fuzzing, ...) from real `rustc --print cfg` facts -- a
+    // declared build configuration, from the compiler, not a guess.
+    // `--feature NAME` (repeatable): declare an enabled crate feature.
+    let use_rustc_cfg = args.iter().any(|a| a == "--rustc-cfg");
+    let features: Vec<String> = args
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.as_str() == "--feature")
+        .filter_map(|(i, _)| args.get(i + 1).cloned())
+        .collect();
+    let options = if use_rustc_cfg || !features.is_empty() {
+        let mut cfg_text = String::new();
+        if use_rustc_cfg {
+            match std::process::Command::new("rustc")
+                .args(["--print", "cfg"])
+                .output()
+            {
+                Ok(o) if o.status.success() => {
+                    cfg_text.push_str(&String::from_utf8_lossy(&o.stdout));
+                }
+                _ => eprintln!("warning: `rustc --print cfg` failed; target cfgs stay ambiguous"),
+            }
+        }
+        for f in &features {
+            cfg_text.push_str(&format!("\nfeature=\"{f}\"\n"));
+        }
+        match TargetCfg::from_rustc_cfg_text(&cfg_text) {
+            Ok(cfg) => {
+                eprintln!(
+                    "build config: rustc facts + {} declared feature(s)",
+                    features.len()
+                );
+                LiftOptions::for_target_cfg(cfg)
+            }
+            Err(e) => {
+                eprintln!("warning: cfg parse failed ({e}); using default");
+                LiftOptions::default()
+            }
+        }
+    } else {
+        LiftOptions::default()
+    };
     let mut totals = Totals::default();
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
     let mut reason_samples: BTreeMap<String, Vec<String>> = BTreeMap::new();
