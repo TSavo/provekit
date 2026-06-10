@@ -38,6 +38,13 @@ right because nothing says it shouldn't be.** And almost all of the software
 running the banks, the hospitals, and the grid is this second kind: a tower of
 hot promises, twenty layers deep, with nothing tying any floor to the next.
 
+And here is the inversion that actually matters: **the value of the analysis is
+not in the satisfied. It is in the *these parts are undecided*.** A green proof
+is table stakes — honest software is mostly consistent, so the satisfied rows are
+the *expected* result, not the product. The product is the precise, enumerated
+list of the parts that are **not** decided: the ground with nothing under it,
+named.
+
 Because Sugar accounts for *everything* it reads — every statement lifted or
 refused **by name**, never silently — the unsworn remainder stops being a blur
 and acquires a perimeter. A coverage tool tells you 78% of your lines ran. Sugar
