@@ -58,6 +58,15 @@ updates and its entire behavioral delta lands in territory no one ever swore to.
 Not detection of the backdoor. Detection of the conditions that make backdoors
 the rational move. The dog that didn't bark — with a signature on the silence.
 
+The thing that flaps in the night was never the unit test. It is the **lack** of
+one. It is the API shape that lifts to `[]`. It is the endpoint with no `.proof`
+behind it — load-bearing, shipped, depended on by thousands, and warranted by
+absolutely nothing. That is the product. We do not sell *"here is a `.proof`
+file, and here is where it solves."* We sell:
+
+> **Here is the gap between what you hope is true, and what is completely without
+> warrant.**
+
 That is the vision. Not "we prove your code is correct." **We make software
 honest** — it can no longer claim more than it can prove, and it can no longer
 hide what it never swore.
