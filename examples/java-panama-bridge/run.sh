@@ -6,34 +6,39 @@
 # A Java test calls a native Rust function via Panama FFM (java.lang.foreign).
 # The bridge lifter reads the Java source via com.sun.source tree nodes (NO regex)
 # and emits a call-edge declaration: Java callsite CID → native symbol CID.
-# The verifier conjoins the Java consumer's claim with the Rust vendor's contract.
+# The verifier conjoins the Java consumer's claim with the Rust contract.
 #
 # SCOPE:
-#   Rust vendor proof: base64 0.22.1 — assert_eq!(3, decoded_len_estimate(4))
+#   Rust contract: decoded-len-estimate-contract — a MINIMAL one-row crate whose
+#     single test is assert_eq!(3, decoded_len_estimate(4)). This is the EXACT
+#     assertion base64 0.22.1 makes (src/engine/general_purpose/decode.rs formula),
+#     reproduced as a self-contained integer-only contract so the imported .proof
+#     carries ONLY the bridge target row — nothing string-theory-shaped.
 #   Rust row: decoded_len_estimate#euf#c:callresult_decoded_len_estimate_a1(i:4)::assertion
-#   Java bridge: assertEquals(N, decoded_len_estimate(4)) via Panama downcall
-#   Bridge lifter reads: VariableTree(DECODED_LEN_ESTIMATE=Linker.downcallHandle(
-#                             LOOKUP.find("decoded_len_estimate").orElseThrow(), ...))
-#                    → wrapperMethod: decoded_len_estimate → DECODED_LEN_ESTIMATE
-#                    → @Test assertEquals(N, decoded_len_estimate(4)) → call-edge
-#   The call-edge targetSymbol = "rust-kit:decoded_len_estimate#euf#..." is resolved
-#   from the imported base64 .proof via name_to_cid lookup in the verifier pool.
+#   Native runtime: native-shim links the REAL base64 0.22.1 crate; the Java test
+#     downcalls base64::decoded_len_estimate via Panama. The FFI edge is honest.
+#   Java bridge: assertEquals(N, decoded_len_estimate(4)) via Panama downcall.
+#   Bridge lifter reads (AST, no regex):
+#     VariableTree(DECODED_LEN_ESTIMATE = Linker.downcallHandle(
+#         LOOKUP.find("decoded_len_estimate").orElseThrow(), ...))
+#       → wrapperMethod decoded_len_estimate → DECODED_LEN_ESTIMATE field
+#       → @Test assertEquals(N, decoded_len_estimate(4)) → call-edge
+#   The call-edge targetSymbol "rust-kit:decoded_len_estimate#euf#..." resolves to
+#   the imported contract's CID via name_to_cid lookup in the verifier pool.
 #
 # GOOD suite:
-#   assertEquals(3, decoded_len_estimate(4)) — consistent with Rust vendor row.
-#   Java contract: =(result, 3). Rust contract: =(result, 3). Conjoined: SAT → discharged.
+#   assertEquals(3, decoded_len_estimate(4)) — consistent with the Rust row.
+#   Java =(result,3) ∧ Rust =(result,3). Conjoined SAT.
+#   sugar verify is CLEAN: rc=0, ALL consistency rows discharged.
 #
 # BAD suite (the cross-language refutation):
-#   assertEquals(4, decoded_len_estimate(4)) — CONTRADICTS the Rust vendor row.
-#   Java contract: =(result, 4). Rust contract: =(result, 3). Conjoined: UNSAT → unsatisfied.
+#   assertEquals(4, decoded_len_estimate(4)) — CONTRADICTS the Rust row.
+#   Java =(result,4) ∧ Rust =(result,3). Conjoined UNSAT.
+#   The bridge row is the ONLY refusal; rc reflects exactly that one unsatisfied row.
 #
-# The bad twin's refutation comes through the REAL sugar verify, parsed from the receipt.
-# No fabrication. The bridge lifter emitted a call-edge; the verifier discharged it.
-#
-# Bridge lifter reads the Panama pattern from AST nodes (com.sun.source.tree.*):
-#   VariableTree.initializer → MethodInvocationTree(downcallHandle)
-#     → MethodInvocationTree(find) → LiteralTree("decoded_len_estimate")
-#   NOT from regex patterns on Java source text.
+# The bad twin's refutation comes through the REAL sugar verify, parsed from the
+# receipt. No fabrication. run.sh checks the OVERALL verify verdict — no row-scoping
+# around noise, because the imported contract is minimal (one clean row).
 set -euo pipefail
 
 command -v javac   >/dev/null 2>&1 || { echo "SKIP: no JDK on PATH"; exit 0; }
@@ -56,14 +61,18 @@ JUNIT_JAR="${SUGAR_JUNIT_CONSOLE_JAR:-$JAR_DIR/junit-platform-console-standalone
 WORK="$HERE/work"
 BASE64_SRC="$WORK/base64-$BASE64_VERSION"
 NATIVE_DIR="$HERE/native-shim"
+CONTRACT_DIR="$HERE/native-contract"
 JDK22_DIR="${SUGAR_JDK22_DIR:-/tmp/sugar-jdk-22}"
 JDK22_URL="${SUGAR_JDK22_URL:-https://api.adoptium.net/v3/binary/latest/22/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk}"
 
+TARGET_EUF="decoded_len_estimate#euf#c:callresult_decoded_len_estimate_a1(i:4)::assertion"
+
 echo "SCOPE: P5b Java-native Panama FFM bridge lifter — cross-language correctness."
 echo "SCOPE: Bridge reads Java source via com.sun.source tree nodes (no regex)."
-echo "SCOPE: Rust vendor row: decoded_len_estimate#euf# assert_eq!(3, decoded_len_estimate(4))."
-echo "SCOPE: GOOD: Java assertEquals(3, ...) — consistent → discharged."
-echo "SCOPE: BAD: Java assertEquals(4, ...) — contradicts Rust row → unsatisfied (cross-language refutation)."
+echo "SCOPE: Rust contract = MINIMAL one-row crate: assert_eq!(3, decoded_len_estimate(4))."
+echo "SCOPE: Native runtime = real base64 $BASE64_VERSION via Panama downcall (honest FFI)."
+echo "SCOPE: GOOD: Java assertEquals(3, ...) — consistent → verify CLEAN (rc=0, all discharged)."
+echo "SCOPE: BAD: Java assertEquals(4, ...) — contradicts Rust row → bridge row is the ONLY refusal."
 
 fetch_file() {
   local out="$1" url="$2"
@@ -136,89 +145,74 @@ export SUGAR_JUNIT_CONSOLE_JAR="$JUNIT_JAR"
 export SUGAR_JAVA_ASSERT_CLASSPATH="$JUNIT_JAR"
 export JDK_JAVA_OPTIONS="${JDK_JAVA_OPTIONS:-} --enable-native-access=ALL-UNNAMED"
 
-# ── Mint the Rust base64 vendor proof ────────────────────────────────────────
+# ── Mint the MINIMAL Rust contract proof (one row, no string theory) ─────────
+
+mint_contract_proof() {
+  echo "== mint minimal Rust contract: assert_eq!(3, decoded_len_estimate(4)) =="
+  echo "contract-row: native-contract/src/lib.rs decodes_four_to_three"
+  local base="$CONTRACT_DIR/.sugar/lift/rust-test-assertions"
+  sed "s#@RUST_ASSERT_RPC@#${RUST_ASSERT_RPC}#g" "$base/manifest.toml.in" > "$base/manifest.toml"
+  rm -f "$CONTRACT_DIR"/blake3-512:*.proof
+  rm -rf "$CONTRACT_DIR/.sugar/runs" "$CONTRACT_DIR/target"
+  (cd "$CONTRACT_DIR" && "$SUGAR" mint --out .) >/dev/null
+  local proof
+  proof="$(first_match "$CONTRACT_DIR/blake3-512:*.proof")"
+  [ -n "$proof" ] || { echo "FAIL: contract mint produced no proof" >&2; exit 1; }
+
+  # The minimal proof must carry EXACTLY the bridge target row and verify clean.
+  python3 - "$CONTRACT_DIR" "$TARGET_EUF" <<'PY'
+import glob, sys
+dirp, euf = sys.argv[1], sys.argv[2]
+proofs = sorted(glob.glob(dirp + "/blake3-512:*.proof"))
+if not proofs:
+    print("FAIL: no contract proof found", file=sys.stderr); raise SystemExit(1)
+needle = euf.encode()
+found = any(needle in open(p, "rb").read() for p in proofs)
+if not found:
+    print(f"FAIL: expected row {euf} not in contract proof", file=sys.stderr); raise SystemExit(1)
+print(f"   contract-row: {euf} present in minimal proof")
+PY
+
+  # Confirm the contract proof verifies CLEAN on its own (rc=0, one row discharged).
+  local rc
+  set +e
+  (cd "$CONTRACT_DIR" && "$SUGAR" verify --project . --json 2>/dev/null) > "$CONTRACT_DIR/.verify.json"
+  rc=$?
+  set -e
+  python3 - "$CONTRACT_DIR/.verify.json" "$rc" "$TARGET_EUF" <<'PY'
+import json, sys
+path = sys.argv[1]; rc = int(sys.argv[2]); euf = sys.argv[3]
+data = json.load(open(path, encoding="utf-8"))
+rows = data.get("rows", [])
+statuses = [(r.get("property",""), r.get("status","")) for r in rows]
+nonrefl = [s for p, s in statuses]
+if rc != 0:
+    print(f"FAIL: contract verify rc={rc} (expected 0); rows={statuses}", file=sys.stderr)
+    raise SystemExit(1)
+if not all(s == "discharged" for s in nonrefl):
+    print(f"FAIL: contract has a non-discharged row: {statuses}", file=sys.stderr)
+    raise SystemExit(1)
+print(f"   contract verify CLEAN: rc=0, {len(rows)} row(s) all discharged")
+PY
+  rm -f "$CONTRACT_DIR/.verify.json"
+
+  CONTRACT_PROOF="$proof"
+  export CONTRACT_PROOF
+}
+
+# ── Build the native shim (real base64 FFI for runtime honesty) ──────────────
 
 unpack_base64() {
   [ -d "$BASE64_SRC/src" ] && return 0
-  echo "== fetch real rust crate base64 $BASE64_VERSION =="
+  echo "== fetch real rust crate base64 $BASE64_VERSION (native runtime target) =="
   rm -rf "$BASE64_SRC"; mkdir -p "$WORK"
   local archive="$WORK/base64-$BASE64_VERSION.crate"
   fetch_file "$archive" "https://static.crates.io/crates/base64/base64-$BASE64_VERSION.crate"
   tar -xzf "$archive" -C "$WORK"
 }
 
-write_base64_manifest() {
-  mkdir -p "$BASE64_SRC/.sugar/lift/rust-test-assertions"
-  cat > "$BASE64_SRC/.sugar/config.toml" <<'TOML'
-[[plugins]]
-name = "rust-test-assertions-lift"
-kind = "lift"
-surface = "rust-test-assertions"
-emit = "ir-document"
-
-[solvers]
-default = "z3"
-
-[solvers.dispatch]
-linear_arithmetic = "z3"
-default = "z3"
-
-[solvers.z3]
-binary = "z3"
-flags = ["-smt2", "-in"]
-
-[platform_profile]
-language = "rust"
-library = "base64"
-TOML
-  cat > "$BASE64_SRC/.sugar/lift/rust-test-assertions/manifest.toml" <<TOML
-name = "rust-test-assertions-lift"
-version = "0.1.0"
-protocol_version = "pep/1.7.0"
-kind = "lift"
-command = ["$RUST_ASSERT_RPC"]
-working_dir = "."
-
-[capabilities]
-authoring_surfaces = ["rust-test-assertions"]
-ir_version = "v1.1.0"
-emits_signed_mementos = false
-TOML
-}
-
-mint_base64_proof() {
-  unpack_base64
-  write_base64_manifest
-  rm -f "$BASE64_SRC"/blake3-512:*.proof "$BASE64_SRC/.prove.json"
-  rm -rf "$BASE64_SRC/.sugar/runs" "$BASE64_SRC/target"
-  echo "== mint base64 $BASE64_VERSION vendor proof from own tests =="
-  echo "vendor-row: base64-$BASE64_VERSION/src/decode.rs assert_eq!(3, decoded_len_estimate(4))"
-  (cd "$BASE64_SRC" && "$SUGAR" mint --out .) >/dev/null
-  local proof
-  proof="$(first_match "$BASE64_SRC/blake3-512:*.proof")"
-  [ -n "$proof" ] || { echo "FAIL: base64 mint produced no proof" >&2; exit 1; }
-
-  # Verify the expected row exists
-  python3 - "$BASE64_SRC" <<'PY'
-import glob, sys
-dirp = sys.argv[1]
-proofs = sorted(glob.glob(dirp + "/blake3-512:*.proof"))
-if not proofs:
-    print("FAIL: no proof found", file=sys.stderr); raise SystemExit(1)
-needle = b"decoded_len_estimate#euf#c:callresult_decoded_len_estimate_a1(i:4)::assertion"
-found = any(needle in open(p, "rb").read() for p in proofs)
-if not found:
-    print("FAIL: expected row not in proof", file=sys.stderr); raise SystemExit(1)
-print(f"   rust-row: decoded_len_estimate#euf# found in {len(proofs)} proof(s)")
-PY
-
-  BASE64_PROOF="$proof"
-  export BASE64_PROOF
-}
-
-# ── Build the native shim ─────────────────────────────────────────────────────
-
 build_native_shim() {
+  unpack_base64
   echo "== build native cdylib wrapper over real base64 crate =="
   cargo build --manifest-path "$NATIVE_DIR/Cargo.toml" --release >/dev/null
   case "$(uname -s)" in
@@ -262,7 +256,7 @@ clean_suite() {
   rm -rf "$dir/.sugar/runs" "$dir/.sugar/witnesses" "$dir/target"
   mkdir -p "$dir/.sugar/imports"
   rm -f "$dir/.sugar/imports/"*.proof
-  cp "$BASE64_PROOF" "$dir/.sugar/imports/"
+  cp "$CONTRACT_PROOF" "$dir/.sugar/imports/"
 }
 
 edge_summary() {
@@ -277,29 +271,29 @@ print(json.dumps(edges[0], sort_keys=True))
 PY
 }
 
-TARGET_EUF="decoded_len_estimate#euf#c:callresult_decoded_len_estimate_a1(i:4)::assertion"
-
-# verify_status: check the status of the specific decoded_len_estimate#euf# row.
-# We only care about the bridge-specific row, not other rows from the base64 proof
-# (some of those are refused for unrelated reasons — string/approx operations).
-verify_status() {
-  python3 - "$1" "$2" "$TARGET_EUF" <<'PY'
+# overall_verdict: the OVERALL consistency verdict over ALL rows in the receipt.
+# Because the imported contract is minimal (one clean row), the only consistency
+# rows are the contract's row and the bridge's row — no orthogonal noise.
+#   GOOD → all discharged → prints "discharged"
+#   BAD  → the bridge row is unsatisfied → prints "refused"
+overall_verdict() {
+  python3 - "$1" <<'PY'
 import json, sys
-path, kind, target_euf = sys.argv[1:4]
+path = sys.argv[1]
 try:
     data = json.load(open(path, encoding="utf-8"))
 except Exception:
     print("MISSING"); raise SystemExit(0)
 rows = data.get("rows") or data.get("claims") or []
-bridge_statuses = []
+statuses = []
 for row in rows:
     prop = row.get("property") or row.get("predicate") or ""
     status = row.get("status") or row.get("result") or ""
-    if "consistency:" in prop and target_euf in prop:
-        bridge_statuses.append(status)
-if not bridge_statuses:
-    print("MISSING")
-elif all(s == "discharged" for s in bridge_statuses):
+    if "consistency:" in prop and "witness-package" not in prop:
+        statuses.append((prop, status))
+if not statuses:
+    print("MISSING"); raise SystemExit(0)
+if all(s == "discharged" for _, s in statuses):
     print("discharged")
 else:
     print("refused")
@@ -353,51 +347,59 @@ PY
   local verify_rc=$?
   set -e
 
-  local got_consistency
-  got_consistency="$(verify_status "$dir/.verify.json" consistency)"
+  local verdict
+  verdict="$(overall_verdict "$dir/.verify.json")"
 
-  # Check only the bridge-specific row (decoded_len_estimate#euf#).
-  # Other rows in the base64 proof (chunked_encode_str, encode_all_bytes_url) may
-  # be refused for unrelated reasons (string-theory, approximate assertions) and
-  # do not invalidate the bridge correctness check.
-  if [ "$expect_consistency" = "discharged" ]; then
-    if [ "$got_consistency" != "discharged" ]; then
-      echo "FAIL[$suite]: bridge row expected discharged, got consistency=$got_consistency (rc=$verify_rc)" >&2
-      python3 -c "
+  # Print every consistency row verbatim so the verdict is auditable.
+  echo "   consistency rows:"
+  python3 - "$dir/.verify.json" <<'PY'
 import json, sys
-data = json.load(open('$dir/.verify.json', encoding='utf-8'))
-rows = data.get('rows', [])
-for r in rows:
-    prop = r.get('property','')
-    if 'decoded_len_estimate' in prop:
-        print(prop[:100], '->', r.get('status',''))
-" >&2 || true
-      exit 1
-    fi
-    echo "   GOOD $suite: bridge-row consistency=$got_consistency (rc=$verify_rc)"
-  else
-    if [ "$got_consistency" = "discharged" ] || [ "$got_consistency" = "MISSING" ]; then
-      echo "FAIL[$suite]: bridge row expected refusal, got consistency=$got_consistency (rc=$verify_rc)" >&2
-      python3 -c "
-import json
-data = json.load(open('$dir/.verify.json', encoding='utf-8'))
-rows = data.get('rows', [])
-for r in rows:
-    prop = r.get('property','')
-    if 'decoded_len_estimate' in prop:
-        print(prop[:100], '->', r.get('status',''))
-" >&2 || true
-      exit 1
-    fi
-    echo "   BAD $suite: bridge-row consistency=$got_consistency (rc=$verify_rc) — cross-language refutation confirmed"
-  fi
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+for r in data.get("rows", []):
+    prop = r.get("property","")
+    if "consistency:" in prop:
+        print(f"     {prop} -> {r.get('status','')}")
+PY
 
-  echo "$suite: proof=$(basename "$proof") consistency=$got_consistency"
+  if [ "$expect_consistency" = "discharged" ]; then
+    # GOOD: overall verdict must be discharged AND rc must be 0 (clean verify).
+    if [ "$verify_rc" -ne 0 ] || [ "$verdict" != "discharged" ]; then
+      echo "FAIL[$suite]: expected CLEAN discharge, got rc=$verify_rc verdict=$verdict" >&2
+      exit 1
+    fi
+    echo "   GOOD $suite: verify CLEAN — rc=0, overall verdict=$verdict"
+  else
+    # BAD: overall verdict must be refused (the bridge contradiction); rc != 0.
+    if [ "$verify_rc" -eq 0 ] || [ "$verdict" = "discharged" ] || [ "$verdict" = "MISSING" ]; then
+      echo "FAIL[$suite]: expected bridge refusal, got rc=$verify_rc verdict=$verdict" >&2
+      exit 1
+    fi
+    # And confirm the ONLY refused consistency row is the bridge row.
+    python3 - "$dir/.verify.json" "$TARGET_EUF" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+euf = sys.argv[2]
+refused = []
+for r in data.get("rows", []):
+    prop = r.get("property","")
+    if "consistency:" in prop and r.get("status","") != "discharged":
+        refused.append((prop, r.get("status","")))
+if len(refused) != 1:
+    print(f"FAIL: expected exactly 1 refused consistency row, got {len(refused)}: {refused}", file=sys.stderr)
+    raise SystemExit(1)
+prop, status = refused[0]
+if euf not in prop:
+    print(f"FAIL: the refused row is not the bridge row: {prop} -> {status}", file=sys.stderr)
+    raise SystemExit(1)
+print(f"   the ONLY refused row is the bridge row: {status}")
+PY
+    echo "   BAD $suite: bridge row is the ONLY refusal — rc=$verify_rc overall verdict=$verdict (cross-language refutation)"
+  fi
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-mint_base64_proof
+mint_contract_proof
 build_native_shim
 
 run_suite good discharged
