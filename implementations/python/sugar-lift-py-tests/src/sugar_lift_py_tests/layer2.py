@@ -3226,6 +3226,17 @@ def _collect_value_scope_assertion_facts(
                             )
                             for ch in universe.forbidden
                         ]
+                    elif universe.kind == "chars-in-set":
+                        # table-loop union: every output char is in the
+                        # walked tables' char union -- the positive
+                        # membership atom (substrate-supported since the
+                        # Java weak tier).
+                        universe_atoms = [
+                            atomic(
+                                "str.chars-in-set",
+                                [subject_term, str_const(universe.forbidden)],
+                            )
+                        ]
                     elif universe.kind == "member-of-values":
                         # subscript membership: every returned value IS an
                         # element of the pinned tuple -- one disjunction of
