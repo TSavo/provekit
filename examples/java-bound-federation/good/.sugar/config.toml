@@ -1,0 +1,28 @@
+[[plugins]]
+name = "java-test-assertions-lift"
+kind = "lift"
+surface = "java-test-assertions"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+bitvectors = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+
+[platform_profile]
+language = "java"
+library = "java-bound-federation-good"
+version = "0.0.0"
+
+# G2b showcase — bound federation.
+# Assertion vocabulary is learned from the JUnit5 framework source.
+# No vendor_source_dirs needed: this showcase is pure comparison-bound lifting.
+[java-test-assertions]
+assertion_source_dirs = ["vendor/junit5"]

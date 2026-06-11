@@ -35,6 +35,13 @@
 #  33. [A3] user-scope impostor: assertEquals without static import → silent skip (not lift)
 #  34. [C8] TestNG assertNotEquals 2-arg: INEQUALITY, not APPROX (delta overload blocked)
 #  35. [B6] lineLength=0 → encodeNoChunk universe registered; lineLength=76 → refused
+#
+# Test suite (G2b — comparison-bound lifting):
+#  41. assertTrue(g(7) < 10) → <(call:g(7), 10) with correct #euf# name
+#  42. assertTrue(5 > g(2)) → <(call:g(2), 5) [lit-left mirror normalised]
+#  43. assertFalse(g(2) < 5) → >=(call:g(2), 5) [negated predicate]
+#  44. non-literal bound refused; both-calls refused (both named)
+#  45. #euf# name matches assertEquals schema → federation is live
 set -euo pipefail
 
 command -v javac >/dev/null 2>&1 || { echo "SKIP: no JDK on PATH"; exit 0; }
@@ -1596,4 +1603,159 @@ print("PASS: G2 no-vendor-dir — equality lifts; numeric registry empty, no int
 PY
 
 echo
-echo "== all 40 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 41: G2b assertTrue(g(7) < 10) → <(call:g(7), 10) with #euf# name"
+echo "────────────────────────────────────────────────────────────────"
+RESULT41="$(run_lift "$FIXTURES" "ComparisonBoundLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT41" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# assertTrue(g(7) < 10)
+name = "g#euf#c:callresult_g_a1(i:7)::assertion"
+lt_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == "<"]
+assert len(lt_rows) == 1, (
+    f"expected 1 '<' contract for g(7), got {len(lt_rows)}. "
+    f"ir={[c['name']+':'+c['inv']['operands'][0]['name'] for c in ir]}"
+)
+atom = lt_rows[0]["inv"]["operands"][0]
+assert atom["args"][0] == {"kind":"ctor","name":"call:g","args":[{"kind":"const","value":7,"sort":{"kind":"primitive","name":"Int"}}]}, \
+    f"call arg wrong: {atom['args'][0]}"
+assert atom["args"][1] == {"kind":"const","value":10,"sort":{"kind":"primitive","name":"Int"}}, \
+    f"lit arg wrong: {atom['args'][1]}"
+print(f"PASS: G2b assertTrue(g(7) < 10) → <(call:g(7),10) name={name}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 42: G2b assertTrue(5 > g(2)) → <(call:g(2), 5) [lit-left mirror]"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT41" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+
+# assertTrue(5 > g(2)) — lit on left, mirrored: g(2) < 5
+# testLessThanLitLeft emits this; testAssertFalse also emits for g(2) >= 5
+# Check the < row exists (from testLessThanLitLeft)
+name = "g#euf#c:callresult_g_a1(i:2)::assertion"
+lt_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == "<"]
+gte_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == ">="]
+assert len(lt_rows) == 1, f"expected 1 '<' contract for g(2) (mirrored 5>g(2)): {[(c['name'],c['inv']['operands'][0]['name']) for c in ir]}"
+assert len(gte_rows) == 1, f"expected 1 '>=' contract for g(2) (assertFalse(g(2)<5)): {[(c['name'],c['inv']['operands'][0]['name']) for c in ir]}"
+lt_atom = lt_rows[0]["inv"]["operands"][0]
+assert lt_atom["args"][1] == {"kind":"const","value":5,"sort":{"kind":"primitive","name":"Int"}}, \
+    f"lit wrong for mirrored: {lt_atom['args'][1]}"
+print(f"PASS: G2b assertTrue(5>g(2)) → <(call:g(2),5); assertFalse(g(2)<5) → >=(call:g(2),5)")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 43: G2b assertFalse(g(2) < 5) → >=(call:g(2), 5) [negated predicate]"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT41" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+
+name = "g#euf#c:callresult_g_a1(i:2)::assertion"
+gte_rows = [c for c in ir if c["name"] == name and c["inv"]["operands"][0]["name"] == ">="]
+assert len(gte_rows) == 1, f"expected 1 '>=' contract for assertFalse(g(2)<5): {[(c['name'],c['inv']['operands'][0]['name']) for c in ir]}"
+gte_atom = gte_rows[0]["inv"]["operands"][0]
+assert gte_atom["args"][0]["name"] == "call:g", f"call wrong: {gte_atom['args'][0]}"
+assert gte_atom["args"][1] == {"kind":"const","value":5,"sort":{"kind":"primitive","name":"Int"}}, \
+    f"lit wrong: {gte_atom['args'][1]}"
+print(f"PASS: G2b assertFalse(g(2)<5) → >=(call:g(2),5) confirmed")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 44: G2b non-literal bound refused by name; both-calls refused by name"
+echo "────────────────────────────────────────────────────────────────"
+RESULT44="$(run_lift "$FIXTURES" "ComparisonBoundDiscrimination.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT44" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+ir = result["ir"]
+diags = result["diagnostics"]
+reasons = [d.get("reason", "") for d in diags]
+
+# No contracts should be emitted
+assert len(ir) == 0, f"expected no contracts, got {[c['name'] for c in ir]}"
+
+# non-literal bound refused
+non_lit = [r for r in reasons if "non-literal bound" in r or "not an int literal" in r.lower()]
+assert non_lit, f"expected non-literal-bound refusal, got reasons: {reasons}"
+
+# both-calls refused
+both_calls = [r for r in reasons if "both operands are calls" in r]
+assert both_calls, f"expected both-operands-are-calls refusal, got reasons: {reasons}"
+
+print(f"PASS: G2b discrimination — non-literal bound refused: {non_lit[0][:80]}")
+print(f"PASS: G2b discrimination — both-calls refused: {both_calls[0][:80]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 45: G2b #euf# name is IDENTICAL to assertEquals name for same callsite"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT41" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+
+# The contract name for assertTrue(g(7) < 10) must be IDENTICAL to what
+# assertEquals(expected, g(7)) would produce — same #euf# schema.
+expected_name = "g#euf#c:callresult_g_a1(i:7)::assertion"
+names = [c["name"] for c in ir]
+assert expected_name in names, (
+    f"assertTrue(g(7)<10) must produce name '{expected_name}' for federation; "
+    f"got names: {names}"
+)
+print(f"PASS: G2b #euf# name '{expected_name}' matches assertEquals schema — federation is live")
+PY
+
+echo
+echo "== all 45 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b) =="

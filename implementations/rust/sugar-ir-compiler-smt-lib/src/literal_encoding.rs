@@ -404,9 +404,19 @@ fn is_bv32_atomic_predicate(name: &str) -> bool {
     // pre-pass: a sibling sworn equality `=(call:abs, IntConst)` promoted to
     // the bv32 sort because its subject also appears in an `int32.eq-bv-expr`
     // universe atom. See `apply_bv32_contagion` in generated.rs.
+    //
+    // `int32.{lt,lte,gt,gte}-const` are the G2b comparison-bound synthetic atoms:
+    // a sibling `<`/`<=`/`>`/`>=` atom promoted to bv32 by the same contagion pass.
+    // They render as `bvs{lt,le,gt,ge}` over the bv32-promoted subject.
     matches!(
         name,
-        "int32.eq-bv-expr" | "int32.in-range" | "int32.eq-const"
+        "int32.eq-bv-expr"
+            | "int32.in-range"
+            | "int32.eq-const"
+            | "int32.lt-const"
+            | "int32.lte-const"
+            | "int32.gt-const"
+            | "int32.gte-const"
     )
 }
 
