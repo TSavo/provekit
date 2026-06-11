@@ -2683,25 +2683,55 @@ PY
 
 echo
 echo "────────────────────────────────────────────────────────────────"
-echo "TEST 68: STRONG discrimination -- non-multiple-of-3 input REFUSES the tail by name"
+echo "TEST 68: STRONG mod-3 TAILS (PHASE 2) -- the tail is now WALKED, not refused"
 echo "  assertEquals(\"YmE=\", encodeBase64String(getBytesUtf8(\"ba\")))  (2-byte tail)"
-echo "  Expect: NO strong row; weak str.chars-in-set STILL present; named tail refusal."
+echo "  assertEquals(\"Zg==\", encodeBase64String(getBytesUtf8(\"f\")))   (1-byte tail)"
+echo "  Expect strong str.eq-bv-blocks rows: 2-byte tail = 3 sextet + 1 '=' pad;"
+echo "  1-byte tail = 2 sextet + 2 '=' pads. Pad codepoint AST-resolved (PAD_DEFAULT=61)."
 echo "────────────────────────────────────────────────────────────────"
-RESULT68="$(run_lift "$FIXTURES/strong-universe" "StrongTailRefusal.java" | eval "$JAVA_CMD" 2>/dev/null)"
+RESULT68="$(run_lift "$FIXTURES/strong-universe" "StrongTailLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
 python3 - "$RESULT68" <<'PY'
 import sys, json
 lines = sys.argv[1].strip().split('\n')
 result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
-ir = result["ir"]; diags = result["diagnostics"]
+ir = result["ir"]
 def atoms(c): return c["inv"]["operands"]
 strong = [c for c in ir if atoms(c)[0]["name"] == "str.eq-bv-blocks"]
 weak   = [c for c in ir if atoms(c)[0]["name"] == "str.chars-in-set"]
-assert len(strong) == 0, f"non-mult-3 must emit NO strong row, got {len(strong)}"
-assert len(weak)   == 1, f"weak str.chars-in-set must still emit (non-regression), got {len(weak)}"
-reasons = [d.get("reason", "") for d in diags]
-tail = [r for r in reasons if "not a multiple of 3" in r and "PHASE 2" in r]
-assert tail, f"expected named tail refusal, got: {reasons}"
-print(f"PASS: STRONG tail discrimination -- no strong row, weak stands, named tail refusal: {tail[0][:90]}")
+assert len(strong) == 2, f"two tail callsites must emit 2 strong rows, got {len(strong)}"
+assert len(weak)   == 2, f"weak str.chars-in-set must still emit per callsite, got {len(weak)}"
+# Map by input bytes.
+by_bytes = {}
+for c in strong:
+    p = json.loads(atoms(c)[0]["args"][1]["value"])
+    by_bytes[tuple(p["input_bytes"])] = p
+ba = by_bytes[(98, 97)]   # "ba"
+f  = by_bytes[(102,)]     # "f"
+# 2-byte tail: 3 sextet chars + 1 pad char (codepoint 61='=' AST-resolved).
+assert len(ba["per_char"]) == 3, f"2-byte tail: 3 sextet equations, got {len(ba['per_char'])}"
+assert ba.get("pad_chars") == [61], f"2-byte tail: 1 '='(61) pad, got {ba.get('pad_chars')}"
+# 1-byte tail: 2 sextet chars + 2 pad chars.
+assert len(f["per_char"]) == 2, f"1-byte tail: 2 sextet equations, got {len(f['per_char'])}"
+assert f.get("pad_chars") == [61, 61], f"1-byte tail: 2 '='(61) pads, got {f.get('pad_chars')}"
+# The pad value is AST-resolved (PAD_DEFAULT='='=61), not typed: confirm no other
+# codepoint sneaks in as a pad, and that the tail sextet ops are all walked.
+def collect(node, ops, consts):
+    if isinstance(node, dict):
+        if node.get("kind") == "ctor":
+            ops.add(node.get("name"))
+            for a in node.get("args", []): collect(a, ops, consts)
+        elif node.get("kind") == "const":
+            consts.add(node.get("value"))
+    elif isinstance(node, list):
+        for x in node: collect(x, ops, consts)
+ops, consts = set(), set()
+collect(ba["per_char"], ops, consts)
+for op in ["bv32.shl", "bv32.lshr", "bv32.and", "bv32.add"]:
+    assert op in ops, f"tail walked op {op} missing; saw {ops}"
+# 2-byte case shifts (Base64.java:753-755): >>10, >>4, <<2; mask 63; acc shift 8.
+for k in [10, 4, 2, 63, 8]:
+    assert k in consts, f"tail walked constant {k} missing; saw {sorted(consts)}"
+print(f"PASS: STRONG mod-3 tails WALKED -- 2-byte=3 sextet+1 pad, 1-byte=2 sextet+2 pad, pad=61 AST-resolved")
 PY
 
 echo
@@ -2744,4 +2774,51 @@ print(f"PASS: STRONG uninterpretable-index discrimination -- no strong row, weak
 PY
 
 echo
-echo "== all 70 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 4 STRONG) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 71: STRONG TAIL table discipline -- URL-SAFE tail emits NO '=' pad"
+echo "  assertEquals(\"YmE\", encodeBase64URLSafeString(getBytesUtf8(\"ba\")))  (urlsafe 2-byte tail)"
+echo "  Expect strong row with 3 sextet equations and NO pad_chars (guard is table-specific)."
+echo "────────────────────────────────────────────────────────────────"
+RESULT71="$(run_lift "$FIXTURES/strong-universe" "StrongUrlSafeTailLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT71" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+ir = result["ir"]
+def atoms(c): return c["inv"]["operands"]
+strong = [c for c in ir if atoms(c)[0]["name"] == "str.eq-bv-blocks"]
+assert len(strong) == 1, f"urlsafe tail must emit 1 strong row, got {len(strong)}"
+p = json.loads(atoms(strong[0])[0]["args"][1]["value"])
+# urlsafe table: index 62 -> '-'(45), index 63 -> '_'(95) (standard would be '+'/'/' = 43/47).
+assert p["table"][62] == 45 and p["table"][63] == 95, f"resolved table must be URL-SAFE: {p['table'][62:64]}"
+assert len(p["per_char"]) == 3, f"3 sextet equations for a 2-byte tail, got {len(p['per_char'])}"
+assert "pad_chars" not in p or not p.get("pad_chars"), \
+    f"URL-SAFE tail must carry NO pad (the vendor's STANDARD-only guard), got {p.get('pad_chars')}"
+print(f"PASS: STRONG tail table discipline -- URL-SAFE tail = 3 sextet, NO pad (guard walked, not typed)")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 72: STRONG TAIL discrimination -- uninterpretable tail index REFUSES by name"
+echo "  encode EOF tail indexes encodeTable[scramble(ibitWorkArea) >> N & MASK] (method call)"
+echo "  Expect: NO strong row; weak str.chars-in-set STILL present; named modulus-N tail refusal."
+echo "────────────────────────────────────────────────────────────────"
+RESULT72="$(run_lift "$FIXTURES/strong-universe-bad-tail" "BadTailLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT72" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+ir = result["ir"]; diags = result["diagnostics"]
+def atoms(c): return c["inv"]["operands"]
+strong = [c for c in ir if atoms(c)[0]["name"] == "str.eq-bv-blocks"]
+weak   = [c for c in ir if atoms(c)[0]["name"] == "str.chars-in-set"]
+assert len(strong) == 0, f"uninterpretable tail must emit NO strong row, got {len(strong)}"
+assert len(weak)   == 1, f"weak charset row must still emit (table walk unaffected), got {len(weak)}"
+reasons = [d.get("reason", "") for d in diags]
+tail = [r for r in reasons if "tail refused" in r and "modulus-" in r]
+assert tail, f"expected named modulus-N tail refusal, got: {reasons}"
+print(f"PASS: STRONG tail uninterpretable-index discrimination -- no strong row, weak stands, named refusal: {tail[0][:90]}")
+PY
+
+echo
+echo "== all 72 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 6 STRONG) =="
