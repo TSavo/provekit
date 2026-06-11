@@ -56,8 +56,16 @@ except ModuleNotFoundError:  # repo checkout without editable installs
 
 @dataclass(frozen=True)
 class TranslateUniverse:
-    """A walked complement universe: the callee's output contains none of
-    ``forbidden``. Provenance pins the claim to the vendor source."""
+    """A walked complement universe over the callee's output. Two kinds:
+
+    - ``chars-not-in-set``: the output CONTAINS none of ``forbidden``
+      (derived from a total bytes.translate over a maketrans table);
+    - ``no-suffix-chars``: the output ENDS WITH none of ``forbidden``
+      (derived from a total .rstrip of a bytes literal -- the
+      token-padding family: rstrip(b"=") means no trailing padding,
+      ever, for any input).
+
+    Provenance pins the claim to the vendor source."""
 
     forbidden: str
     module: str
@@ -65,6 +73,7 @@ class TranslateUniverse:
     source_path: str
     lineno: int
     table_name: str
+    kind: str = "chars-not-in-set"
     # ∀⊨sample evidence: how many VENDOR vectors (from the vendor's own test
     # corpus, the same party that swore the body) were evaluated against the
     # walked set, and where they came from. Zero with a None source means no
@@ -130,14 +139,52 @@ def translate_universe_for_callee(
             and isinstance(stmt.value.value, str)
         )
     ]
-    shape = _translate_return_shape(body)
-    if shape is None:
-        # Not translate-shaped: not a candidate, no refusal owed.
-        return None, None
-    table_name = shape
-
     def refuse(reason: str) -> Tuple[None, TranslateWalkRefusal]:
         return None, TranslateWalkRefusal(callee=callee, reason=reason)
+
+    shape = _translate_return_shape(body)
+    if shape is None:
+        # Second family: a total .rstrip of a bytes literal as the LAST
+        # operation -- the token-padding shape (itsdangerous.base64_encode:
+        # return urlsafe_b64encode(s).rstrip(b"=")). The claim "output never
+        # ends with a stripped char" derives from rstrip totality ALONE, so
+        # preceding statements are irrelevant and no binding scan is needed
+        # (the literal is inline).
+        strip_literal = _rstrip_return_shape(body)
+        if strip_literal is None:
+            # Neither family: not a candidate, no refusal owed.
+            return None, None
+        try:
+            strip_chars = strip_literal.decode("ascii")
+        except UnicodeDecodeError:
+            return refuse("rstrip bytes are not ASCII; charset atom needs ASCII")
+        forbidden = "".join(sorted(set(strip_chars)))
+        if not forbidden:
+            return refuse("rstrip literal is empty; no claim exists")
+        vectors, vector_source = _vendor_vectors(module_name, fn_name)
+        for vector in vectors:
+            if vector and vector[-1] in forbidden:
+                return refuse(
+                    f"sample-gate: vendor vector {vector!r} from "
+                    f"{vector_source} ends with a stripped char; the walk "
+                    "misread the body or the vendor contradicts their own "
+                    "source"
+                )
+        return (
+            TranslateUniverse(
+                forbidden=forbidden,
+                module=module_name,
+                qualname=f"{module_name}.{fn_name}",
+                source_path=spec.origin,
+                lineno=fn.lineno,
+                table_name="<inline rstrip literal>",
+                kind="no-suffix-chars",
+                vendor_vectors_checked=len(vectors),
+                vendor_vector_source=vector_source,
+            ),
+            None,
+        )
+    table_name = shape
 
     table_call, table_line = _module_binding_call(tree, table_name)
     if table_call is None:
@@ -290,6 +337,26 @@ def _extract_vectors(tree: ast.Module, fn_name: str) -> list:
         if literal is not None:
             vectors.append(literal)
     return vectors
+
+
+def _rstrip_return_shape(body: list) -> Optional[bytes]:
+    """Match a body whose LAST statement is return <expr>.rstrip(<bytes
+    literal>). rstrip totality makes preceding statements irrelevant to the
+    no-trailing-chars claim. Returns the stripped bytes literal."""
+    if not body or not isinstance(body[-1], ast.Return):
+        return None
+    value = body[-1].value
+    if (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and value.func.attr == "rstrip"
+        and len(value.args) == 1
+        and not value.keywords
+        and isinstance(value.args[0], ast.Constant)
+        and isinstance(value.args[0].value, bytes)
+    ):
+        return value.args[0].value
+    return None
 
 
 def _translate_return_shape(body: list) -> Optional[str]:

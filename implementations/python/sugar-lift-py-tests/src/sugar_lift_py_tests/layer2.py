@@ -3205,12 +3205,28 @@ def _collect_value_scope_assertion_facts(
                         )
                     )
                 elif universe is not None:
-                    universe_atom = atomic(
-                        "str.chars-not-in-set",
-                        [subject_term, str_const(universe.forbidden)],
-                    )
-                    if universe_atom not in assertion_atoms_by_base[base]:
-                        assertion_atoms_by_base[base].append(universe_atom)
+                    if universe.kind == "no-suffix-chars":
+                        # rstrip totality: the output never ENDS with any of
+                        # the stripped chars -- one negated suffix-of per char.
+                        universe_atoms = [
+                            not_(
+                                atomic(
+                                    "suffix-of",
+                                    [str_const(ch), subject_term],
+                                )
+                            )
+                            for ch in universe.forbidden
+                        ]
+                    else:
+                        universe_atoms = [
+                            atomic(
+                                "str.chars-not-in-set",
+                                [subject_term, str_const(universe.forbidden)],
+                            )
+                        ]
+                    for universe_atom in universe_atoms:
+                        if universe_atom not in assertion_atoms_by_base[base]:
+                            assertion_atoms_by_base[base].append(universe_atom)
     return made
 
 

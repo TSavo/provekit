@@ -250,3 +250,65 @@ def test_non_translate_callee_emits_nothing_and_no_warning(vendor_path):
     )
     assert not _universe_decls(out)
     assert not [w for w in out.warnings if "translate-universe" in w.item_name]
+
+
+# --- the rstrip family (no-suffix-chars): the token-padding shape ---
+
+VENDOR_RSTRIP = '''
+def _inner(s):
+    return s
+
+
+def b64e(s):
+    s = _inner(s)
+    return _inner(s).rstrip(b"=")
+'''
+
+
+def test_rstrip_family_walks(vendor_path):
+    vendor_path("vendrstrip_ok", VENDOR_RSTRIP)
+    universe, refusal = translate_universe_for_callee("vendrstrip_ok.b64e")
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "no-suffix-chars"
+    assert universe.forbidden == "="
+
+
+def test_rstrip_emits_negated_suffix_conjunct(vendor_path):
+    vendor_path("vendrstrip_l2", VENDOR_RSTRIP)
+    out = _lift(
+        """
+        import vendrstrip_l2
+
+        def test_token():
+            assert vendrstrip_l2.b64e("abc") == "abc"
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    suffix_atoms = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            for f in [d.inv] if not hasattr(d.inv, "operands") else list(d.inv.operands):
+                if getattr(f, "kind", None) == "not":
+                    inner = f.operands[0]
+                    if getattr(inner, "name", None) == "suffix-of":
+                        suffix_atoms.append(inner)
+    assert len(suffix_atoms) == 1
+    assert suffix_atoms[0].args[0].value == "="
+
+
+def test_rstrip_vendor_vector_endswith_refuses(vendor_path):
+    vendor_path("vendrstrip_bad", VENDOR_RSTRIP)
+    vendor_path(
+        "test_vendrstrip_bad",
+        """
+        import vendrstrip_bad
+
+        def test_vector():
+            assert vendrstrip_bad.b64e("abc") == "abc="
+        """,
+    )
+    universe, refusal = translate_universe_for_callee("vendrstrip_bad.b64e")
+    assert universe is None
+    assert refusal is not None and "sample-gate" in refusal.reason
