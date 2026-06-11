@@ -2972,5 +2972,152 @@ else
   echo "SKIP: examples/java-mt-reference/good/vendor/commons-rng not present"
 fi
 
+# ──────────────────────────────────────────────────────────────
+# Test suite (G5 — CRC VALUE-PIN: connect the folded static-init table to the
+# value. WALK the stateful instance update(int) over a LITERAL input + getValue()
+# inversion, pinning crc(literalInput) == value as ONE closed bv32 FOL — or REFUSE
+# BY NAME (unresolvable table alias; non-literal input → floor only).):
+#  78. POSITIVE: the REAL OpenJDK CRC32C (examples/java-crc32-valuepin) → the
+#      value-pin contract `crc32.eq-walked` is emitted; its walked crc-FOL folds
+#      to the vendor-sworn 0xE3069283, has NO free vars, and carries >= 9 update
+#      shifts (the 9 walked update steps over "123456789"). The byteTable alias
+#      resolves to byteTables[0] (the folded table).
+#  79. DISCRIMINATION: a CRC-shaped vendor whose `byteTable` alias is assigned a
+#      FRESH `new int[256]` (never the folded sub-array) → value-pin REFUSED by
+#      name (alias not statically resolvable); table-fold UNCHANGED (additive).
+#  80. DISCRIMINATION: a NON-LITERAL update input → no value-pin (floor only),
+#      named — the literal-input gate.
+# ──────────────────────────────────────────────────────────────
+
+CRC_VP_GOOD="$HERE/../../../../examples/java-crc32-valuepin/good"
+
 echo
-echo "== all 77 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 6 STRONG + 5 G4-RECURRENCE) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 78: CRC VALUE-PIN POSITIVE — REAL CRC32C update()/getValue() walked into a closed crc-FOL"
+echo "────────────────────────────────────────────────────────────────"
+if [ -d "$CRC_VP_GOOD/vendor/jdk-crc32c" ]; then
+  # The CRC value-pin payload is a large closed bv32 tree (the full walked
+  # table+update FOL); pass the lift JSON via a temp FILE, not argv (it exceeds
+  # the arg-size limit).
+  LIFT78="$(mktemp)"
+  run_lift "$CRC_VP_GOOD" "src/test/java/demo/Crc32cValuePinTest.java" | eval "$JAVA_CMD" 2>/dev/null > "$LIFT78"
+  python3 - "$LIFT78" <<'PY'
+import sys, json
+o = None
+for ln in open(sys.argv[1]):
+    ln = ln.strip()
+    if ln and json.loads(ln).get("id") == 2:
+        o = json.loads(ln)["result"]; break
+assert o is not None, "no lift result"
+vps = [c for c in o["ir"] if c["name"].endswith("::crc-value-pin")]
+assert len(vps) == 1, f"expected 1 value-pin contract, got {len(vps)}"
+atom = vps[0]["inv"]["operands"][0]
+assert atom["name"] == "crc32.eq-walked", f"value-pin atom: {atom['name']}"
+asserted = atom["args"][0]["value"] & 0xffffffff
+walked = json.loads(atom["args"][1]["value"])  # String-const payload
+def ev(n):
+    if n["kind"] == "const": return n["value"] & 0xffffffff
+    if n["kind"] == "var": raise SystemExit("FREE VAR in walked crc-FOL: " + n.get("name",""))
+    nm, a = n["name"], n["args"]
+    if nm == "bv32.and":  return (ev(a[0]) & ev(a[1])) & 0xffffffff
+    if nm == "bv32.or":   return (ev(a[0]) | ev(a[1])) & 0xffffffff
+    if nm == "bv32.xor":  return (ev(a[0]) ^ ev(a[1])) & 0xffffffff
+    if nm == "bv32.add":  return (ev(a[0]) + ev(a[1])) & 0xffffffff
+    if nm == "bv32.shl":  return (ev(a[0]) << (ev(a[1]) & 31)) & 0xffffffff
+    if nm == "bv32.lshr": return (ev(a[0]) >> (ev(a[1]) & 31)) & 0xffffffff
+    if nm == "bv32.ite":  return ev(a[1]) if evb(a[0]) else ev(a[2])
+    raise SystemExit("unhandled " + nm)
+def evb(n):
+    nm, a = n["name"], n["args"]
+    if nm == "bv32.ne": return ev(a[0]) != ev(a[1])
+    if nm == "bv32.eq": return ev(a[0]) == ev(a[1])
+    raise SystemExit("unhandled bool " + nm)
+folded = ev(walked)  # also asserts NO free var
+assert folded == 0xE3069283, f"walked crc-FOL folds to {folded:#010x}, not 0xE3069283"
+assert asserted == 0xE3069283, f"GOOD asserts {asserted:#010x}, not 0xE3069283"
+nshift = json.dumps(walked).count('"bv32.lshr"')
+assert nshift >= 9, f"walked FOL has {nshift} lshr nodes; expected >= 9 update steps"
+print(f"PASS: CRC value-pin — REAL CRC32C update()/getValue() walked over \"123456789\" into a closed")
+print(f"      bv32 crc-FOL ({nshift} update shifts, NO free vars) that folds to the vendor-sworn")
+print(f"      0xE3069283; byteTable alias resolved to byteTables[0] (the folded table).")
+PY
+  rm -f "$LIFT78"
+else
+  echo "SKIP: examples/java-crc32-valuepin/good/vendor/jdk-crc32c not present"
+fi
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 79: CRC VALUE-PIN discrimination — unresolvable byteTable alias REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+LIFT79="$(mktemp)"
+run_lift "$FIXTURES/crc-valuepin-noalias" "CrcNoAliasTest.java" | eval "$JAVA_CMD" 2>/dev/null > "$LIFT79"
+python3 - "$LIFT79" <<'PY'
+import sys, json
+o = None
+for ln in open(sys.argv[1]):
+    ln = ln.strip()
+    if ln and json.loads(ln).get("id") == 2:
+        o = json.loads(ln)["result"]; break
+assert o is not None, "no lift result"
+vps = [c for c in o["ir"] if c["name"].endswith("::crc-value-pin")]
+assert len(vps) == 0, f"unresolvable alias must emit NO value-pin, got {len(vps)}"
+refusals = [d["reason"] for d in o["diagnostics"]
+            if "value-pin refused" in (d.get("reason","") or "")
+            and "alias" in d["reason"] and "resolvable" in d["reason"]]
+assert refusals, f"expected a named alias refusal, got: {[d.get('reason','') for d in o['diagnostics'] if 'value-pin' in d.get('reason','')]}"
+# Additive: the static-init table-fold is UNCHANGED (construction-site walk OK).
+unrolled = [d for d in o["diagnostics"] if "recurrence unrolled" in (d.get("reason","") or "")]
+assert len(unrolled) >= 1, "the static-init table-fold must be unaffected (additive)"
+print(f"PASS: unresolvable byteTable alias refused by name — no branch guess, no faked table read:")
+print(f"      {refusals[0].split(': ',1)[1][:120]}")
+print(f"      (the static-init table-fold is UNCHANGED — fully additive.)")
+PY
+rm -f "$LIFT79"
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 80: CRC VALUE-PIN discrimination — NON-LITERAL update input → floor only, named"
+echo "────────────────────────────────────────────────────────────────"
+if [ -d "$CRC_VP_GOOD/vendor/jdk-crc32c" ]; then
+  PROBE="$CRC_VP_GOOD/src/test/java/demo/_NonLiteralProbe.java"
+  cat > "$PROBE" <<'EOF'
+package demo;
+import java.util.zip.CRC32C;
+import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+public class _NonLiteralProbe {
+    @Test public void t(int x) {
+        CRC32C crc = new CRC32C();
+        crc.update(x);          // NON-literal update input
+        long v = crc.getValue();
+        assertEquals(0xE3069283L, v);
+    }
+}
+EOF
+  LIFT80="$(mktemp)"
+  run_lift "$CRC_VP_GOOD" "src/test/java/demo/_NonLiteralProbe.java" | eval "$JAVA_CMD" 2>/dev/null > "$LIFT80"
+  rm -f "$PROBE"
+  python3 - "$LIFT80" <<'PY'
+import sys, json
+o = None
+for ln in open(sys.argv[1]):
+    ln = ln.strip()
+    if ln and json.loads(ln).get("id") == 2:
+        o = json.loads(ln)["result"]; break
+assert o is not None, "no lift result"
+vps = [c for c in o["ir"] if c["name"].endswith("::crc-value-pin")]
+assert len(vps) == 0, f"non-literal input must emit NO value-pin (floor only), got {len(vps)}"
+named = [d["reason"] for d in o["diagnostics"]
+         if "crc value-pin" in (d.get("reason","") or "")
+         and "non-literal" in d["reason"] and "floor only" in d["reason"]]
+assert named, f"expected a non-literal floor-only refusal, got: {[d.get('reason','') for d in o['diagnostics'] if 'value-pin' in d.get('reason','')]}"
+print(f"PASS: non-literal update input → no value-pin (floor only), named: {named[0].split(': ',1)[1][:110]}")
+PY
+  rm -f "$LIFT80"
+else
+  echo "SKIP: examples/java-crc32-valuepin/good/vendor/jdk-crc32c not present"
+fi
+
+echo
+echo "== all 80 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 6 STRONG + 5 G4-RECURRENCE + 3 G5-CRC-VALUEPIN) =="

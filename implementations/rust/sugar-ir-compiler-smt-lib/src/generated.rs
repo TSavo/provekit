@@ -650,6 +650,78 @@ fn render_bv_index_json(
     }
 }
 
+/// Render a CRC value-pin bv32 tree from RAW JSON (var/const/ctor nodes) into an
+/// SMT-LIB `(_ BitVec 32)` expression. The walked crc-FOL reuses the SAME bv32
+/// node shapes the recurrence/numeric walkers emit, but its const nodes carry NO
+/// `sort` field (bare `{"kind":"const","value":N}`), so it cannot be rendered via
+/// `emit_bv32_term` (which needs IrTerm). The op vocabulary is the full bv32 set
+/// the value-pin walk produces: the table's folded ite-chains (ite over eq/ne)
+/// and the stateful update's xor / lshr / and / xor-with-(-1) inversion.
+fn render_crc_bv_json(
+    node: &serde_json::Value,
+    subst: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let kind = node.get("kind")?.as_str()?;
+    match kind {
+        "var" => subst.get(node.get("name")?.as_str()?).cloned(),
+        "const" => Some(i32_to_bv32_hex(node.get("value")?.as_i64()?)),
+        "ctor" => {
+            let name = node.get("name")?.as_str()?;
+            let args = node.get("args")?.as_array()?;
+            let bin = |op: &str| -> Option<String> {
+                if args.len() != 2 {
+                    return None;
+                }
+                let l = render_crc_bv_json(&args[0], subst)?;
+                let r = render_crc_bv_json(&args[1], subst)?;
+                Some(format!("({} {} {})", op, l, r))
+            };
+            match name {
+                "bv32.and" => bin("bvand"),
+                "bv32.or" => bin("bvor"),
+                "bv32.xor" => bin("bvxor"),
+                "bv32.add" => bin("bvadd"),
+                "bv32.mul" => bin("bvmul"),
+                "bv32.shl" => bin("bvshl"),
+                "bv32.lshr" => bin("bvlshr"),
+                "bv32.neg" if args.len() == 1 => {
+                    let a = render_crc_bv_json(&args[0], subst)?;
+                    Some(format!("(bvneg {})", a))
+                }
+                "bv32.ite" if args.len() == 3 => {
+                    let c = render_crc_bv_json_bool(&args[0], subst)?;
+                    let t = render_crc_bv_json(&args[1], subst)?;
+                    let f = render_crc_bv_json(&args[2], subst)?;
+                    Some(format!("(ite {} {} {})", c, t, f))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Render the Bool-sorted condition of a CRC value-pin ite (eq/ne/slt over bv32).
+fn render_crc_bv_json_bool(
+    node: &serde_json::Value,
+    subst: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let name = node.get("name")?.as_str()?;
+    let args = node.get("args")?.as_array()?;
+    if args.len() != 2 {
+        return None;
+    }
+    let l = render_crc_bv_json(&args[0], subst)?;
+    let r = render_crc_bv_json(&args[1], subst)?;
+    match name {
+        "bv32.eq" => Some(format!("(= {} {})", l, r)),
+        "bv32.ne" => Some(format!("(not (= {} {}))", l, r)),
+        "bv32.slt" => Some(format!("(bvslt {} {})", l, r)),
+        "bv32.ule" => Some(format!("(bvule {} {})", l, r)),
+        _ => None,
+    }
+}
+
 fn is_string_theory_atomic_predicate(name: &str) -> bool {
     matches!(
         name,
@@ -860,6 +932,38 @@ fn render_bv32_subject(subject: &Term) -> Option<String> {
 fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
     if !crate::literal_encoding::routes_to_bv32_theory(name) {
         return None;
+    }
+    // ── CRC value-pin (paper 26 — connect the folded table to the value) ──
+    // `crc32.eq-walked(asserted_int_const, walked_bv_tree)`:
+    //   args[0] = the test's asserted CRC value (an Int const; truncated to bv32)
+    //   args[1] = the WALKED closed crc-FOL — the symbolic table+update+inversion
+    //             computation walked from the vendor's CRC32C AST. It contains no
+    //             free vars (the input is literal, the table is folded), so it
+    //             renders with an EMPTY substitution and constant-folds in z3 to
+    //             the genuine CRC value.
+    // Rendered: `(= <asserted_hex> <walked_smt>)`. GOOD (vendor-sworn value) → sat
+    // → discharged; BAD (wrong value) → unsat → unsatisfied BY THE WALKED
+    // COMPUTATION (a single equation, not a within-test contradiction).
+    if name == "crc32.eq-walked" && args.len() == 2 {
+        let asserted = match &args[0] {
+            Term::Const { value, .. } => value.as_i64().map(i32_to_bv32_hex)?,
+            _ => return None,
+        };
+        // args[1] is a String const carrying the walked crc-FOL JSON (its bv32
+        // nodes have no `sort` field, so they are rendered from RAW JSON, not via
+        // emit_bv32_term — mirroring render_b64_blocks_body).
+        let json_str = match &args[1] {
+            Term::Const {
+                value: serde_json::Value::String(s),
+                sort: Sort::Primitive { name },
+            } if name == "String" => s,
+            _ => return None,
+        };
+        let node: serde_json::Value = serde_json::from_str(json_str).ok()?;
+        let empty: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        let walked = render_crc_bv_json(&node, &empty)?;
+        return Some(format!("(= {} {})", asserted, walked));
     }
     if name == "int32.eq-bv-expr" && args.len() == 2 {
         let subject = &args[0];

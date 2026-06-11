@@ -174,7 +174,12 @@ public final class JavaTestAssertionsRpc {
         // "recurrence-walker:") or REFUSES BY NAME with the structural break located
         // at the defeating AST node. ADDITIVE: emits diagnostics only — never alters
         // the IR contract set or the discharge/check-sat path.
-        RecurrenceUniverseWalker.run(compiler, root, diagnostics);
+        // The walker's diagnostics-only construction-site notes are unchanged; it
+        // ADDITIONALLY returns the value-pin registry (the closed crc-FOL for the
+        // canonical literal input, walked from update()/getValue()), consulted at
+        // the getValue() callsite below. Empty registry → no value-pin → byte-
+        // identical to before.
+        CrcValuePinRegistry crcValuePins = RecurrenceUniverseWalker.run(compiler, root, diagnostics);
 
         // G3: Load instance-universe — walks receiver classes in the WORKSPACE to pin
         // construction-time facts: new Box(5).get() == 5 BY CONSTRUCTION (ctor→field→getter).
@@ -201,7 +206,7 @@ public final class JavaTestAssertionsRpc {
             // contracts already lifted from the other files. Without this, one bad
             // file in a 229-file vendor test tree drops the entire artifact to GAP.
             try {
-                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, strongRegistry, instanceUniverse, javaConstants, ir, diagnostics);
+                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, instanceUniverse, javaConstants, ir, diagnostics);
             } catch (Exception e) {
                 diagnostics.add(diagnostic(rel, null, null,
                     "per-file lift skipped (isolated): "
@@ -1881,6 +1886,7 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
+            CrcValuePinRegistry crcValuePins,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             List<String> ir,
@@ -1963,7 +1969,7 @@ public final class JavaTestAssertionsRpc {
                 if (decl instanceof ClassTree ct) {
                     walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
                             vocab, frameworkKind, ambiguousFramework,
-                            universeRegistry, numericRegistry, strongRegistry, instanceUniverse, javaConstants, ir, diagnostics, null);
+                            universeRegistry, numericRegistry, strongRegistry, crcValuePins, instanceUniverse, javaConstants, ir, diagnostics, null);
                 }
             }
         }
@@ -1994,6 +2000,7 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
+            CrcValuePinRegistry crcValuePins,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             List<String> ir,
@@ -2007,11 +2014,11 @@ public final class JavaTestAssertionsRpc {
             if (member instanceof MethodTree mt) {
                 liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry,
-                        instanceUniverse, javaConstants, classTree, ir, diagnostics);
+                        crcValuePins, instanceUniverse, javaConstants, classTree, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
                 walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework,
-                        universeRegistry, numericRegistry, strongRegistry, instanceUniverse, javaConstants, ir, diagnostics, className);
+                        universeRegistry, numericRegistry, strongRegistry, crcValuePins, instanceUniverse, javaConstants, ir, diagnostics, className);
             }
         }
     }
@@ -2033,6 +2040,7 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
+            CrcValuePinRegistry crcValuePins,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             ClassTree classTree,
@@ -2084,10 +2092,21 @@ public final class JavaTestAssertionsRpc {
             }
         }
 
+        // CRC value-pin INPUT RECONSTRUCTION: for every receiver fed bytes via
+        // `<recv>.update(...)` over LITERALS in this test body, reconstruct the
+        // exact input string the receiver was checksummed over (textual order).
+        // The value-pin contract only fires when this reconstructed input matches
+        // the canonical literal the walked crc-FOL was walked over — otherwise the
+        // pin does NOT apply (non-literal input → floor only). A receiver whose
+        // update args are not all literals is recorded as null (no value-pin).
+        Map<String, String> crcReceiverInputs =
+                crcValuePins.isEmpty() ? Map.of()
+                                       : reconstructCrcInputs(body);
+
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry, instanceUniverse,
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry, crcValuePins, crcReceiverInputs, instanceUniverse,
                         ssaBindings, mutatedLocals, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
@@ -3124,6 +3143,8 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
+            CrcValuePinRegistry crcValuePins,
+            Map<String, String> crcReceiverInputs,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3238,7 +3259,7 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, strongRegistry, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, crcReceiverInputs, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
@@ -3268,6 +3289,8 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
+            CrcValuePinRegistry crcValuePins,
+            Map<String, String> crcReceiverInputs,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3335,7 +3358,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
-                universeRegistry, numericRegistry, strongRegistry, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+                universeRegistry, numericRegistry, strongRegistry, crcValuePins, crcReceiverInputs, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -3404,7 +3427,7 @@ public final class JavaTestAssertionsRpc {
         // binding substitution needed; pass empty maps.
         liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
                 UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, StrongUniverseRegistry.EMPTY,
-                InstanceUniverse.EMPTY,
+                CrcValuePinRegistry.EMPTY, Map.of(), InstanceUniverse.EMPTY,
                 Collections.emptyMap(), Collections.emptySet(), ir, diagnostics);
     }
 
@@ -3440,6 +3463,8 @@ public final class JavaTestAssertionsRpc {
             String scope, UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
+            CrcValuePinRegistry crcValuePins,
+            Map<String, String> crcReceiverInputs,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3645,6 +3670,37 @@ public final class JavaTestAssertionsRpc {
                 }
                 ir.add(buildLocationKeyedIntContract(locationBase, receiverName, callee,
                         intArgValues, intVal.getAsLong(), relation, constructed));
+
+                // ── THE VALUE-PIN RUNG (paper 26): if the receiver is a CRC class
+                //    whose static-init table folded AND its update()/getValue() walked
+                //    over the canonical literal input, AND THIS test checksummed THIS
+                //    receiver over exactly that literal input, emit a SELF-CONTAINED
+                //    value-pin contract: the walked closed crc-FOL == the test's
+                //    asserted value. The universe does the work — a wrong CRC is
+                //    refuted UNSATISFIED BY THE WALKED TABLE+UPDATE COMPUTATION (a
+                //    single equation, not a within-test contradiction). ──
+                if (!crcValuePins.isEmpty() && callee.equals("getValue")
+                        && init instanceof NewClassTree nctCrc) {
+                    String crcClass = newClassSimpleName(nctCrc);
+                    CrcValuePin pin = crcClass == null ? null : crcValuePins.forClass(crcClass);
+                    String fedInput = crcReceiverInputs.get(receiverName);
+                    if (pin != null && fedInput != null && fedInput.equals(pin.literalInput)) {
+                        ir.add(buildCrcValuePinContract(locationBase, pin, intVal.getAsLong()));
+                    } else if (pin != null && fedInput != null) {
+                        // Receiver checksummed over a DIFFERENT literal than the walked
+                        // pin's canonical input → the pin does not apply; floor only.
+                        diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                            methodName, "crc value-pin: receiver '" + receiverName + "' was fed input \""
+                            + fedInput + "\" but the walked pin covers \"" + pin.literalInput
+                            + "\" — value-pin not applicable (floor only)"));
+                    } else if (pin != null) {
+                        // Receiver's update input is not a reconstructable literal →
+                        // non-literal input, floor only, named.
+                        diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                            methodName, "crc value-pin refused: receiver '" + receiverName
+                            + "' update input is not a reconstructable literal — non-literal input, floor only"));
+                    }
+                }
             }
         } else if (strVal.isPresent()) {
             // String expected — emit string-sort equality contract (#euf# federated)
@@ -3789,6 +3845,110 @@ public final class JavaTestAssertionsRpc {
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + operands
              + "]}}";
+    }
+
+    /**
+     * THE VALUE-PIN CONTRACT. A self-contained bv32 equality between the test's
+     * asserted CRC value and the WALKED closed crc-FOL (crc(literalInput) after
+     * getValue()'s inversion). Rendered by the SMT emitter as
+     *   (= <asserted_hex> <walked_crc_smt>)
+     * where the RHS is the symbolic table+update computation walked from the
+     * vendor's CRC32C AST. The walked RHS constant-folds to the genuine CRC value,
+     * so a GOOD assertion (the vendor-sworn 0xE3069283) is SAT → discharged, and a
+     * BAD assertion (a wrong value) is UNSAT → unsatisfied BY THE WALKED
+     * COMPUTATION (a single equation; no within-test contradiction). The contract
+     * name carries the walked input + class so it is location-keyed to this test.
+     */
+    private static String buildCrcValuePinContract(
+            String locationBase, CrcValuePin pin, long assertedValue) {
+        String contractName = locationBase + "::crc-value-pin";
+        String intSort = "\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}";
+        // asserted value as an Int const (the emitter truncates to bv32 hex).
+        String assertedConst = "{\"kind\":\"const\",\"value\":" + assertedValue + "," + intSort + "}";
+        // The walked crc-FOL is carried as a STRING-const payload JSON (its bv32
+        // nodes have no `sort` field — they would not deserialize as IR Terms; the
+        // SMT emitter parses the payload back and renders the bv32 tree from raw
+        // JSON, exactly as the base64 strong tier carries its block payload).
+        String walkedPayload = "{\"kind\":\"const\",\"value\":\"" + esc(pin.valueTreeJson)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}";
+        String atom = "{\"kind\":\"atomic\",\"name\":\"crc32.eq-walked\",\"args\":["
+                + assertedConst + "," + walkedPayload + "]}";
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":[" + atom + "]}}";
+    }
+
+    /** Simple class name of a `new Cls(...)` expression, or null. */
+    private static String newClassSimpleName(NewClassTree nct) {
+        ExpressionTree id = nct.getIdentifier();
+        if (id instanceof IdentifierTree it) return it.getName().toString();
+        if (id instanceof ParameterizedTypeTree ptt
+                && ptt.getType() instanceof IdentifierTree it2) return it2.getName().toString();
+        if (id instanceof MemberSelectTree ms) return ms.getIdentifier().toString();
+        return null;
+    }
+
+    /**
+     * Reconstruct, per receiver local, the exact input string it was checksummed
+     * over via `<recv>.update(...)` calls in TEXTUAL ORDER. Supports the two
+     * literal-driven shapes the value-pin walk covers:
+     *   - `<recv>.update(<intLiteral>)`           → one byte (low 8 bits)
+     *   - `<recv>.update(<bytesLiteral>, 0, len)` → the literal string's bytes
+     * A receiver whose any update arg is NOT a reconstructable literal is mapped to
+     * null (no value-pin: non-literal input). Receivers with no update calls are
+     * absent (no value-pin applies). All facts from tree nodes; no name keying.
+     */
+    private static Map<String, String> reconstructCrcInputs(BlockTree body) {
+        // receiver → accumulated bytes (or null = a non-literal update was seen).
+        Map<String, java.io.ByteArrayOutputStream> acc = new LinkedHashMap<>();
+        Set<String> poisoned = new LinkedHashSet<>();
+        for (StatementTree st : body.getStatements()) {
+            if (!(st instanceof ExpressionStatementTree est)
+                    || !(est.getExpression() instanceof MethodInvocationTree mit)) continue;
+            if (!(mit.getMethodSelect() instanceof MemberSelectTree ms)) continue;
+            if (!"update".equals(ms.getIdentifier().toString())) continue;
+            if (!(ms.getExpression() instanceof IdentifierTree recId)) continue;
+            String recv = recId.getName().toString();
+            if (poisoned.contains(recv)) continue;
+            java.io.ByteArrayOutputStream out =
+                    acc.computeIfAbsent(recv, k -> new java.io.ByteArrayOutputStream());
+            List<? extends ExpressionTree> a = mit.getArguments();
+            boolean ok = false;
+            if (a.size() == 1) {
+                // update(int b) — a single int/char literal byte.
+                Integer b = literalIntByte(a.get(0));
+                if (b != null) { out.write(b & 0xFF); ok = true; }
+            } else if (a.size() == 3) {
+                // update(byte[], off, len) — bytes from a string literal, off=0.
+                Optional<String> sv = asBytesStringLiteral(a.get(0));
+                OptionalLong off = asIntLiteral(a.get(1));
+                if (sv.isPresent() && off.isPresent() && off.getAsLong() == 0) {
+                    byte[] bs = sv.get().getBytes(StandardCharsets.US_ASCII);
+                    out.writeBytes(bs); ok = true;
+                }
+            }
+            if (!ok) { poisoned.add(recv); acc.remove(recv); }
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (String recv : poisoned) result.put(recv, null);
+        for (Map.Entry<String, java.io.ByteArrayOutputStream> e : acc.entrySet()) {
+            result.put(e.getKey(),
+                    new String(e.getValue().toByteArray(), StandardCharsets.US_ASCII));
+        }
+        return result;
+    }
+
+    /** An int or char literal as a byte value (low 8 bits), or null. */
+    private static Integer literalIntByte(ExpressionTree e) {
+        if (e instanceof ParenthesizedTree pt) return literalIntByte(pt.getExpression());
+        if (e instanceof LiteralTree lt) {
+            Object v = lt.getValue();
+            if (v instanceof Integer i) return i;
+            if (v instanceof Long l) return (int) (long) l;
+            if (v instanceof Character c) return (int) (char) c;
+        }
+        return null;
     }
 
     /**
@@ -6778,14 +6938,14 @@ public final class JavaTestAssertionsRpc {
          *  so the kit test can grep them deterministically. */
         static final String TAG = "recurrence-walker";
 
-        static void run(JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
+        static CrcValuePinRegistry run(JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
             List<Path> vendorDirs;
             try {
                 vendorDirs = UniverseWalker.readVendorSourceDirs(workspaceRoot);
             } catch (IOException e) {
-                return;
+                return CrcValuePinRegistry.EMPTY;
             }
-            if (vendorDirs.isEmpty()) return;
+            if (vendorDirs.isEmpty()) return CrcValuePinRegistry.EMPTY;
 
             List<Path> vendorFiles = new ArrayList<>();
             for (Path dir : vendorDirs) {
@@ -6799,7 +6959,7 @@ public final class JavaTestAssertionsRpc {
                     // dir walk error — silent (other walkers will surface their own)
                 }
             }
-            if (vendorFiles.isEmpty()) return;
+            if (vendorFiles.isEmpty()) return CrcValuePinRegistry.EMPTY;
 
             Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
             for (Path src : vendorFiles) {
@@ -6821,7 +6981,7 @@ public final class JavaTestAssertionsRpc {
                     // parse error on one file — skip it; do not zero the walk
                 }
             }
-            if (classTreeByName.isEmpty()) return;
+            if (classTreeByName.isEmpty()) return CrcValuePinRegistry.EMPTY;
 
             Set<String> identityBridges =
                     UniverseWalker.loadPlatformAxioms(workspaceRoot, diagnostics);
@@ -6833,6 +6993,9 @@ public final class JavaTestAssertionsRpc {
             // induction index. We attempt each; success emits the FOL note, any
             // unwalkable node emits the located refusal. The shape gate is
             // structural (a loop that stores to an array local), never name-keyed.
+            // Per-class folded static-init store (the construction-site table the
+            // value-pin rung reads). Keyed by class simple name.
+            Map<String, Store> staticInitStoreByClass = new LinkedHashMap<>();
             for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
                 String cls = ce.getKey();
                 for (Tree m : ce.getValue().getMembers()) {
@@ -6854,10 +7017,21 @@ public final class JavaTestAssertionsRpc {
                     // as a construction site, constant-folding the table it builds
                     // into the store; any node that does not fold is REFUSED BY NAME.
                     if (m instanceof BlockTree blk && blk.isStatic()) {
-                        walkStaticInit(corpus, cls, blk, diagnostics);
+                        Store folded = walkStaticInit(corpus, cls, blk, diagnostics);
+                        if (folded != null) staticInitStoreByClass.put(cls, folded);
                     }
                 }
             }
+
+            // ── THE VALUE-PIN RUNG (paper 26 — connect the folded table to the
+            //    value). For every class whose static-init table folded, attempt to
+            //    walk the stateful instance `update(int b)` over the canonical CRC
+            //    check input "123456789" + `getValue()`'s final inversion, pinning
+            //    crc(literalInput) == value as one CLOSED bv32 FOL. Any structural
+            //    break (unresolvable table alias, non-walkable update step) is
+            //    REFUSED BY NAME — never faked. ──
+            return CrcValuePinWalker.walkAll(classTreeByName, staticInitStoreByClass,
+                    corpus, diagnostics);
         }
 
         /**
@@ -6876,7 +7050,7 @@ public final class JavaTestAssertionsRpc {
          * sub-array constant-folds (the outer index is a literal selecting one
          * concrete sub-array; a non-literal outer index is refused by name).
          */
-        private static void walkStaticInit(
+        private static Store walkStaticInit(
                 UniverseWalker.Corpus corpus, String cls, BlockTree blk,
                 List<String> diagnostics) {
             String method = "<clinit>";
@@ -6904,13 +7078,19 @@ public final class JavaTestAssertionsRpc {
                     return super.visitForLoop(flt, x);
                 }
             }.scan(blk, null);
-            if (carriers.isEmpty()) return; // not a table-gen-shaped static block
+            if (carriers.isEmpty()) return null; // not a table-gen-shaped static block
 
+            // The FIRST carrier that unrolls cleanly is the primary table-gen loop;
+            // we thread ONE shared store across all carriers (later carriers, e.g.
+            // the slicing-by-8 second loop, READ the first table) and return it so
+            // the value-pin rung can read the folded table. A carrier that refuses
+            // (named) leaves the store with whatever the earlier carriers folded.
+            Store store = new Store();
             for (ForLoopTree flt : carriers) {
-                Store store = new Store();
                 seedFromPreamble(blk, flt, store, corpus, cls, method, diagnostics);
                 unrollLoop(flt, store, corpus, cls, method, intArrayLocals, diagnostics);
             }
+            return store;
         }
 
         /** Like loopStoresToAnyArray but also accepts a 2-D sub-array store
@@ -7783,6 +7963,514 @@ public final class JavaTestAssertionsRpc {
         }
         private static void refuseN(List<String> diagnostics, String cls, String method, String reason) {
             if (diagnostics != null) diagnostics.add(diagnostic("<" + TAG + ">", cls, method, TAG + ": " + reason));
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // THE VALUE-PIN RUNG: connect the folded static-init table to the value.
+        //
+        // The construction-site walk above folds CRC32C's lookup table into a
+        // Store (key `byteTables#0`, index→bv32 tree, constant-folding to the
+        // genuine table). This rung WALKS the vendor's stateful instance
+        // `update(int b)` over the LITERAL canonical input "123456789" (9 bytes,
+        // known at the callsite), threading the `crc` instance state as SSA
+        // (crc_0 = 0xFFFFFFFF; crc_{i+1} = (crc_i >>> 8) ^ byteTable[(crc_i ^ b_i) & 0xff]),
+        // each step READING the folded static-init table at the index
+        // (crc_i ^ b_i) & 0xff (concrete once crc_i is threaded — a nested
+        // constant index into the merged folded table). It then applies
+        // getValue()'s final inversion ((~crc) & 0xFFFFFFFF), pinning
+        // crc(literalInput) == value as ONE closed bv32 tree.
+        //
+        // SOUNDNESS (named refusals, never faked):
+        //  - the `byteTable` field read in update() must resolve to byteTables[0]
+        //    (the folded table) by WALKING the endianness if/else; if the alias is
+        //    not statically resolvable → REFUSE BY NAME (no branch guess).
+        //  - if the running crc index is not reducible to a concrete table index
+        //    at any step → REFUSE (symbolic index, read unsound).
+        //  - if an update step hits a non-walkable statement → REFUSE at that node.
+        // ════════════════════════════════════════════════════════════════
+        static final class CrcValuePinWalker {
+
+            /** The canonical CRC check input, exactly as OpenJDK's ChecksumBase
+             *  feeds it (US-ASCII "123456789"). The vendor's TestCRC32C swears
+             *  CRC-32C("123456789") == 0xE3069283. We walk over THESE literal
+             *  bytes; nothing about the value is authored. */
+            static final byte[] CHECK_INPUT = "123456789".getBytes(StandardCharsets.US_ASCII);
+            static final String CHECK_INPUT_STR = "123456789";
+
+            /** Walk every class whose static-init table folded; emit one value-pin
+             *  per class whose update()/getValue() walks cleanly over CHECK_INPUT. */
+            static CrcValuePinRegistry walkAll(
+                    Map<String, ClassTree> classTreeByName,
+                    Map<String, Store> staticInitStoreByClass,
+                    UniverseWalker.Corpus corpus,
+                    List<String> diagnostics) {
+                Map<String, CrcValuePin> byClass = new LinkedHashMap<>();
+                for (Map.Entry<String, Store> e : staticInitStoreByClass.entrySet()) {
+                    String cls = e.getKey();
+                    Store tableStore = e.getValue();
+                    ClassTree ct = classTreeByName.get(cls);
+                    if (ct == null) continue;
+                    CrcValuePin pin = walkOne(cls, ct, tableStore, corpus, diagnostics);
+                    if (pin != null) byClass.put(cls, pin);
+                }
+                return byClass.isEmpty() ? CrcValuePinRegistry.EMPTY
+                                         : new CrcValuePinRegistry(byClass);
+            }
+
+            /** Walk one class's update/getValue value-pin, or null (named refusal). */
+            private static CrcValuePin walkOne(
+                    String cls, ClassTree ct, Store tableStore,
+                    UniverseWalker.Corpus corpus, List<String> diagnostics) {
+                final String M = "<value-pin>";
+
+                // ── (1) Resolve the per-byte update method: a single-statement
+                //    `crc = (crc >>> 8) ^ <tableField>[(crc ^ (b & 0xFF)) & 0xFF];`.
+                //    Located by SHAPE (a void instance method with one int param
+                //    whose body is one assignment to a `crc`-style int field), not
+                //    by name. ──
+                MethodTree update = findPerByteUpdate(ct);
+                if (update == null) {
+                    refusePin(diagnostics, cls, M,
+                        "value-pin refused: no single-statement per-byte `update(int)` "
+                        + "of shape `crc = (crc>>>8) ^ table[(crc^(b&0xFF))&0xFF]` found");
+                    return null;
+                }
+
+                // ── (2) The crc state field + its initial value (a static/instance
+                //    int field initialized to a literal, e.g. `crc = 0xFFFFFFFF`). ──
+                String crcField = simpleName(stripP(updateAssignTarget(update)));
+                Integer crcInit = corpus.resolveFieldValue(crcField, 0);
+                if (crcInit == null) {
+                    refusePin(diagnostics, cls, M,
+                        "value-pin refused: crc state field `" + crcField
+                        + "` has no walkable literal initial value");
+                    return null;
+                }
+
+                // ── (3) Resolve the `byteTable` alias to a folded table store key by
+                //    WALKING the endianness if/else in the static initializer. ──
+                ExpressionTree updateRhs = updateAssignRhs(update);
+                String tableField = tableFieldInUpdate(updateRhs);
+                if (tableField == null) {
+                    refusePin(diagnostics, cls, M,
+                        "value-pin refused: update() RHS is not `(crc>>>8) ^ <field>[idx]`");
+                    return null;
+                }
+                String tableKey = resolveTableAlias(ct, tableField, tableStore, corpus,
+                                                    cls, M, diagnostics);
+                if (tableKey == null) return null; // named refusal already emitted
+
+                // ── (4) Thread crc over the 9 literal bytes, building ONE closed
+                //    bv32 tree. Each step reads the folded table at the concrete
+                //    index, keeping the symbolic table-entry tree in the FOL. ──
+                int crcConcrete = crcInit;            // concrete thread (resolves indices)
+                String crcTree = constNode(crcInit);  // the symbolic FOL chain
+                int stepsWalked = 0;
+                for (int i = 0; i < CHECK_INPUT.length; i++) {
+                    int b = CHECK_INPUT[i] & 0xFF;
+                    int idx = (crcConcrete ^ b) & 0xFF;          // concrete table index
+                    String entryTree = tableStore.readArray(tableKey, idx);
+                    if (entryTree == null) {
+                        refusePin(diagnostics, cls, M,
+                            "value-pin refused: folded table `" + tableKey + "` has no entry at "
+                            + "concrete index " + idx + " (step " + i + ") — table read unsound");
+                        return null;
+                    }
+                    // crc_{i+1} = (crc_i >>> 8) ^ table[idx]   (FOL: symbolic chain)
+                    String shifted = ctor("bv32.lshr", crcTree, constNode(8));
+                    crcTree = ctor("bv32.xor", shifted, entryTree);
+                    // Thread the concrete value to resolve the NEXT index. The
+                    // folded entry constant-folds; we fold the whole step.
+                    Integer entryConcrete = foldBv32(entryTree);
+                    if (entryConcrete == null) {
+                        refusePin(diagnostics, cls, M,
+                            "value-pin refused: folded table entry at index " + idx
+                            + " does not constant-fold (step " + i + ")");
+                        return null;
+                    }
+                    crcConcrete = (crcConcrete >>> 8) ^ entryConcrete;
+                    stepsWalked++;
+                }
+
+                // ── (5) getValue()'s final inversion: (~crc) & 0xFFFFFFFF.
+                //    Walk the getValue() body to confirm the inversion shape; refuse
+                //    if it is not the canonical `return (~crc) & 0xFFFFFFFFL;`. ──
+                if (!getValueIsInversion(ct, crcField, diagnostics, cls, M)) {
+                    return null; // named refusal already emitted
+                }
+                // ~crc  ==  crc ^ -1  (bv32.xor with all-ones); & 0xFFFFFFFF is a
+                // no-op on bv32 (we already model 32-bit). The inversion is the
+                // vendor's getValue() applied to the threaded crc.
+                String valueTree = ctor("bv32.xor", crcTree, constNode(-1));
+                int valueConcrete = (~crcConcrete) & 0xFFFFFFFF; // for the self-check only
+
+                return new CrcValuePin(cls, tableKey, stepsWalked, valueTree,
+                        valueConcrete, CHECK_INPUT_STR);
+            }
+
+            // ── alias resolution: walk the endianness if/else ──────────────────
+            /** Resolve the simple `byteTable` field used by update() to a folded
+             *  table store key (e.g. "byteTables#0"). Walks the static initializer's
+             *  endianness `if/else` that assigns the alias; for the LITTLE_ENDIAN
+             *  branch the alias is `byteTable = byteTables[0]`. We resolve the alias
+             *  to the branch whose RHS is a sub-array of the folded table; if the
+             *  alias is not a statically resolvable sub-array reference → REFUSE. */
+            private static String resolveTableAlias(
+                    ClassTree ct, String tableField, Store tableStore,
+                    UniverseWalker.Corpus corpus, String cls, String M,
+                    List<String> diagnostics) {
+                // If the field is itself a folded table (direct `int[]` carrier in
+                // the store), use it directly.
+                if (tableStore.arrays.containsKey(tableField)) return tableField;
+
+                // Otherwise find the static-init alias assignment `tableField = RHS`.
+                List<ExpressionTree> rhsCandidates = new ArrayList<>();
+                for (Tree m : ct.getMembers()) {
+                    if (!(m instanceof BlockTree blk) || !blk.isStatic()) continue;
+                    new TreeScanner<Void, Void>() {
+                        @Override public Void visitAssignment(AssignmentTree at, Void x) {
+                            if (tableField.equals(simpleName(stripP(at.getVariable())))) {
+                                rhsCandidates.add(stripP(at.getExpression()));
+                            }
+                            return super.visitAssignment(at, x);
+                        }
+                    }.scan(blk, null);
+                }
+                if (rhsCandidates.isEmpty()) {
+                    refusePin(diagnostics, cls, M,
+                        "value-pin refused: alias field `" + tableField + "` is never assigned in a "
+                        + "static initializer — cannot resolve the table read in update()");
+                    return null;
+                }
+                // Prefer a `field[<lit>]` sub-array RHS whose folded sub-array exists
+                // in the store (the LITTLE_ENDIAN `byteTable = byteTables[0]` branch).
+                for (ExpressionTree rhs : rhsCandidates) {
+                    String key = subArrayKey(rhs, corpus);
+                    if (key != null && tableStore.arrays.containsKey(key)) return key;
+                    String direct = simpleName(rhs);
+                    if (direct != null && tableStore.arrays.containsKey(direct)) return direct;
+                }
+                // No alias RHS resolves to a folded table soundly. The other branch
+                // (BIG_ENDIAN: `new int[...]` + arraycopy + byte-reverse) is NOT a
+                // sub-array of the folded table and is platform-conditional — we do
+                // NOT guess a branch.
+                refusePin(diagnostics, cls, M,
+                    "value-pin refused: `" + tableField + "` alias is not statically resolvable to a "
+                    + "folded table sub-array (endianness if/else has no branch whose RHS is a folded "
+                    + "table[<lit>]); platform-conditional alias — no branch guess");
+                return null;
+            }
+
+            /** `byteTables[<lit>]` → "byteTables#<lit>" (folded sub-array key). */
+            private static String subArrayKey(ExpressionTree ref, UniverseWalker.Corpus corpus) {
+                ref = stripP(ref);
+                if (ref instanceof ArrayAccessTree aat) {
+                    String base = simpleName(stripP(aat.getExpression()));
+                    Integer outer = concreteIndex(aat.getIndex(), new Store(), corpus);
+                    if (base != null && outer != null) return base + "#" + outer;
+                }
+                return null;
+            }
+
+            // ── update() shape recognition ─────────────────────────────────────
+            /** A single-statement `void update(int b)` whose body is one assignment
+             *  `crc = (crc >>> 8) ^ table[ ... ]`. Located by shape, not name. */
+            private static MethodTree findPerByteUpdate(ClassTree ct) {
+                for (Tree m : ct.getMembers()) {
+                    if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                    List<? extends VariableTree> ps = mt.getParameters();
+                    if (ps.size() != 1) continue;
+                    if (!(ps.get(0).getType() instanceof PrimitiveTypeTree ptt)
+                            || ptt.getPrimitiveTypeKind() != TypeKind.INT) continue;
+                    List<? extends StatementTree> body = mt.getBody().getStatements();
+                    if (body.size() != 1) continue;
+                    if (!(body.get(0) instanceof ExpressionStatementTree est)
+                            || !(est.getExpression() instanceof AssignmentTree at)) continue;
+                    ExpressionTree rhs = stripP(at.getExpression());
+                    // RHS must be `(crc >>> 8) ^ <field>[idx]`.
+                    if (tableFieldInUpdate(rhs) != null) return mt;
+                }
+                return null;
+            }
+            private static ExpressionTree updateAssignTarget(MethodTree update) {
+                ExpressionStatementTree est = (ExpressionStatementTree)
+                        update.getBody().getStatements().get(0);
+                return ((AssignmentTree) est.getExpression()).getVariable();
+            }
+            private static ExpressionTree updateAssignRhs(MethodTree update) {
+                ExpressionStatementTree est = (ExpressionStatementTree)
+                        update.getBody().getStatements().get(0);
+                return stripP(((AssignmentTree) est.getExpression()).getExpression());
+            }
+            /** If `rhs` is `(... >>> ...) ^ <field>[<idx>]`, return the table field
+             *  simple name; else null. */
+            private static String tableFieldInUpdate(ExpressionTree rhs) {
+                rhs = stripP(rhs);
+                if (!(rhs instanceof BinaryTree bt) || bt.getKind() != Tree.Kind.XOR) return null;
+                ExpressionTree r = stripP(bt.getRightOperand());
+                if (!(r instanceof ArrayAccessTree aat)) {
+                    // operands may be in either order: try the left.
+                    ExpressionTree l = stripP(bt.getLeftOperand());
+                    if (l instanceof ArrayAccessTree laat) {
+                        return simpleName(stripP(laat.getExpression()));
+                    }
+                    return null;
+                }
+                return simpleName(stripP(aat.getExpression()));
+            }
+
+            // ── getValue() inversion shape ─────────────────────────────────────
+            /** Confirm a `getValue()`-style method returns `(~<crcField>) & MASK`.
+             *  Refuses by name if no such inversion is present. */
+            private static boolean getValueIsInversion(
+                    ClassTree ct, String crcField, List<String> diagnostics,
+                    String cls, String M) {
+                for (Tree m : ct.getMembers()) {
+                    if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                    if (!mt.getParameters().isEmpty()) continue;
+                    List<? extends StatementTree> body = mt.getBody().getStatements();
+                    if (body.size() != 1 || !(body.get(0) instanceof ReturnTree rt)) continue;
+                    ExpressionTree e = stripP(rt.getExpression());
+                    // `(~crc) & 0xFFFFFFFFL` — an AND whose one operand is `~crc`.
+                    if (e instanceof BinaryTree bt && bt.getKind() == Tree.Kind.AND) {
+                        if (isBitNotOf(bt.getLeftOperand(), crcField)
+                                || isBitNotOf(bt.getRightOperand(), crcField)) {
+                            return true;
+                        }
+                    }
+                    // Bare `return ~crc;` (no mask) is also a valid inversion on bv32.
+                    if (isBitNotOf(e, crcField)) return true;
+                }
+                refusePin(diagnostics, cls, M,
+                    "value-pin refused: no `getValue()` of shape `return (~" + crcField
+                    + ") & MASK;` found — final inversion not walkable");
+                return false;
+            }
+            /** True if `e` is `~<crcField>` (bitwise complement of the crc field). */
+            private static boolean isBitNotOf(ExpressionTree e, String crcField) {
+                e = stripP(e);
+                if (e instanceof UnaryTree ut && ut.getKind() == Tree.Kind.BITWISE_COMPLEMENT) {
+                    return crcField.equals(simpleName(stripP(ut.getExpression())));
+                }
+                return false;
+            }
+
+            // ── bv32 constant folder (resolves concrete crc each step) ─────────
+            /** Constant-fold a closed bv32 tree JSON to a concrete int, or null if
+             *  it contains a free var (the value-pin trees are always closed, so a
+             *  null here is a structural break, refused by the caller). Mirrors the
+             *  SMT emitter's bv32 vocabulary exactly. */
+            static Integer foldBv32(String json) {
+                try {
+                    Object node = MiniJson.parse(json);
+                    return foldBv32Node(node);
+                } catch (RuntimeException ex) {
+                    return null;
+                }
+            }
+            @SuppressWarnings("unchecked")
+            private static Integer foldBv32Node(Object node) {
+                Map<String, Object> n = (Map<String, Object>) node;
+                String kind = (String) n.get("kind");
+                if ("const".equals(kind)) {
+                    Number v = (Number) n.get("value");
+                    return v.intValue();
+                }
+                if ("var".equals(kind)) return null; // free var → not closed
+                if ("ctor".equals(kind)) {
+                    String name = (String) n.get("name");
+                    List<Object> args = (List<Object>) n.get("args");
+                    if ("bv32.ite".equals(name)) {
+                        Boolean c = foldBv32Bool(args.get(0));
+                        if (c == null) return null;
+                        return c ? foldBv32Node(args.get(1)) : foldBv32Node(args.get(2));
+                    }
+                    if ("bv32.neg".equals(name)) {
+                        Integer a = foldBv32Node(args.get(0));
+                        return a == null ? null : -a;
+                    }
+                    Integer l = foldBv32Node(args.get(0));
+                    if (l == null) return null;
+                    Integer r = foldBv32Node(args.get(1));
+                    if (r == null) return null;
+                    return switch (name) {
+                        case "bv32.and"  -> l & r;
+                        case "bv32.or"   -> l | r;
+                        case "bv32.xor"  -> l ^ r;
+                        case "bv32.add"  -> l + r;
+                        case "bv32.mul"  -> l * r;
+                        case "bv32.shl"  -> l << (r & 31);
+                        case "bv32.lshr" -> l >>> (r & 31);
+                        default          -> null;
+                    };
+                }
+                return null;
+            }
+            @SuppressWarnings("unchecked")
+            private static Boolean foldBv32Bool(Object node) {
+                Map<String, Object> n = (Map<String, Object>) node;
+                if (!"ctor".equals(n.get("kind"))) return null;
+                String name = (String) n.get("name");
+                List<Object> args = (List<Object>) n.get("args");
+                Integer l = foldBv32Node(args.get(0));
+                if (l == null) return null;
+                Integer r = foldBv32Node(args.get(1));
+                if (r == null) return null;
+                return switch (name) {
+                    case "bv32.eq"  -> l.intValue() == r.intValue();
+                    case "bv32.ne"  -> l.intValue() != r.intValue();
+                    case "bv32.slt" -> l < r;
+                    case "bv32.ule" -> Integer.compareUnsigned(l, r) <= 0;
+                    default         -> null;
+                };
+            }
+
+            // ── tiny tree-builder helpers (mirror the recurrence walker's) ─────
+            private static String constNode(int v) {
+                return "{\"kind\":\"const\",\"value\":" + v + "}";
+            }
+            private static String ctor(String name, String a, String b) {
+                return "{\"kind\":\"ctor\",\"name\":\"" + name + "\",\"args\":[" + a + "," + b + "]}";
+            }
+            private static void refusePin(List<String> diagnostics, String cls, String method, String reason) {
+                if (diagnostics != null)
+                    diagnostics.add(diagnostic("<" + TAG + ">", cls, method, TAG + ": " + reason));
+            }
+        }
+    }
+
+    /** One walked CRC value-pin: the closed bv32 FOL for crc(literalInput) and the
+     *  literal input it was walked over. The concrete value is for the kit's own
+     *  self-check only; the CONTRACT pins the SYMBOLIC tree against the test's
+     *  asserted value (the universe does the work). */
+    static final class CrcValuePin {
+        final String cls;
+        final String tableKey;
+        final int steps;
+        final String valueTreeJson; // closed bv32 tree: crc(literalInput) after inversion
+        final int valueConcrete;    // self-check only
+        final String literalInput;
+        CrcValuePin(String cls, String tableKey, int steps, String valueTreeJson,
+                    int valueConcrete, String literalInput) {
+            this.cls = cls; this.tableKey = tableKey; this.steps = steps;
+            this.valueTreeJson = valueTreeJson; this.valueConcrete = valueConcrete;
+            this.literalInput = literalInput;
+        }
+    }
+
+    /** Registry of walked CRC value-pins, keyed by the CRC class simple name. Built
+     *  once at lift time; consulted when a test asserts an int value on the CRC
+     *  class's getValue() callsite over the canonical literal input. */
+    static final class CrcValuePinRegistry {
+        static final CrcValuePinRegistry EMPTY = new CrcValuePinRegistry(Map.of());
+        private final Map<String, CrcValuePin> byClass;
+        CrcValuePinRegistry(Map<String, CrcValuePin> byClass) {
+            this.byClass = Map.copyOf(byClass);
+        }
+        boolean isEmpty() { return byClass.isEmpty(); }
+        CrcValuePin forClass(String cls) { return byClass.get(cls); }
+        /** The single value-pin whose literal input matches `input`, if any (the
+         *  CRC universe has one canonical-input pin per class). */
+        CrcValuePin forInput(String input) {
+            for (CrcValuePin p : byClass.values())
+                if (p.literalInput.equals(input)) return p;
+            return null;
+        }
+    }
+
+    /** Minimal recursive-descent JSON reader for the kit's own well-formed bv32
+     *  tree strings (objects / arrays / strings / numbers / true/false/null). Used
+     *  ONLY to fold a closed bv32 value-pin tree back to a concrete int for the
+     *  kit's index-threading + self-check; it never touches Java source bytes. */
+    static final class MiniJson {
+        private final String s; private int i;
+        private MiniJson(String s) { this.s = s; }
+        static Object parse(String s) {
+            MiniJson p = new MiniJson(s);
+            p.ws();
+            Object v = p.value();
+            p.ws();
+            return v;
+        }
+        private void ws() { while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++; }
+        private Object value() {
+            char c = s.charAt(i);
+            switch (c) {
+                case '{': return object();
+                case '[': return array();
+                case '"': return string();
+                case 't': i += 4; return Boolean.TRUE;
+                case 'f': i += 5; return Boolean.FALSE;
+                case 'n': i += 4; return null;
+                default:  return number();
+            }
+        }
+        private Map<String, Object> object() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            i++; ws();
+            if (s.charAt(i) == '}') { i++; return m; }
+            while (true) {
+                ws();
+                String k = string();
+                ws(); i++; /* ':' */ ws();
+                m.put(k, value());
+                ws();
+                char c = s.charAt(i++);
+                if (c == '}') break;
+                /* else ',' */
+            }
+            return m;
+        }
+        private List<Object> array() {
+            List<Object> a = new ArrayList<>();
+            i++; ws();
+            if (s.charAt(i) == ']') { i++; return a; }
+            while (true) {
+                ws();
+                a.add(value());
+                ws();
+                char c = s.charAt(i++);
+                if (c == ']') break;
+                /* else ',' */
+            }
+            return a;
+        }
+        private String string() {
+            StringBuilder b = new StringBuilder();
+            i++; /* opening quote */
+            while (true) {
+                char c = s.charAt(i++);
+                if (c == '"') break;
+                if (c == '\\') {
+                    char e = s.charAt(i++);
+                    switch (e) {
+                        case 'n': b.append('\n'); break;
+                        case 't': b.append('\t'); break;
+                        case 'r': b.append('\r'); break;
+                        case 'b': b.append('\b'); break;
+                        case 'f': b.append('\f'); break;
+                        case '/': b.append('/'); break;
+                        case '\\': b.append('\\'); break;
+                        case '"': b.append('"'); break;
+                        case 'u':
+                            b.append((char) Integer.parseInt(s.substring(i, i + 4), 16));
+                            i += 4; break;
+                        default: b.append(e);
+                    }
+                } else {
+                    b.append(c);
+                }
+            }
+            return b.toString();
+        }
+        private Number number() {
+            int start = i;
+            while (i < s.length() && "+-0123456789.eE".indexOf(s.charAt(i)) >= 0) i++;
+            String num = s.substring(start, i);
+            if (num.indexOf('.') >= 0 || num.indexOf('e') >= 0 || num.indexOf('E') >= 0) {
+                return Double.parseDouble(num);
+            }
+            return Long.parseLong(num);
         }
     }
 

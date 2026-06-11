@@ -1,0 +1,6 @@
+# Fixture workspace for the CRC value-pin DISCRIMINATION test:
+# a CRC-shaped vendor whose update() reads an alias field that is NOT statically
+# resolvable to a folded table sub-array — the value-pin must REFUSE BY NAME.
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor"]
