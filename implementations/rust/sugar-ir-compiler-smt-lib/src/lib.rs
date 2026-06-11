@@ -1385,89 +1385,79 @@ mod tests {
     #[test]
     fn abs_universe_truth_at_min_value_is_sat() {
         // GOOD: the BV universe row for abs(MIN_VALUE), compiled standalone,
-        // asserts `(= (call:abs #x80000000) (ite (bvslt #x80000000 #x00000000)
-        // (bvneg #x80000000) #x80000000))`.
-        // Under two's complement: bvneg(#x80000000) == #x80000000, so the
-        // expression evaluates to #x80000000 == the subject.
-        // The standalone assertion is satisfiable (SAT) with a BV model
-        // where call:abs(#x80000000) = #x80000000.
-        // Nobody believes abs(MIN_VALUE) == MIN_VALUE. Sugar proves it.
+        // is the REAL marquee conjunction the kit emits per #euf# name:
+        //   =(call:abs(MIN), MIN)  ∧  int32.eq-bv-expr(call:abs(MIN), ite(...))
+        // The sworn equality carries an Int const; the bv32-contagion pre-pass
+        // promotes it to bv32 because call:abs also appears in the universe atom.
+        // Under two's complement bvneg(#x80000000) == #x80000000, so both hold:
+        // SAT → discharged. Nobody believes abs(MIN)==MIN. Sugar proves it.
         let z3 = which_z3().expect("z3 required for BV32 check");
-        let inv = abs_bv_atom(-2147483648);
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                abs_eq_atom(-2147483648, -2147483648),
+                abs_bv_atom(-2147483648)
+            ]
+        });
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
-        // The BV literal for MIN_VALUE must appear
+        // The sworn equality must have been promoted to bv32 (BV hex literal,
+        // NOT a bare Int numeral -2147483648). Contagion proof.
         assert!(
             script.contains("#x80000000"),
-            "MIN_VALUE must be encoded as BV hex #x80000000:\n{script}"
+            "MIN_VALUE must be encoded as BV hex #x80000000 (contagion promoted the equality):\n{script}"
         );
-        // The BV operators must appear
         assert!(
-            script.contains("bvslt") && script.contains("bvneg") && script.contains("ite"),
-            "walked BV tree must contain bvslt, bvneg, ite:\n{script}"
+            !script.contains("(- 2147483648)") && !script.contains(" -2147483648"),
+            "the sworn Int const must NOT leak as a bare Int numeral — it must be bv32:\n{script}"
+        );
+        // call:abs declared ONCE, as a BV32 function (no Int) Int duplicate.
+        assert!(
+            script.contains("(declare-fun |call:abs| ((_ BitVec 32)) (_ BitVec 32))"),
+            "call:abs must be declared once as a BV32 function:\n{script}"
+        );
+        assert!(
+            !script.contains("(declare-fun |call:abs| (Int) Int)"),
+            "call:abs must NOT also be declared as an Int function (mixed-sort):\n{script}"
         );
         let out = run_z3(&z3, &script);
         assert_eq!(
             out.trim(),
             "sat",
-            "abs(MIN_VALUE) BV universe row must be SAT (consistent with two's complement truth);\
+            "=(abs(MIN),MIN) ∧ universe must be SAT (two's complement truth, contagion routed);\
              \ngot: {out}\nscript:\n{script}"
         );
     }
 
     #[test]
     fn abs_universe_false_belief_at_min_value_is_unsat() {
-        // BAD: build a conjunction where we claim call:abs(#x80000000) == #x7fffffff
-        // AND the BV expression evaluates to #x80000000. Under BV32 arithmetic
-        // these cannot both hold at once: the ite reduces to bvneg(#x80000000)
-        // = #x80000000, not #x7fffffff. UNSAT via z3 BV theory.
+        // BAD: the industry belief. The kit's conjunction per #euf# name:
+        //   =(call:abs(MIN), MAX)  ∧  int32.eq-bv-expr(call:abs(MIN), ite(...))
+        // The sworn equality (Int const MAX=2147483647) is promoted to bv32 by
+        // contagion → (= |call:abs| #x7fffffff). The universe atom forces
+        // |call:abs| = ite(...) = #x80000000. #x80000000 ≠ #x7fffffff → UNSAT.
+        // The false belief abs(MIN)==MAX is refuted by the walked body.
         let z3 = which_z3().expect("z3 required for BV32 check");
-        // Build: (= (|call:abs| #x80000000) #x7fffffff) ∧ int32.eq-bv-expr(...)
-        // Both share the SAME BV-sorted call:abs function.
-        let bv_subject = serde_json::json!({
-            "kind": "ctor",
-            "name": "call:abs",
-            "args": [{"kind": "const", "value": -2147483648i64, "sort": {"kind": "primitive", "name": "Int"}}]
-        });
-        // Claim: call:abs(MIN_VALUE) == MAX_VALUE (industry false belief) — in BV
-        // We express this as a standalone bv-eq-expr with the result forced via
-        // a conjunction. To stay same-sort, we assert: bv_tree == #x7fffffff
-        // by building an int32.eq-bv-expr where the bv_tree IS #x7fffffff.
-        // Actually, the cleaner discrimination test: compile the bv atom with
-        // MIN_VALUE arg, run z3, confirm SAT. Then assert it equals MAX_VALUE.
-        // The simplest form: build the full BV formula manually.
-        // int32.eq-bv-expr(call:abs(-2147483648), bv32.ite(...)) evaluates to
-        // (= call:abs(#x80000000) (ite (bvslt #x80000000 #x00000000) (bvneg #x80000000) #x80000000))
-        // We want to additionally assert call:abs(#x80000000) == #x7fffffff.
-        // Because the BV atom itself is SAT (as shown above), the contradiction
-        // comes from asserting BOTH:
-        //   (= f(#x80000000) (ite (bvslt ...) (bvneg #x80000000) #x80000000))  [= #x80000000]
-        //   (= f(#x80000000) #x7fffffff)
-        // which forces #x80000000 == #x7fffffff — UNSAT.
-        let claim_wrong = serde_json::json!({
-            "kind": "atomic",
-            "name": "int32.eq-bv-expr",
-            "args": [
-                bv_subject,
-                // BV tree that always evaluates to MAX_VALUE (#x7fffffff):
-                // just a const 2147483647 treated as BV
-                {"kind": "const", "value": 2147483647i64, "sort": {"kind": "primitive", "name": "Int"}}
-            ]
-        });
-        let and_both = serde_json::json!({
+        let inv = serde_json::json!({
             "kind": "and",
             "operands": [
-                abs_bv_atom(-2147483648),
-                claim_wrong
+                abs_eq_atom(-2147483648, 2147483647),
+                abs_bv_atom(-2147483648)
             ]
         });
-        let parts = compile_asserted_to_parts(&and_both).expect("compile");
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
+        // Both BV literals must appear (the false claim #x7fffffff and the
+        // walked-body subject #x80000000).
+        assert!(
+            script.contains("#x7fffffff") && script.contains("#x80000000"),
+            "both BV literals must appear (false-claim MAX + subject MIN):\n{script}"
+        );
         let out = run_z3(&z3, &script);
         assert_eq!(
             out.trim(),
             "unsat",
-            "abs(MIN_VALUE) BV tree == #x80000000 ∧ #x7fffffff must be UNSAT;\
+            "=(abs(MIN),MAX) ∧ universe must be UNSAT (industry belief refuted by walked body);\
              \ngot: {out}\nscript:\n{script}"
         );
     }
@@ -1544,6 +1534,102 @@ mod tests {
         assert!(
             script.contains("Int) Int"),
             "call:abs must be declared with Int sort in the legacy regime:\n{script}"
+        );
+    }
+
+    #[test]
+    fn bv32_contagion_does_not_trip_b7_mixed_sort_stop() {
+        // GUARD: the marquee conjunction — Int sworn equality + bv32 universe
+        // row over the SAME call:abs term — must NOT be flagged as a B7
+        // mixed-sort conflict. bv32+Int-equality-on-same-term is the SAME term
+        // promoted to bv32, not a String-vs-Int conflict. It must compile.
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                abs_eq_atom(-2147483648, -2147483648),
+                abs_bv_atom(-2147483648)
+            ]
+        });
+        // compile_asserted_to_parts runs check_mixed_sort_conjunction first;
+        // it must NOT return Err.
+        let result = compile_asserted_to_parts(&inv);
+        assert!(
+            result.is_ok(),
+            "bv32 universe + Int sworn equality on same term must compile (no B7 STOP); \
+             got: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn genuine_string_vs_int_conflict_still_stops_b7() {
+        // DISCRIMINATION twin: a GENUINE String-vs-Int conflict on the same
+        // ctor (String literal in one row, Int literal in another) must STILL
+        // trip the B7 mixed-sort STOP. The bv32 routing change must not weaken
+        // this. No bv32 atom here — pure String-vs-Int.
+        let call = serde_json::json!({
+            "kind": "ctor",
+            "name": "call:f",
+            "args": [{"kind": "const", "value": 1, "sort": {"kind": "primitive", "name": "Int"}}]
+        });
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                {"kind": "atomic", "name": "=", "args": [
+                    call.clone(),
+                    {"kind": "const", "value": "x", "sort": {"kind": "primitive", "name": "String"}}
+                ]},
+                {"kind": "atomic", "name": "=", "args": [
+                    call,
+                    {"kind": "const", "value": 5, "sort": {"kind": "primitive", "name": "Int"}}
+                ]}
+            ]
+        });
+        let result = compile_asserted_to_parts(&inv);
+        assert!(
+            result.is_err(),
+            "genuine String-vs-Int conflict must still trip B7 STOP, but compiled cleanly"
+        );
+        let msg = format!("{:?}", result.err());
+        assert!(
+            msg.contains("mixed-sort") && msg.contains("String vs Int"),
+            "B7 error must name the String-vs-Int conflict, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn g1_string_regime_unchanged_without_bv32_atom() {
+        // GUARD: a G1 string conjunction (universe + sworn String equality) with
+        // NO bv32 atom present must be byte-for-byte unchanged — the contagion
+        // pre-pass must be a no-op when there are no bv32 subjects.
+        let call = serde_json::json!({
+            "kind": "ctor",
+            "name": "c:callresult_enc_a1",
+            "args": [{"kind": "const", "value": "foo", "sort": {"kind": "primitive", "name": "String"}}]
+        });
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                {"kind": "atomic", "name": "str.chars-in-set", "args": [
+                    call.clone(),
+                    {"kind": "const", "value": "Zmo9v", "sort": {"kind": "primitive", "name": "String"}}
+                ]},
+                {"kind": "atomic", "name": "=", "args": [
+                    call,
+                    {"kind": "const", "value": "Zm9v", "sort": {"kind": "primitive", "name": "String"}}
+                ]}
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        // Must stay in string theory: no BV sort, no int32.eq-const promotion.
+        assert!(
+            !script.contains("BitVec") && !script.contains("int32.eq-const"),
+            "G1 string regime must be untouched by bv32 contagion:\n{script}"
+        );
+        assert!(
+            script.contains("str.in_re") && script.contains("\"Zm9v\""),
+            "string-theory lowering must be intact:\n{script}"
         );
     }
 }

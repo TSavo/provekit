@@ -400,7 +400,14 @@ pub(crate) fn routes_to_bv32_theory(name: &str) -> bool {
 }
 
 fn is_bv32_atomic_predicate(name: &str) -> bool {
-    matches!(name, "int32.eq-bv-expr" | "int32.in-range")
+    // `int32.eq-const` is the synthetic atom produced by the bv32-contagion
+    // pre-pass: a sibling sworn equality `=(call:abs, IntConst)` promoted to
+    // the bv32 sort because its subject also appears in an `int32.eq-bv-expr`
+    // universe atom. See `apply_bv32_contagion` in generated.rs.
+    matches!(
+        name,
+        "int32.eq-bv-expr" | "int32.in-range" | "int32.eq-const"
+    )
 }
 
 fn is_string_theory_atomic_predicate(name: &str) -> bool {

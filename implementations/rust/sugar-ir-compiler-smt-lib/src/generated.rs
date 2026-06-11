@@ -560,13 +560,37 @@ fn collect_bv32_vars(term: &Term, out: &mut Vec<String>) {
     }
 }
 
-/// G2: `int32.eq-bv-expr` atom emitter.
+/// Render a subject ctor as a BV32 application: `(|call:abs| #x80000000)`.
+/// Every ctor arg must be an integer const (rendered as a BV32 hex literal).
+fn render_bv32_subject(subject: &Term) -> Option<String> {
+    let (subj_name, subj_args) = match subject {
+        Term::Ctor { name, args } => (name.as_str(), args.as_slice()),
+        _ => return None,
+    };
+    let subj_bv_args: Vec<String> = subj_args
+        .iter()
+        .map(|a| match a {
+            Term::Const { value, .. } => value.as_i64().map(i32_to_bv32_hex),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if subj_bv_args.is_empty() {
+        Some(smt_quote(subj_name).to_string())
+    } else {
+        Some(format!("({} {})", smt_quote(subj_name), subj_bv_args.join(" ")))
+    }
+}
+
+/// G2: BV32-theory atom emitter — handles both bv32 atom shapes.
 ///
-/// `args[0]` = subject ctor (`call:abs(i:-2147483648)`)
-/// `args[1]` = BV expression tree (`bv32.ite(bv32.slt(a, 0), bv32.neg(a), a)`)
+/// `int32.eq-bv-expr(subject_ctor, bv_tree)`:
+///   `args[0]` = subject ctor (`call:abs(i:-2147483648)`)
+///   `args[1]` = BV expression tree (`bv32.ite(bv32.slt(a, 0), bv32.neg(a), a)`)
+///   Builds substitution param_name[i] → BV32 hex of subject.args[i];
+///   renders `(= subject_bv bv_expr)`.
 ///
-/// Builds substitution: param_name[i] → BV32 hex of subject.args[i].
-/// Renders: `(= subject_bv bv_expr)`
+/// `int32.eq-const(subject_ctor, IntConst)` (synthetic, from bv32 contagion):
+///   the sworn sibling equality promoted to bv32; renders `(= subject_bv hex)`.
 fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
     if !crate::literal_encoding::routes_to_bv32_theory(name) {
         return None;
@@ -575,8 +599,8 @@ fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
         let subject = &args[0];
         let bv_tree = &args[1];
         // subject must be a ctor
-        let (subj_name, subj_args) = match subject {
-            Term::Ctor { name, args } => (name.as_str(), args.as_slice()),
+        let subj_args = match subject {
+            Term::Ctor { args, .. } => args.as_slice(),
             _ => return None,
         };
         // Collect var names from the BV tree in DFS order — these are the
@@ -601,22 +625,20 @@ fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
             };
             subst.insert(vname.clone(), bv_lit);
         }
-        // Render subject as a BV32 application: (|call:abs| #x80000000)
-        let subj_bv_args: Vec<String> = subj_args
-            .iter()
-            .map(|a| match a {
-                Term::Const { value, .. } => value.as_i64().map(i32_to_bv32_hex),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let subj_rendered = if subj_bv_args.is_empty() {
-            smt_quote(subj_name).to_string()
-        } else {
-            format!("({} {})", smt_quote(subj_name), subj_bv_args.join(" "))
-        };
+        let subj_rendered = render_bv32_subject(subject)?;
         // Render the BV expression tree
         let bv_rendered = emit_bv32_term(bv_tree, &subst)?;
         return Some(format!("(= {} {})", subj_rendered, bv_rendered));
+    }
+    // Synthetic sibling equality promoted by bv32 contagion.
+    if name == "int32.eq-const" && args.len() == 2 {
+        let subject = &args[0];
+        let lit = match &args[1] {
+            Term::Const { value, .. } => value.as_i64().map(i32_to_bv32_hex)?,
+            _ => return None,
+        };
+        let subj_rendered = render_bv32_subject(subject)?;
+        return Some(format!("(= {} {})", subj_rendered, lit));
     }
     None
 }
@@ -1395,7 +1417,158 @@ fn collect_predicate_decls_formula(formula: &Formula, out: &mut BTreeMap<String,
     }
 }
 
+// ── G2: bv32 contagion (mirror of G1's string-theory routing) ─────────────
+//
+// G1 made `=(call, "literal")` route to string theory because the STRING CONST
+// on the RHS self-identifies the atom as string-sorted. For bv32 the sibling
+// sworn equality is `=(call:abs, IntConst)` — an Int const that looks identical
+// to a legacy Int equality. The ONLY signal that it must live in the bv32 sort
+// is that the SAME ctor subject appears inside an `int32.eq-bv-expr` universe
+// atom elsewhere in the conjunction.
+//
+// So bv32 is CONTAGIOUS PER-TERM: we run a formula-level pre-pass that (1)
+// collects every ctor subject appearing as args[0] of an `int32.eq-bv-expr`
+// atom, then (2) rewrites every sibling `=(subject, IntConst)` over those
+// subjects into a synthetic `int32.eq-const` atom carrying `[subject, IntConst]`.
+// The emitter renders `int32.eq-const` as `(= |call:abs| <i32_to_bv32_hex>)`,
+// and the subject ctor is declared ONCE as `(_ BitVec 32)`. No mixed-sort STOP:
+// bv32-universe + Int-equality on the SAME term is not a conflict — it is the
+// same term promoted to bv32. The genuine String-vs-Int STOP (B7) is untouched.
+
+/// The synthetic atom name a promoted bv32 sibling equality carries.
+const BV32_EQ_CONST: &str = "int32.eq-const";
+
+/// Collect the set of ctor subjects (full Term::Ctor) that appear as args[0]
+/// of any `int32.eq-bv-expr` atom in the formula.
+fn collect_bv32_subjects(formula: &Formula, out: &mut Vec<Term>) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            if name == "int32.eq-bv-expr" && !args.is_empty() {
+                if let Term::Ctor { .. } = &args[0] {
+                    if !out.contains(&args[0]) {
+                        out.push(args[0].clone());
+                    }
+                }
+            }
+        }
+        Formula::And { operands }
+        | Formula::Or { operands }
+        | Formula::Not { operands }
+        | Formula::Implies { operands } => {
+            for o in operands {
+                collect_bv32_subjects(o, out);
+            }
+        }
+        Formula::Forall { body, .. }
+        | Formula::Exists { body, .. }
+        | Formula::Choice { body, .. } => collect_bv32_subjects(body, out),
+        Formula::DivergenceBetween { source, target } => {
+            collect_bv32_subjects(source, out);
+            collect_bv32_subjects(target, out);
+        }
+        Formula::Substitute { .. } | Formula::Apply { .. } => {}
+    }
+}
+
+/// True iff the term is an Int const (integer-valued).
+fn is_int_const(t: &Term) -> bool {
+    matches!(
+        t,
+        Term::Const { value, .. } if value.as_i64().is_some()
+    )
+}
+
+/// Rewrite qualifying `=(subject, IntConst)` atoms into `int32.eq-const`
+/// atoms when `subject` is a known bv32 subject. Recurses structurally.
+fn promote_bv32_siblings_formula(formula: &Formula, subjects: &[Term]) -> Formula {
+    match formula {
+        Formula::Atomic { name, args } => {
+            if name == "=" && args.len() == 2 {
+                // Identify (subject, IntConst) in either order.
+                let promote = |subj: &Term, lit: &Term| -> Option<Formula> {
+                    if subjects.contains(subj) && is_int_const(lit) {
+                        Some(Formula::Atomic {
+                            name: BV32_EQ_CONST.to_string(),
+                            args: vec![subj.clone(), lit.clone()],
+                        })
+                    } else {
+                        None
+                    }
+                };
+                if let Some(f) = promote(&args[0], &args[1]) {
+                    return f;
+                }
+                if let Some(f) = promote(&args[1], &args[0]) {
+                    return f;
+                }
+            }
+            formula.clone()
+        }
+        Formula::And { operands } => Formula::And {
+            operands: operands
+                .iter()
+                .map(|o| promote_bv32_siblings_formula(o, subjects))
+                .collect(),
+        },
+        Formula::Or { operands } => Formula::Or {
+            operands: operands
+                .iter()
+                .map(|o| promote_bv32_siblings_formula(o, subjects))
+                .collect(),
+        },
+        Formula::Not { operands } => Formula::Not {
+            operands: operands
+                .iter()
+                .map(|o| promote_bv32_siblings_formula(o, subjects))
+                .collect(),
+        },
+        Formula::Implies { operands } => Formula::Implies {
+            operands: operands
+                .iter()
+                .map(|o| promote_bv32_siblings_formula(o, subjects))
+                .collect(),
+        },
+        Formula::Forall { name, sort, body } => Formula::Forall {
+            name: name.clone(),
+            sort: sort.clone(),
+            body: Box::new(promote_bv32_siblings_formula(body, subjects)),
+        },
+        Formula::Exists { name, sort, body } => Formula::Exists {
+            name: name.clone(),
+            sort: sort.clone(),
+            body: Box::new(promote_bv32_siblings_formula(body, subjects)),
+        },
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => Formula::Choice {
+            var_name: var_name.clone(),
+            sort: sort.clone(),
+            body: Box::new(promote_bv32_siblings_formula(body, subjects)),
+        },
+        Formula::DivergenceBetween { source, target } => Formula::DivergenceBetween {
+            source: Box::new(promote_bv32_siblings_formula(source, subjects)),
+            target: Box::new(promote_bv32_siblings_formula(target, subjects)),
+        },
+        Formula::Substitute { .. } | Formula::Apply { .. } => formula.clone(),
+    }
+}
+
+/// Top-level bv32 contagion pre-pass: collect bv32 subjects, then promote the
+/// sibling Int equalities over them. Returns the formula unchanged if there are
+/// no bv32 atoms (the common case — byte-for-byte identical output).
+pub(crate) fn apply_bv32_contagion(formula: &Formula) -> Formula {
+    let mut subjects: Vec<Term> = Vec::new();
+    collect_bv32_subjects(formula, &mut subjects);
+    if subjects.is_empty() {
+        return formula.clone();
+    }
+    promote_bv32_siblings_formula(formula, &subjects)
+}
+
 pub fn compile_formula(formula: &Formula) -> CompiledFormula {
+    let formula = &apply_bv32_contagion(formula);
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
     collect_free_vars_formula(formula, &mut free_vars, &bound);
@@ -1522,6 +1695,7 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
 }
 
 pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
+    let formula = &apply_bv32_contagion(formula);
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
     collect_free_vars_formula(formula, &mut free_vars, &bound);

@@ -81,7 +81,7 @@ run_suite() {
   echo "── suite: $suite (expect consistency: $expect_consistency) ──"
 
   echo "-- mint --"
-  ( cd "$dir" && "$SUGAR" mint . 2>/dev/null ) || { echo "FAIL[$suite]: sugar mint failed"; exit 1; }
+  ( cd "$dir" && "$SUGAR" mint --out . ) >/dev/null 2>&1 || { echo "FAIL[$suite]: sugar mint failed"; exit 1; }
 
   local have_proof=0
   for p in "$dir"/blake3-512:*.proof; do [ -e "$p" ] && have_proof=1; done
