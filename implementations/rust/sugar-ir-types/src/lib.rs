@@ -5945,6 +5945,31 @@ impl LanguageTransitionMemento {
     }
 }
 
+/// The deterministic bytes a witness signature attests: the discharge CID
+/// PLUS the observation timestamp. The CID is the THEOREM-mode convergence
+/// handle (byte-stable across honest re-derivation); `observed_at` is a
+/// TESTIMONY-mode IO event that is NOT part of the convergence hash but MUST
+/// still be sworn so it cannot be peeled off or forged. Signing `{cid,
+/// observed_at}` (JCS-canonical) seals the postmark to the discharge: tamper
+/// the timestamp and the signature no longer verifies, while two honest
+/// provers on the same obligation land on the SAME CID regardless of WHEN
+/// each observed it.
+///
+/// Both the mint path (`sugar-cli` `cmd_verify::mint_verification_witness`)
+/// and the verify path (`sugar-cli` `witness_verify`) reconstruct these exact
+/// bytes; keep this the single source of truth for the payload shape.
+pub fn witness_attestation_payload(cid: &str, observed_at: &str) -> Vec<u8> {
+    let value = serde_json::json!({
+        "cid": cid,
+        "observed_at": observed_at,
+    });
+    // Reuse the same JCS canonicalization the migration CID preimage uses, so
+    // the attested bytes are deterministic and key-order independent.
+    let canonical = migration_json_to_canonical(&value)
+        .expect("witness attestation payload is a string-keyed object of strings");
+    sugar_canonicalizer::encode_jcs(&canonical).into_bytes()
+}
+
 impl WitnessMemento {
     pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
         // The CID addresses WHAT is attested -- the observation (subject,
@@ -5954,7 +5979,22 @@ impl WitnessMemento {
         // observation attested by a different key is the SAME CID (same WHAT),
         // a different attestation. (Excluding only "cid" was a bug: it baked
         // the HOW into the WHAT and made a self-consistent CID impossible.)
-        migration_cid_without_keys(self, &["cid", "signed_by", "signature"])
+        //
+        // `observed_at` is in the SAME class as signed_by/signature: a
+        // TESTIMONY-mode IO event (a clock read), not part of the DISCHARGE.
+        // Baking it into the preimage made the CID a clock-address -- two
+        // honest provers discharging the SAME obligation produced DIFFERENT
+        // witness CIDs, so the supply-chain pin never rendezvoused (#2022
+        // class). It is excluded here and instead sworn OUTSIDE the CID via
+        // `witness_attestation_payload` (signature covers {cid, observed_at}).
+        migration_cid_without_keys(self, &["cid", "signed_by", "signature", "observed_at"])
+    }
+
+    /// The exact bytes this witness's signature attests: {cid, observed_at}
+    /// JCS-canonical. The discharge CID converges; the postmark rides sealed
+    /// alongside it (see [`witness_attestation_payload`]).
+    pub fn attestation_payload(&self) -> Vec<u8> {
+        witness_attestation_payload(&self.cid, &self.observed_at)
     }
 
     pub fn validate(&self) -> Result<(), MigrationReceiptError> {
@@ -6319,5 +6359,118 @@ mod platform_semantic_envelope_tests {
             tag_op1.cid, tag_op2.cid,
             "different op_cids must yield distinct content-CIDs"
         );
+    }
+}
+
+#[cfg(test)]
+mod witness_cid_stability_tests {
+    use super::*;
+
+    fn cid(ch: char) -> String {
+        format!("blake3-512:{}", ch.to_string().repeat(128))
+    }
+
+    /// Build a witness for a fixed DISCHARGE (obligation/solver/signer) but a
+    /// caller-chosen `observed_at`. The CID is left blank; the test recomputes
+    /// it. This is the shape the verify-mint path produces.
+    fn witness_for_discharge(observed_at: &str, obligation: char) -> WitnessMemento {
+        WitnessMemento {
+            kind: "witness".to_string(),
+            schema_version: "1".to_string(),
+            witness_for: cid('p'),
+            subject: cid('s'),
+            fixture_state_cid: cid(obligation),
+            observed_at: observed_at.to_string(),
+            sample_count: 1,
+            measurements: serde_json::json!({
+                "solver": "z3@4.13",
+                "obligation_cid": cid(obligation),
+            }),
+            outcome: "pass".to_string(),
+            signed_by: Some("ed25519:dev".to_string()),
+            signature: None,
+            cid: String::new(),
+        }
+    }
+
+    // #2022-class: a witness CID is a content-address of the DISCHARGE, not a
+    // clock-address. Two honest provers discharging the SAME obligation at
+    // DIFFERENT wall-clock times MUST land on the SAME witness CID, or the
+    // supply-chain pin in a proof receipt never rendezvous across honest
+    // re-derivation. RED before the fix (observed_at was in the preimage).
+    #[test]
+    fn witness_cid_is_stable_across_observed_at() {
+        let early = witness_for_discharge("1970-01-01T00:00:00.000Z", 'a');
+        let late = witness_for_discharge("2099-12-31T23:59:59.999Z", 'a');
+
+        let cid_early = early.recompute_cid().expect("recompute early");
+        let cid_late = late.recompute_cid().expect("recompute late");
+
+        assert_eq!(
+            cid_early, cid_late,
+            "same discharge, different observed_at -> witness CID MUST be \
+             identical (the CID addresses the discharge, not the clock)"
+        );
+    }
+
+    // Discrimination: the CID still addresses the discharge content. A
+    // DIFFERENT obligation (different fixture_state_cid + obligation_cid) must
+    // yield a DIFFERENT CID -- excluding observed_at did NOT over-exclude the
+    // discharge identity.
+    #[test]
+    fn witness_cid_distinguishes_distinct_discharges() {
+        let a = witness_for_discharge("2026-06-11T12:00:00.000Z", 'a');
+        let b = witness_for_discharge("2026-06-11T12:00:00.000Z", 'b');
+
+        let cid_a = a.recompute_cid().expect("recompute a");
+        let cid_b = b.recompute_cid().expect("recompute b");
+
+        assert_ne!(
+            cid_a, cid_b,
+            "distinct discharges (different obligation) must yield distinct \
+             witness CIDs"
+        );
+    }
+
+    // The postmark is SEALED, not free-floating: the bytes the signature
+    // attests bind BOTH the (convergent) CID and the (testimony) observed_at.
+    // Tampering observed_at changes the attested payload, so a signature over
+    // the original payload cannot verify against the tampered one. (The
+    // signature-level discrimination is exercised end-to-end in the sugar-cli
+    // witness_verify tests; here we prove the payload binds the timestamp.)
+    #[test]
+    fn attestation_payload_binds_observed_at() {
+        let original = witness_for_discharge("2026-06-11T12:00:00.000Z", 'a');
+        let mut tampered = original.clone();
+        tampered.observed_at = "2026-06-11T13:00:00.000Z".to_string();
+
+        // Same discharge -> same CID (the seal rides on a stable address)...
+        assert_eq!(
+            original.recompute_cid().expect("orig cid"),
+            tampered.recompute_cid().expect("tampered cid"),
+            "tampering only observed_at must NOT move the CID"
+        );
+
+        // ...but the attested bytes DIFFER, so the postmark cannot be peeled.
+        let orig_cid = original.recompute_cid().expect("orig cid");
+        let tampered_cid = tampered.recompute_cid().expect("tampered cid");
+        let orig_payload = witness_attestation_payload(&orig_cid, &original.observed_at);
+        let tampered_payload = witness_attestation_payload(&tampered_cid, &tampered.observed_at);
+
+        assert_ne!(
+            orig_payload, tampered_payload,
+            "the signed {{cid, observed_at}} payload MUST change when observed_at \
+             is tampered (postmark sealed under the signature)"
+        );
+    }
+
+    // The attestation payload is deterministic and key-order independent:
+    // recomputing it from the same (cid, observed_at) yields identical bytes,
+    // so the mint and verify sides always agree.
+    #[test]
+    fn attestation_payload_is_deterministic() {
+        let p1 = witness_attestation_payload(&cid('a'), "2026-06-11T12:00:00.000Z");
+        let p2 = witness_attestation_payload(&cid('a'), "2026-06-11T12:00:00.000Z");
+        assert_eq!(p1, p2, "attestation payload must be deterministic");
     }
 }
