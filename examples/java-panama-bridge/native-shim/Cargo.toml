@@ -1,0 +1,11 @@
+[package]
+name = "base64-panama-demo"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+base64 = { path = "../work/base64-0.22.1" }

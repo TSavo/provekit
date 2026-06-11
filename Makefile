@@ -324,7 +324,8 @@ SHOWCASE_RUNS = \
 	examples/java-codec-universe/run.sh \
 	examples/java-abs-universe/run.sh \
 	examples/java-bound-federation/run.sh \
-	examples/java-abs-bound/run.sh
+	examples/java-abs-bound/run.sh \
+	examples/java-panama-bridge/run.sh
 
 .PHONY: test-showcases
 test-showcases:

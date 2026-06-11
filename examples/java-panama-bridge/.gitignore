@@ -1,0 +1,13 @@
+work/
+*.proof
+.prove.json
+.verify.json
+.verify_recompute.json
+java-panama-ffm.call-edges.json
+**/.sugar/imports/
+**/.sugar/runs/
+**/.sugar/witnesses/
+**/.sugar/lift/*/manifest.toml
+**/target/
+**/Cargo.lock
+**/src/test/java/demo/PanamaConsumerTest.java
