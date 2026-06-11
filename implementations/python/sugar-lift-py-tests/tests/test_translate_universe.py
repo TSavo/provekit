@@ -720,3 +720,74 @@ def test_table_loop_vendor_vector_outside_union_refuses(vendor_path):
     universe, refusal = translate_universe_for_callee("vendloop_gate.hexify")
     assert universe is None
     assert refusal is not None and "sample-gate" in refusal.reason
+
+
+# --- the pre-conjoined path: multi-assert bodies carry universes too ---
+
+
+def test_preconjoined_path_carries_universes(vendor_path):
+    # Two asserts in ONE test body route through the characterization
+    # (pre-conjoined) classifier, which previously emitted no universes.
+    vendor_path("vendpre_l2", VENDOR_TRANSLATE)
+    out = _lift(
+        """
+        import vendpre_l2
+
+        def test_urlsafe_twice():
+            assert vendpre_l2.urlsafe("abc") == "abc"
+            assert vendpre_l2.urlsafe("xyz") == "xyz"
+        """
+    )
+    atoms = _universe_atoms_anywhere(out)
+    assert len(atoms) == 2  # one universe per distinct subject
+
+
+def _universe_atoms_anywhere(out):
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    atoms = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        stack = [d.inv]
+        while stack:
+            f = stack.pop()
+            if getattr(f, "kind", None) in ("and", "or", "not"):
+                stack.extend(f.operands)
+            elif getattr(f, "name", None) in (
+                "str.chars-not-in-set",
+                "str.chars-in-set",
+            ):
+                atoms.append(f)
+    return atoms
+
+
+def test_preconjoined_guard_universe_injects(vendor_path):
+    from sugar_lift_py_tests.translate_universe import guard_universe_for_callee
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path("vendpre_guard", VENDOR_GUARDED)
+    out = _lift(
+        """
+        import vendpre_guard
+
+        def test_scale_twice():
+            assert vendpre_guard.scale(-3, 2) == -6
+            assert vendpre_guard.scale(4, 2) == 8
+        """
+    )
+    nots = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        stack = [d.inv]
+        while stack:
+            f = stack.pop()
+            if getattr(f, "kind", None) == "not":
+                nots.append(f)
+            elif getattr(f, "kind", None) in ("and", "or"):
+                stack.extend(f.operands)
+    # two callsites x two guard clauses, MINUS the shared-factor dedupe:
+    # not(-3 < 0), not(4 < 0), and ONE not(2 = 0) (identical for both
+    # callsites; idempotent conjuncts dedupe).
+    assert len(nots) == 3

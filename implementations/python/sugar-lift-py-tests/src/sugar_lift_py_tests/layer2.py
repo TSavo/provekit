@@ -2653,9 +2653,12 @@ def _classify_characterization(
 
     atoms: List[Formula] = []
     skipped: List[str] = []
+    lifted_pairs: List[Tuple[ast.stmt, Formula]] = []
     for i, stmt in enumerate(asserts):
         try:
-            atoms.append(_lift_assertion_stmt(stmt))
+            atom = _lift_assertion_stmt(stmt)
+            atoms.append(atom)
+            lifted_pairs.append((stmt, atom))
         except ValueError as e:
             skipped.append(f"#{i}: {e}")
 
@@ -2673,6 +2676,29 @@ def _classify_characterization(
                         f"layer2 characterization: only {len(atoms)} of {len(asserts)} asserts were liftable; releasing to layer 0{skip_detail}")
         )
         return
+
+    # UNIVERSE INJECTION (the pre-conjoined path): each single-call assert's
+    # subject gets its callee's walked universes as extra conjuncts in the
+    # SAME pre-conjoined inv -- one shared implementation with the
+    # value-scope path, same contact rule. Injected AFTER the liftability
+    # check so universes never rescue an otherwise-released test.
+    universe_extras: List[Formula] = []
+    for stmt, atom in lifted_pairs:
+        calls = _collect_assertion_calls(stmt)
+        if len(calls) != 1:
+            continue  # multi-call asserts keep point semantics (named v1 bound)
+        origin = _call_origin_from_expr(calls[0])
+        if origin is None:
+            continue
+        subject = _assertion_call_subject(atom)
+        if subject is None:
+            continue
+        for conjunct in _universe_conjuncts(
+            origin.callee, subject, out, source_path, test_name
+        ):
+            if conjunct not in atoms and conjunct not in universe_extras:
+                universe_extras.append(conjunct)
+    atoms = atoms + universe_extras
 
     inv = atoms[0] if len(atoms) == 1 else and_(atoms)
     out.decls.append(ContractDecl(name=test_name, inv=inv))
@@ -3198,117 +3224,98 @@ def _collect_value_scope_assertion_facts(
             # the origin carries a callresult ctor, and a universe over a term
             # the assertion never mentions is vacuously SAT (the disjointness
             # failure). Same-statement extraction makes contact structural.
+            # UNIVERSE CONJUNCTS (one shared implementation for every lift
+            # path -- see _universe_conjuncts for the contact rule and the
+            # per-family doctrine). Appended INTO this base's conjoined
+            # ::assertion: the verifier conjoins by NAME, so a sibling decl
+            # would verify alone and be vacuously consistent.
             subject_term = _assertion_call_subject(assertion) or origin.euf_term
             if subject_term is not None:
-                universe, walk_refusal = translate_universe_for_callee(
-                    origin.callee
-                )
-                if walk_refusal is not None:
-                    out.warnings.append(
-                        LiftWarning(
-                            source_path=source_path,
-                            item_name=f"{test_name}::translate-universe",
-                            reason=(
-                                f"{walk_refusal.callee}: {walk_refusal.reason}"
-                            ),
-                        )
-                    )
-                elif universe is not None:
-                    if universe.kind == "no-suffix-chars":
-                        # rstrip totality: the output never ENDS with any of
-                        # the stripped chars -- one negated suffix-of per char.
-                        universe_atoms = [
-                            not_(
-                                atomic(
-                                    "suffix-of",
-                                    [str_const(ch), subject_term],
-                                )
-                            )
-                            for ch in universe.forbidden
-                        ]
-                    elif universe.kind == "chars-in-set":
-                        # table-loop union: every output char is in the
-                        # walked tables' char union -- the positive
-                        # membership atom (substrate-supported since the
-                        # Java weak tier).
-                        universe_atoms = [
-                            atomic(
-                                "str.chars-in-set",
-                                [subject_term, str_const(universe.forbidden)],
-                            )
-                        ]
-                    elif universe.kind == "member-of-values":
-                        # subscript membership: every returned value IS an
-                        # element of the pinned tuple -- one disjunction of
-                        # string-routed equalities over the same subject.
-                        universe_atoms = [
-                            or_(
-                                [
-                                    eq(subject_term, str_const(v))
-                                    for v in universe.values
-                                ]
-                            )
-                        ]
-                    else:
-                        universe_atoms = [
-                            atomic(
-                                "str.chars-not-in-set",
-                                [subject_term, str_const(universe.forbidden)],
-                            )
-                        ]
-                    for universe_atom in universe_atoms:
-                        if universe_atom not in assertion_atoms_by_base[base]:
-                            assertion_atoms_by_base[base].append(universe_atom)
-            # GUARD-THEN-RAISE UNIVERSE (census family #1): a sworn value
-            # from callee(<concrete args>) implies every walked leading
-            # guard did NOT fire -- one negated comparison per clause,
-            # instantiated at this callsite's own argument terms. Assert a
-            # value for a guarded-out input and the conjunction is UNSAT:
-            # you swore a return from a call the vendor's source says
-            # raises.
-            if subject_term is not None and isinstance(subject_term, _Ctor):
-                guards, guard_refusal = guard_universe_for_callee(
-                    origin.callee
-                )
-                if guard_refusal is not None:
-                    out.warnings.append(
-                        LiftWarning(
-                            source_path=source_path,
-                            item_name=f"{test_name}::guard-universe",
-                            reason=(
-                                f"{guard_refusal.callee}: {guard_refusal.reason}"
-                            ),
-                        )
-                    )
-                elif guards is not None:
-                    call_args = (
-                        subject_term.args[1:]
-                        if subject_term.name.startswith("callval_")
-                        else subject_term.args
-                    )
-                    cmp_ctor = {
-                        "<": lt,
-                        "≤": lte,
-                        ">": gt,
-                        "≥": gte,
-                        "=": eq,
-                        "≠": ne,
-                    }
-                    for clause in guards.clauses:
-                        if clause.param_index >= len(call_args):
-                            continue
-                        arg_term = call_args[clause.param_index]
-                        lit_term = (
-                            num(clause.literal)
-                            if isinstance(clause.literal, int)
-                            else str_const(clause.literal)
-                        )
-                        guard_atom = not_(
-                            cmp_ctor[clause.op](arg_term, lit_term)
-                        )
-                        if guard_atom not in assertion_atoms_by_base[base]:
-                            assertion_atoms_by_base[base].append(guard_atom)
+                for conjunct in _universe_conjuncts(
+                    origin.callee, subject_term, out, source_path, test_name
+                ):
+                    if conjunct not in assertion_atoms_by_base[base]:
+                        assertion_atoms_by_base[base].append(conjunct)
     return made
+
+
+def _universe_conjuncts(
+    callee: str,
+    subject_term: Term,
+    out: Layer2Output,
+    source_path: str,
+    test_name: str,
+) -> List[Formula]:
+    """Every walked universe for ``callee``, instantiated at
+    ``subject_term`` -- the call-shaped side of the assertion's OWN equality
+    atom (the contact rule: a universe over a term the assertion never
+    mentions is vacuously SAT). Families: translate (chars-not-in-set),
+    rstrip (negated suffix-of per char), table-loop (positive chars-in-set),
+    table-subscript (membership disjunction), and guard-then-raise (negated
+    comparisons at the callsite's concrete args). Refused walks surface as
+    loud warnings; non-candidates contribute nothing."""
+    conjuncts: List[Formula] = []
+    universe, walk_refusal = translate_universe_for_callee(callee)
+    if walk_refusal is not None:
+        out.warnings.append(
+            LiftWarning(
+                source_path=source_path,
+                item_name=f"{test_name}::translate-universe",
+                reason=f"{walk_refusal.callee}: {walk_refusal.reason}",
+            )
+        )
+    elif universe is not None:
+        if universe.kind == "no-suffix-chars":
+            conjuncts.extend(
+                not_(atomic("suffix-of", [str_const(ch), subject_term]))
+                for ch in universe.forbidden
+            )
+        elif universe.kind == "chars-in-set":
+            conjuncts.append(
+                atomic(
+                    "str.chars-in-set",
+                    [subject_term, str_const(universe.forbidden)],
+                )
+            )
+        elif universe.kind == "member-of-values":
+            conjuncts.append(
+                or_([eq(subject_term, str_const(v)) for v in universe.values])
+            )
+        else:
+            conjuncts.append(
+                atomic(
+                    "str.chars-not-in-set",
+                    [subject_term, str_const(universe.forbidden)],
+                )
+            )
+    if isinstance(subject_term, _Ctor):
+        guards, guard_refusal = guard_universe_for_callee(callee)
+        if guard_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::guard-universe",
+                    reason=f"{guard_refusal.callee}: {guard_refusal.reason}",
+                )
+            )
+        elif guards is not None:
+            call_args = (
+                subject_term.args[1:]
+                if subject_term.name.startswith("callval_")
+                else subject_term.args
+            )
+            cmp_ctor = {"<": lt, "≤": lte, ">": gt, "≥": gte, "=": eq, "≠": ne}
+            for clause in guards.clauses:
+                if clause.param_index >= len(call_args):
+                    continue
+                arg_term = call_args[clause.param_index]
+                lit_term = (
+                    num(clause.literal)
+                    if isinstance(clause.literal, int)
+                    else str_const(clause.literal)
+                )
+                conjuncts.append(not_(cmp_ctor[clause.op](arg_term, lit_term)))
+    return conjuncts
 
 
 def _assertion_callsite_context(
