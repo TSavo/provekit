@@ -1569,6 +1569,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde_json",
+ "sugar-canonicalizer",
  "sugar-ir-symbolic",
  "syn",
  "toml",

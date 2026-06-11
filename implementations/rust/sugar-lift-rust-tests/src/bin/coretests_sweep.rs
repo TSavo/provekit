@@ -333,65 +333,152 @@ fn main() {
     }
 
     if let Some(out_path) = json_out {
-        let mut obj = serde_json::Map::new();
-        obj.insert("corpus".into(), corpus.clone().into());
-        obj.insert("files".into(), totals.files.into());
-        obj.insert("parse_ok".into(), totals.parse_ok.into());
-        obj.insert("parse_fail".into(), totals.parse_fail.into());
-        obj.insert("assert_macros".into(), totals.assert_macros.into());
-        obj.insert("discharged".into(), totals.discharged.into());
-        obj.insert("refused".into(), totals.refused.into());
-        obj.insert("unaccounted".into(), unaccounted.into());
-        let reason_obj: serde_json::Map<String, serde_json::Value> = reasons
-            .iter()
-            .map(|(k, v)| (k.clone(), serde_json::Value::from(*v)))
-            .collect();
-        obj.insert("reasons".into(), serde_json::Value::Object(reason_obj));
-        let sample_obj: serde_json::Map<String, serde_json::Value> = reason_samples
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    serde_json::Value::Array(
-                        v.iter()
-                            .map(|s| serde_json::Value::from(s.clone()))
-                            .collect(),
-                    ),
-                )
-            })
-            .collect();
-        obj.insert(
-            "reason_samples".into(),
-            serde_json::Value::Object(sample_obj),
+        let json = build_ledger_json(
+            corpus,
+            &totals,
+            unaccounted,
+            &reasons,
+            &reason_samples,
+            &all_reasons,
+            &rows,
         );
-        obj.insert(
-            "all_reasons".into(),
-            serde_json::Value::Array(
-                all_reasons
-                    .iter()
-                    .map(|s| serde_json::Value::from(s.clone()))
-                    .collect(),
-            ),
-        );
-        let file_arr: Vec<serde_json::Value> = rows
-            .iter()
-            .map(|(rel, asserts, discharged, refused, unacc, ok)| {
-                let mut m = serde_json::Map::new();
-                m.insert("file".into(), rel.clone().into());
-                m.insert("asserts".into(), (*asserts).into());
-                m.insert("discharged".into(), (*discharged).into());
-                m.insert("refused".into(), (*refused).into());
-                m.insert("unaccounted".into(), (*unacc).into());
-                m.insert("parse_ok".into(), (*ok).into());
-                serde_json::Value::Object(m)
-            })
-            .collect();
-        obj.insert("per_file".into(), serde_json::Value::Array(file_arr));
-        let json = serde_json::Value::Object(obj);
+        // The silence gets a CID: content-address the ledger over its JCS
+        // canonical form (recomputable from the file: parse -> JCS -> hash),
+        // so the residual is a pinned object, not a printout.
+        let cid = sugar_canonicalizer::jcs_cid_of_json(&json);
         if let Err(e) = std::fs::write(&out_path, serde_json::to_string_pretty(&json).unwrap()) {
             eprintln!("failed to write {}: {}", out_path, e);
+        } else if let Err(e) = std::fs::write(format!("{out_path}.cid"), &cid) {
+            eprintln!("failed to write {}.cid: {}", out_path, e);
         } else {
             println!("\nwrote ledger json: {}", out_path);
+            println!("ledger cid: {}", cid);
         }
+    }
+}
+
+/// The sweep ledger as a JSON value: the total accounting (every assertion
+/// binned into discharged/refused/unaccounted), the reason histogram, and the
+/// per-file rows. Pure so the shape -- and the CID over it -- is testable.
+#[allow(clippy::too_many_arguments)]
+fn build_ledger_json(
+    corpus: &str,
+    totals: &Totals,
+    unaccounted: i64,
+    reasons: &BTreeMap<String, usize>,
+    reason_samples: &BTreeMap<String, Vec<String>>,
+    all_reasons: &[String],
+    rows: &[(String, usize, usize, usize, i64, bool)],
+) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    obj.insert("corpus".into(), corpus.into());
+    obj.insert("files".into(), totals.files.into());
+    obj.insert("parse_ok".into(), totals.parse_ok.into());
+    obj.insert("parse_fail".into(), totals.parse_fail.into());
+    obj.insert("assert_macros".into(), totals.assert_macros.into());
+    obj.insert("discharged".into(), totals.discharged.into());
+    obj.insert("refused".into(), totals.refused.into());
+    obj.insert("unaccounted".into(), unaccounted.into());
+    let reason_obj: serde_json::Map<String, serde_json::Value> = reasons
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json::Value::from(*v)))
+        .collect();
+    obj.insert("reasons".into(), serde_json::Value::Object(reason_obj));
+    let sample_obj: serde_json::Map<String, serde_json::Value> = reason_samples
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                serde_json::Value::Array(
+                    v.iter()
+                        .map(|s| serde_json::Value::from(s.clone()))
+                        .collect(),
+                ),
+            )
+        })
+        .collect();
+    obj.insert(
+        "reason_samples".into(),
+        serde_json::Value::Object(sample_obj),
+    );
+    obj.insert(
+        "all_reasons".into(),
+        serde_json::Value::Array(
+            all_reasons
+                .iter()
+                .map(|s| serde_json::Value::from(s.clone()))
+                .collect(),
+        ),
+    );
+    let file_arr: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(rel, asserts, discharged, refused, unacc, ok)| {
+            let mut m = serde_json::Map::new();
+            m.insert("file".into(), rel.clone().into());
+            m.insert("asserts".into(), (*asserts).into());
+            m.insert("discharged".into(), (*discharged).into());
+            m.insert("refused".into(), (*refused).into());
+            m.insert("unaccounted".into(), (*unacc).into());
+            m.insert("parse_ok".into(), (*ok).into());
+            serde_json::Value::Object(m)
+        })
+        .collect();
+    obj.insert("per_file".into(), serde_json::Value::Array(file_arr));
+    serde_json::Value::Object(obj)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> (
+        Totals,
+        BTreeMap<String, usize>,
+        BTreeMap<String, Vec<String>>,
+        Vec<String>,
+        Vec<(String, usize, usize, usize, i64, bool)>,
+    ) {
+        let totals = Totals {
+            files: 2,
+            parse_ok: 2,
+            parse_fail: 0,
+            assert_macros: 5,
+            test_fns_seen: 3,
+            test_fns_lifted: 3,
+            discharged: 3,
+            refused: 2,
+        };
+        let reasons = BTreeMap::from([("closure argument".to_string(), 2usize)]);
+        let samples = BTreeMap::from([(
+            "closure argument".to_string(),
+            vec!["a.rs: closure argument `|x| x`".to_string()],
+        )]);
+        let all = vec!["closure argument `|x| x`".to_string(); 2];
+        let rows = vec![
+            ("a.rs".to_string(), 3, 2, 1, 0i64, true),
+            ("b.rs".to_string(), 2, 1, 1, 0i64, true),
+        ];
+        (totals, reasons, samples, all, rows)
+    }
+
+    #[test]
+    fn ledger_json_is_deterministic_and_carries_the_residual_fields() {
+        let (totals, reasons, samples, all, rows) = fixture();
+        let v1 = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows);
+        let v2 = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows);
+        assert_eq!(v1, v2);
+        // exactly the fields `sugar diff --ledger-*` reads for the residual axis.
+        for field in ["assert_macros", "discharged", "refused", "unaccounted"] {
+            assert!(v1.get(field).and_then(|n| n.as_i64()).is_some(), "{field}");
+        }
+    }
+
+    #[test]
+    fn ledger_cid_is_blake3_512_tagged_and_stable() {
+        let (totals, reasons, samples, all, rows) = fixture();
+        let v = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows);
+        let cid = sugar_canonicalizer::jcs_cid_of_json(&v);
+        assert!(cid.starts_with("blake3-512:"), "{cid}");
+        assert_eq!(cid, sugar_canonicalizer::jcs_cid_of_json(&v));
     }
 }

@@ -17,7 +17,7 @@ fn to_cvalue(v: &Value) -> Arc<CValue> {
             }
         }
         Value::String(s) => CValue::string(s.clone()),
-        Value::Array(arr) => CValue::array(arr.iter().map(|v| to_cvalue(v)).collect()),
+        Value::Array(arr) => CValue::array(arr.iter().map(to_cvalue).collect()),
         Value::Object(obj) => CValue::object(obj.iter().map(|(k, v)| (k.clone(), to_cvalue(v)))),
     }
 }
