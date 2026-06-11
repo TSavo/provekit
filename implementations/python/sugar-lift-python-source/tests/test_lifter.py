@@ -20,6 +20,7 @@ from sugar_lift_py_tests.canonicalizer import jcs_hash, vobj, vstr
 
 from sugar_lift_python_source.canonical import canonical_json_bytes, cid_of_json
 from sugar_lift_python_source.compiler import compile_body_term, compile_ir_document
+from sugar_lift_python_source.ir import int_const, str_const
 from sugar_lift_python_source.lifter import lift_source
 from sugar_lift_python_source.rpc import dispatch, initialize_result
 
@@ -355,7 +356,9 @@ def test_lift_function_emits_source_unit_and_python_ops() -> None:
 
     function_contract = result.ir[1]
     assert function_contract["formals"] == ["x"]
-    assert function_contract["effects"] == [{"kind": "reads", "target": "GLOBAL"}]
+    # GLOBAL = 3 is a single-binding immutable literal: it value-pins, so the
+    # body carries the value itself and no mutable-global read effect remains.
+    assert function_contract["effects"] == []
     body = function_contract["post"]["args"][1]
     assert _ctor_names(body) == [
         "python:seq",
@@ -363,6 +366,7 @@ def test_lift_function_emits_source_unit_and_python_ops() -> None:
         "python:add",
         "python:return",
     ]
+    assert json.dumps(int_const(3)) in json.dumps(body)
     assert all(not name.endswith(":unknown") for name in _ctor_names(result.ir))
 
 
@@ -2673,7 +2677,12 @@ def test_b1_except_handler_name_does_not_leak_after_handler() -> None:
 
     assert result.refusals == []
     contract = _contract(result.ir, ".f")
-    assert {"kind": "reads", "target": "err"} in contract["effects"]
+    # The handler alias is scoped to the handler: after it, `err` resolves
+    # module-ward. The module binding `err = 'module'` value-pins, so the
+    # post-handler read carries the pinned value rather than a fog read --
+    # which still proves the alias did not leak past the handler.
+    assert {"kind": "reads", "target": "err"} not in contract["effects"]
+    assert json.dumps(str_const("module")) in json.dumps(contract)
 
 
 def test_b1_with_statement_remains_refused() -> None:
