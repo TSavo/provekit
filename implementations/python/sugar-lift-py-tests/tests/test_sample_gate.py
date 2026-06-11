@@ -30,92 +30,106 @@ def urlsafe(s):
 
 
 @pytest.fixture()
-def vendor(tmp_path, monkeypatch):
-    def write(module_name: str) -> None:
-        (tmp_path / f"{module_name}.py").write_text(textwrap.dedent(VENDOR_TRANSLATE))
-
+def fixture_dir(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     translate_universe_for_callee.cache_clear()
+
+    def write(module_name: str, source: str) -> None:
+        (tmp_path / f"{module_name}.py").write_text(textwrap.dedent(source))
+
     return write
 
 
-def _lift(source: str):
-    return lift_file_layer2(textwrap.dedent(source), "test_mod.py")
+# --- the gate's evidence is the VENDOR's corpus ---
 
 
-def _universe_decls(out):
-    return [d for d in out.decls if d.name.endswith("::universe")]
-
-
-def _gate_warnings(out):
-    return [w for w in out.warnings if "sample-gate rejected" in w.reason]
-
-
-def test_clean_vector_licenses_the_universe(vendor):
-    vendor("vendgate_ok")
-    out = _lift(
+def test_clean_vendor_vectors_license_the_universe(fixture_dir):
+    fixture_dir("vendg2_ok", VENDOR_TRANSLATE)
+    fixture_dir(
+        "test_vendg2_ok",
         """
-        import vendgate_ok
+        import vendg2_ok
 
-        def test_urlsafe():
-            assert vendgate_ok.urlsafe("abc") == "abc"
-        """
+        def test_vendor_vector():
+            assert vendg2_ok.urlsafe("abc") == "abc"
+            assert vendg2_ok.urlsafe("xy") == "x-y"
+        """,
     )
-    assert len(_universe_decls(out)) == 1
-    assert not _gate_warnings(out)
+    universe, refusal = translate_universe_for_callee("vendg2_ok.urlsafe")
+    assert refusal is None
+    assert universe is not None
+    assert universe.vendor_vectors_checked == 2
+    assert universe.vendor_vector_source.endswith("test_vendg2_ok.py")
 
 
-def test_violating_vector_rejects_the_universe_loudly(vendor):
-    # The sworn vector itself contains a forbidden char: either the walk
-    # misread the body or the vendor contradicts their own source. The
-    # universe must NOT ship; the point rows must remain; the rejection is
-    # loud and names the vector and the chars.
-    vendor("vendgate_bad")
-    out = _lift(
+def test_violating_vendor_vector_refuses_the_walk(fixture_dir):
+    # The VENDOR's own test swears an output containing a forbidden char:
+    # our walk misread the body or the vendor contradicts their own source.
+    # Either way the universe is refused at the walk, loudly.
+    fixture_dir("vendg2_bad", VENDOR_TRANSLATE)
+    fixture_dir(
+        "test_vendg2_bad",
         """
-        import vendgate_bad
+        import vendg2_bad
 
-        def test_urlsafe():
-            assert vendgate_bad.urlsafe("abc") == "ab+c"
-        """
+        def test_vendor_vector():
+            assert vendg2_bad.urlsafe("abc") == "ab+c"
+        """,
     )
-    assert not _universe_decls(out)
-    warnings = _gate_warnings(out)
-    assert len(warnings) == 1
-    assert "'ab+c'" in warnings[0].reason and "'+'" in warnings[0].reason
-    # the sworn point rows survive the rejection
+    universe, refusal = translate_universe_for_callee("vendg2_bad.urlsafe")
+    assert universe is None
+    assert refusal is not None
+    assert "sample-gate" in refusal.reason
+    assert "'ab+c'" in refusal.reason
+
+
+def test_assert_equal_style_vendor_vectors_count(fixture_dir):
+    fixture_dir("vendg2_ue", VENDOR_TRANSLATE)
+    fixture_dir(
+        "test_vendg2_ue",
+        """
+        import unittest
+        import vendg2_ue
+
+        class T(unittest.TestCase):
+            def test_vector(self):
+                self.assertEqual(vendg2_ue.urlsafe(b"abc"), b"abc")
+        """,
+    )
+    universe, refusal = translate_universe_for_callee("vendg2_ue.urlsafe")
+    assert refusal is None
+    assert universe.vendor_vectors_checked == 1
+
+
+def test_no_vendor_corpus_is_said_plainly(fixture_dir):
+    fixture_dir("vendg2_lone", VENDOR_TRANSLATE)
+    universe, refusal = translate_universe_for_callee("vendg2_lone.urlsafe")
+    assert refusal is None
+    assert universe.vendor_vectors_checked == 0
+    assert universe.vendor_vector_source is None
+
+
+# --- the marquee property: a consumer's lying claim is NOT gate evidence ---
+
+
+def test_consumer_bad_twin_does_not_eat_the_universe(fixture_dir):
+    # The bad twin asserts the urlsafe confusion. The universe row must STILL
+    # be emitted -- the contradiction is check's verdict to deliver, not the
+    # gate's evidence to consume. (The first gate version got this wrong and
+    # disarmed the marquee's own refutation.)
+    fixture_dir("vendg2_twin", VENDOR_TRANSLATE)
+    out = lift_file_layer2(
+        textwrap.dedent(
+            """
+            import vendg2_twin
+
+            def test_confusion():
+                assert vendg2_twin.urlsafe("abc") == "ab+c"
+            """
+        ),
+        "bad_twin.py",
+    )
+    rows = [d for d in out.decls if d.name.endswith("::universe")]
+    assert len(rows) == 1
+    # and the assertion row coexists: the conjunction is check's to refute
     assert any(d.name.endswith("::assertion") for d in out.decls)
-
-
-def test_bytes_vector_runs_the_gate_too(vendor):
-    vendor("vendgate_bytes")
-    out = _lift(
-        """
-        import vendgate_bytes
-
-        def test_urlsafe():
-            assert vendgate_bytes.urlsafe(b"abc") == b"ab/c"
-        """
-    )
-    assert not _universe_decls(out)
-    assert _gate_warnings(out)
-
-
-def test_gate_scopes_per_base(vendor):
-    # A violating vector on one base must not reject the universe minted on
-    # a DIFFERENT base (different args -> different subject).
-    vendor("vendgate_scope")
-    out = _lift(
-        """
-        import vendgate_scope
-
-        def test_clean():
-            assert vendgate_scope.urlsafe("abc") == "abc"
-
-        def test_dirty():
-            assert vendgate_scope.urlsafe("xyz") == "x+z"
-        """
-    )
-    rows = _universe_decls(out)
-    assert len(rows) == 1  # the clean base keeps its universe
-    assert len(_gate_warnings(out)) == 1  # the dirty base rejected, loudly

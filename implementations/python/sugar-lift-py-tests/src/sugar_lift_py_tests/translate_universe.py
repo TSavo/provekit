@@ -65,6 +65,13 @@ class TranslateUniverse:
     source_path: str
     lineno: int
     table_name: str
+    # ∀⊨sample evidence: how many VENDOR vectors (from the vendor's own test
+    # corpus, the same party that swore the body) were evaluated against the
+    # walked set, and where they came from. Zero with a None source means no
+    # vendor test corpus resolved -- licensed by the body walk alone, said
+    # plainly rather than implied.
+    vendor_vectors_checked: int = 0
+    vendor_vector_source: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +179,23 @@ def translate_universe_for_callee(
             "no complement universe exists"
         )
 
+    # ∀⊨SAMPLE (the gate): the walked universe must be consistent with every
+    # vector the VENDOR's own test corpus swears at this surface -- the same
+    # party that wrote the body, evaluated by ground computation, no solver.
+    # Consumer claims are NOT gate evidence: a consumer contradicting the
+    # universe is the refutation working, decided by check. A violating
+    # VENDOR vector means our walk misread the body (or the vendor
+    # contradicts their own source); the universe is refused.
+    vectors, vector_source = _vendor_vectors(module_name, fn_name)
+    for vector in vectors:
+        violating = sorted(set(ch for ch in forbidden if ch in vector))
+        if violating:
+            return refuse(
+                f"sample-gate: vendor vector {vector!r} from "
+                f"{vector_source} contains forbidden {violating!r}; the walk "
+                "misread the body or the vendor contradicts their own source"
+            )
+
     return (
         TranslateUniverse(
             forbidden=forbidden,
@@ -180,9 +204,92 @@ def translate_universe_for_callee(
             source_path=spec.origin,
             lineno=fn.lineno,
             table_name=table_name,
+            vendor_vectors_checked=len(vectors),
+            vendor_vector_source=vector_source,
         ),
         None,
     )
+
+
+def _vendor_vectors(
+    module_name: str, fn_name: str
+) -> Tuple[list, Optional[str]]:
+    """Sworn expected-value vectors for the callee surface, extracted from
+    the vendor's own test corpus (CPython convention: test.test_<module>;
+    sibling convention: test_<module>). A vector is the str/bytes literal a
+    vendor assertion equates with a call of the callee. Extraction is an
+    ast scan (calls of fn_name compared/assertEqual'd against a literal);
+    what it cannot read it does not invent -- the gate runs over what is
+    sworn AND extractable, and reports the count."""
+    for candidate in (f"test.test_{module_name}", f"test_{module_name}"):
+        try:
+            spec = importlib.util.find_spec(candidate)
+        except (ImportError, ValueError):
+            continue
+        if spec is None or not spec.origin or not spec.origin.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(
+                open(spec.origin, encoding="utf-8").read(), filename=spec.origin
+            )
+        except (OSError, SyntaxError):
+            continue
+        return _extract_vectors(tree, fn_name), spec.origin
+    return [], None
+
+
+def _is_callee_call(node: ast.AST, fn_name: str) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id == fn_name
+    if isinstance(func, ast.Attribute):
+        return func.attr == fn_name
+    return False
+
+
+def _literal_text(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, str):
+            return node.value
+        if isinstance(node.value, bytes):
+            try:
+                return node.value.decode("ascii")
+            except UnicodeDecodeError:
+                return None
+    return None
+
+
+def _extract_vectors(tree: ast.Module, fn_name: str) -> list:
+    vectors = []
+    for node in ast.walk(tree):
+        operands: list = []
+        if isinstance(node, ast.Compare) and len(node.comparators) == 1:
+            if isinstance(node.ops[0], (ast.Eq, ast.NotEq)) and isinstance(
+                node.ops[0], ast.Eq
+            ):
+                operands = [node.left, node.comparators[0]]
+        elif isinstance(node, ast.Call) and len(node.args) >= 2:
+            # assertEqual / assertEquals, plus the aliased-helper pattern
+            # CPython itself uses (eq = self.assertEqual; eq(call, expected)):
+            # ANY 2+-arg call pairing a callee-call with a literal is read as
+            # an expected-value vector. Over-extraction is the SAFE direction
+            # here -- a spurious vector can only make the gate stricter
+            # (refuse a universe), never license one.
+            operands = list(node.args[:2])
+        if len(operands) != 2:
+            continue
+        a, b = operands
+        if _is_callee_call(a, fn_name):
+            literal = _literal_text(b)
+        elif _is_callee_call(b, fn_name):
+            literal = _literal_text(a)
+        else:
+            continue
+        if literal is not None:
+            vectors.append(literal)
+    return vectors
 
 
 def _translate_return_shape(body: list) -> Optional[str]:

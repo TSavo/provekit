@@ -229,7 +229,6 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
             _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
 
         _coalesce_same_named_decls(out)
-        _apply_sample_gate(out, source_path)
     finally:
         _CURRENT_MODULE_ALIASES = prev_aliases
     return out
@@ -261,72 +260,13 @@ def _assertion_call_subject(assertion: Formula) -> Optional[Term]:
     return None
 
 
-def _sworn_string_content(term: Term) -> Optional[str]:
-    from .ir import _ConstStr
-
-    if isinstance(term, _ConstStr):
-        return term.value
-    if (
-        isinstance(term, _Ctor)
-        and term.name == "python:bytes"
-        and len(term.args) == 1
-        and isinstance(term.args[0], _ConstStr)
-    ):
-        return term.args[0].value
-    return None
-
-
-def _apply_sample_gate(out: Layer2Output, source_path: str) -> None:
-    """∀⊨sample: every minted universe must be consistent with every sworn
-    vector at its surface, checked by EVALUATION -- the world is the
-    vendor's own ground vector, so no solver is consulted and no solver is
-    trusted. A violating vector means the walk misread the body (a misquote
-    to be caught here, by us, about us) or the vendor contradicts their own
-    source; either way the universe is REJECTED loudly and only the sworn
-    point rows remain. The gate can only ever shrink what we claim."""
-    universe_decls = [d for d in out.decls if d.name.endswith("::universe")]
-    if not universe_decls:
-        return
-    rejected: Set[str] = set()
-    for universe in universe_decls:
-        inv = universe.inv
-        if not isinstance(inv, _Atomic) or inv.name != "str.chars-not-in-set":
-            continue
-        subject = inv.args[0]
-        forbidden = _sworn_string_content(inv.args[1]) or ""
-        base = universe.name[: -len("::universe")]
-        assertion_name = f"{base}::assertion"
-        for decl in out.decls:
-            if decl.name != assertion_name or decl.inv is None:
-                continue
-            for atom in _iter_conjuncts(decl.inv):
-                if atom.name != "=" or len(atom.args) != 2:
-                    continue
-                literal = None
-                if atom.args[0] == subject:
-                    literal = _sworn_string_content(atom.args[1])
-                elif atom.args[1] == subject:
-                    literal = _sworn_string_content(atom.args[0])
-                if literal is None:
-                    continue
-                violating = [ch for ch in forbidden if ch in literal]
-                if violating:
-                    rejected.add(universe.name)
-                    out.warnings.append(
-                        LiftWarning(
-                            source_path,
-                            universe.name,
-                            "sample-gate rejected universe: sworn vector "
-                            f"{literal!r} contains forbidden {violating!r} -- "
-                            "the walk misread the body or the vendor "
-                            "contradicts their own source; point rows remain",
-                        )
-                    )
-                    break
-            if universe.name in rejected:
-                break
-    if rejected:
-        out.decls = [d for d in out.decls if d.name not in rejected]
+# NOTE on ∀⊨sample: the gate lives in translate_universe_for_callee and runs
+# over the VENDOR's own test corpus (test.test_<module> / test_<module>) --
+# the same party that swore the walked body. It deliberately does NOT read
+# the file being lifted: a consumer claim contradicting the universe is the
+# refutation working (decided by check), never gate evidence. The first
+# version of this gate read same-file assertions and ate the bad twin's own
+# refutation; that evidence model was wrong and is intentionally gone.
 
 
 def _coalesce_same_named_decls(out: Layer2Output) -> None:
