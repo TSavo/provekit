@@ -1,0 +1,12 @@
+# Derive receipts written by run.sh
+good-receipt.json
+bad-receipt.json
+no-universe-receipt.json
+
+# Minted artifacts + run state (produced by `sugar mint` in run.sh)
+good/blake3-512:*.proof
+good/.sugar/runs/
+good/.sugar/lift/java-test-assertions/manifest.toml
+good/.dump.json
+good/.bv-tree.json
+good/no-universe.proof

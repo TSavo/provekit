@@ -30,6 +30,7 @@ mod cmd_init;
 mod cmd_lift;
 mod cmd_materialize;
 mod cmd_mint;
+mod cmd_model;
 mod cmd_package;
 mod cmd_plugin;
 mod cmd_prove;
@@ -156,6 +157,15 @@ enum Cmd {
     Doctor(cmd_doctor::DoctorArgs),
     /// Run the v1 release health gate and emit a release evidence receipt.
     ReleaseGate(cmd_release_gate::ReleaseGateArgs),
+    /// Derive a concrete output from a lifted universe BV expression via z3 model extraction.
+    ///
+    /// Reads the walked universe body from a minted .proof (`--from-proof`, the
+    /// int32.eq-bv-expr atom's bv_tree) or an extracted bv_tree JSON (`--bv-expr`),
+    /// then asks z3 what the definition COMPUTES via `(get-value)`. Derived, not
+    /// executed. No built-in formula: the lift is the only source of truth.
+    ///
+    /// Flagship: abs(Integer.MIN_VALUE) = -2147483648, derived from the lifted Math.abs body.
+    Derive(cmd_model::ModelArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -294,6 +304,7 @@ fn main() -> ExitCode {
         Cmd::Materialize(a) => cmd_materialize::run(a),
         Cmd::Doctor(a) => cmd_doctor::run(a),
         Cmd::ReleaseGate(a) => cmd_release_gate::run(a),
+        Cmd::Derive(a) => cmd_model::run(a),
     };
     ExitCode::from(code)
 }
