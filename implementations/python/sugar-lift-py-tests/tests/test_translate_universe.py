@@ -599,3 +599,124 @@ def test_unguarded_body_is_not_a_candidate(vendor_path):
     vendor_path("vendguard_none", "def f(x):\n    return x + 1\n")
     guards, refusal = guard_universe_for_callee("vendguard_none.f")
     assert guards is None and refusal is None
+
+
+# --- the table-loop family: census #2 (17,781 bodies) ---
+
+VENDOR_LOOP = '''
+_HEX = "0123456789abcdef"
+
+
+def hexify(data):
+    out = []
+    for b in data:
+        out.append(_HEX[b >> 4])
+        out.append(_HEX[b & 15])
+    return ":".join(out)
+'''
+
+
+def test_table_loop_walks_with_union_and_separator(vendor_path):
+    vendor_path("vendloop_ok", VENDOR_LOOP)
+    universe, refusal = translate_universe_for_callee("vendloop_ok.hexify")
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "chars-in-set"
+    assert universe.forbidden == "".join(sorted(set("0123456789abcdef:")))
+
+
+def test_table_loop_emits_positive_membership(vendor_path):
+    vendor_path("vendloop_l2", VENDOR_LOOP)
+    out = _lift(
+        """
+        import vendloop_l2
+
+        def test_hexify():
+            assert vendloop_l2.hexify("ab") == "36:31:36:32"
+        """
+    )
+    atoms = []
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            atoms.extend(
+                a for a in _iter_conjuncts(d.inv) if a.name == "str.chars-in-set"
+            )
+    assert len(atoms) == 1
+    assert "f" in atoms[0].args[1].value and ":" in atoms[0].args[1].value
+
+
+def test_table_loop_str_accumulator(vendor_path):
+    vendor_path(
+        "vendloop_str",
+        '''
+_DIG = "01"
+
+
+def bits(n):
+    out = ""
+    for b in n:
+        out += _DIG[b]
+    return out
+''',
+    )
+    universe, refusal = translate_universe_for_callee("vendloop_str.bits")
+    assert refusal is None
+    assert universe.forbidden == "01"
+
+
+def test_table_loop_foreign_append_refuses(vendor_path):
+    vendor_path(
+        "vendloop_foreign",
+        '''
+_HEX = "0123456789abcdef"
+
+
+def hexify(data, extra):
+    out = []
+    for b in data:
+        out.append(extra)
+    return "".join(out)
+''',
+    )
+    universe, refusal = translate_universe_for_callee("vendloop_foreign.hexify")
+    assert universe is None
+    assert refusal is not None
+    assert "not a pinned-table element" in refusal.reason
+
+
+def test_table_loop_unstable_table_refuses(vendor_path):
+    vendor_path(
+        "vendloop_unstable",
+        '''
+_HEX = "0123456789abcdef"
+_HEX = "0123456789ABCDEF"
+
+
+def hexify(data):
+    out = []
+    for b in data:
+        out.append(_HEX[b])
+    return "".join(out)
+''',
+    )
+    universe, refusal = translate_universe_for_callee("vendloop_unstable.hexify")
+    assert universe is None
+    assert refusal is not None and "bound more than once" in refusal.reason
+
+
+def test_table_loop_vendor_vector_outside_union_refuses(vendor_path):
+    vendor_path("vendloop_gate", VENDOR_LOOP)
+    vendor_path(
+        "test_vendloop_gate",
+        """
+        import vendloop_gate
+
+        def test_vector():
+            assert vendloop_gate.hexify("a") == "6Z"
+        """,
+    )
+    universe, refusal = translate_universe_for_callee("vendloop_gate.hexify")
+    assert universe is None
+    assert refusal is not None and "sample-gate" in refusal.reason

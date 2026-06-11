@@ -400,8 +400,46 @@ def translate_universe_for_callee(
             # input that returns at all. Index expression is irrelevant.
             sub_table = _table_subscript_shape(body)
             if sub_table is None:
-                # No family matched: not a candidate, no refusal owed.
-                return None, None
+                # Fourth family: the table-loop (census: 17,781 bodies).
+                # acc = []/"" ; for ...: acc.append(TABLE[i]) / acc += ... ;
+                # return sep.join(acc) / acc. Every accumulated piece is an
+                # element of a pinned table (or a literal), so every output
+                # char is in the union of their chars -- the POSITIVE
+                # chars-in-set universe. Widening the set is the safe
+                # direction (output ⊆ S stays true for any S ⊇ truth), so
+                # join separators and literal appends just add their chars.
+                loop_result = _table_loop_charset(body, tree)
+                if loop_result is None:
+                    # No family matched: not a candidate, no refusal owed.
+                    return None, None
+                allowed, loop_refusal = loop_result
+                if loop_refusal is not None:
+                    return refuse(loop_refusal)
+                vectors, vector_source = _vendor_vectors(module_name, fn_name)
+                for vector in vectors:
+                    stray = sorted(set(vector) - set(allowed))
+                    if stray:
+                        return refuse(
+                            f"sample-gate: vendor vector {vector!r} from "
+                            f"{vector_source} contains chars {stray!r} "
+                            "outside the walked table union; the walk "
+                            "misread the body or the vendor contradicts "
+                            "their own source"
+                        )
+                return (
+                    TranslateUniverse(
+                        forbidden=allowed,
+                        module=module_name,
+                        qualname=f"{module_name}.{fn_name}",
+                        source_path=spec.origin,
+                        lineno=fn.lineno,
+                        table_name="<table-loop union>",
+                        kind="chars-in-set",
+                        vendor_vectors_checked=len(vectors),
+                        vendor_vector_source=vector_source,
+                    ),
+                    None,
+                )
             values_node, _line = _module_binding_tuple(tree, sub_table)
             if values_node is None:
                 return refuse(
@@ -643,6 +681,139 @@ def _extract_vectors(tree: ast.Module, fn_name: str) -> list:
         if literal is not None:
             vectors.append(literal)
     return vectors
+
+
+def _table_loop_charset(body: list, tree: ast.Module):
+    """Match: acc-init, one for-loop accumulating table elements / literals,
+    return join(acc) or acc. Returns (allowed_charset, None) on success,
+    (None, reason) when the shape matched but a piece refuses, or None when
+    the body is not table-loop shaped at all."""
+    if len(body) != 3:
+        return None
+    init, loop, ret = body
+    if not (
+        isinstance(init, ast.Assign)
+        and len(init.targets) == 1
+        and isinstance(init.targets[0], ast.Name)
+    ):
+        return None
+    acc = init.targets[0].id
+    is_list = isinstance(init.value, ast.List) and not init.value.elts
+    is_str = isinstance(init.value, ast.Constant) and init.value.value == ""
+    if not (is_list or is_str):
+        return None
+    if not isinstance(loop, (ast.For,)):
+        return None
+    if not isinstance(ret, ast.Return) or ret.value is None:
+        return None
+
+    chars: set = set()
+
+    # the return: "sep".join(acc) for list accumulators, bare acc for str
+    rv = ret.value
+    if (
+        isinstance(rv, ast.Call)
+        and isinstance(rv.func, ast.Attribute)
+        and rv.func.attr == "join"
+        and isinstance(rv.func.value, ast.Constant)
+        and isinstance(rv.func.value.value, str)
+        and len(rv.args) == 1
+        and isinstance(rv.args[0], ast.Name)
+        and rv.args[0].id == acc
+    ):
+        chars.update(rv.func.value.value)
+    elif isinstance(rv, ast.Name) and rv.id == acc and is_str:
+        pass
+    else:
+        return None
+
+    # every write to acc inside the loop must be append(TABLE[i]) /
+    # += TABLE[i] / a string literal; ANY other write anywhere refuses
+    writes = []
+    for node in ast.walk(loop):
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.value.func.value, ast.Name)
+            and node.value.func.value.id == acc
+        ):
+            if node.value.func.attr != "append" or len(node.value.args) != 1:
+                return None, f"accumulator method '{node.value.func.attr}' is not a readable append"
+            writes.append(node.value.args[0])
+        elif (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == acc
+        ):
+            if not isinstance(node.op, ast.Add):
+                return None, "accumulator augmented with a non-concatenation op"
+            writes.append(node.value)
+        elif (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(t, ast.Name) and t.id == acc for t in node.targets
+            )
+        ):
+            return None, "accumulator reassigned inside the loop"
+    if not writes:
+        return None
+
+    for src in writes:
+        piece = _table_piece_chars(src, tree)
+        if piece is None:
+            return None, "accumulated piece is not a pinned-table element or string literal"
+        ok, payload = piece
+        if not ok:
+            return None, payload
+        chars.update(payload)
+    return "".join(sorted(chars)), None
+
+
+def _table_piece_chars(src: ast.expr, tree: ast.Module):
+    """Chars contributed by one accumulated piece: a string literal, or
+    TABLE[<expr>] over a stable pinned str/tuple-of-str table. Returns
+    (True, chars) / (False, refusal-reason) / None (not piece-shaped)."""
+    if isinstance(src, ast.Constant) and isinstance(src.value, str):
+        return True, src.value
+    if (
+        isinstance(src, ast.Subscript)
+        and isinstance(src.value, ast.Name)
+        and not isinstance(src.slice, ast.Slice)
+    ):
+        name = src.value.id
+        binding = None
+        for stmt in tree.body:
+            if (
+                isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+                and stmt.targets[0].id == name
+            ):
+                if binding is not None:
+                    return False, f"table '{name}' bound more than once"
+                binding = stmt
+        if binding is None:
+            return False, f"table '{name}' has no module-level binding"
+        candidate = _Candidate(
+            name=name, value=binding.value, line=binding.lineno, confession=None
+        )
+        events = [e for e in _binding_events(tree) if e.name == name]
+        failure = _admission_failure(
+            candidate, events, _global_declarations(tree).get(name)
+        )
+        if failure is not None:
+            return False, f"table '{name}' is not stable: {failure}"
+        v = binding.value
+        if isinstance(v, ast.Constant) and isinstance(v.value, str):
+            return True, v.value
+        if isinstance(v, ast.Tuple) and all(
+            isinstance(el, ast.Constant) and isinstance(el.value, str)
+            for el in v.elts
+        ):
+            return True, "".join(el.value for el in v.elts)
+        return False, f"table '{name}' is not a str or tuple-of-str literal"
+    return None
 
 
 def _table_subscript_shape(body: list) -> Optional[str]:
