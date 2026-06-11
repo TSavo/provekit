@@ -1757,5 +1757,172 @@ assert expected_name in names, (
 print(f"PASS: G2b #euf# name '{expected_name}' matches assertEquals schema — federation is live")
 PY
 
+
+# ──────────────────────────────────────────────────────────────
+# TEST SUITE P5c — call-binding lift (SSA substitution + instance-method location-keyed)
+# Mirrors Python PATTERN 5 / _apply_value_scope_binding + _call_origin_from_expr.
+#
+# 46. SSA static: `int r = compute(7); assertEquals(14, r)` → same #euf# name as inline form
+# 47. SSA static byte-identity: SSA and inline forms produce byte-identical contract names
+# 48. Instance-method: `Codec c = new Codec(); assertEquals(0, c.getPolicy())` → location-keyed
+# 49. Two-test no-collision: two test methods with different constructions → different location bases
+# 50. Reassigned local refused by name
+# ──────────────────────────────────────────────────────────────
+
 echo
-echo "== all 45 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 46: P5c SSA static — effectively-final local substituted to #euf# call"
+echo "────────────────────────────────────────────────────────────────"
+RESULT46="$(run_lift "$FIXTURES" "P5cSsaStaticLiftInt.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT46" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Both testViaLocal and testInline must produce a contract
+assert len(ir) == 2, f"expected 2 contracts (one per test), got {len(ir)}: {[c['name'] for c in ir]}"
+
+# Both must use #euf# (static call federates)
+for c in ir:
+    assert "#euf#" in c["name"], f"expected #euf# in name (static call), got: {c['name']}"
+
+print(f"PASS: P5c SSA static — {len(ir)} contracts, both #euf#-federated: {ir[0]['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 47: P5c SSA byte-identity — local form and inline form produce SAME contract name"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT46" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+
+names = [c["name"] for c in ir]
+expected_name = "compute#euf#c:callresult_compute_a1(i:7)::assertion"
+assert names.count(expected_name) == 2, (
+    f"SSA and inline forms must produce byte-identical contract names; "
+    f"expected 2x '{expected_name}', got: {names}"
+)
+print(f"PASS: P5c byte-identity — SSA form and inline form produce same name: {expected_name}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 48: P5c instance-method — local receiver → location-keyed (NOT #euf#)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT48="$(run_lift "$FIXTURES" "P5cInstanceMethodLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT48" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Must produce contracts (the instance-method calls are liftable)
+assert len(ir) >= 1, f"expected contracts from instance-method lift, got 0 (diags: {diags})"
+
+# MUST NOT use #euf# — instance-method calls are location-keyed
+for c in ir:
+    assert "#euf#" not in c["name"], (
+        f"instance-method call must NOT be #euf#-federated; got: {c['name']}"
+    )
+
+# Must contain the scope (file::class::method) in the name — location-keyed
+for c in ir:
+    assert "P5cInstanceMethodLift" in c["name"], (
+        f"location-keyed name must contain the class/method scope; got: {c['name']}"
+    )
+
+print(f"PASS: P5c instance-method — {len(ir)} location-keyed contracts (no #euf#): {ir[0]['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 49: P5c no-collision — two test methods with same method name produce different names"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT48" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+
+# Both test methods (testCodecPolicyDefault, testCodecPolicyStrict) must produce contracts
+assert len(ir) == 2, f"expected 2 contracts (one per test method), got {len(ir)}: {[c['name'] for c in ir]}"
+
+# The two names must be DIFFERENT (different test method scope)
+assert ir[0]["name"] != ir[1]["name"], (
+    f"two different test methods must produce different location-keyed names; "
+    f"both produced: {ir[0]['name']}"
+)
+
+# Each name must encode the respective test method
+names = [c["name"] for c in ir]
+assert any("testCodecPolicyDefault" in n for n in names), f"first test name not in: {names}"
+assert any("testCodecPolicyStrict" in n for n in names), f"second test name not in: {names}"
+
+print(f"PASS: P5c no-collision — two tests, two distinct names:")
+print(f"  {ir[0]['name']}")
+print(f"  {ir[1]['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 50: P5c reassigned local refused by name (not a stable SSA alias)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT50="$(run_lift "$FIXTURES" "P5cReassignedRefusal.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT50" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+ir = result["ir"]
+diags = result["diagnostics"]
+
+assert len(ir) == 0, f"reassigned local must produce 0 contracts, got {len(ir)}: {[c['name'] for c in ir]}"
+assert len(diags) >= 1, f"expected a named refusal for reassigned local, got: {diags}"
+reasons = [d.get("reason", "") for d in diags]
+ssa_diags = [r for r in reasons if "reassigned" in r.lower() or "stable" in r.lower() or "SSA" in r]
+assert ssa_diags, f"expected a refusal naming 'reassigned' or 'stable SSA alias', got: {reasons}"
+print(f"PASS: P5c reassigned local refused by name: {ssa_diags[0]}")
+PY
+
+echo
+echo "== all 50 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c) =="

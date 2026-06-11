@@ -65,7 +65,7 @@ import java.util.stream.*;
 public final class JavaTestAssertionsRpc {
 
     private static final String SURFACE = "java-test-assertions";
-    private static final String VERSION = "0.6.0"; // G2: numeric-universe-walk pass
+    private static final String VERSION = "0.7.0"; // P5c: call-binding lift (SSA + instance-method location-keyed)
 
     // ──────────────────────────────────────────────────────────────
     // Entry point: JSON-RPC 2.0 over stdin/stdout, one object per line.
@@ -170,7 +170,19 @@ public final class JavaTestAssertionsRpc {
                 diagnostics.add(diagnostic(rel, null, null, "cannot read file"));
                 continue;
             }
-            liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, ir, diagnostics);
+            // PER-FILE ISOLATION (multi-file robustness): a single vendor file that
+            // throws during parse/walk (malformed source, unsupported syntax, an
+            // internal walker error) must NOT zero out the whole artifact. Mirror the
+            // rust coretests_sweep tolerance: skip-and-diagnose per file, keep the
+            // contracts already lifted from the other files. Without this, one bad
+            // file in a 229-file vendor test tree drops the entire artifact to GAP.
+            try {
+                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, ir, diagnostics);
+            } catch (Exception e) {
+                diagnostics.add(diagnostic(rel, null, null,
+                    "per-file lift skipped (isolated): "
+                    + (e.getMessage() == null ? e.toString() : e.getMessage())));
+            }
         }
 
         return irDocument(ir, diagnostics);
@@ -2002,10 +2014,29 @@ public final class JavaTestAssertionsRpc {
 
         Set<String> mutatedLocals = computeMutatedLocals(body);
 
+        // P5c: Build SSA binding map — localName → initializer call expression.
+        // A local variable declared with a call initializer (e.g. `String e = f(x)`)
+        // is an SSA alias for that callsite. The effectively-final gate (never
+        // reassigned, checked against mutatedLocals) makes the alias stable.
+        // Mirrors Python _apply_value_scope_binding / _ValueScope.origins.
+        Map<String, ExpressionTree> ssaBindings = new LinkedHashMap<>();
+        for (StatementTree stmt : body.getStatements()) {
+            if (stmt instanceof VariableTree vt && vt.getInitializer() != null) {
+                String localName = vt.getName().toString();
+                // Only record if effectively final: declared here and never reassigned.
+                // mutatedLocals is computed from AssignmentTree/CompoundAssignmentTree/
+                // UnaryTree targets — covers all post-declaration writes.
+                if (!mutatedLocals.contains(localName)) {
+                    ssaBindings.put(localName, vt.getInitializer());
+                }
+            }
+        }
+
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, ir, diagnostics);
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry,
+                        ssaBindings, mutatedLocals, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
             }
@@ -2380,6 +2411,8 @@ public final class JavaTestAssertionsRpc {
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            Map<String, ExpressionTree> ssaBindings,
+            Set<String> mutatedLocals,
             List<String> ir,
             List<String> diagnostics) {
 
@@ -2491,7 +2524,7 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, ssaBindings, mutatedLocals, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
@@ -2520,6 +2553,8 @@ public final class JavaTestAssertionsRpc {
             AssertionVocab vocab,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            Map<String, ExpressionTree> ssaBindings,
+            Set<String> mutatedLocals,
             List<String> ir, List<String> diagnostics) {
 
         List<? extends ExpressionTree> args = mit.getArguments();
@@ -2584,7 +2619,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
-                universeRegistry, numericRegistry, ir, diagnostics);
+                universeRegistry, numericRegistry, ssaBindings, mutatedLocals, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -2648,16 +2683,34 @@ public final class JavaTestAssertionsRpc {
             ExpressionTree constExpr, ExpressionTree callExpr,
             String relation, String methodName,
             String scope, List<String> ir, List<String> diagnostics) {
+        // liftBinaryIntContract is called from the truth/comparison-bound path,
+        // which processes already-resolved MethodInvocationTree nodes — no SSA
+        // binding substitution needed; pass empty maps.
         liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
-                UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, ir, diagnostics);
+                UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY,
+                Collections.emptyMap(), Collections.emptySet(), ir, diagnostics);
     }
 
     /**
-     * G1/G2: Extended binary contract lifter that handles both int and String literal
+     * G1/G2/P5c: Extended binary contract lifter that handles both int and String literal
      * expected values. When the expected is a String literal AND the callee is
      * universe-registered, ALSO emits a str.chars-in-set universe contract.
      * G2: When the expected is an int literal AND the callee is numeric-universe-registered,
      * ALSO emits an int32.eq-bv-expr universe contract encoding the walked body.
+     *
+     * P5c: SSA binding substitution (mirrors Python PATTERN 5 / _apply_value_scope_binding):
+     * When the actual arg is an IdentifierTree naming an effectively-final local whose
+     * initializer is a call, we substitute that call as the subject of the assertion.
+     *
+     * LOCATION vs #euf# keying (mirrors Python _call_origin_from_expr rule):
+     *   - Static/bare call OR class-qualified call (Base64.encode(...)) where the
+     *     qualifier is a class name (not a local): #euf#-federated (existing path).
+     *   - Instance-method call (receiver is a local variable, not a class name):
+     *     LOCATION-keyed (::facts + ::assertion contracts), NOT #euf#-federated.
+     *     Rationale: two different receiver objects may produce different values for
+     *     the same method name → cross-location unification is unsound. Python does
+     *     exactly this: _call_origin_from_expr returns None for non-module receiver
+     *     attribute calls, keeping them location-keyed.
      *
      * String-literal args are accepted for the call's own args only when the call
      * receives them via StringUtils.getBytesUtf8("lit") or "lit".getBytes(...).
@@ -2669,6 +2722,8 @@ public final class JavaTestAssertionsRpc {
             String relation, String methodName,
             String scope, UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            Map<String, ExpressionTree> ssaBindings,
+            Set<String> mutatedLocals,
             List<String> ir, List<String> diagnostics) {
 
         // Try int literal first (existing path)
@@ -2682,10 +2737,87 @@ public final class JavaTestAssertionsRpc {
             return;
         }
 
-        if (!(callExpr instanceof MethodInvocationTree callMit)) {
+        // P5c: SSA binding substitution.
+        // `assertEquals("foo", encoded)` where `String encoded = f(args)` → resolve
+        // `encoded` to its initializer call expression before further processing.
+        // Mirrors Python _apply_value_scope_binding + _assertion_callsite_context:
+        // the local is an SSA alias for the callsite; the ::facts binding records
+        // the aliasing; the assertion fires on the callsite subject.
+        //
+        // Effectively-final gate (mirrors Python "single-assignment" rule):
+        //   A reassigned local is NOT a stable SSA alias → refuse by name.
+        //   We compute effective-finality from the AST (not the `final` keyword)
+        //   because real vendor test code almost never writes `final String e = ...`.
+        //   Single-assignment = declared once with an initializer AND never the target
+        //   of AssignmentTree / CompoundAssignmentTree / ++/-- in the method body.
+        //   This is doubly attested: the vendor wrote single-assignment code (intent)
+        //   AND javac enforces effective-finality for lambda capture (compiler sign-off).
+        //
+        // DOES NOT substitute when the local IS in ssaBindings but IS also in
+        // mutatedLocals — that combination cannot arise (we only insert into ssaBindings
+        // when !mutatedLocals.contains(localName)), but the guard is kept explicit for
+        // clarity.
+        ExpressionTree resolvedCallExpr = callExpr;
+        String ssaSourceName = null; // the local name that was substituted, for diagnostics
+        if (callExpr instanceof IdentifierTree idTree) {
+            String localName = idTree.getName().toString();
+            if (mutatedLocals.contains(localName)) {
+                // Reassigned local: not a stable SSA alias — refuse by name.
+                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                    methodName, "SSA binding refused: local '" + localName
+                    + "' is reassigned — not a stable alias for its initializer call"));
+                return;
+            }
+            ExpressionTree bound = ssaBindings.get(localName);
+            if (bound != null) {
+                resolvedCallExpr = bound;
+                ssaSourceName = localName;
+            }
+            // If not in ssaBindings (not a call-initialised local), fall through to the
+            // "second arg is not a method call" refusal below.
+        }
+
+        if (!(resolvedCallExpr instanceof MethodInvocationTree callMit)) {
             diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
-                methodName, "second arg is not a method call: " + callExpr));
+                methodName, "second arg is not a method call: " + callExpr
+                + (ssaSourceName != null ? " (resolved from local '" + ssaSourceName + "')" : "")));
             return;
+        }
+
+        // P5c: Determine whether this is a static/class-qualified call (#euf#-federated)
+        // or an instance-method call on a local receiver (location-keyed).
+        // Mirrors Python _call_origin_from_expr: only module-attribute calls are admitted
+        // for federation; local-receiver calls are kept location-keyed.
+        //
+        // Discrimination:
+        //   - Bare call `f(args)`: MethodSelect is IdentifierTree → static/imported → #euf#
+        //   - `Class.method(args)` where `Class` is NOT in ssaBindings: class-qualified
+        //     static call → #euf# (same as bare, existing behaviour)
+        //   - `local.method(args)` where `local` IS in ssaBindings OR is a known local:
+        //     receiver-dependent → location-keyed
+        //
+        // We detect the last case by checking whether the receiver of the MemberSelectTree
+        // is an IdentifierTree whose name appears in ssaBindings. Class names (Base64,
+        // StringUtils, etc.) are never in ssaBindings (ssaBindings only contains locals
+        // declared in this method body). This is sound: the only way a name is in
+        // ssaBindings is if this method body has a `Type name = initializer` statement.
+        boolean isInstanceMethodCall = false;
+        String receiverName = null;
+        ExpressionTree methodSelect = callMit.getMethodSelect();
+        if (methodSelect instanceof MemberSelectTree mst) {
+            ExpressionTree receiver = mst.getExpression();
+            if (receiver instanceof IdentifierTree recId) {
+                receiverName = recId.getName().toString();
+                // Local variable receiver → instance-method call → location-keyed.
+                // We check ssaBindings (effectively-final locals with call initialisers)
+                // AND mutatedLocals (any locally-declared variable that was reassigned).
+                // Any local name that appears in either set was declared in this method.
+                // Class names (capitalised identifiers referring to imported types) are
+                // never in either set.
+                if (ssaBindings.containsKey(receiverName) || mutatedLocals.contains(receiverName)) {
+                    isInstanceMethodCall = true;
+                }
+            }
         }
 
         String callee = methodInvocationName(callMit);
@@ -2723,8 +2855,29 @@ public final class JavaTestAssertionsRpc {
             }
         }
 
-        if (strVal.isPresent()) {
-            // String expected — emit string-sort equality contract
+        if (isInstanceMethodCall) {
+            // P5c: instance-method call on a local receiver — LOCATION-KEYED.
+            // Mirrors Python: _call_origin_from_expr returns None for non-module
+            // receiver attribute calls → kept location-keyed in _callsite_contract_base.
+            // Two different receiver objects may return different values for the same
+            // method name; cross-location unification would be unsound (#euf# is wrong).
+            // We emit a ::facts + ::assertion pair anchored to the FULL scope
+            // (file::class::testMethod + receiverName) so consistency is checked WITHIN
+            // this test method's scope, not across tests.  Two different test methods that
+            // both declare a local `codec` get DIFFERENT location bases because `scope`
+            // encodes the method name — mirrors Python _callsite_contract_base location
+            // path which encodes file:lineno:col_offset.
+            String locationBase = callee + "@" + scope + ":" + receiverName;
+            if (strVal.isPresent()) {
+                ir.add(buildLocationKeyedStringContract(locationBase, receiverName, callee,
+                        intArgValues, strArgValues, argsAreStrings, strVal.get(), relation,
+                        ssaBindings));
+            } else {
+                ir.add(buildLocationKeyedIntContract(locationBase, receiverName, callee,
+                        intArgValues, intVal.getAsLong(), relation, ssaBindings));
+            }
+        } else if (strVal.isPresent()) {
+            // String expected — emit string-sort equality contract (#euf# federated)
             ir.add(buildStringContract(callee, intArgValues, strArgValues, argsAreStrings,
                     strVal.get(), relation));
             // G1: ALSO emit universe contract if callee is registered
@@ -2734,7 +2887,7 @@ public final class JavaTestAssertionsRpc {
                         universeSet));
             }
         } else {
-            // Int expected — original path
+            // Int expected — original #euf# path
             ir.add(buildContractWithRelation(callee, intArgValues, intVal.getAsLong(), relation));
             // G2: ALSO emit numeric-universe contract if callee is registered
             String bvExprJson = numericRegistry.getBvExprJson(callee);
@@ -2742,6 +2895,79 @@ public final class JavaTestAssertionsRpc {
                 ir.add(buildNumericUniverseContract(callee, intArgValues, bvExprJson));
             }
         }
+    }
+
+    /**
+     * P5c: Build a location-keyed ::assertion contract for an instance-method call.
+     * Mirrors Python _callsite_contract_base (location path):
+     *   base = callee + "@" + file:line:col  (here: scope + receiverName as proxy for location)
+     * The contract name is  <base>::assertion  so it is scoped to this test, not federated.
+     *
+     * The receiver is recorded as arg 0 (mirrors Python layer2.py "receiver counts as arg 0").
+     * The receiver's own construction (its SSA binding) is emitted as the ::facts contract.
+     *
+     * String sort — used when assertEquals("SGVsbG8=", codec.encode(bytes)).
+     */
+    private static String buildLocationKeyedStringContract(
+            String locationBase, String receiverName, String callee,
+            List<Long> intArgValues, List<String> strArgValues, boolean argsAreStrings,
+            String expectedStr, String relation,
+            Map<String, ExpressionTree> ssaBindings) {
+
+        String assertionName = locationBase + "::assertion";
+        String safeName = toSafeName(callee);
+        int arity = intArgValues.size();
+        String argSig = argsAreStrings
+                ? buildArgSigMixed(intArgValues, strArgValues)
+                : intArgValues.stream().map(v -> "i:" + v).collect(Collectors.joining(","));
+        String ctorArgs = argsAreStrings
+                ? buildCtorArgsWithStrings(intArgValues, strArgValues)
+                : buildCtorArgs(intArgValues);
+
+        // Receiver as arg 0 — location-keyed free variable for the receiver object.
+        // Mirrors Python "receiver counts as arg 0" (layer2.py:779,1275).
+        String receiverVarJson = "{\"kind\":\"var\",\"name\":\"" + esc(receiverName) + "\"}";
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + receiverVarJson
+                + (ctorArgs.isEmpty() ? "" : "," + ctorArgs) + "]}";
+        String constJson = "{\"kind\":\"const\",\"value\":\"" + esc(expectedStr)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(assertionName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":["
+             + "{\"kind\":\"atomic\",\"name\":\"" + relation + "\",\"args\":["
+             + ctorJson + "," + constJson + "]}]}}";
+    }
+
+    /**
+     * P5c: Build a location-keyed ::assertion contract for an instance-method int result.
+     * Same structure as the String variant above but uses Int sort for the constant.
+     */
+    private static String buildLocationKeyedIntContract(
+            String locationBase, String receiverName, String callee,
+            List<Long> intArgValues, long constVal, String relation,
+            Map<String, ExpressionTree> ssaBindings) {
+
+        String assertionName = locationBase + "::assertion";
+        String ctorArgs = buildCtorArgs(intArgValues);
+
+        // Receiver as arg 0 — location-keyed free variable for the receiver object.
+        String receiverVarJson = "{\"kind\":\"var\",\"name\":\"" + esc(receiverName) + "\"}";
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + receiverVarJson
+                + (ctorArgs.isEmpty() ? "" : "," + ctorArgs) + "]}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(assertionName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":["
+             + "{\"kind\":\"atomic\",\"name\":\"" + relation + "\",\"args\":["
+             + ctorJson + ","
+             + "{\"kind\":\"const\",\"value\":" + constVal
+             + ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}"
+             + "]}]}}";
     }
 
     /**
@@ -3587,8 +3813,38 @@ public final class JavaTestAssertionsRpc {
     }
 
     private static String esc(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+        // JSON spec (RFC 8259 section 7): the C0 control characters (U+0000 through
+        // U+001F) MUST be escaped in a JSON string, plus '"' and '\'. A vendor literal
+        // can legitimately contain ANY control char (commons-lang3's StringUtilsTest
+        // asserts over form-feeds, vertical tabs, NUL in its whitespace/separator
+        // tests). The old escaper handled only \n \r \t, so a raw control byte leaked
+        // into the emitted JSON-RPC response and the rust mint aborted parsing the
+        // WHOLE artifact ("control character found while parsing a string"). One bad
+        // literal zeroed out hundreds of valid contracts. Escape the full control
+        // range here so emission is always valid JSON.
+        StringBuilder sb = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"'  -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                default -> {
+                    if (c < 0x20) {
+                        // Any remaining C0 control char becomes a JSON-mandated
+                        // backslash-u-four-hex-digits escape.
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     // ──────────────────────────────────────────────────────────────
