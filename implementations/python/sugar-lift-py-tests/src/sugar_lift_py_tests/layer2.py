@@ -219,9 +219,13 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
         )
         return out
 
-    global _CURRENT_MODULE_ALIASES
+    global _CURRENT_MODULE_ALIASES, _CURRENT_FROM_IMPORT_MEMBERS
     prev_aliases = _CURRENT_MODULE_ALIASES
+    prev_members = _CURRENT_FROM_IMPORT_MEMBERS
     _CURRENT_MODULE_ALIASES = _collect_module_aliases(tree)
+    _CURRENT_FROM_IMPORT_MEMBERS = _collect_from_import_members(
+        tree, _CURRENT_MODULE_ALIASES
+    )
     try:
         helpers = _collect_helpers(tree)
         test_fns = list(_iter_test_functions(tree))
@@ -231,6 +235,7 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
         _coalesce_same_named_decls(out)
     finally:
         _CURRENT_MODULE_ALIASES = prev_aliases
+        _CURRENT_FROM_IMPORT_MEMBERS = prev_members
     return out
 
 
@@ -3527,12 +3532,21 @@ def _call_key(call: ast.Call) -> Tuple[int, int]:
 # a time, and the map is saved/restored around each file.
 _CURRENT_MODULE_ALIASES: Dict[str, str] = {}
 
+# `from X import y` where y is a FUNCTION: maps the bare local name to its
+# qualified callee ("urlsafe_b64encode" -> "base64.urlsafe_b64encode") so the
+# callsite base keys to the function under test (aligning cross-proof conjoin
+# contact with vendor rows) and the universe walk can resolve the vendor
+# module. Saved/restored around each file alongside the module aliases.
+_CURRENT_FROM_IMPORT_MEMBERS: Dict[str, str] = {}
+
 
 def _collect_module_aliases(tree: ast.AST) -> Dict[str, str]:
     """Map each local module name to its qualified module: ``import numpy`` ->
-    {"numpy": "numpy"}, ``import numpy as np`` -> {"np": "numpy"}. Only plain
-    ``import`` (a module bound to a name); ``from x import y`` binds y to a
-    member, handled by the bare-name path, not here."""
+    {"numpy": "numpy"}, ``import numpy as np`` -> {"np": "numpy"}, and
+    ``from itsdangerous import encoding`` -> {"encoding":
+    "itsdangerous.encoding"} WHEN the imported member is itself a module
+    (find_spec-verified; a class or instance receiver must stay
+    location-keyed, so unverified members are never aliased here)."""
     aliases: Dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -3546,7 +3560,43 @@ def _collect_module_aliases(tree: ast.AST) -> Dict[str, str]:
                     # Binding `numpy` -> `numpy.linalg` would mis-resolve `numpy.add`.
                     top = a.name.split(".")[0]
                     aliases[top] = top
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            for a in node.names:
+                if a.name == "*":
+                    continue
+                qualified = f"{node.module}.{a.name}"
+                if _is_importable_module(qualified):
+                    aliases[a.asname or a.name] = qualified
     return aliases
+
+
+def _is_importable_module(qualified: str) -> bool:
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec(qualified) is not None
+    except (ImportError, ValueError, AttributeError):
+        return False
+
+
+def _collect_from_import_members(
+    tree: ast.AST, module_aliases: Dict[str, str]
+) -> Dict[str, str]:
+    """Bare names bound by ``from X import y`` where y is NOT a module:
+    {"urlsafe_b64encode": "base64.urlsafe_b64encode"}. Excludes names that
+    resolved as module aliases and relative imports (no anchored module to
+    qualify against)."""
+    members: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            for a in node.names:
+                if a.name == "*":
+                    continue
+                local = a.asname or a.name
+                if local in module_aliases:
+                    continue
+                members[local] = f"{node.module}.{a.name}"
+    return members
 
 
 def _module_attr_callee(func: ast.expr) -> Optional[str]:
@@ -3566,7 +3616,10 @@ def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
     if not (isinstance(node, ast.Call) and not node.keywords):
         return None
     if isinstance(node.func, ast.Name):
-        callee: Optional[str] = node.func.id
+        # A from-imported function keys to its QUALIFIED name so the base
+        # aligns with vendor-proof rows and the universe walk can resolve
+        # the vendor module. Unimported bare names stay as-is.
+        callee = _CURRENT_FROM_IMPORT_MEMBERS.get(node.func.id, node.func.id)
     else:
         # Attribute call: key to the callsite ONLY when the receiver is an
         # imported module (``np.add`` -> ``numpy.add``). The callsite under test

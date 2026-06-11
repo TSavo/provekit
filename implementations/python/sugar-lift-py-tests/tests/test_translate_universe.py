@@ -312,3 +312,63 @@ def test_rstrip_vendor_vector_endswith_refuses(vendor_path):
     universe, refusal = translate_universe_for_callee("vendrstrip_bad.b64e")
     assert universe is None
     assert refusal is not None and "sample-gate" in refusal.reason
+
+
+# --- from-import callee resolution ---
+
+
+def test_from_import_module_alias_claims_and_walks(vendor_path, tmp_path):
+    # `from vend_pkg import enc` where enc IS a module: alias-bound
+    # (find_spec-verified), the callsite claims, the universe attaches.
+    pkg = tmp_path / "vendfi_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "enc.py").write_text(textwrap.dedent(VENDOR_TRANSLATE))
+    translate_universe_for_callee.cache_clear()
+    out = _lift(
+        """
+        from vendfi_pkg import enc
+
+        def test_urlsafe():
+            assert enc.urlsafe("abc") == "abc"
+        """
+    )
+    atoms = _universe_atoms(out)
+    assert len(atoms) == 1
+    assert atoms[0].args[1].value == "+/"
+
+
+def test_from_import_function_qualifies_base_and_walks(vendor_path):
+    # `from vendmod import urlsafe`: the bare-name callsite keys to the
+    # QUALIFIED base (cross-proof conjoin alignment) and the walk resolves.
+    vendor_path("vendfi_fn", VENDOR_TRANSLATE)
+    out = _lift(
+        """
+        from vendfi_fn import urlsafe
+
+        def test_urlsafe():
+            assert urlsafe("abc") == "abc"
+        """
+    )
+    atoms = _universe_atoms(out)
+    assert len(atoms) == 1
+    assert any(
+        d.name.startswith("vendfi_fn.urlsafe#euf#")
+        for d in out.decls
+        if d.name.endswith("::assertion")
+    )
+
+
+def test_from_import_class_does_not_alias(vendor_path):
+    # A from-imported NON-module that is not walkable must not crash or
+    # mis-claim; behavior stays as before (no universe, no error).
+    vendor_path("vendfi_cls", "class Thing:\n    @staticmethod\n    def go(x):\n        return x\n")
+    out = _lift(
+        """
+        from vendfi_cls import Thing
+
+        def test_thing():
+            assert Thing.go("abc") == "abc"
+        """
+    )
+    assert not _universe_atoms(out)
