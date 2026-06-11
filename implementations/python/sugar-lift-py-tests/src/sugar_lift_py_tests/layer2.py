@@ -99,6 +99,7 @@ from .ir import (
     str_const,
     subst_var_in_formula,
 )
+from .translate_universe import translate_universe_for_callee
 
 
 # ---------------------------------------------------------------------------
@@ -2867,6 +2868,7 @@ def _classify_value_scope(
                 used_names,
                 assertion_atoms_by_base,
                 base_order,
+                out,
             )
             assertion_index += 1
             if pairs:
@@ -3052,6 +3054,7 @@ def _collect_value_scope_assertion_facts(
     used_names: Set[str],
     assertion_atoms_by_base: Dict[str, List[Formula]],
     base_order: List[str],
+    out: Layer2Output,
 ) -> int:
     """Collect ::facts contracts and implication wiring for one assertion
     statement.  The ::assertion contract itself is NOT emitted here; the
@@ -3095,6 +3098,45 @@ def _collect_value_scope_assertion_facts(
                 )
             )
             made += 1
+            # TRANSLATE-UNIVERSE WALK (rung 2a): when the callee's installed
+            # vendor body is translate-shaped, emit ONE sibling ::universe row
+            # per base over the SAME conjoin subject. The universal claim is
+            # instantiated at this base's concrete subject -- sound, since the
+            # translate totality argument holds for every input. Refused walks
+            # surface as loud warnings; non-candidates stay silent by design.
+            if origin.euf_term is not None:
+                universe_name = f"{base}::universe"
+                already_emitted = universe_name in used_names or any(
+                    d.name == universe_name for d in out.decls
+                )
+                if not already_emitted:
+                    universe, walk_refusal = translate_universe_for_callee(
+                        origin.callee
+                    )
+                    if walk_refusal is not None:
+                        out.warnings.append(
+                            LiftWarning(
+                                source_path=source_path,
+                                item_name=f"{test_name}::translate-universe",
+                                reason=(
+                                    f"{walk_refusal.callee}: {walk_refusal.reason}"
+                                ),
+                            )
+                        )
+                    elif universe is not None:
+                        used_names.add(universe_name)
+                        decls.append(
+                            ContractDecl(
+                                name=universe_name,
+                                inv=atomic(
+                                    "str.chars-not-in-set",
+                                    [
+                                        origin.euf_term,
+                                        str_const(universe.forbidden),
+                                    ],
+                                ),
+                            )
+                        )
     return made
 
 
@@ -3157,6 +3199,9 @@ def _assertion_callsite_context(
                 # collapses to the same name across locations for same args.
                 assert isinstance(euf_term, _Ctor)
                 origin.arg_sig = _canonical_term_sig(euf_term)
+                # Carry the subject term so the universe walk can emit a
+                # sibling ::universe row over the same conjoin subject.
+                origin.euf_term = euf_term
             else:
                 call_vars[_call_key(call)] = make_var(_call_result_var_name(origin))
             euf_origins[_call_key(call)] = origin
