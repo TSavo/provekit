@@ -119,13 +119,17 @@ impl Summary {
 /// One side's total accounting, as read from a sweep ledger: every assertion
 /// macro in the corpus, binned. `assert_macros - discharged` is the residual
 /// (the dark half); `unaccounted` is the silent drop count, which must be 0
-/// for the ledger to mean anything at all.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// for the ledger to mean anything at all. `assertion_multiset_cid` is the content
+/// identity of the whole assertion surface (None on pre-member-CID ledgers),
+/// so the dark half is diffable by MEMBER, not only by cardinality: a
+/// count-preserving swap moves the multiset-CID even when count and distinct-set both hold (multiplicity counts).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Residual {
     pub assert_macros: i64,
     pub discharged: i64,
     pub refused: i64,
     pub unaccounted: i64,
+    pub assertion_multiset_cid: Option<String>,
 }
 
 impl Residual {
@@ -140,6 +144,11 @@ impl Residual {
             discharged: field("discharged")?,
             refused: field("refused")?,
             unaccounted: field("unaccounted")?,
+            // Optional: absent on ledgers minted before per-member CIDs.
+            assertion_multiset_cid: v
+                .get("assertion_multiset_cid")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string()),
         })
     }
 
@@ -158,6 +167,12 @@ impl Residual {
 ///   default          fail iff the residual grew (a proof regression).
 ///   --require BUMP    growth is MAJOR; `--require major` may accept it.
 ///   --frozen          fail iff the accounting moved at all, even improvement.
+///                    This is where MEMBER identity bites: the derived `==`
+///                    includes `assertion_multiset_cid`, so a count-preserving swap
+///                    (and a cid-less/cid-present mismatch) fails fail-closed.
+/// Magnitude gates (default/--require) stay cardinality-based on purpose: a
+/// same-size member swap is not growth, so it fits a minor claim; identity
+/// pinning is --frozen's job, not semver's.
 pub fn residual_gate_ok(
     before: &Residual,
     after: &Residual,
@@ -370,13 +385,19 @@ pub fn run(args: DiffArgs) -> u8 {
             let pair = load_ledger(b).and_then(|rb| load_ledger(a).map(|ra| (rb, ra)));
             match pair {
                 Ok((rb, ra)) => {
+                    let members = if rb.assertion_multiset_cid == ra.assertion_multiset_cid {
+                        "held"
+                    } else {
+                        "MOVED"
+                    };
                     println!(
-                        "residual: undischarged {} -> {} ({:+}); silent {} -> {}",
+                        "residual: undischarged {} -> {} ({:+}); silent {} -> {}; members {}",
                         rb.undischarged(),
                         ra.undischarged(),
                         ra.undischarged() - rb.undischarged(),
                         rb.unaccounted,
-                        ra.unaccounted
+                        ra.unaccounted,
+                        members
                     );
                     Some((rb, ra))
                 }
@@ -423,7 +444,13 @@ pub fn run(args: DiffArgs) -> u8 {
                         ra.unaccounted
                     );
                 } else if args.frozen {
-                    eprintln!("frozen: residual accounting moved under a fixed pin");
+                    if rb.assertion_multiset_cid != ra.assertion_multiset_cid {
+                        eprintln!(
+                            "frozen: assertion-multiset CID moved under a fixed pin (a member swap, even if every count held)"
+                        );
+                    } else {
+                        eprintln!("frozen: residual accounting moved under a fixed pin");
+                    }
                 } else {
                     eprintln!(
                         "gate: residual grew (undischarged {} -> {})",
@@ -608,6 +635,7 @@ mod tests {
             discharged,
             refused,
             unaccounted,
+            assertion_multiset_cid: None,
         }
     }
 
@@ -680,6 +708,84 @@ mod tests {
         assert_eq!(
             residual_gate_ok(&silent.0, &silent.1, Some("major"), false),
             Ok(false)
+        );
+    }
+
+    // --- per-member identity: the count-preserving swap. Same cardinality,
+    // different assertion-multiset CID -- one obligation swapped for a decoy. The
+    // count gate is blind to this; the multiset-CID is the teeth, and --frozen is
+    // where it bites (identity pin). The semver gate stays magnitude-based. ---
+
+    fn res_cid(am: i64, d: i64, r: i64, u: i64, cid: &str) -> Residual {
+        Residual {
+            assert_macros: am,
+            discharged: d,
+            refused: r,
+            unaccounted: u,
+            assertion_multiset_cid: Some(cid.to_string()),
+        }
+    }
+
+    #[test]
+    fn frozen_catches_count_preserving_member_swap() {
+        let before = res_cid(100, 80, 20, 0, "blake3-512:AAA");
+        let after = res_cid(100, 80, 20, 0, "blake3-512:BBB");
+        assert_eq!(
+            before.undischarged(),
+            after.undischarged(),
+            "the cardinality gate is blind here by construction"
+        );
+        assert_eq!(residual_gate_ok(&before, &after, None, true), Ok(false));
+    }
+
+    #[test]
+    fn frozen_passes_when_member_set_identical() {
+        let r = res_cid(100, 80, 20, 0, "blake3-512:AAA");
+        assert_eq!(residual_gate_ok(&r, &r, None, true), Ok(true));
+    }
+
+    #[test]
+    fn member_swap_fits_a_minor_claim_without_count_regression() {
+        // --require is magnitude (semver); a same-size swap is not growth.
+        let before = res_cid(100, 80, 20, 0, "blake3-512:AAA");
+        let after = res_cid(100, 80, 20, 0, "blake3-512:BBB");
+        assert_eq!(
+            residual_gate_ok(&before, &after, Some("minor"), false),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn frozen_fails_closed_when_one_side_lacks_member_set() {
+        // can't verify member identity -> not green. Mixing an old (cid-less)
+        // ledger with a new one under --frozen fails rather than pretends.
+        let new = res_cid(1, 1, 0, 0, "blake3-512:Z");
+        let old = res(1, 1, 0, 0);
+        assert_eq!(residual_gate_ok(&new, &old, None, true), Ok(false));
+        assert_eq!(residual_gate_ok(&old, &new, None, true), Ok(false));
+    }
+
+    #[test]
+    fn from_ledger_reads_member_set_cid_and_tolerates_absence() {
+        let with = serde_json::json!({
+            "assert_macros": 1, "discharged": 1, "refused": 0, "unaccounted": 0,
+            "assertion_multiset_cid": "blake3-512:Z"
+        });
+        assert_eq!(
+            Residual::from_ledger(&with)
+                .unwrap()
+                .assertion_multiset_cid
+                .as_deref(),
+            Some("blake3-512:Z")
+        );
+        let without = serde_json::json!({
+            "assert_macros": 1, "discharged": 1, "refused": 0, "unaccounted": 0
+        });
+        assert_eq!(
+            Residual::from_ledger(&without)
+                .unwrap()
+                .assertion_multiset_cid,
+            None
         );
     }
 

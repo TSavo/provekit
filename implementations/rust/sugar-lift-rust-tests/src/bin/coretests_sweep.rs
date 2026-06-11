@@ -29,11 +29,32 @@ fn is_assert_macro_name(name: &str) -> bool {
     name.starts_with("assert") || name.starts_with("debug_assert")
 }
 
+/// A content CID for one assertion invocation: the macro path plus its
+/// token stream, normalized. proc_macro2's Display collapses original
+/// whitespace to single spaces, so two byte-different-but-token-identical
+/// assertions share a CID (formatting is sugar) while a changed asserted
+/// value moves it (the obligation actually changed). This is the per-member
+/// identity that lets the residual diff a MULTISET (membership + multiplicity), not just a cardinality.
+fn assertion_site_cid(m: &syn::Macro) -> String {
+    let path = m
+        .path
+        .segments
+        .iter()
+        .map(|s| s.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::");
+    let body = m.tokens.to_string();
+    sugar_canonicalizer::blake3_512_of(format!("{path}!({body})").as_bytes())
+}
+
 /// Counts assertion-macro invocations independently of the lifter, so we can
 /// reconcile against the lifter's own accounting and surface silent drops.
+/// Also collects a content CID per site so the unproven set is identifiable
+/// by member, not only by count.
 #[derive(Default)]
 struct AssertCounter {
     total: usize,
+    site_cids: Vec<String>,
 }
 
 impl<'ast> Visit<'ast> for AssertCounter {
@@ -41,6 +62,7 @@ impl<'ast> Visit<'ast> for AssertCounter {
         if let Some(seg) = m.path.segments.last() {
             if is_assert_macro_name(&seg.ident.to_string()) {
                 self.total += 1;
+                self.site_cids.push(assertion_site_cid(m));
             }
         }
         visit::visit_macro(self, m);
@@ -189,6 +211,10 @@ fn main() {
     let mut all_reasons: Vec<String> = Vec::new();
     // Per-file rows: (path, asserts, atoms, warnings, unaccounted, parse_ok)
     let mut rows: Vec<(String, usize, usize, usize, i64, bool)> = Vec::new();
+    // Every assertion site's content CID across the whole corpus. Sorted +
+    // hashed (dups kept) into one multiset-CID below: the identity of the assertion surface,
+    // so a count-preserving swap is still a moved CID.
+    let mut all_site_cids: Vec<String> = Vec::new();
 
     for entry in walkdir::WalkDir::new(corpus)
         .into_iter()
@@ -225,6 +251,7 @@ fn main() {
 
         let mut counter = AssertCounter::default();
         counter.visit_file(&file);
+        all_site_cids.extend(counter.site_cids.iter().cloned());
 
         let out = lift_file_with_macro_imports(&file, &rel, &options, &registry);
         let discharged = out.assertions_lifted;
@@ -332,6 +359,17 @@ fn main() {
         );
     }
 
+    // The assertion-surface multiset-CID: sort the site CIDs, keep dups (order-independent, multiplicity-preserving
+    // identity) and content-address the array. Recomputable from source.
+    all_site_cids.sort();
+    let assertion_multiset_cid = sugar_canonicalizer::jcs_cid_of_json(&serde_json::Value::Array(
+        all_site_cids
+            .iter()
+            .map(|c| serde_json::Value::from(c.clone()))
+            .collect(),
+    ));
+    println!("assertion multiset cid: {}", assertion_multiset_cid);
+
     if let Some(out_path) = json_out {
         let json = build_ledger_json(
             corpus,
@@ -341,6 +379,7 @@ fn main() {
             &reason_samples,
             &all_reasons,
             &rows,
+            &assertion_multiset_cid,
         );
         // The silence gets a CID: content-address the ledger over its JCS
         // canonical form (recomputable from the file: parse -> JCS -> hash),
@@ -369,6 +408,7 @@ fn build_ledger_json(
     reason_samples: &BTreeMap<String, Vec<String>>,
     all_reasons: &[String],
     rows: &[(String, usize, usize, usize, i64, bool)],
+    assertion_multiset_cid: &str,
 ) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     obj.insert("corpus".into(), corpus.into());
@@ -379,6 +419,10 @@ fn build_ledger_json(
     obj.insert("discharged".into(), totals.discharged.into());
     obj.insert("refused".into(), totals.refused.into());
     obj.insert("unaccounted".into(), unaccounted.into());
+    obj.insert(
+        "assertion_multiset_cid".into(),
+        assertion_multiset_cid.into(),
+    );
     let reason_obj: serde_json::Map<String, serde_json::Value> = reasons
         .iter()
         .map(|(k, v)| (k.clone(), serde_json::Value::from(*v)))
@@ -464,8 +508,8 @@ mod tests {
     #[test]
     fn ledger_json_is_deterministic_and_carries_the_residual_fields() {
         let (totals, reasons, samples, all, rows) = fixture();
-        let v1 = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows);
-        let v2 = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows);
+        let v1 = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows, "x");
+        let v2 = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows, "x");
         assert_eq!(v1, v2);
         // exactly the fields `sugar diff --ledger-*` reads for the residual axis.
         for field in ["assert_macros", "discharged", "refused", "unaccounted"] {
@@ -476,9 +520,62 @@ mod tests {
     #[test]
     fn ledger_cid_is_blake3_512_tagged_and_stable() {
         let (totals, reasons, samples, all, rows) = fixture();
-        let v = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows);
+        let v = build_ledger_json("corpus", &totals, 0, &reasons, &samples, &all, &rows, "");
         let cid = sugar_canonicalizer::jcs_cid_of_json(&v);
         assert!(cid.starts_with("blake3-512:"), "{cid}");
         assert_eq!(cid, sugar_canonicalizer::jcs_cid_of_json(&v));
+    }
+
+    // --- per-silence identity: the unproven set must be diffable by member,
+    // not just by cardinality. Each assertion site gets a content CID so a
+    // count-preserving swap (one assertion out, a decoy in) is visible. ---
+
+    fn mac(src: &str) -> syn::Macro {
+        match syn::parse_str::<syn::Expr>(src).expect("parse expr") {
+            syn::Expr::Macro(m) => m.mac,
+            _ => panic!("not a macro invocation"),
+        }
+    }
+
+    #[test]
+    fn site_cid_is_whitespace_insensitive_but_value_sensitive() {
+        let base = assertion_site_cid(&mac("assert_eq!(a, 2)"));
+        let spaced = assertion_site_cid(&mac("assert_eq!(a ,   2)"));
+        let revalued = assertion_site_cid(&mac("assert_eq!(a, 3)"));
+        assert!(base.starts_with("blake3-512:"), "{base}");
+        assert_eq!(base, spaced, "whitespace must not move the site cid");
+        assert_ne!(base, revalued, "a changed asserted value must move it");
+    }
+
+    #[test]
+    fn site_cid_distinguishes_macro_path() {
+        assert_ne!(
+            assertion_site_cid(&mac("assert!(a)")),
+            assertion_site_cid(&mac("debug_assert!(a)")),
+            "assert! and debug_assert! are different obligations"
+        );
+    }
+
+    #[test]
+    fn assert_counter_collects_one_site_cid_per_assertion() {
+        let file: syn::File =
+            syn::parse_str("fn t() { assert!(a); assert_eq!(b, 1); }").expect("parse file");
+        let mut c = AssertCounter::default();
+        c.visit_file(&file);
+        assert_eq!(c.total, 2);
+        assert_eq!(c.site_cids.len(), 2, "one site cid per assertion macro");
+    }
+
+    #[test]
+    fn ledger_carries_assertion_multiset_cid() {
+        let (totals, reasons, samples, all, rows) = fixture();
+        let set_cid = "blake3-512:abc";
+        let v = build_ledger_json(
+            "corpus", &totals, 0, &reasons, &samples, &all, &rows, set_cid,
+        );
+        assert_eq!(
+            v.get("assertion_multiset_cid").and_then(|s| s.as_str()),
+            Some(set_cid)
+        );
     }
 }
