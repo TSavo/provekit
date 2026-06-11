@@ -1,0 +1,4 @@
+target/
+proofs/
+blake3-512:*.proof
+.sugar/runs/
