@@ -16,3 +16,46 @@ version = "0.1.0"
 [[artifact]]
 name = "sugar"
 path = "implementations/rust/target/release/sugar"
+
+[[artifact]]
+name = "sugar-lift"
+path = "implementations/rust/target/release/sugar-lift"
+
+# Coverage gate: completeness is STRUCTURAL, not sworn. Every bin the workspace
+# builds (cargo metadata --no-deps) must be either pinned above or listed here.
+# A newly-added bin that is neither FAILS `package release` -- so a shippable
+# binary can never be silently left unpinned. `exclude` is the explicit
+# decision that a bin is not a pinned deliverable of THIS manifest (internal
+# rpc/test/dev bins, or deliverables not yet pinned). To pin one, move it to an
+# [[artifact]] above and ensure the build produces it.
+[coverage]
+cargo_manifest = "implementations/rust/Cargo.toml"
+exclude = [
+  # cargo subcommand wrappers (front the same CLIs as sugar/sugar-lift)
+  "cargo-sugar",
+  "cargo-sugar-lift",
+  # language-server / linker daemons (editor/build integration, not yet pinned)
+  "sugar-lsp",
+  "sugar-lsp-rust",
+  "sugar-linkerd",
+  # IR-compiler backend bins (internal to the verify pipeline)
+  "sugar-ir-coq",
+  "sugar-ir-lean",
+  "sugar-ir-maude",
+  "sugar-ir-smt-lib",
+  # JSON-RPC protocol servers (internal lift/verify transport)
+  "contracts_rpc",
+  "witness_rpc",
+  "rust_test_assertions_rpc",
+  "sugar-plugin-loader-stub-rpc",
+  "sugar-walk-rpc",
+  # dev / test / fixture / demo tooling (not shipped)
+  "compute_fixture_cid",
+  "coretests_sweep",
+  "discharge_cli",
+  "emit_c_fixtures",
+  "hover_probe",
+  "mint-plugin-cid",
+  "sugar-walk-demo",
+  "sugar-walk-emit",
+]
