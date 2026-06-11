@@ -96,6 +96,7 @@ from .ir import (
     ne,
     not_,
     num,
+    or_,
     str_const,
     subst_var_in_formula,
 )
@@ -3221,6 +3222,18 @@ def _collect_value_scope_assertion_facts(
                                 )
                             )
                             for ch in universe.forbidden
+                        ]
+                    elif universe.kind == "member-of-values":
+                        # subscript membership: every returned value IS an
+                        # element of the pinned tuple -- one disjunction of
+                        # string-routed equalities over the same subject.
+                        universe_atoms = [
+                            or_(
+                                [
+                                    eq(subject_term, str_const(v))
+                                    for v in universe.values
+                                ]
+                            )
                         ]
                     else:
                         universe_atoms = [
