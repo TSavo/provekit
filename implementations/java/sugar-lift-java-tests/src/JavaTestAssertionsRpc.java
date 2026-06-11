@@ -163,6 +163,9 @@ public final class JavaTestAssertionsRpc {
         // and registers int32.eq-bv-expr universe contracts per method name.
         // Supported shapes: ternary-with-comparison ((a < 0) ? -a : a) → abs BV expression.
         NumericUniverseRegistry numericRegistry = NumericUniverseWalker.loadRegistry(compiler, root, diagnostics);
+        // STRONG TIER (paper 26 seam): per-character block equations walked from
+        // the vendor encode body. Built once; consumed at string-literal callsites.
+        StrongUniverseRegistry strongRegistry = StrongUniverseWalker.loadRegistry(compiler, root, diagnostics);
 
         // G3: Load instance-universe — walks receiver classes in the WORKSPACE to pin
         // construction-time facts: new Box(5).get() == 5 BY CONSTRUCTION (ctor→field→getter).
@@ -189,7 +192,7 @@ public final class JavaTestAssertionsRpc {
             // contracts already lifted from the other files. Without this, one bad
             // file in a 229-file vendor test tree drops the entire artifact to GAP.
             try {
-                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, instanceUniverse, javaConstants, ir, diagnostics);
+                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, strongRegistry, instanceUniverse, javaConstants, ir, diagnostics);
             } catch (Exception e) {
                 diagnostics.add(diagnostic(rel, null, null,
                     "per-file lift skipped (isolated): "
@@ -1868,6 +1871,7 @@ public final class JavaTestAssertionsRpc {
             MultiFrameworkVocab multiVocab,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            StrongUniverseRegistry strongRegistry,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             List<String> ir,
@@ -1950,7 +1954,7 @@ public final class JavaTestAssertionsRpc {
                 if (decl instanceof ClassTree ct) {
                     walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
                             vocab, frameworkKind, ambiguousFramework,
-                            universeRegistry, numericRegistry, instanceUniverse, javaConstants, ir, diagnostics, null);
+                            universeRegistry, numericRegistry, strongRegistry, instanceUniverse, javaConstants, ir, diagnostics, null);
                 }
             }
         }
@@ -1980,6 +1984,7 @@ public final class JavaTestAssertionsRpc {
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            StrongUniverseRegistry strongRegistry,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             List<String> ir,
@@ -1992,12 +1997,12 @@ public final class JavaTestAssertionsRpc {
         for (Tree member : classTree.getMembers()) {
             if (member instanceof MethodTree mt) {
                 liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry,
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry,
                         instanceUniverse, javaConstants, classTree, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
                 walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework,
-                        universeRegistry, numericRegistry, instanceUniverse, javaConstants, ir, diagnostics, className);
+                        universeRegistry, numericRegistry, strongRegistry, instanceUniverse, javaConstants, ir, diagnostics, className);
             }
         }
     }
@@ -2018,6 +2023,7 @@ public final class JavaTestAssertionsRpc {
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            StrongUniverseRegistry strongRegistry,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             ClassTree classTree,
@@ -2072,7 +2078,7 @@ public final class JavaTestAssertionsRpc {
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, instanceUniverse,
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry, instanceUniverse,
                         ssaBindings, mutatedLocals, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
@@ -3108,6 +3114,7 @@ public final class JavaTestAssertionsRpc {
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            StrongUniverseRegistry strongRegistry,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3222,7 +3229,7 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, strongRegistry, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
@@ -3251,6 +3258,7 @@ public final class JavaTestAssertionsRpc {
             AssertionVocab vocab,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            StrongUniverseRegistry strongRegistry,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3318,7 +3326,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
-                universeRegistry, numericRegistry, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+                universeRegistry, numericRegistry, strongRegistry, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -3386,7 +3394,8 @@ public final class JavaTestAssertionsRpc {
         // which processes already-resolved MethodInvocationTree nodes — no SSA
         // binding substitution needed; pass empty maps.
         liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
-                UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, InstanceUniverse.EMPTY,
+                UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, StrongUniverseRegistry.EMPTY,
+                InstanceUniverse.EMPTY,
                 Collections.emptyMap(), Collections.emptySet(), ir, diagnostics);
     }
 
@@ -3421,6 +3430,7 @@ public final class JavaTestAssertionsRpc {
             String relation, String methodName,
             String scope, UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            StrongUniverseRegistry strongRegistry,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3636,6 +3646,28 @@ public final class JavaTestAssertionsRpc {
             if (universeSet != null) {
                 ir.add(buildUniverseContract(callee, intArgValues, strArgValues, argsAreStrings,
                         universeSet));
+            }
+            // STRONG TIER (paper 26 seam): if the callee is strong-registered AND
+            // the input is a single string literal of length a multiple of 3 (a
+            // whole number of full blocks, no mod-3 tail), emit the per-character
+            // block equations alongside the weak row, under the SAME #euf# name.
+            List<Integer> strongTable = strongRegistry.tableFor(callee);
+            if (strongTable != null && !strongRegistry.isEmpty()
+                    && argsAreStrings && strArgValues.size() == 1 && strArgValues.get(0) != null) {
+                String input = strArgValues.get(0);
+                byte[] bytes = input.getBytes(StandardCharsets.UTF_8);
+                if (bytes.length > 0 && bytes.length % 3 == 0) {
+                    ir.add(buildStrongUniverseContract(callee, intArgValues, strArgValues,
+                            bytes, strongRegistry, strongTable));
+                } else {
+                    // PHASE 1 honest bound: the mod-3 tail (1/2-byte + pad) is walked
+                    // as a NAMED REFUSAL, not faked. The weak row still stands.
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope), methodName,
+                            "strong universe refused: input length " + bytes.length
+                            + " is not a multiple of 3 — the mod-3 tail (Base64.java:740-760, "
+                            + "1/2-byte block + '=' padding) is PHASE 2 and not yet walked; "
+                            + "weak tier (str.chars-in-set) emitted alone"));
+                }
             }
         } else {
             // Int expected — original #euf# path
@@ -4407,6 +4439,123 @@ public final class JavaTestAssertionsRpc {
              + "]}]}}";
     }
 
+    /**
+     * STRONG TIER (paper 26 seam): build the `str.eq-bv-blocks` universe atom.
+     * Same #euf# contract name as the sworn equality and the weak str.chars-in-set
+     * row → all three conjoin at prove time. The conjunction is UNSAT iff the
+     * claimed output string is not the one the block equations compute — which
+     * refutes an ALPHABET-VALID-BUT-WRONG claim ("ZmFy" for encode("bar")) that
+     * the weak tier alone discharges.
+     *
+     * The atom carries:
+     *   args[0] — the call:callee ctor (the result String)
+     *   args[1] — a String const whose value is the payload JSON:
+     *       { "input_bytes":[...],   // the literal's UTF-8 bytes
+     *         "vars":["b0","b1",...],// one byte var per input byte
+     *         "per_char":[ <bv index tree>, ... ],  // unrolled, one per output char
+     *         "table":[64 codepoints] }             // resolved table, source order
+     *
+     * The per-char index trees are the SAME equations walked once from the encode
+     * body (StrongUniverseWalker), re-instantiated per 3-byte block onto that
+     * block's three byte vars. NOTHING here is hand-authored arithmetic; the only
+     * literals are the input bytes (from the call's string literal) and the walked
+     * table codepoints.
+     */
+    private static String buildStrongUniverseContract(
+            String callee, List<Long> intArgValues, List<String> strArgValues,
+            byte[] inputBytes, StrongUniverseRegistry strong, List<Integer> table) {
+
+        String safeName = toSafeName(callee);
+        int arity = intArgValues.size();
+        String argSig = buildArgSigMixed(intArgValues, strArgValues);
+        String contractName = callee + "#euf#c:callresult_" + safeName + "_a" + arity
+                + "(" + argSig + ")::assertion";
+
+        String ctorArgs = buildCtorArgsWithStrings(intArgValues, strArgValues);
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + ctorArgs + "]}";
+
+        // input_bytes (UTF-8, unsigned 0..255) and one var per byte.
+        StringBuilder bytesJson = new StringBuilder("[");
+        StringBuilder varsJson  = new StringBuilder("[");
+        List<String> varNamesAll = new ArrayList<>();
+        for (int i = 0; i < inputBytes.length; i++) {
+            int ub = inputBytes[i] & 0xFF;
+            if (i > 0) { bytesJson.append(","); varsJson.append(","); }
+            bytesJson.append(ub);
+            String vn = "b" + i;
+            varNamesAll.add(vn);
+            varsJson.append("\"").append(vn).append("\"");
+        }
+        bytesJson.append("]");
+        varsJson.append("]");
+
+        // per_char: for each 3-byte block, re-instantiate the walked block index
+        // trees onto that block's three vars (b{3k}, b{3k+1}, b{3k+2}).
+        List<String> blockTrees = strong.blockIndexTrees();   // 4 trees over b0,b1,b2
+        List<String> blockVars  = strong.blockVarNames();     // ["b0","b1","b2"]
+        StringBuilder perChar = new StringBuilder("[");
+        int nBlocks = inputBytes.length / 3;
+        boolean firstChar = true;
+        for (int blk = 0; blk < nBlocks; blk++) {
+            // var remap: blockVars[j] → b{3*blk + j}
+            Map<String, String> remap = new LinkedHashMap<>();
+            for (int j = 0; j < blockVars.size(); j++) {
+                remap.put(blockVars.get(j), "b" + (3 * blk + j));
+            }
+            for (String tree : blockTrees) {
+                String inst = remapVars(tree, remap);
+                if (!firstChar) perChar.append(",");
+                perChar.append(inst);
+                firstChar = false;
+            }
+        }
+        perChar.append("]");
+
+        // table codepoints, source order.
+        StringBuilder tableJson = new StringBuilder("[");
+        for (int i = 0; i < table.size(); i++) {
+            if (i > 0) tableJson.append(",");
+            tableJson.append(table.get(i));
+        }
+        tableJson.append("]");
+
+        String payloadJson = "{\"input_bytes\":" + bytesJson
+                + ",\"vars\":" + varsJson
+                + ",\"per_char\":" + perChar
+                + ",\"table\":" + tableJson + "}";
+
+        // Carry the payload as a String const (the emitter parses it back).
+        String payloadConst = "{\"kind\":\"const\",\"value\":\"" + esc(payloadJson)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":["
+             + "{\"kind\":\"atomic\",\"name\":\"str.eq-bv-blocks\",\"args\":["
+             + ctorJson + "," + payloadConst
+             + "]}]}}";
+    }
+
+    /**
+     * Re-instantiate a walked bv index tree (JSON string) onto a new set of byte
+     * vars by renaming `var` node names per `remap`. We do a structural rename on
+     * the parsed JSON-ish var tokens: every `"name":"<old>"` inside a `"kind":
+     * "var"` node is replaced. Because the walked trees only ever name byte vars
+     * b0/b1/b2 inside var nodes (the table has no var names), a targeted token
+     * replace of `{"kind":"var","name":"<old>"}` is exact and order-independent.
+     */
+    private static String remapVars(String treeJson, Map<String, String> remap) {
+        String out = treeJson;
+        for (Map.Entry<String, String> e : remap.entrySet()) {
+            String from = "{\"kind\":\"var\",\"name\":\"" + e.getKey() + "\"}";
+            String to   = "{\"kind\":\"var\",\"name\":\"" + e.getValue() + "\"}";
+            out = out.replace(from, to);
+        }
+        return out;
+    }
+
     // ──────────────────────────────────────────────────────────────
     // File enumeration
     // ──────────────────────────────────────────────────────────────
@@ -5160,6 +5309,15 @@ public final class JavaTestAssertionsRpc {
                 return vt != null && vt.getInitializer() instanceof NewArrayTree;
             }
 
+            /** A declared field whose TYPE is an array (e.g. `byte[] encodeTable`),
+             *  regardless of initializer. Used by the strong-tier walker to accept
+             *  the `encodeTable` member as the indexed table in extraction writes
+             *  (its literal codepoints are resolved separately via the selector). */
+            boolean isByteArrayField(String name) {
+                VariableTree vt = fields.get(name);
+                return vt != null && vt.getType() instanceof ArrayTypeTree;
+            }
+
             boolean isStaticFinal(String name) {
                 VariableTree vt = fields.get(name);
                 if (vt == null) return false;
@@ -5731,6 +5889,458 @@ public final class JavaTestAssertionsRpc {
             if (e == null) return null;
             while (e instanceof ParenthesizedTree pt) e = pt.getExpression();
             return e;
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // STRONG TIER: StrongUniverseWalker — symbolic execution of the encode body
+    //
+    // Paper 26 names this "THE seam between tiers." The weak tier asserts every
+    // output char is a member of the walked table (a SET). The strong tier mints
+    // the PER-CHARACTER EQUATIONS (a FUNCTION): out_k = table[index_k(b0..bn)],
+    // where index_k is read by SYMBOLIC EXECUTION of the vendor's encode loop —
+    // never pattern-matched, never hand-authored.
+    //
+    // THE SUPREME LAW: every shift amount, mask, accumulation op, and table entry
+    // in an emitted equation must trace to a com.sun.source tree node of the
+    // vendored Base64.java. A constant we cannot point to in the AST is a fraud.
+    // Any statement/expression shape the symbolic store cannot interpret → the
+    // strong row is REFUSED BY NAME (the weak row still emits).
+    //
+    // PHASE 1 (this build): FULL 3-byte BLOCKS only. A callsite whose string
+    // literal has length a multiple of 3 has a known byte count and no mod-3
+    // tail — we emit the UNROLLED equations (a finite conjunction). The mod-3
+    // tails (1/2-byte + '=' pad, Base64.java:740-760) are PHASE 2: walked here as
+    // a NAMED REFUSAL, not faked. A non-multiple-of-3 literal gets the weak row
+    // plus a diagnostic naming the tail as unwalked.
+    // ──────────────────────────────────────────────────────────────
+
+    /** A strong-tier entry: the resolved table (ordered codepoints) for a callee. */
+    static final class StrongUniverseRegistry {
+        static final StrongUniverseRegistry EMPTY =
+                new StrongUniverseRegistry(Map.of(), null, List.of());
+
+        /** callee simple-name → ordered table codepoints (index → codepoint). */
+        private final Map<String, List<Integer>> tableByCallee;
+        /** The per-output-char index bv-trees for ONE full 3-byte block (4 trees),
+         *  walked once from the encode body. Table-independent. Null if unwalked. */
+        private final List<String> blockIndexTrees;
+        /** The byte var names for one block, in accumulation order: ["b0","b1","b2"]. */
+        private final List<String> blockVarNames;
+
+        StrongUniverseRegistry(Map<String, List<Integer>> tableByCallee,
+                List<String> blockIndexTrees, List<String> blockVarNames) {
+            this.tableByCallee = Map.copyOf(tableByCallee);
+            this.blockIndexTrees = blockIndexTrees == null ? null : List.copyOf(blockIndexTrees);
+            this.blockVarNames = List.copyOf(blockVarNames);
+        }
+
+        boolean isEmpty() {
+            return tableByCallee.isEmpty() || blockIndexTrees == null;
+        }
+
+        /** Ordered table codepoints for a callee, or null if not strong-registered. */
+        List<Integer> tableFor(String callee) { return tableByCallee.get(callee); }
+        List<String> blockIndexTrees() { return blockIndexTrees; }
+        List<String> blockVarNames() { return blockVarNames; }
+    }
+
+    /**
+     * Walk the vendored encode body symbolically and pair the resulting per-char
+     * index equations with each String entry point's resolved table.
+     *
+     * Reuses (does NOT duplicate) the weak-tier walker's machinery:
+     *   - UniverseWalker.readVendorSourceDirs / corpus build / Selector / findSelectors
+     *   - Corpus.resolveStaticMethod (literal-propagation table resolution)
+     *   - Corpus.literalArrayValues (ordered table codepoints)
+     *   - Corpus.resolveFieldValue (MASK_6BITS → 0x3f, etc.)
+     */
+    static final class StrongUniverseWalker {
+
+        static StrongUniverseRegistry loadRegistry(
+                JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
+            List<Path> vendorDirs;
+            try {
+                vendorDirs = UniverseWalker.readVendorSourceDirs(workspaceRoot);
+            } catch (IOException e) {
+                return StrongUniverseRegistry.EMPTY;
+            }
+            if (vendorDirs.isEmpty()) return StrongUniverseRegistry.EMPTY;
+
+            List<Path> vendorFiles = new ArrayList<>();
+            for (Path dir : vendorDirs) {
+                if (!Files.isDirectory(dir)) continue;
+                try (Stream<Path> walk = Files.walk(dir)) {
+                    walk.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .forEach(vendorFiles::add);
+                } catch (IOException e) {
+                    diagnostics.add(diagnostic("<strong-universe-walker>", "<strong-universe-walker>",
+                            dir.toString(), "vendor dir walk error: " + e.getMessage()));
+                }
+            }
+            if (vendorFiles.isEmpty()) return StrongUniverseRegistry.EMPTY;
+
+            // Parse into the SAME corpus shape the weak tier uses.
+            Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
+            for (Path src : vendorFiles) {
+                try {
+                    String source = Files.readString(src, StandardCharsets.UTF_8);
+                    JavaFileObject fo = new StringJavaFileObject(src.toString(), source);
+                    StandardJavaFileManager fm = compiler.getStandardFileManager(
+                            null, null, StandardCharsets.UTF_8);
+                    JavacTask task = (JavacTask) compiler.getTask(
+                            null, fm, d -> {}, List.of("--release", "21"), null, List.of(fo));
+                    for (CompilationUnitTree cu : task.parse()) {
+                        for (Tree decl : cu.getTypeDecls()) {
+                            if (decl instanceof ClassTree ct) {
+                                classTreeByName.putIfAbsent(ct.getSimpleName().toString(), ct);
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    diagnostics.add(diagnostic("<strong-universe-walker>", "<strong-universe-walker>",
+                            src.toString(), "parse error: " + e.getMessage()));
+                }
+            }
+            if (classTreeByName.isEmpty()) return StrongUniverseRegistry.EMPTY;
+
+            // Reuse the SAME identity-bridge axioms the weak walker uses, so the
+            // entry-point chain (which ends in the name-gated newStringUsAscii
+            // unwrap) resolves identically — otherwise no String entry point
+            // resolves a table and the strong tier is silently empty.
+            Set<String> identityBridges =
+                    UniverseWalker.loadPlatformAxioms(workspaceRoot, diagnostics);
+            UniverseWalker.Corpus corpus =
+                    new UniverseWalker.Corpus(classTreeByName, identityBridges);
+
+            List<UniverseWalker.Selector> selectors =
+                    UniverseWalker.findSelectors(corpus, diagnostics);
+            if (selectors.isEmpty()) return StrongUniverseRegistry.EMPTY;
+
+            // ── Symbolically execute ONE full 3-byte block from the encode body ──
+            BlockEquations eqns = walkEncodeBlock(corpus, diagnostics);
+            if (eqns == null) {
+                // Named refusal already added. No strong tier; weak tier stands.
+                return StrongUniverseRegistry.EMPTY;
+            }
+
+            // ── Pair the (table-independent) index equations with each String
+            //    entry point's RESOLVED table — reuse the weak walker's resolver ──
+            Map<String, List<Integer>> tableByCallee = new LinkedHashMap<>();
+            Set<String> ambiguous = new HashSet<>();
+            for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
+                for (Tree m : ce.getValue().getMembers()) {
+                    if (!(m instanceof MethodTree mt)) continue;
+                    Set<Modifier> mods = mt.getModifiers().getFlags();
+                    if (!mods.contains(Modifier.PUBLIC) || !mods.contains(Modifier.STATIC)) continue;
+                    String retType = mt.getReturnType() != null ? mt.getReturnType().toString() : "";
+                    if (!retType.equals("String")) continue;
+                    if (mt.getBody() == null || mt.getBody().getStatements().isEmpty()) continue;
+
+                    String mName = mt.getName().toString();
+                    List<String> notes = new ArrayList<>();
+                    String tbl = corpus.resolveStaticMethod(mt, Map.of(), selectors, 0, notes);
+                    if (tbl == null) continue; // weak tier names its own refusal
+                    List<Integer> ordered = corpus.literalArrayValues(tbl);
+                    if (ordered == null || ordered.size() != 64) {
+                        // A non-64-entry table is not a base64 alphabet; refuse strong.
+                        diagnostics.add(diagnostic("<strong-universe-walker>", ce.getKey(), mName,
+                                "strong universe refused: resolved table " + tbl
+                                + " is not 64 literal entries"));
+                        continue;
+                    }
+                    List<Integer> prev = tableByCallee.get(mName);
+                    if (prev != null && !prev.equals(ordered)) {
+                        diagnostics.add(diagnostic("<strong-universe-walker>", ce.getKey(), mName,
+                                "strong universe refused: overloads of " + mName
+                                + " resolve to different tables; simple-name callsite is ambiguous"));
+                        ambiguous.add(mName);
+                        continue;
+                    }
+                    tableByCallee.put(mName, ordered);
+                }
+            }
+            for (String a : ambiguous) tableByCallee.remove(a);
+            if (tableByCallee.isEmpty()) return StrongUniverseRegistry.EMPTY;
+
+            return new StrongUniverseRegistry(tableByCallee, eqns.indexTrees, eqns.varNames);
+        }
+
+        /** The per-char index equations for one full 3-byte block. */
+        private static final class BlockEquations {
+            final List<String> indexTrees;  // 4 bv-tree JSON strings (output chars 0..3)
+            final List<String> varNames;    // byte var names in accumulation order
+            BlockEquations(List<String> indexTrees, List<String> varNames) {
+                this.indexTrees = indexTrees; this.varNames = varNames;
+            }
+        }
+
+        /**
+         * Symbolically execute the vendor's full-block encode path.
+         *
+         * The vendor (Base64.java:778-783) does, per 3-byte block:
+         *   ibitWorkArea = (ibitWorkArea << 8) + b;        // x3, accumulation
+         *   if (0 == modulus) {                            // block complete
+         *     buffer[pos++] = encodeTable[ibitWorkArea >> 18 & MASK_6BITS];
+         *     buffer[pos++] = encodeTable[ibitWorkArea >> 12 & MASK_6BITS];
+         *     buffer[pos++] = encodeTable[ibitWorkArea >>  6 & MASK_6BITS];
+         *     buffer[pos++] = encodeTable[ibitWorkArea       & MASK_6BITS];
+         *   }
+         *
+         * We find the accumulation assignment and the four `encodeTable[<idx>]`
+         * index expressions, then interpret each `<idx>` over a symbolic store
+         * where the work-area local equals the accumulation of b0,b1,b2 (the
+         * Context int field starts at its Java default 0 — a fixed language
+         * fact — and the block fires after exactly 3 accumulations).
+         *
+         * Returns null (named refusal) on any shape the store cannot interpret.
+         */
+        private static BlockEquations walkEncodeBlock(
+                UniverseWalker.Corpus corpus, List<String> diagnostics) {
+            // Locate the streaming encode method by its WALKABLE SHAPE, not its
+            // name/arity: scan every `encode(byte[] ..., Context)` candidate and
+            // keep the one whose body actually carries the full-block accumulation
+            // (`work = (work << 8) + b`) AND exactly four `encodeTable[...]`
+            // extractions. Multiple `encode` overloads exist (BaseNCodec has a
+            // byte[]-returning delegator and an abstract decl); only the per-block
+            // arithmetic shape is the one we symbolically execute.
+            AccFinder acc = null;
+            String encodeOwner = null;
+            int candidates = 0;
+            for (Map.Entry<String, ClassTree> ce : corpus.classes.entrySet()) {
+                for (Tree m : ce.getValue().getMembers()) {
+                    if (!(m instanceof MethodTree mt)) continue;
+                    if (!mt.getName().contentEquals("encode")) continue;
+                    if (mt.getBody() == null) continue;
+                    List<? extends VariableTree> ps = mt.getParameters();
+                    if (ps.isEmpty() || !(ps.get(0).getType() instanceof ArrayTypeTree)) continue;
+                    candidates++;
+                    AccFinder f = new AccFinder(corpus);
+                    f.scan(mt.getBody(), null);
+                    if (f.workLocal != null && f.shiftAmount == 8
+                            && f.fullBlockIndexExprs != null && f.fullBlockIndexExprs.size() == 4) {
+                        acc = f; encodeOwner = ce.getKey();
+                    }
+                }
+            }
+            if (candidates == 0) {
+                diagnostics.add(diagnostic("<strong-universe-walker>", "<vendor>", "encode",
+                        "strong universe refused: no `encode(byte[], ...)` method found to walk"));
+                return null;
+            }
+            if (acc == null) {
+                diagnostics.add(diagnostic("<strong-universe-walker>", "<vendor>", "encode",
+                        "strong universe refused: no encode body carries the full-block shape "
+                        + "(`work = (work << 8) + b` accumulation + 4 `encodeTable[...]` extractions)"));
+                return null;
+            }
+
+            // Build the symbolic work-area: 3 accumulations from 0.
+            //   w0 = (0 << 8) + b0;  w1 = (w0 << 8) + b1;  w2 = (w1 << 8) + b2
+            List<String> varNames = List.of("b0", "b1", "b2");
+            String work = "{\"kind\":\"const\",\"value\":0}";
+            for (String bv : varNames) {
+                String shifted = "{\"kind\":\"ctor\",\"name\":\"bv32.shl\",\"args\":["
+                        + work + ",{\"kind\":\"const\",\"value\":8}]}";
+                work = "{\"kind\":\"ctor\",\"name\":\"bv32.add\",\"args\":["
+                        + shifted + ",{\"kind\":\"var\",\"name\":\"" + bv + "\"}]}";
+            }
+
+            // Interpret each extraction index expression over the store
+            // { workLocal → work }. Any unhandled node → named refusal.
+            List<String> indexTrees = new ArrayList<>();
+            for (ExpressionTree idxExpr : acc.fullBlockIndexExprs) {
+                String tree = interpret(idxExpr, acc.workLocal, work, corpus, encodeOwner, diagnostics);
+                if (tree == null) return null; // refusal already named
+                indexTrees.add(tree);
+            }
+            return new BlockEquations(indexTrees, varNames);
+        }
+
+        /**
+         * Symbolic interpreter: turn an extraction index expression into a bv-tree
+         * JSON over the byte vars, reading every constant/op from the AST.
+         *
+         *   <work>           (MemberSelect `context.ibitWorkArea` or Ident) → the work tree
+         *   int literal      → const node (the literal VALUE)
+         *   static-final int field (MASK_6BITS) → const node (resolveFieldValue)
+         *   a << b           → bv32.shl   (Java left shift)
+         *   a >> b           → bv32.lshr  (Java unsigned-shape >> on the masked work area)
+         *   a & b            → bv32.and
+         *   a | b            → bv32.or
+         *   a + b            → bv32.add
+         *
+         * Note on `>>`: Java `>>` is arithmetic, but the vendor immediately masks
+         * with `& MASK_6BITS` (6 bits), and the work area is a non-negative 24-bit
+         * value, so the high bits are irrelevant — `bvlshr` and `bvashr` agree on
+         * the masked result. We render `bvlshr`; the mask makes the choice moot,
+         * and z3 confirms the equality end-to-end (the sample-gate: encode("foo")
+         * == the vendor's sworn "Zm9v").
+         */
+        private static String interpret(
+                ExpressionTree expr, String workLocal, String workTree,
+                UniverseWalker.Corpus corpus, String owner, List<String> diagnostics) {
+            expr = strip(expr);
+            // The work-area local: `context.ibitWorkArea` (MemberSelect) or bare ident.
+            String name = memberOrIdentName(expr);
+            if (name != null && name.equals(workLocal)) {
+                return workTree;
+            }
+            // Int literal.
+            if (expr instanceof LiteralTree lt) {
+                Object v = lt.getValue();
+                if (v instanceof Integer i) return "{\"kind\":\"const\",\"value\":" + i + "}";
+                if (v instanceof Long l) return "{\"kind\":\"const\",\"value\":" + l + "}";
+                diagnostics.add(diagnostic("<strong-universe-walker>", owner, "encode",
+                        "strong universe refused: non-int literal in index expression: " + lt));
+                return null;
+            }
+            // Static-final int field (MASK_6BITS, BITS_PER_ENCODED_BYTE, ...).
+            if (expr instanceof IdentifierTree id) {
+                String fname = id.getName().toString();
+                if (corpus.isStaticFinal(fname)) {
+                    Integer val = corpus.resolveFieldValue(fname, 0);
+                    if (val != null) return "{\"kind\":\"const\",\"value\":" + val + "}";
+                }
+                diagnostics.add(diagnostic("<strong-universe-walker>", owner, "encode",
+                        "strong universe refused: identifier '" + fname
+                        + "' in index expr is neither the work area nor a walkable static-final int"));
+                return null;
+            }
+            // Binary op.
+            if (expr instanceof BinaryTree bt) {
+                String op = switch (bt.getKind()) {
+                    case LEFT_SHIFT          -> "bv32.shl";
+                    case RIGHT_SHIFT         -> "bv32.lshr";  // see method doc: mask makes lshr/ashr agree
+                    case UNSIGNED_RIGHT_SHIFT-> "bv32.lshr";
+                    case AND                 -> "bv32.and";
+                    case OR                  -> "bv32.or";
+                    case PLUS                -> "bv32.add";
+                    default                  -> null;
+                };
+                if (op == null) {
+                    diagnostics.add(diagnostic("<strong-universe-walker>", owner, "encode",
+                            "strong universe refused: unsupported binary operator "
+                            + bt.getKind() + " in index expression"));
+                    return null;
+                }
+                String l = interpret(bt.getLeftOperand(), workLocal, workTree, corpus, owner, diagnostics);
+                if (l == null) return null;
+                String r = interpret(bt.getRightOperand(), workLocal, workTree, corpus, owner, diagnostics);
+                if (r == null) return null;
+                return "{\"kind\":\"ctor\",\"name\":\"" + op + "\",\"args\":[" + l + "," + r + "]}";
+            }
+            diagnostics.add(diagnostic("<strong-universe-walker>", owner, "encode",
+                    "strong universe refused: uninterpretable node in index expression: "
+                    + expr.getKind() + " (" + expr + ")"));
+            return null;
+        }
+
+        /** Simple name of an Identifier or `x.field` MemberSelect (the field name); else null. */
+        private static String memberOrIdentName(ExpressionTree e) {
+            e = strip(e);
+            if (e instanceof IdentifierTree id) return id.getName().toString();
+            if (e instanceof MemberSelectTree ms) return ms.getIdentifier().toString();
+            return null;
+        }
+
+        private static ExpressionTree strip(ExpressionTree e) {
+            while (e instanceof ParenthesizedTree pt) e = pt.getExpression();
+            return e;
+        }
+
+        /**
+         * TreeScanner that finds, inside the encode body:
+         *   - the accumulation `<work> = (<work> << <k>) + <byte>` (records work
+         *     local name + shift amount k)
+         *   - the full-block extraction set: an `if`/`case` body containing >= 4
+         *     `buffer[...] = encodeTable[<idx>]` statements. We capture the FIRST
+         *     block of EXACTLY 4 consecutive table-indexed writes — that is the
+         *     modulus==0 full block (the mod-3 tails have 2 or 3, phase 2).
+         */
+        private static final class AccFinder extends TreeScanner<Void, Void> {
+            final UniverseWalker.Corpus corpus;
+            String workLocal = null;
+            int shiftAmount = -1;
+            List<ExpressionTree> fullBlockIndexExprs = null;
+
+            AccFinder(UniverseWalker.Corpus corpus) { this.corpus = corpus; }
+
+            @Override public Void visitAssignment(AssignmentTree at, Void p) {
+                if (workLocal == null) {
+                    // RHS: (W << k) + b  where W is the same local as LHS.
+                    ExpressionTree lhs = strip(at.getVariable());
+                    String lhsName = memberOrIdentName(lhs);
+                    ExpressionTree rhs = strip(at.getExpression());
+                    if (lhsName != null && rhs instanceof BinaryTree add
+                            && add.getKind() == Tree.Kind.PLUS) {
+                        ExpressionTree left = strip(add.getLeftOperand());
+                        if (left instanceof BinaryTree shl
+                                && shl.getKind() == Tree.Kind.LEFT_SHIFT) {
+                            String shiftedName = memberOrIdentName(strip(shl.getLeftOperand()));
+                            ExpressionTree shAmt = strip(shl.getRightOperand());
+                            Integer k = intLiteralOrField(shAmt);
+                            if (lhsName.equals(shiftedName) && k != null) {
+                                workLocal = lhsName;
+                                shiftAmount = k;
+                            }
+                        }
+                    }
+                }
+                return super.visitAssignment(at, p);
+            }
+
+            // Find a run of 4 consecutive `buffer[...] = encodeTable[<idx>]` writes.
+            @Override public Void visitBlock(BlockTree bt, Void p) {
+                if (fullBlockIndexExprs == null) {
+                    List<ExpressionTree> run = new ArrayList<>();
+                    for (StatementTree st : bt.getStatements()) {
+                        ExpressionTree idx = tableIndexWrite(st);
+                        if (idx != null) {
+                            run.add(idx);
+                        } else if (!run.isEmpty()) {
+                            // run broken; the full block is exactly 4 consecutive writes
+                            if (run.size() == 4) { fullBlockIndexExprs = new ArrayList<>(run); break; }
+                            run.clear();
+                        }
+                    }
+                    if (fullBlockIndexExprs == null && run.size() == 4) {
+                        fullBlockIndexExprs = new ArrayList<>(run);
+                    }
+                }
+                return super.visitBlock(bt, p);
+            }
+
+            /** If `st` is `<arr>[...] = <encodeTableField>[<idx>];`, return the index
+             *  expr. The indexed expression is the vendor's `encodeTable` member
+             *  (the selector result), which is a byte[]-typed FIELD — not itself a
+             *  literal array (those are STANDARD/URL_SAFE_ENCODE_TABLE, resolved
+             *  separately by the weak walker's selector). We accept any declared
+             *  byte[]-typed field; the table CODEPOINTS still come exclusively from
+             *  the resolved literal table, never from this field name. A possibly-
+             *  cast RHS (`(byte) encodeTable[...]` does NOT occur here; the writes
+             *  are bare array reads) is handled by strip. */
+            private ExpressionTree tableIndexWrite(StatementTree st) {
+                if (!(st instanceof ExpressionStatementTree est)) return null;
+                if (!(est.getExpression() instanceof AssignmentTree at)) return null;
+                ExpressionTree rhs = strip(at.getExpression());
+                if (!(rhs instanceof ArrayAccessTree aat)) return null;
+                String arrName = memberOrIdentName(strip(aat.getExpression()));
+                if (arrName == null || !corpus.isByteArrayField(arrName)) return null;
+                return aat.getIndex();
+            }
+
+            private Integer intLiteralOrField(ExpressionTree e) {
+                e = strip(e);
+                if (e instanceof LiteralTree lt && lt.getValue() instanceof Integer i) return i;
+                if (e instanceof LiteralTree lt2 && lt2.getValue() instanceof Long l) return (int) (long) l;
+                if (e instanceof IdentifierTree id && corpus.isStaticFinal(id.getName().toString())) {
+                    return corpus.resolveFieldValue(id.getName().toString(), 0);
+                }
+                return null;
+            }
         }
     }
 

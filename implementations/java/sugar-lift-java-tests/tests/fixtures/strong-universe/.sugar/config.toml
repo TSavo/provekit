@@ -1,0 +1,7 @@
+# Fixture workspace for STRONG-TIER (str.eq-bv-blocks) walk tests.
+# Vocab is learned from the shared vendored JUnit5 source; the implementation
+# universe (weak charset AND strong block equations) is walked from the real
+# Apache Commons Codec Base64.java vendored here.
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor/commons-codec"]
