@@ -1,0 +1,29 @@
+# Assertion vocabulary is learned from the framework's own source (Phase 2+).
+# G1: the implementation universe is walked from the vendor's own source.
+# Both paths are relative to the workspace root (this directory).
+[java-test-assertions]
+assertion_source_dirs = ["vendor/junit5"]
+vendor_source_dirs = ["vendor/commons-codec"]
+
+[[plugins]]
+name = "java-test-assertions-lift"
+kind = "lift"
+surface = "java-test-assertions"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+strings = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+
+[platform_profile]
+language = "java"
+library = "java-urlsafe-seam-bad"
+version = "0.0.0"
