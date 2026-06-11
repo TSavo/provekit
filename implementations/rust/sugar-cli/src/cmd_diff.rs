@@ -65,6 +65,19 @@ pub struct DiffArgs {
     /// Sweep ledger JSON for AFTER. Required with --ledger-before.
     #[arg(long, value_name = "LEDGER", requires = "ledger_before")]
     pub ledger_after: Option<std::path::PathBuf>,
+    /// Output format. `markdown` emits a PR-comment block (the verdict the
+    /// CI bot posts); `human` is the default terminal report. The exit code
+    /// is identical either way -- the gate is the gate.
+    #[arg(long, value_enum, default_value_t = DiffFormat::Human)]
+    pub format: DiffFormat,
+}
+
+/// How `sugar diff` renders its verdict. The gate (exit code) is the same;
+/// only the prose differs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum DiffFormat {
+    Human,
+    Markdown,
 }
 
 /// `name -> CID`, as loaded from a proof set.
@@ -201,6 +214,79 @@ fn load_ledger(path: &Path) -> Result<Residual, String> {
     let json: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("parse ledger {}: {e}", path.display()))?;
     Residual::from_ledger(&json)
+}
+
+/// Render the diff verdict as a Markdown PR comment. Pure: the wording is the
+/// product (the trojan-horse comment that rides Renovate/Dependabot), so it is
+/// tested in-binary and the Action stays thin glue. Every claim here is
+/// recomputable from the proofs -- the comment says so, because a verdict you
+/// must trust is just another vendor.
+pub fn render_markdown(
+    s: &Summary,
+    residual: Option<&(Residual, Residual)>,
+    behavior_ok: bool,
+    residual_ok: bool,
+    require: Option<&str>,
+    frozen: bool,
+) -> String {
+    let pass = behavior_ok && residual_ok;
+    let verdict = if pass { "PASS ✅" } else { "FAIL ❌" };
+    let mode = if frozen {
+        "frozen (any change fails)".to_string()
+    } else if let Some(req) = require {
+        format!("require {req}")
+    } else {
+        "default (loss/growth fails)".to_string()
+    };
+
+    let mut out = String::new();
+    out.push_str(&format!("### sugar diff — {verdict}\n\n"));
+    out.push_str(&format!("**Mode:** `{mode}`\n\n"));
+
+    if s.vacuous() {
+        out.push_str(
+            "**Behavior:** _vacuous_ — no proofs on either side. An empty comparison is not a green one; this dependency has nothing to pin.\n\n",
+        );
+    } else {
+        out.push_str(&format!(
+            "**Behavior:** {} new · {} lost · {} held · {} renamed — bump `{}`\n\n",
+            s.new_behaviors,
+            s.lost_behaviors,
+            s.held,
+            s.renamed,
+            s.bump()
+        ));
+        if !s.lines.is_empty() {
+            out.push_str("```\n");
+            for line in &s.lines {
+                out.push_str(line.trim_start());
+                out.push('\n');
+            }
+            out.push_str("```\n\n");
+        }
+    }
+
+    if let Some((rb, ra)) = residual {
+        let members = if rb.assertion_multiset_cid == ra.assertion_multiset_cid {
+            "held"
+        } else {
+            "**MOVED**"
+        };
+        out.push_str(&format!(
+            "**Residual (the unproven set):** undischarged {} → {} ({:+}) · silent {} → {} · members {}\n\n",
+            rb.undischarged(),
+            ra.undischarged(),
+            ra.undischarged() - rb.undischarged(),
+            rb.unaccounted,
+            ra.unaccounted,
+            members
+        ));
+    }
+
+    out.push_str(
+        "<sub>Recomputable, not trusted: this verdict is a hash you can reproduce from the proofs with `sugar diff`.</sub>\n",
+    );
+    out
 }
 
 /// Rank of a semver bump for ordering: none < minor < major.
@@ -367,38 +453,44 @@ pub fn run(args: DiffArgs) -> u8 {
         )
     };
 
+    let markdown = args.format == DiffFormat::Markdown;
+
     let s = summarize(&before.name_to_cid, &after.name_to_cid);
-    for line in &s.lines {
-        println!("{line}");
+    if !markdown {
+        for line in &s.lines {
+            println!("{line}");
+        }
+        if !s.lines.is_empty() {
+            println!();
+        }
+        println!(
+            "behavior: {} new, {} lost, {} held, {} renamed",
+            s.new_behaviors, s.lost_behaviors, s.held, s.renamed
+        );
+        println!("required bump: {}", s.bump());
     }
-    if !s.lines.is_empty() {
-        println!();
-    }
-    println!(
-        "behavior: {} new, {} lost, {} held, {} renamed",
-        s.new_behaviors, s.lost_behaviors, s.held, s.renamed
-    );
-    println!("required bump: {}", s.bump());
 
     let residual = match (&args.ledger_before, &args.ledger_after) {
         (Some(b), Some(a)) => {
             let pair = load_ledger(b).and_then(|rb| load_ledger(a).map(|ra| (rb, ra)));
             match pair {
                 Ok((rb, ra)) => {
-                    let members = if rb.assertion_multiset_cid == ra.assertion_multiset_cid {
-                        "held"
-                    } else {
-                        "MOVED"
-                    };
-                    println!(
-                        "residual: undischarged {} -> {} ({:+}); silent {} -> {}; members {}",
-                        rb.undischarged(),
-                        ra.undischarged(),
-                        ra.undischarged() - rb.undischarged(),
-                        rb.unaccounted,
-                        ra.unaccounted,
-                        members
-                    );
+                    if !markdown {
+                        let members = if rb.assertion_multiset_cid == ra.assertion_multiset_cid {
+                            "held"
+                        } else {
+                            "MOVED"
+                        };
+                        println!(
+                            "residual: undischarged {} -> {} ({:+}); silent {} -> {}; members {}",
+                            rb.undischarged(),
+                            ra.undischarged(),
+                            ra.undischarged() - rb.undischarged(),
+                            rb.unaccounted,
+                            ra.unaccounted,
+                            members
+                        );
+                    }
                     Some((rb, ra))
                 }
                 Err(e) => {
@@ -433,9 +525,9 @@ pub fn run(args: DiffArgs) -> u8 {
         }
     };
 
-    let residual_ok = match residual {
+    let residual_ok = match &residual {
         None => true,
-        Some((rb, ra)) => match residual_gate_ok(&rb, &ra, args.require.as_deref(), args.frozen) {
+        Some((rb, ra)) => match residual_gate_ok(rb, ra, args.require.as_deref(), args.frozen) {
             Ok(true) => true,
             Ok(false) => {
                 if ra.unaccounted > 0 {
@@ -467,6 +559,20 @@ pub fn run(args: DiffArgs) -> u8 {
         },
     };
 
+    if markdown {
+        print!(
+            "{}",
+            render_markdown(
+                &s,
+                residual.as_ref(),
+                behavior_ok,
+                residual_ok,
+                args.require.as_deref(),
+                args.frozen,
+            )
+        );
+    }
+
     if behavior_ok && residual_ok {
         EXIT_OK
     } else {
@@ -483,6 +589,62 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
+    }
+
+    // --- markdown comment: the literal text of the PR-bot verdict. Pure, so
+    // the Action is thin glue and the wording is tested in-binary. ---
+
+    #[test]
+    fn markdown_pass_shows_check_and_bump() {
+        let a = table(&[("f", "c1")]);
+        let s = summarize(&a, &a);
+        let md = render_markdown(&s, None, true, true, None, false);
+        assert!(md.contains("PASS"), "{md}");
+        assert!(md.contains("none"), "bump shown: {md}");
+        assert!(!md.contains("undischarged"), "no residual section: {md}");
+    }
+
+    #[test]
+    fn markdown_fail_names_lost_behavior() {
+        let s = summarize(&table(&[("f", "c1"), ("g", "c2")]), &table(&[("f", "c1")]));
+        let md = render_markdown(&s, None, false, true, None, false);
+        assert!(md.contains("FAIL"), "{md}");
+        assert!(md.contains("lost"), "lost detail surfaced: {md}");
+    }
+
+    #[test]
+    fn markdown_includes_residual_with_members() {
+        let a = table(&[("f", "c1")]);
+        let s = summarize(&a, &a);
+        let before = res_cid(100, 80, 20, 0, "blake3-512:AAA");
+        let after = res_cid(100, 80, 20, 0, "blake3-512:BBB");
+        let md = render_markdown(&s, Some(&(before, after)), true, false, None, true);
+        assert!(md.contains("undischarged"), "{md}");
+        assert!(md.contains("member"), "member status surfaced: {md}");
+    }
+
+    #[test]
+    fn markdown_flags_vacuous_behavior_even_with_a_residual() {
+        let empty = table(&[]);
+        let s = summarize(&empty, &empty);
+        let before = res(10, 8, 2, 0);
+        let after = res(10, 8, 2, 0);
+        let md = render_markdown(&s, Some(&(before, after)), false, true, None, true);
+        assert!(
+            md.to_lowercase().contains("vacuous"),
+            "a proofless behavior must read as vacuous, not as '0 held': {md}"
+        );
+    }
+
+    #[test]
+    fn markdown_is_recomputable_disclaimer_present() {
+        let a = table(&[("f", "c1")]);
+        let s = summarize(&a, &a);
+        let md = render_markdown(&s, None, true, true, None, false);
+        assert!(
+            md.to_lowercase().contains("recomput"),
+            "the comment must say it is recomputable, not trusted: {md}"
+        );
     }
 
     #[test]
