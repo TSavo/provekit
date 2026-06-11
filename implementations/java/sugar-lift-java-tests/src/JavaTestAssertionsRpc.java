@@ -65,7 +65,7 @@ import java.util.stream.*;
 public final class JavaTestAssertionsRpc {
 
     private static final String SURFACE = "java-test-assertions";
-    private static final String VERSION = "0.5.0"; // G1: universe-walk pass
+    private static final String VERSION = "0.6.0"; // G2: numeric-universe-walk pass
 
     // ──────────────────────────────────────────────────────────────
     // Entry point: JSON-RPC 2.0 over stdin/stdout, one object per line.
@@ -158,13 +158,19 @@ public final class JavaTestAssertionsRpc {
         // universe contracts (str.chars-in-set) per entry-point method name.
         UniverseRegistry universeRegistry = UniverseWalker.loadRegistry(compiler, root, diagnostics);
 
+        // G2: Load numeric universe registry from vendor_source_dirs (numeric-universe-walk pass).
+        // The NumericUniverseWalker walks public static int-returning methods in vendored source
+        // and registers int32.eq-bv-expr universe contracts per method name.
+        // Supported shapes: ternary-with-comparison ((a < 0) ? -a : a) → abs BV expression.
+        NumericUniverseRegistry numericRegistry = NumericUniverseWalker.loadRegistry(compiler, root, diagnostics);
+
         for (String rel : files) {
             Path abs = root.resolve(rel).normalize();
             if (!Files.isReadable(abs)) {
                 diagnostics.add(diagnostic(rel, null, null, "cannot read file"));
                 continue;
             }
-            liftFile(compiler, abs, rel, multiVocab, universeRegistry, ir, diagnostics);
+            liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, ir, diagnostics);
         }
 
         return irDocument(ir, diagnostics);
@@ -1837,6 +1843,7 @@ public final class JavaTestAssertionsRpc {
             String rel,
             MultiFrameworkVocab multiVocab,
             UniverseRegistry universeRegistry,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir,
             List<String> diagnostics) throws IOException {
 
@@ -1917,7 +1924,7 @@ public final class JavaTestAssertionsRpc {
                 if (decl instanceof ClassTree ct) {
                     walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
                             vocab, frameworkKind, ambiguousFramework,
-                            universeRegistry, ir, diagnostics, null);
+                            universeRegistry, numericRegistry, ir, diagnostics, null);
                 }
             }
         }
@@ -1946,6 +1953,7 @@ public final class JavaTestAssertionsRpc {
             FrameworkKind frameworkKind,
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir,
             List<String> diagnostics,
             String outerClassName) {
@@ -1956,11 +1964,11 @@ public final class JavaTestAssertionsRpc {
         for (Tree member : classTree.getMembers()) {
             if (member instanceof MethodTree mt) {
                 liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, ir, diagnostics);
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
                 walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework,
-                        universeRegistry, ir, diagnostics, className);
+                        universeRegistry, numericRegistry, ir, diagnostics, className);
             }
         }
     }
@@ -1980,6 +1988,7 @@ public final class JavaTestAssertionsRpc {
             FrameworkKind frameworkKind,
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir,
             List<String> diagnostics) {
 
@@ -1996,7 +2005,7 @@ public final class JavaTestAssertionsRpc {
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, ir, diagnostics);
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
             }
@@ -2370,6 +2379,7 @@ public final class JavaTestAssertionsRpc {
             FrameworkKind frameworkKind,
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir,
             List<String> diagnostics) {
 
@@ -2481,7 +2491,7 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, ir, diagnostics);
@@ -2509,6 +2519,7 @@ public final class JavaTestAssertionsRpc {
             MethodInvocationTree mit, String methodName, String scope,
             AssertionVocab vocab,
             UniverseRegistry universeRegistry,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir, List<String> diagnostics) {
 
         List<? extends ExpressionTree> args = mit.getArguments();
@@ -2573,7 +2584,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
-                universeRegistry, ir, diagnostics);
+                universeRegistry, numericRegistry, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -2638,13 +2649,15 @@ public final class JavaTestAssertionsRpc {
             String relation, String methodName,
             String scope, List<String> ir, List<String> diagnostics) {
         liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
-                UniverseRegistry.EMPTY, ir, diagnostics);
+                UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, ir, diagnostics);
     }
 
     /**
-     * G1: Extended binary contract lifter that handles both int and String literal
+     * G1/G2: Extended binary contract lifter that handles both int and String literal
      * expected values. When the expected is a String literal AND the callee is
      * universe-registered, ALSO emits a str.chars-in-set universe contract.
+     * G2: When the expected is an int literal AND the callee is numeric-universe-registered,
+     * ALSO emits an int32.eq-bv-expr universe contract encoding the walked body.
      *
      * String-literal args are accepted for the call's own args only when the call
      * receives them via StringUtils.getBytesUtf8("lit") or "lit".getBytes(...).
@@ -2655,6 +2668,7 @@ public final class JavaTestAssertionsRpc {
             ExpressionTree constExpr, ExpressionTree callExpr,
             String relation, String methodName,
             String scope, UniverseRegistry universeRegistry,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir, List<String> diagnostics) {
 
         // Try int literal first (existing path)
@@ -2722,6 +2736,11 @@ public final class JavaTestAssertionsRpc {
         } else {
             // Int expected — original path
             ir.add(buildContractWithRelation(callee, intArgValues, intVal.getAsLong(), relation));
+            // G2: ALSO emit numeric-universe contract if callee is registered
+            String bvExprJson = numericRegistry.getBvExprJson(callee);
+            if (bvExprJson != null) {
+                ir.add(buildNumericUniverseContract(callee, intArgValues, bvExprJson));
+            }
         }
     }
 
@@ -3171,6 +3190,41 @@ public final class JavaTestAssertionsRpc {
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + "{\"kind\":\"atomic\",\"name\":\"str.chars-in-set\",\"args\":["
              + ctorJson + "," + setJson + "]}]}}";
+    }
+
+    /**
+     * G2: Build an int32.eq-bv-expr universe contract.
+     * The contract name is the same #euf# name as the sworn equality, so the
+     * conjoin folds them automatically at prove time.
+     *
+     * The atom carries:
+     *   args[0] — the call:callee ctor term (the result variable)
+     *   args[1] — the walked BV expression tree (as a JSON string embedded in a
+     *             const term with sort Int — the emitter parses it back)
+     *
+     * The bvExprJson is a JSON string produced by NumericUniverseWalker.
+     */
+    private static String buildNumericUniverseContract(
+            String callee, List<Long> intArgValues, String bvExprJson) {
+
+        String safeName = toSafeName(callee);
+        int arity = intArgValues.size();
+        String argSig = intArgValues.stream().map(v -> "i:" + v).collect(Collectors.joining(","));
+        String contractName = callee + "#euf#c:callresult_" + safeName + "_a" + arity
+                + "(" + argSig + ")::assertion";
+
+        String ctorArgs = buildCtorArgs(intArgValues);
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + ctorArgs + "]}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":["
+             + "{\"kind\":\"atomic\",\"name\":\"int32.eq-bv-expr\",\"args\":["
+             + ctorJson + ","
+             + bvExprJson
+             + "]}]}}";
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -4233,6 +4287,240 @@ public final class JavaTestAssertionsRpc {
                 }
                 return null;
             }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // G2: NumericUniverseRegistry — callee → BV expression JSON
+    // ──────────────────────────────────────────────────────────────
+
+    static final class NumericUniverseRegistry {
+        static final NumericUniverseRegistry EMPTY = new NumericUniverseRegistry(Map.of());
+
+        private final Map<String, String> bvExprs; // callee simple-name → BV expr JSON
+
+        NumericUniverseRegistry(Map<String, String> bvExprs) {
+            this.bvExprs = Map.copyOf(bvExprs);
+        }
+
+        /** Return the BV expression JSON for a callee, or null if not registered. */
+        String getBvExprJson(String callee) { return bvExprs.get(callee); }
+        boolean isEmpty() { return bvExprs.isEmpty(); }
+        Map<String, String> all() { return bvExprs; }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // G2: NumericUniverseWalker — walk public static int methods from vendor source
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * THE LAW: every BV expression emitted by this walker must trace to an AST
+     * node of the vendored source. No hand-authored arithmetic. If it is not
+     * in the tree, it is not in the universe.
+     *
+     * Supported body shapes (refused by name otherwise):
+     *   TERNARY_NEG_OR_SELF: `return (a < 0) ? -a : a;`
+     *     — the canonical abs pattern under two's complement.
+     *     BV expr: bv32.ite(bv32.slt(a, 0), bv32.neg(a), a)
+     *
+     * Refused shapes are named in diagnostics. Any other shape = named refusal.
+     */
+    static final class NumericUniverseWalker {
+
+        static NumericUniverseRegistry loadRegistry(
+                JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
+            List<Path> vendorDirs;
+            try {
+                vendorDirs = UniverseWalker.readVendorSourceDirs(workspaceRoot);
+            } catch (IOException e) {
+                // No vendor_source_dirs configured — numeric universe is empty
+                return NumericUniverseRegistry.EMPTY;
+            }
+            if (vendorDirs.isEmpty()) return NumericUniverseRegistry.EMPTY;
+
+            // Collect all vendor Java files (same pattern as UniverseWalker)
+            List<Path> vendorFiles = new ArrayList<>();
+            for (Path dir : vendorDirs) {
+                if (!Files.isDirectory(dir)) continue;
+                try (Stream<Path> walk = Files.walk(dir)) {
+                    walk.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .forEach(vendorFiles::add);
+                } catch (IOException e) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", "<numeric-universe-walker>",
+                            dir.toString(), "vendor dir walk error: " + e.getMessage()));
+                }
+            }
+            if (vendorFiles.isEmpty()) return NumericUniverseRegistry.EMPTY;
+
+            // Parse the vendor source files
+            DiagnosticCollector<JavaFileObject> dc = new DiagnosticCollector<>();
+            StandardJavaFileManager fm = compiler.getStandardFileManager(dc, null, null);
+            List<String> absFiles = vendorFiles.stream()
+                    .map(p -> p.toAbsolutePath().toString())
+                    .collect(Collectors.toList());
+            Iterable<? extends JavaFileObject> compilationUnits;
+            try {
+                compilationUnits = fm.getJavaFileObjectsFromStrings(absFiles);
+            } catch (Exception e) {
+                diagnostics.add(diagnostic("<numeric-universe-walker>", "<numeric-universe-walker>",
+                        "<init>", "error opening vendor files: " + e.getMessage()));
+                return NumericUniverseRegistry.EMPTY;
+            }
+
+            JavacTask task = (JavacTask) compiler.getTask(
+                    null, fm, dc, List.of("-proc:none"), null, compilationUnits);
+            Iterable<? extends CompilationUnitTree> trees;
+            try {
+                trees = task.parse();
+            } catch (IOException e) {
+                diagnostics.add(diagnostic("<numeric-universe-walker>", "<init>", "<init>",
+                        "parse error: " + e.getMessage()));
+                return NumericUniverseRegistry.EMPTY;
+            }
+
+            Map<String, String> bvExprs = new LinkedHashMap<>();
+            for (CompilationUnitTree cu : trees) {
+                walkCompilationUnit(cu, bvExprs, diagnostics);
+            }
+            return new NumericUniverseRegistry(bvExprs);
+        }
+
+        private static void walkCompilationUnit(
+                CompilationUnitTree cu, Map<String, String> bvExprs, List<String> diagnostics) {
+            for (Tree td : cu.getTypeDecls()) {
+                if (td instanceof ClassTree ct) {
+                    walkClass(ct, bvExprs, diagnostics);
+                }
+            }
+        }
+
+        private static void walkClass(
+                ClassTree ct, Map<String, String> bvExprs, List<String> diagnostics) {
+            String className = ct.getSimpleName().toString();
+            for (Tree member : ct.getMembers()) {
+                if (!(member instanceof MethodTree mt)) continue;
+                Set<Modifier> mods = mt.getModifiers().getFlags();
+                if (!mods.contains(Modifier.PUBLIC) || !mods.contains(Modifier.STATIC)) continue;
+                // Must return int (primitive)
+                if (!(mt.getReturnType() instanceof PrimitiveTypeTree ptt)) continue;
+                if (ptt.getPrimitiveTypeKind() != TypeKind.INT) continue;
+                // Single-statement body: return <expr>;
+                if (mt.getBody() == null) continue;
+                List<? extends StatementTree> stmts = mt.getBody().getStatements();
+                if (stmts.size() != 1) continue;
+                if (!(stmts.get(0) instanceof ReturnTree rt)) continue;
+                ExpressionTree retExpr = stripParensN(rt.getExpression());
+                if (retExpr == null) continue;
+
+                String methodName = mt.getName().toString();
+                // Collect parameter names in order
+                List<String> params = mt.getParameters().stream()
+                        .map(v -> v.getName().toString())
+                        .collect(Collectors.toList());
+
+                String bvJson = tryBuildBvExpr(retExpr, params, className, methodName, diagnostics);
+                if (bvJson != null) {
+                    bvExprs.put(methodName, bvJson);
+                }
+            }
+        }
+
+        /**
+         * Try to build a BV expression JSON for the given return expression.
+         * Returns null (and adds a named diagnostic) if the shape is not supported.
+         */
+        private static String tryBuildBvExpr(
+                ExpressionTree expr, List<String> params,
+                String className, String methodName, List<String> diagnostics) {
+            // Shape: ternary (a < 0) ? -a : a
+            if (expr instanceof ConditionalExpressionTree cet) {
+                ExpressionTree cond  = stripParensN(cet.getCondition());
+                ExpressionTree tPart = stripParensN(cet.getTrueExpression());
+                ExpressionTree fPart = stripParensN(cet.getFalseExpression());
+                if (cond == null || tPart == null || fPart == null) return null;
+
+                // Condition: param < 0  (BinaryTree, LT, lhs=param, rhs=0)
+                if (!(cond instanceof BinaryTree bt)) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                            "numeric universe walk refused: ternary condition is not a binary comparison; shape unsupported"));
+                    return null;
+                }
+                if (bt.getKind() != Tree.Kind.LESS_THAN) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                            "numeric universe walk refused: ternary condition operator is not <; shape unsupported"));
+                    return null;
+                }
+                String condLhs = asParamName(bt.getLeftOperand(), params);
+                if (condLhs == null) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                            "numeric universe walk refused: LHS of condition is not a parameter; shape unsupported"));
+                    return null;
+                }
+                if (!isIntLiteralZero(bt.getRightOperand())) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                            "numeric universe walk refused: RHS of condition is not literal 0; shape unsupported"));
+                    return null;
+                }
+                // truePart: -param (UnaryTree UNARY_MINUS of same param)
+                if (!(tPart instanceof UnaryTree ut) || ut.getKind() != Tree.Kind.UNARY_MINUS) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                            "numeric universe walk refused: true branch is not unary negation; shape unsupported"));
+                    return null;
+                }
+                String negParam = asParamName(stripParensN(ut.getExpression()), params);
+                if (negParam == null || !negParam.equals(condLhs)) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                            "numeric universe walk refused: negated param does not match condition LHS; shape unsupported"));
+                    return null;
+                }
+                // falsePart: same param identifier
+                String falseParam = asParamName(fPart, params);
+                if (falseParam == null || !falseParam.equals(condLhs)) {
+                    diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                            "numeric universe walk refused: false branch is not the same param; shape unsupported"));
+                    return null;
+                }
+
+                // All checks pass: build bv32.ite(bv32.slt(a, 0), bv32.neg(a), a)
+                String varJson   = "{\"kind\":\"var\",\"name\":\"" + esc(condLhs) + "\"}";
+                String zeroJson  = "{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
+                String sltJson   = "{\"kind\":\"ctor\",\"name\":\"bv32.slt\",\"args\":[" + varJson + "," + zeroJson + "]}";
+                String negJson   = "{\"kind\":\"ctor\",\"name\":\"bv32.neg\",\"args\":[" + varJson + "]}";
+                return "{\"kind\":\"ctor\",\"name\":\"bv32.ite\",\"args\":[" + sltJson + "," + negJson + "," + varJson + "]}";
+            }
+
+            diagnostics.add(diagnostic("<numeric-universe-walker>", className, methodName,
+                    "numeric universe walk refused: return expression shape not supported (not a ternary)"));
+            return null;
+        }
+
+        /** Return param name if expr is an IdentifierTree naming one of the given params; else null. */
+        private static String asParamName(ExpressionTree expr, List<String> params) {
+            if (expr == null) return null;
+            expr = stripParensN(expr);
+            if (!(expr instanceof IdentifierTree id)) return null;
+            String name = id.getName().toString();
+            return params.contains(name) ? name : null;
+        }
+
+        /** True iff expr is an int literal with value 0. */
+        private static boolean isIntLiteralZero(ExpressionTree expr) {
+            expr = stripParensN(expr);
+            if (expr instanceof LiteralTree lt) {
+                Object v = lt.getValue();
+                if (v instanceof Integer i) return i == 0;
+                if (v instanceof Long l) return l == 0L;
+            }
+            return false;
+        }
+
+        /** Strip parentheses; returns null if input is null. */
+        private static ExpressionTree stripParensN(ExpressionTree e) {
+            if (e == null) return null;
+            while (e instanceof ParenthesizedTree pt) e = pt.getExpression();
+            return e;
         }
     }
 

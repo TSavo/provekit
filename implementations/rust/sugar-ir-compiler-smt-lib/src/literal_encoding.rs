@@ -169,6 +169,11 @@ impl LiteralConstants {
                     }
                     return;
                 }
+                // G2: BV32 atoms live in the bitvector sort — skip legacy Int
+                // opaque-symbol collection entirely. The BV emitter handles them.
+                if routes_to_bv32_theory(name) {
+                    return;
+                }
                 for a in args {
                     self.collect_term_for_legacy_literals(a);
                 }
@@ -381,6 +386,28 @@ pub(crate) fn routes_to_string_theory(name: &str, args: &[Term]) -> bool {
     };
     (is_string_const(&args[0]) && is_routable_subject(&args[1]))
         || (is_string_const(&args[1]) && is_routable_subject(&args[0]))
+}
+
+/// Route atoms for the bitvector-32 theory arm.
+///
+/// G2: `int32.eq-bv-expr` carries a BV expression tree walked from the vendor's
+/// source. The SMT emitter renders it as `(bvslt ...)` / `(bvneg ...)` / `(ite ...)`
+/// over a `(_ BitVec 32)` sort. These atoms must NOT be collected for the
+/// legacy opaque-Int regime, and must NOT be mixed with string-theory atoms
+/// over the same EUF subject (mixed-sort STOP).
+pub(crate) fn routes_to_bv32_theory(name: &str) -> bool {
+    is_bv32_atomic_predicate(name)
+}
+
+fn is_bv32_atomic_predicate(name: &str) -> bool {
+    // `int32.eq-const` is the synthetic atom produced by the bv32-contagion
+    // pre-pass: a sibling sworn equality `=(call:abs, IntConst)` promoted to
+    // the bv32 sort because its subject also appears in an `int32.eq-bv-expr`
+    // universe atom. See `apply_bv32_contagion` in generated.rs.
+    matches!(
+        name,
+        "int32.eq-bv-expr" | "int32.in-range" | "int32.eq-const"
+    )
 }
 
 fn is_string_theory_atomic_predicate(name: &str) -> bool {
