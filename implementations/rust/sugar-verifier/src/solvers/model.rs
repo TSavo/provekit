@@ -144,6 +144,35 @@ pub fn solve_with_model(
     };
 
     let raw_stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // HONEST REFUSAL: if z3 exited non-zero (a crash, a parse error, an internal
+    // failure), surface it as a solver ERROR with stderr preserved -- never parse
+    // the verdict/model. A fabricated derived value from a failed solver run is a
+    // silent lie. (trichotomy: refuse, loudly.)
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let code = output
+            .status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+        // z3 writes its `(error ...)` diagnostics to stdout, not stderr; include
+        // whichever carries the message so the refusal is legible.
+        let diag = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else {
+            raw_stdout.trim().to_string()
+        };
+        return ModelResult {
+            verdict_line: String::new(),
+            derived_value: None,
+            raw_stdout,
+            wall_clock: started.elapsed(),
+            timed_out,
+            error: format!("z3 exited non-zero (code {code}): {diag}"),
+        };
+    }
+
     // Collect non-empty lines.
     let lines: Vec<&str> = raw_stdout
         .lines()
@@ -216,5 +245,28 @@ mod tests {
             result.derived_value,
             result.raw_stdout
         );
+    }
+
+    #[test]
+    fn nonzero_exit_is_an_honest_error_not_a_fabricated_value() {
+        if std::process::Command::new("z3").arg("--version").output().is_err() {
+            eprintln!("z3 absent: skipping solver-error test");
+            return;
+        }
+        // A script z3 rejects with a non-zero exit: a sort mismatch (asserting a
+        // BitVec equals a Bool). z3 prints an (error ...) and exits non-zero. We
+        // must surface a solver error with stderr/stdout preserved and NO derived
+        // value -- never parse a verdict/model out of a failed run.
+        let broken = "(set-logic QF_BV)\n(declare-const a (_ BitVec 32))\n(assert (= a true))\n(check-sat)\n(get-value (a))\n";
+        let result = solve_with_model("z3", broken, "a", None);
+        assert!(
+            !result.error.is_empty(),
+            "a non-zero z3 exit must yield a solver error, got error={:?} verdict={:?}",
+            result.error,
+            result.verdict_line
+        );
+        assert!(result.error.contains("non-zero"), "error must name the failure: {}", result.error);
+        assert_eq!(result.derived_value, None, "must NOT fabricate a derived value on solver failure");
+        assert!(result.verdict_line.is_empty(), "must NOT report a verdict on solver failure");
     }
 }

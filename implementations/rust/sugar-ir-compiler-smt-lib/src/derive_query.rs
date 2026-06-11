@@ -233,7 +233,14 @@ pub fn emit_derive_query(bv_tree_json: &Json, inputs: &[i32]) -> Result<DeriveQu
         ))
     })?;
 
-    let result_var = "r".to_string();
+    // Choose a result symbol provably disjoint from the lifted variable names.
+    // The bv_tree's vars come straight from the universe; a hardcoded `r` would
+    // collide with a universe variable literally named `r` and silently produce
+    // a WRONG-but-green derivation. We use a reserved token and assert it is not
+    // among the lifted vars; if by some chance it is, we refuse rather than risk
+    // a capture. (The reserved token is namespaced specifically so a real source
+    // variable could never legitimately be named it.)
+    let result_var = pick_fresh_result_symbol(&var_names)?;
     let mut smt = String::new();
 
     // Logic header (QF_BV: quantifier-free, bitvector arithmetic).
@@ -276,7 +283,27 @@ pub fn emit_derive_query(bv_tree_json: &Json, inputs: &[i32]) -> Result<DeriveQu
     })
 }
 
-/// Parse z3's `(get-value (r))` response line into a signed i32.
+/// The reserved result symbol. Namespaced (`__sugar_derive_result__`) so a
+/// genuine lifted source variable could never legitimately carry this name.
+const RESERVED_RESULT_SYMBOL: &str = "__sugar_derive_result__";
+
+/// Pick a result symbol provably disjoint from the lifted variable names.
+///
+/// Returns the reserved token when it is not among `var_names`. If a universe
+/// somehow uses the reserved token as a variable (it never should), we REFUSE
+/// rather than risk variable capture / a wrong-but-green derivation.
+fn pick_fresh_result_symbol(var_names: &[String]) -> Result<String, DeriveQueryError> {
+    if var_names.iter().any(|v| v == RESERVED_RESULT_SYMBOL) {
+        return Err(DeriveQueryError(format!(
+            "result-symbol collision: the lifted universe uses a variable named \
+             `{RESERVED_RESULT_SYMBOL}`, which is reserved for the derive-query \
+             result; refusing rather than risk variable capture"
+        )));
+    }
+    Ok(RESERVED_RESULT_SYMBOL.to_string())
+}
+
+/// Parse z3's `(get-value (<result_var>))` response line into a signed i32.
 ///
 /// z3 returns a line like `((r #x80000000))`. We extract the hex pattern
 /// and interpret the 32-bit value as a signed two's complement i32.
@@ -335,18 +362,67 @@ mod tests {
     fn emit_derive_query_abs_min_value() {
         let tree = abs_bv_tree();
         let dq = emit_derive_query(&tree, &[i32::MIN]).expect("emit");
-        // Must declare a and r.
+        let rv = &dq.result_var;
+        // The result symbol is the reserved (collision-free) token, not `r`.
+        assert_eq!(rv, "__sugar_derive_result__", "result symbol must be the reserved token");
+        // Must declare the arg var and the result var.
         assert!(dq.smt.contains("(declare-const a (_ BitVec 32))"), "missing a decl:\n{}", dq.smt);
-        assert!(dq.smt.contains("(declare-const r (_ BitVec 32))"), "missing r decl:\n{}", dq.smt);
+        assert!(dq.smt.contains(&format!("(declare-const {rv} (_ BitVec 32))")), "missing result decl:\n{}", dq.smt);
         // Universe definition must be symbolic.
-        assert!(dq.smt.contains("(assert (= r (ite (bvslt a #x00000000) (bvneg a) a)))"),
+        assert!(dq.smt.contains(&format!("(assert (= {rv} (ite (bvslt a #x00000000) (bvneg a) a)))")),
             "universe definition wrong:\n{}", dq.smt);
         // Input assertion: MIN_VALUE = #x80000000.
         assert!(dq.smt.contains("(assert (= a #x80000000))"), "input assertion wrong:\n{}", dq.smt);
-        // Must end with check-sat + get-value.
-        assert!(dq.smt.contains("(check-sat)\n(get-value (r))\n"), "missing check-sat/get-value:\n{}", dq.smt);
+        // Must end with check-sat + get-value over the result symbol.
+        assert!(dq.smt.contains(&format!("(check-sat)\n(get-value ({rv}))\n")), "missing check-sat/get-value:\n{}", dq.smt);
         // QF_BV header.
         assert!(dq.smt.starts_with("(set-logic QF_BV)\n"), "must start with QF_BV:\n{}", dq.smt);
+    }
+
+    #[test]
+    fn result_symbol_is_collision_free_when_universe_uses_var_r() {
+        // A universe whose variable is literally named `r`. A hardcoded result
+        // symbol `r` would collide and silently produce a wrong-but-green value.
+        // The fresh reserved symbol must keep them disjoint.
+        let tree = serde_json::json!({
+            "kind": "ctor",
+            "name": "bv32.ite",
+            "args": [
+                {"kind": "ctor", "name": "bv32.slt", "args": [
+                    {"kind": "var", "name": "r"},
+                    {"kind": "const", "value": 0}
+                ]},
+                {"kind": "ctor", "name": "bv32.neg", "args": [{"kind": "var", "name": "r"}]},
+                {"kind": "var", "name": "r"}
+            ]
+        });
+        let dq = emit_derive_query(&tree, &[i32::MIN]).expect("emit");
+        let rv = &dq.result_var;
+        assert_ne!(rv, "r", "result symbol must NOT be `r` when the universe uses `r`");
+        // The universe var `r` is declared as a BitVec, distinct from the result.
+        assert!(dq.smt.contains("(declare-const r (_ BitVec 32))"), "universe var r must be declared:\n{}", dq.smt);
+        assert!(dq.smt.contains(&format!("(declare-const {rv} (_ BitVec 32))")), "result var must be declared:\n{}", dq.smt);
+        // The input assertion binds the universe var `r` to MIN_VALUE.
+        assert!(dq.smt.contains("(assert (= r #x80000000))"), "universe var r must bind to input:\n{}", dq.smt);
+        // The universe definition binds the result symbol to ite over `r`.
+        assert!(dq.smt.contains(&format!("(assert (= {rv} (ite (bvslt r #x00000000) (bvneg r) r)))")),
+            "result must equal ite over universe var r:\n{}", dq.smt);
+    }
+
+    #[test]
+    fn refuses_when_universe_uses_the_reserved_result_token() {
+        // Pathological: a universe variable literally named the reserved token.
+        // We must REFUSE rather than risk capture.
+        let tree = serde_json::json!({
+            "kind": "ctor",
+            "name": "bv32.neg",
+            "args": [{"kind": "var", "name": "__sugar_derive_result__"}]
+        });
+        let result = emit_derive_query(&tree, &[5]);
+        assert!(result.is_err(), "must refuse when universe uses the reserved token");
+        let msg = result.unwrap_err().0;
+        assert!(msg.contains("collision") && msg.contains("__sugar_derive_result__"),
+            "refusal must name the collision: {msg}");
     }
 
     #[test]
@@ -426,7 +502,7 @@ mod tests {
         assert!(lines.len() >= 2, "expected at least 2 lines, got: {stdout:?}");
         assert_eq!(lines[0], "sat", "z3 must return sat for the abs derive query; got: {stdout:?}");
 
-        let derived = parse_model_value(lines[1], "r")
+        let derived = parse_model_value(lines[1], &dq.result_var)
             .unwrap_or_else(|| panic!("could not parse model value from: {:?}", lines[1]));
         assert_eq!(
             derived, i32::MIN,

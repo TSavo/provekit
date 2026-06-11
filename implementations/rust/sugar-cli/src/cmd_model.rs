@@ -293,6 +293,13 @@ fn extract_bv_tree_from_proof(path: &PathBuf) -> Result<Json, String> {
         .and_then(|v| v.as_map())
         .ok_or_else(|| "catalog has no `members` map".to_string())?;
 
+    // Collect EVERY int32.eq-bv-expr universe bv_tree across all members. We
+    // never first-match: ambiguity must refuse. Note one universe is often
+    // lifted at several call-sites (e.g. abs(5), abs(-5), abs(MIN)) — those
+    // carry the SAME bv_tree (only the call-site subject differs). The choice
+    // that matters is the DISTINCT universe DEFINITION. So we dedup by structure
+    // and require exactly one distinct bv_tree.
+    let mut trees: Vec<Json> = Vec::new();
     for (_cid, val) in members {
         let bytes = match val.as_bstr() {
             Some(b) => b,
@@ -306,43 +313,71 @@ fn extract_bv_tree_from_proof(path: &PathBuf) -> Result<Json, String> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        if let Some(tree) = find_universe_bv_tree(&parsed) {
-            return Ok(tree);
+        collect_universe_bv_trees(&parsed, &mut trees);
+    }
+
+    // Dedup by canonical (sorted-key) JSON: same definition tree -> one entry.
+    let mut distinct: Vec<Json> = Vec::new();
+    for t in trees {
+        let key = canonical_json(&t);
+        if !distinct.iter().any(|d| canonical_json(d) == key) {
+            distinct.push(t);
         }
     }
 
-    Err("no int32.eq-bv-expr universe atom in any catalog member".to_string())
+    match distinct.len() {
+        0 => Err("no int32.eq-bv-expr universe atom in any catalog member".to_string()),
+        1 => Ok(distinct.into_iter().next().unwrap()),
+        n => Err(format!(
+            "ambiguous: {n} distinct int32.eq-bv-expr universe definitions in proof, \
+             cannot choose; refusing rather than pick arbitrarily"
+        )),
+    }
 }
 
-/// Recursively search a JSON node for an `int32.eq-bv-expr` atom and return a
-/// clone of its `args[1]` (the bv_tree). The atom shape (per the lift) is:
-///   {"kind":"atomic","name":"int32.eq-bv-expr","args":[<subject>, <bv_tree>]}
-fn find_universe_bv_tree(node: &Json) -> Option<Json> {
+/// Canonical (deterministic, sorted-key) JSON string for structural comparison.
+fn canonical_json(v: &Json) -> String {
+    match v {
+        Json::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let parts: Vec<String> = keys
+                .iter()
+                .map(|k| format!("{:?}:{}", k, canonical_json(&map[*k])))
+                .collect();
+            format!("{{{}}}", parts.join(","))
+        }
+        Json::Array(arr) => {
+            let parts: Vec<String> = arr.iter().map(canonical_json).collect();
+            format!("[{}]", parts.join(","))
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Recursively collect the `args[1]` (bv_tree) of EVERY `int32.eq-bv-expr` atom
+/// reachable from `node`, appending each to `out`. The atom shape (per the lift)
+/// is `{"kind":"atomic","name":"int32.eq-bv-expr","args":[<subject>, <bv_tree>]}`.
+fn collect_universe_bv_trees(node: &Json, out: &mut Vec<Json>) {
     match node {
         Json::Object(obj) => {
             if obj.get("name").and_then(|n| n.as_str()) == Some("int32.eq-bv-expr") {
                 if let Some(args) = obj.get("args").and_then(|a| a.as_array()) {
                     if args.len() == 2 {
-                        return Some(args[1].clone());
+                        out.push(args[1].clone());
                     }
                 }
             }
             for (_k, v) in obj {
-                if let Some(found) = find_universe_bv_tree(v) {
-                    return Some(found);
-                }
+                collect_universe_bv_trees(v, out);
             }
-            None
         }
         Json::Array(arr) => {
             for v in arr {
-                if let Some(found) = find_universe_bv_tree(v) {
-                    return Some(found);
-                }
+                collect_universe_bv_trees(v, out);
             }
-            None
         }
-        _ => None,
+        _ => {}
     }
 }
 
@@ -350,10 +385,10 @@ fn find_universe_bv_tree(node: &Json) -> Option<Json> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn find_universe_bv_tree_pulls_args1() {
-        // A member-body-shaped node carrying an int32.eq-bv-expr atom.
-        let body = serde_json::json!({
+    // Build a member-body-shaped node carrying an int32.eq-bv-expr atom whose
+    // subject is call:abs(<subj_val>) and whose bv_tree is the given ite.
+    fn member_with_universe(subj_val: i64, bv_tree: Json) -> Json {
+        serde_json::json!({
             "header": {
                 "inv": {
                     "kind": "and",
@@ -363,29 +398,147 @@ mod tests {
                             "kind": "atomic",
                             "name": "int32.eq-bv-expr",
                             "args": [
-                                {"kind": "ctor", "name": "call:abs", "args": []},
-                                {"kind": "ctor", "name": "bv32.ite", "args": [
-                                    {"kind": "var", "name": "a"}
-                                ]}
+                                {"kind": "ctor", "name": "call:abs", "args": [
+                                    {"kind": "const", "value": subj_val}
+                                ]},
+                                bv_tree
                             ]
                         }
                     ]
                 }
             }
-        });
-        let tree = find_universe_bv_tree(&body).expect("should find bv_tree");
-        assert_eq!(tree["name"], "bv32.ite", "must return args[1] (the bv_tree)");
+        })
+    }
+
+    fn abs_tree() -> Json {
+        serde_json::json!({"kind": "ctor", "name": "bv32.ite", "args": [
+            {"kind": "ctor", "name": "bv32.slt", "args": [
+                {"kind": "var", "name": "a"}, {"kind": "const", "value": 0}]},
+            {"kind": "ctor", "name": "bv32.neg", "args": [{"kind": "var", "name": "a"}]},
+            {"kind": "var", "name": "a"}
+        ]})
     }
 
     #[test]
-    fn find_universe_bv_tree_absent_returns_none() {
+    fn collect_universe_bv_trees_pulls_args1() {
+        let body = member_with_universe(-5, abs_tree());
+        let mut out = Vec::new();
+        collect_universe_bv_trees(&body, &mut out);
+        assert_eq!(out.len(), 1, "should collect exactly one bv_tree");
+        assert_eq!(out[0]["name"], "bv32.ite", "must collect args[1] (the bv_tree)");
+    }
+
+    #[test]
+    fn collect_universe_bv_trees_absent_yields_empty() {
         let body = serde_json::json!({
             "header": {"inv": {"kind": "atomic", "name": "=", "args": []}}
         });
-        assert!(
-            find_universe_bv_tree(&body).is_none(),
-            "no universe atom -> None (the refuse path)"
-        );
+        let mut out = Vec::new();
+        collect_universe_bv_trees(&body, &mut out);
+        assert!(out.is_empty(), "no universe atom -> empty (the refuse path)");
+    }
+
+    #[test]
+    fn same_universe_at_multiple_callsites_dedups_to_one() {
+        // Three atoms, SAME bv_tree, different subject literals (the real abs
+        // proof shape). Canonical dedup must collapse them to one distinct tree.
+        let trees = vec![abs_tree(), abs_tree(), abs_tree()];
+        let mut distinct: Vec<Json> = Vec::new();
+        for t in trees {
+            let key = canonical_json(&t);
+            if !distinct.iter().any(|d| canonical_json(d) == key) {
+                distinct.push(t);
+            }
+        }
+        assert_eq!(distinct.len(), 1, "same definition at N call-sites = one distinct tree");
+    }
+
+    #[test]
+    fn two_distinct_universes_are_not_deduped() {
+        // Two genuinely different definitions must remain distinct (=> refuse).
+        let abs = abs_tree();
+        let neg_only = serde_json::json!({"kind": "ctor", "name": "bv32.neg",
+            "args": [{"kind": "var", "name": "a"}]});
+        let mut distinct: Vec<Json> = Vec::new();
+        for t in [abs, neg_only] {
+            let key = canonical_json(&t);
+            if !distinct.iter().any(|d| canonical_json(d) == key) {
+                distinct.push(t);
+            }
+        }
+        assert_eq!(distinct.len(), 2, "two different definitions stay distinct -> ambiguous");
+    }
+
+    #[test]
+    fn extract_refuses_on_ambiguous_proof() {
+        // A real CBOR catalog carrying TWO members with DIFFERENT universe
+        // definitions must refuse, not first-match. We build the catalog with
+        // the same encoder the minter uses so extract_bv_tree_from_proof reads it.
+        let body_abs = member_with_universe(-5, abs_tree());
+        let body_neg = member_with_universe(-5, serde_json::json!(
+            {"kind": "ctor", "name": "bv32.neg", "args": [{"kind": "var", "name": "a"}]}));
+        let proof_bytes = encode_two_member_catalog(&body_abs, &body_neg);
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("sugar-derive-ambiguous-{}.proof", std::process::id()));
+        std::fs::write(&path, &proof_bytes).expect("write tmp proof");
+        let r = extract_bv_tree_from_proof(&path);
+        let _ = std::fs::remove_file(&path);
+        let err = r.expect_err("ambiguous proof must refuse");
+        assert!(err.contains("ambiguous") && err.contains("2 distinct"),
+            "refusal must name the ambiguity, got: {err}");
+    }
+
+    // Encode a minimal CBOR catalog with two members, mirroring the on-disk
+    // shape that `decode` expects: a map with a `members` map of CID -> bstr
+    // (the JCS-JSON member body bytes).
+    fn encode_two_member_catalog(m1: &Json, m2: &Json) -> Vec<u8> {
+        use sugar_canonicalizer::blake3_512_of;
+        let b1 = serde_json::to_vec(m1).unwrap();
+        let b2 = serde_json::to_vec(m2).unwrap();
+        let c1 = blake3_512_of(&b1);
+        let c2 = blake3_512_of(&b2);
+        // Hand-roll deterministic CBOR: { "members": { c1: b1, c2: b2 } }.
+        let mut out = Vec::new();
+        // map(1)
+        out.push(0xA1);
+        cbor_tstr(&mut out, "members");
+        // map(2)
+        out.push(0xA2);
+        cbor_tstr(&mut out, &c1);
+        cbor_bstr(&mut out, &b1);
+        cbor_tstr(&mut out, &c2);
+        cbor_bstr(&mut out, &b2);
+        out
+    }
+
+    fn cbor_len_header(out: &mut Vec<u8>, major: u8, len: usize) {
+        let m = major << 5;
+        if len < 24 {
+            out.push(m | (len as u8));
+        } else if len < 256 {
+            out.push(m | 24);
+            out.push(len as u8);
+        } else if len < 65536 {
+            out.push(m | 25);
+            out.push((len >> 8) as u8);
+            out.push((len & 0xff) as u8);
+        } else {
+            out.push(m | 26);
+            out.push((len >> 24) as u8);
+            out.push((len >> 16) as u8);
+            out.push((len >> 8) as u8);
+            out.push((len & 0xff) as u8);
+        }
+    }
+
+    fn cbor_tstr(out: &mut Vec<u8>, s: &str) {
+        cbor_len_header(out, 3, s.len());
+        out.extend_from_slice(s.as_bytes());
+    }
+
+    fn cbor_bstr(out: &mut Vec<u8>, b: &[u8]) {
+        cbor_len_header(out, 2, b.len());
+        out.extend_from_slice(b);
     }
 
     #[test]
@@ -405,8 +558,9 @@ mod tests {
             ]
         });
         let dq = emit_derive_query(&bv_tree, &[i32::MIN]).expect("emit");
-        assert!(dq.smt.contains("(get-value (r))"));
+        let rv = &dq.result_var;
+        assert!(dq.smt.contains(&format!("(get-value ({rv}))")));
         assert!(dq.smt.contains("(assert (= a #x80000000))"));
-        assert!(dq.smt.contains("(assert (= r (ite (bvslt a #x00000000) (bvneg a) a)))"));
+        assert!(dq.smt.contains(&format!("(assert (= {rv} (ite (bvslt a #x00000000) (bvneg a) a)))")));
     }
 }

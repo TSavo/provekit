@@ -161,10 +161,12 @@ if derived != -2147483648:
     raise SystemExit(f"FAIL[good]: derived value must be -2147483648, got {derived!r}")
 if "#x80000000" not in model_line:
     raise SystemExit(f"FAIL[good]: model line must contain #x80000000, got {model_line!r}")
-if "(set-logic QF_BV)" not in smt or "(get-value (r))" not in smt:
+if "(set-logic QF_BV)" not in smt or "(get-value (" not in smt:
     raise SystemExit("FAIL[good]: SMT query missing QF_BV / get-value shape")
-if "(assert (= r (ite (bvslt a" not in smt:
-    raise SystemExit("FAIL[good]: SMT missing symbolic universe definition")
+# The result symbol is a fresh, collision-free token (not `r`); the universe
+# definition binds it to the ite over the lifted arg `a`.
+if "(ite (bvslt a #x00000000) (bvneg a) a)" not in smt:
+    raise SystemExit("FAIL[good]: SMT missing symbolic universe definition (ite over a)")
 print(f"   bv_tree source: {src}")
 print(f"   z3 verdict    : {verdict}")
 print(f"   z3 model      : {model_line}")
