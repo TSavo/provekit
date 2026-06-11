@@ -1,0 +1,29 @@
+[[plugins]]
+name = "java-test-assertions-lift"
+kind = "lift"
+surface = "java-test-assertions"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+bitvectors = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+
+[platform_profile]
+language = "java"
+library = "java-abs-flagship-good"
+version = "0.0.0"
+
+# P6: jtreg error-sentinel lift path.
+# vendor_source_dirs: the kit walks Math.abs(int) body → int32.eq-bv-expr universe.
+# No assertion_source_dirs: AbsTests.java is a jtreg @test harness, NOT a JUnit test.
+# The lift path is the error-sentinel pathway, NOT the vocab-learned pathway.
+[java-test-assertions]
+vendor_source_dirs = ["vendor/jdk21"]

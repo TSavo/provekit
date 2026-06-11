@@ -328,6 +328,7 @@ SHOWCASE_RUNS = \
 	examples/java-callbind-consistency/run.sh \
 	examples/java-instance-universe/run.sh \
 	examples/java-voltron/run.sh \
+	examples/java-abs-flagship/run.sh \
 	examples/java-panama-bridge/run.sh
 
 .PHONY: test-showcases

@@ -2191,4 +2191,215 @@ print(f"PASS: Voltron computation discrimination — whole chain refused, named 
 PY
 
 echo
-echo "== all 56 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 57: P6 jtreg positive — error-sentinel harness → 2 contracts (equality + universe)"
+echo "  MECHANISM: testIntAbs classified by body shape (NOT name)."
+echo "  Math::abs resolved via MemberReferenceTree; Integer.MIN_VALUE from platform-axioms.json."
+echo "  Expected: abs#euf#c:callresult_abs_a1(i:-2147483648)::assertion x2 (= + int32.eq-bv-expr)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT57="$(run_lift "$FIXTURES/p6-jtreg-positive" "P6JtregPositive.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT57" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Must produce exactly 2 contracts: equality + int32.eq-bv-expr universe row.
+assert len(ir) == 2, (
+    f"P6 positive: expected 2 contracts (= + int32.eq-bv-expr), got {len(ir)}: {json.dumps(ir, indent=2)}")
+
+expected_name = "abs#euf#c:callresult_abs_a1(i:-2147483648)::assertion"
+for c in ir:
+    assert c["name"] == expected_name, (
+        f"P6 positive: wrong contract name: {c['name']} (expected {expected_name})")
+
+# First contract: equality relation.
+eq_contract = ir[0]
+inv0 = eq_contract["inv"]["operands"][0]
+assert inv0["kind"] == "atomic" and inv0["name"] == "=", (
+    f"P6 positive: first contract must be equality (=), got: {inv0['name']}")
+
+ctor = inv0["args"][0]
+assert ctor["kind"] == "ctor" and ctor["name"] == "call:abs", (
+    f"P6 positive: call:abs expected, got: {ctor}")
+assert ctor["args"][0] == {"kind": "const", "value": -2147483648, "sort": {"kind": "primitive", "name": "Int"}}, (
+    f"P6 positive: arg should be -2147483648 (Integer.MIN_VALUE from platform-axioms.json)")
+assert inv0["args"][1] == {"kind": "const", "value": -2147483648, "sort": {"kind": "primitive", "name": "Int"}}, (
+    f"P6 positive: expected value should be -2147483648")
+
+# Second contract: int32.eq-bv-expr universe row (walked Math.abs body).
+bv_contract = ir[1]
+inv1 = bv_contract["inv"]["operands"][0]
+assert inv1["kind"] == "atomic" and inv1["name"] == "int32.eq-bv-expr", (
+    f"P6 positive: second contract must be int32.eq-bv-expr, got: {inv1['name']}")
+
+# Verify the walked BV expression is bv32.ite(bv32.slt(a,0), bv32.neg(a), a).
+bv_ctor = inv1["args"][1]
+assert bv_ctor["kind"] == "ctor" and bv_ctor["name"] == "bv32.ite", (
+    f"P6 positive: walked body must be bv32.ite, got: {bv_ctor['name']}")
+
+# Named diagnostics must NOT mention name-key classification.
+name_key_diags = [d for d in diags if "name" in d.get("reason", "").lower()
+                  and "abs" in d.get("reason", "").lower()
+                  and "classified" in d.get("reason", "").lower()]
+assert not name_key_diags, (
+    f"SOUNDNESS VIOLATION: classification used a name key: {name_key_diags}")
+
+print(f"PASS: P6 jtreg positive -- 2 contracts produced:")
+print(f"  Contract name: {ir[0]['name']}")
+print(f"  Contract 1: equality   abs(-2147483648) = -2147483648 (Integer.MIN_VALUE)")
+print(f"  Contract 2: int32.eq-bv-expr  bv32.ite(bv32.slt(a,0),bv32.neg(a),a)")
+print(f"  MECHANISM: body shape (NOT name); MemberReferenceTree; platform-axioms.json")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 58: P6 discrimination — unconditional return 1 → 0 contracts, named diagnostic"
+echo "  Harness returns 1 unconditionally (no 'result != expected' guard)."
+echo "  Kit must refuse with: \"no 'result != expected' guard found\""
+echo "────────────────────────────────────────────────────────────────"
+RESULT58="$(run_lift "$FIXTURES/p6-unconditional-return" "P6UnconditionalReturn.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT58" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Must produce 0 contracts.
+assert len(ir) == 0, (
+    f"P6 unconditional-return discrimination: expected 0 contracts, got {len(ir)}: {ir}")
+
+# Must have a named diagnostic about the missing guard.
+reasons = [d.get("reason", "") for d in diags]
+guard_diags = [r for r in reasons if "result != expected" in r or "no 'result" in r or "guard" in r]
+assert guard_diags, (
+    f"P6 unconditional-return: expected named diagnostic about missing guard, got: {reasons}")
+
+print(f"PASS: P6 unconditional-return discrimination -- 0 contracts, named diagnostic: {guard_diags[0][:100]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 59: P6 discrimination — wrong guard (unrelated comparison) → 0 contracts, named diagnostic"
+echo "  Guard compares 0 != 1 (not result vs expected)."
+echo "  Kit must refuse: \"no 'result != expected' guard found\""
+echo "────────────────────────────────────────────────────────────────"
+RESULT59="$(run_lift "$FIXTURES/p6-wrong-guard" "P6WrongGuard.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT59" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Must produce 0 contracts.
+assert len(ir) == 0, (
+    f"P6 wrong-guard discrimination: expected 0 contracts, got {len(ir)}: {ir}")
+
+# Must have a named diagnostic about the missing guard.
+reasons = [d.get("reason", "") for d in diags]
+guard_diags = [r for r in reasons if "result != expected" in r or "no 'result" in r or "guard" in r]
+assert guard_diags, (
+    f"P6 wrong-guard: expected named diagnostic about missing guard, got: {reasons}")
+
+print(f"PASS: P6 wrong-guard discrimination -- 0 contracts, named diagnostic: {guard_diags[0][:100]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 60: P6 discrimination — sentinel never throws → 0 contracts, named diagnostic"
+echo "  Harness body shape is correct; main has NO 'if (errors > 0) throw'."
+echo "  Kit must refuse: \"error-sentinel flow not verified\""
+echo "────────────────────────────────────────────────────────────────"
+RESULT60="$(run_lift "$FIXTURES/p6-no-throw" "P6NoThrow.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT60" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Must produce 0 contracts.
+assert len(ir) == 0, (
+    f"P6 no-throw discrimination: expected 0 contracts, got {len(ir)}: {ir}")
+
+# Must have a named diagnostic about the missing accumulator+throw.
+reasons = [d.get("reason", "") for d in diags]
+flow_diags = [r for r in reasons if "flow not verified" in r or "accumulator" in r or "throw" in r]
+assert flow_diags, (
+    f"P6 no-throw: expected named diagnostic about missing throw, got: {reasons}")
+
+print(f"PASS: P6 no-throw discrimination -- 0 contracts, named diagnostic: {flow_diags[0][:100]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 61: P6 discrimination — lambda instead of method reference → 0 contracts, named diagnostic"
+echo "  Callsite passes a lambda (a -> ...) not a MemberReferenceTree."
+echo "  Kit must refuse: \"functional-interface argument is not a method reference\""
+echo "────────────────────────────────────────────────────────────────"
+RESULT61="$(run_lift "$FIXTURES/p6-method-ref-refusal" "P6MethodRefRefusal.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT61" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Must produce 0 contracts.
+assert len(ir) == 0, (
+    f"P6 method-ref-refusal discrimination: expected 0 contracts, got {len(ir)}: {ir}")
+
+# Must have a named diagnostic about the non-method-reference functional arg.
+reasons = [d.get("reason", "") for d in diags]
+mref_diags = [r for r in reasons if "not a method reference" in r or "MemberReferenceTree" in r or "LAMBDA" in r]
+assert mref_diags, (
+    f"P6 method-ref-refusal: expected named diagnostic about non-MemberReferenceTree, got: {reasons}")
+
+print(f"PASS: P6 method-ref-refusal discrimination -- 0 contracts, named diagnostic: {mref_diags[0][:100]}")
+PY
+
+echo
+echo "== all 61 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6) =="
