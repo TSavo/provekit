@@ -1,0 +1,18 @@
+# sugar's own shippable artifacts -- the self-attestation manifest.
+#
+# This is the config that ARMS the coarse supply-chain pin on sugar itself.
+# `make self-attest` (run by `make ci`) executes
+#   sugar package release --manifest sugar-release.toml
+# which content-addresses each declared artifact, writes its
+# PackageReleaseReceipt (the top-level `binaryCid` the admission gate consumes),
+# and re-verifies. A sound gate that nothing arms is a silence read wrong; this
+# manifest is the producer that loads the round, dogfooded on the very tool
+# doing the gating.
+#
+# Paths are relative to this manifest's directory (the repo root).
+
+version = "0.1.0"
+
+[[artifact]]
+name = "sugar"
+path = "implementations/rust/target/release/sugar"
