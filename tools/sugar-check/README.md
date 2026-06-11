@@ -17,7 +17,7 @@ moves it.
 
 ```yaml
 repos:
-  - repo: https://github.com/TSavo/provekit
+  - repo: https://github.com/TSavo/sugar
     rev: <sha>
     hooks:
       - id: sugar-check
