@@ -380,12 +380,27 @@ pub(crate) fn routes_to_string_theory(name: &str, args: &[Term]) -> bool {
             } if name == "String"
         )
     };
+    // python:bytes(<String const>) is the Python kit's ASCII-gated bytes
+    // literal: kind-distinct from a bare str at the EUF/term layer (the kit
+    // refuses literal-vs-literal cross-kind comparisons), but its CONTENT
+    // must live in string theory so a sworn bytes equality conjoins with a
+    // charset universe over the same subject instead of ill-sorting.
+    let is_bytes_wrapped_string_const = |t: &Term| {
+        matches!(
+            t,
+            Term::Ctor { name, args } if name == "python:bytes"
+                && args.len() == 1
+                && is_string_const(&args[0])
+        )
+    };
+    let is_string_like_const =
+        |t: &Term| is_string_const(t) || is_bytes_wrapped_string_const(t);
     let is_routable_subject = |t: &Term| {
         matches!(t, Term::Ctor { name, args } if !(name == "None" && args.is_empty()))
             || is_string_const(t)
     };
-    (is_string_const(&args[0]) && is_routable_subject(&args[1]))
-        || (is_string_const(&args[1]) && is_routable_subject(&args[0]))
+    (is_string_like_const(&args[0]) && is_routable_subject(&args[1]))
+        || (is_string_like_const(&args[1]) && is_routable_subject(&args[0]))
 }
 
 /// Route atoms for the bitvector-32 theory arm.

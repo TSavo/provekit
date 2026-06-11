@@ -1023,6 +1023,57 @@ mod tests {
         }
     }
 
+    #[test]
+    fn bytes_wrapped_equality_conjoins_with_complement_universe() {
+        // CONTACT: the python kit lifts b"..." as python:bytes(<String const>).
+        // The sworn bytes equality must meet the complement universe in string
+        // theory -- a disconnected (opaque-Int) bytes row would be vacuously
+        // SAT against any universe. Forbidden char present -> UNSAT; clean ->
+        // SAT. This is the marquee's actual bytes path.
+        let z3 = which_z3().expect("z3 required for bytes conjoin check");
+        let call = callresult("c:callresult_urlsafe_b64encode_a1", "bar");
+        let bad = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.chars-not-in-set",
+                    vec![call.clone(), string_const("+/")],
+                ),
+                eq(call.clone(), ctor("python:bytes", vec![string_const("YmFy+x=")])),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&bad).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains("\"YmFy+x=\""),
+            "python:bytes must unwrap to a real String literal:\n{script}"
+        );
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "bytes equality with forbidden char must refute against the universe, got: {out}\nscript:\n{script}"
+        );
+        let good = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.chars-not-in-set",
+                    vec![call.clone(), string_const("+/")],
+                ),
+                eq(call, ctor("python:bytes", vec![string_const("YmFy-x=")])),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&good).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "clean bytes equality must be consistent with the universe, got: {out}\nscript:\n{script}"
+        );
+    }
+
     // ── Cross-type literal distinctness (Python `==` semantics) ───────────
     // Helpers for int / bool / None literal terms.
     fn int_const(n: i64) -> serde_json::Value {
