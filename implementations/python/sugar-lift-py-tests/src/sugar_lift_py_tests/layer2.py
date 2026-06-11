@@ -229,9 +229,104 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
             _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
 
         _coalesce_same_named_decls(out)
+        _apply_sample_gate(out, source_path)
     finally:
         _CURRENT_MODULE_ALIASES = prev_aliases
     return out
+
+
+def _iter_conjuncts(formula: Formula):
+    if isinstance(formula, _Atomic):
+        yield formula
+        return
+    if getattr(formula, "kind", None) == "and":
+        for operand in formula.operands:
+            yield from _iter_conjuncts(operand)
+
+
+def _assertion_call_subject(assertion: Formula) -> Optional[Term]:
+    """The call-shaped side of the assertion's equality atom: the term the
+    assertion ACTUALLY swears about, and therefore the only sound subject
+    for a sibling universe row. Returns None when no equality conjunct has
+    a call-shaped (callval_*/callresult_*) ctor side."""
+    for atom in _iter_conjuncts(assertion):
+        if atom.name != "=" or len(atom.args) != 2:
+            continue
+        for side in atom.args:
+            if isinstance(side, _Ctor) and (
+                side.name.startswith("callval_")
+                or side.name.startswith("callresult_")
+            ):
+                return side
+    return None
+
+
+def _sworn_string_content(term: Term) -> Optional[str]:
+    from .ir import _ConstStr
+
+    if isinstance(term, _ConstStr):
+        return term.value
+    if (
+        isinstance(term, _Ctor)
+        and term.name == "python:bytes"
+        and len(term.args) == 1
+        and isinstance(term.args[0], _ConstStr)
+    ):
+        return term.args[0].value
+    return None
+
+
+def _apply_sample_gate(out: Layer2Output, source_path: str) -> None:
+    """∀⊨sample: every minted universe must be consistent with every sworn
+    vector at its surface, checked by EVALUATION -- the world is the
+    vendor's own ground vector, so no solver is consulted and no solver is
+    trusted. A violating vector means the walk misread the body (a misquote
+    to be caught here, by us, about us) or the vendor contradicts their own
+    source; either way the universe is REJECTED loudly and only the sworn
+    point rows remain. The gate can only ever shrink what we claim."""
+    universe_decls = [d for d in out.decls if d.name.endswith("::universe")]
+    if not universe_decls:
+        return
+    rejected: Set[str] = set()
+    for universe in universe_decls:
+        inv = universe.inv
+        if not isinstance(inv, _Atomic) or inv.name != "str.chars-not-in-set":
+            continue
+        subject = inv.args[0]
+        forbidden = _sworn_string_content(inv.args[1]) or ""
+        base = universe.name[: -len("::universe")]
+        assertion_name = f"{base}::assertion"
+        for decl in out.decls:
+            if decl.name != assertion_name or decl.inv is None:
+                continue
+            for atom in _iter_conjuncts(decl.inv):
+                if atom.name != "=" or len(atom.args) != 2:
+                    continue
+                literal = None
+                if atom.args[0] == subject:
+                    literal = _sworn_string_content(atom.args[1])
+                elif atom.args[1] == subject:
+                    literal = _sworn_string_content(atom.args[0])
+                if literal is None:
+                    continue
+                violating = [ch for ch in forbidden if ch in literal]
+                if violating:
+                    rejected.add(universe.name)
+                    out.warnings.append(
+                        LiftWarning(
+                            source_path,
+                            universe.name,
+                            "sample-gate rejected universe: sworn vector "
+                            f"{literal!r} contains forbidden {violating!r} -- "
+                            "the walk misread the body or the vendor "
+                            "contradicts their own source; point rows remain",
+                        )
+                    )
+                    break
+            if universe.name in rejected:
+                break
+    if rejected:
+        out.decls = [d for d in out.decls if d.name not in rejected]
 
 
 def _coalesce_same_named_decls(out: Layer2Output) -> None:
@@ -3143,7 +3238,15 @@ def _collect_value_scope_assertion_facts(
             # instantiated at this base's concrete subject -- sound, since the
             # translate totality argument holds for every input. Refused walks
             # surface as loud warnings; non-candidates stay silent by design.
-            if origin.euf_term is not None:
+            #
+            # CONTACT RULE: the subject is extracted from THIS assertion's own
+            # equality atom (the call-shaped side), never assumed from
+            # origin.euf_term -- attribute-calls lift as callval terms while
+            # the origin carries a callresult ctor, and a universe over a term
+            # the assertion never mentions is vacuously SAT (the disjointness
+            # failure). Same-statement extraction makes contact structural.
+            subject_term = _assertion_call_subject(assertion) or origin.euf_term
+            if subject_term is not None:
                 universe_name = f"{base}::universe"
                 already_emitted = universe_name in used_names or any(
                     d.name == universe_name for d in out.decls
@@ -3170,7 +3273,7 @@ def _collect_value_scope_assertion_facts(
                                 inv=atomic(
                                     "str.chars-not-in-set",
                                     [
-                                        origin.euf_term,
+                                        subject_term,
                                         str_const(universe.forbidden),
                                     ],
                                 ),
