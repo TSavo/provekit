@@ -435,6 +435,166 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
                 inner
             ))
         }
+        // ── Base64 STRONG TIER (paper 26 — "THE seam between tiers") ──────────
+        // str.eq-bv-blocks: arg[0] = subject (the callresult String term),
+        //                   arg[1] = a String const carrying the strong-tier
+        //                            payload JSON walked from the vendor source.
+        //
+        // Payload JSON (all fields walked from Base64.java; NOTHING hand-authored):
+        //   { "input_bytes": [98,97,114],            // the literal's UTF-8 bytes
+        //     "vars": ["b0","b1","b2"],              // byte var names (parallel)
+        //     "per_char": [ <bv-index-tree>, ... ],  // one index expr per output char
+        //     "table": [65,66,...,47] }              // 64 codepoints, source order
+        //
+        // We render a SELF-CONTAINED string equality binding the subject to the
+        // concatenation of per-character codepoints, computed by the solver from
+        // the walked bit arithmetic. The byte vars are `let`-bound to the literal
+        // bytes, so NO top-level declaration is emitted (additive: invisible to
+        // the declaration-collection passes). Each index tree is a bv-expression
+        // over the byte vars using the same `emit_bv32_term` vocabulary as G2;
+        // the index selects a codepoint from the walked table via a nested `ite`,
+        // and `str.from_code` bridges the codepoint Int to a one-char String.
+        //
+        //   (= <subject>
+        //      (let ((b0 #x..)(b1 #x..)(b2 #x..))
+        //         (str.++ (str.from_code <table-ite over per_char[0]>) ... )))
+        //
+        // GOOD claim → sat (z3 computes "YmFy"); alphabet-valid-but-WRONG claim
+        // ("ZmFy") → unsat. The weak str.chars-in-set row cannot refute "ZmFy";
+        // only these equations can. That refutation is the entire point.
+        "str.eq-bv-blocks" if args.len() == 2 => emit_b64_strong_blocks(&args[0], &args[1]),
+        _ => None,
+    }
+}
+
+/// Render the Base64 strong-tier `str.eq-bv-blocks` atom.
+///
+/// See the call-site comment in `emit_string_theory_atomic` for the payload
+/// shape. Returns `None` (the atom is dropped, never approximated) if the
+/// payload is malformed — but the Java walker only ever emits well-formed
+/// payloads, and a malformed one is a kit bug, not a soundness hole.
+fn emit_b64_strong_blocks(subject: &Term, payload: &Term) -> Option<String> {
+    // Payload is a String const carrying the JSON.
+    let json_str = match payload {
+        Term::Const {
+            value: serde_json::Value::String(s),
+            sort: Sort::Primitive { name },
+        } if name == "String" => s,
+        _ => return None,
+    };
+    let body = render_b64_blocks_body(json_str)?;
+    Some(format!("(= {} {})", emit_string_term(subject), body))
+}
+
+/// Render the RHS string expression of a Base64 strong-tier block payload — the
+/// `(let (...) (str.++ ...))` term whose value is the encoded output string,
+/// computed by the solver from the walked bit arithmetic. Public so the derive
+/// path (`sugar derive` over a strong-tier universe) can reuse the exact same
+/// rendering, keeping the derived string and the discharge check byte-aligned.
+pub fn render_b64_blocks_body(payload_json: &str) -> Option<String> {
+    let payload: serde_json::Value = serde_json::from_str(payload_json).ok()?;
+
+    let input_bytes = payload.get("input_bytes")?.as_array()?;
+    let vars = payload.get("vars")?.as_array()?;
+    let per_char = payload.get("per_char")?.as_array()?;
+    let table = payload.get("table")?.as_array()?;
+
+    if input_bytes.len() != vars.len() {
+        return None;
+    }
+
+    // Build the byte-var substitution: bN → bv32 hex of the literal byte.
+    let mut subst: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut let_binds: Vec<String> = Vec::new();
+    for (vname_v, byte_v) in vars.iter().zip(input_bytes.iter()) {
+        let vname = vname_v.as_str()?;
+        let b = byte_v.as_i64()?;
+        let hex = i32_to_bv32_hex(b);
+        subst.insert(vname.to_string(), hex.clone());
+        let_binds.push(format!("({} {})", vname, hex));
+    }
+
+    // Build the table-lookup `ite` chain ONCE as a parameterised closure over an
+    // already-rendered BV index expression. Each table entry is a walked
+    // codepoint (Int), keyed by its source-order index (the BV index value).
+    let table_ite = |index_smt: &str| -> Option<String> {
+        // Innermost default: codepoint 0 (unreachable for a valid 6-bit index;
+        // present so the ite is total). We fold from the last entry inward.
+        let mut acc = "0".to_string();
+        for (idx, cp_v) in table.iter().enumerate().rev() {
+            let cp = cp_v.as_i64()?;
+            let idx_hex = i32_to_bv32_hex(idx as i64);
+            acc = format!("(ite (= {} {}) {} {})", index_smt, idx_hex, cp, acc);
+        }
+        Some(acc)
+    };
+
+    // Render each output character: str.from_code over the table-selected codepoint.
+    // We render the index tree DIRECTLY from raw JSON (not via IrTerm) because the
+    // walked index nodes carry no `sort` field — deserializing into IrTerm::Const
+    // would fail. This mirrors `derive_query::render_bv_term`.
+    let mut char_terms: Vec<String> = Vec::new();
+    for index_tree in per_char {
+        let index_smt = render_bv_index_json(index_tree, &subst)?;
+        let cp_smt = table_ite(&index_smt)?;
+        char_terms.push(format!("(str.from_code {})", cp_smt));
+    }
+    if char_terms.is_empty() {
+        return None;
+    }
+
+    let concat = if char_terms.len() == 1 {
+        char_terms.pop().unwrap()
+    } else {
+        format!("(str.++ {})", char_terms.join(" "))
+    };
+
+    if let_binds.is_empty() {
+        Some(concat)
+    } else {
+        Some(format!("(let ({}) {})", let_binds.join(" "), concat))
+    }
+}
+
+/// Render a bv-expression tree from RAW JSON (var/const/ctor nodes) into an
+/// SMT-LIB (_ BitVec 32) expression, substituting `var` nodes from `subst`.
+/// Const nodes here carry no `sort` field (they are bare `{"kind":"const",
+/// "value":N}`), so we cannot reuse `emit_bv32_term`. The op vocabulary is the
+/// same one the G2 walker / derive path use.
+fn render_bv_index_json(
+    node: &serde_json::Value,
+    subst: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let kind = node.get("kind")?.as_str()?;
+    match kind {
+        "var" => {
+            let name = node.get("name")?.as_str()?;
+            subst.get(name).cloned()
+        }
+        "const" => {
+            let v = node.get("value")?.as_i64()?;
+            Some(i32_to_bv32_hex(v))
+        }
+        "ctor" => {
+            let name = node.get("name")?.as_str()?;
+            let args = node.get("args")?.as_array()?;
+            let bin = |smt_op: &str| -> Option<String> {
+                if args.len() != 2 {
+                    return None;
+                }
+                let l = render_bv_index_json(&args[0], subst)?;
+                let r = render_bv_index_json(&args[1], subst)?;
+                Some(format!("({} {} {})", smt_op, l, r))
+            };
+            match name {
+                "bv32.and"  => bin("bvand"),
+                "bv32.or"   => bin("bvor"),
+                "bv32.shl"  => bin("bvshl"),
+                "bv32.lshr" => bin("bvlshr"),
+                "bv32.add"  => bin("bvadd"),
+                _ => None, // any other op = unwalkable here; drop rather than approximate
+            }
+        }
         _ => None,
     }
 }
@@ -458,6 +618,7 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "str.is_ascii_whitespace"
             | "str.is_ascii_control"
             | "str.chars-in-set"
+            | "str.eq-bv-blocks"
     )
 }
 
@@ -514,6 +675,32 @@ fn emit_bv32_term(term: &Term, subst: &std::collections::HashMap<String, String>
                 let l = emit_bv32_term(&args[0], subst)?;
                 let r = emit_bv32_term(&args[1], subst)?;
                 Some(format!("(bvand {} {})", l, r))
+            }
+            // ── Base64 strong-tier ops (paper 26 seam). Each maps 1:1 to a Java
+            // operator read from the vendor's Base64.java AST:
+            //   bv32.or   → bvor    (Java `|`, the alphabet-block OR — tail path)
+            //   bv32.shl  → bvshl   (Java `<<`, the accumulation/extraction shifts)
+            //   bv32.lshr → bvlshr  (Java `>>`, the work-area extraction shifts)
+            //   bv32.add  → bvadd   (Java `+`, the per-byte accumulation `(w<<8)+b`)
+            "bv32.or" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvor {} {})", l, r))
+            }
+            "bv32.shl" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvshl {} {})", l, r))
+            }
+            "bv32.lshr" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvlshr {} {})", l, r))
+            }
+            "bv32.add" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvadd {} {})", l, r))
             }
             _ => None,
         },
@@ -1851,5 +2038,160 @@ fn has_outlives_predicate(formula: &Formula) -> bool {
         Formula::DivergenceBetween { source, target } => {
             has_outlives_predicate(source) || has_outlives_predicate(target)
         }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Base64 strong-tier (`str.eq-bv-blocks`) emitter tests (paper 26 seam).
+// ADDITIVE: these exercise the new string-theory atom and the four new bv32
+// ops (shl/lshr/or/add). They do not touch the discharge emission.
+// ──────────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod b64_strong_tests {
+    use super::*;
+    use sugar_ir_types::IrTerm as Term;
+
+    fn s(name: &str) -> Sort {
+        Sort::Primitive { name: name.into() }
+    }
+
+    /// Build the per-char index tree for output char `k` of a full 3-byte block,
+    /// EXACTLY mirroring the vendor's Base64.java full-block path:
+    ///   work = ((((0<<8)+b0)<<8)+b1)<<8)+b2     (line 778, x3)
+    ///   idx_k = (work >> shift_k) & 0x3f          (lines 780-783; MASK_6BITS=0x3f)
+    /// shifts: [18, 12, 6, 0].
+    fn block_index_tree(shift: i64) -> serde_json::Value {
+        // accumulation: (((0<<8)+b0)<<8 + b1)<<8 + b2
+        let acc = serde_json::json!({
+          "kind":"ctor","name":"bv32.add","args":[
+            {"kind":"ctor","name":"bv32.shl","args":[
+              {"kind":"ctor","name":"bv32.add","args":[
+                {"kind":"ctor","name":"bv32.shl","args":[
+                  {"kind":"ctor","name":"bv32.add","args":[
+                    {"kind":"ctor","name":"bv32.shl","args":[
+                      {"kind":"const","value":0},
+                      {"kind":"const","value":8}]},
+                    {"kind":"var","name":"b0"}]},
+                  {"kind":"const","value":8}]},
+                {"kind":"var","name":"b1"}]},
+              {"kind":"const","value":8}]},
+            {"kind":"var","name":"b2"}]
+        });
+        let shifted = if shift == 0 {
+            acc
+        } else {
+            serde_json::json!({"kind":"ctor","name":"bv32.lshr","args":[acc, {"kind":"const","value": shift}]})
+        };
+        serde_json::json!({"kind":"ctor","name":"bv32.and","args":[shifted, {"kind":"const","value":63}]})
+    }
+
+    /// Standard table codepoints in source order (A-Za-z0-9+/), walked by G1.
+    fn std_table() -> Vec<i64> {
+        let t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        t.chars().map(|c| c as i64).collect()
+    }
+
+    fn bar_payload() -> Term {
+        let payload = serde_json::json!({
+            "input_bytes": [98, 97, 114],     // "bar"
+            "vars": ["b0","b1","b2"],
+            "per_char": [
+                block_index_tree(18),
+                block_index_tree(12),
+                block_index_tree(6),
+                block_index_tree(0),
+            ],
+            "table": std_table(),
+        });
+        Term::Const { value: serde_json::Value::String(payload.to_string()), sort: s("String") }
+    }
+
+    fn subject() -> Term {
+        Term::Ctor {
+            name: "call:encodeBase64String".into(),
+            args: vec![Term::Const {
+                value: serde_json::Value::String("bar".into()),
+                sort: s("String"),
+            }],
+        }
+    }
+
+    #[test]
+    fn new_bv_ops_render() {
+        let subst: std::collections::HashMap<String, String> =
+            [("b0".to_string(), "#x00000062".to_string())].into_iter().collect();
+        let mk = |op: &str| Term::Ctor {
+            name: op.into(),
+            args: vec![Term::Var { name: "b0".into() }, Term::Const { value: serde_json::json!(8), sort: s("Int") }],
+        };
+        assert_eq!(emit_bv32_term(&mk("bv32.shl"), &subst).unwrap(),  "(bvshl #x00000062 #x00000008)");
+        assert_eq!(emit_bv32_term(&mk("bv32.lshr"), &subst).unwrap(), "(bvlshr #x00000062 #x00000008)");
+        assert_eq!(emit_bv32_term(&mk("bv32.or"), &subst).unwrap(),   "(bvor #x00000062 #x00000008)");
+        assert_eq!(emit_bv32_term(&mk("bv32.add"), &subst).unwrap(),  "(bvadd #x00000062 #x00000008)");
+    }
+
+    #[test]
+    fn emits_self_contained_string_equality() {
+        let rendered = emit_string_theory_atomic("str.eq-bv-blocks", &[subject(), bar_payload()])
+            .expect("str.eq-bv-blocks must render");
+        // Subject equality, let-bound bytes, four chars via str.from_code, the
+        // walked ops, and the 6-bit mask all present.
+        assert!(rendered.starts_with("(= "), "must be an equality: {rendered}");
+        assert!(rendered.contains("(let ((b0 #x00000062) (b1 #x00000061) (b2 #x00000072))"),
+            "bytes must be let-bound to the literal's UTF-8 bytes: {rendered}");
+        assert!(rendered.contains("str.from_code"), "char bridge missing: {rendered}");
+        assert_eq!(rendered.matches("str.from_code").count(), 4, "exactly 4 output chars: {rendered}");
+        assert!(rendered.contains("bvlshr"), "extraction shift op missing: {rendered}");
+        assert!(rendered.contains("bvshl"),  "accumulation shift op missing: {rendered}");
+        assert!(rendered.contains("bvadd"),  "accumulation add op missing: {rendered}");
+        assert!(rendered.contains("#x0000003f"), "MASK_6BITS (0x3f) missing: {rendered}");
+        // The table-ite must carry walked codepoints, e.g. 'Y'=89, 'm'=109.
+        assert!(rendered.contains(" 89 "), "table codepoint 89 ('Y') missing: {rendered}");
+    }
+
+    #[test]
+    fn malformed_payload_drops_atom() {
+        let bad = Term::Const { value: serde_json::Value::String("not json".into()), sort: s("String") };
+        assert!(emit_b64_strong_blocks(&subject(), &bad).is_none());
+    }
+
+    // z3 integration: GOOD claim sat, alphabet-valid-but-WRONG claim unsat.
+    // Uses a plain String-sorted subject var (the real pipeline supplies the
+    // ctor subject + its declarations via compile_formula; here we isolate the
+    // equation logic — the conjoin with the sworn equality is what binds the
+    // subject to the claim, modelled below by the second assert over `subj`).
+    fn run_claim(claim: &str) -> String {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let subj = Term::Var { name: "subj".into() };
+        let atom = emit_string_theory_atomic("str.eq-bv-blocks", &[subj, bar_payload()]).unwrap();
+        let claim_lit = format!("\"{}\"", claim);
+        // Assert the strong-tier definition AND the sworn equality over the same
+        // subject. Conjoined: GOOD claim sat, alphabet-valid-but-wrong unsat.
+        let script = format!(
+            "(set-logic ALL)\n(declare-const subj String)\n\
+             (assert {atom})\n(assert (= subj {claim_lit}))\n(check-sat)\n"
+        );
+        let mut child = Command::new("z3").args(["-smt2","-in"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn().expect("spawn z3");
+        child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn z3_good_claim_sat_bad_claim_unsat() {
+        use std::process::Command;
+        if Command::new("z3").arg("--version").output().is_err() {
+            eprintln!("z3 absent: skipping b64 strong-tier z3 integration test");
+            return;
+        }
+        let good = run_claim("YmFy");
+        assert!(good.starts_with("sat"),  "GOOD claim YmFy must be sat; got: {good}");
+        // ZmFy is alphabet-valid (every char in the standard table) but WRONG.
+        // Only the block equations can refute it.
+        let bad = run_claim("ZmFy");
+        assert!(bad.starts_with("unsat"), "alphabet-valid-but-wrong ZmFy must be unsat; got: {bad}");
     }
 }

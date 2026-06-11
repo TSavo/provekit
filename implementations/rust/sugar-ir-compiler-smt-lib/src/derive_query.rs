@@ -329,6 +329,124 @@ pub fn parse_model_value(response_line: &str, result_var: &str) -> Option<i32> {
     Some(u as i32)
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Base64 STRONG TIER string-derive (paper 26 seam).
+//
+// `sugar derive` over a strong-tier `str.eq-bv-blocks` universe: build a query
+// that binds a String const `subj` to the walked block equations and asks z3
+// for its value. The derived string is computed from the definition, not
+// executed — the punchline of the strong tier: `encode("bar")` → `"YmFy"`.
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Result of a strong-tier string derive query.
+#[derive(Debug, Clone)]
+pub struct BlocksDeriveQuery {
+    /// The complete SMT-LIB script (ALL logic: BV + strings).
+    pub smt: String,
+    /// The result string symbol queried via get-value (`subj`).
+    pub result_var: String,
+}
+
+/// Emit a derive query for a Base64 strong-tier block payload (the `args[1]`
+/// String const JSON of a `str.eq-bv-blocks` atom). Returns the script and the
+/// result symbol. The output string is read from z3's `(get-value (subj))`.
+pub fn emit_blocks_derive_query(payload_json: &str) -> Result<BlocksDeriveQuery, DeriveQueryError> {
+    let body = crate::generated::render_b64_blocks_body(payload_json).ok_or_else(|| {
+        DeriveQueryError("could not render strong-tier block payload (malformed JSON?)".into())
+    })?;
+    let result_var = "subj".to_string();
+    let smt = format!(
+        "(set-logic ALL)\n(declare-const {result_var} String)\n\
+         (assert (= {result_var} {body}))\n(check-sat)\n(get-value ({result_var}))\n"
+    );
+    Ok(BlocksDeriveQuery { smt, result_var })
+}
+
+/// Parse z3's `(get-value (subj))` response line into the derived string.
+///
+/// z3 returns a line like `((subj "YmFy"))`. Returns the string between the
+/// first pair of double quotes. Returns `None` if the response does not match
+/// or the result var name does not appear.
+pub fn parse_model_string(response_line: &str, result_var: &str) -> Option<String> {
+    if !response_line.contains(result_var) {
+        return None;
+    }
+    let first = response_line.find('"')?;
+    let rest = &response_line[first + 1..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+#[cfg(test)]
+mod blocks_derive_tests {
+    use super::*;
+
+    fn bar_payload() -> String {
+        // "bar" → standard table. per_char index trees mirror the vendor full-block path.
+        let acc = serde_json::json!({
+          "kind":"ctor","name":"bv32.add","args":[
+            {"kind":"ctor","name":"bv32.shl","args":[
+              {"kind":"ctor","name":"bv32.add","args":[
+                {"kind":"ctor","name":"bv32.shl","args":[
+                  {"kind":"ctor","name":"bv32.add","args":[
+                    {"kind":"ctor","name":"bv32.shl","args":[
+                      {"kind":"const","value":0},{"kind":"const","value":8}]},
+                    {"kind":"var","name":"b0"}]},
+                  {"kind":"const","value":8}]},
+                {"kind":"var","name":"b1"}]},
+              {"kind":"const","value":8}]},
+            {"kind":"var","name":"b2"}]
+        });
+        let idx = |sh: i64| {
+            let shifted = if sh == 0 { acc.clone() } else {
+                serde_json::json!({"kind":"ctor","name":"bv32.lshr","args":[acc.clone(),{"kind":"const","value":sh}]})
+            };
+            serde_json::json!({"kind":"ctor","name":"bv32.and","args":[shifted,{"kind":"const","value":63}]})
+        };
+        let table: Vec<i64> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+            .chars().map(|c| c as i64).collect();
+        serde_json::json!({
+            "input_bytes":[98,97,114], "vars":["b0","b1","b2"],
+            "per_char":[idx(18),idx(12),idx(6),idx(0)], "table": table
+        }).to_string()
+    }
+
+    #[test]
+    fn emits_string_derive_query() {
+        let dq = emit_blocks_derive_query(&bar_payload()).expect("emit");
+        assert!(dq.smt.contains("(declare-const subj String)"), "{}", dq.smt);
+        assert!(dq.smt.contains("(get-value (subj))"), "{}", dq.smt);
+        assert!(dq.smt.contains("str.from_code"), "{}", dq.smt);
+    }
+
+    #[test]
+    fn parse_string_model() {
+        assert_eq!(parse_model_string("((subj \"YmFy\"))", "subj").unwrap(), "YmFy");
+        assert!(parse_model_string("((other \"x\"))", "subj").is_none());
+    }
+
+    #[test]
+    fn z3_derives_bar_to_ymfy() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        if Command::new("z3").arg("--version").output().is_err() {
+            eprintln!("z3 absent: skipping string-derive integration test");
+            return;
+        }
+        let dq = emit_blocks_derive_query(&bar_payload()).expect("emit");
+        let mut child = Command::new("z3").args(["-smt2","-in"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn().expect("spawn z3");
+        child.stdin.as_mut().unwrap().write_all(dq.smt.as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines[0], "sat", "must be sat; got {stdout:?}");
+        let derived = parse_model_string(lines[1], &dq.result_var).expect("parse");
+        assert_eq!(derived, "YmFy", "z3.model derives encode(\"bar\") = \"YmFy\"");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

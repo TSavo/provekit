@@ -2609,5 +2609,139 @@ assert mref_diags, (
 print(f"PASS: P6 method-ref-refusal discrimination -- 0 contracts, named diagnostic: {mref_diags[0][:100]}")
 PY
 
+# ──────────────────────────────────────────────────────────────
+# STRONG TIER (str.eq-bv-blocks) -- paper 26 "the seam between tiers".
+# The walker symbolically executes the vendor encode body and mints the
+# per-character block equations. These tests assert the positive shape and
+# the three named refusals (tail / non-literal / uninterpretable index).
+# ──────────────────────────────────────────────────────────────
+
 echo
-echo "== all 66 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 67: STRONG positive -- full 3-byte block lifts 4 per-char equations"
+echo "  assertEquals(\"YmFy\", encodeBase64String(getBytesUtf8(\"bar\")))"
+echo "  Expect equality + weak str.chars-in-set + strong str.eq-bv-blocks, SAME #euf# name."
+echo "  Every op/constant in the equations must be present (shl/lshr/and/add, mask 0x3f, table folded)."
+echo "────────────────────────────────────────────────────────────────"
+RESULT67="$(run_lift "$FIXTURES/strong-universe" "StrongUniverseLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT67" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+ir = result["ir"]
+
+def atoms(c): return c["inv"]["operands"]
+strong = [c for c in ir if atoms(c)[0]["name"] == "str.eq-bv-blocks"]
+weak   = [c for c in ir if atoms(c)[0]["name"] == "str.chars-in-set"]
+eq     = [c for c in ir if atoms(c)[0]["name"] == "="]
+assert len(strong) == 1, f"expected 1 strong str.eq-bv-blocks row, got {len(strong)}: {[c['name'] for c in ir]}"
+assert len(weak)   == 1, f"expected 1 weak str.chars-in-set row, got {len(weak)} (non-regression)"
+assert len(eq)     == 1, f"expected 1 sworn equality row, got {len(eq)}"
+
+# Same #euf# name across all three (conjoin folds them).
+names = {strong[0]["name"], weak[0]["name"], eq[0]["name"]}
+assert len(names) == 1, f"strong/weak/equality must share one #euf# name, got {names}"
+assert "#euf#" in strong[0]["name"], f"strong row must be #euf#-federated: {strong[0]['name']}"
+
+# args[1] is a String const carrying the payload JSON. Parse it and inspect.
+payload_const = atoms(strong[0])[0]["args"][1]
+assert payload_const["kind"] == "const" and payload_const["sort"]["name"] == "String"
+payload = json.loads(payload_const["value"])
+assert payload["input_bytes"] == [98, 97, 114], f"input_bytes must be 'bar' UTF-8: {payload['input_bytes']}"
+assert payload["vars"] == ["b0", "b1", "b2"], f"three byte vars: {payload['vars']}"
+assert len(payload["per_char"]) == 4, f"exactly 4 per-char equations: {len(payload['per_char'])}"
+assert len(payload["table"]) == 64, f"64-entry table folded into payload: {len(payload['table'])}"
+# table is the standard alphabet in source order: index 24 -> 'Y'(89), 38 -> 'm'(109).
+assert payload["table"][24] == ord('Y') and payload["table"][38] == ord('m'), "table codepoints wrong"
+
+# Every walked op + constant must be present in the equation trees. We collect
+# them STRUCTURALLY (whitespace-independent) rather than substring-matching the
+# serialized form, so re-serialization with spaces does not hide a missing op.
+def collect(node, ops, consts):
+    if isinstance(node, dict):
+        if node.get("kind") == "ctor":
+            ops.add(node.get("name"))
+            for a in node.get("args", []): collect(a, ops, consts)
+        elif node.get("kind") == "const":
+            consts.add(node.get("value"))
+    elif isinstance(node, list):
+        for x in node: collect(x, ops, consts)
+ops, consts = set(), set()
+collect(payload["per_char"], ops, consts)
+for op in ["bv32.shl", "bv32.lshr", "bv32.and", "bv32.add"]:
+    assert op in ops, f"walked op {op} missing from equations; saw {ops}"
+# MASK_6BITS = 0x3f = 63 (field-resolved); accumulation shift 8; extraction shifts 18/12/6.
+for k in [63, 8, 18, 12, 6]:
+    assert k in consts, f"walked constant {k} missing from equations; saw {sorted(consts)}"
+# out3 (bare & MASK) has NO lshr at its top level -- it is and(work, 63).
+import re
+last = payload["per_char"][3]
+assert last["name"] == "bv32.and", f"out3 must be bv32.and(work, mask): {last['name']}"
+
+print(f"PASS: STRONG positive -- 4 equations, all ops/constants present, table folded, one #euf# name")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 68: STRONG discrimination -- non-multiple-of-3 input REFUSES the tail by name"
+echo "  assertEquals(\"YmE=\", encodeBase64String(getBytesUtf8(\"ba\")))  (2-byte tail)"
+echo "  Expect: NO strong row; weak str.chars-in-set STILL present; named tail refusal."
+echo "────────────────────────────────────────────────────────────────"
+RESULT68="$(run_lift "$FIXTURES/strong-universe" "StrongTailRefusal.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT68" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+ir = result["ir"]; diags = result["diagnostics"]
+def atoms(c): return c["inv"]["operands"]
+strong = [c for c in ir if atoms(c)[0]["name"] == "str.eq-bv-blocks"]
+weak   = [c for c in ir if atoms(c)[0]["name"] == "str.chars-in-set"]
+assert len(strong) == 0, f"non-mult-3 must emit NO strong row, got {len(strong)}"
+assert len(weak)   == 1, f"weak str.chars-in-set must still emit (non-regression), got {len(weak)}"
+reasons = [d.get("reason", "") for d in diags]
+tail = [r for r in reasons if "not a multiple of 3" in r and "PHASE 2" in r]
+assert tail, f"expected named tail refusal, got: {reasons}"
+print(f"PASS: STRONG tail discrimination -- no strong row, weak stands, named tail refusal: {tail[0][:90]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 69: STRONG discrimination -- non-literal input emits NO strong row"
+echo "  byte[] data = ...; encodeBase64String(data)  (no known byte length)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT69="$(run_lift "$FIXTURES/strong-universe" "StrongNonLiteral.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT69" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+ir = result["ir"]
+strong = [c for c in ir if c["inv"]["operands"][0]["name"] == "str.eq-bv-blocks"]
+assert len(strong) == 0, f"non-literal input must emit NO strong row, got {len(strong)}"
+print(f"PASS: STRONG non-literal discrimination -- no strong row ({len(ir)} contracts total)")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 70: STRONG discrimination -- uninterpretable index (method call) REFUSES by name"
+echo "  encode body indexes encodeTable[scramble(ibitWorkArea) >> 18 & MASK_6BITS]"
+echo "  Expect: NO strong row; weak charset row STILL present; named refusal citing METHOD_INVOCATION."
+echo "────────────────────────────────────────────────────────────────"
+RESULT70="$(run_lift "$FIXTURES/strong-universe-bad-shape" "BadShapeLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT70" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+ir = result["ir"]; diags = result["diagnostics"]
+def atoms(c): return c["inv"]["operands"]
+strong = [c for c in ir if atoms(c)[0]["name"] == "str.eq-bv-blocks"]
+weak   = [c for c in ir if atoms(c)[0]["name"] == "str.chars-in-set"]
+assert len(strong) == 0, f"uninterpretable index must emit NO strong row, got {len(strong)}"
+assert len(weak)   == 1, f"weak charset row must still emit (table walk unaffected), got {len(weak)}"
+reasons = [d.get("reason", "") for d in diags]
+bad = [r for r in reasons if "uninterpretable node" in r and "METHOD_INVOCATION" in r]
+assert bad, f"expected named refusal citing METHOD_INVOCATION, got: {reasons}"
+print(f"PASS: STRONG uninterpretable-index discrimination -- no strong row, weak stands, named refusal: {bad[0][:90]}")
+PY
+
+echo
+echo "== all 70 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 4 STRONG) =="

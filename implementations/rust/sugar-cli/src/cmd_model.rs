@@ -41,7 +41,9 @@ use owo_colors::OwoColorize;
 use serde_json::Value as Json;
 use sugar_verifier::cbor_decode::decode;
 
-use sugar_ir_compiler_smt_lib::derive_query::emit_derive_query;
+use sugar_ir_compiler_smt_lib::derive_query::{
+    emit_blocks_derive_query, emit_derive_query, parse_model_string,
+};
 use sugar_verifier::solvers::model::solve_with_model;
 
 use crate::{OutputFlags, EXIT_OK, EXIT_SOLVER_FAIL, EXIT_USER_ERROR};
@@ -68,10 +70,21 @@ pub struct ModelArgs {
     #[arg(long = "bv-expr", conflicts_with = "from_proof")]
     pub bv_expr: Option<String>,
 
+    /// Base64 STRONG-TIER string derive (paper 26 seam).
+    ///
+    /// The `args[1]` payload JSON of a `str.eq-bv-blocks` universe atom (the
+    /// per-character block equations walked from the vendor's encode body). The
+    /// input bytes are baked into the payload, so `--input` is NOT used in this
+    /// mode. z3 computes the output STRING from the equations — derived, not
+    /// executed (e.g. encode("bar") → "YmFy").
+    #[arg(long = "blocks-payload", conflicts_with_all = ["from_proof", "bv_expr"])]
+    pub blocks_payload: Option<String>,
+
     /// Concrete 32-bit integer input(s) for the query.
     /// Supply one per var in the BV tree (in DFS var order).
     /// For Math.abs: one input (the argument `a`).
-    #[arg(long = "input", short = 'i', required = true)]
+    /// NOT required in `--blocks-payload` mode (inputs are baked into the payload).
+    #[arg(long = "input", short = 'i', required = false)]
     pub inputs: Vec<i32>,
 
     /// Path to z3 binary (default: "z3" on PATH).
@@ -112,6 +125,21 @@ struct DeriveReceipt {
 }
 
 pub fn run(args: ModelArgs) -> u8 {
+    // ── Base64 STRONG-TIER string derive (paper 26 seam) ──────────────────
+    // The payload carries the per-character block equations AND the input bytes,
+    // so z3 computes the output STRING directly. Derived, not executed.
+    if let Some(ref payload) = args.blocks_payload {
+        return run_blocks_derive(&args, payload);
+    }
+
+    if args.inputs.is_empty() {
+        eprintln!(
+            "{}: --input is required (one per bv-tree var) unless using --blocks-payload",
+            "error".red().bold()
+        );
+        return EXIT_USER_ERROR;
+    }
+
     // Resolve the BV tree JSON. It MUST come from the lifted universe — either
     // read out of a minted .proof, or passed in by a caller that already did so.
     // There is no built-in formula.
@@ -266,6 +294,145 @@ pub fn run(args: ModelArgs) -> u8 {
             "  {} z3.model DERIVES {} from the lifted universe body — derived, not executed.",
             "PASS".green().bold(),
             derived.to_string().green().bold()
+        );
+        println!();
+        if let Some(ref path) = args.receipt_out {
+            println!("  receipt written to: {path:?}");
+        }
+    }
+
+    EXIT_OK
+}
+
+/// Receipt for a strong-tier string derive.
+#[derive(Debug, serde::Serialize)]
+struct BlocksDeriveReceipt {
+    payload_source: String,
+    smt_query: String,
+    derived_string: String,
+    verdict: String,
+    model_line: String,
+    solver: String,
+}
+
+/// Run the Base64 strong-tier string derive: build the block-equation query,
+/// run z3, parse the derived output string, and report it.
+fn run_blocks_derive(args: &ModelArgs, payload_json: &str) -> u8 {
+    // Validate the payload is JSON before handing it on (named refusal).
+    if serde_json::from_str::<Json>(payload_json).is_err() {
+        eprintln!("{}: --blocks-payload is not valid JSON", "error".red().bold());
+        return EXIT_USER_ERROR;
+    }
+    let dq = match emit_blocks_derive_query(payload_json) {
+        Ok(q) => q,
+        Err(e) => {
+            eprintln!("{}: blocks derive emission failed: {e}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
+    };
+
+    if !args.out.quiet {
+        eprintln!("[sugar derive] strong-tier block payload");
+        eprintln!("[sugar derive] SMT query:\n{}", dq.smt);
+    }
+
+    // Run z3 directly: this query returns a String model, not an i32, so we do
+    // not route through solve_with_model (which parses a bitvector).
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = match Command::new(&args.z3)
+        .args(["-smt2", "-in"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}: could not spawn z3 ({}): {e}", "error".red().bold(), args.z3);
+            return EXIT_SOLVER_FAIL;
+        }
+    };
+    if let Some(stdin) = child.stdin.as_mut() {
+        if let Err(e) = stdin.write_all(dq.smt.as_bytes()) {
+            eprintln!("{}: writing to z3 stdin: {e}", "error".red().bold());
+            return EXIT_SOLVER_FAIL;
+        }
+    }
+    let out = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("{}: z3 wait failed: {e}", "error".red().bold());
+            return EXIT_SOLVER_FAIL;
+        }
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout
+        .lines()
+        .map(|l| l.trim_end_matches('\r').trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    let verdict = lines.first().copied().unwrap_or("").to_string();
+    if verdict != "sat" {
+        eprintln!(
+            "{}: z3 returned {:?} (expected sat) for the block-equation derive",
+            "error".red().bold(),
+            verdict
+        );
+        eprintln!("raw stdout:\n{stdout}");
+        return EXIT_SOLVER_FAIL;
+    }
+    let model_line = lines.get(1).copied().unwrap_or("").to_string();
+    let derived = match parse_model_string(&model_line, &dq.result_var) {
+        Some(s) => s,
+        None => {
+            eprintln!(
+                "{}: z3 returned sat but the derived string could not be parsed from: {:?}",
+                "error".red().bold(),
+                model_line
+            );
+            return EXIT_SOLVER_FAIL;
+        }
+    };
+
+    let receipt = BlocksDeriveReceipt {
+        payload_source: "caller-supplied --blocks-payload (extracted from lift/.proof)".to_string(),
+        smt_query: dq.smt.clone(),
+        derived_string: derived.clone(),
+        verdict: verdict.clone(),
+        model_line: model_line.clone(),
+        solver: args.z3.clone(),
+    };
+
+    if let Some(ref path) = args.receipt_out {
+        match serde_json::to_string_pretty(&receipt) {
+            Ok(s) => {
+                if let Err(e) = std::fs::write(path, &s) {
+                    eprintln!("{}: writing receipt to {:?}: {e}", "error".red().bold(), path);
+                    return EXIT_SOLVER_FAIL;
+                }
+            }
+            Err(e) => {
+                eprintln!("{}: receipt serialization: {e}", "error".red().bold());
+                return EXIT_SOLVER_FAIL;
+            }
+        }
+    }
+
+    if args.out.json {
+        println!("{}", serde_json::to_string_pretty(&receipt).unwrap_or_default());
+    } else {
+        println!();
+        println!("  {}", "z3.model strong-tier string derive".bold());
+        println!("  z3 verdict     : {}", verdict.green().bold());
+        println!("  z3 model       : {model_line}");
+        println!("  derived string : {}", format!("\"{derived}\"").green().bold());
+        println!();
+        println!(
+            "  {} z3.model DERIVES {} from the walked block equations — derived, not executed.",
+            "PASS".green().bold(),
+            format!("\"{derived}\"").green().bold()
         );
         println!();
         if let Some(ref path) = args.receipt_out {

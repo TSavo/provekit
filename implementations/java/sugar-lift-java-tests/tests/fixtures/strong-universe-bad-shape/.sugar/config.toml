@@ -1,0 +1,6 @@
+# Fixture: a codec whose full-block extraction index contains a METHOD CALL,
+# which the symbolic store cannot interpret -> the strong row is REFUSED BY
+# NAME. The weak charset row still emits (the table walk is unaffected).
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor"]

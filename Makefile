@@ -323,6 +323,7 @@ SHOWCASE_RUNS = \
 	examples/java-testng-consistency/run.sh \
 	examples/java-codec-universe/run.sh \
 	examples/java-urlsafe-seam/run.sh \
+	examples/java-b64-strong/run.sh \
 	examples/java-abs-universe/run.sh \
 	examples/java-bound-federation/run.sh \
 	examples/java-abs-bound/run.sh \
