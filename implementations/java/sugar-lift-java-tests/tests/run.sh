@@ -2820,5 +2820,157 @@ assert tail, f"expected named modulus-N tail refusal, got: {reasons}"
 print(f"PASS: STRONG tail uninterpretable-index discrimination -- no strong row, weak stands, named refusal: {tail[0][:90]}")
 PY
 
+# ──────────────────────────────────────────────────────────────
+# Test suite (G4 — RECURRENCE keystone: symbolic execution over a MUTABLE
+# ARRAY with LITERAL-BOUNDED LOOP UNROLLING. A loop-carried recurrence over a
+# fixed-size buffer pins as bv32 FOL, or REFUSES BY NAME with the structural
+# break located at the defeating AST node.):
+#  73. POSITIVE: synthetic SeedRecurrence (MT-seeding shape, LITERAL bound) →
+#      recurrence unrolled fully; per-step FOL emitted with bv32.mul/xor/lshr/
+#      add + the bv32.ite low-bit gate; node count is exhaustive (silent=0).
+#  74. DISCRIMINATION: non-literal bound (`state.length`) → unroll refused,
+#      no FOL — the termination guarantee.
+#  75. DISCRIMINATION: symbolic array index → store refused, no FOL — the
+#      mutable-store soundness boundary.
+#  76. DISCRIMINATION: statement-level branch-gated `if` store → refused, no
+#      FOL — never silently drops a branch.
+#  77. HONEST SCOPE: the REAL Commons RNG MersenneTwister.java (vendored at
+#      examples/java-mt-reference) → 3 named structural refusals across the
+#      seeding chain (initializeState / mixSeedAndState / mixState), zero
+#      unrolled FOL, and the existing FLOOR point-contracts UNCHANGED. The
+#      vendor reference-vector oath stays structurally blocked — named, not faked.
+# ──────────────────────────────────────────────────────────────
+
+# Helper: collect recurrence-walker diagnostics from a lift over a fixture.
+recurrence_diags() {
+  python3 - "$1" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+diags = result["diagnostics"]
+rec = [d for d in diags if "recurrence-walker" in d.get("reason","")]
+unrolled = [d for d in rec if "recurrence unrolled" in d["reason"]]
+refusals = [d for d in rec if "refused" in d["reason"]]
+out = {"ir": len(result["ir"]), "unrolled": [d["reason"] for d in unrolled],
+       "refusals": [{"item": d.get("item",""), "reason": d["reason"]} for d in refusals]}
+print(json.dumps(out))
+PY
+}
+
 echo
-echo "== all 72 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 6 STRONG) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 73: RECURRENCE keystone POSITIVE — literal-bounded unroll emits per-step FOL"
+echo "────────────────────────────────────────────────────────────────"
+RESULT73="$(run_lift "$FIXTURES/recurrence" "RecurrenceLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+DIAGS73="$(recurrence_diags "$RESULT73")"
+python3 - "$DIAGS73" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+assert len(o["unrolled"]) == 1, f"expected 1 recurrence-unrolled note, got {len(o['unrolled'])}: {o}"
+assert len(o["refusals"]) == 0, f"positive fixture must have NO refusals, got: {o['refusals']}"
+note_txt = o["unrolled"][0].split("— ", 1)[1]
+note = json.loads(note_txt)
+# Full unroll over the static-final LEN=8 literal bound: range [1,8) → 7 steps.
+assert note["steps"] == 7, f"expected 7 unrolled steps (range [1,8)), got {note['steps']}"
+assert note["induction"] == "i", f"induction var: {note['induction']}"
+assert note["range_lo"] == 1 and note["range_hi_exclusive"] == 8, f"range: {note}"
+# "silent = 0" is STRUCTURAL: nodes_walked is the exhaustive AST node count.
+assert note["nodes_walked"] > 0, f"node count must be a real exhaustive count, got {note['nodes_walked']}"
+# The per-step FOL must carry every walked operator, including the MAG01 gate.
+def has(t, name):
+    if isinstance(t, dict):
+        if t.get("name") == name: return True
+        return any(has(a, name) for a in t.get("args", []))
+    return False
+step0 = json.loads(note["step0_fol"])
+stepN = json.loads(note["stepN_fol"])
+for op in ["bv32.mul", "bv32.xor", "bv32.lshr", "bv32.add", "bv32.ite", "bv32.eq", "bv32.and"]:
+    assert has(step0, op), f"step0 FOL missing {op}: {note['step0_fol'][:200]}"
+assert has(stepN, "bv32.mul"), "stepN FOL missing bv32.mul (last step must also be a full recurrence step)"
+print(f"PASS: RECURRENCE keystone — synthetic MT-seeding-shape recurrence unrolled FULLY over the")
+print(f"      static-final literal bound: {note['steps']} steps, {note['nodes_walked']} AST nodes walked")
+print(f"      (silent=0 structural), per-step bv32 FOL with mul/xor/lshr/add + the bv32.ite low-bit gate.")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 74: RECURRENCE discrimination — non-literal bound (state.length) REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+RESULT74="$(run_lift "$FIXTURES/recurrence-openbound" "RecurrenceLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+DIAGS74="$(recurrence_diags "$RESULT74")"
+python3 - "$DIAGS74" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+assert len(o["unrolled"]) == 0, f"non-literal bound must emit NO FOL, got: {o['unrolled']}"
+assert len(o["refusals"]) >= 1, f"expected a named refusal, got: {o}"
+named = [r["reason"] for r in o["refusals"]
+         if "bound" in r["reason"] and ("non-literal" in r["reason"] or "array-length" in r["reason"] or "termination" in r["reason"])]
+assert named, f"expected a bound/termination refusal, got: {[r['reason'] for r in o['refusals']]}"
+print(f"PASS: non-literal bound refused by name — no unbounded unroll: {named[0].split(': ',1)[1][:110]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 75: RECURRENCE discrimination — symbolic array index REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+RESULT75="$(run_lift "$FIXTURES/recurrence-symidx" "RecurrenceLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+DIAGS75="$(recurrence_diags "$RESULT75")"
+python3 - "$DIAGS75" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+assert len(o["unrolled"]) == 0, f"symbolic index must emit NO FOL, got: {o['unrolled']}"
+named = [r["reason"] for r in o["refusals"] if "index" in r["reason"] and ("symbolic" in r["reason"] or "concrete" in r["reason"])]
+assert named, f"expected a symbolic-index refusal, got: {[r['reason'] for r in o['refusals']]}"
+print(f"PASS: symbolic array index refused by name — store soundness boundary: {named[0].split(': ',1)[1][:110]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 76: RECURRENCE discrimination — statement-level branch-gated `if` store REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+RESULT76="$(run_lift "$FIXTURES/recurrence-ifstore" "RecurrenceLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+DIAGS76="$(recurrence_diags "$RESULT76")"
+python3 - "$DIAGS76" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+assert len(o["unrolled"]) == 0, f"branch-gated `if` store must emit NO FOL, got: {o['unrolled']}"
+named = [r["reason"] for r in o["refusals"] if "IF node" in r["reason"] or ("if" in r["reason"] and "branch-gated" in r["reason"])]
+assert named, f"expected an IF-node refusal, got: {[r['reason'] for r in o['refusals']]}"
+print(f"PASS: branch-gated `if` store refused by name (located at IF node) — no silent branch drop: {named[0].split(': ',1)[1][:110]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 77: RECURRENCE honest scope — REAL MersenneTwister.java → named structural breaks"
+echo "  (examples/java-mt-reference: the vendor oath stays blocked, located not faked;"
+echo "   the existing FLOOR point-contracts are UNCHANGED — fully additive.)"
+echo "────────────────────────────────────────────────────────────────"
+MT_GOOD="$HERE/../../../../examples/java-mt-reference/good"
+if [ -d "$MT_GOOD/vendor/commons-rng" ]; then
+  RESULT77="$(run_lift "$MT_GOOD" "src/test/java/demo/MersenneTwisterReferenceTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+  DIAGS77="$(recurrence_diags "$RESULT77")"
+  python3 - "$DIAGS77" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+# The seeding chain has NON-LITERAL loop bounds/inits → the recurrence can NOT be
+# unrolled. The walker must say so by name, never fake a connection to the oath.
+assert len(o["unrolled"]) == 0, f"REAL MT seeding must NOT unroll (non-literal bounds); got FOL: {o['unrolled']}"
+items = sorted({r["item"] for r in o["refusals"]})
+# initializeState (state.length), mixSeedAndState (Math.max init), mixState (stateSize-1 init).
+need = ["initializeState", "mixSeedAndState", "mixState"]
+for n in need:
+    assert any(n in it for it in items), f"expected a named structural refusal for {n}; got items {items}"
+# Fully additive: the existing FLOOR point-contracts (8 reference-vector draws) are intact.
+assert o["ir"] == 8, f"the existing 8 FLOOR point-contracts must be UNCHANGED, got {o['ir']}"
+print(f"PASS: REAL MersenneTwister.java — {len(o['refusals'])} named structural breaks across the seeding chain")
+for r in o["refusals"]:
+    print(f"      [{r['item']}] {r['reason'].split(': ',1)[1][:120]}")
+print(f"      Vendor reference-vector oath stays STRUCTURALLY BLOCKED (located, not faked).")
+print(f"      Existing FLOOR point-contracts UNCHANGED: {o['ir']} draw contracts intact (additive).")
+PY
+else
+  echo "SKIP: examples/java-mt-reference/good/vendor/commons-rng not present"
+fi
+
+echo
+echo "== all 77 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 6 STRONG + 5 G4-RECURRENCE) =="

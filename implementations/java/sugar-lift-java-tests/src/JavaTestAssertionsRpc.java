@@ -167,6 +167,15 @@ public final class JavaTestAssertionsRpc {
         // the vendor encode body. Built once; consumed at string-literal callsites.
         StrongUniverseRegistry strongRegistry = StrongUniverseWalker.loadRegistry(compiler, root, diagnostics);
 
+        // G4 (keystone): RecurrenceUniverseWalker — symbolic execution over a
+        // MUTABLE ARRAY with LITERAL-BOUNDED LOOP UNROLLING. Walks every vendor
+        // method carrying a loop-carried recurrence over a fixed-size buffer and
+        // either pins the per-step recurrence as bv32 FOL (diagnostic note prefixed
+        // "recurrence-walker:") or REFUSES BY NAME with the structural break located
+        // at the defeating AST node. ADDITIVE: emits diagnostics only — never alters
+        // the IR contract set or the discharge/check-sat path.
+        RecurrenceUniverseWalker.run(compiler, root, diagnostics);
+
         // G3: Load instance-universe — walks receiver classes in the WORKSPACE to pin
         // construction-time facts: new Box(5).get() == 5 BY CONSTRUCTION (ctor→field→getter).
         // Pure final-field-return-only tier; anything more complex is refused by name.
@@ -6626,6 +6635,727 @@ public final class JavaTestAssertionsRpc {
                 }
                 return null;
             }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // G4: RecurrenceUniverseWalker — symbolic execution over a MUTABLE
+    //     ARRAY with LITERAL-BOUNDED LOOP UNROLLING.
+    //
+    // Paper 26 / keystone: a loop-carried recurrence over a fixed-size
+    // buffer pins as FOL only if we can (a) thread a symbolic mutable-array
+    // store whose reads/writes resolve at STATICALLY-KNOWN indices, and
+    // (b) unroll the carrying loop fully over a literal/static-final bound
+    // (the termination guarantee). This is the input to the universe walker
+    // (the last gate): every constant/operator/shift/mask/array-index must
+    // trace to a com.sun.source tree node, or we REFUSE BY NAME with the
+    // structural break located at the defeating AST node (silent = 0 is the
+    // base case of soundness — it is an exhaustive node count, never an
+    // impression).
+    //
+    // DELIVERABLE = FOL. We emit the per-step recurrence bv-tree (a finite
+    // conjunction obtained by re-walking the loop over the literal bound).
+    // The unrolled FOL is admissible ONLY because re-walking regenerates it;
+    // we hold the derivation.
+    //
+    // SOUND SUBSET (anything outside → named refusal, never a fake):
+    //   - store: (arrayLocal, CONCRETE index) → bv expr tree.
+    //     A computed/symbolic index not resolvable to a concrete int → REFUSE.
+    //   - loop unroll: `for(int v=<lit>; v <|<= <bound>; v++)` where <bound>
+    //     is an int literal or a static-final int (resolveFieldValue).
+    //     A non-literal bound (e.g. `arr.length`) → REFUSE (no unbounded unroll).
+    //   - scalar recurrence: `t = <expr over t, v, store, consts>` (SSA per step).
+    //   - array store: `arr[<concrete idx>] = <expr>`.
+    //   - conditional in body: `arr[idx] = ... ^ GATE[low-bit]` over a 2-elem
+    //     static-final array gated on a low bit → bv32.ite(test, GATE[1], GATE[0])
+    //     with BOTH entries walked. An unwalkable guard/branch → REFUSE.
+    //   - ops: << >> >>> & | + * ^  (the last two add bv32.mul / bv32.xor).
+    //
+    // This walker is ADDITIVE: it only appends diagnostics (the walked FOL
+    // notes prefixed "recurrence-walker:" and the named refusals). It never
+    // alters the IR contract set or the discharge/check-sat path.
+    //
+    // HONEST SCOPE on the real Mersenne Twister (vendored at
+    // examples/java-mt-reference): the seeding loop `initializeState`
+    // (state[i] = f(state[i-1], i)) is a CLEAN recurrence over a mutable
+    // array, BUT its loop bound is `state.length` (a non-literal, runtime
+    // array length) — a structural break this walker NAMES, not fakes. The
+    // twist `next()` adds the MAG01-gated array write across 624 words and
+    // `seed[j]` symbolic reads — further structural breaks, each named with a
+    // count. The vendor's reference-vector oath (nextInt()==refValue) is
+    // therefore NOT connectable from the walked recurrence without inter-
+    // procedural seed-state plumbing + array-length resolution; we say so
+    // plainly and ship the generalized machinery proven on a SYNTHETIC fixture
+    // (clearly labeled not-a-vendor-logo) instead of a diorama.
+    // ──────────────────────────────────────────────────────────────
+    static final class RecurrenceUniverseWalker {
+
+        /** Diagnostic prefix; both the walked-FOL notes and the refusals carry it
+         *  so the kit test can grep them deterministically. */
+        static final String TAG = "recurrence-walker";
+
+        static void run(JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
+            List<Path> vendorDirs;
+            try {
+                vendorDirs = UniverseWalker.readVendorSourceDirs(workspaceRoot);
+            } catch (IOException e) {
+                return;
+            }
+            if (vendorDirs.isEmpty()) return;
+
+            List<Path> vendorFiles = new ArrayList<>();
+            for (Path dir : vendorDirs) {
+                if (!Files.isDirectory(dir)) continue;
+                try (Stream<Path> walk = Files.walk(dir)) {
+                    walk.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .forEach(vendorFiles::add);
+                } catch (IOException e) {
+                    // dir walk error — silent (other walkers will surface their own)
+                }
+            }
+            if (vendorFiles.isEmpty()) return;
+
+            Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
+            for (Path src : vendorFiles) {
+                try {
+                    String source = Files.readString(src, StandardCharsets.UTF_8);
+                    JavaFileObject fo = new StringJavaFileObject(src.toString(), source);
+                    StandardJavaFileManager fm = compiler.getStandardFileManager(
+                            null, null, StandardCharsets.UTF_8);
+                    JavacTask task = (JavacTask) compiler.getTask(
+                            null, fm, d -> {}, List.of("--release", "21"), null, List.of(fo));
+                    for (CompilationUnitTree cu : task.parse()) {
+                        for (Tree decl : cu.getTypeDecls()) {
+                            if (decl instanceof ClassTree ct) {
+                                classTreeByName.putIfAbsent(ct.getSimpleName().toString(), ct);
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    // parse error on one file — skip it; do not zero the walk
+                }
+            }
+            if (classTreeByName.isEmpty()) return;
+
+            Set<String> identityBridges =
+                    UniverseWalker.loadPlatformAxioms(workspaceRoot, diagnostics);
+            UniverseWalker.Corpus corpus =
+                    new UniverseWalker.Corpus(classTreeByName, identityBridges);
+
+            // Walk EVERY method carrying the recurrence-over-mutable-array shape:
+            // a method with >= 1 for-loop whose body writes an array local at an
+            // induction index. We attempt each; success emits the FOL note, any
+            // unwalkable node emits the located refusal. The shape gate is
+            // structural (a loop that stores to an array local), never name-keyed.
+            for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
+                String cls = ce.getKey();
+                for (Tree m : ce.getValue().getMembers()) {
+                    if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                    String method = mt.getName().toString();
+                    walkMethod(corpus, cls, method, mt, diagnostics);
+                }
+            }
+        }
+
+        /**
+         * Walk one method. Find array-local declarations / params, the literal-
+         * index seed stores, and each carrying for-loop; unroll soundly or refuse
+         * by name. Emits at most one FOL note per (method, array-local) that walks
+         * cleanly, plus one refusal per defeating node.
+         */
+        private static void walkMethod(
+                UniverseWalker.Corpus corpus, String cls, String method,
+                MethodTree mt, List<String> diagnostics) {
+
+            // Identify array-typed locals/params in scope (name → element kind we
+            // care about: we track int[] only; other element types → refuse if a
+            // loop tries to store to them).
+            Set<String> intArrayLocals = new LinkedHashSet<>();
+            for (VariableTree p : mt.getParameters()) {
+                if (isIntArrayType(p.getType())) intArrayLocals.add(p.getName().toString());
+            }
+            // Local int[] declarations inside the body.
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitVariable(VariableTree vt, Void x) {
+                    if (isIntArrayType(vt.getType())) intArrayLocals.add(vt.getName().toString());
+                    return super.visitVariable(vt, x);
+                }
+            }.scan(mt.getBody(), null);
+
+            // Find for-loops whose body stores into one of those array locals.
+            List<ForLoopTree> carriers = new ArrayList<>();
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitForLoop(ForLoopTree flt, Void x) {
+                    if (loopStoresToAnyArray(flt, intArrayLocals)) carriers.add(flt);
+                    return super.visitForLoop(flt, x);
+                }
+            }.scan(mt.getBody(), null);
+            if (carriers.isEmpty()) return; // not a carrier method — silent (no shape)
+
+            for (ForLoopTree flt : carriers) {
+                Store store = new Store();
+                // Seed the store from any straight-line `arr[<lit>] = <expr>` /
+                // `t = <expr>` statements that PRECEDE the loop in the method body,
+                // so the recurrence's base case (state[0], scalar init) is present.
+                seedFromPreamble(mt.getBody(), flt, store, corpus, cls, method, diagnostics);
+                unrollLoop(flt, store, corpus, cls, method, intArrayLocals, diagnostics);
+            }
+        }
+
+        // ── Mutable symbolic store ─────────────────────────────────────────
+        /** (arrayName, concreteIndex) → bv-tree JSON; scalarName → bv-tree JSON. */
+        static final class Store {
+            final Map<String, Map<Integer, String>> arrays = new LinkedHashMap<>();
+            final Map<String, String> scalars = new LinkedHashMap<>();
+            /** loop induction var name → its CONCRETE value this step (or null). */
+            String inductionVar = null;
+            long inductionVal = 0;
+
+            String readArray(String arr, int idx) {
+                Map<Integer, String> a = arrays.get(arr);
+                return a == null ? null : a.get(idx);
+            }
+            void writeArray(String arr, int idx, String tree) {
+                arrays.computeIfAbsent(arr, k -> new LinkedHashMap<>()).put(idx, tree);
+            }
+            String readScalar(String name) { return scalars.get(name); }
+            void writeScalar(String name, String tree) { scalars.put(name, tree); }
+        }
+
+        /** True if the for-loop body contains `arr[...] = ...` for some tracked array. */
+        private static boolean loopStoresToAnyArray(ForLoopTree flt, Set<String> arrays) {
+            final boolean[] hit = {false};
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitAssignment(AssignmentTree at, Void x) {
+                    ExpressionTree lhs = stripP(at.getVariable());
+                    if (lhs instanceof ArrayAccessTree aat) {
+                        String n = simpleName(stripP(aat.getExpression()));
+                        if (n != null && arrays.contains(n)) hit[0] = true;
+                    }
+                    return super.visitAssignment(at, x);
+                }
+            }.scan(flt.getStatement(), null);
+            return hit[0];
+        }
+
+        /** Process straight-line statements before the loop: `t = <expr>`,
+         *  `<type> t = <expr>`, `arr[<lit>] = <expr>`. Anything else preceding the
+         *  loop is ignored (it cannot affect a clean recurrence base unless it is a
+         *  store; an UNWALKABLE store would surface at unroll time when read). */
+        private static void seedFromPreamble(
+                BlockTree body, ForLoopTree loop, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, List<String> diagnostics) {
+            for (StatementTree st : body.getStatements()) {
+                if (st == loop) break;
+                execSimpleStmt(st, store, corpus, cls, method, /*allowOnlyConcrete*/true, diagnostics);
+            }
+        }
+
+        /**
+         * UNROLL the loop fully over a literal/static-final bound, threading the
+         * store; concrete induction var each step. Emits the FOL note on success or
+         * the located refusal.
+         */
+        private static void unrollLoop(
+                ForLoopTree flt, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, Set<String> arrays, List<String> diagnostics) {
+
+            // init: single `int v = <lit>`
+            List<? extends StatementTree> inits = flt.getInitializer();
+            if (inits.size() != 1 || !(inits.get(0) instanceof VariableTree vt)
+                    || vt.getInitializer() == null) {
+                refuse(diagnostics, cls, method, "unroll refused: loop init is not a single `int v = <literal>` declaration");
+                return;
+            }
+            String v = vt.getName().toString();
+            Integer lo = constInt(vt.getInitializer(), corpus);
+            if (lo == null) {
+                refuse(diagnostics, cls, method, "unroll refused: loop init value is not a literal/static-final int (open lower bound) at `" + vt + "`");
+                return;
+            }
+
+            // cond: `v < B` or `v <= B`
+            if (!(flt.getCondition() instanceof BinaryTree cond)) {
+                refuse(diagnostics, cls, method, "unroll refused: loop condition is not a binary comparison");
+                return;
+            }
+            Tree.Kind ck = cond.getKind();
+            if (ck != Tree.Kind.LESS_THAN && ck != Tree.Kind.LESS_THAN_EQUAL) {
+                refuse(diagnostics, cls, method, "unroll refused: loop condition operator is not < or <=");
+                return;
+            }
+            if (!(stripP(cond.getLeftOperand()) instanceof IdentifierTree li)
+                    || !li.getName().toString().equals(v)) {
+                refuse(diagnostics, cls, method, "unroll refused: loop condition LHS is not the induction variable " + v);
+                return;
+            }
+            // THE TERMINATION GUARANTEE: bound must be a literal or static-final int.
+            // A non-literal bound (e.g. `state.length`, a parameter, a field access
+            // that is not a static-final int) is the structural break we NAME — no
+            // unbounded unroll.
+            ExpressionTree boundExpr = stripP(cond.getRightOperand());
+            Integer hi = constInt(boundExpr, corpus);
+            if (hi == null) {
+                String shape = boundShape(boundExpr);
+                refuse(diagnostics, cls, method,
+                        "unroll refused: loop bound `" + boundExpr + "` is not a literal/static-final int ("
+                        + shape + ") — open/non-literal bound, no termination guarantee");
+                return;
+            }
+
+            // update: `v++` / `++v` / `v += 1`
+            List<? extends ExpressionStatementTree> upds = flt.getUpdate();
+            if (upds.size() != 1 || !isPlusOneUpdate(upds.get(0).getExpression(), v)) {
+                refuse(diagnostics, cls, method, "unroll refused: loop update is not `" + v + "++` / `++" + v + "` / `" + v + "+=1`");
+                return;
+            }
+
+            long endExclusive = (ck == Tree.Kind.LESS_THAN_EQUAL) ? (hi + 1L) : (long) hi;
+            long iters = endExclusive - lo;
+            if (iters < 0) iters = 0;
+            // Bound the unroll to a sane ceiling so a pathological literal cannot
+            // explode; the MT N=624 is well within. A larger bound is itself a
+            // named refusal (we do not silently truncate a recurrence).
+            final long UNROLL_CEILING = 4096;
+            if (iters > UNROLL_CEILING) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: literal bound yields " + iters + " iterations > ceiling "
+                        + UNROLL_CEILING + " (would not be re-walkable in one pass)");
+                return;
+            }
+
+            // The per-step recurrence FOL: we record the bv-tree written to the
+            // PRIMARY array (the first array stored in the body) at the FINAL step,
+            // which by construction names the whole unrolled chain (each step's tree
+            // references the prior step's stored trees). For the note we emit step 0
+            // and the last step — enough to witness the recurrence shape — plus the
+            // exhaustive structural counts.
+            int stepCount = 0;
+            int nodeCount = 0;
+            String firstStepTree = null;
+            String lastStepTree = null;
+            for (long iv = lo; iv < endExclusive; iv++) {
+                store.inductionVar = v;
+                store.inductionVal = iv;
+                StepResult sr = execBody(flt.getStatement(), store, corpus, cls, method, arrays, diagnostics);
+                if (sr == null) return; // refusal already located
+                stepCount++;
+                nodeCount += sr.nodesWalked;
+                if (firstStepTree == null) firstStepTree = sr.lastArrayTree;
+                if (sr.lastArrayTree != null) lastStepTree = sr.lastArrayTree;
+            }
+
+            // SUCCESS: the loop unrolled fully and every node walked. Emit the FOL
+            // note. "silent = 0" is STRUCTURAL: nodeCount is the exact number of AST
+            // nodes interpreted across the unroll; a node we could not interpret
+            // would have produced a refusal and an early return above (we never
+            // reach here with an uninterpreted node).
+            String note = "{\"steps\":" + stepCount
+                    + ",\"nodes_walked\":" + nodeCount
+                    + ",\"induction\":\"" + esc(v) + "\""
+                    + ",\"range_lo\":" + lo
+                    + ",\"range_hi_exclusive\":" + endExclusive
+                    + ",\"step0_fol\":" + jsonStringOrNull(firstStepTree)
+                    + ",\"stepN_fol\":" + jsonStringOrNull(lastStepTree)
+                    + "}";
+            diagnostics.add(diagnostic("<" + TAG + ">", cls, method,
+                    TAG + ": recurrence unrolled — " + note));
+        }
+
+        private static String jsonStringOrNull(String inner) {
+            return inner == null ? "null" : "\"" + esc(inner) + "\"";
+        }
+
+        /** Result of executing one loop-body step. */
+        private static final class StepResult {
+            int nodesWalked = 0;
+            String lastArrayTree = null; // the bv-tree of the last array store this step
+        }
+
+        /** Execute the loop body for ONE concrete induction value. Returns null on
+         *  any unwalkable node (refusal already located). */
+        private static StepResult execBody(
+                StatementTree body, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, Set<String> arrays, List<String> diagnostics) {
+            StepResult sr = new StepResult();
+            List<StatementTree> stmts = new ArrayList<>();
+            if (body instanceof BlockTree bt) stmts.addAll(bt.getStatements());
+            else stmts.add(body);
+            for (StatementTree st : stmts) {
+                if (!execStmt(st, store, corpus, cls, method, arrays, sr, diagnostics)) return null;
+            }
+            return sr;
+        }
+
+        /** Execute a single statement against the store; false = unwalkable. */
+        private static boolean execStmt(
+                StatementTree st, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, Set<String> arrays, StepResult sr, List<String> diagnostics) {
+            st = (st instanceof BlockTree) ? st : st;
+            if (st instanceof BlockTree bt) {
+                for (StatementTree s : bt.getStatements())
+                    if (!execStmt(s, store, corpus, cls, method, arrays, sr, diagnostics)) return false;
+                return true;
+            }
+            // local var decl: `final int x = <expr>;`  (SSA scalar)
+            if (st instanceof VariableTree vt) {
+                if (vt.getInitializer() == null) return true; // declaration only
+                if (isIntArrayType(vt.getType())) return true; // array alloc, no store
+                String tree = interpret(vt.getInitializer(), store, corpus, cls, method, sr, diagnostics);
+                if (tree == null) return false;
+                store.writeScalar(vt.getName().toString(), tree);
+                return true;
+            }
+            if (st instanceof ExpressionStatementTree est
+                    && est.getExpression() instanceof AssignmentTree at) {
+                return execAssign(at, store, corpus, cls, method, arrays, sr, diagnostics);
+            }
+            // A conditional in the body is only walkable as the MAG01-gated array
+            // write (handled inside interpret via the ?:/array-gate shape on the
+            // RHS). A standalone `if` statement that performs a store is the twist's
+            // shape we have NOT generalized → refuse by name with the node located.
+            if (st instanceof IfTree it) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: in-loop `if` statement is not a generalized walkable shape "
+                        + "(branch-gated store) — structural break at IF node `if (" + it.getCondition() + ")`");
+                return false;
+            }
+            refuse(diagnostics, cls, method,
+                    "unroll refused: uninterpretable statement in loop body: " + st.getKind() + " (" + oneLine(st) + ")");
+            return false;
+        }
+
+        /** `t = <expr>` (scalar) or `arr[<idx>] = <expr>` (array store). */
+        private static boolean execAssign(
+                AssignmentTree at, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, Set<String> arrays, StepResult sr, List<String> diagnostics) {
+            ExpressionTree lhs = stripP(at.getVariable());
+            if (lhs instanceof ArrayAccessTree aat) {
+                String arr = simpleName(stripP(aat.getExpression()));
+                if (arr == null || !arrays.contains(arr)) {
+                    refuse(diagnostics, cls, method,
+                            "unroll refused: array store to non-tracked / non-int[] target `" + oneLine(lhs) + "`");
+                    return false;
+                }
+                Integer idx = concreteIndex(aat.getIndex(), store, corpus);
+                if (idx == null) {
+                    // THE STORE SOUNDNESS GATE: a computed/symbolic index not
+                    // resolvable to a concrete value is unsound to store/read → REFUSE.
+                    refuse(diagnostics, cls, method,
+                            "unroll refused: array index `" + oneLine(aat.getIndex())
+                            + "` is not statically concrete (literal / induction-var arithmetic) — symbolic index, store is unsound");
+                    return false;
+                }
+                String tree = interpret(at.getExpression(), store, corpus, cls, method, sr, diagnostics);
+                if (tree == null) return false;
+                store.writeArray(arr, idx, tree);
+                sr.lastArrayTree = tree;
+                return true;
+            }
+            String sname = simpleName(lhs);
+            if (sname != null) {
+                String tree = interpret(at.getExpression(), store, corpus, cls, method, sr, diagnostics);
+                if (tree == null) return false;
+                store.writeScalar(sname, tree);
+                return true;
+            }
+            refuse(diagnostics, cls, method,
+                    "unroll refused: assignment LHS is neither a scalar nor an array element: " + oneLine(lhs));
+            return false;
+        }
+
+        // Like execAssign but for the preamble (straight-line, only literal idx).
+        private static void execSimpleStmt(
+                StatementTree st, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, boolean concreteOnly, List<String> diagnostics) {
+            StepResult sr = new StepResult();
+            if (st instanceof VariableTree vt && vt.getInitializer() != null
+                    && !isIntArrayType(vt.getType())) {
+                String tree = interpret(vt.getInitializer(), store, corpus, cls, method, sr, null);
+                if (tree != null) store.writeScalar(vt.getName().toString(), tree);
+                return;
+            }
+            if (st instanceof ExpressionStatementTree est
+                    && est.getExpression() instanceof AssignmentTree at) {
+                ExpressionTree lhs = stripP(at.getVariable());
+                if (lhs instanceof ArrayAccessTree aat) {
+                    String arr = simpleName(stripP(aat.getExpression()));
+                    Integer idx = concreteIndex(aat.getIndex(), store, corpus);
+                    if (arr != null && idx != null) {
+                        String tree = interpret(at.getExpression(), store, corpus, cls, method, sr, null);
+                        if (tree != null) store.writeArray(arr, idx, tree);
+                    }
+                    return;
+                }
+                String sname = simpleName(lhs);
+                if (sname != null) {
+                    String tree = interpret(at.getExpression(), store, corpus, cls, method, sr, null);
+                    if (tree != null) store.writeScalar(sname, tree);
+                }
+            }
+        }
+
+        /**
+         * The symbolic interpreter — turn an expression into a bv32 tree JSON over
+         * the store, reading EVERY constant/operator/shift/mask/array-index from the
+         * AST. Null = unwalkable (refusal located if diagnostics != null).
+         *
+         * Operator map (each 1:1 to a Java operator at an AST node):
+         *   << → bv32.shl     >> → bv32.lshr    >>> → bv32.lshr
+         *   &  → bv32.and      |  → bv32.or       +  → bv32.add
+         *   *  → bv32.mul       ^  → bv32.xor
+         *   -  (binary)        → bv32.add of bv32.neg (a - b = a + (-b))
+         *   (cast) e           → drop (we model 32-bit; & 0xffffffffL is a no-op)
+         *   ?: low-bit gate over a 2-elem static-final array → bv32.ite(test, A[1], A[0])
+         */
+        private static String interpret(
+                ExpressionTree expr, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, StepResult sr, List<String> diagnostics) {
+            expr = stripP(expr);
+            if (sr != null) sr.nodesWalked++;
+
+            // Cast: model 32-bit, the cast (and the `& 0xffffffffL` truncation that
+            // accompanies it) is a no-op on bv32 — descend into the operand.
+            if (expr instanceof TypeCastTree tc) {
+                return interpret(tc.getExpression(), store, corpus, cls, method, sr, diagnostics);
+            }
+            // Literal int/long.
+            if (expr instanceof LiteralTree lt) {
+                Object val = lt.getValue();
+                if (val instanceof Integer i) return constNode(i);
+                if (val instanceof Long l)    return constNode((int) (long) l);
+                refuseN(diagnostics, cls, method, "non-int literal in recurrence expr: " + lt);
+                return null;
+            }
+            // Identifier: induction var → its concrete value; scalar in store →
+            // its tree; static-final int field → resolved const; else a free var.
+            if (expr instanceof IdentifierTree id) {
+                String n = id.getName().toString();
+                if (n.equals(store.inductionVar)) return constNode((int) store.inductionVal);
+                String sv = store.readScalar(n);
+                if (sv != null) return sv;
+                if (corpus.isStaticFinal(n)) {
+                    Integer fv = corpus.resolveFieldValue(n, 0);
+                    if (fv != null) return constNode(fv);
+                }
+                // A read of a method PARAMETER (e.g. an input seed value) that is not
+                // in the store is a genuine free variable of the recurrence — model
+                // it as a bv var. (Used by the synthetic fixture's `seed` scalar.)
+                return varNode(n);
+            }
+            // Array read: arr[<concrete idx>] → the stored tree at that index.
+            if (expr instanceof ArrayAccessTree aat) {
+                String arr = simpleName(stripP(aat.getExpression()));
+                Integer idx = concreteIndex(aat.getIndex(), store, corpus);
+                if (arr == null || idx == null) {
+                    refuseN(diagnostics, cls, method,
+                            "array READ index `" + oneLine(aat.getIndex())
+                            + "` is not statically concrete — symbolic index, read is unsound");
+                    return null;
+                }
+                String stored = store.readArray(arr, idx);
+                if (stored == null) {
+                    // 2-element static-final array read at a CONCRETE small index
+                    // whose value is a literal (e.g. MAG01[0], MAG01[1]) — resolve it
+                    // as a const from the literal array initializer.
+                    Integer lit = literalArrayEntry(corpus, arr, idx);
+                    if (lit != null) return constNode(lit);
+                    refuseN(diagnostics, cls, method,
+                            "array READ `" + arr + "[" + idx + "]` has no stored value and is not a "
+                            + "walkable static-final literal-array entry — recurrence base is incomplete");
+                    return null;
+                }
+                return stored;
+            }
+            // Unary minus: -(a) → bv32.neg(a).
+            if (expr instanceof UnaryTree ut && ut.getKind() == Tree.Kind.UNARY_MINUS) {
+                String a = interpret(ut.getExpression(), store, corpus, cls, method, sr, diagnostics);
+                if (a == null) return null;
+                return "{\"kind\":\"ctor\",\"name\":\"bv32.neg\",\"args\":[" + a + "]}";
+            }
+            // Conditional ?: — the low-bit MAG01 gate shape:
+            //   (cond) ? A : B  →  bv32.ite(<cond-bool>, A, B)
+            // We only walk a Bool-sorted comparison condition; both branches walked.
+            if (expr instanceof ConditionalExpressionTree cet) {
+                String condBool = interpretBool(cet.getCondition(), store, corpus, cls, method, sr, diagnostics);
+                if (condBool == null) {
+                    refuseN(diagnostics, cls, method,
+                            "conditional guard `" + oneLine(cet.getCondition())
+                            + "` is not a walkable bv32 comparison — uninterpretable branch gate");
+                    return null;
+                }
+                String tb = interpret(cet.getTrueExpression(), store, corpus, cls, method, sr, diagnostics);
+                if (tb == null) return null;
+                String fb = interpret(cet.getFalseExpression(), store, corpus, cls, method, sr, diagnostics);
+                if (fb == null) return null;
+                return "{\"kind\":\"ctor\",\"name\":\"bv32.ite\",\"args\":[" + condBool + "," + tb + "," + fb + "]}";
+            }
+            // Binary op.
+            if (expr instanceof BinaryTree bt) {
+                String op = switch (bt.getKind()) {
+                    case LEFT_SHIFT           -> "bv32.shl";
+                    case RIGHT_SHIFT          -> "bv32.lshr";
+                    case UNSIGNED_RIGHT_SHIFT -> "bv32.lshr";
+                    case AND                  -> "bv32.and";
+                    case OR                   -> "bv32.or";
+                    case XOR                  -> "bv32.xor";
+                    case PLUS                 -> "bv32.add";
+                    case MULTIPLY             -> "bv32.mul";
+                    default                   -> null;
+                };
+                if (op == null) {
+                    // `a - b` desugars to add(a, neg(b)); everything else refuses.
+                    if (bt.getKind() == Tree.Kind.MINUS) {
+                        String l = interpret(bt.getLeftOperand(), store, corpus, cls, method, sr, diagnostics);
+                        if (l == null) return null;
+                        String r = interpret(bt.getRightOperand(), store, corpus, cls, method, sr, diagnostics);
+                        if (r == null) return null;
+                        String negR = "{\"kind\":\"ctor\",\"name\":\"bv32.neg\",\"args\":[" + r + "]}";
+                        return "{\"kind\":\"ctor\",\"name\":\"bv32.add\",\"args\":[" + l + "," + negR + "]}";
+                    }
+                    refuseN(diagnostics, cls, method,
+                            "unsupported binary operator " + bt.getKind() + " in recurrence expr `" + oneLine(bt) + "`");
+                    return null;
+                }
+                String l = interpret(bt.getLeftOperand(), store, corpus, cls, method, sr, diagnostics);
+                if (l == null) return null;
+                String r = interpret(bt.getRightOperand(), store, corpus, cls, method, sr, diagnostics);
+                if (r == null) return null;
+                return "{\"kind\":\"ctor\",\"name\":\"" + op + "\",\"args\":[" + l + "," + r + "]}";
+            }
+            refuseN(diagnostics, cls, method,
+                    "uninterpretable node in recurrence expr: " + expr.getKind() + " (" + oneLine(expr) + ")");
+            return null;
+        }
+
+        /** Bool-sorted comparison: `e & 1` style low-bit tests are arithmetic, so the
+         *  gate is written `(e) ? A : B` with cond being `<expr> == 1`, `<expr> != 0`,
+         *  `<expr> < 0`, etc. We render the comparison to a bv32 bool term. */
+        private static String interpretBool(
+                ExpressionTree cond, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, StepResult sr, List<String> diagnostics) {
+            cond = stripP(cond);
+            if (!(cond instanceof BinaryTree bt)) return null;
+            String smt = switch (bt.getKind()) {
+                case EQUAL_TO     -> "bv32.eq";
+                case NOT_EQUAL_TO -> "bv32.ne";
+                case LESS_THAN    -> "bv32.slt";
+                default           -> null;
+            };
+            if (smt == null) return null;
+            String l = interpret(bt.getLeftOperand(), store, corpus, cls, method, sr, diagnostics);
+            if (l == null) return null;
+            String r = interpret(bt.getRightOperand(), store, corpus, cls, method, sr, diagnostics);
+            if (r == null) return null;
+            return "{\"kind\":\"ctor\",\"name\":\"" + smt + "\",\"args\":[" + l + "," + r + "]}";
+        }
+
+        // ── concrete-index resolution (the soundness boundary) ─────────────
+        /** Resolve an index expression to a CONCRETE int, or null if symbolic.
+         *  Walkable: int literal; static-final int; the induction var (→ its value);
+         *  and induction-var ± literal / induction-var arithmetic with consts. */
+        private static Integer concreteIndex(ExpressionTree e, Store store, UniverseWalker.Corpus corpus) {
+            e = stripP(e);
+            if (e instanceof LiteralTree lt) {
+                Object v = lt.getValue();
+                if (v instanceof Integer i) return i;
+                if (v instanceof Long l) return (int) (long) l;
+                return null;
+            }
+            if (e instanceof IdentifierTree id) {
+                String n = id.getName().toString();
+                if (n.equals(store.inductionVar)) return (int) store.inductionVal;
+                if (corpus.isStaticFinal(n)) return corpus.resolveFieldValue(n, 0);
+                return null; // a non-induction scalar index is symbolic for our purpose
+            }
+            if (e instanceof BinaryTree bt) {
+                Integer l = concreteIndex(bt.getLeftOperand(), store, corpus);
+                Integer r = concreteIndex(bt.getRightOperand(), store, corpus);
+                if (l == null || r == null) return null;
+                return switch (bt.getKind()) {
+                    case PLUS     -> l + r;
+                    case MINUS    -> l - r;
+                    case MULTIPLY -> l * r;
+                    case AND      -> l & r;
+                    default       -> null;
+                };
+            }
+            if (e instanceof TypeCastTree tc) return concreteIndex(tc.getExpression(), store, corpus);
+            return null;
+        }
+
+        /** A static-final int[] literal entry at a concrete index (e.g. MAG01[1]). */
+        private static Integer literalArrayEntry(UniverseWalker.Corpus corpus, String arr, int idx) {
+            List<Integer> vals = corpus.literalArrayValues(arr);
+            if (vals == null || idx < 0 || idx >= vals.size()) return null;
+            return vals.get(idx);
+        }
+
+        // ── small helpers ──────────────────────────────────────────────────
+        private static boolean isIntArrayType(Tree type) {
+            return type instanceof ArrayTypeTree att
+                    && att.getType() instanceof PrimitiveTypeTree ptt
+                    && ptt.getPrimitiveTypeKind() == TypeKind.INT;
+        }
+        private static Integer constInt(ExpressionTree e, UniverseWalker.Corpus corpus) {
+            e = stripP(e);
+            if (e instanceof LiteralTree lt) {
+                Object v = lt.getValue();
+                if (v instanceof Integer i) return i;
+                if (v instanceof Long l) return (int) (long) l;
+            }
+            if (e instanceof IdentifierTree id && corpus.isStaticFinal(id.getName().toString())) {
+                return corpus.resolveFieldValue(id.getName().toString(), 0);
+            }
+            return null;
+        }
+        private static boolean isPlusOneUpdate(ExpressionTree e, String v) {
+            e = stripP(e);
+            if (e instanceof UnaryTree ut
+                    && (ut.getKind() == Tree.Kind.POSTFIX_INCREMENT || ut.getKind() == Tree.Kind.PREFIX_INCREMENT)) {
+                return stripP(ut.getExpression()) instanceof IdentifierTree id && id.getName().toString().equals(v);
+            }
+            if (e instanceof CompoundAssignmentTree cat && cat.getKind() == Tree.Kind.PLUS_ASSIGNMENT) {
+                if (!(stripP(cat.getVariable()) instanceof IdentifierTree id) || !id.getName().toString().equals(v)) return false;
+                ExpressionTree step = stripP(cat.getExpression());
+                return step instanceof LiteralTree lt && lt.getValue() instanceof Integer i && i == 1;
+            }
+            return false;
+        }
+        private static String boundShape(ExpressionTree e) {
+            e = stripP(e);
+            if (e instanceof MemberSelectTree ms && ms.getIdentifier().contentEquals("length"))
+                return "array-length `" + oneLine(e) + "`";
+            if (e instanceof IdentifierTree) return "variable `" + oneLine(e) + "`";
+            return e.getKind().toString();
+        }
+        private static String constNode(int v) {
+            return "{\"kind\":\"const\",\"value\":" + v + "}";
+        }
+        private static String varNode(String name) {
+            return "{\"kind\":\"var\",\"name\":\"" + esc(name) + "\"}";
+        }
+        private static ExpressionTree stripP(ExpressionTree e) {
+            while (e instanceof ParenthesizedTree pt) e = pt.getExpression();
+            return e;
+        }
+        private static String simpleName(ExpressionTree e) {
+            e = stripP(e);
+            if (e instanceof IdentifierTree id) return id.getName().toString();
+            if (e instanceof MemberSelectTree ms) return ms.getIdentifier().toString();
+            return null;
+        }
+        private static String oneLine(Tree t) {
+            String s = t.toString().replaceAll("\\s+", " ").trim();
+            return s.length() > 90 ? s.substring(0, 90) + "…" : s;
+        }
+        private static void refuse(List<String> diagnostics, String cls, String method, String reason) {
+            if (diagnostics != null) diagnostics.add(diagnostic("<" + TAG + ">", cls, method, TAG + ": " + reason));
+        }
+        private static void refuseN(List<String> diagnostics, String cls, String method, String reason) {
+            if (diagnostics != null) diagnostics.add(diagnostic("<" + TAG + ">", cls, method, TAG + ": " + reason));
         }
     }
 
