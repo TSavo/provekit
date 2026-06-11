@@ -102,6 +102,7 @@ from .ir import (
     subst_var_in_formula,
 )
 from .translate_universe import (
+    callee_is_nondeterministic,
     guard_universe_for_callee,
     translate_universe_for_callee,
 )
@@ -3141,6 +3142,7 @@ def _apply_value_scope_binding(
                     and isinstance(euf_term, _Ctor)
                     and euf_term.args  # >=1 arg required (zero-arg -> no input to key on)
                     and _euf_args_all_concrete(euf_term)
+                    and not callee_is_nondeterministic(origin.callee)
                 ):
                     origin.arg_sig = _canonical_term_sig(euf_term)
                     origin.euf_term = euf_term
@@ -3359,7 +3361,11 @@ def _assertion_callsite_context(
         origin = _call_origin_from_expr(call)
         if origin is not None:
             euf_term = _call_result_term(call, origin, scope, call_vars)
-            if euf_term is not None and _euf_args_all_concrete(euf_term):
+            if (
+                euf_term is not None
+                and _euf_args_all_concrete(euf_term)
+                and not callee_is_nondeterministic(origin.callee)
+            ):
                 # VALUE-AWARE EUF UNIFICATION (FIX 1 / soundness):
                 # Use the argument-keyed base ONLY when EVERY argument of the
                 # call-result ctor is a CONCRETE LITERAL (int / str / bool /
