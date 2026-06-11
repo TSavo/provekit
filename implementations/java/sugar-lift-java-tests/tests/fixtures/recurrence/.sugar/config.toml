@@ -1,0 +1,6 @@
+# Fixture workspace for G4 recurrence-walk (keystone) tests.
+# Vocab learned from the shared vendored JUnit5 source (one level up);
+# the recurrence is walked from this workspace's vendor/ dir.
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor"]

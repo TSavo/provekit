@@ -712,6 +712,21 @@ fn emit_bv32_term(term: &Term, subst: &std::collections::HashMap<String, String>
                 let r = emit_bv32_term(&args[1], subst)?;
                 Some(format!("(bvadd {} {})", l, r))
             }
+            // ── Recurrence strong-tier ops (paper 26 keystone). Each maps 1:1 to a
+            // Java operator read from the vendor's recurrence AST (e.g. Mersenne
+            // Twister's `1812433253 * (mt ^ (mt >> 30))` seeding recurrence):
+            //   bv32.mul  → bvmul   (Java `*`, the LCG-style multiply in the seed mix)
+            //   bv32.xor  → bvxor   (Java `^`, the fold and the twist xors)
+            "bv32.mul" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvmul {} {})", l, r))
+            }
+            "bv32.xor" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(bvxor {} {})", l, r))
+            }
             _ => None,
         },
         _ => None,
@@ -731,6 +746,18 @@ fn emit_bv32_bool_term(term: &Term, subst: &std::collections::HashMap<String, St
                 let l = emit_bv32_term(&args[0], subst)?;
                 let r = emit_bv32_term(&args[1], subst)?;
                 Some(format!("(bvule {} {})", l, r))
+            }
+            // Equality/disequality on bv32 — the low-bit MAG01 gate condition
+            // (`y & 1 == 1`) in the recurrence twist renders to these.
+            "bv32.eq" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(= {} {})", l, r))
+            }
+            "bv32.ne" if args.len() == 2 => {
+                let l = emit_bv32_term(&args[0], subst)?;
+                let r = emit_bv32_term(&args[1], subst)?;
+                Some(format!("(not (= {} {}))", l, r))
             }
             _ => None,
         },
@@ -2138,6 +2165,55 @@ mod b64_strong_tests {
         assert_eq!(emit_bv32_term(&mk("bv32.lshr"), &subst).unwrap(), "(bvlshr #x00000062 #x00000008)");
         assert_eq!(emit_bv32_term(&mk("bv32.or"), &subst).unwrap(),   "(bvor #x00000062 #x00000008)");
         assert_eq!(emit_bv32_term(&mk("bv32.add"), &subst).unwrap(),  "(bvadd #x00000062 #x00000008)");
+        // Recurrence keystone ops (paper 26): multiply + xor for MT-style seeding.
+        assert_eq!(emit_bv32_term(&mk("bv32.mul"), &subst).unwrap(),  "(bvmul #x00000062 #x00000008)");
+        assert_eq!(emit_bv32_term(&mk("bv32.xor"), &subst).unwrap(),  "(bvxor #x00000062 #x00000008)");
+    }
+
+    #[test]
+    fn recurrence_mt_seed_step_renders() {
+        // The Mersenne Twister seeding recurrence step, exactly as the
+        // RecurrenceUniverseWalker emits it for one unrolled iteration:
+        //   mt = 1812433253 * (mt ^ (mt >> 30)) + i      (i concrete = 1)
+        // over a prior scalar `mt` substituted to a bv32 literal.
+        let subst: std::collections::HashMap<String, String> =
+            [("mt".to_string(), "#x012bd6e8".to_string())].into_iter().collect();
+        let v = || Term::Var { name: "mt".into() };
+        let c = |n: i64| Term::Const { value: serde_json::json!(n), sort: s("Int") };
+        let ctor = |name: &str, args: Vec<Term>| Term::Ctor { name: name.into(), args };
+        // mt >> 30
+        let shifted = ctor("bv32.lshr", vec![v(), c(30)]);
+        // mt ^ (mt >> 30)
+        let folded = ctor("bv32.xor", vec![v(), shifted]);
+        // 1812433253 * folded
+        let mult = ctor("bv32.mul", vec![c(1812433253), folded]);
+        // (1812433253 * folded) + 1
+        let step = ctor("bv32.add", vec![mult, c(1)]);
+        let rendered = emit_bv32_term(&step, &subst).expect("MT seed step must render");
+        assert_eq!(
+            rendered,
+            "(bvadd (bvmul #x6c078965 (bvxor #x012bd6e8 (bvlshr #x012bd6e8 #x0000001e))) #x00000001)"
+        );
+    }
+
+    #[test]
+    fn recurrence_mag01_gate_ite_renders() {
+        // The twist's MAG01-gated write low-bit branch:
+        //   (y & 1) == 1 ? MAG01[1] : MAG01[0]
+        // → bv32.ite(bv32.eq(bv32.and(y,1),1), 0x9908b0df, 0x0)
+        let subst: std::collections::HashMap<String, String> =
+            [("y".to_string(), "#x00000003".to_string())].into_iter().collect();
+        let v = || Term::Var { name: "y".into() };
+        let c = |n: i64| Term::Const { value: serde_json::json!(n), sort: s("Int") };
+        let ctor = |name: &str, args: Vec<Term>| Term::Ctor { name: name.into(), args };
+        let low = ctor("bv32.and", vec![v(), c(1)]);
+        let cond = ctor("bv32.eq", vec![low, c(1)]);
+        let ite = ctor("bv32.ite", vec![cond, c(0x9908b0dfu32 as i64), c(0)]);
+        let rendered = emit_bv32_term(&ite, &subst).expect("MAG01 gate must render");
+        // bvand then = compare then ite over the two MAG01 entries.
+        assert!(rendered.starts_with("(ite (= (bvand #x00000003 #x00000001) #x00000001)"),
+            "gate must render as ite over the low-bit equality: {rendered}");
+        assert!(rendered.contains("#x9908b0df"), "MAG01[1] entry missing: {rendered}");
     }
 
     #[test]
