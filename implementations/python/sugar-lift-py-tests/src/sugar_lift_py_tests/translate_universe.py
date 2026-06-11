@@ -81,6 +81,8 @@ class TranslateUniverse:
     # plainly rather than implied.
     vendor_vectors_checked: int = 0
     vendor_vector_source: Optional[str] = None
+    # member-of-values payload: the pinned tuple's string elements.
+    values: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -152,8 +154,75 @@ def translate_universe_for_callee(
         # (the literal is inline).
         strip_literal = _rstrip_return_shape(body)
         if strip_literal is None:
-            # Neither family: not a candidate, no refusal owed.
-            return None, None
+            # Third family: return TABLE[<expr>] over a stable module-level
+            # tuple of string literals -- the membership universe (the
+            # corpus census's cheapest swearable shape, 15,943 bodies in the
+            # top-1000). The returned value is ALWAYS an element of the
+            # pinned tuple: subscript either yields an element or raises
+            # (no value escapes the table), so membership holds for every
+            # input that returns at all. Index expression is irrelevant.
+            sub_table = _table_subscript_shape(body)
+            if sub_table is None:
+                # No family matched: not a candidate, no refusal owed.
+                return None, None
+            values_node, _line = _module_binding_tuple(tree, sub_table)
+            if values_node is None:
+                return refuse(
+                    f"subscript table '{sub_table}' has no single "
+                    "module-level tuple-literal binding (mutable or computed "
+                    "tables cannot pin)"
+                )
+            tbl_candidate = _Candidate(
+                name=sub_table, value=values_node, line=_line, confession=None
+            )
+            tbl_events = [
+                e for e in _binding_events(tree) if e.name == sub_table
+            ]
+            tbl_failure = _admission_failure(
+                tbl_candidate,
+                tbl_events,
+                _global_declarations(tree).get(sub_table),
+            )
+            if tbl_failure is not None:
+                return refuse(
+                    f"subscript table '{sub_table}' is not stable: {tbl_failure}"
+                )
+            values = []
+            for el in values_node.elts:
+                if isinstance(el, ast.Constant) and isinstance(el.value, str):
+                    values.append(el.value)
+                else:
+                    return refuse(
+                        f"subscript table '{sub_table}' is not all-string "
+                        "literals (mixed/non-string tables are vNext, refused "
+                        "by name)"
+                    )
+            if not values:
+                return refuse(f"subscript table '{sub_table}' is empty")
+            vectors, vector_source = _vendor_vectors(module_name, fn_name)
+            for vector in vectors:
+                if vector not in values:
+                    return refuse(
+                        f"sample-gate: vendor vector {vector!r} from "
+                        f"{vector_source} is not in the walked table; the "
+                        "walk misread the body or the vendor contradicts "
+                        "their own source"
+                    )
+            return (
+                TranslateUniverse(
+                    forbidden="",
+                    module=module_name,
+                    qualname=f"{module_name}.{fn_name}",
+                    source_path=spec.origin,
+                    lineno=fn.lineno,
+                    table_name=sub_table,
+                    kind="member-of-values",
+                    vendor_vectors_checked=len(vectors),
+                    vendor_vector_source=vector_source,
+                    values=tuple(values),
+                ),
+                None,
+            )
         try:
             strip_chars = strip_literal.decode("ascii")
         except UnicodeDecodeError:
@@ -337,6 +406,42 @@ def _extract_vectors(tree: ast.Module, fn_name: str) -> list:
         if literal is not None:
             vectors.append(literal)
     return vectors
+
+
+def _table_subscript_shape(body: list) -> Optional[str]:
+    """Match exactly one statement: return NAME[<expr>]. Returns NAME."""
+    if len(body) != 1 or not isinstance(body[0], ast.Return):
+        return None
+    value = body[0].value
+    if (
+        isinstance(value, ast.Subscript)
+        and isinstance(value.value, ast.Name)
+        and not isinstance(value.slice, ast.Slice)
+    ):
+        return value.value.id
+    return None
+
+
+def _module_binding_tuple(
+    tree: ast.Module, name: str
+) -> Tuple[Optional[ast.Tuple], int]:
+    binding: Optional[ast.Tuple] = None
+    line = 0
+    for stmt in tree.body:
+        if (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+            and stmt.targets[0].id == name
+        ):
+            if binding is not None:
+                return None, 0
+            if isinstance(stmt.value, ast.Tuple):
+                binding = stmt.value
+                line = stmt.lineno
+            else:
+                return None, 0
+    return binding, line
 
 
 def _rstrip_return_shape(body: list) -> Optional[bytes]:

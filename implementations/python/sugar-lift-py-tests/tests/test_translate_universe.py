@@ -372,3 +372,124 @@ def test_from_import_class_does_not_alias(vendor_path):
         """
     )
     assert not _universe_atoms(out)
+
+
+# --- the member-of-values family: return TABLE[x] (census #1 cheap shape) ---
+
+VENDOR_TABLE = '''
+_STATUSES = ("active", "paused", "deleted")
+
+
+def status_name(i):
+    return _STATUSES[i]
+'''
+
+
+def test_table_subscript_family_walks(vendor_path):
+    vendor_path("vendtbl_ok", VENDOR_TABLE)
+    universe, refusal = translate_universe_for_callee("vendtbl_ok.status_name")
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "member-of-values"
+    assert universe.values == ("active", "paused", "deleted")
+
+
+def test_table_subscript_emits_membership_disjunction(vendor_path):
+    vendor_path("vendtbl_l2", VENDOR_TABLE)
+    out = _lift(
+        """
+        import vendtbl_l2
+
+        def test_status():
+            assert vendtbl_l2.status_name(0) == "active"
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    ors = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            stack = [d.inv]
+            while stack:
+                f = stack.pop()
+                if getattr(f, "kind", None) == "or":
+                    ors.append(f)
+                elif getattr(f, "kind", None) in ("and", "not"):
+                    stack.extend(f.operands)
+    assert len(ors) == 1
+    assert len(ors[0].operands) == 3
+
+
+def test_mutable_table_refuses(vendor_path):
+    vendor_path(
+        "vendtbl_list",
+        '''
+_STATUSES = ["active", "paused"]
+
+
+def status_name(i):
+    return _STATUSES[i]
+''',
+    )
+    universe, refusal = translate_universe_for_callee("vendtbl_list.status_name")
+    assert universe is None
+    assert refusal is not None
+    assert "tuple-literal" in refusal.reason
+
+
+def test_mixed_type_table_refuses(vendor_path):
+    vendor_path(
+        "vendtbl_mixed",
+        '''
+_STATUSES = ("active", 2)
+
+
+def status_name(i):
+    return _STATUSES[i]
+''',
+    )
+    universe, refusal = translate_universe_for_callee("vendtbl_mixed.status_name")
+    assert universe is None
+    assert refusal is not None and "all-string" in refusal.reason
+
+
+def test_rebound_table_refuses(vendor_path):
+    vendor_path(
+        "vendtbl_rebound",
+        '''
+_STATUSES = ("active",)
+_STATUSES = ("active", "paused")
+
+
+def status_name(i):
+    return _STATUSES[i]
+''',
+    )
+    universe, refusal = translate_universe_for_callee("vendtbl_rebound.status_name")
+    assert universe is None
+    assert refusal is not None
+
+
+def test_table_vendor_vector_outside_table_refuses(vendor_path):
+    vendor_path("vendtbl_gate", VENDOR_TABLE)
+    vendor_path(
+        "test_vendtbl_gate",
+        """
+        import vendtbl_gate
+
+        def test_vector():
+            assert vendtbl_gate.status_name(0) == "archived"
+        """,
+    )
+    universe, refusal = translate_universe_for_callee("vendtbl_gate.status_name")
+    assert universe is None
+    assert refusal is not None and "sample-gate" in refusal.reason
+
+
+def test_table_flip_changes_values(vendor_path):
+    vendor_path(
+        "vendtbl_flip",
+        VENDOR_TABLE.replace('"deleted"', '"removed"'),
+    )
+    universe, _ = translate_universe_for_callee("vendtbl_flip.status_name")
+    assert universe.values == ("active", "paused", "removed")
