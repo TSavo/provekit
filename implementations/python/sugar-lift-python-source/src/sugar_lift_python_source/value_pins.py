@@ -35,6 +35,11 @@ _SCOPE_BOUNDARY_NODES = (
     ast.GeneratorExp,
 )
 
+_TRY_NODES: tuple = (
+    (ast.Try, ast.TryStar) if hasattr(ast, "TryStar") else (ast.Try,)
+)
+_TYPE_ALIAS_NODE = getattr(ast, "TypeAlias", None)
+
 
 @dataclass(frozen=True)
 class ValuePin:
@@ -319,13 +324,16 @@ def _statement_binding_events(stmt: ast.stmt) -> Iterator[_BindingEvent]:
             if item.optional_vars is not None:
                 for name, line in _target_names(item.optional_vars):
                     yield _BindingEvent(name, line, "with-as binding")
-    elif isinstance(stmt, ast.Try):
+    elif isinstance(stmt, _TRY_NODES):
         for handler in stmt.handlers:
             if handler.name:
                 yield _BindingEvent(handler.name, handler.lineno, "except-as binding")
     elif isinstance(stmt, ast.Match):
         for case in stmt.cases:
             yield from _match_pattern_bindings(case.pattern)
+    elif _TYPE_ALIAS_NODE is not None and isinstance(stmt, _TYPE_ALIAS_NODE):
+        if isinstance(stmt.name, ast.Name):
+            yield _BindingEvent(stmt.name.id, stmt.lineno, "type-alias definition")
     # Walrus targets anywhere in this statement's expressions, outside
     # nested scopes, bind module names.
     yield from _walrus_bindings(stmt)
@@ -378,3 +386,111 @@ def _global_declarations(tree: ast.Module) -> dict[str, int]:
             for name in node.names:
                 declarations.setdefault(name, node.lineno)
     return declarations
+
+
+# ── THE STRUCTURAL FLOOR ─────────────────────────────────────────────────
+# The binding-event scan must be TOTAL over this interpreter's statement
+# grammar, and the totality must be readable off the module rather than
+# sworn by the sweep: ast.NodeVisitor's generic_visit is an asserted
+# silence in structural costume. Every ast.stmt subclass the running
+# interpreter knows is classified below as either BINDING-HANDLED
+# (produces events in _statement_binding_events) or DECLARED-NONBINDING
+# (cannot bind a module name directly; compound bodies are recursed
+# structurally by the field-generic _child_statement_lists, and walrus
+# expressions are scanned for EVERY statement kind regardless). A
+# statement kind in NEITHER set -- a new grammar node in a future Python
+# -- fails the IMPORT of this module, loudly, before any pin can be
+# admitted. The audit of silence terminates here, in exhaustion ("there
+# are no more nodes"), not in another oath ("we believe we got them all").
+
+def _grammar_classes(base: type) -> frozenset:
+    return frozenset(
+        cls
+        for name in dir(ast)
+        if isinstance(cls := getattr(ast, name), type)
+        and issubclass(cls, base)
+        and cls is not base
+    )
+
+
+_BINDING_HANDLED_STMT = frozenset(
+    cls
+    for cls in (
+        ast.Assign,
+        ast.AnnAssign,
+        ast.AugAssign,
+        ast.Delete,
+        ast.Import,
+        ast.ImportFrom,
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        ast.ClassDef,
+        ast.For,
+        ast.AsyncFor,
+        ast.With,
+        ast.AsyncWith,
+        ast.Try,
+        ast.Match,
+        getattr(ast, "TryStar", None),
+        _TYPE_ALIAS_NODE,
+    )
+    if cls is not None
+)
+
+_DECLARED_NONBINDING_STMT = frozenset(
+    (
+        ast.Expr,
+        ast.Return,
+        ast.Raise,
+        ast.Assert,
+        ast.Pass,
+        ast.Break,
+        ast.Continue,
+        ast.If,
+        ast.While,
+        # Global/Nonlocal do not bind at module scope themselves; Global is
+        # consumed by the dedicated _global_declarations puncture scan.
+        ast.Global,
+        ast.Nonlocal,
+    )
+)
+
+_BINDING_HANDLED_PATTERN = frozenset(
+    (ast.MatchAs, ast.MatchStar, ast.MatchMapping)
+)
+
+_DECLARED_NONBINDING_PATTERN = frozenset(
+    # Children are recursed generically in _match_pattern_bindings via
+    # iter_child_nodes; these kinds carry no name binding of their own.
+    (ast.MatchValue, ast.MatchSingleton, ast.MatchSequence, ast.MatchClass, ast.MatchOr)
+)
+
+
+def _unaccounted_grammar() -> dict[str, list[str]]:
+    """Every grammar class the interpreter knows that the scan neither
+    handles nor declares non-binding. Empty dicts are the floor holding;
+    anything else is a hole that must be classified before pins can be
+    trusted."""
+    unaccounted: dict[str, list[str]] = {}
+    stmt_holes = _grammar_classes(ast.stmt) - _BINDING_HANDLED_STMT - _DECLARED_NONBINDING_STMT
+    if stmt_holes:
+        unaccounted["stmt"] = sorted(c.__name__ for c in stmt_holes)
+    pattern_holes = (
+        _grammar_classes(ast.pattern)
+        - _BINDING_HANDLED_PATTERN
+        - _DECLARED_NONBINDING_PATTERN
+    )
+    if pattern_holes:
+        unaccounted["pattern"] = sorted(c.__name__ for c in pattern_holes)
+    return unaccounted
+
+
+_FLOOR_HOLES = _unaccounted_grammar()
+if _FLOOR_HOLES:
+    raise RuntimeError(
+        "value_pins binding scan is not total over this interpreter's ast "
+        f"grammar: unaccounted node kinds {_FLOOR_HOLES}. Classify each as "
+        "binding-handled or declared-nonbinding before any pin is admissible; "
+        "a best-effort total is an asserted silence and is inadmissible."
+    )
+del _FLOOR_HOLES
