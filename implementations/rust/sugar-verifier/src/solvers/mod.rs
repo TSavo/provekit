@@ -35,6 +35,7 @@ pub mod coq;
 pub mod dispatch;
 pub mod lean;
 pub mod maude;
+pub mod model;
 pub mod plan;
 pub mod registry;
 pub mod stub;

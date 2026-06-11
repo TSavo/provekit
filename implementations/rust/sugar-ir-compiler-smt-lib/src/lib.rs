@@ -16,6 +16,7 @@ use sugar_ir_compiler::{
 mod generated;
 mod isinstance_encoding;
 mod literal_encoding;
+pub mod derive_query;
 
 pub const DIALECT: &str = "smt-lib-v2.6";
 pub const COMPILER_NAME: &str = "smt-lib-reference";
