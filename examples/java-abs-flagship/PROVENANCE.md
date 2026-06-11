@@ -15,6 +15,23 @@ Raw URL: https://raw.githubusercontent.com/openjdk/jdk/master/test/jdk/java/lang
 This file is placed VERBATIM (unmodified) as the source under test.
 The kit lifts it directly without any transformation.
 
+### Parse-only lift — the file is intentionally NOT compiled
+
+The kit reads this file through `JavacTask.parse()` — a PARSE, never an
+`attribute`/compile step. It therefore does NOT need the file to be javac-clean:
+
+  - `testFloatAbs`/`testDoubleAbs` call a jtreg test-library helper `Tests.test(...)`
+    that is not vendored here, and the file imports `jdk.internal.math.{Double,Float}Consts`
+    (not exported by `java.base`). A plain `javac` of this file would fail on both.
+  - That is irrelevant to the lift: parsing succeeds regardless of unresolved
+    symbols or inaccessible imports, and the only assertion lifted is line 110
+    (`testIntAbs(Math::abs, Integer.MIN_VALUE, Integer.MIN_VALUE)`). The float/long/
+    double/absExact methods are OUT OF SCOPE and refused-by-name, never compiled.
+
+Editing the file to make it javac-clean would defeat the flagship: the whole point
+is that the JDK's OWN test, byte-for-byte, is the spec. We lift the grammar, not a
+compiled artifact. (Raised by CodeRabbit on PR #2024 — by-design, documented here.)
+
 The key line (110):
 
 ```java
