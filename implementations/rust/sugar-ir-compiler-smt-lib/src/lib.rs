@@ -924,6 +924,105 @@ mod tests {
         }
     }
 
+    // ── G1b: str.chars-not-in-set (complement universe from a translate table) ──
+    // The Python kit's translate walk emits `str.chars-not-in-set(subject, set)`
+    // where `set` is the FROM side of a vendor bytes.maketrans literal: a total
+    // translate maps every listed char away, so the output contains none of
+    // them. Lowering: (and (not (str.contains subject "c")) ...).
+
+    #[test]
+    fn chars_not_in_set_with_clean_literal_is_sat() {
+        // POSITIVE: the translate universe + a sworn equality whose literal
+        // contains none of the forbidden chars — the GOOD-twin conjoin.
+        let z3 = which_z3().expect("z3 required for chars-not-in-set check");
+        let call = callresult("c:callresult_urlsafe_b64encode_a1", "bar");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.chars-not-in-set",
+                    vec![call.clone(), string_const("+/")],
+                ),
+                eq(call, string_const("YmFy-_x=")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "complement universe + clean sworn literal must be SAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn chars_not_in_set_with_forbidden_char_is_unsat() {
+        // DISCRIMINATION: the python marquee shape. The walked maketrans
+        // table swears urlsafe output never contains '+' or '/'; the consumer
+        // asserts an output with '+'. UNSAT — refuted on an input the vendor
+        // never tested, from two byte literals in the vendor's own source.
+        let z3 = which_z3().expect("z3 required for chars-not-in-set check");
+        let call = callresult("c:callresult_urlsafe_b64encode_a1", "bar");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.chars-not-in-set",
+                    vec![call.clone(), string_const("+/")],
+                ),
+                eq(call, string_const("YmFy+x=")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "complement universe + forbidden-char literal must be UNSAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn chars_not_in_set_round_trips_through_emit_asserted() {
+        // STRUCTURAL: conjunction of negated str.contains, sorted+deduped,
+        // quote escaped, no opaque strlit_ laundering, no uninterpreted
+        // predicate fallback; the lone row is SAT (empty string qualifies).
+        let inv =
+            string_theory_atom("str.chars-not-in-set", vec![var("r"), string_const("/+/")]);
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains(
+                "(and (not (str.contains r \"+\")) (not (str.contains r \"/\")))"
+            ),
+            "round-trip rendering wrong (must sort+dedup to +,/):\n{script}"
+        );
+        assert!(
+            !script.contains("strlit_"),
+            "the set must lower to string theory, not opaque literals:\n{script}"
+        );
+        assert!(
+            !script.contains("(declare-fun str.chars-not-in-set")
+                && !script.contains("(declare-fun |str.chars-not-in-set|"),
+            "chars-not-in-set must be a theory lowering, not an uninterpreted predicate:\n{script}"
+        );
+        let single =
+            string_theory_atom("str.chars-not-in-set", vec![var("r"), string_const("+")]);
+        let single_parts = compile_asserted_to_parts(&single).expect("compile");
+        let single_script = format!("{}{}", single_parts.preamble, single_parts.body);
+        assert!(
+            single_script.contains("(not (str.contains r \"+\"))")
+                && !single_script.contains("(and (not"),
+            "single-char set must degenerate without the and:\n{single_script}"
+        );
+        if let Some(z3) = which_z3() {
+            let out = run_z3(&z3, &script);
+            assert_eq!(out.trim(), "sat", "lone complement row must be SAT: {out}");
+        }
+    }
+
     // ── Cross-type literal distinctness (Python `==` semantics) ───────────
     // Helpers for int / bool / None literal terms.
     fn int_const(n: i64) -> serde_json::Value {

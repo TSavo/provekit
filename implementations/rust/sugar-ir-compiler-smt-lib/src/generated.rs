@@ -435,6 +435,47 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
                 inner
             ))
         }
+        // str.chars-not-in-set: arg[0] = subject (String-sorted term), arg[1] =
+        // forbidden-charset constant. The complement universe row: derived from
+        // a vendor translate/maketrans table, it swears the subject contains
+        // NONE of the listed characters. Renders as a conjunction of negated
+        // str.contains atoms, one per forbidden char -- the exact semantics of
+        // a total byte-translate that maps each listed char away.
+        "str.chars-not-in-set" if args.len() == 2 => {
+            let charset: Vec<char> = match &args[1] {
+                Term::Const { value, sort }
+                    if matches!(sort, Sort::Primitive { name } if name == "String") =>
+                {
+                    if let serde_json::Value::String(s) = value {
+                        let mut chars: Vec<char> = s.chars().collect();
+                        chars.sort_unstable();
+                        chars.dedup();
+                        chars
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            };
+            if charset.is_empty() {
+                return None;
+            }
+            let subject = emit_string_term(&args[0]);
+            let not_contains = |ch: char| -> String {
+                let esc = match ch {
+                    '"' => "\"\"".to_string(),
+                    '\u{0}'..='\u{1f}' | '\u{7f}' => format!("\\u{{{:x}}}", ch as u32),
+                    _ => ch.to_string(),
+                };
+                format!("(not (str.contains {} \"{}\"))", subject, esc)
+            };
+            if charset.len() == 1 {
+                Some(not_contains(charset[0]))
+            } else {
+                let parts: Vec<String> = charset.iter().map(|ch| not_contains(*ch)).collect();
+                Some(format!("(and {})", parts.join(" ")))
+            }
+        }
         // ── Base64 STRONG TIER (paper 26 — "THE seam between tiers") ──────────
         // str.eq-bv-blocks: arg[0] = subject (the callresult String term),
         //                   arg[1] = a String const carrying the strong-tier
@@ -628,6 +669,7 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "str.is_ascii_whitespace"
             | "str.is_ascii_control"
             | "str.chars-in-set"
+            | "str.chars-not-in-set"
             | "str.eq-bv-blocks"
     )
 }
