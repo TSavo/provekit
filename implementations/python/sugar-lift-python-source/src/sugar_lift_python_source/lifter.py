@@ -981,6 +981,20 @@ class _Emitter:
         if isinstance(node, ast.Call):
             return self.call(node)
         if isinstance(node, ast.Attribute):
+            if (
+                isinstance(node.value, ast.Name)
+                and node.value.id not in self.locals
+            ):
+                pin = self.value_pins.get(f"{node.value.id}.{node.attr}")
+                if pin is not None:
+                    # A pinned IntEnum/StrEnum member: the term IS the value
+                    # (those kinds compare as their values), and no panic
+                    # locus is emitted -- Enum's metaclass forbids member
+                    # reassignment, and the pin's scan refuses on any
+                    # syntactic puncture, so the presence claim rides the
+                    # pin's premise rather than a per-access AttributeError
+                    # site.
+                    return pin.term
             term = ctor("python:attribute", self.expr(node.value), str_const(node.attr))
             self.effects.add_panics()
             self.panic_loci.append(
