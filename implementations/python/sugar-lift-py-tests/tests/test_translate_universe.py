@@ -146,8 +146,27 @@ def _lift(source: str):
     return lift_file_layer2(textwrap.dedent(source), "test_mod.py")
 
 
+def _universe_atoms(out):
+    # The universe is a CONJUNCT inside the base's conjoined ::assertion --
+    # never a sibling contract (the verifier conjoins by name; a sibling
+    # verifies alone and is vacuously consistent).
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    atoms = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            atoms.extend(
+                a
+                for a in _iter_conjuncts(d.inv)
+                if a.name == "str.chars-not-in-set"
+            )
+    return atoms
+
+
 def _universe_decls(out):
-    return [d for d in out.decls if d.name.endswith("::universe")]
+    # Distinct universe claims, deduped by content: coalescing may repeat
+    # idempotent conjuncts; WHICH universes exist is the property.
+    return sorted({(a.args[0], a.args[1]) for a in _universe_atoms(out)}, key=str)
 
 
 def test_universe_row_emitted_for_translate_callee(vendor_path):
@@ -160,14 +179,11 @@ def test_universe_row_emitted_for_translate_callee(vendor_path):
             assert venduniv_l2.urlsafe("abc") == "abc"
         """
     )
-    rows = _universe_decls(out)
-    assert len(rows) == 1
-    inv = rows[0].inv
-    assert inv.name == "str.chars-not-in-set"
-    # args: [subject euf ctor, str_const("+/")]
-    assert inv.args[1].value == "+/"
-    # the subject is the SAME euf ctor the assertion uses (conjoin contact)
-    assert "venduniv_l2.urlsafe" in rows[0].name or "urlsafe" in rows[0].name
+    atoms = _universe_atoms(out)
+    assert len(atoms) == 1
+    assert atoms[0].args[1].value == "+/"
+    # contact is structural: the atom lives INSIDE the conjoined assertion
+    assert any(d.name.endswith("::assertion") and "urlsafe" in d.name for d in out.decls)
 
 
 def test_universe_row_emitted_once_per_base_across_tests(vendor_path):
@@ -217,9 +233,9 @@ def test_bad_twin_flip_changes_forbidden_set(vendor_path):
             assert venduniv_flip.urlsafe("abc") == "abc"
         """
     )
-    rows = _universe_decls(out)
-    assert len(rows) == 1
-    assert rows[0].inv.args[1].value == "!+"
+    atoms = _universe_atoms(out)
+    assert len(atoms) == 1
+    assert atoms[0].args[1].value == "!+"
 
 
 def test_non_translate_callee_emits_nothing_and_no_warning(vendor_path):

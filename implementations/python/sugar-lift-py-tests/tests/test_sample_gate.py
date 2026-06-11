@@ -129,7 +129,16 @@ def test_consumer_bad_twin_does_not_eat_the_universe(fixture_dir):
         ),
         "bad_twin.py",
     )
-    rows = [d for d in out.decls if d.name.endswith("::universe")]
-    assert len(rows) == 1
-    # and the assertion row coexists: the conjunction is check's to refute
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    atoms = [
+        a
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for a in _iter_conjuncts(d.inv)
+        if a.name == "str.chars-not-in-set"
+    ]
+    assert len(atoms) == 1
+    # the lying equality and the universe share one conjoined inv: the
+    # contradiction is check's to refute at verify
     assert any(d.name.endswith("::assertion") for d in out.decls)

@@ -309,6 +309,7 @@ SHOWCASE_RUNS = \
 	examples/std-core-string-predicates/run.sh \
 	examples/python-bodyguard-precondition/run.sh \
 	examples/python-guard-shapes/run.sh \
+	examples/python-urlsafe-seam/run.sh \
 	examples/forall-vampire-showcase/run.sh \
 	examples/url-showcase/run.sh \
 	examples/semver-showcase/run.sh \
