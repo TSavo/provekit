@@ -91,6 +91,243 @@ class TranslateWalkRefusal:
     reason: str
 
 
+@dataclass(frozen=True)
+class GuardClause:
+    """One walked precondition: `if <param> <op> <literal>: raise` means a
+    RETURNED value exists only when the guard did NOT fire. param_index is
+    positional in the vendor signature; op is the ir comparison symbol of
+    the guard test itself (the universe conjunct is its negation,
+    instantiated at the callsite's concrete argument)."""
+
+    param_index: int
+    param_name: str
+    op: str
+    literal: object
+
+
+@dataclass(frozen=True)
+class GuardUniverse:
+    clauses: tuple
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    vendor_vectors_checked: int = 0
+    vendor_vector_source: Optional[str] = None
+
+
+_CMP_SYMBOL = {
+    ast.Lt: "<",
+    ast.LtE: "≤",
+    ast.Gt: ">",
+    ast.GtE: "≥",
+    ast.Eq: "=",
+    ast.NotEq: "≠",
+}
+
+_CMP_EVAL = {
+    "<": lambda a, b: a < b,
+    "≤": lambda a, b: a <= b,
+    ">": lambda a, b: a > b,
+    "≥": lambda a, b: a >= b,
+    "=": lambda a, b: a == b,
+    "≠": lambda a, b: a != b,
+}
+
+
+@functools.lru_cache(maxsize=None)
+def guard_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[GuardUniverse], Optional[TranslateWalkRefusal]]:
+    """Walk the vendor body's guard-then-raise prefix: every leading
+    `if <param> <cmpop> <literal>: raise ...` swears that a RETURN value
+    only exists when the guard did not fire. A sworn equality about
+    callee(<concrete args>) therefore carries the negated guard,
+    instantiated at those arguments, as one more conjunct: assert a value
+    for a guarded-out input and the conjunction is UNSAT -- you swore a
+    return from a call the vendor's own source says raises."""
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+
+    def refuse(reason: str) -> Tuple[None, TranslateWalkRefusal]:
+        return None, TranslateWalkRefusal(callee=callee, reason=reason)
+
+    params = [a.arg for a in fn.args.args]
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    clauses = []
+    for stmt in body:
+        if not (
+            isinstance(stmt, ast.If)
+            and len(stmt.body) == 1
+            and isinstance(stmt.body[0], ast.Raise)
+            and not stmt.orelse
+        ):
+            break
+        clause = _guard_clause(stmt.test, params)
+        if clause is None:
+            # Guards are pure tests: the per-guard claim "a value implies
+            # this guard did not fire" holds independently of siblings, so
+            # an unreadable guard is skipped (its claim is simply not made)
+            # rather than poisoning the readable ones.
+            continue
+        clauses.append(clause)
+    if not clauses:
+        return None, None
+
+    vectors, vector_source = _vendor_call_vectors(module_name, fn_name)
+    checked = 0
+    for args in vectors:
+        for c in clauses:
+            if c.param_index < len(args):
+                arg = args[c.param_index]
+                try:
+                    fired = _CMP_EVAL[c.op](arg, c.literal)
+                except TypeError:
+                    continue
+                checked += 1
+                if fired:
+                    return refuse(
+                        "sample-gate: vendor vector args "
+                        f"{args!r} fire the guard "
+                        f"({c.param_name} {c.op} {c.literal!r}) yet the "
+                        "vendor swears a return value; the walk misread "
+                        "the body or the vendor contradicts their own source"
+                    )
+
+    return (
+        GuardUniverse(
+            clauses=tuple(clauses),
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            vendor_vectors_checked=checked,
+            vendor_vector_source=vector_source,
+        ),
+        None,
+    )
+
+
+def _guard_clause(test: ast.expr, params: list) -> Optional[GuardClause]:
+    if not (
+        isinstance(test, ast.Compare)
+        and len(test.ops) == 1
+        and len(test.comparators) == 1
+    ):
+        return None
+    op = _CMP_SYMBOL.get(type(test.ops[0]))
+    if op is None:
+        return None
+    left, right = test.left, test.comparators[0]
+    if (
+        isinstance(left, ast.Name)
+        and left.id in params
+        and isinstance(right, ast.Constant)
+        and isinstance(right.value, (int, str))
+        and not isinstance(right.value, bool)
+    ):
+        return GuardClause(params.index(left.id), left.id, op, right.value)
+    # literal-on-the-left mirror: `if 0 > x: raise` == `x < 0`
+    if (
+        isinstance(right, ast.Name)
+        and right.id in params
+        and isinstance(left, ast.Constant)
+        and isinstance(left.value, (int, str))
+        and not isinstance(left.value, bool)
+    ):
+        mirror = {"<": ">", ">": "<", "≤": "≥", "≥": "≤", "=": "=", "≠": "≠"}
+        return GuardClause(
+            params.index(right.id), right.id, mirror[op], left.value
+        )
+    return None
+
+
+def _resolve_vendor_function(callee: str):
+    if "." not in callee:
+        return None
+    module_name, fn_name = callee.rsplit(".", 1)
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except (ImportError, ValueError):
+        return None
+    if spec is None or spec.origin in (None, "built-in", "frozen"):
+        return None
+    if not spec.origin.endswith(".py"):
+        return None
+    try:
+        tree = ast.parse(
+            open(spec.origin, encoding="utf-8").read(), filename=spec.origin
+        )
+    except (OSError, SyntaxError):
+        return None
+    fn = next(
+        (
+            stmt
+            for stmt in tree.body
+            if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
+        ),
+        None,
+    )
+    if fn is None:
+        return None
+    return tree, fn, spec.origin, module_name, fn_name
+
+
+def _vendor_call_vectors(
+    module_name: str, fn_name: str
+) -> Tuple[list, Optional[str]]:
+    """All-literal argument tuples from the vendor corpus' calls of the
+    callee (the guard gate's evidence: a vendor-sworn call must not fire
+    a walked guard)."""
+    for candidate in (f"test.test_{module_name}", f"test_{module_name}"):
+        try:
+            spec = importlib.util.find_spec(candidate)
+        except (ImportError, ValueError):
+            continue
+        if spec is None or not spec.origin or not spec.origin.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(
+                open(spec.origin, encoding="utf-8").read(), filename=spec.origin
+            )
+        except (OSError, SyntaxError):
+            continue
+        vectors = []
+        for node in ast.walk(tree):
+            if _is_callee_call(node, fn_name):
+                args = []
+                ok = True
+                for a in node.args:
+                    if isinstance(a, ast.Constant) and isinstance(
+                        a.value, (int, str)
+                    ):
+                        args.append(a.value)
+                    elif (
+                        isinstance(a, ast.UnaryOp)
+                        and isinstance(a.op, ast.USub)
+                        and isinstance(a.operand, ast.Constant)
+                        and type(a.operand.value) is int
+                    ):
+                        args.append(-a.operand.value)
+                    else:
+                        ok = False
+                        break
+                if ok and args:
+                    vectors.append(tuple(args))
+        return vectors, spec.origin
+    return [], None
+
+
 @functools.lru_cache(maxsize=None)
 def translate_universe_for_callee(
     callee: str,
