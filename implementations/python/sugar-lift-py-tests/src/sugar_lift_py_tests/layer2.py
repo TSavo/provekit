@@ -79,6 +79,7 @@ from .ir import (
     Int,
     Term,
     _Atomic,
+    _Connective,
     _Ctor,
     and_,
     atomic,
