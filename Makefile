@@ -332,7 +332,8 @@ SHOWCASE_RUNS = \
 	examples/java-voltron/run.sh \
 	examples/java-abs-flagship/run.sh \
 	examples/java-panama-bridge/run.sh \
-	examples/java-abs-model/run.sh
+	examples/java-abs-model/run.sh \
+	examples/java-mt-reference/run.sh
 
 .PHONY: test-showcases
 test-showcases:
