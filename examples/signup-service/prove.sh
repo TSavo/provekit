@@ -80,6 +80,36 @@ echo "== mvn: resolve every dependency's source + test-source =="
 mvn -q -B dependency:copy-dependencies -Dclassifier=sources      -DoutputDirectory=target/srcjars
 mvn -q -B dependency:copy-dependencies -Dclassifier=test-sources -DoutputDirectory=target/testjars -DfailOnMissingClassifierArtifact=false || true
 
+# Count the contracts the kit lifts from a work dir — drive the kit's JSON-RPC
+# `lift` directly (the SAME invocation sugar mint makes) and count the `ir`
+# array. The .proof bundle itself is a binary content-addressed artifact, so we
+# read the count from the lift response, not the bundle. This is the real
+# per-artifact warranty surface — reported so the loop itself is the honest
+# record, not an external tally.
+count_lifted_contracts() {
+  local work="$1" kit="$2" java; java="$(command -v java)"
+  printf '%s\n%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"lift\",\"params\":{\"workspace_root\":\"$work\"}}" \
+    '{"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}}' \
+  | "$java" --add-exports jdk.compiler/com.sun.source.tree=ALL-UNNAMED \
+            --add-exports jdk.compiler/com.sun.source.util=ALL-UNNAMED \
+            --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+            -cp "$kit/out" JavaTestAssertionsRpc 2>/dev/null \
+  | python3 -c '
+import sys, json
+n = 0
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    try: obj = json.loads(line)
+    except Exception: continue
+    if obj.get("id") == 2 and "result" in obj:
+        n = len(obj["result"].get("ir", []))
+print(n)
+' 2>/dev/null || echo "?"
+}
+
 # 2. sugar, prove everything: one .proof per artifact, from its own source.
 echo "== sugar: mint a proof per artifact =="
 proven=0; gaps=0
@@ -89,13 +119,27 @@ for jar in target/srcjars/*-sources.jar; do
   work="$(mktemp -d)"
   unzip -qo "$jar" -d "$work" -x 'META-INF/*' >/dev/null 2>&1 || true
   tj="target/testjars/${art}-test-sources.jar"
-  [ -e "$tj" ] && unzip -qo "$tj" -d "$work" -x 'META-INF/*' >/dev/null 2>&1 || true
+  have_testjar=0
+  if [ -e "$tj" ]; then
+    have_testjar=1
+    unzip -qo "$tj" -d "$work" -x 'META-INF/*' >/dev/null 2>&1 || true
+  fi
   render_manifest "$work" "$KIT_DIR"   # drop a java-test-assertions lift manifest onto $work
   if ( cd "$work" && "$SUGAR" mint --out . ) >/dev/null 2>&1 && ls "$work"/blake3-512:*.proof >/dev/null 2>&1; then
-    cp "$work"/blake3-512:*.proof "$OUT/$art.proof"
-    proven=$((proven+1)); echo "  PROOF  $art"
+    proof="$(ls "$work"/blake3-512:*.proof | head -1)"
+    cp "$proof" "$OUT/$art.proof"
+    nc="$(count_lifted_contracts "$work" "$KIT_DIR")"
+    proven=$((proven+1)); printf "  PROOF  %-34s %s contracts\n" "$art" "$nc"
   else
-    gaps=$((gaps+1));     echo "  GAP    $art -> []   (no sworn behavior; on the perimeter)"
+    # Honest GAP reason: no test-source jar = nobody published a spec; vs a
+    # test-source jar present but nothing liftable = a real perimeter inside
+    # the vendor's own tests.
+    if [ "$have_testjar" = 1 ]; then
+      reason="test-sources present, 0 liftable assertions"
+    else
+      reason="no -test-sources.jar on Central (no published spec)"
+    fi
+    gaps=$((gaps+1));     printf "  GAP    %-34s -> []   (%s)\n" "$art" "$reason"
   fi
   rm -rf "$work"
 done

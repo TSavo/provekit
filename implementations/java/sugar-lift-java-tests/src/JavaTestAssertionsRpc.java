@@ -170,7 +170,19 @@ public final class JavaTestAssertionsRpc {
                 diagnostics.add(diagnostic(rel, null, null, "cannot read file"));
                 continue;
             }
-            liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, ir, diagnostics);
+            // PER-FILE ISOLATION (multi-file robustness): a single vendor file that
+            // throws during parse/walk (malformed source, unsupported syntax, an
+            // internal walker error) must NOT zero out the whole artifact. Mirror the
+            // rust coretests_sweep tolerance: skip-and-diagnose per file, keep the
+            // contracts already lifted from the other files. Without this, one bad
+            // file in a 229-file vendor test tree drops the entire artifact to GAP.
+            try {
+                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, ir, diagnostics);
+            } catch (Exception e) {
+                diagnostics.add(diagnostic(rel, null, null,
+                    "per-file lift skipped (isolated): "
+                    + (e.getMessage() == null ? e.toString() : e.getMessage())));
+            }
         }
 
         return irDocument(ir, diagnostics);
@@ -3801,8 +3813,38 @@ public final class JavaTestAssertionsRpc {
     }
 
     private static String esc(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+        // JSON spec (RFC 8259 section 7): the C0 control characters (U+0000 through
+        // U+001F) MUST be escaped in a JSON string, plus '"' and '\'. A vendor literal
+        // can legitimately contain ANY control char (commons-lang3's StringUtilsTest
+        // asserts over form-feeds, vertical tabs, NUL in its whitespace/separator
+        // tests). The old escaper handled only \n \r \t, so a raw control byte leaked
+        // into the emitted JSON-RPC response and the rust mint aborted parsing the
+        // WHOLE artifact ("control character found while parsing a string"). One bad
+        // literal zeroed out hundreds of valid contracts. Escape the full control
+        // range here so emission is always valid JSON.
+        StringBuilder sb = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"'  -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                default -> {
+                    if (c < 0x20) {
+                        // Any remaining C0 control char becomes a JSON-mandated
+                        // backslash-u-four-hex-digits escape.
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     // ──────────────────────────────────────────────────────────────
