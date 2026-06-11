@@ -111,6 +111,14 @@ def test_bytes_args_carry_the_universe_row(tmp_path, monkeypatch):
         ),
         "test_mod.py",
     )
-    rows = [d for d in out.decls if d.name.endswith("::universe")]
-    assert len(rows) == 1, [d.name for d in out.decls]
-    assert rows[0].inv.args[1] == str_const("+/")
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    atoms = [
+        a
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for a in _iter_conjuncts(d.inv)
+        if a.name == "str.chars-not-in-set"
+    ]
+    assert len(atoms) == 1, [d.name for d in out.decls]
+    assert atoms[0].args[1] == str_const("+/")

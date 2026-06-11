@@ -3173,11 +3173,15 @@ def _collect_value_scope_assertion_facts(
             )
             made += 1
             # TRANSLATE-UNIVERSE WALK (rung 2a): when the callee's installed
-            # vendor body is translate-shaped, emit ONE sibling ::universe row
-            # per base over the SAME conjoin subject. The universal claim is
-            # instantiated at this base's concrete subject -- sound, since the
-            # translate totality argument holds for every input. Refused walks
-            # surface as loud warnings; non-candidates stay silent by design.
+            # vendor body is translate-shaped, the universe atom is appended
+            # INTO this base's conjoined ::assertion -- one more conjunct in
+            # the existing conjoin, never a sibling contract. The verifier
+            # conjoins by NAME: a separate ::universe decl verifies alone and
+            # is vacuously consistent (live-fired and observed: the bad twin
+            # DISCHARGED). The universal claim instantiates at this base's
+            # concrete subject -- sound, since translate totality holds for
+            # every input. Refused walks surface as loud warnings;
+            # non-candidates stay silent by design.
             #
             # CONTACT RULE: the subject is extracted from THIS assertion's own
             # equality atom (the call-shaped side), never assumed from
@@ -3187,38 +3191,26 @@ def _collect_value_scope_assertion_facts(
             # failure). Same-statement extraction makes contact structural.
             subject_term = _assertion_call_subject(assertion) or origin.euf_term
             if subject_term is not None:
-                universe_name = f"{base}::universe"
-                already_emitted = universe_name in used_names or any(
-                    d.name == universe_name for d in out.decls
+                universe, walk_refusal = translate_universe_for_callee(
+                    origin.callee
                 )
-                if not already_emitted:
-                    universe, walk_refusal = translate_universe_for_callee(
-                        origin.callee
+                if walk_refusal is not None:
+                    out.warnings.append(
+                        LiftWarning(
+                            source_path=source_path,
+                            item_name=f"{test_name}::translate-universe",
+                            reason=(
+                                f"{walk_refusal.callee}: {walk_refusal.reason}"
+                            ),
+                        )
                     )
-                    if walk_refusal is not None:
-                        out.warnings.append(
-                            LiftWarning(
-                                source_path=source_path,
-                                item_name=f"{test_name}::translate-universe",
-                                reason=(
-                                    f"{walk_refusal.callee}: {walk_refusal.reason}"
-                                ),
-                            )
-                        )
-                    elif universe is not None:
-                        used_names.add(universe_name)
-                        decls.append(
-                            ContractDecl(
-                                name=universe_name,
-                                inv=atomic(
-                                    "str.chars-not-in-set",
-                                    [
-                                        subject_term,
-                                        str_const(universe.forbidden),
-                                    ],
-                                ),
-                            )
-                        )
+                elif universe is not None:
+                    universe_atom = atomic(
+                        "str.chars-not-in-set",
+                        [subject_term, str_const(universe.forbidden)],
+                    )
+                    if universe_atom not in assertion_atoms_by_base[base]:
+                        assertion_atoms_by_base[base].append(universe_atom)
     return made
 
 
