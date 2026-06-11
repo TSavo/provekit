@@ -1107,6 +1107,60 @@ mod tests {
         assert_eq!(res[0].verdict, ObligationVerdict::Discharged);
     }
 
+    /// THE HOLSTER DEMO. A vendor swears `result < X`; a consumer swears
+    /// `result < Y` about THE SAME CALLSITE. To Sugar these are not two
+    /// contracts that happen to be related -- they are ONE contract, because a
+    /// contract's identity is the `#euf#` callsite CID, not the predicate. Two
+    /// separate `.proof`s (distinct memento CIDs) carrying different bounds on
+    /// `g(7)` collapse to a single obligation and are conjoined. Compatible
+    /// bounds stay PROVEN; opposite bounds REFUTE -- the same contract, judged
+    /// once. Prints the verdicts so the mechanism is visible, not just asserted.
+    #[test]
+    fn vendor_lt_x_and_consumer_lt_y_are_the_same_contract() {
+        let (plan, reg) = z3_plan_and_registry();
+        let name = "g#euf#c:callresult_g_a1(i:7)::assertion";
+        let lt = |a: Json, b: Json| json!({"kind":"atomic","name":"<","args":[a, b]});
+        let callg = json!({"kind":"ctor","name":"call:g","args":[int(7)]});
+
+        // VENDOR proof: g(7) < 10.  CONSUMER proof: g(7) < 5.  Distinct CIDs,
+        // SAME callsite name -> one obligation -> and(<10, <5) -> SAT (e.g. 4)
+        // -> the two bounds are the same contract and they agree.
+        let mut pool = MementoPool::default();
+        insert_contract(&mut pool, "blake3-512:vendor10", name, lt(callg.clone(), int(10)));
+        insert_contract(&mut pool, "blake3-512:consumer5", name, lt(callg.clone(), int(5)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 1, "vendor<10 and consumer<5 are ONE contract: {res:?}");
+        assert_eq!(
+            res[0].verdict,
+            ObligationVerdict::Discharged,
+            "compatible bounds on the same callsite stay proven: {res:?}"
+        );
+        println!(
+            "[holster] vendor `g(7) < 10` + consumer `g(7) < 5`  (2 proofs, 1 contract by #euf# CID)  -> {:?}",
+            res[0].verdict
+        );
+
+        // CONSUMER now swears g(7) < 5 while the VENDOR swears g(7) > 10. Same
+        // callsite -> same contract -> and(<5, >10) -> UNSAT -> REFUSED. The
+        // consumer's bound contradicts the vendor's, and Sugar names the clash
+        // because it never thought of them as two separate things.
+        let gtp = |a: Json, b: Json| json!({"kind":"atomic","name":">","args":[a, b]});
+        let mut pool = MementoPool::default();
+        insert_contract(&mut pool, "blake3-512:vendorGt10", name, gtp(callg.clone(), int(10)));
+        insert_contract(&mut pool, "blake3-512:consumerLt5", name, lt(callg.clone(), int(5)));
+        let res = verify_consistency(&pool, &plan, &reg);
+        assert_eq!(res.len(), 1, "still ONE contract: {res:?}");
+        assert_eq!(
+            res[0].verdict,
+            ObligationVerdict::Unsatisfied,
+            "opposite bounds on the same callsite must refute: {res:?}"
+        );
+        println!(
+            "[holster] vendor `g(7) > 10` + consumer `g(7) < 5`  (2 proofs, 1 contract by #euf# CID)  -> {:?}",
+            res[0].verdict
+        );
+    }
+
     /// H1 [B7]: MIXED-SORT CONJUNCTION is a NAMED Undecidable, not a parse error.
     /// Two same-named contracts equate the same `call:f` ctor to a String literal
     /// (String-theory regime: String return sort) and to an Int literal (legacy
