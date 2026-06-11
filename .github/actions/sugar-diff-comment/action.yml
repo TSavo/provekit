@@ -1,0 +1,142 @@
+name: 'Sugar Diff Comment'
+description: 'Post the behavior + residual delta of a dependency bump (or any two revisions) as a recomputable PR comment.'
+author: 'Sugar'
+
+branding:
+  icon: 'git-pull-request'
+  color: 'purple'
+
+# The trojan horse: ride the dependency-bump PR everyone already reviews and
+# augment it with a behavior verdict. The intelligence lives in the binary
+# (`sugar diff --format markdown`), tested in-tree; this action is thin glue.
+# The verdict is recomputable, so the comment is not "trust the bot" -- it is a
+# hash the reviewer can reproduce.
+
+inputs:
+  before:
+    description: 'BEFORE revision (git rev). Defaults to the PR base SHA.'
+    required: false
+    default: ''
+  after:
+    description: 'AFTER revision (git rev). Defaults to the PR head / current SHA.'
+    required: false
+    default: ''
+  path:
+    description: 'Project subdirectory holding the proofs within each revision.'
+    required: false
+    default: '.'
+  require:
+    description: 'Honest-semver gate: none|minor|major. Empty disables it.'
+    required: false
+    default: ''
+  frozen:
+    description: 'Supply-chain pin: fail on ANY behavior/residual movement.'
+    required: false
+    default: 'false'
+  ledger-before:
+    description: 'Sweep ledger JSON for BEFORE (adds the residual axis).'
+    required: false
+    default: ''
+  ledger-after:
+    description: 'Sweep ledger JSON for AFTER. Required with ledger-before.'
+    required: false
+    default: ''
+  post-comment:
+    description: 'Upsert the verdict as a PR comment (needs a PR context + GITHUB_TOKEN). Default true.'
+    required: false
+    default: 'true'
+  fail-on-gate:
+    description: 'Propagate the gate exit code (fail the job on a lost behavior / residual regression). Default true.'
+    required: false
+    default: 'true'
+  sugar-version:
+    description: 'npm version spec for sugar. Defaults to latest published.'
+    required: false
+    default: 'latest'
+
+outputs:
+  comment-md:
+    description: 'The rendered Markdown verdict (also posted as a comment and to the step summary).'
+    value: ${{ steps.diff.outputs.comment-md }}
+  verdict:
+    description: 'pass | fail — the gate outcome.'
+    value: ${{ steps.diff.outputs.verdict }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run sugar diff
+      id: diff
+      shell: bash
+      env:
+        SUGAR_VERSION: ${{ inputs.sugar-version }}
+        IN_BEFORE: ${{ inputs.before }}
+        IN_AFTER: ${{ inputs.after }}
+        IN_PATH: ${{ inputs.path }}
+        IN_REQUIRE: ${{ inputs.require }}
+        IN_FROZEN: ${{ inputs.frozen }}
+        IN_LEDGER_BEFORE: ${{ inputs.ledger-before }}
+        IN_LEDGER_AFTER: ${{ inputs.ledger-after }}
+        POST_COMMENT: ${{ inputs.post-comment }}
+        FAIL_ON_GATE: ${{ inputs.fail-on-gate }}
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set -uo pipefail
+
+        # Resolve revisions: explicit inputs win; else PR base..head; else
+        # HEAD~1..HEAD. We need the base in history for --git, so fetch it.
+        before="$IN_BEFORE"; after="$IN_AFTER"
+        if [ -z "$before" ]; then before="${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}"; fi
+        if [ -z "$before" ]; then before="HEAD~1"; fi
+        if [ -z "$after" ]; then after="HEAD"; fi
+        git fetch --quiet --depth=50 origin "${GITHUB_BASE_REF:-HEAD}" 2>/dev/null || true
+
+        flags=(diff --git "$before" "$after" --path "$IN_PATH" --format markdown)
+        [ -n "$IN_REQUIRE" ] && flags+=(--require "$IN_REQUIRE")
+        [ "$IN_FROZEN" = "true" ] && flags+=(--frozen)
+        [ -n "$IN_LEDGER_BEFORE" ] && flags+=(--ledger-before "$IN_LEDGER_BEFORE")
+        [ -n "$IN_LEDGER_AFTER" ] && flags+=(--ledger-after "$IN_LEDGER_AFTER")
+
+        # The binary renders the comment; the action never reformats the verdict.
+        npx -y "sugar@${SUGAR_VERSION}" "${flags[@]}" > comment.md 2> diff.err
+        gate_exit=$?
+
+        if [ ! -s comment.md ]; then
+          { echo "### sugar diff"; echo; echo '_No verdict emitted._'; echo;
+            echo '```'; cat diff.err 2>/dev/null; echo '```'; } > comment.md
+        fi
+
+        verdict="pass"; [ "$gate_exit" -ne 0 ] && verdict="fail"
+
+        # A stable marker so re-runs upsert one comment instead of spamming.
+        marker='<!-- sugar-diff-comment -->'
+        body="$(printf '%s\n%s\n' "$marker" "$(cat comment.md)")"
+
+        {
+          echo "verdict=$verdict"
+          echo "comment-md<<__SUGAR_EOF__"
+          cat comment.md
+          echo "__SUGAR_EOF__"
+        } >> "$GITHUB_OUTPUT"
+        cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$POST_COMMENT" = "true" ] && [ -n "${PR_NUMBER:-}" ] && [ -n "${GH_TOKEN:-}" ]; then
+          repo="$GITHUB_REPOSITORY"
+          existing=$(gh api "repos/$repo/issues/$PR_NUMBER/comments" --paginate \
+            --jq "[.[] | select(.body | startswith(\"$marker\"))][0].id" 2>/dev/null)
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh api -X PATCH "repos/$repo/issues/comments/$existing" -f body="$body" >/dev/null \
+              && echo "sugar-diff-comment: updated comment $existing"
+          else
+            gh pr comment "$PR_NUMBER" --repo "$repo" --body "$body" \
+              && echo "sugar-diff-comment: posted new comment"
+          fi
+        else
+          echo "sugar-diff-comment: comment posting skipped (no PR context, token, or disabled)"
+        fi
+
+        if [ "$FAIL_ON_GATE" = "true" ]; then
+          exit "$gate_exit"
+        fi
+        exit 0
