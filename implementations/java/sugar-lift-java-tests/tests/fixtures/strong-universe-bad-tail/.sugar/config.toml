@@ -1,0 +1,7 @@
+# Fixture: a codec whose FULL block is walkable but whose mod-3 TAIL extraction
+# index contains a METHOD CALL. A multiple-of-3 callsite gets the full-block
+# strong row; a non-multiple-of-3 (tail) callsite REFUSES the strong row BY
+# NAME (modulus-N tail uninterpretable) while the weak charset row stands.
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor"]

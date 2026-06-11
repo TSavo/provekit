@@ -3656,17 +3656,23 @@ public final class JavaTestAssertionsRpc {
                     && argsAreStrings && strArgValues.size() == 1 && strArgValues.get(0) != null) {
                 String input = strArgValues.get(0);
                 byte[] bytes = input.getBytes(StandardCharsets.UTF_8);
-                if (bytes.length > 0 && bytes.length % 3 == 0) {
+                int modulus = bytes.length % 3;
+                if (bytes.length == 0) {
+                    // empty input: no blocks, no tail — nothing to pin strongly.
+                } else if (modulus == 0) {
                     ir.add(buildStrongUniverseContract(callee, intArgValues, strArgValues,
                             bytes, strongRegistry, strongTable));
                 } else {
-                    // PHASE 1 honest bound: the mod-3 tail (1/2-byte + pad) is walked
-                    // as a NAMED REFUSAL, not faked. The weak row still stands.
-                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope), methodName,
-                            "strong universe refused: input length " + bytes.length
-                            + " is not a multiple of 3 — the mod-3 tail (Base64.java:740-760, "
-                            + "1/2-byte block + '=' padding) is PHASE 2 and not yet walked; "
-                            + "weak tier (str.chars-in-set) emitted alone"));
+                    // PHASE 2: the mod-3 tail. Walk it through the same machinery.
+                    // buildStrongUniverseContract returns null (with a NAMED refusal
+                    // appended) if the tail sextets/pad could not be walked — then
+                    // the weak str.chars-in-set row stands alone, honestly.
+                    String tailContract = buildStrongUniverseContract(callee, intArgValues,
+                            strArgValues, bytes, strongRegistry, strongTable, diagnostics,
+                            scopePath(scope), scopeClassMethod(scope), methodName);
+                    if (tailContract != null) {
+                        ir.add(tailContract);
+                    }
                 }
             }
         } else {
@@ -4464,6 +4470,50 @@ public final class JavaTestAssertionsRpc {
     private static String buildStrongUniverseContract(
             String callee, List<Long> intArgValues, List<String> strArgValues,
             byte[] inputBytes, StrongUniverseRegistry strong, List<Integer> table) {
+        // mod-0 (full blocks only) path: tail machinery unused, never refuses.
+        return buildStrongUniverseContract(callee, intArgValues, strArgValues,
+                inputBytes, strong, table, null, null, null, null);
+    }
+
+    /**
+     * Tail-aware strong contract builder. For a literal of length 3k (modulus 0)
+     * this emits the k full blocks exactly as before. For length 3k+1 / 3k+2 it
+     * ADDITIONALLY emits the walked mod-3 tail: the 2 or 3 leftover-byte sextet
+     * equations (over the trailing 1/2 bytes), then the '=' pad chars (count from
+     * the literal's modulus, codepoint AST-resolved) when the callee's table is
+     * the vendor's padded (STANDARD) table. Returns null (named refusal appended
+     * to `diagnostics`) if the tail could not be walked — weak row stands.
+     */
+    private static String buildStrongUniverseContract(
+            String callee, List<Long> intArgValues, List<String> strArgValues,
+            byte[] inputBytes, StrongUniverseRegistry strong, List<Integer> table,
+            List<String> diagnostics, String diagPath, String diagItem, String diagDetail) {
+
+        int modulus = inputBytes.length % 3;
+
+        // ── PHASE 2 tail gate: refuse by name if the tail is not fully walkable ──
+        if (modulus != 0) {
+            List<String> tailTrees = strong.tailIndexTrees(modulus);
+            if (tailTrees == null) {
+                if (diagnostics != null) {
+                    diagnostics.add(diagnostic(diagPath, diagItem, diagDetail,
+                        "strong universe tail refused: modulus-" + modulus
+                        + " tail (Base64.java:740-760) carries an index the symbolic "
+                        + "interpreter could not walk; weak str.chars-in-set stands"));
+                }
+                return null;
+            }
+            // If the vendor pads this tail for this table, the pad codepoint must
+            // be AST-resolved or we refuse (never fabricate the '=').
+            if (strong.tableIsPadded(modulus, table) && strong.padCodepoint() == null) {
+                if (diagnostics != null) {
+                    diagnostics.add(diagnostic(diagPath, diagItem, diagDetail,
+                        "strong universe tail refused: modulus-" + modulus
+                        + " tail pads (STANDARD table) but pad codepoint is not AST-walkable"));
+                }
+                return null;
+            }
+        }
 
         String safeName = toSafeName(callee);
         int arity = intArgValues.size();
@@ -4490,8 +4540,8 @@ public final class JavaTestAssertionsRpc {
         bytesJson.append("]");
         varsJson.append("]");
 
-        // per_char: for each 3-byte block, re-instantiate the walked block index
-        // trees onto that block's three vars (b{3k}, b{3k+1}, b{3k+2}).
+        // per_char: for each FULL 3-byte block, re-instantiate the walked block
+        // index trees onto that block's three vars (b{3k}, b{3k+1}, b{3k+2}).
         List<String> blockTrees = strong.blockIndexTrees();   // 4 trees over b0,b1,b2
         List<String> blockVars  = strong.blockVarNames();     // ["b0","b1","b2"]
         StringBuilder perChar = new StringBuilder("[");
@@ -4510,6 +4560,32 @@ public final class JavaTestAssertionsRpc {
                 firstChar = false;
             }
         }
+        // ── PHASE 2: the tail sextet chars over the trailing 1/2 bytes ──
+        // The walked tail trees name b0..b{m-1}; remap them onto the trailing
+        // bytes b{3k}..b{3k+m-1} so they read the literal's leftover bytes.
+        StringBuilder padChars = new StringBuilder();   // "[61,61]" / "[61]" / ""
+        if (modulus != 0) {
+            List<String> tailTrees = strong.tailIndexTrees(modulus);
+            Map<String, String> remap = new LinkedHashMap<>();
+            for (int j = 0; j < modulus; j++) remap.put("b" + j, "b" + (3 * nBlocks + j));
+            for (String tree : tailTrees) {
+                String inst = remapVars(tree, remap);
+                if (!firstChar) perChar.append(",");
+                perChar.append(inst);
+                firstChar = false;
+            }
+            // The '=' pad chars (table-specific; AST-resolved codepoint).
+            if (strong.tableIsPadded(modulus, table)) {
+                int padCount = strong.tailPadCount(modulus);
+                int padCp = strong.padCodepoint();
+                padChars.append("[");
+                for (int j = 0; j < padCount; j++) {
+                    if (j > 0) padChars.append(",");
+                    padChars.append(padCp);
+                }
+                padChars.append("]");
+            }
+        }
         perChar.append("]");
 
         // table codepoints, source order.
@@ -4520,10 +4596,11 @@ public final class JavaTestAssertionsRpc {
         }
         tableJson.append("]");
 
+        String padCharsField = padChars.length() == 0 ? "" : (",\"pad_chars\":" + padChars);
         String payloadJson = "{\"input_bytes\":" + bytesJson
                 + ",\"vars\":" + varsJson
                 + ",\"per_char\":" + perChar
-                + ",\"table\":" + tableJson + "}";
+                + ",\"table\":" + tableJson + padCharsField + "}";
 
         // Carry the payload as a String const (the emitter parses it back).
         String payloadConst = "{\"kind\":\"const\",\"value\":\"" + esc(payloadJson)
@@ -5920,6 +5997,10 @@ public final class JavaTestAssertionsRpc {
         static final StrongUniverseRegistry EMPTY =
                 new StrongUniverseRegistry(Map.of(), null, List.of());
 
+        static final StrongUniverseRegistry EMPTY_TAILS =
+                new StrongUniverseRegistry(Map.of(), null, List.of(),
+                        Map.of(), Map.of(), Map.of(), null, Map.of());
+
         /** callee simple-name → ordered table codepoints (index → codepoint). */
         private final Map<String, List<Integer>> tableByCallee;
         /** The per-output-char index bv-trees for ONE full 3-byte block (4 trees),
@@ -5927,12 +6008,39 @@ public final class JavaTestAssertionsRpc {
         private final List<String> blockIndexTrees;
         /** The byte var names for one block, in accumulation order: ["b0","b1","b2"]. */
         private final List<String> blockVarNames;
+        /** PHASE 2: modulus (1 or 2) → ordered sextet index bv-trees over b0..b{m-1}.
+         *  A modulus absent here = that tail could not be walked → refuse by name. */
+        private final Map<Integer, List<String>> tailIndexTrees;
+        /** modulus → the guard table field name whose `==` guards the pad write. */
+        private final Map<Integer, String> tailPadGuardTable;
+        /** modulus → number of '=' pad chars under that guard (1 or 2). */
+        private final Map<Integer, Integer> tailPadCount;
+        /** The AST-resolved pad codepoint ('='=61), or null if unwalkable. */
+        private final Integer padCodepoint;
+        /** modulus → the pad-guard table's 64 literal codepoints (e.g. STANDARD).
+         *  Used to decide, by CODEPOINT match, whether a callee's table is padded. */
+        private final Map<Integer, List<Integer>> padGuardTableCps;
 
         StrongUniverseRegistry(Map<String, List<Integer>> tableByCallee,
                 List<String> blockIndexTrees, List<String> blockVarNames) {
+            this(tableByCallee, blockIndexTrees, blockVarNames,
+                    Map.of(), Map.of(), Map.of(), null, Map.of());
+        }
+
+        StrongUniverseRegistry(Map<String, List<Integer>> tableByCallee,
+                List<String> blockIndexTrees, List<String> blockVarNames,
+                Map<Integer, List<String>> tailIndexTrees,
+                Map<Integer, String> tailPadGuardTable,
+                Map<Integer, Integer> tailPadCount, Integer padCodepoint,
+                Map<Integer, List<Integer>> padGuardTableCps) {
             this.tableByCallee = Map.copyOf(tableByCallee);
             this.blockIndexTrees = blockIndexTrees == null ? null : List.copyOf(blockIndexTrees);
             this.blockVarNames = List.copyOf(blockVarNames);
+            this.tailIndexTrees = Map.copyOf(tailIndexTrees);
+            this.tailPadGuardTable = Map.copyOf(tailPadGuardTable);
+            this.tailPadCount = Map.copyOf(tailPadCount);
+            this.padCodepoint = padCodepoint;
+            this.padGuardTableCps = Map.copyOf(padGuardTableCps);
         }
 
         boolean isEmpty() {
@@ -5943,6 +6051,18 @@ public final class JavaTestAssertionsRpc {
         List<Integer> tableFor(String callee) { return tableByCallee.get(callee); }
         List<String> blockIndexTrees() { return blockIndexTrees; }
         List<String> blockVarNames() { return blockVarNames; }
+        /** Sextet index bv-trees for the given modulus tail, or null if unwalked. */
+        List<String> tailIndexTrees(int modulus) { return tailIndexTrees.get(modulus); }
+        String tailPadGuardTable(int modulus) { return tailPadGuardTable.get(modulus); }
+        int tailPadCount(int modulus) { return tailPadCount.getOrDefault(modulus, 0); }
+        Integer padCodepoint() { return padCodepoint; }
+        /** True iff the vendor pads this modulus tail AND the given callee table
+         *  (by codepoint identity) is the very table the pad guard names. The pad
+         *  is table-specific: urlsafe skips it, so urlsafe callees get NO pad. */
+        boolean tableIsPadded(int modulus, List<Integer> calleeTable) {
+            List<Integer> guard = padGuardTableCps.get(modulus);
+            return guard != null && guard.equals(calleeTable);
+        }
     }
 
     /**
@@ -6065,15 +6185,46 @@ public final class JavaTestAssertionsRpc {
             for (String a : ambiguous) tableByCallee.remove(a);
             if (tableByCallee.isEmpty()) return StrongUniverseRegistry.EMPTY;
 
-            return new StrongUniverseRegistry(tableByCallee, eqns.indexTrees, eqns.varNames);
+            // Resolve the pad-guard table's literal codepoints (e.g.
+            // STANDARD_ENCODE_TABLE), so the contract builder can decide whether a
+            // given callee's resolved table is the one the vendor pads. The pad is
+            // table-specific (urlsafe skips it); we compare CODEPOINTS, never names.
+            Map<Integer, List<Integer>> padGuardTableCps = new LinkedHashMap<>();
+            for (Map.Entry<Integer, String> ge : eqns.tailPadGuardTable.entrySet()) {
+                List<Integer> cps = corpus.literalArrayValues(ge.getValue());
+                if (cps != null && cps.size() == 64) padGuardTableCps.put(ge.getKey(), cps);
+            }
+
+            return new StrongUniverseRegistry(tableByCallee, eqns.indexTrees, eqns.varNames,
+                    eqns.tailIndexTrees, eqns.tailPadGuardTable, eqns.tailPadCount,
+                    eqns.padCodepoint, padGuardTableCps);
         }
 
-        /** The per-char index equations for one full 3-byte block. */
+        /** The per-char index equations for one full 3-byte block, plus the
+         *  PHASE 2 mod-3 tails (modulus 1 and 2) walked from the same body. */
         private static final class BlockEquations {
             final List<String> indexTrees;  // 4 bv-tree JSON strings (output chars 0..3)
             final List<String> varNames;    // byte var names in accumulation order
-            BlockEquations(List<String> indexTrees, List<String> varNames) {
+            /** modulus (1 or 2) → ordered sextet index bv-trees over b0..b{m-1}.
+             *  Null/absent if that tail could not be walked. */
+            final Map<Integer, List<String>> tailIndexTrees;
+            /** modulus → the guard table field name whose `==` guards the pad
+             *  write in that case (the pad is table-specific). */
+            final Map<Integer, String> tailPadGuardTable;
+            /** modulus → number of '=' pad chars emitted under the guard. */
+            final Map<Integer, Integer> tailPadCount;
+            /** The resolved pad codepoint (AST-walked, e.g. PAD_DEFAULT='='=61), or
+             *  null if the pad ident had no walkable literal value. */
+            final Integer padCodepoint;
+            BlockEquations(List<String> indexTrees, List<String> varNames,
+                    Map<Integer, List<String>> tailIndexTrees,
+                    Map<Integer, String> tailPadGuardTable,
+                    Map<Integer, Integer> tailPadCount, Integer padCodepoint) {
                 this.indexTrees = indexTrees; this.varNames = varNames;
+                this.tailIndexTrees = tailIndexTrees;
+                this.tailPadGuardTable = tailPadGuardTable;
+                this.tailPadCount = tailPadCount;
+                this.padCodepoint = padCodepoint;
             }
         }
 
@@ -6156,7 +6307,54 @@ public final class JavaTestAssertionsRpc {
                 if (tree == null) return null; // refusal already named
                 indexTrees.add(tree);
             }
-            return new BlockEquations(indexTrees, varNames);
+
+            // ── PHASE 2: walk the mod-3 tails (modulus 1 and 2) ──────────────
+            // The vendor's EOF switch (Base64.java:737-760) packs the leftover
+            // 1 or 2 bytes into the SAME work area (m accumulations from 0, no
+            // block-completion reset) and extracts 2 or 3 sextet chars, then —
+            // for the STANDARD table only, behind its own `==` guard — emits the
+            // '=' pad bytes. We interpret each tail sextet index THROUGH THE SAME
+            // interpret(); the pad codepoint is AST-resolved (never typed). A tail
+            // whose index is uninterpretable simply gets no tail entry → the
+            // callsite refuses by name and the weak row stands.
+            Map<Integer, List<String>> tailTrees = new LinkedHashMap<>();
+            for (Map.Entry<Integer, List<ExpressionTree>> te : acc.tailIndexExprs.entrySet()) {
+                int modulus = te.getKey();
+                // Build the work area for `modulus` accumulations from 0:
+                //   w = (((0<<8)+b0)<<8)+b1 ...  (modulus bytes)
+                String tailWork = "{\"kind\":\"const\",\"value\":0}";
+                for (int j = 0; j < modulus; j++) {
+                    String shifted = "{\"kind\":\"ctor\",\"name\":\"bv32.shl\",\"args\":["
+                            + tailWork + ",{\"kind\":\"const\",\"value\":8}]}";
+                    tailWork = "{\"kind\":\"ctor\",\"name\":\"bv32.add\",\"args\":["
+                            + shifted + ",{\"kind\":\"var\",\"name\":\"b" + j + "\"}]}";
+                }
+                List<String> trees = new ArrayList<>();
+                boolean ok = true;
+                for (ExpressionTree idxExpr : te.getValue()) {
+                    String tree = interpret(idxExpr, acc.workLocal, tailWork, corpus, encodeOwner, diagnostics);
+                    if (tree == null) { ok = false; break; } // refusal already named
+                    trees.add(tree);
+                }
+                if (ok && !trees.isEmpty()) tailTrees.put(modulus, trees);
+            }
+
+            // Resolve the pad codepoint from the AST (PAD_DEFAULT='=' → 61), walked
+            // through the SAME resolver the weak tier uses (field ← ctor param ←
+            // super(...) arg ← static-final literal). NEVER a typed '=' / 61.
+            Integer padCp = null;
+            String anyPadIdent = acc.tailPadIdent.values().stream().findFirst().orElse(null);
+            if (anyPadIdent != null) {
+                padCp = corpus.resolveFieldValue(anyPadIdent, 0);
+                if (padCp == null) {
+                    diagnostics.add(diagnostic("<strong-universe-walker>", encodeOwner, "encode",
+                            "strong universe tail refused: pad identifier '" + anyPadIdent
+                            + "' has no walkable literal value — tail pad not pinnable"));
+                }
+            }
+
+            return new BlockEquations(indexTrees, varNames, tailTrees,
+                    acc.tailPadGuardTable, acc.tailPadCount, padCp);
         }
 
         /**
@@ -6265,8 +6463,95 @@ public final class JavaTestAssertionsRpc {
             String workLocal = null;
             int shiftAmount = -1;
             List<ExpressionTree> fullBlockIndexExprs = null;
+            /** PHASE 2 tails: modulus (1 or 2) → ordered `encodeTable[<idx>]` index
+             *  exprs in that switch case (the leftover-byte sextet extractions). */
+            final Map<Integer, List<ExpressionTree>> tailIndexExprs = new LinkedHashMap<>();
+            /** Per modulus: the table field name whose `==`-guard wraps the pad
+             *  write(s) in that case, and the count of pad writes under it. The pad
+             *  IDENTIFIER (resolved to a codepoint elsewhere) — captured by name. */
+            final Map<Integer, String> tailPadGuardTable = new LinkedHashMap<>();
+            final Map<Integer, Integer> tailPadCount = new LinkedHashMap<>();
+            final Map<Integer, String> tailPadIdent = new LinkedHashMap<>();
 
             AccFinder(UniverseWalker.Corpus corpus) { this.corpus = corpus; }
+
+            /**
+             * Walk the EOF `switch (context.modulus)` whose `case 1:` / `case 2:`
+             * bodies emit the leftover-byte sextet chars + the table-guarded '='
+             * pad writes. We record, per case label, the ordered table-index
+             * extraction exprs (walked through the SAME interpret() as the full
+             * block) and the pad-guard structure (guard table + pad ident + count).
+             * Anything else in the case body is ignored; what we DON'T capture
+             * becomes a named refusal at walk time, never a fake.
+             */
+            @Override public Void visitSwitch(SwitchTree st, Void p) {
+                for (CaseTree ct : st.getCases()) {
+                    Integer label = caseConstant(ct);
+                    if (label == null || (label != 1 && label != 2)) continue;
+                    if (tailIndexExprs.containsKey(label)) continue;
+                    List<ExpressionTree> idxs = new ArrayList<>();
+                    for (StatementTree cs : ct.getStatements()) {
+                        ExpressionTree idx = tableIndexWrite(cs);
+                        if (idx != null) { idxs.add(idx); continue; }
+                        // A `if (<table> == T) { buffer[..] = pad; ... }` pad guard.
+                        if (cs instanceof IfTree it) {
+                            ExpressionTree cond = strip(it.getCondition());
+                            if (cond instanceof BinaryTree bt && bt.getKind() == Tree.Kind.EQUAL_TO) {
+                                String l = memberOrIdentName(strip(bt.getLeftOperand()));
+                                String r = memberOrIdentName(strip(bt.getRightOperand()));
+                                // The guard table is the operand naming the LITERAL
+                                // array (STANDARD_ENCODE_TABLE), not the selector
+                                // field (encodeTable). We want the side whose 64
+                                // codepoints are walkable — mirrors the weak tier's
+                                // findPadGuards, which keys on isArrayField (literal).
+                                String guardTbl = null;
+                                if (l != null && corpus.isArrayField(l)) guardTbl = l;
+                                else if (r != null && corpus.isArrayField(r)) guardTbl = r;
+                                lastPadIdent = null;
+                                int[] padInfo = countPadWrites(it.getThenStatement());
+                                if (guardTbl != null && padInfo[0] > 0 && lastPadIdent != null) {
+                                    tailPadGuardTable.putIfAbsent(label, guardTbl);
+                                    tailPadCount.putIfAbsent(label, padInfo[0]);
+                                    tailPadIdent.putIfAbsent(label, lastPadIdent);
+                                }
+                            }
+                        }
+                    }
+                    if (!idxs.isEmpty()) tailIndexExprs.putIfAbsent(label, idxs);
+                }
+                return super.visitSwitch(st, p);
+            }
+
+            /** Integer constant of a `case N:` label, or null. */
+            private Integer caseConstant(CaseTree ct) {
+                List<? extends ExpressionTree> exprs = ct.getExpressions();
+                if (exprs == null || exprs.size() != 1) return null;
+                ExpressionTree e = strip(exprs.get(0));
+                if (e instanceof LiteralTree lt && lt.getValue() instanceof Integer i) return i;
+                return null;
+            }
+
+            /** Count `<buffer>[...] = <ident>;` writes whose RHS is a bare ident in a
+             *  statement subtree; record the (first) pad ident name by side effect.
+             *  Returns {count, 0}. */
+            private int[] countPadWrites(StatementTree st) {
+                final int[] count = {0};
+                new TreeScanner<Void, Void>() {
+                    @Override public Void visitAssignment(AssignmentTree at, Void q) {
+                        ExpressionTree lhs = strip(at.getVariable());
+                        ExpressionTree rhs = strip(at.getExpression());
+                        if (lhs instanceof ArrayAccessTree && rhs instanceof IdentifierTree id) {
+                            count[0]++;
+                            // Capture the pad ident the first time we see one in ANY case.
+                            // Stored under the modulus by the caller via tailPadIdent.
+                            lastPadIdent = id.getName().toString();
+                        }
+                        return super.visitAssignment(at, q);
+                    }
+                }.scan(st, null);
+                return new int[]{count[0], 0};
+            }
+            private String lastPadIdent = null;
 
             @Override public Void visitAssignment(AssignmentTree at, Void p) {
                 if (workLocal == null) {

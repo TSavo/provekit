@@ -539,6 +539,16 @@ pub fn render_b64_blocks_body(payload_json: &str) -> Option<String> {
         let cp_smt = table_ite(&index_smt)?;
         char_terms.push(format!("(str.from_code {})", cp_smt));
     }
+    // PHASE 2 mod-3 tail: the '=' pad chars. These are NOT table-indexed (the pad
+    // is outside the 64-entry alphabet); their codepoint is the AST-resolved pad
+    // value the Java walker pinned (e.g. PAD_DEFAULT='='=61). Absent field (the
+    // mod-0 and urlsafe-tail cases) → no extra chars → byte-identical to before.
+    if let Some(pad_chars) = payload.get("pad_chars").and_then(|v| v.as_array()) {
+        for cp_v in pad_chars {
+            let cp = cp_v.as_i64()?;
+            char_terms.push(format!("(str.from_code {})", cp));
+        }
+    }
     if char_terms.is_empty() {
         return None;
     }
@@ -2193,5 +2203,125 @@ mod b64_strong_tests {
         // Only the block equations can refute it.
         let bad = run_claim("ZmFy");
         assert!(bad.starts_with("unsat"), "alphabet-valid-but-wrong ZmFy must be unsat; got: {bad}");
+    }
+
+    // ── PHASE 2: mod-3 tail emitter (sextet chars + AST-resolved '=' pad) ──
+    // A 2-byte tail ("ba") emits 3 sextet chars over (b0,b1) + 1 pad char; a
+    // 1-byte tail ("f") emits 2 sextet chars over (b0) + 2 pad chars. The sextet
+    // index trees mirror Base64.java case-2 / case-1 (>>10/>>4/<<2 ; >>2/<<4),
+    // masked with 0x3f. The pad codepoint (61='=') is carried in `pad_chars`,
+    // NOT routed through the table-ite (the pad is outside the 64-char alphabet).
+
+    fn tail2_sextet(op: &str, shift: i64) -> serde_json::Value {
+        // work = ((0<<8)+b0)<<8 + b1   (2 accumulations)
+        let acc = serde_json::json!({
+          "kind":"ctor","name":"bv32.add","args":[
+            {"kind":"ctor","name":"bv32.shl","args":[
+              {"kind":"ctor","name":"bv32.add","args":[
+                {"kind":"ctor","name":"bv32.shl","args":[
+                  {"kind":"const","value":0},{"kind":"const","value":8}]},
+                {"kind":"var","name":"b0"}]},
+              {"kind":"const","value":8}]},
+            {"kind":"var","name":"b1"}]
+        });
+        let shifted = serde_json::json!({"kind":"ctor","name":op,"args":[acc, {"kind":"const","value": shift}]});
+        serde_json::json!({"kind":"ctor","name":"bv32.and","args":[shifted, {"kind":"const","value":63}]})
+    }
+    fn tail1_sextet(op: &str, shift: i64) -> serde_json::Value {
+        // work = (0<<8)+b0   (1 accumulation)
+        let acc = serde_json::json!({
+          "kind":"ctor","name":"bv32.add","args":[
+            {"kind":"ctor","name":"bv32.shl","args":[
+              {"kind":"const","value":0},{"kind":"const","value":8}]},
+            {"kind":"var","name":"b0"}]
+        });
+        let shifted = serde_json::json!({"kind":"ctor","name":op,"args":[acc, {"kind":"const","value": shift}]});
+        serde_json::json!({"kind":"ctor","name":"bv32.and","args":[shifted, {"kind":"const","value":63}]})
+    }
+
+    fn tail2_payload() -> Term {
+        // "ba" = [98,97]; case 2: >>10, >>4, <<2 ; + 1 '=' pad.
+        let payload = serde_json::json!({
+            "input_bytes": [98, 97],
+            "vars": ["b0","b1"],
+            "per_char": [
+                tail2_sextet("bv32.lshr", 10),
+                tail2_sextet("bv32.lshr", 4),
+                tail2_sextet("bv32.shl", 2),
+            ],
+            "table": std_table(),
+            "pad_chars": [61],
+        });
+        Term::Const { value: serde_json::Value::String(payload.to_string()), sort: s("String") }
+    }
+    fn tail1_payload() -> Term {
+        // "f" = [102]; case 1: >>2, <<4 ; + 2 '=' pads.
+        let payload = serde_json::json!({
+            "input_bytes": [102],
+            "vars": ["b0"],
+            "per_char": [
+                tail1_sextet("bv32.lshr", 2),
+                tail1_sextet("bv32.shl", 4),
+            ],
+            "table": std_table(),
+            "pad_chars": [61, 61],
+        });
+        Term::Const { value: serde_json::Value::String(payload.to_string()), sort: s("String") }
+    }
+
+    #[test]
+    fn tail_emits_pad_chars_as_literal_codepoints() {
+        let r2 = emit_string_theory_atomic("str.eq-bv-blocks",
+            &[Term::Var { name: "subj".into() }, tail2_payload()]).unwrap();
+        // 3 sextet + 1 pad = 4 chars; pad rendered as (str.from_code 61).
+        assert_eq!(r2.matches("str.from_code").count(), 4, "2-byte tail: 3 sextet + 1 pad: {r2}");
+        assert!(r2.contains("(str.from_code 61)"), "pad '=' (61) literal char missing: {r2}");
+        let r1 = emit_string_theory_atomic("str.eq-bv-blocks",
+            &[Term::Var { name: "subj".into() }, tail1_payload()]).unwrap();
+        // 2 sextet + 2 pad = 4 chars.
+        assert_eq!(r1.matches("str.from_code").count(), 4, "1-byte tail: 2 sextet + 2 pad: {r1}");
+        assert_eq!(r1.matches("(str.from_code 61)").count(), 2, "two pad chars expected: {r1}");
+    }
+
+    fn run_tail_claim(payload: Term, claim: &str) -> String {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let atom = emit_string_theory_atomic("str.eq-bv-blocks",
+            &[Term::Var { name: "subj".into() }, payload]).unwrap();
+        let script = format!(
+            "(set-logic ALL)\n(declare-const subj String)\n\
+             (assert {atom})\n(assert (= subj \"{claim}\"))\n(check-sat)\n"
+        );
+        let mut child = Command::new("z3").args(["-smt2","-in"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn().expect("spawn z3");
+        child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+        String::from_utf8_lossy(&child.wait_with_output().unwrap().stdout).trim().to_string()
+    }
+
+    #[test]
+    fn z3_tail_good_sat_bad_padded_lie_unsat() {
+        use std::process::Command;
+        if Command::new("z3").arg("--version").output().is_err() {
+            eprintln!("z3 absent: skipping b64 tail z3 integration test");
+            return;
+        }
+        // 2-byte tail "ba" -> "YmE=". GOOD claim sat.
+        assert!(run_tail_claim(tail2_payload(), "YmE=").starts_with("sat"),
+            "GOOD 2-byte tail YmE= must be sat");
+        // "YmX=" is alphabet-valid (Y,m,X all in table; '=' is the sworn pad) but
+        // WRONG (3rd char should be E, not X). Weak tier would discharge it; only
+        // the tail sextet equations refute it.
+        assert!(run_tail_claim(tail2_payload(), "YmX=").starts_with("unsat"),
+            "alphabet-valid-but-wrong padded YmX= must be unsat");
+        // A claim with the WRONG pad count ("YmEX" instead of "YmE=") is refuted
+        // by the pinned pad char.
+        assert!(run_tail_claim(tail2_payload(), "YmEX").starts_with("unsat"),
+            "wrong-pad YmEX must be unsat (pad char pinned)");
+        // 1-byte tail "f" -> "Zg==". GOOD sat; alphabet-valid lie "ZX==" unsat.
+        assert!(run_tail_claim(tail1_payload(), "Zg==").starts_with("sat"),
+            "GOOD 1-byte tail Zg== must be sat");
+        assert!(run_tail_claim(tail1_payload(), "ZX==").starts_with("unsat"),
+            "alphabet-valid-but-wrong padded ZX== must be unsat");
     }
 }
