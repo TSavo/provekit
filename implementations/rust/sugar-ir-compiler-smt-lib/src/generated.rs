@@ -722,6 +722,52 @@ fn render_crc_bv_json_bool(
     }
 }
 
+/// Render an MT seeding value-pin SSA payload as a nested `let` chain.
+///
+/// Payload shape (emitted by the Java `MtSeedingWalker`):
+/// ```json
+/// { "binds":  [ {"name":"w0","tree":<bv32-json>}, {"name":"w1","tree":<bv32-json>}, ... ],
+///   "result": <bv32-json referencing bind names via {"kind":"var","name":"wK"}> }
+/// ```
+/// Each bind's `tree` may reference any EARLIER bind name as a `var` node. We
+/// build `(let ((w0 t0)) (let ((w1 t1)) ... result))` so the recurrence shares
+/// sub-terms (linear SMT size) and every bind is in scope for all later binds.
+///
+/// `var` nodes render to the bare SMT symbol (the bind name). The per-bind trees
+/// use the SAME bv32 vocabulary as the CRC pin (`render_crc_bv_json`), so adding
+/// this path touches no existing rendering. A malformed payload → `None` (the
+/// atom is dropped, never approximated); the Java walker only emits well-formed
+/// payloads and self-checks the fold, so a malformed one is a kit bug.
+fn render_mt_let_chain(payload: &serde_json::Value) -> Option<String> {
+    let binds = payload.get("binds")?.as_array()?;
+    let result = payload.get("result")?;
+
+    // `var` nodes carry the SSA bind name; render it as the bare SMT symbol by
+    // mapping each name to itself. (render_crc_bv_json's `var` arm does
+    // `subst.get(name)`, so an identity map yields the symbol verbatim.)
+    let mut subst: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    // Render every bind RHS first (each in scope of the binds declared before it),
+    // accumulating the (name rhs) pairs, then fold the nested lets inside-out.
+    let mut pairs: Vec<(String, String)> = Vec::with_capacity(binds.len());
+    for b in binds {
+        let bname = b.get("name")?.as_str()?.to_string();
+        let tree = b.get("tree")?;
+        let rhs = render_crc_bv_json(tree, &subst)?;
+        // The bind name becomes referenceable by later binds and the result.
+        subst.insert(bname.clone(), bname.clone());
+        pairs.push((bname, rhs));
+    }
+    let result_smt = render_crc_bv_json(result, &subst)?;
+
+    // Fold inside-out: innermost is `result`, wrap each bind from last to first.
+    let mut acc = result_smt;
+    for (bname, rhs) in pairs.into_iter().rev() {
+        acc = format!("(let (({} {})) {})", bname, rhs, acc);
+    }
+    Some(acc)
+}
+
 fn is_string_theory_atomic_predicate(name: &str) -> bool {
     matches!(
         name,
@@ -963,6 +1009,39 @@ fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
         let empty: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
         let walked = render_crc_bv_json(&node, &empty)?;
+        return Some(format!("(= {} {})", asserted, walked));
+    }
+    // ── MT seeding value-pin (paper 26 — inter-procedural seed-state walk) ──
+    // `mt32.eq-seeded(asserted_int_const, ssa_let_chain_payload)`:
+    //   args[0] = the test's asserted reference value (Int const; truncated to bv32)
+    //   args[1] = a String const carrying the SSA `let`-chain JSON. The MT seeding
+    //             chain (624-word initializeState + mixSeedAndState + mixState) and
+    //             the twist (the 624-word regeneration in next()) form a recurrence
+    //             where each word references earlier words; inlining the bv32 tree
+    //             would blow up exponentially. Instead the Java walker emits the
+    //             computation in SSA form — a list of named binds `{name, tree}`
+    //             where each `tree` references earlier names via `var` nodes — plus
+    //             a `result` tree. We render it as a NESTED `let` chain so every
+    //             bind sees all prior binds and sub-terms are shared (linear size).
+    //   No free vars (seed is the literal Nishimura seed, bounds are concrete), so
+    //   it constant-folds in z3 to the genuine reference value.
+    // Rendered: `(= asserted_hex (let ((w0 t0)) (let ((w1 t1)) ... result)))`.
+    // GOOD (vendor-sworn value) → sat → discharged; BAD (wrong value) → unsat →
+    // unsatisfied BY THE WALKED RECURRENCE (a single equation, not a contradiction).
+    if name == "mt32.eq-seeded" && args.len() == 2 {
+        let asserted = match &args[0] {
+            Term::Const { value, .. } => value.as_i64().map(i32_to_bv32_hex)?,
+            _ => return None,
+        };
+        let json_str = match &args[1] {
+            Term::Const {
+                value: serde_json::Value::String(s),
+                sort: Sort::Primitive { name },
+            } if name == "String" => s,
+            _ => return None,
+        };
+        let payload: serde_json::Value = serde_json::from_str(json_str).ok()?;
+        let walked = render_mt_let_chain(&payload)?;
         return Some(format!("(= {} {})", asserted, walked));
     }
     if name == "int32.eq-bv-expr" && args.len() == 2 {

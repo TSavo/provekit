@@ -435,6 +435,12 @@ fn is_bv32_atomic_predicate(name: &str) -> bool {
             // CRC value-pin (paper 26): a self-contained bv32 equality between the
             // test's asserted CRC value and the WALKED closed crc-FOL.
             | "crc32.eq-walked"
+            // MT seeding value-pin (paper 26 — inter-procedural seed-state walk):
+            // a self-contained bv32 equality between the test's asserted reference
+            // value and the WALKED closed MT recurrence (the 624-word seeding chain
+            // + twist), carried as an SSA `let`-chain payload so the deep recurrence
+            // shares sub-terms (no exponential tree blowup).
+            | "mt32.eq-seeded"
     )
 }
 

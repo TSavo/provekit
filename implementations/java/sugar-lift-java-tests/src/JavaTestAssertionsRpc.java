@@ -181,6 +181,12 @@ public final class JavaTestAssertionsRpc {
         // identical to before.
         CrcValuePinRegistry crcValuePins = RecurrenceUniverseWalker.run(compiler, root, diagnostics);
 
+        // MT seeding value-pin (paper 26 — inter-procedural seed-state walk): walks the
+        // vendor's seed→state→draw pipeline for the canonical Nishimura seed and pins
+        // each draw position to the WALKED recurrence (the SSA `let`-chain FOL),
+        // consulted at the nextInt() callsite. Empty registry → byte-identical to before.
+        MtSeedPinRegistry mtSeedPins = MtSeedingWalker.run(compiler, root, diagnostics);
+
         // G3: Load instance-universe — walks receiver classes in the WORKSPACE to pin
         // construction-time facts: new Box(5).get() == 5 BY CONSTRUCTION (ctor→field→getter).
         // Pure final-field-return-only tier; anything more complex is refused by name.
@@ -206,7 +212,7 @@ public final class JavaTestAssertionsRpc {
             // contracts already lifted from the other files. Without this, one bad
             // file in a 229-file vendor test tree drops the entire artifact to GAP.
             try {
-                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, instanceUniverse, javaConstants, ir, diagnostics);
+                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics);
             } catch (Exception e) {
                 diagnostics.add(diagnostic(rel, null, null,
                     "per-file lift skipped (isolated): "
@@ -1887,6 +1893,7 @@ public final class JavaTestAssertionsRpc {
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
+            MtSeedPinRegistry mtSeedPins,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             List<String> ir,
@@ -1969,7 +1976,7 @@ public final class JavaTestAssertionsRpc {
                 if (decl instanceof ClassTree ct) {
                     walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
                             vocab, frameworkKind, ambiguousFramework,
-                            universeRegistry, numericRegistry, strongRegistry, crcValuePins, instanceUniverse, javaConstants, ir, diagnostics, null);
+                            universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, null);
                 }
             }
         }
@@ -2001,6 +2008,7 @@ public final class JavaTestAssertionsRpc {
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
+            MtSeedPinRegistry mtSeedPins,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             List<String> ir,
@@ -2014,11 +2022,11 @@ public final class JavaTestAssertionsRpc {
             if (member instanceof MethodTree mt) {
                 liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry,
-                        crcValuePins, instanceUniverse, javaConstants, classTree, ir, diagnostics);
+                        crcValuePins, mtSeedPins, instanceUniverse, javaConstants, classTree, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
                 walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework,
-                        universeRegistry, numericRegistry, strongRegistry, crcValuePins, instanceUniverse, javaConstants, ir, diagnostics, className);
+                        universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, className);
             }
         }
     }
@@ -2041,6 +2049,7 @@ public final class JavaTestAssertionsRpc {
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
+            MtSeedPinRegistry mtSeedPins,
             InstanceUniverse instanceUniverse,
             JavaConstantTable javaConstants,
             ClassTree classTree,
@@ -2103,10 +2112,19 @@ public final class JavaTestAssertionsRpc {
                 crcValuePins.isEmpty() ? Map.of()
                                        : reconstructCrcInputs(body);
 
+        // MT seeding value-pin: per receiver constructed via `new MT(<seed>)`, the
+        // DRAW POSITION asserted = (# of nextInt() calls on that receiver) - 1 (the
+        // bound call is the last). We reconstruct it textually, expanding literal-
+        // bounded advance loops `for(i=0;i<K;i++) recv.nextInt();`. A receiver whose
+        // advance count is not statically reconstructable is absent (no pin applies).
+        Map<String, Integer> mtReceiverDraws =
+                mtSeedPins.isEmpty() ? Map.of()
+                                     : reconstructMtDraws(body, classTree);
+
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry, crcValuePins, crcReceiverInputs, instanceUniverse,
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse,
                         ssaBindings, mutatedLocals, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
@@ -3144,7 +3162,9 @@ public final class JavaTestAssertionsRpc {
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
+            MtSeedPinRegistry mtSeedPins,
             Map<String, String> crcReceiverInputs,
+            Map<String, Integer> mtReceiverDraws,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3259,7 +3279,7 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, crcReceiverInputs, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
@@ -3290,7 +3310,9 @@ public final class JavaTestAssertionsRpc {
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
+            MtSeedPinRegistry mtSeedPins,
             Map<String, String> crcReceiverInputs,
+            Map<String, Integer> mtReceiverDraws,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3358,7 +3380,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
-                universeRegistry, numericRegistry, strongRegistry, crcValuePins, crcReceiverInputs, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+                universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -3427,7 +3449,7 @@ public final class JavaTestAssertionsRpc {
         // binding substitution needed; pass empty maps.
         liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
                 UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, StrongUniverseRegistry.EMPTY,
-                CrcValuePinRegistry.EMPTY, Map.of(), InstanceUniverse.EMPTY,
+                CrcValuePinRegistry.EMPTY, MtSeedPinRegistry.EMPTY, Map.of(), Map.of(), InstanceUniverse.EMPTY,
                 Collections.emptyMap(), Collections.emptySet(), ir, diagnostics);
     }
 
@@ -3464,7 +3486,9 @@ public final class JavaTestAssertionsRpc {
             NumericUniverseRegistry numericRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
+            MtSeedPinRegistry mtSeedPins,
             Map<String, String> crcReceiverInputs,
+            Map<String, Integer> mtReceiverDraws,
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
@@ -3701,6 +3725,40 @@ public final class JavaTestAssertionsRpc {
                             + "' update input is not a reconstructable literal — non-literal input, floor only"));
                     }
                 }
+
+                // ── THE MT SEEDING VALUE-PIN RUNG (paper 26 — inter-procedural
+                //    seed-state walk): if the receiver was constructed via
+                //    `new MersenneTwister(<canonical seed>)` AND this test asserts a
+                //    value on its nextInt() at draw position P (reconstructed), emit a
+                //    self-contained pin: the WALKED seeding+twist recurrence at P ==
+                //    the test's asserted reference value. GOOD (vendor-sworn) → sat →
+                //    discharged; BAD (wrong) → unsat → unsatisfied BY THE WALKED
+                //    RECURRENCE (the real seed→state→draw computation, not a within-
+                //    test contradiction). Real callsite (mt.nextInt()), real vendor
+                //    value, or named refusal — nothing between. ──
+                if (!mtSeedPins.isEmpty() && callee.equals("nextInt")
+                        && init instanceof NewClassTree nctMt) {
+                    String mtClass = newClassSimpleName(nctMt);
+                    MtSeedPin pin = mtClass == null ? null : mtSeedPins.forClass(mtClass);
+                    Integer drawPos = mtReceiverDraws.get(receiverName);
+                    if (pin != null && drawPos != null) {
+                        MtSeedPinPos posPin = pin.at(drawPos);
+                        if (posPin != null) {
+                            ir.add(buildMtSeedPinContract(locationBase, posPin, intVal.getAsLong()));
+                        } else {
+                            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                                methodName, "mt seeding value-pin: draw position " + drawPos
+                                + " is beyond the walked reference-vector row (floor only)"));
+                        }
+                    } else if (pin != null) {
+                        // Receiver seed not the canonical Nishimura seed, or the draw
+                        // position is not statically reconstructable → floor only, named.
+                        diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                            methodName, "mt seeding value-pin refused: receiver '" + receiverName
+                            + "' was not constructed with the canonical Nishimura seed over a "
+                            + "reconstructable draw position — pin not applicable (floor only)"));
+                    }
+                }
             }
         } else if (strVal.isPresent()) {
             // String expected — emit string-sort equality contract (#euf# federated)
@@ -3877,6 +3935,139 @@ public final class JavaTestAssertionsRpc {
              + ",\"name\":\"" + esc(contractName) + "\""
              + ",\"outBinding\":\"out\""
              + ",\"inv\":{\"kind\":\"and\",\"operands\":[" + atom + "]}}";
+    }
+
+    /** Build the MT seeding value-pin contract: `mt32.eq-seeded(asserted, ssaPayload)`.
+     *  The SSA `let`-chain payload carries the walked seeding+twist recurrence at the
+     *  asserted draw position; the emitter renders it as a nested `let` (shared
+     *  sub-terms) and z3 folds it to the genuine reference value. */
+    private static String buildMtSeedPinContract(
+            String locationBase, MtSeedPinPos pin, long assertedValue) {
+        String contractName = locationBase + "::mt-seed-value-pin";
+        String intSort = "\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}";
+        String assertedConst = "{\"kind\":\"const\",\"value\":" + assertedValue + "," + intSort + "}";
+        // The SSA payload's bv32 nodes have no `sort` field; carried as a String const
+        // (the emitter parses it back and renders the let-chain from raw JSON), exactly
+        // as the crc value-pin and base64 strong tier carry their payloads.
+        String payload = "{\"kind\":\"const\",\"value\":\"" + esc(pin.payloadJson)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}";
+        String atom = "{\"kind\":\"atomic\",\"name\":\"mt32.eq-seeded\",\"args\":["
+                + assertedConst + "," + payload + "]}";
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":[" + atom + "]}}";
+    }
+
+    /**
+     * Reconstruct, per MT receiver local, the asserted DRAW POSITION — but ONLY for
+     * receivers constructed via `new MersenneTwister(<canonical Nishimura seed>)`.
+     * The draw position = (number of `<recv>.nextInt()` calls in the method) - 1
+     * (the bound call is the last; the earlier calls advance the generator). Advance
+     * loops `for(i=0;i<K;i++) recv.nextInt();` over a literal bound are expanded. A
+     * receiver whose seed is not the canonical literal, or whose advance count is not
+     * statically reconstructable, is ABSENT from the map (the pin does not apply —
+     * floor only). All facts from tree nodes; the seed is matched to the canonical
+     * Nishimura seed {0x123,0x234,0x345,0x456}.
+     */
+    private static Map<String, Integer> reconstructMtDraws(BlockTree body, ClassTree classTree) {
+        // 1) Find receivers constructed with the canonical seed: `MT r = new MT(seedArg);`.
+        Map<String, Boolean> canonicalReceiver = new LinkedHashMap<>();
+        for (StatementTree st : body.getStatements()) {
+            if (!(st instanceof VariableTree vt) || vt.getInitializer() == null) continue;
+            if (!(stripParensN(vt.getInitializer()) instanceof NewClassTree nct)) continue;
+            if (nct.getArguments().size() != 1) continue;
+            int[] seed = resolveSeedLiteral(nct.getArguments().get(0), classTree);
+            if (seed != null && java.util.Arrays.equals(seed, MtSeedingWalker.NISHIMURA_SEED))
+                canonicalReceiver.put(vt.getName().toString(), Boolean.TRUE);
+        }
+        if (canonicalReceiver.isEmpty()) return Map.of();
+
+        // 2) Count nextInt() calls per canonical receiver, expanding literal-bounded
+        //    advance loops. The asserted draw = count - 1.
+        Map<String, Integer> calls = new LinkedHashMap<>();
+        for (String r : canonicalReceiver.keySet()) calls.put(r, 0);
+        countNextIntCalls(body, calls);
+
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> e : calls.entrySet()) {
+            int n = e.getValue();
+            if (n >= 1) out.put(e.getKey(), n - 1); // last call is the asserted draw
+        }
+        return out;
+    }
+
+    /** Count `<recv>.nextInt()` invocations into `calls`, expanding literal-bounded
+     *  `for(int v=0; v</<= <lit>; v++) <recv>.nextInt();` advance loops. */
+    private static void countNextIntCalls(Tree node, Map<String, Integer> calls) {
+        new com.sun.source.util.TreeScanner<Void, Void>() {
+            @Override public Void visitMethodInvocation(MethodInvocationTree mi, Void x) {
+                if (mi.getMethodSelect() instanceof MemberSelectTree ms
+                        && "nextInt".equals(ms.getIdentifier().toString())
+                        && ms.getExpression() instanceof IdentifierTree recId) {
+                    String r = recId.getName().toString();
+                    if (calls.containsKey(r)) calls.merge(r, 1, Integer::sum);
+                }
+                return super.visitMethodInvocation(mi, x);
+            }
+            @Override public Void visitForLoop(ForLoopTree flt, Void x) {
+                // Expand a literal-bounded advance loop: each call inside counts `iters`×.
+                Integer iters = literalForIterations(flt);
+                if (iters != null && iters > 0) {
+                    Map<String, Integer> inner = new LinkedHashMap<>();
+                    for (String r : calls.keySet()) inner.put(r, 0);
+                    countNextIntCalls(flt.getStatement(), inner);
+                    for (Map.Entry<String, Integer> e : inner.entrySet())
+                        if (e.getValue() > 0) calls.merge(e.getKey(), e.getValue() * iters, Integer::sum);
+                    return null; // already accounted (do not double-count via super)
+                }
+                return super.visitForLoop(flt, x);
+            }
+        }.scan(node, null);
+    }
+
+    /** Iteration count of `for(int v=<lit>; v </<= <lit>; v++)`, or null if not so. */
+    private static Integer literalForIterations(ForLoopTree flt) {
+        List<? extends StatementTree> inits = flt.getInitializer();
+        if (inits.size() != 1 || !(inits.get(0) instanceof VariableTree vt) || vt.getInitializer() == null) return null;
+        OptionalLong lo = asIntLiteral(vt.getInitializer());
+        if (lo.isEmpty()) return null;
+        if (!(stripParensN(flt.getCondition()) instanceof BinaryTree cond)) return null;
+        Tree.Kind k = cond.getKind();
+        if (k != Tree.Kind.LESS_THAN && k != Tree.Kind.LESS_THAN_EQUAL) return null;
+        OptionalLong hi = asIntLiteral(cond.getRightOperand());
+        if (hi.isEmpty()) return null;
+        long end = (k == Tree.Kind.LESS_THAN_EQUAL) ? hi.getAsLong() + 1 : hi.getAsLong();
+        long iters = end - lo.getAsLong();
+        return iters < 0 ? 0 : (int) iters;
+    }
+
+    /** Resolve a `new MT(seedArg)` seed argument to a literal int[]:
+     *  - inline `new int[]{...}` / `{...}` array → its literal entries.
+     *  - an identifier referring to a class field `int[] NAME = {...}` → its entries.
+     *  Returns null if not a reconstructable literal int[]. */
+    private static int[] resolveSeedLiteral(ExpressionTree arg, ClassTree classTree) {
+        arg = stripParensN(arg);
+        if (arg instanceof NewArrayTree nat && nat.getInitializers() != null)
+            return literalIntArray(nat.getInitializers());
+        if (arg instanceof IdentifierTree id) {
+            String name = id.getName().toString();
+            for (Tree m : classTree.getMembers()) {
+                if (m instanceof VariableTree vt && vt.getName().contentEquals(name)
+                        && vt.getInitializer() instanceof NewArrayTree nat && nat.getInitializers() != null)
+                    return literalIntArray(nat.getInitializers());
+            }
+        }
+        return null;
+    }
+    private static int[] literalIntArray(List<? extends ExpressionTree> inits) {
+        int[] out = new int[inits.size()];
+        for (int i = 0; i < out.length; i++) {
+            OptionalLong v = asIntLiteral(inits.get(i));
+            if (v.isEmpty()) return null;
+            out[i] = (int) v.getAsLong();
+        }
+        return out;
     }
 
     /** Simple class name of a `new Cls(...)` expression, or null. */
@@ -5592,6 +5783,16 @@ public final class JavaTestAssertionsRpc {
                 return literalDim(dims.get(0));
             }
 
+            /** Allocated first-dimension length of a field by its simple NAME (the
+             *  MT seeding walker resolves `state.length` by binding the `state` param
+             *  to the field `mt = new int[N]`; N is read from the allocation, JLS
+             *  §12.4). Returns null if the field is not so allocated. */
+            Integer allocatedArrayLengthByName(String field) {
+                List<ExpressionTree> dims = arrayDims(field);
+                if (dims == null || dims.isEmpty()) return null;
+                return literalDim(dims.get(0));
+            }
+
             /** Dimension expressions of a field's `new int[..][..]` initializer. */
             private List<ExpressionTree> arrayDims(String field) {
                 VariableTree vt = fields.get(field);
@@ -5627,6 +5828,9 @@ public final class JavaTestAssertionsRpc {
             List<Integer> literalArrayValues(String fieldName) {
                 VariableTree vt = fields.get(fieldName);
                 if (vt == null || !(vt.getInitializer() instanceof NewArrayTree nat)) return null;
+                // A DIMENSIONED allocation `new int[N]` has no initializer list (it is
+                // not a literal-valued array) → no literal values.
+                if (nat.getInitializers() == null) return null;
                 List<Integer> out = new ArrayList<>();
                 for (ExpressionTree e : nat.getInitializers()) {
                     Integer v = literalCharOrInt(stripParens(e));
@@ -8337,6 +8541,1163 @@ public final class JavaTestAssertionsRpc {
                     diagnostics.add(diagnostic("<" + TAG + ">", cls, method, TAG + ": " + reason));
             }
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // MT SEEDING WALKER (paper 26 — inter-procedural seed-state recurrence).
+    //
+    // The strong-tier oath: testMakotoNishimura swears `mt.nextInt() == refValue`
+    // for the canonical Nishimura seed {0x123,0x234,0x345,0x456}. To CHECK that
+    // sworn value against the WALKED recurrence (no extraction, no authored value)
+    // we must, inter-procedurally, walk the vendor's seed→state→draw pipeline:
+    //
+    //   constructor(int[] seed)
+    //     → setSeedInternal(seed)
+    //       → fillStateMersenneTwister(mt, seed)
+    //           → initializeState(state)        [forward i++, bound state.length]
+    //           → mixSeedAndState(state, seed)  [countdown k--, cursors i,j, wrap]
+    //           → mixState(state, nextIndex)    [countdown k--, cursor i,   wrap]
+    //           → state[0] = UPPER_MASK
+    //     → mti = N
+    //   nextInt() → next() → (when mti>=N) the twist [three k++ sweeps] + tempering
+    //
+    // THREE pieces of new machinery, each a NAMED REFUSAL if it cannot resolve:
+    //  (1) INTER-PROCEDURAL PARAM-ARRAY .length + IDENTITY: a loop bound that is
+    //      `state.length` / `Math.max(state.length, seed.length)` / `stateSize-1`
+    //      resolves by binding the `state` param to the field `int[] mt = new int[N]`
+    //      (N a static-final/literal) flowing in at the call chain; `seed.length` for
+    //      the LITERAL seed = 4. Math.max/min of two concrete ints folds. A length
+    //      not statically resolvable through the chain → REFUSE BY NAME.
+    //  (2) FIELD-ARRAY STORE: the store target is the FIELD array `mt` (bound to the
+    //      `state` param); writes are threaded across the static-method chain. A field
+    //      array read/written outside the resolvable chain → REFUSE.
+    //  (3) STATIC-METHOD CALL CHAIN: each static method body is inlined/substituted,
+    //      binding the array param to the flowing array. A call that escapes the
+    //      walkable set → REFUSE BY NAME.
+    //
+    // DELIVERABLE = FOL. The seeding+twist recurrence is deep and each word
+    // references earlier words, so we emit it in SSA form (a `let`-chain payload):
+    // a list of named binds, each bv32-tree referencing earlier names, plus a
+    // `result` tree (the asserted draw, tempered). The SMT emitter renders it as a
+    // nested `let` (shared sub-terms, linear size); z3 constant-folds it (the seed
+    // is literal, the bounds concrete → no free vars) to the genuine value.
+    //
+    // SELF-VERIFY: the kit independently re-computes the concrete value with the
+    // SAME 32-bit arithmetic and refuses if the emitted SSA payload does not fold
+    // to it (the bad-twin guard — a faked draw is the only failure).
+    //
+    // WALK OR SILENCE: every constant/op/index/length is read from a tree node; an
+    // uninterpretable node REFUSES BY NAME at that node. ADDITIVE: emits one
+    // registry consulted at the nextInt() callsite; the discharge path gains one
+    // new atom arm (`mt32.eq-seeded`) and is otherwise byte-identical.
+    // ════════════════════════════════════════════════════════════════════
+    static final class MtSeedingWalker {
+        static final String TAG = "mt-seeding-walker";
+        /** The canonical Nishimura test seed — the seed testMakotoNishimura swears
+         *  its reference vectors over. We bake it (it is the vendor's own test seed)
+         *  and match it against the test's `new MersenneTwister(<literal seed>)`. */
+        static final int[] NISHIMURA_SEED = {0x123, 0x234, 0x345, 0x456};
+        /** How many draw positions to pin (the reference vector's first row). */
+        static final int DRAWS = 8;
+
+        static MtSeedPinRegistry run(JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
+            List<Path> vendorDirs;
+            try {
+                vendorDirs = UniverseWalker.readVendorSourceDirs(workspaceRoot);
+            } catch (IOException e) {
+                return MtSeedPinRegistry.EMPTY;
+            }
+            if (vendorDirs.isEmpty()) return MtSeedPinRegistry.EMPTY;
+            List<Path> vendorFiles = new ArrayList<>();
+            for (Path dir : vendorDirs) {
+                if (!Files.isDirectory(dir)) continue;
+                try (Stream<Path> walk = Files.walk(dir)) {
+                    walk.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".java"))
+                        .sorted().forEach(vendorFiles::add);
+                } catch (IOException e) { /* dir walk error — silent */ }
+            }
+            if (vendorFiles.isEmpty()) return MtSeedPinRegistry.EMPTY;
+
+            Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
+            for (Path src : vendorFiles) {
+                try {
+                    String source = Files.readString(src, StandardCharsets.UTF_8);
+                    JavaFileObject fo = new StringJavaFileObject(src.toString(), source);
+                    StandardJavaFileManager fm = compiler.getStandardFileManager(null, null, StandardCharsets.UTF_8);
+                    JavacTask task = (JavacTask) compiler.getTask(null, fm, d -> {}, List.of("--release", "21"), null, List.of(fo));
+                    for (CompilationUnitTree cu : task.parse())
+                        for (Tree decl : cu.getTypeDecls())
+                            if (decl instanceof ClassTree ct)
+                                classTreeByName.putIfAbsent(ct.getSimpleName().toString(), ct);
+                } catch (IOException e) { /* per-file parse error — skip */ }
+            }
+            if (classTreeByName.isEmpty()) return MtSeedPinRegistry.EMPTY;
+
+            Set<String> identityBridges = UniverseWalker.loadPlatformAxioms(workspaceRoot, diagnostics);
+            UniverseWalker.Corpus corpus = new UniverseWalker.Corpus(classTreeByName, identityBridges);
+
+            Map<String, MtSeedPin> pinsByClass = new LinkedHashMap<>();
+            for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
+                MtSeedPin pin = walkClass(ce.getKey(), ce.getValue(), corpus, diagnostics);
+                if (pin != null) pinsByClass.put(ce.getKey(), pin);
+            }
+            return pinsByClass.isEmpty() ? MtSeedPinRegistry.EMPTY : new MtSeedPinRegistry(pinsByClass);
+        }
+
+        /** Walk ONE class as a Mersenne-Twister-shaped generator, or null (named
+         *  refusal). Returns one pin carrying per-draw-position payloads. */
+        private static MtSeedPin walkClass(String cls, ClassTree ct, UniverseWalker.Corpus corpus, List<String> diagnostics) {
+            final String M = "<mt-seeding>";
+            // ── MT-shape discriminator (gates BEFORE any refusal so non-MT vendor
+            //    classes stay silent): a constructor `Cls(int[] p)` whose body enters
+            //    a seeding chain. A class without it is simply not an MT generator. ──
+            MethodTree ctor = findArrayCtor(ct);
+            if (ctor == null) return null; // not MT-shaped — silent (no shape)
+            // The state buffer: a `final int[] <fld> = new int[...]` field. Found by
+            // shape REGARDLESS of whether its dimension resolves — so an MT-shaped
+            // generator whose buffer length is NOT statically resolvable through the
+            // chain is REFUSED BY NAME (machinery #1), not silently skipped.
+            String stateField = findStateField(ct, corpus);
+            if (stateField == null) return null; // MT-shaped ctor but no int[] buffer — silent
+            Integer stateLen = corpus.allocatedArrayLengthByName(stateField);
+            if (stateLen == null || stateLen <= 0) {
+                refuse(diagnostics, cls, M, "inter-procedural param-array length: state field `" + stateField
+                        + "` is not allocated `new int[<literal/static-final N>]` — the buffer length is not "
+                        + "statically resolvable through the call chain, no termination guarantee (no guess)");
+                return null;
+            }
+            // ── SSA store for the field-array `mt` + scalars; threaded across the
+            //    inlined static-method bodies, all bound to the literal seed. ──
+            try {
+                // Resolve the static-method chain by SHAPE-FREE name binding through
+                // calls: ctor → setSeedInternal(seed) → fillStateMersenneTwister(mt,seed)
+                // → {initializeState, mixSeedAndState, mixState}. A call that escapes the
+                // walkable class REFUSES BY NAME (machinery #3). Located by the call
+                // graph, never by name.
+                ChainMethods chain = resolveChain(ct, ctor, stateField, corpus, cls, M, diagnostics);
+                if (chain == null) return null; // named refusal already emitted
+                SsaState st = new SsaState();
+                // Bind the seed param to the literal Nishimura seed (each entry a const).
+                st.seed = NISHIMURA_SEED.clone();
+                st.stateLen = stateLen;
+                // (3) inline initializeState(state)
+                walkInitializeState(chain.initializeState, st, corpus, cls, M, diagnostics);
+                // (3) inline mixSeedAndState(state, seed) → returns nextIndex (concrete)
+                int nextIndex = walkMixSeedAndState(chain.mixSeedAndState, st, corpus, cls, M, diagnostics);
+                // (3) inline mixState(state, nextIndex)
+                walkMixState(chain.mixState, nextIndex, st, corpus, cls, M, diagnostics);
+                // state[0] = UPPER_MASK (the final non-zero guarantee), walked from the
+                // fillState body's trailing `state[0] = (int) UPPER_MASK_LONG;`.
+                applyFillStateTail(chain.fillState, st, corpus, cls, M, diagnostics);
+
+                // Self-check: the seeded state must fold to the genuine initial state.
+                int[] genuineState = referenceSeed(NISHIMURA_SEED, stateLen);
+                for (int idx = 0; idx < stateLen; idx++) {
+                    Integer folded = st.foldWord(idx);
+                    if (folded == null) {
+                        refuse(diagnostics, cls, M, "self-check: seeded state word " + idx
+                                + " did not fold to a concrete value — recurrence incomplete");
+                        return null;
+                    }
+                    if (folded.intValue() != genuineState[idx]) {
+                        refuse(diagnostics, cls, M, "self-check FAILED: seeded state word " + idx
+                                + " folds to " + Integer.toHexString(folded) + " but the independent recompute is "
+                                + Integer.toHexString(genuineState[idx]) + " — walk is unsound, refusing (no faked state)");
+                        return null;
+                    }
+                }
+                diagnostics.add(diagnostic("<" + TAG + ">", cls, M, TAG + ": seeding folds to the genuine "
+                        + stateLen + "-word MT initial state for the literal Nishimura seed (verified against an "
+                        + "independent recompute) — state[0]=" + hex(genuineState[0]) + " state[1]=" + hex(genuineState[1])
+                        + " state[" + (stateLen - 1) + "]=" + hex(genuineState[stateLen - 1])));
+
+                // ── THE TWIST + tempering: walk next()'s regeneration over the seeded
+                //    store, then read+temper the asserted draw position. ──
+                MethodTree next = findNext(ct, stateField, corpus);
+                if (next == null) {
+                    refuse(diagnostics, cls, M, "twist: no `next()` of the MT regeneration+tempering shape found — "
+                            + "seeding pinned, draw not connectable");
+                    return null;
+                }
+                // Walk the twist ONCE over a fork of the seeded store (mti>=N branch).
+                SsaState twisted = st.fork();
+                if (!walkTwist(next, twisted, stateField, corpus, cls, M, diagnostics)) return null;
+
+                // For each draw position, the tempered word mt[pos]. (All positions
+                // 0..DRAWS-1 are within one twist sweep; mti starts at 0 after twist.)
+                MtSeedPinPos[] pins = new MtSeedPinPos[DRAWS];
+                int[] genuineDraws = referenceDraws(NISHIMURA_SEED, stateLen, DRAWS);
+                for (int pos = 0; pos < DRAWS; pos++) {
+                    String drawTree = walkTemper(next, twisted, stateField, pos, corpus, cls, M, diagnostics);
+                    if (drawTree == null) return null; // named refusal already emitted
+                    // Self-check the draw folds to the genuine reference value.
+                    Integer folded = twisted.foldTree(drawTree);
+                    if (folded == null || folded.intValue() != genuineDraws[pos]) {
+                        refuse(diagnostics, cls, M, "self-check FAILED: draw[" + pos + "] folds to "
+                                + (folded == null ? "<open>" : hex(folded)) + " but the independent recompute is "
+                                + hex(genuineDraws[pos]) + " — twist/tempering unsound, refusing (no faked draw)");
+                        return null;
+                    }
+                    String payload = twisted.payloadJson(drawTree);
+                    pins[pos] = new MtSeedPinPos(pos, payload, genuineDraws[pos]);
+                }
+                diagnostics.add(diagnostic("<" + TAG + ">", cls, M, TAG + ": twist+tempering walked — "
+                        + DRAWS + " draw positions pinned to the genuine reference vector (each verified against "
+                        + "an independent recompute); draw[0]=" + hex(genuineDraws[0]) + " draw[1]=" + hex(genuineDraws[1])));
+                return new MtSeedPin(cls, pins);
+            } catch (UnwalkableMt e) {
+                // A named refusal was already emitted at the defeating node.
+                return null;
+            }
+        }
+
+        // ── refusal signal: thrown from deep helpers; the named diagnostic is
+        //    emitted at the throw site so the break is LOCATED. ──
+        private static final class UnwalkableMt extends RuntimeException {
+            UnwalkableMt() { super(null, null, false, false); }
+        }
+        private static void refuse(List<String> diagnostics, String cls, String method, String reason) {
+            if (diagnostics != null)
+                diagnostics.add(diagnostic("<" + TAG + ">", cls, method, TAG + ": " + reason));
+        }
+        private static void bail(List<String> diagnostics, String cls, String method, String reason) {
+            refuse(diagnostics, cls, method, reason);
+            throw new UnwalkableMt();
+        }
+        private static String hex(int v) { return "0x" + Integer.toHexString(v); }
+
+        // ── shape gates ─────────────────────────────────────────────────────
+        /** A `final int[] <fld> = new int[<dim>]` instance field (1-dimensional). The
+         *  dimension need NOT resolve here — walkClass refuses by name if it does not
+         *  (so an MT-shaped buffer with a non-literal length is named, not skipped). */
+        private static String findStateField(ClassTree ct, UniverseWalker.Corpus corpus) {
+            for (Tree m : ct.getMembers()) {
+                if (!(m instanceof VariableTree vt)) continue;
+                if (!isIntArrayType(vt.getType())) continue;
+                if (!(vt.getInitializer() instanceof NewArrayTree nat)) continue;
+                if (nat.getDimensions() == null || nat.getDimensions().size() != 1) continue;
+                return vt.getName().toString();
+            }
+            return null;
+        }
+        /** A constructor taking exactly one `int[]` parameter. */
+        private static MethodTree findArrayCtor(ClassTree ct) {
+            for (Tree m : ct.getMembers()) {
+                if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                if (!mt.getName().contentEquals("<init>")) continue;
+                List<? extends VariableTree> ps = mt.getParameters();
+                if (ps.size() == 1 && isIntArrayType(ps.get(0).getType())) return mt;
+            }
+            return null;
+        }
+
+        /** Resolved static-method bodies of the seeding chain (located by the call
+         *  graph from the ctor, never by name). */
+        private static final class ChainMethods {
+            MethodTree fillState;        // fillStateMersenneTwister(int[] state, int[] seed)
+            MethodTree initializeState;  // initializeState(int[] state)
+            MethodTree mixSeedAndState;  // mixSeedAndState(int[] state, int[] seed) -> int
+            MethodTree mixState;         // mixState(int[] state, int startIndex)
+        }
+
+        /** Thread the constructor's call chain to the three core static seeding
+         *  methods. ctor → setSeedInternal(seed) → fillStateMersenneTwister(mt, seed)
+         *  → {initializeState, mixSeedAndState, mixState}. Located by following the
+         *  call edges; a call that escapes the class's own methods → REFUSE. */
+        private static ChainMethods resolveChain(ClassTree ct, MethodTree ctor, String stateField,
+                UniverseWalker.Corpus corpus, String cls, String M, List<String> diagnostics) {
+            Map<String, MethodTree> byName = methodsByName(ct);
+            // ctor body: a single call `setSeedInternal(<param>)` (the seed param).
+            MethodTree setSeed = followSingleCall(ctor, byName, cls, M, diagnostics,
+                    "constructor must call a single seeding method `setSeedInternal(seed)`");
+            if (setSeed == null) return null;
+            // setSeedInternal body: a call `fillStateMersenneTwister(<field>, seed)`.
+            MethodTree fillState = followCallTo(setSeed, byName, cls, M, diagnostics,
+                    "seeding method must call `fillStateMersenneTwister(mt, seed)`");
+            if (fillState == null) return null;
+            // fillState body: calls initializeState(state), mixSeedAndState(state,seed),
+            // mixState(state, nextIndex). Locate each by its argument arity/shape.
+            ChainMethods c = new ChainMethods();
+            c.fillState = fillState;
+            for (StatementTree st : fillState.getBody().getStatements()) {
+                MethodInvocationTree call = asCallStmt(st);
+                if (call == null) {
+                    // also: `final int nextIndex = mixSeedAndState(...);` (var-init call)
+                    if (st instanceof VariableTree vt && vt.getInitializer() instanceof MethodInvocationTree mi)
+                        call = mi;
+                }
+                if (call == null) continue;
+                String name = callSimpleName(call);
+                MethodTree target = name == null ? null : byName.get(name + "/" + call.getArguments().size());
+                if (target == null) continue;
+                int argc = call.getArguments().size();
+                if (argc == 1) c.initializeState = target;
+                else if (argc == 2 && returnsInt(target)) c.mixSeedAndState = target;
+                else if (argc == 2) c.mixState = target;
+            }
+            if (c.initializeState == null || c.mixSeedAndState == null || c.mixState == null) {
+                bail(diagnostics, cls, M, "static-method call chain: fillStateMersenneTwister does not call all three "
+                        + "of initializeState/mixSeedAndState/mixState within the walkable class — chain escapes");
+            }
+            return c;
+        }
+
+        private static Map<String, MethodTree> methodsByName(ClassTree ct) {
+            Map<String, MethodTree> out = new LinkedHashMap<>();
+            for (Tree m : ct.getMembers())
+                if (m instanceof MethodTree mt && mt.getBody() != null)
+                    out.put(mt.getName().toString() + "/" + mt.getParameters().size(), mt);
+            return out;
+        }
+        private static MethodTree followSingleCall(MethodTree from, Map<String, MethodTree> byName,
+                String cls, String M, List<String> diagnostics, String why) {
+            for (StatementTree st : from.getBody().getStatements()) {
+                MethodInvocationTree call = asCallStmt(st);
+                if (call == null) continue;
+                String name = callSimpleName(call);
+                MethodTree t = name == null ? null : byName.get(name + "/" + call.getArguments().size());
+                if (t != null) return t;
+            }
+            bail(diagnostics, cls, M, "static-method call chain: " + why + " — call escapes the walkable class");
+            return null;
+        }
+        private static MethodTree followCallTo(MethodTree from, Map<String, MethodTree> byName,
+                String cls, String M, List<String> diagnostics, String why) {
+            final MethodTree[] found = {null};
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitMethodInvocation(MethodInvocationTree mi, Void x) {
+                    if (found[0] == null) {
+                        String name = callSimpleName(mi);
+                        MethodTree t = name == null ? null : byName.get(name + "/" + mi.getArguments().size());
+                        if (t != null && t.getModifiers().getFlags().contains(Modifier.STATIC)) found[0] = t;
+                    }
+                    return super.visitMethodInvocation(mi, x);
+                }
+            }.scan(from.getBody(), null);
+            if (found[0] == null) bail(diagnostics, cls, M, "static-method call chain: " + why + " — call escapes the walkable class");
+            return found[0];
+        }
+        private static MethodInvocationTree asCallStmt(StatementTree st) {
+            if (st instanceof ExpressionStatementTree est && est.getExpression() instanceof MethodInvocationTree mi)
+                return mi;
+            return null;
+        }
+        private static String callSimpleName(MethodInvocationTree mi) {
+            ExpressionTree sel = mi.getMethodSelect();
+            if (sel instanceof IdentifierTree id) return id.getName().toString();
+            if (sel instanceof MemberSelectTree ms) return ms.getIdentifier().toString();
+            return null;
+        }
+        private static boolean returnsInt(MethodTree mt) {
+            return mt.getReturnType() instanceof PrimitiveTypeTree ptt && ptt.getPrimitiveTypeKind() == TypeKind.INT;
+        }
+
+        // ── SSA store ───────────────────────────────────────────────────────
+        /** SSA-threaded symbolic store for the field-array state words + scalars.
+         *  Each (re)assignment mints a fresh `wN` bind whose tree references earlier
+         *  binds via `var` nodes; the concrete fold is cached so loop indices resolve
+         *  and the per-step self-check runs. The emitted payload is a list of binds +
+         *  a result tree → the SMT emitter's nested `let` chain (shared sub-terms). */
+        private static final class SsaState {
+            int[] seed;
+            int stateLen;
+            int counter = 0;
+            final Map<Integer, String> wordName = new LinkedHashMap<>();   // word idx → ssa name
+            final Map<String, String> scalarName = new LinkedHashMap<>();  // scalar → ssa name
+            final List<String[]> binds = new ArrayList<>();                // ordered (name, treeJson)
+            final Map<String, Integer> foldByName = new LinkedHashMap<>();  // ssa name → concrete value
+            // per-loop concrete induction/cursor bindings (k, i, j, startIndex, ...)
+            final Map<String, Integer> concretes = new LinkedHashMap<>();
+            // names classified as CURSORS (concrete control counters / indices) for the
+            // method currently being walked — the complement are DATA scalars whose
+            // symbolic bv32 tree is threaded (never collapsed to a const). A name is a
+            // cursor iff the body ever does `name++/--` or `name = <literal>` (a counter
+            // reset), or it is the loop induction variable. Set per-method before walk.
+            final Set<String> cursors = new LinkedHashSet<>();
+
+            SsaState fork() {
+                SsaState s = new SsaState();
+                s.seed = seed; s.stateLen = stateLen; s.counter = counter;
+                s.wordName.putAll(wordName); s.scalarName.putAll(scalarName);
+                s.binds.addAll(binds); s.foldByName.putAll(foldByName);
+                s.concretes.putAll(concretes); s.cursors.addAll(cursors);
+                return s;
+            }
+            /** Mint a fresh SSA bind for `tree` with concrete `value`; return its name. */
+            private String mint(String tree, int value) {
+                String name = "w" + (counter++);
+                binds.add(new String[]{name, tree});
+                foldByName.put(name, value);
+                return name;
+            }
+            /** Bind state word `idx` to `tree` (concrete `value`), minting an SSA name. */
+            void writeWord(int idx, String tree, int value) { wordName.put(idx, mint(tree, value)); }
+            /** Bind scalar `s` to `tree` (concrete `value`), minting an SSA name. */
+            void writeScalar(String s, String tree, int value) { scalarName.put(s, mint(tree, value)); }
+            String wordVar(int idx) {
+                String n = wordName.get(idx);
+                return n == null ? null : "{\"kind\":\"var\",\"name\":\"" + n + "\"}";
+            }
+            String scalarVar(String s) {
+                String n = scalarName.get(s);
+                return n == null ? null : "{\"kind\":\"var\",\"name\":\"" + n + "\"}";
+            }
+            Integer foldWord(int idx) {
+                String n = wordName.get(idx);
+                return n == null ? null : foldByName.get(n);
+            }
+            Integer foldScalar(String s) {
+                String n = scalarName.get(s);
+                return n == null ? null : foldByName.get(n);
+            }
+            /** Fold a closed tree (over var nodes already in foldByName + consts/ctors). */
+            Integer foldTree(String tree) { return MtFold.fold(tree, foldByName); }
+
+            // The interpreter pairs a symbolic bv32 tree with its concrete fold value.
+            // We thread both so loop indices resolve and the per-step self-check runs.
+            String stateArrayName; // the field/param name bound to the state array
+            /** The SSA `let`-chain payload JSON for the emitter (binds + result). */
+            String payloadJson(String resultTree) {
+                StringBuilder sb = new StringBuilder("{\"binds\":[");
+                for (int i = 0; i < binds.size(); i++) {
+                    if (i > 0) sb.append(',');
+                    sb.append("{\"name\":\"").append(binds.get(i)[0]).append("\",\"tree\":")
+                      .append(binds.get(i)[1]).append('}');
+                }
+                sb.append("],\"result\":").append(resultTree).append('}');
+                return sb.toString();
+            }
+        }
+
+        // ── the bv32 expression interpreter (SSA-aware) ─────────────────────
+        /** A walked value: the symbolic bv32 tree + its concrete fold. */
+        private static final class Val {
+            final String tree; final int v;
+            Val(String tree, int v) { this.tree = tree; this.v = v; }
+        }
+        private static Val constVal(int v) { return new Val("{\"kind\":\"const\",\"value\":" + v + "}", v); }
+        private static Val bin(String op, Val l, Val r, int folded) {
+            return new Val("{\"kind\":\"ctor\",\"name\":\"" + op + "\",\"args\":[" + l.tree + "," + r.tree + "]}", folded);
+        }
+
+        /** Interpret a vendor expression into a walked bv32 Val over the SSA store.
+         *  Reads EVERY constant/op/index/mask from a tree node; an uninterpretable
+         *  node REFUSES BY NAME (located) and throws. Concrete vars (induction/cursor)
+         *  come from `st.concretes`; `seed[j]` from the literal seed; `state[idx]` from
+         *  the word SSA; local scalars from the scalar SSA. */
+        private static Val interp(ExpressionTree e, SsaState st, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            e = stripP(e);
+            if (e instanceof TypeCastTree tc) return interp(tc.getExpression(), st, corpus, cls, M, diagnostics);
+            if (e instanceof LiteralTree lt) {
+                Object val = lt.getValue();
+                if (val instanceof Integer i) return constVal(i);
+                if (val instanceof Long l) return constVal((int) (long) l);
+                bail(diagnostics, cls, M, "twist/seed expr: non-int literal `" + lt + "`");
+            }
+            if (e instanceof IdentifierTree id) {
+                String n = id.getName().toString();
+                if (st.concretes.containsKey(n)) return constVal(st.concretes.get(n));
+                String sv = st.scalarVar(n);
+                if (sv != null) return new Val(sv, st.foldScalar(n));
+                if (corpus.isStaticFinal(n)) {
+                    Integer fv = corpus.resolveFieldValue(n, 0);
+                    if (fv != null) return constVal(fv);
+                }
+                bail(diagnostics, cls, M, "seed/twist expr: identifier `" + n + "` is neither a threaded cursor, "
+                        + "a scalar in the SSA store, nor a resolvable static-final int — free variable, refusing");
+            }
+            if (e instanceof MemberSelectTree ms) {
+                // `Class.FIELD` static-final (e.g. UPPER_MASK_LONG) or `arr.length`.
+                String sel = ms.getIdentifier().toString();
+                if (sel.equals("length")) {
+                    String base = simpleName(stripP(ms.getExpression()));
+                    if (base != null && st.stateArrayName != null && base.equals(st.stateArrayName))
+                        return constVal(st.stateLen);
+                    // seed.length for the literal seed
+                    if (base != null && base.equals("seed")) return constVal(st.seed.length);
+                    Integer len = corpus.allocatedArrayLengthByName(base);
+                    if (len != null) return constVal(len);
+                }
+                String fname = ms.getIdentifier().toString();
+                if (corpus.isStaticFinal(fname)) {
+                    Integer fv = corpus.resolveFieldValue(fname, 0);
+                    if (fv != null) return constVal(fv);
+                }
+                bail(diagnostics, cls, M, "seed/twist expr: member-select `" + oneLine(ms) + "` is not a resolvable "
+                        + "static-final int or known array length — refusing");
+            }
+            if (e instanceof ArrayAccessTree aat) {
+                String base = simpleName(stripP(aat.getExpression()));
+                Integer idx = concreteIdx(aat.getIndex(), st, corpus, cls, M, diagnostics);
+                if (base == null || idx == null)
+                    bail(diagnostics, cls, M, "seed/twist expr: array read `" + oneLine(aat) + "` has unresolved base/index");
+                if (base.equals("seed")) {
+                    if (idx < 0 || idx >= st.seed.length)
+                        bail(diagnostics, cls, M, "seed read index " + idx + " out of literal-seed bounds");
+                    return constVal(st.seed[idx]);
+                }
+                // a static-final literal int[] (e.g. MAG01) read.
+                List<Integer> lits = corpus.literalArrayValues(base);
+                if (lits != null) {
+                    if (idx < 0 || idx >= lits.size())
+                        bail(diagnostics, cls, M, "static-final array `" + base + "` read index " + idx + " out of bounds");
+                    // THE MAG01 LOW-BIT GATE: a 2-element static-final array read at a
+                    // DATA-DEPENDENT index (`y & 1`, depending on the twisted state) is
+                    // walked SYMBOLICALLY as `ite(idx==1, A[1], A[0])` — the FOL keeps
+                    // the dependence on the computed low bit (never collapsed to the
+                    // taken branch). A pure literal/cursor index resolves to a const.
+                    if (lits.size() == 2 && isDataDependentIndex(aat.getIndex(), st)) {
+                        Val idxVal = interp(aat.getIndex(), st, corpus, cls, M, diagnostics);
+                        String cond = "{\"kind\":\"ctor\",\"name\":\"bv32.eq\",\"args\":["
+                                + idxVal.tree + ",{\"kind\":\"const\",\"value\":1}]}";
+                        String tree = "{\"kind\":\"ctor\",\"name\":\"bv32.ite\",\"args\":[" + cond + ","
+                                + "{\"kind\":\"const\",\"value\":" + lits.get(1) + "},"
+                                + "{\"kind\":\"const\",\"value\":" + lits.get(0) + "}]}";
+                        return new Val(tree, lits.get(idx));
+                    }
+                    return constVal(lits.get(idx));
+                }
+                // the state array word
+                String wv = st.wordVar(idx);
+                if (wv == null)
+                    bail(diagnostics, cls, M, "state read `" + base + "[" + idx + "]` has no SSA word — recurrence base incomplete");
+                return new Val(wv, st.foldWord(idx));
+            }
+            if (e instanceof MethodInvocationTree mi) {
+                // Math.max / Math.min of two now-concrete ints → folds.
+                String name = callSimpleName(mi);
+                if (("max".equals(name) || "min".equals(name)) && mi.getArguments().size() == 2) {
+                    Val a = interp(mi.getArguments().get(0), st, corpus, cls, M, diagnostics);
+                    Val b = interp(mi.getArguments().get(1), st, corpus, cls, M, diagnostics);
+                    int r = "max".equals(name) ? Math.max(a.v, b.v) : Math.min(a.v, b.v);
+                    return constVal(r);
+                }
+                bail(diagnostics, cls, M, "seed/twist expr: call `" + oneLine(mi) + "` is not a foldable Math.max/min — escapes the walkable set");
+            }
+            if (e instanceof ConditionalExpressionTree cet) {
+                // `<cmp> ? A : B` — the sign-conditional reconstruction. Walk both arms.
+                String condBool = interpBool(cet.getCondition(), st, corpus, cls, M, diagnostics);
+                boolean condConcrete = foldBool(cet.getCondition(), st, corpus, cls, M, diagnostics);
+                Val a = interp(cet.getTrueExpression(), st, corpus, cls, M, diagnostics);
+                Val b = interp(cet.getFalseExpression(), st, corpus, cls, M, diagnostics);
+                String tree = "{\"kind\":\"ctor\",\"name\":\"bv32.ite\",\"args\":[" + condBool + "," + a.tree + "," + b.tree + "]}";
+                return new Val(tree, condConcrete ? a.v : b.v);
+            }
+            if (e instanceof UnaryTree ut && ut.getKind() == Tree.Kind.UNARY_MINUS) {
+                Val a = interp(ut.getExpression(), st, corpus, cls, M, diagnostics);
+                return new Val("{\"kind\":\"ctor\",\"name\":\"bv32.neg\",\"args\":[" + a.tree + "]}", -a.v);
+            }
+            if (e instanceof BinaryTree bt) {
+                Tree.Kind k = bt.getKind();
+                if (k == Tree.Kind.MINUS) {
+                    Val l = interp(bt.getLeftOperand(), st, corpus, cls, M, diagnostics);
+                    Val r = interp(bt.getRightOperand(), st, corpus, cls, M, diagnostics);
+                    String negR = "{\"kind\":\"ctor\",\"name\":\"bv32.neg\",\"args\":[" + r.tree + "]}";
+                    Val nr = new Val(negR, -r.v);
+                    return bin("bv32.add", l, nr, l.v + (-r.v));
+                }
+                String op = switch (k) {
+                    case LEFT_SHIFT -> "bv32.shl";
+                    case RIGHT_SHIFT, UNSIGNED_RIGHT_SHIFT -> "bv32.lshr";
+                    case AND -> "bv32.and"; case OR -> "bv32.or"; case XOR -> "bv32.xor";
+                    case PLUS -> "bv32.add"; case MULTIPLY -> "bv32.mul";
+                    default -> null;
+                };
+                if (op == null)
+                    bail(diagnostics, cls, M, "seed/twist expr: unsupported binary operator " + k + " in `" + oneLine(bt) + "`");
+                Val l = interp(bt.getLeftOperand(), st, corpus, cls, M, diagnostics);
+                Val r = interp(bt.getRightOperand(), st, corpus, cls, M, diagnostics);
+                int folded = switch (k) {
+                    case LEFT_SHIFT -> l.v << (r.v & 31);
+                    case RIGHT_SHIFT, UNSIGNED_RIGHT_SHIFT -> l.v >>> (r.v & 31);
+                    case AND -> l.v & r.v; case OR -> l.v | r.v; case XOR -> l.v ^ r.v;
+                    case PLUS -> l.v + r.v; case MULTIPLY -> l.v * r.v;
+                    default -> 0;
+                };
+                return bin(op, l, r, folded);
+            }
+            bail(diagnostics, cls, M, "seed/twist expr: uninterpretable node " + e.getKind() + " (" + oneLine(e) + ")");
+            return null; // unreachable
+        }
+
+        /** A comparison condition → bv32 bool tree (for the sign-gate ite). */
+        private static String interpBool(ExpressionTree cond, SsaState st, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            cond = stripP(cond);
+            if (!(cond instanceof BinaryTree bt))
+                bail(diagnostics, cls, M, "seed/twist gate: condition `" + oneLine(cond) + "` is not a comparison");
+            String smt = switch (((BinaryTree) cond).getKind()) {
+                case EQUAL_TO -> "bv32.eq"; case NOT_EQUAL_TO -> "bv32.ne"; case LESS_THAN -> "bv32.slt";
+                default -> null;
+            };
+            if (smt == null)
+                bail(diagnostics, cls, M, "seed/twist gate: comparison operator " + ((BinaryTree) cond).getKind() + " unsupported");
+            Val l = interp(((BinaryTree) cond).getLeftOperand(), st, corpus, cls, M, diagnostics);
+            Val r = interp(((BinaryTree) cond).getRightOperand(), st, corpus, cls, M, diagnostics);
+            return "{\"kind\":\"ctor\",\"name\":\"" + smt + "\",\"args\":[" + l.tree + "," + r.tree + "]}";
+        }
+        private static boolean foldBool(ExpressionTree cond, SsaState st, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            BinaryTree bt = (BinaryTree) stripP(cond);
+            Val l = interp(bt.getLeftOperand(), st, corpus, cls, M, diagnostics);
+            Val r = interp(bt.getRightOperand(), st, corpus, cls, M, diagnostics);
+            return switch (bt.getKind()) {
+                case EQUAL_TO -> l.v == r.v; case NOT_EQUAL_TO -> l.v != r.v;
+                case LESS_THAN -> l.v < r.v; case LESS_THAN_EQUAL -> l.v <= r.v;
+                case GREATER_THAN -> l.v > r.v; case GREATER_THAN_EQUAL -> l.v >= r.v;
+                default -> false;
+            };
+        }
+
+        /** Resolve an index expression to a concrete int over the SSA store's concrete
+         *  cursors + static-finals; a non-resolvable index REFUSES (store unsound). */
+        private static Integer concreteIdx(ExpressionTree e, SsaState st, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            e = stripP(e);
+            if (e instanceof LiteralTree lt) {
+                Object v = lt.getValue();
+                if (v instanceof Integer i) return i;
+                if (v instanceof Long l) return (int) (long) l;
+                return null;
+            }
+            if (e instanceof IdentifierTree id) {
+                String n = id.getName().toString();
+                if (st.concretes.containsKey(n)) return st.concretes.get(n);
+                // A threaded scalar (e.g. the twist's `y`) whose fold is concrete also
+                // resolves an index soundly — the whole twist folds for the literal seed.
+                Integer sf = st.foldScalar(n);
+                if (sf != null) return sf;
+                if (corpus.isStaticFinal(n)) return corpus.resolveFieldValue(n, 0);
+                return null;
+            }
+            if (e instanceof MemberSelectTree ms && corpus.isStaticFinal(ms.getIdentifier().toString()))
+                return corpus.resolveFieldValue(ms.getIdentifier().toString(), 0);
+            if (e instanceof BinaryTree bt) {
+                Integer l = concreteIdx(bt.getLeftOperand(), st, corpus, cls, M, diagnostics);
+                Integer r = concreteIdx(bt.getRightOperand(), st, corpus, cls, M, diagnostics);
+                if (l == null || r == null) return null;
+                return switch (bt.getKind()) {
+                    case PLUS -> l + r; case MINUS -> l - r; case MULTIPLY -> l * r; case AND -> l & r;
+                    default -> null;
+                };
+            }
+            if (e instanceof TypeCastTree tc) return concreteIdx(tc.getExpression(), st, corpus, cls, M, diagnostics);
+            return null;
+        }
+
+        /** True if `e` references a threaded SCALAR (e.g. the twist's `y`) — i.e. the
+         *  index is data-dependent on the computed state, not a pure literal/cursor.
+         *  Used to decide whether a 2-element static-final read is the symbolic MAG01
+         *  low-bit gate (data-dependent) or a constant (cursor/literal index). */
+        private static boolean isDataDependentIndex(ExpressionTree e, SsaState st) {
+            final boolean[] dep = {false};
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitIdentifier(IdentifierTree id, Void x) {
+                    String n = id.getName().toString();
+                    if (st.scalarName.containsKey(n) && !st.concretes.containsKey(n)) dep[0] = true;
+                    return null;
+                }
+            }.scan(e, null);
+            return dep[0];
+        }
+
+        /** Execute one straight-line statement in a seeding/twist method body against
+         *  the SSA store. Handles: local var decl, scalar assign, `arr[idx] = expr`
+         *  store, and the in-body `if (i>=bound) { arr[0]=...; i=1; }` wrap (driven
+         *  concretely). Anything else REFUSES BY NAME (located). */
+        private static void execStmt(StatementTree st, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            st = unwrap(st);
+            if (st instanceof VariableTree vt) {
+                if (vt.getInitializer() == null) return;
+                if (isIntArrayType(vt.getType())) return; // array alloc, no store
+                String name = vt.getName().toString();
+                Val v = interp(vt.getInitializer(), s, corpus, cls, M, diagnostics);
+                // CURSOR (concrete control counter / index: i, j, stateSize, startIndex)
+                // → thread the concrete value only. DATA scalar (mt, y, a, b, c, mtNext)
+                // → thread the SYMBOLIC bv32 tree (never collapsed to a const). The
+                // classifier (classifyCursors) decided which from the body's structure.
+                if (s.cursors.contains(name)) s.concretes.put(name, v.v);
+                else s.writeScalar(name, v.tree, v.v);
+                return;
+            }
+            if (st instanceof ExpressionStatementTree est) {
+                ExpressionTree ex = est.getExpression();
+                if (ex instanceof AssignmentTree at) { execAssign(at, s, corpus, cls, M, diagnostics); return; }
+                // Cursor increment/decrement: `i++`, `++i`, `i--`, `--i` on a threaded
+                // concrete cursor (data-independent control flow). Updates the concrete.
+                if (ex instanceof UnaryTree ut) {
+                    Tree.Kind k = ut.getKind();
+                    String n = simpleName(stripP(ut.getExpression()));
+                    if (n != null && s.concretes.containsKey(n)
+                            && (k == Tree.Kind.POSTFIX_INCREMENT || k == Tree.Kind.PREFIX_INCREMENT
+                                || k == Tree.Kind.POSTFIX_DECREMENT || k == Tree.Kind.PREFIX_DECREMENT)) {
+                        int delta = (k == Tree.Kind.POSTFIX_INCREMENT || k == Tree.Kind.PREFIX_INCREMENT) ? 1 : -1;
+                        s.concretes.put(n, s.concretes.get(n) + delta);
+                        return;
+                    }
+                    bail(diagnostics, cls, M, "seed/twist body: unary `" + oneLine(ut) + "` is not a threaded-cursor inc/dec");
+                }
+                // Compound cursor update: `i += 1` etc. on a concrete cursor.
+                if (ex instanceof CompoundAssignmentTree cat) {
+                    String n = simpleName(stripP(cat.getVariable()));
+                    if (n != null && s.concretes.containsKey(n)) {
+                        Integer d = concreteIdx(cat.getExpression(), s, corpus, cls, M, diagnostics);
+                        if (d != null) {
+                            int cur = s.concretes.get(n);
+                            int nv = switch (cat.getKind()) {
+                                case PLUS_ASSIGNMENT -> cur + d; case MINUS_ASSIGNMENT -> cur - d;
+                                case MULTIPLY_ASSIGNMENT -> cur * d; default -> cur;
+                            };
+                            s.concretes.put(n, nv); return;
+                        }
+                    }
+                    bail(diagnostics, cls, M, "seed/twist body: compound `" + oneLine(cat) + "` is not a threaded-cursor update");
+                }
+                if (ex instanceof MethodInvocationTree) return; // a void call (none expected) — ignore
+                bail(diagnostics, cls, M, "seed/twist body: unsupported expression statement `" + oneLine(ex) + "`");
+            }
+            if (st instanceof IfTree it) {
+                // Concrete-guard wrap: `if (i>=stateSize) { state[0]=state[stateSize-1]; i=1; }`.
+                // The guard folds concretely (cursor counters), so we take exactly the
+                // live branch — no symbolic branch, the control flow is data-independent.
+                boolean taken = foldBool(it.getCondition(), s, corpus, cls, M, diagnostics);
+                if (taken) execBlock(it.getThenStatement(), s, corpus, cls, M, diagnostics);
+                else if (it.getElseStatement() != null) execBlock(it.getElseStatement(), s, corpus, cls, M, diagnostics);
+                return;
+            }
+            bail(diagnostics, cls, M, "seed/twist body: uninterpretable statement " + st.getKind() + " (" + oneLine(st) + ")");
+        }
+        private static void execBlock(StatementTree body, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            if (body instanceof BlockTree bt) for (StatementTree x : bt.getStatements()) execStmt(x, s, corpus, cls, M, diagnostics);
+            else execStmt(body, s, corpus, cls, M, diagnostics);
+        }
+        private static void execAssign(AssignmentTree at, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            ExpressionTree lhs = stripP(at.getVariable());
+            if (lhs instanceof ArrayAccessTree aat) {
+                String base = simpleName(stripP(aat.getExpression()));
+                Integer idx = concreteIdx(aat.getIndex(), s, corpus, cls, M, diagnostics);
+                if (base == null || idx == null || !base.equals(s.stateArrayName))
+                    bail(diagnostics, cls, M, "field-array store: `" + oneLine(lhs) + "` is not a concrete-index write "
+                            + "to the bound state array — refusing");
+                Val v = interp(at.getExpression(), s, corpus, cls, M, diagnostics);
+                s.writeWord(idx, v.tree, v.v);
+                return;
+            }
+            String sname = simpleName(lhs);
+            if (sname != null) {
+                // CURSOR assign (`i = 1`, `state[0]`-cursor reset) → concrete update;
+                // DATA scalar value assign (`mt = ...`, `y = ...`) → SSA symbolic tree.
+                Val v = interp(at.getExpression(), s, corpus, cls, M, diagnostics);
+                if (s.cursors.contains(sname) || s.concretes.containsKey(sname)) s.concretes.put(sname, v.v);
+                else s.writeScalar(sname, v.tree, v.v);
+                return;
+            }
+            bail(diagnostics, cls, M, "seed/twist body: assignment LHS is neither a scalar nor a state element `" + oneLine(lhs) + "`");
+        }
+        private static StatementTree unwrap(StatementTree st) { return st; }
+
+        // ── the three seeding methods, inlined over the field-array store ───
+        /** initializeState(state): `state[0]=seed0; for(i=1;i<state.length;i++) state[i]=f(state[i-1],i)`.
+         *  The forward i++ loop, bound state.length=N (resolved). */
+        private static void walkInitializeState(MethodTree mt, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            s.stateArrayName = paramName(mt, 0); // bind `state` param to the field array
+            classifyCursors(mt, s);
+            BlockTree body = mt.getBody();
+            ForLoopTree loop = null;
+            for (StatementTree st : body.getStatements()) {
+                if (st instanceof ForLoopTree flt) { loop = flt; break; }
+                execStmt(st, s, corpus, cls, M, diagnostics); // preamble: `long mt=...; state[0]=(int)mt;`
+            }
+            if (loop == null) bail(diagnostics, cls, M, "initializeState: no carrier for-loop found");
+            walkForward(loop, s, corpus, cls, M, diagnostics);
+        }
+        /** mixSeedAndState(state, seed): countdown `for(k=Math.max(...);k>0;k--)` with
+         *  mutable cursors i,j + concrete wrap resets. Returns the next index i. */
+        private static int walkMixSeedAndState(MethodTree mt, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            s.stateArrayName = paramName(mt, 0);
+            classifyCursors(mt, s);
+            BlockTree body = mt.getBody();
+            ForLoopTree loop = null;
+            for (StatementTree st : body.getStatements()) {
+                if (st instanceof ForLoopTree flt) { loop = flt; break; }
+                execStmt(st, s, corpus, cls, M, diagnostics); // `int stateSize=state.length; int i=1,j=0;`
+            }
+            if (loop == null) bail(diagnostics, cls, M, "mixSeedAndState: no countdown for-loop found");
+            walkCountdown(loop, s, corpus, cls, M, diagnostics);
+            // the method returns `i`; read the concrete cursor.
+            Integer i = s.concretes.get("i");
+            if (i == null) bail(diagnostics, cls, M, "mixSeedAndState: post-loop next index cursor `i` not threaded");
+            return i;
+        }
+        /** mixState(state, startIndex): countdown `for(k=stateSize-1;k>0;k--)` with cursor i. */
+        private static void walkMixState(MethodTree mt, int startIndex, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            s.stateArrayName = paramName(mt, 0);
+            classifyCursors(mt, s);
+            String startParam = paramName(mt, 1);
+            s.concretes.put(startParam, startIndex); // bind the startIndex arg concretely
+            BlockTree body = mt.getBody();
+            ForLoopTree loop = null;
+            for (StatementTree st : body.getStatements()) {
+                if (st instanceof ForLoopTree flt) { loop = flt; break; }
+                execStmt(st, s, corpus, cls, M, diagnostics); // `int stateSize=state.length; int i=startIndex;`
+            }
+            if (loop == null) bail(diagnostics, cls, M, "mixState: no countdown for-loop found");
+            walkCountdown(loop, s, corpus, cls, M, diagnostics);
+        }
+        /** The fillState tail `state[0] = (int) UPPER_MASK_LONG;` — walked, not faked. */
+        private static void applyFillStateTail(MethodTree fillState, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            s.stateArrayName = paramName(fillState, 0);
+            for (StatementTree st : fillState.getBody().getStatements()) {
+                if (st instanceof ExpressionStatementTree est && est.getExpression() instanceof AssignmentTree at
+                        && stripP(at.getVariable()) instanceof ArrayAccessTree aat) {
+                    Integer idx = concreteIdx(aat.getIndex(), s, corpus, cls, M, diagnostics);
+                    if (idx != null && idx == 0) { execAssign(at, s, corpus, cls, M, diagnostics); return; }
+                }
+            }
+            bail(diagnostics, cls, M, "fillState tail: `state[0] = UPPER_MASK` non-zero guarantee not found");
+        }
+
+        /** Walk a forward `for(int v=lo; v < bound; v++)` loop, threading v concretely
+         *  and executing the body each step. Bound resolved via interp (state.length). */
+        private static void walkForward(ForLoopTree flt, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            VariableTree vt = (VariableTree) flt.getInitializer().get(0);
+            String v = vt.getName().toString();
+            int lo = interp(vt.getInitializer(), s, corpus, cls, M, diagnostics).v;
+            BinaryTree cond = (BinaryTree) stripP(flt.getCondition());
+            int bound = interp(cond.getRightOperand(), s, corpus, cls, M, diagnostics).v;
+            boolean le = cond.getKind() == Tree.Kind.LESS_THAN_EQUAL;
+            int end = le ? bound + 1 : bound;
+            for (int iv = lo; iv < end; iv++) {
+                s.concretes.put(v, iv);
+                execBlock(flt.getStatement(), s, corpus, cls, M, diagnostics);
+            }
+            s.concretes.remove(v);
+        }
+        /** Walk a countdown `for(int k=<hi>; k>0; k--)` loop, threading k concretely and
+         *  executing the body (which mutates cursors i,j + writes state). The body's
+         *  concrete-guard wraps are taken live by execStmt. */
+        private static void walkCountdown(ForLoopTree flt, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            VariableTree vt = (VariableTree) flt.getInitializer().get(0);
+            String k = vt.getName().toString();
+            int hi = interp(vt.getInitializer(), s, corpus, cls, M, diagnostics).v;
+            if (hi < 0 || hi > 8192) bail(diagnostics, cls, M, "countdown loop bound " + hi + " out of sane range");
+            for (int kv = hi; kv > 0; kv--) {
+                s.concretes.put(k, kv);
+                execBlock(flt.getStatement(), s, corpus, cls, M, diagnostics);
+            }
+            s.concretes.remove(k);
+        }
+        private static String paramName(MethodTree mt, int idx) {
+            return mt.getParameters().get(idx).getName().toString();
+        }
+
+        /** Classify the CURSOR names in a method body: a name is a cursor (concrete
+         *  control counter / array index, never carrying data) iff the body EVER does
+         *  `name++/--` / `++/--name` or assigns it a bare literal (`name = <int lit>`),
+         *  OR it is a `for` induction variable. Data scalars (assigned via arithmetic
+         *  over other scalars/words) are the complement; their symbolic bv32 tree is
+         *  threaded and never collapsed. Adds to `s.cursors`. */
+        private static void classifyCursors(MethodTree mt, SsaState s) {
+            s.cursors.clear();
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitUnary(UnaryTree ut, Void x) {
+                    Tree.Kind k = ut.getKind();
+                    if (k == Tree.Kind.POSTFIX_INCREMENT || k == Tree.Kind.PREFIX_INCREMENT
+                            || k == Tree.Kind.POSTFIX_DECREMENT || k == Tree.Kind.PREFIX_DECREMENT) {
+                        String n = simpleName(stripP(ut.getExpression()));
+                        if (n != null) s.cursors.add(n);
+                    }
+                    return super.visitUnary(ut, x);
+                }
+                @Override public Void visitAssignment(AssignmentTree at, Void x) {
+                    String n = simpleName(stripP(at.getVariable()));
+                    if (n != null && stripP(at.getExpression()) instanceof LiteralTree) s.cursors.add(n);
+                    return super.visitAssignment(at, x);
+                }
+                @Override public Void visitForLoop(ForLoopTree flt, Void x) {
+                    for (StatementTree it : flt.getInitializer())
+                        if (it instanceof VariableTree vt) s.cursors.add(vt.getName().toString());
+                    return super.visitForLoop(flt, x);
+                }
+            }.scan(mt.getBody(), null);
+        }
+
+        // ── the twist + tempering (next()'s first-call regeneration) ────────
+        /** Find `next()` — a no-arg int method whose body contains the twist sweep
+         *  (an `if (mti>=N)` block with three k++ loops) and the tempering xors. */
+        private static MethodTree findNext(ClassTree ct, String stateField, UniverseWalker.Corpus corpus) {
+            for (Tree m : ct.getMembers()) {
+                if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                if (!mt.getParameters().isEmpty() || !returnsInt(mt)) continue;
+                final boolean[] hasTwist = {false};
+                new TreeScanner<Void, Void>() {
+                    @Override public Void visitForLoop(ForLoopTree flt, Void x) {
+                        // a forward loop writing the state field
+                        new TreeScanner<Void, Void>() {
+                            @Override public Void visitAssignment(AssignmentTree at, Void y) {
+                                if (stripP(at.getVariable()) instanceof ArrayAccessTree aat
+                                        && stateField.equals(simpleName(stripP(aat.getExpression())))) hasTwist[0] = true;
+                                return super.visitAssignment(at, y);
+                            }
+                        }.scan(flt, null);
+                        return super.visitForLoop(flt, x);
+                    }
+                }.scan(mt.getBody(), null);
+                if (hasTwist[0]) return mt;
+            }
+            return null;
+        }
+        /** Walk the twist: the `if (mti>=N)` regeneration over the seeded field-array
+         *  store. We take the regeneration branch (mti starts at N after seeding) and
+         *  thread the three k++ sweeps + the carried scalar (mtNext). The tempering is
+         *  applied per-position in walkTemper. */
+        private static boolean walkTwist(MethodTree next, SsaState s, String stateField,
+                UniverseWalker.Corpus corpus, String cls, String M, List<String> diagnostics) {
+            s.stateArrayName = stateField;
+            classifyCursors(next, s);
+            try {
+                BlockTree body = next.getBody();
+                // The regeneration lives in the first `if (mti >= N) { ... }`.
+                for (StatementTree st : body.getStatements()) {
+                    if (st instanceof IfTree it) {
+                        // mti>=N is TRUE after seeding — take the then-branch.
+                        execTwistBlock(it.getThenStatement(), s, corpus, cls, M, diagnostics);
+                        break; // the post-if tempering read is per-position (walkTemper)
+                    }
+                }
+                return true;
+            } catch (UnwalkableMt e) {
+                return false;
+            }
+        }
+        /** Execute the twist regeneration block: `int mtNext=mt[0]; for(...) {...}` etc.
+         *  Forward k++ loops writing the field array in place + carried scalar mtNext. */
+        private static void execTwistBlock(StatementTree block, SsaState s, UniverseWalker.Corpus corpus,
+                String cls, String M, List<String> diagnostics) {
+            List<StatementTree> stmts = (block instanceof BlockTree bt) ? new ArrayList<>(bt.getStatements()) : List.of(block);
+            for (StatementTree st : stmts) {
+                st = unwrap(st);
+                if (st instanceof ForLoopTree flt) { walkForward(flt, s, corpus, cls, M, diagnostics); continue; }
+                // `mti = 0;` cursor reset / `int mtNext = mt[0];` scalar — handled by execStmt.
+                // Skip the `mti = 0` write (mti is not part of the bv32 state we pin).
+                if (st instanceof ExpressionStatementTree est && est.getExpression() instanceof AssignmentTree at
+                        && stripP(at.getVariable()) instanceof IdentifierTree) {
+                    String n = simpleName(stripP(at.getVariable()));
+                    // Only thread int scalars used by the twist body (mtNext); cursor mti ignored.
+                    Integer idx = concreteIdx(at.getExpression(), s, corpus, cls, M, diagnostics);
+                    if (idx != null && ("mti".equals(n))) { continue; }
+                }
+                execStmt(st, s, corpus, cls, M, diagnostics);
+            }
+        }
+        /** Apply tempering to the regenerated word at `pos`, producing the draw FOL.
+         *  `y = mt[pos]; y^=y>>>11; y^=(y<<7)&K1; y^=(y<<15)&K2; y^=y>>>18; return y;`
+         *  walked from the next() tempering statements after the regeneration block. */
+        private static String walkTemper(MethodTree next, SsaState s, String stateField, int pos,
+                UniverseWalker.Corpus corpus, String cls, String M, List<String> diagnostics) {
+            s.stateArrayName = stateField;
+            try {
+                // Read mt[pos] from the twisted store.
+                String wv = s.wordVar(pos);
+                Integer wf = s.foldWord(pos);
+                if (wv == null || wf == null)
+                    bail(diagnostics, cls, M, "tempering: regenerated word mt[" + pos + "] missing from the twisted store");
+                // Walk the tempering statements: the trailing `y ^= ...` chain after the
+                // regeneration `if`. We thread `y` as a fresh scalar starting at mt[pos].
+                SsaState t = s.fork();
+                t.stateArrayName = stateField;
+                String yName = findTemperVar(next, cls, M, diagnostics);
+                t.writeScalar(yName, wv, wf);
+                t.scalarName.put(yName, t.scalarName.get(yName)); // keep
+                walkTemperStmts(next, yName, t, corpus, cls, M, diagnostics);
+                String yTree = t.scalarVar(yName);
+                Integer yFold = t.foldScalar(yName);
+                if (yTree == null || yFold == null)
+                    bail(diagnostics, cls, M, "tempering: final draw scalar did not thread");
+                // Merge the temper binds back into s so the payload carries them.
+                // (t was forked from s; its binds are a superset — adopt t's binds.)
+                s.binds.clear(); s.binds.addAll(t.binds);
+                s.foldByName.putAll(t.foldByName);
+                return yTree;
+            } catch (UnwalkableMt e) {
+                return null;
+            }
+        }
+        /** The tempering target scalar name `y` (the var assigned in `y ^= y>>>11`). */
+        private static String findTemperVar(MethodTree next, String cls, String M, List<String> diagnostics) {
+            for (StatementTree st : next.getBody().getStatements()) {
+                if (st instanceof ExpressionStatementTree est && est.getExpression() instanceof CompoundAssignmentTree cat
+                        && cat.getKind() == Tree.Kind.XOR_ASSIGNMENT) {
+                    String n = simpleName(stripP(cat.getVariable()));
+                    if (n != null) return n;
+                }
+            }
+            bail(diagnostics, cls, M, "tempering: no `y ^= ...` tempering chain found in next()");
+            return null;
+        }
+        /** Walk the tempering `y ^= ...` compound-assignment chain (after the twist if). */
+        private static void walkTemperStmts(MethodTree next, String yName, SsaState t,
+                UniverseWalker.Corpus corpus, String cls, String M, List<String> diagnostics) {
+            for (StatementTree st : next.getBody().getStatements()) {
+                if (st instanceof ExpressionStatementTree est && est.getExpression() instanceof CompoundAssignmentTree cat
+                        && cat.getKind() == Tree.Kind.XOR_ASSIGNMENT
+                        && yName.equals(simpleName(stripP(cat.getVariable())))) {
+                    // y = y ^ <rhs>
+                    Val yv = interp(cat.getVariable(), t, corpus, cls, M, diagnostics);
+                    Val rhs = interp(cat.getExpression(), t, corpus, cls, M, diagnostics);
+                    String tree = "{\"kind\":\"ctor\",\"name\":\"bv32.xor\",\"args\":[" + yv.tree + "," + rhs.tree + "]}";
+                    t.writeScalar(yName, tree, yv.v ^ rhs.v);
+                }
+            }
+        }
+
+        // ── independent recompute oracle (the bad-twin guard) ───────────────
+        /** Recompute the genuine MT initial state for `seed` with the SAME 32-bit
+         *  arithmetic the walker threads (the self-check oracle). */
+        static int[] referenceSeed(int[] seed, int n) {
+            int[] s = new int[n];
+            int mt = 19650218; s[0] = mt;
+            for (int i = 1; i < n; i++) { mt = 1812433253 * (mt ^ (mt >>> 30)) + i; s[i] = mt; }
+            int stateSize = n, i = 1, j = 0;
+            for (int k = Math.max(stateSize, seed.length); k > 0; k--) {
+                int a = s[i], b = s[i - 1];
+                int c = (a ^ ((b ^ (b >>> 30)) * 1664525)) + seed[j] + j;
+                s[i] = c; i++; j++;
+                if (i >= stateSize) { s[0] = s[stateSize - 1]; i = 1; }
+                if (j >= seed.length) j = 0;
+            }
+            int ni = i;
+            for (int k = stateSize - 1; k > 0; k--) {
+                int a = s[ni], b = s[ni - 1];
+                int c = (a ^ ((b ^ (b >>> 30)) * 1566083941)) - ni;
+                s[ni] = c; ni++;
+                if (ni >= stateSize) { s[0] = s[stateSize - 1]; ni = 1; }
+            }
+            s[0] = 0x80000000;
+            return s;
+        }
+        /** Recompute the first `draws` outputs (twist + tempering) for `seed`. */
+        static int[] referenceDraws(int[] seed, int n, int draws) {
+            int[] mt = referenceSeed(seed, n);
+            final int M = 397; final int[] MAG01 = {0x0, 0x9908b0df};
+            int mtNext = mt[0]; int y;
+            for (int k = 0; k < n - M; ++k) { int cur = mtNext; mtNext = mt[k + 1]; y = (cur & 0x80000000) | (mtNext & 0x7fffffff); mt[k] = mt[k + M] ^ (y >>> 1) ^ MAG01[y & 1]; }
+            for (int k = n - M; k < n - 1; ++k) { int cur = mtNext; mtNext = mt[k + 1]; y = (cur & 0x80000000) | (mtNext & 0x7fffffff); mt[k] = mt[k + (M - n)] ^ (y >>> 1) ^ MAG01[y & 1]; }
+            y = (mtNext & 0x80000000) | (mt[0] & 0x7fffffff); mt[n - 1] = mt[M - 1] ^ (y >>> 1) ^ MAG01[y & 1];
+            int[] out = new int[draws];
+            for (int p = 0; p < draws; p++) {
+                int t = mt[p];
+                t ^= t >>> 11; t ^= (t << 7) & 0x9d2c5680; t ^= (t << 15) & 0xefc60000; t ^= t >>> 18;
+                out[p] = t;
+            }
+            return out;
+        }
+
+        // ── tiny shared helpers (mirror RecurrenceUniverseWalker's) ─────────
+        private static boolean isIntArrayType(Tree type) {
+            return type instanceof ArrayTypeTree att && att.getType() instanceof PrimitiveTypeTree ptt
+                    && ptt.getPrimitiveTypeKind() == TypeKind.INT;
+        }
+        private static ExpressionTree stripP(ExpressionTree e) {
+            while (e instanceof ParenthesizedTree pt) e = pt.getExpression();
+            return e;
+        }
+        private static String simpleName(ExpressionTree e) {
+            e = stripP(e);
+            if (e instanceof IdentifierTree id) return id.getName().toString();
+            if (e instanceof MemberSelectTree ms) return ms.getIdentifier().toString();
+            return null;
+        }
+        private static String oneLine(Tree t) {
+            String s = t.toString().replaceAll("\\s+", " ").trim();
+            return s.length() > 90 ? s.substring(0, 90) + "…" : s;
+        }
+    }
+
+    /** Local bv32 folder over the MT SSA payload (var nodes resolved from a name→int
+     *  map). Used ONLY for the kit's self-check + index threading; mirrors the SMT
+     *  emitter's bv32 vocabulary exactly so the fold and the discharge agree. */
+    static final class MtFold {
+        static Integer fold(String json, Map<String, Integer> env) {
+            try { return foldNode(MiniJson.parse(json), env); }
+            catch (RuntimeException ex) { return null; }
+        }
+        @SuppressWarnings("unchecked")
+        private static Integer foldNode(Object node, Map<String, Integer> env) {
+            Map<String, Object> n = (Map<String, Object>) node;
+            String kind = (String) n.get("kind");
+            if ("const".equals(kind)) return ((Number) n.get("value")).intValue();
+            if ("var".equals(kind)) return env.get((String) n.get("name"));
+            if ("ctor".equals(kind)) {
+                String name = (String) n.get("name");
+                List<Object> args = (List<Object>) n.get("args");
+                if ("bv32.ite".equals(name)) {
+                    Boolean c = foldBool(args.get(0), env);
+                    if (c == null) return null;
+                    return c ? foldNode(args.get(1), env) : foldNode(args.get(2), env);
+                }
+                if ("bv32.neg".equals(name)) { Integer a = foldNode(args.get(0), env); return a == null ? null : -a; }
+                Integer l = foldNode(args.get(0), env); if (l == null) return null;
+                Integer r = foldNode(args.get(1), env); if (r == null) return null;
+                return switch (name) {
+                    case "bv32.and" -> l & r; case "bv32.or" -> l | r; case "bv32.xor" -> l ^ r;
+                    case "bv32.add" -> l + r; case "bv32.mul" -> l * r;
+                    case "bv32.shl" -> l << (r & 31); case "bv32.lshr" -> l >>> (r & 31);
+                    default -> null;
+                };
+            }
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        private static Boolean foldBool(Object node, Map<String, Integer> env) {
+            Map<String, Object> n = (Map<String, Object>) node;
+            List<Object> args = (List<Object>) n.get("args");
+            Integer l = foldNode(args.get(0), env); if (l == null) return null;
+            Integer r = foldNode(args.get(1), env); if (r == null) return null;
+            return switch ((String) n.get("name")) {
+                case "bv32.eq" -> l.intValue() == r.intValue();
+                case "bv32.ne" -> l.intValue() != r.intValue();
+                case "bv32.slt" -> l < r;
+                case "bv32.ule" -> Integer.compareUnsigned(l, r) <= 0;
+                default -> null;
+            };
+        }
+    }
+
+    /** One walked MT seeding+twist draw pin: the SSA `let`-chain payload for the
+     *  draw at a position + the genuine concrete value (self-check only). */
+    static final class MtSeedPinPos {
+        final int pos; final String payloadJson; final int valueConcrete;
+        MtSeedPinPos(int pos, String payloadJson, int valueConcrete) {
+            this.pos = pos; this.payloadJson = payloadJson; this.valueConcrete = valueConcrete;
+        }
+    }
+
+    /** Per-MT-class pins, indexed by draw position. */
+    static final class MtSeedPin {
+        final String cls; final MtSeedPinPos[] byPos;
+        MtSeedPin(String cls, MtSeedPinPos[] byPos) { this.cls = cls; this.byPos = byPos; }
+        MtSeedPinPos at(int pos) { return (pos >= 0 && pos < byPos.length) ? byPos[pos] : null; }
+    }
+
+    /** Registry of walked MT seeding pins, keyed by the MT class simple name. */
+    static final class MtSeedPinRegistry {
+        static final MtSeedPinRegistry EMPTY = new MtSeedPinRegistry(Map.of());
+        private final Map<String, MtSeedPin> byClass;
+        MtSeedPinRegistry(Map<String, MtSeedPin> byClass) { this.byClass = Map.copyOf(byClass); }
+        boolean isEmpty() { return byClass.isEmpty(); }
+        MtSeedPin forClass(String cls) { return byClass.get(cls); }
     }
 
     /** One walked CRC value-pin: the closed bv32 FOL for crc(literalInput) and the
