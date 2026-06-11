@@ -894,6 +894,20 @@ def _translate_term(node: ast.expr) -> Term:
             return str_const(v)
         if v is None:
             return ctor("None", [])
+        if isinstance(v, bytes):
+            # ASCII-gated bytes: lifted as a python:bytes ctor wrapping the
+            # decoded content. The wrapper keeps b"a" and "a" DISTINCT terms
+            # (python == between them is kind-constant False); the substrate
+            # unwraps the content for string-theory contact so equality rows
+            # conjoin with charset universes. Non-ASCII refuses loudly: the
+            # String-sorted encoding cannot carry it honestly.
+            try:
+                return ctor("python:bytes", [str_const(v.decode("ascii"))])
+            except UnicodeDecodeError:
+                raise ValueError(
+                    "non-ASCII bytes literal is not liftable; the "
+                    "String-sorted bytes encoding is ASCII-gated"
+                ) from None
         raise ValueError(f"only int / str / bool / None literals are liftable; got {type(v)!r}")
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int) and not isinstance(node.operand.value, bool):
@@ -1042,7 +1056,32 @@ def _operator_dispatch_operand(term: Term) -> Term:
     return term
 
 
+def _is_bytes_literal_term(term: Term) -> bool:
+    from .ir import _ConstStr
+
+    return (
+        isinstance(term, _Ctor)
+        and term.name == "python:bytes"
+        and len(term.args) == 1
+        and isinstance(term.args[0], _ConstStr)
+    )
+
+
 def _comparison_from_symbol(sym: str, left: Term, right: Term) -> Formula:
+    from .ir import _ConstStr
+
+    # KIND-CONSTANT GUARD: python `==`/`!=` between a bytes literal and a str
+    # literal never consults content -- it is constant by kind (b"a" == "a" is
+    # False, always). Lifting it as a content comparison would be a wrong row
+    # in both directions; refuse by name instead.
+    if sym in ("=", "≠") and (
+        (_is_bytes_literal_term(left) and isinstance(right, _ConstStr))
+        or (isinstance(left, _ConstStr) and _is_bytes_literal_term(right))
+    ):
+        raise ValueError(
+            "bytes-vs-str literal comparison is kind-constant in python "
+            "(never content-equal); row refused -- assert within one kind"
+        )
     tag = _constructor_operator_tag(left) or _constructor_operator_tag(right)
     if tag is not None:
         call_name = _OPERATOR_CALL_NAMES.get(sym)
@@ -3383,6 +3422,16 @@ def _euf_args_all_concrete(euf_term: "_Ctor") -> bool:
         if isinstance(arg, (_ConstInt, _ConstStr, _ConstBool)):
             continue
         if _is_none_term(arg):
+            continue
+        if (
+            isinstance(arg, _Ctor)
+            and arg.name == "python:bytes"
+            and len(arg.args) == 1
+            and isinstance(arg.args[0], _ConstStr)
+        ):
+            # A bytes literal is a fixed value known at lift time -- exactly
+            # as concrete as a str literal; the ctor wrapper only carries the
+            # kind so b"x" and "x" never unify.
             continue
         return False
     return True

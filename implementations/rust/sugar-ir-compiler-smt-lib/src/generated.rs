@@ -947,6 +947,13 @@ fn emit_string_term(term: &Term) -> String {
                 emit_string_term(&args[1])
             )
         }
+        // The Python kit's ASCII-gated bytes literal: unwrap to the raw
+        // String content so bytes equalities meet charset universes in one
+        // theory. Kind distinctness (b"a" != "a") is enforced kit-side by
+        // refusing literal-vs-literal cross-kind rows before emission.
+        Term::Ctor { name, args } if name == "python:bytes" && args.len() == 1 => {
+            emit_string_term(&args[0])
+        }
         Term::Let { body, .. } => emit_string_term(body),
         _ => emit_term(term),
     }
