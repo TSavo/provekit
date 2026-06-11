@@ -2814,6 +2814,7 @@ public final class JavaTestAssertionsRpc {
         // ssaBindings is if this method body has a `Type name = initializer` statement.
         boolean isInstanceMethodCall = false;
         String receiverName = null;
+        ExpressionTree chainedReceiverExpr = null; // non-null when receiver is a MethodInvocationTree chain
         ExpressionTree methodSelect = callMit.getMethodSelect();
         if (methodSelect instanceof MemberSelectTree mst) {
             ExpressionTree receiver = mst.getExpression();
@@ -2828,6 +2829,15 @@ public final class JavaTestAssertionsRpc {
                 if (ssaBindings.containsKey(receiverName) || mutatedLocals.contains(receiverName)) {
                     isInstanceMethodCall = true;
                 }
+            } else if (receiver instanceof MethodInvocationTree) {
+                // Voltron: receiver is itself a method call chain (e.g. `w.unwrap().get()`).
+                // We use the receiver expression's toString() as the location label only;
+                // facts come exclusively from tree nodes via resolveConstruction.
+                // We do NOT invent a new #euf# federation for chains — if resolution fails,
+                // the whole assertion is refused with a named diagnostic.
+                chainedReceiverExpr = receiver;
+                receiverName = receiver.toString(); // label only; NOT scanned for facts
+                isInstanceMethodCall = true;
             }
         }
 
@@ -2867,7 +2877,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         if (isInstanceMethodCall) {
-            // P5c: instance-method call on a local receiver — LOCATION-KEYED.
+            // P5c / Voltron: instance-method call on a local or chained receiver — LOCATION-KEYED.
             // Mirrors Python: _call_origin_from_expr returns None for non-module
             // receiver attribute calls → kept location-keyed in _callsite_contract_base.
             // Two different receiver objects may return different values for the same
@@ -2878,6 +2888,36 @@ public final class JavaTestAssertionsRpc {
             // both declare a local `codec` get DIFFERENT location bases because `scope`
             // encodes the method name — mirrors Python _callsite_contract_base location
             // path which encodes file:lineno:col_offset.
+
+            if (chainedReceiverExpr != null) {
+                // Voltron: chained receiver (e.g. `w.unwrap().get()`).
+                // Attempt full two-layer resolution via resolveIntFromChain.
+                // If it fails (any impurity), REFUSE with a named diagnostic — do NOT emit
+                // an unsound opaque federated term for chains.
+                if (strVal.isPresent()) {
+                    // String path — no construction walk for chains; refuse.
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName, "voltron: chained receiver with string expected — not supported; refusing"));
+                    return;
+                }
+                OptionalLong chainedPin = instanceUniverse.resolveIntFromChain(
+                        chainedReceiverExpr, callee, intArgValues.size(), ssaBindings, diagnostics);
+                if (chainedPin.isEmpty()) {
+                    // Named diagnostic already appended by resolveIntFromChain or resolveConstruction.
+                    // Refuse the whole assertion rather than emitting an unsound term.
+                    diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                        methodName, "voltron: chained receiver could not be resolved — assertion refused"));
+                    return;
+                }
+                // Use a safe, deterministic receiver label from the receiver expression text.
+                // This is a CONTRACT NAME label only — all facts come from tree nodes.
+                String safeReceiverLabel = receiverName.replaceAll("[^A-Za-z0-9_.$]", "_");
+                String locationBase = callee + "@" + scope + ":" + safeReceiverLabel;
+                ir.add(buildLocationKeyedIntContract(locationBase, safeReceiverLabel, callee,
+                        intArgValues, intVal.getAsLong(), relation, chainedPin));
+                return;
+            }
+
             String locationBase = callee + "@" + scope + ":" + receiverName;
             if (strVal.isPresent()) {
                 ir.add(buildLocationKeyedStringContract(locationBase, receiverName, callee,
@@ -5099,12 +5139,239 @@ public final class JavaTestAssertionsRpc {
             }
         }
 
+        // ──────────────────────────────────────────────────────────────
+        // Voltron: mutually-recursive construction-semantics resolver
+        // ──────────────────────────────────────────────────────────────
+
+        /** Value type: a resolved construction — class name + ctor argument list. */
+        static final class ResolvedCtor {
+            final String className;
+            final List<? extends ExpressionTree> ctorArgs;
+            ResolvedCtor(String className, List<? extends ExpressionTree> ctorArgs) {
+                this.className = className;
+                this.ctorArgs  = ctorArgs;
+            }
+        }
+
+        /**
+         * Attempt to resolve `expr` to a ResolvedCtor — i.e. determine which class was
+         * constructed and what arguments were passed to its constructor.
+         *
+         * Cases (every other shape → Optional.empty, never a guess):
+         *   - NewClassTree C(args)          → ResolvedCtor(simpleName(C), args)
+         *   - IdentifierTree in ssaBindings → resolveConstruction(its initializer, depth+1)
+         *   - recv.method() (zero-arg, MemberSelectTree):
+         *       rc = resolveConstruction(recv, depth+1)
+         *       find unique non-static `method` with arity 0 in rc.className
+         *       body must be exactly `return this.field` or `return field`
+         *       field must be final, not mutated outside ctor
+         *       ctorArg at paramIdx → resolveConstruction(ctorArg, depth+1)
+         *   - anything else → empty
+         *
+         * Depth guard: depth > 8 → empty (with named diagnostic).
+         * All SOUNDNESS TEETH from resolveIntResult apply at EVERY layer.
+         *
+         * @param ssaBindings  effectively-final local variable bindings for the test method
+         */
+        Optional<ResolvedCtor> resolveConstruction(ExpressionTree expr, int depth,
+                                                    Map<String, ExpressionTree> ssaBindings,
+                                                    List<String> diagnostics) {
+            if (depth > 8) {
+                diagnostics.add(diagnostic("<instance-universe>", "<voltron>", "<chain>",
+                        "voltron: construction chain deeper than 8 — refusing"));
+                return Optional.empty();
+            }
+
+            // Case 1: direct construction.
+            if (expr instanceof NewClassTree nct) {
+                String cn = simpleNameOf(nct.getIdentifier());
+                if (cn == null) return Optional.empty();
+                return Optional.of(new ResolvedCtor(cn, nct.getArguments()));
+            }
+
+            // Case 2: local variable in ssaBindings — follow its initializer.
+            if (expr instanceof IdentifierTree id) {
+                String name = id.getName().toString();
+                ExpressionTree init = ssaBindings.get(name);
+                if (init == null) return Optional.empty();
+                return resolveConstruction(init, depth + 1, ssaBindings, diagnostics);
+            }
+
+            // Case 3: zero-arg method call on a resolvable receiver.
+            if (expr instanceof MethodInvocationTree mit) {
+                ExpressionTree sel = mit.getMethodSelect();
+                if (!(sel instanceof MemberSelectTree mst)) return Optional.empty();
+                // Must be zero-arg (a pure getter of a construction).
+                if (!mit.getArguments().isEmpty()) return Optional.empty();
+                String methodName = mst.getIdentifier().toString();
+                ExpressionTree recv = mst.getExpression();
+
+                // Recursively resolve the receiver to a construction.
+                Optional<ResolvedCtor> rcOpt = resolveConstruction(recv, depth + 1, ssaBindings, diagnostics);
+                if (rcOpt.isEmpty()) return Optional.empty();
+                ResolvedCtor rc = rcOpt.get();
+
+                // Look up the class in the universe.
+                ClassTree ct = classes.get(rc.className);
+                if (ct == null) return Optional.empty();
+
+                // Step 2: find exactly one non-static method named methodName with arity 0.
+                List<MethodTree> candidates = new ArrayList<>();
+                for (Tree m : ct.getMembers()) {
+                    if (!(m instanceof MethodTree mt)) continue;
+                    if (!mt.getName().contentEquals(methodName)) continue;
+                    if (mt.getParameters().size() != 0) continue;
+                    if (mt.getModifiers().getFlags().contains(Modifier.STATIC)) continue;
+                    candidates.add(mt);
+                }
+                if (candidates.size() != 1) return Optional.empty();
+                MethodTree method = candidates.get(0);
+
+                // Step 3: method body must be exactly one statement: `return <expr>;`
+                BlockTree body = method.getBody();
+                if (body == null || body.getStatements().size() != 1) return Optional.empty();
+                StatementTree sole = body.getStatements().get(0);
+                if (!(sole instanceof ReturnTree rt)) return Optional.empty();
+                ExpressionTree retExpr = rt.getExpression();
+                if (retExpr == null) return Optional.empty();
+
+                // Step 4: return expression must be `this.<field>` or bare `<field>`.
+                String fieldName = extractFieldName(retExpr);
+                if (fieldName == null) return Optional.empty();
+
+                // Step 5: field must be final in rc.className.
+                VariableTree fieldDecl = findFieldDecl(ct, fieldName);
+                if (fieldDecl == null) return Optional.empty();
+                if (!fieldDecl.getModifiers().getFlags().contains(Modifier.FINAL)) {
+                    diagnostics.add(diagnostic("<instance-universe>", rc.className, methodName,
+                            "instance-universe: field " + fieldName
+                            + " not final — construction not pinned; refusing"));
+                    return Optional.empty();
+                }
+                // Step 5b: field must not be written outside a ctor.
+                if (isFieldMutatedOutsideCtor(ct, fieldName)) {
+                    diagnostics.add(diagnostic("<instance-universe>", rc.className, methodName,
+                            "instance-universe: field " + fieldName
+                            + " assigned outside constructor — pin not safe; refusing"));
+                    return Optional.empty();
+                }
+
+                // Step 6: find ctor whose arity matches rc.ctorArgs.size().
+                int ctorArity = rc.ctorArgs.size();
+                List<MethodTree> ctorList = ctors.getOrDefault(rc.className, List.of());
+                MethodTree matchedCtor = null;
+                for (MethodTree c : ctorList) {
+                    if (c.getParameters().size() == ctorArity) { matchedCtor = c; break; }
+                }
+                if (matchedCtor == null) return Optional.empty();
+
+                // Step 7: find which param index feeds the field.
+                Integer paramIdx = paramIndexAssignedToField(matchedCtor, fieldName);
+                if (paramIdx == null) return Optional.empty();
+
+                // The supplied ctor arg at paramIdx is the next expression to resolve.
+                ExpressionTree nextExpr = rc.ctorArgs.get(paramIdx);
+                return resolveConstruction(nextExpr, depth + 1, ssaBindings, diagnostics);
+            }
+
+            return Optional.empty();
+        }
+
+        /**
+         * Voltron entry point: resolve the int result of `outerMethod()` called on a
+         * chained receiver expression (e.g. `w.unwrap()`).
+         *
+         * Walks: resolveConstruction(receiverExpr) → apply outerMethod getter walk → int leaf.
+         * Every soundness gate from resolveIntResult applies at every layer.
+         *
+         * @param receiverExpr  the full receiver expression (e.g. `w.unwrap()`)
+         * @param outerMethod   the final method name (e.g. `get`)
+         * @param callArity     number of arguments at the outer call site (0 for `.get()`)
+         * @param ssaBindings   effectively-final local variable bindings
+         * @param diagnostics   named refusals appended here
+         */
+        OptionalLong resolveIntFromChain(ExpressionTree receiverExpr, String outerMethod,
+                                         int callArity, Map<String, ExpressionTree> ssaBindings,
+                                         List<String> diagnostics) {
+            // Step A: resolve the receiver expression to a concrete construction.
+            Optional<ResolvedCtor> rcOpt = resolveConstruction(receiverExpr, 0, ssaBindings, diagnostics);
+            if (rcOpt.isEmpty()) return OptionalLong.empty();
+            ResolvedCtor rc = rcOpt.get();
+
+            // Step B: look up outerMethod in rc.className — same gates as resolveIntResult.
+            ClassTree ct = classes.get(rc.className);
+            if (ct == null) return OptionalLong.empty();
+
+            // Step B2: exactly one non-static outerMethod with matching arity.
+            List<MethodTree> candidates = new ArrayList<>();
+            for (Tree m : ct.getMembers()) {
+                if (!(m instanceof MethodTree mt)) continue;
+                if (!mt.getName().contentEquals(outerMethod)) continue;
+                if (mt.getParameters().size() != callArity) continue;
+                if (mt.getModifiers().getFlags().contains(Modifier.STATIC)) continue;
+                candidates.add(mt);
+            }
+            if (candidates.size() != 1) return OptionalLong.empty();
+            MethodTree method = candidates.get(0);
+
+            // Step B3: body must be exactly `return <expr>;`
+            BlockTree body = method.getBody();
+            if (body == null || body.getStatements().size() != 1) return OptionalLong.empty();
+            StatementTree sole = body.getStatements().get(0);
+            if (!(sole instanceof ReturnTree rt)) return OptionalLong.empty();
+            ExpressionTree retExpr = rt.getExpression();
+            if (retExpr == null) return OptionalLong.empty();
+
+            // Step B4: return must be `this.<field>` or bare `<field>`.
+            String fieldName = extractFieldName(retExpr);
+            if (fieldName == null) return OptionalLong.empty();
+
+            // Step B5: field must be final.
+            VariableTree fieldDecl = findFieldDecl(ct, fieldName);
+            if (fieldDecl == null) return OptionalLong.empty();
+            if (!fieldDecl.getModifiers().getFlags().contains(Modifier.FINAL)) {
+                diagnostics.add(diagnostic("<instance-universe>", rc.className, outerMethod,
+                        "instance-universe: field " + fieldName
+                        + " not final — construction not pinned; refusing"));
+                return OptionalLong.empty();
+            }
+            if (isFieldMutatedOutsideCtor(ct, fieldName)) {
+                diagnostics.add(diagnostic("<instance-universe>", rc.className, outerMethod,
+                        "instance-universe: field " + fieldName
+                        + " assigned outside constructor — pin not safe; refusing"));
+                return OptionalLong.empty();
+            }
+
+            // Step B6: find ctor whose arity matches rc.ctorArgs.size().
+            int ctorArity = rc.ctorArgs.size();
+            List<MethodTree> ctorList = ctors.getOrDefault(rc.className, List.of());
+            MethodTree matchedCtor = null;
+            for (MethodTree c : ctorList) {
+                if (c.getParameters().size() == ctorArity) { matchedCtor = c; break; }
+            }
+            if (matchedCtor == null) return OptionalLong.empty();
+
+            // Step B6b: try direct literal assignment.
+            OptionalLong directLit = findDirectLiteralAssignment(matchedCtor, fieldName);
+            if (directLit.isPresent()) return directLit;
+
+            // Step B7: find which param index feeds the field.
+            Integer paramIdx = paramIndexAssignedToField(matchedCtor, fieldName);
+            if (paramIdx == null) return OptionalLong.empty();
+
+            ExpressionTree ctorArg = rc.ctorArgs.get(paramIdx);
+            return asIntLiteral(ctorArg);
+        }
+
         /**
          * Attempt to resolve the int return value of `methodName` called on a receiver
          * constructed by `construction` (a NewClassTree).
          *
          * Every gate below is a REFUSAL gate: if it does not hold exactly, returns empty.
          * A refusal is safer than a guess — the opaque term stays unconstrained.
+         *
+         * Delegates to resolveIntFromChain for the construction walk, preserving
+         * byte-identical behaviour for the existing one-hop case.
          *
          * @param construction  the NewClassTree for the receiver (e.g. `new Box(5)`)
          * @param methodName    simple method name (e.g. `get`)
@@ -5113,73 +5380,10 @@ public final class JavaTestAssertionsRpc {
          */
         OptionalLong resolveIntResult(NewClassTree construction, String methodName,
                                       int callArity, List<String> diagnostics) {
-            // Step 1: look up the class by simple name from the construction's identifier.
-            String className = simpleNameOf(construction.getIdentifier());
-            if (className == null) return OptionalLong.empty();
-            ClassTree ct = classes.get(className);
-            if (ct == null) return OptionalLong.empty();
-
-            // Step 2: find exactly one non-static method named methodName with matching arity.
-            List<MethodTree> candidates = new ArrayList<>();
-            for (Tree m : ct.getMembers()) {
-                if (!(m instanceof MethodTree mt)) continue;
-                if (!mt.getName().contentEquals(methodName)) continue;
-                if (mt.getParameters().size() != callArity) continue;
-                if (mt.getModifiers().getFlags().contains(Modifier.STATIC)) continue;
-                candidates.add(mt);
-            }
-            if (candidates.size() != 1) return OptionalLong.empty(); // overload ambiguity or not found
-
-            MethodTree method = candidates.get(0);
-
-            // Step 3: method body must be exactly one statement: `return <expr>;`
-            BlockTree body = method.getBody();
-            if (body == null || body.getStatements().size() != 1) return OptionalLong.empty();
-            StatementTree sole = body.getStatements().get(0);
-            if (!(sole instanceof ReturnTree rt)) return OptionalLong.empty();
-            ExpressionTree retExpr = rt.getExpression();
-            if (retExpr == null) return OptionalLong.empty();
-
-            // Step 4: return expression must be `this.<field>` or a bare `<field>` identifier.
-            String fieldName = extractFieldName(retExpr);
-            if (fieldName == null) return OptionalLong.empty();
-
-            // Step 5: field must be declared `final` in this class.
-            VariableTree fieldDecl = findFieldDecl(ct, fieldName);
-            if (fieldDecl == null) return OptionalLong.empty();
-            if (!fieldDecl.getModifiers().getFlags().contains(Modifier.FINAL)) {
-                diagnostics.add(diagnostic("<instance-universe>", className, methodName,
-                        "instance-universe: field " + fieldName
-                        + " not final — construction not pinned; refusing"));
-                return OptionalLong.empty();
-            }
-            // Step 5b: field must not be written outside a constructor.
-            if (isFieldMutatedOutsideCtor(ct, fieldName)) {
-                diagnostics.add(diagnostic("<instance-universe>", className, methodName,
-                        "instance-universe: field " + fieldName
-                        + " assigned outside constructor — pin not safe; refusing"));
-                return OptionalLong.empty();
-            }
-
-            // Step 6: find the constructor whose arity matches the construction argument count.
-            int ctorArity = construction.getArguments().size();
-            List<MethodTree> ctorList = ctors.getOrDefault(className, List.of());
-            MethodTree matchedCtor = null;
-            for (MethodTree c : ctorList) {
-                if (c.getParameters().size() == ctorArity) { matchedCtor = c; break; }
-            }
-            if (matchedCtor == null) return OptionalLong.empty();
-
-            // Step 6b: try direct literal assignment `this.field = <int literal>` in ctor body.
-            OptionalLong directLit = findDirectLiteralAssignment(matchedCtor, fieldName);
-            if (directLit.isPresent()) return directLit;
-
-            // Step 7: find which param index is assigned to the field via `this.field = param`.
-            Integer paramIdx = paramIndexAssignedToField(matchedCtor, fieldName);
-            if (paramIdx == null) return OptionalLong.empty();
-
-            ExpressionTree ctorArg = construction.getArguments().get(paramIdx);
-            return asIntLiteral(ctorArg);
+            // Delegate to resolveIntFromChain with an empty ssaBindings map —
+            // the construction IS a NewClassTree so the IdentifierTree case is not needed.
+            return resolveIntFromChain(construction, methodName, callArity,
+                    Collections.emptyMap(), diagnostics);
         }
 
         /** Extract the simple field name from `this.field` or a bare `field` identifier. */
