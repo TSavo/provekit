@@ -791,3 +791,25 @@ def test_preconjoined_guard_universe_injects(vendor_path):
     # not(-3 < 0), not(4 < 0), and ONE not(2 = 0) (identical for both
     # callsites; idempotent conjuncts dedupe).
     assert len(nots) == 3
+
+
+# --- regression: the corpus (Werkzeug) caught a NameError on the
+# single-assertion operator-dispatch path. _Connective was referenced but
+# never imported into layer2; a boolean-connective assertion over an
+# operator-dispatch ctor reaches the unimported name. ---
+
+
+def test_connective_operator_dispatch_does_not_NameError():
+    out = _lift(
+        """
+        class C:
+            def __eq__(self, other):
+                return True
+
+        def test_dispatch():
+            assert (C() == C()) and (1 < 2)
+        """
+    )
+    # the point is simply that lifting completes without NameError;
+    # whatever the classification, no exception escapes.
+    assert out is not None
