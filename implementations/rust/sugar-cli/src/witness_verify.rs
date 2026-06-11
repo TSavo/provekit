@@ -89,10 +89,41 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
             continue;
         }
 
-        // 1. SIGNATURE -- rust's own primitive, over the witness CID bytes.
-        if witness_cid.is_empty()
-            || !ed25519_verify_string(signer, signature, witness_cid.as_bytes())
-        {
+        // 1. SIGNATURE -- rust's own primitive. Two witness families flow
+        // through here with two signing schemes:
+        //
+        //   - WitnessMemento (verification witnesses from `sugar verify`):
+        //     carries `observed_at`. The mark covers the SEALED POSTMARK --
+        //     the {cid, observed_at} attestation payload (JCS-canonical), not
+        //     the bare CID. The CID is the THEOREM-mode convergence handle
+        //     (excluded from its own preimage; byte-stable across honest
+        //     re-derivation); `observed_at` is a TESTIMONY-mode IO event that
+        //     rides sealed alongside it. Verifying the joint payload means a
+        //     tampered observed_at fails the mark even though it does not move
+        //     the CID (#2022-class: the witness CID is a content-address, the
+        //     timestamp is still sworn).
+        //   - witness-package mementos (cargo-test / pytest suite packages):
+        //     no `observed_at`; the mark covers the bare bundle CID. These
+        //     keep their existing scheme.
+        //
+        // `witness_attestation_payload` is the single source of truth shared
+        // with the mint path (cmd_verify) for the postmark bytes.
+        let observed_at = body
+            .get("observed_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let signature_ok = if witness_cid.is_empty() {
+            false
+        } else if observed_at.is_empty() {
+            // Package family: mark over the bare CID (legacy scheme).
+            ed25519_verify_string(signer, signature, witness_cid.as_bytes())
+        } else {
+            // WitnessMemento family: mark over the sealed {cid, observed_at}.
+            let attested =
+                sugar_ir_types::witness_attestation_payload(&witness_cid, observed_at);
+            ed25519_verify_string(signer, signature, &attested)
+        };
+        if !signature_ok {
             out.push(WitnessVerifyResult {
                 witness_cid,
                 verdict: "refused".to_string(),
@@ -515,6 +546,78 @@ mod tests {
         assert!(
             matches!(res, Resolution::BrokenOracle { .. }),
             "wrong bytes must refuse; got {res:?}"
+        );
+    }
+
+    // ------- SIGNATURE GATE: the SEALED POSTMARK (#2022-class) -------
+    //
+    // The gate in `verify_witnesses` chooses its scheme on the presence of
+    // `observed_at`. These tests exercise that exact predicate end-to-end with
+    // the real ed25519 primitives, mirroring the inline logic.
+
+    use sugar_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
+
+    const TEST_SEED: Ed25519Seed = [7u8; 32];
+
+    /// The exact signature predicate `verify_witnesses` applies (kept in sync).
+    fn signature_ok(witness_cid: &str, observed_at: &str, signer: &str, signature: &str) -> bool {
+        if witness_cid.is_empty() {
+            false
+        } else if observed_at.is_empty() {
+            ed25519_verify_string(signer, signature, witness_cid.as_bytes())
+        } else {
+            let attested =
+                sugar_ir_types::witness_attestation_payload(witness_cid, observed_at);
+            ed25519_verify_string(signer, signature, &attested)
+        }
+    }
+
+    // POSITIVE: a WitnessMemento-family mark (signed over {cid, observed_at})
+    // verifies, and is INDEPENDENT of observed_at being baked into the CID --
+    // the CID is the stable discharge handle, the postmark rides sealed.
+    #[test]
+    fn witness_memento_postmark_signature_verifies() {
+        let cid = format!("blake3-512:{}", "a".repeat(128));
+        let observed_at = "2026-06-11T12:00:00.000Z";
+        let signer = ed25519_pubkey_string(&TEST_SEED);
+        let payload = sugar_ir_types::witness_attestation_payload(&cid, observed_at);
+        let signature = ed25519_sign_string(&TEST_SEED, &payload);
+        assert!(
+            signature_ok(&cid, observed_at, &signer, &signature),
+            "an honest {{cid, observed_at}} postmark must verify"
+        );
+    }
+
+    // THE TEETH: tamper observed_at and the mark NO LONGER verifies, even though
+    // the CID (the discharge handle) is unchanged. The timestamp is still sworn.
+    #[test]
+    fn tampered_observed_at_fails_signature_verification() {
+        let cid = format!("blake3-512:{}", "a".repeat(128));
+        let observed_at = "2026-06-11T12:00:00.000Z";
+        let signer = ed25519_pubkey_string(&TEST_SEED);
+        let payload = sugar_ir_types::witness_attestation_payload(&cid, observed_at);
+        let signature = ed25519_sign_string(&TEST_SEED, &payload);
+
+        // Same signature, same (unchanged) CID, but a forged later timestamp.
+        let tampered_observed_at = "2026-06-11T13:00:00.000Z";
+        assert!(
+            !signature_ok(&cid, tampered_observed_at, &signer, &signature),
+            "a tampered observed_at must FAIL the mark -- the postmark is sealed \
+             under the signature, not free-floating"
+        );
+    }
+
+    // NON-REGRESSION: the package family (no observed_at) keeps the bare-CID
+    // scheme. A mark over the bundle CID still verifies, and a payload-scheme
+    // verification is NOT applied to it.
+    #[test]
+    fn package_family_bare_cid_signature_still_verifies() {
+        let cid = format!("blake3-512:{}", "b".repeat(128));
+        let signer = ed25519_pubkey_string(&TEST_SEED);
+        let signature = ed25519_sign_string(&TEST_SEED, cid.as_bytes());
+        assert!(
+            signature_ok(&cid, "", &signer, &signature),
+            "a package-family mark over the bare bundle CID must still verify"
         );
     }
 }
