@@ -22,10 +22,12 @@
 
 pub mod hash;
 pub mod jcs;
+pub mod json;
 pub mod value;
 
 pub use hash::{blake3_512_hex, blake3_512_of, BLAKE3_512_PREFIX};
 pub use jcs::encode_jcs;
+pub use json::jcs_cid_of_json;
 pub use value::{Value, ValueKind};
 
 #[derive(Debug, thiserror::Error)]

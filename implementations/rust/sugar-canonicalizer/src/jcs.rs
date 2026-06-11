@@ -150,7 +150,7 @@ mod tests {
         let v = Value::string(s);
         let encoded = encode_jcs(&v);
         assert_eq!(encoded, "\"x \u{2265} 0\"");
-        assert_eq!(&encoded[1..encoded.len() - 1].as_bytes(), &s.as_bytes());
+        assert_eq!(&encoded.as_bytes()[1..encoded.len() - 1], s.as_bytes());
     }
 
     #[test]

@@ -57,6 +57,14 @@ pub struct DiffArgs {
     /// under a fixed version. The install-time hook. Overrides --require.
     #[arg(long)]
     pub frozen: bool,
+    /// Sweep ledger JSON for BEFORE (as written by `coretests_sweep --json`).
+    /// Adds the residual axis: the gates then also see the UNPROVEN set --
+    /// silent drops, proof regressions, residual movement under a pin.
+    #[arg(long, value_name = "LEDGER", requires = "ledger_after")]
+    pub ledger_before: Option<std::path::PathBuf>,
+    /// Sweep ledger JSON for AFTER. Required with --ledger-before.
+    #[arg(long, value_name = "LEDGER", requires = "ledger_before")]
+    pub ledger_after: Option<std::path::PathBuf>,
 }
 
 /// `name -> CID`, as loaded from a proof set.
@@ -89,6 +97,13 @@ impl Summary {
         self.lost_behaviors > 0
     }
 
+    /// Neither side contained any proof: the comparison proved nothing.
+    /// Mirrors `report_exit_code`'s zero-callsite rule -- silence must never
+    /// read as green, or a dependency with no proofs at all passes `--frozen`.
+    pub fn vacuous(&self) -> bool {
+        self.held == 0 && self.renamed == 0 && self.new_behaviors == 0 && self.lost_behaviors == 0
+    }
+
     /// The honest-semver bump the behavior delta implies.
     pub fn bump(&self) -> &'static str {
         if self.lost_behaviors > 0 {
@@ -99,6 +114,78 @@ impl Summary {
             "none"
         }
     }
+}
+
+/// One side's total accounting, as read from a sweep ledger: every assertion
+/// macro in the corpus, binned. `assert_macros - discharged` is the residual
+/// (the dark half); `unaccounted` is the silent drop count, which must be 0
+/// for the ledger to mean anything at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Residual {
+    pub assert_macros: i64,
+    pub discharged: i64,
+    pub refused: i64,
+    pub unaccounted: i64,
+}
+
+impl Residual {
+    pub fn from_ledger(v: &serde_json::Value) -> Result<Residual, String> {
+        let field = |name: &str| -> Result<i64, String> {
+            v.get(name)
+                .and_then(|n| n.as_i64())
+                .ok_or_else(|| format!("ledger missing integer field '{name}'"))
+        };
+        Ok(Residual {
+            assert_macros: field("assert_macros")?,
+            discharged: field("discharged")?,
+            refused: field("refused")?,
+            unaccounted: field("unaccounted")?,
+        })
+    }
+
+    /// The unproven set: assertions seen that did not lift to a discharged
+    /// FOL atom. Refusals are inside it (loudly), silent drops are inside it
+    /// (damningly).
+    pub fn undischarged(&self) -> i64 {
+        self.assert_macros - self.discharged
+    }
+}
+
+/// Residual gate policy, parallel to `gate_ok` but over the dark half:
+///   silent           fail always: AFTER has unaccounted assertions, so the
+///                    ledger's own totality claim is broken. No flag bypasses
+///                    a silent drop.
+///   default          fail iff the residual grew (a proof regression).
+///   --require BUMP    growth is MAJOR; `--require major` may accept it.
+///   --frozen          fail iff the accounting moved at all, even improvement.
+pub fn residual_gate_ok(
+    before: &Residual,
+    after: &Residual,
+    require: Option<&str>,
+    frozen: bool,
+) -> Result<bool, String> {
+    if after.unaccounted > 0 {
+        return Ok(false);
+    }
+    if frozen {
+        return Ok(before == after);
+    }
+    let grew = after.undischarged() > before.undischarged();
+    if let Some(req) = require {
+        let allowed =
+            rank(req).ok_or_else(|| format!("invalid --require '{req}' (none|minor|major)"))?;
+        let needed = if grew { rank("major") } else { rank("none") }.expect("static rank");
+        return Ok(needed <= allowed);
+    }
+    Ok(!grew)
+}
+
+fn load_ledger(path: &Path) -> Result<Residual, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("read ledger {}: {e}", path.display()))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("parse ledger {}: {e}", path.display()))?;
+    Residual::from_ledger(&json)
 }
 
 /// Rank of a semver bump for ordering: none < minor < major.
@@ -114,10 +201,14 @@ fn rank(bump: &str) -> Option<u8> {
 /// Does the delta pass the chosen exit gate? `Ok(true)` passes, `Ok(false)`
 /// fails the gate, `Err` is bad input. This is the policy; `run` maps it to an
 /// exit code. Pure, so it is unit-tested directly.
+///   vacuous          fail always: no proofs on either side, nothing compared.
 ///   default          fail iff a behavior was lost (breaking).
 ///   --require BUMP    fail iff the required bump exceeds BUMP.
 ///   --frozen          fail iff anything changed at all (new/lost/renamed).
 pub fn gate_ok(s: &Summary, require: Option<&str>, frozen: bool) -> Result<bool, String> {
+    if s.vacuous() {
+        return Ok(false);
+    }
     if frozen {
         return Ok(s.new_behaviors == 0 && s.lost_behaviors == 0 && s.renamed == 0);
     }
@@ -274,10 +365,38 @@ pub fn run(args: DiffArgs) -> u8 {
     );
     println!("required bump: {}", s.bump());
 
-    match gate_ok(&s, args.require.as_deref(), args.frozen) {
-        Ok(true) => EXIT_OK,
+    let residual = match (&args.ledger_before, &args.ledger_after) {
+        (Some(b), Some(a)) => {
+            let pair = load_ledger(b).and_then(|rb| load_ledger(a).map(|ra| (rb, ra)));
+            match pair {
+                Ok((rb, ra)) => {
+                    println!(
+                        "residual: undischarged {} -> {} ({:+}); silent {} -> {}",
+                        rb.undischarged(),
+                        ra.undischarged(),
+                        ra.undischarged() - rb.undischarged(),
+                        rb.unaccounted,
+                        ra.unaccounted
+                    );
+                    Some((rb, ra))
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    return EXIT_USER_ERROR;
+                }
+            }
+        }
+        _ => None,
+    };
+
+    let behavior_ok = match gate_ok(&s, args.require.as_deref(), args.frozen) {
+        Ok(true) => true,
         Ok(false) => {
-            if args.frozen {
+            if s.vacuous() {
+                eprintln!(
+                    "vacuous: no proofs on either side; an empty comparison is not a green one"
+                );
+            } else if args.frozen {
                 eprintln!("frozen: dependency behavior changed under a fixed pin");
             } else if let Some(req) = &args.require {
                 eprintln!(
@@ -285,12 +404,46 @@ pub fn run(args: DiffArgs) -> u8 {
                     s.bump()
                 );
             }
-            EXIT_VERIFY_FAIL
+            false
         }
         Err(e) => {
             eprintln!("error: {e}");
-            EXIT_USER_ERROR
+            return EXIT_USER_ERROR;
         }
+    };
+
+    let residual_ok = match residual {
+        None => true,
+        Some((rb, ra)) => match residual_gate_ok(&rb, &ra, args.require.as_deref(), args.frozen) {
+            Ok(true) => true,
+            Ok(false) => {
+                if ra.unaccounted > 0 {
+                    eprintln!(
+                        "silent: AFTER ledger has {} unaccounted assertion(s); a silent drop is never green",
+                        ra.unaccounted
+                    );
+                } else if args.frozen {
+                    eprintln!("frozen: residual accounting moved under a fixed pin");
+                } else {
+                    eprintln!(
+                        "gate: residual grew (undischarged {} -> {})",
+                        rb.undischarged(),
+                        ra.undischarged()
+                    );
+                }
+                false
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                return EXIT_USER_ERROR;
+            }
+        },
+    };
+
+    if behavior_ok && residual_ok {
+        EXIT_OK
+    } else {
+        EXIT_VERIFY_FAIL
     }
 }
 
@@ -412,6 +565,122 @@ mod tests {
     #[test]
     fn invalid_require_is_an_error() {
         assert!(gate_ok(&identity(), Some("patchy"), false).is_err());
+    }
+
+    // --- vacuity: two proofless trees prove nothing. An empty-vs-empty diff
+    // must fail every gate, exactly as a zero-callsite verifier report fails
+    // `report_exit_code`. Otherwise a dependency with NO proofs at all sails
+    // through `--frozen` -- the naked node passes the supply-chain pin. ---
+
+    fn vacuous() -> Summary {
+        summarize(&table(&[]), &table(&[]))
+    }
+
+    #[test]
+    fn empty_vs_empty_fails_default_gate() {
+        assert_eq!(gate_ok(&vacuous(), None, false), Ok(false));
+    }
+
+    #[test]
+    fn empty_vs_empty_fails_frozen() {
+        assert_eq!(gate_ok(&vacuous(), None, true), Ok(false));
+    }
+
+    #[test]
+    fn empty_vs_empty_fails_even_require_major() {
+        assert_eq!(gate_ok(&vacuous(), Some("major"), false), Ok(false));
+    }
+
+    #[test]
+    fn vacuous_summary_is_detectable() {
+        assert!(vacuous().vacuous());
+        assert!(!identity().vacuous());
+        assert!(!added().vacuous());
+    }
+
+    // --- residual axis: diff the dark half too. A sweep ledger on each side
+    // lets the gates see the unproven set -- silent drops, proof regressions,
+    // residual movement under a pin -- not just the minted behaviors. ---
+
+    fn res(assert_macros: i64, discharged: i64, refused: i64, unaccounted: i64) -> Residual {
+        Residual {
+            assert_macros,
+            discharged,
+            refused,
+            unaccounted,
+        }
+    }
+
+    #[test]
+    fn residual_parses_sweep_ledger_fields() {
+        let ledger = serde_json::json!({
+            "corpus": "coretests/tests",
+            "assert_macros": 6377, "discharged": 4773,
+            "refused": 1604, "unaccounted": 0,
+            "per_file": []
+        });
+        let r = Residual::from_ledger(&ledger).expect("parses");
+        assert_eq!(r, res(6377, 4773, 1604, 0));
+        assert_eq!(r.undischarged(), 1604);
+    }
+
+    #[test]
+    fn residual_missing_field_is_an_error() {
+        let ledger = serde_json::json!({"assert_macros": 10, "discharged": 9});
+        assert!(Residual::from_ledger(&ledger).is_err());
+    }
+
+    #[test]
+    fn silent_drop_in_after_fails_every_residual_gate() {
+        let before = res(100, 80, 20, 0);
+        let after = res(100, 90, 9, 1);
+        assert_eq!(residual_gate_ok(&before, &after, None, false), Ok(false));
+        assert_eq!(residual_gate_ok(&before, &after, None, true), Ok(false));
+        assert_eq!(
+            residual_gate_ok(&before, &after, Some("major"), false),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn undischarged_growth_fails_default_residual_gate() {
+        // a previously-discharged assertion fell back to refused: proof lost.
+        let before = res(100, 80, 20, 0);
+        let after = res(100, 70, 30, 0);
+        assert_eq!(residual_gate_ok(&before, &after, None, false), Ok(false));
+    }
+
+    #[test]
+    fn undischarged_shrink_passes_default_and_require_none() {
+        let before = res(100, 80, 20, 0);
+        let after = res(100, 90, 10, 0);
+        assert_eq!(residual_gate_ok(&before, &after, None, false), Ok(true));
+        assert_eq!(
+            residual_gate_ok(&before, &after, Some("none"), false),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn frozen_fails_on_any_residual_movement_even_improvement() {
+        let before = res(100, 80, 20, 0);
+        let after = res(100, 90, 10, 0);
+        assert_eq!(residual_gate_ok(&before, &after, None, true), Ok(false));
+        assert_eq!(residual_gate_ok(&before, &before, None, true), Ok(true));
+    }
+
+    #[test]
+    fn require_major_allows_growth_but_never_silence() {
+        let grew = (res(100, 80, 20, 0), res(100, 70, 30, 0));
+        assert_eq!(
+            residual_gate_ok(&grew.0, &grew.1, Some("major"), false),
+            Ok(true)
+        );
+        let silent = (res(100, 80, 20, 0), res(100, 80, 19, 1));
+        assert_eq!(
+            residual_gate_ok(&silent.0, &silent.1, Some("major"), false),
+            Ok(false)
+        );
     }
 
     // --- git mode: build a throwaway repo from the real committed example

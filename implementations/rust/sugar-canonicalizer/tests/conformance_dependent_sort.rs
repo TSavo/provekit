@@ -20,7 +20,7 @@ fn to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
             }
         }
         serde_json::Value::String(s) => CValue::string(s.clone()),
-        serde_json::Value::Array(arr) => CValue::array(arr.iter().map(|v| to_cvalue(v)).collect()),
+        serde_json::Value::Array(arr) => CValue::array(arr.iter().map(to_cvalue).collect()),
         serde_json::Value::Object(obj) => {
             CValue::object(obj.iter().map(|(k, v)| (k.clone(), to_cvalue(v))))
         }
