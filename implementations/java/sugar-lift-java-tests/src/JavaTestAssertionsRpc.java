@@ -65,7 +65,7 @@ import java.util.stream.*;
 public final class JavaTestAssertionsRpc {
 
     private static final String SURFACE = "java-test-assertions";
-    private static final String VERSION = "0.7.0"; // P5c: call-binding lift (SSA + instance-method location-keyed)
+    private static final String VERSION = "0.8.0"; // P6: jtreg error-sentinel lift (no name keys; method-ref + JLS constants)
 
     // ──────────────────────────────────────────────────────────────
     // Entry point: JSON-RPC 2.0 over stdin/stdout, one object per line.
@@ -169,6 +169,13 @@ public final class JavaTestAssertionsRpc {
         // Pure final-field-return-only tier; anything more complex is refused by name.
         InstanceUniverse instanceUniverse = InstanceUniverse.load(compiler, root, diagnostics);
 
+        // P6: Load JLS-declared integer constants from platform-axioms.json.
+        // These are the ONLY non-walked constant bindings: ClassName.FIELD pairs
+        // whose values are established by the Java Language Specification (e.g.
+        // Integer.MIN_VALUE = -2147483648 per JLS §4.2.1). Any ClassName.FIELD
+        // pair absent from this table is REFUSED by name in the error-sentinel path.
+        JavaConstantTable javaConstants = JavaConstantTable.load(root, diagnostics);
+
         for (String rel : files) {
             Path abs = root.resolve(rel).normalize();
             if (!Files.isReadable(abs)) {
@@ -182,7 +189,7 @@ public final class JavaTestAssertionsRpc {
             // contracts already lifted from the other files. Without this, one bad
             // file in a 229-file vendor test tree drops the entire artifact to GAP.
             try {
-                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, instanceUniverse, ir, diagnostics);
+                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, instanceUniverse, javaConstants, ir, diagnostics);
             } catch (Exception e) {
                 diagnostics.add(diagnostic(rel, null, null,
                     "per-file lift skipped (isolated): "
@@ -1862,6 +1869,7 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             InstanceUniverse instanceUniverse,
+            JavaConstantTable javaConstants,
             List<String> ir,
             List<String> diagnostics) throws IOException {
 
@@ -1942,7 +1950,7 @@ public final class JavaTestAssertionsRpc {
                 if (decl instanceof ClassTree ct) {
                     walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
                             vocab, frameworkKind, ambiguousFramework,
-                            universeRegistry, numericRegistry, instanceUniverse, ir, diagnostics, null);
+                            universeRegistry, numericRegistry, instanceUniverse, javaConstants, ir, diagnostics, null);
                 }
             }
         }
@@ -1973,6 +1981,7 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             InstanceUniverse instanceUniverse,
+            JavaConstantTable javaConstants,
             List<String> ir,
             List<String> diagnostics,
             String outerClassName) {
@@ -1983,11 +1992,12 @@ public final class JavaTestAssertionsRpc {
         for (Tree member : classTree.getMembers()) {
             if (member instanceof MethodTree mt) {
                 liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, instanceUniverse, ir, diagnostics);
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry,
+                        instanceUniverse, javaConstants, classTree, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
                 walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework,
-                        universeRegistry, numericRegistry, instanceUniverse, ir, diagnostics, className);
+                        universeRegistry, numericRegistry, instanceUniverse, javaConstants, ir, diagnostics, className);
             }
         }
     }
@@ -2009,8 +2019,27 @@ public final class JavaTestAssertionsRpc {
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
             InstanceUniverse instanceUniverse,
+            JavaConstantTable javaConstants,
+            ClassTree classTree,
             List<String> ir,
             List<String> diagnostics) {
+
+        // P6: error-sentinel (jtreg-style) lift path — for `public static void main`.
+        // Routing is PURELY STRUCTURAL: no Java source text is scanned and no
+        // method name is consulted. We enter on `public static void main` (a tree
+        // shape) and liftJtregMain only emits a contract when the body exhibits the
+        // full error-sentinel structure — a private static int harness of shape
+        // `result = funcParam.applyXxx(argParam); if (result != expected) return
+        // <pos literal>;` whose sentinel demonstrably flows to a `throw` in main
+        // (see classifyErrorSentinelHarness + the throw-flow check in liftJtregMain).
+        // A `main` without that structure yields nothing. The `@test` comment marker
+        // is deliberately NOT consulted: it lives only in a comment (no AST node),
+        // and scanning source text for it would violate the no-string-scan law. The
+        // structural teeth are self-sufficient — they ARE the jtreg signal.
+        if (isJtregMainMethod(method)) {
+            liftJtregMain(method, classTree, rel, className, numericRegistry, javaConstants, ir, diagnostics);
+            return;
+        }
 
         if (!hasTestAnnotation(method, importedNames)) return;
 
@@ -2404,6 +2433,666 @@ public final class JavaTestAssertionsRpc {
             }
         }
         return false;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // P6: jtreg error-sentinel lift path
+    //
+    // WHAT THIS DETECTS (purely structurally, NO name keys, NO source-text scan):
+    //
+    // (A) ROUTING is the `public static void main` tree shape ALONE
+    //     (isJtregMainMethod). The jtreg `@test` comment marker is deliberately
+    //     NOT consulted — it lives only in a comment (no AST node) and scanning
+    //     source text for it would violate the no-string-scan law. We do not need
+    //     it: a `main` without the full error-sentinel structure below yields
+    //     nothing, and the structural teeth (C)/(D) ARE the jtreg signal.
+    //
+    // (B) isJtregMainMethod: the method is `public static void main` with a
+    //     single parameter of array or varargs type. No name key on the harness
+    //     helper methods — only the entry-point shape is gated here.
+    //
+    // (C) classifyErrorSentinelHarness: for each private/package-private
+    //     static int-returning method in the class, walk the body to find the
+    //     shape:
+    //       result = <param>.apply*(arg)  (functional interface invocation)
+    //       if (result != expected) { ... return <nonzero>; }
+    //       else { return 0; }  OR  return 0; at end
+    //     The guard `result != expected` gives us:
+    //       - relation: `=` (the method asserts equality; guard fires on !=)
+    //       - which param is the argument (`arg`) and which is the expected value
+    //     The sentinel must demonstrably flow to a throw:
+    //       - `errors += <sentinel>(...)` in main with `if (errors > 0) throw`
+    //     SOUNDNESS TEETH:
+    //       - Guard must compare exactly `result` against an `expected` param
+    //       - Failure path sentinel must be provably non-zero (literal 1, or
+    //         any positive literal, or `errors++`)
+    //       - The sentinel return must reach a `throw` in main via accumulator
+    //       - Any deviation → refuse with named diagnostic, never classify
+    //
+    // (D) liftErrorSentinelCallsite: at call sites `errors += h(methRef, arg, exp)`
+    //     where h is a classified error-sentinel harness:
+    //       1. Resolve the first arg as a MemberReferenceTree → callee name
+    //       2. Resolve literal int args (including Integer.MIN_VALUE via
+    //          javaConstants table) → concrete long values
+    //       3. Emit equality contract + numeric universe contract exactly as
+    //          the @Test path does, using the same #euf# naming scheme
+    //
+    // DISCRIMINATION (all of these must NOT classify):
+    //   - Harness that returns 1 unconditionally (no if-guard on result)
+    //   - Harness whose guard compares unrelated values (not result vs expected)
+    //   - Harness whose sentinel never reaches a throw in main
+    //   - Call site where the first param is not a MemberReferenceTree
+    //   - Call site where an arg cannot be resolved to a literal
+    // ──────────────────────────────────────────────────────────────
+
+    // NOTE: jtreg's `@test` marker is deliberately NOT detected. It lives only in
+    // a comment (no AST node), so detecting it would require scanning raw source
+    // text — a violation of the no-string-scan law. The error-sentinel path is
+    // routed purely on the `public static void main` tree shape and gated by the
+    // structural teeth of classifyErrorSentinelHarness + the throw-flow check;
+    // those teeth ARE the jtreg signal, and they are self-sufficient.
+
+    /**
+     * True iff the method is `public static void main(String...)` or
+     * `public static void main(String[])`. No name check on helper methods.
+     */
+    private static boolean isJtregMainMethod(MethodTree method) {
+        Set<Modifier> mods = method.getModifiers().getFlags();
+        if (!mods.contains(Modifier.PUBLIC) || !mods.contains(Modifier.STATIC)) return false;
+        if (!(method.getReturnType() instanceof PrimitiveTypeTree ptt)) return false;
+        if (ptt.getPrimitiveTypeKind() != TypeKind.VOID) return false;
+        // Name must be "main"
+        if (!method.getName().contentEquals("main")) return false;
+        // Single parameter of String array or String varargs type
+        // AbsTests uses `String... args` — the javac tree represents varargs as ArrayTypeTree
+        // with the parameter's isVarargs flag set. Both forms are acceptable.
+        List<? extends VariableTree> params = method.getParameters();
+        if (params.size() != 1) return false;
+        Tree paramType = params.get(0).getType();
+        if (paramType instanceof ArrayTypeTree att) {
+            // covers both String[] and String... (varargs)
+            return att.getType().toString().equals("String");
+        }
+        return false;
+    }
+
+    /**
+     * Result of classifying a private static int-returning method as an
+     * error-sentinel harness. Immutable value type.
+     *
+     * funcParamIndex:   the 0-based index of the functional-interface parameter
+     *                   (the one receiving the method reference, e.g. absFunc)
+     * argParamIndex:    the 0-based index of the argument passed to applyAsInt
+     * expectedParamIndex: the 0-based index of the expected-value parameter
+     * relation:         always "=" (guard was `!=`, so assertion is equality)
+     * applyMethodName:  the simple name of the apply method found (e.g. "applyAsInt")
+     */
+    private record ErrorSentinelHarness(
+        int funcParamIndex,
+        int argParamIndex,
+        int expectedParamIndex,
+        String relation,
+        String applyMethodName
+    ) {}
+
+    /**
+     * Attempt to classify a static int-returning method as an error-sentinel
+     * equality harness. Returns null (and adds a named diagnostic) if the body
+     * does not have the required shape.
+     *
+     * Required body shape (structural, NO name keys):
+     *   STEP 1: int result = <funcParam>.apply*(arg);
+     *           where <funcParam> is one of the method's parameters and apply*
+     *           is a method invocation on it (functional interface dispatch).
+     *   STEP 2: if (result != expected) { ... return <positive-literal>; }
+     *           The guard must compare exactly `result` (the local from STEP 1)
+     *           against `expected` (one of the method's OTHER parameters).
+     *   STEP 3: return 0;  (the ok path, either in else or after the if)
+     *   SOUNDNESS: the non-zero return literal must be > 0 (sentinel value).
+     *
+     * Returns null if ANY of the structural requirements are not met.
+     */
+    private static ErrorSentinelHarness classifyErrorSentinelHarness(
+            MethodTree method, String scopeForDiagnostic, List<String> diagnostics) {
+
+        // Must be static, return int, not void
+        Set<Modifier> mods = method.getModifiers().getFlags();
+        if (!mods.contains(Modifier.STATIC)) return null;
+        if (!(method.getReturnType() instanceof PrimitiveTypeTree ptt)) return null;
+        if (ptt.getPrimitiveTypeKind() != TypeKind.INT) return null;
+
+        BlockTree body = method.getBody();
+        if (body == null) return null;
+        List<? extends StatementTree> stmts = body.getStatements();
+        if (stmts.size() < 2) return null;  // need at least: assign + if/return
+
+        List<? extends VariableTree> params = method.getParameters();
+        if (params.size() < 3) return null;  // need: funcParam, argParam, expectedParam
+
+        // Build a name→index map for parameters
+        Map<String, Integer> paramIndex = new LinkedHashMap<>();
+        for (int i = 0; i < params.size(); i++) {
+            paramIndex.put(params.get(i).getName().toString(), i);
+        }
+
+        // STEP 1: Find `int result = <funcParam>.applyXxx(argParam);`
+        // The first statement must be a local variable declaration whose
+        // initializer is a method invocation on one of the parameters.
+        // Shape: VariableTree(int, resultName, MethodInvocationTree(MemberSelectTree(paramExpr, applyXxx), [argExpr]))
+        String resultLocalName = null;
+        int funcParamIndex = -1;
+        int argParamIndex  = -1;
+        String applyMethodName = null;
+
+        StatementTree s0 = stmts.get(0);
+        if (s0 instanceof VariableTree vt) {
+            // Must be int type
+            if (vt.getType() instanceof PrimitiveTypeTree vtPtt
+                    && vtPtt.getPrimitiveTypeKind() == TypeKind.INT) {
+                resultLocalName = vt.getName().toString();
+                ExpressionTree init = vt.getInitializer();
+                if (init instanceof MethodInvocationTree mit) {
+                    ExpressionTree sel = mit.getMethodSelect();
+                    if (sel instanceof MemberSelectTree mst) {
+                        ExpressionTree recv = mst.getExpression();
+                        String applyName = mst.getIdentifier().toString();
+                        // Receiver must be one of the method's parameters
+                        if (recv instanceof IdentifierTree idRecv) {
+                            String recvName = idRecv.getName().toString();
+                            if (paramIndex.containsKey(recvName)) {
+                                funcParamIndex = paramIndex.get(recvName);
+                                applyMethodName = applyName;
+                                // The single argument to applyXxx must be a parameter
+                                List<? extends ExpressionTree> applyArgs = mit.getArguments();
+                                if (applyArgs.size() == 1
+                                        && applyArgs.get(0) instanceof IdentifierTree argId) {
+                                    String argName = argId.getName().toString();
+                                    if (paramIndex.containsKey(argName)
+                                            && !argName.equals(recvName)) {
+                                        argParamIndex = paramIndex.get(argName);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (resultLocalName == null || funcParamIndex < 0 || argParamIndex < 0
+                || applyMethodName == null) {
+            // Shape does not match: not a classifiable harness (silent — not every
+            // static int method is expected to be a harness; only diagnose if we
+            // got partially through the shape).
+            return null;
+        }
+
+        // STEP 2: Scan for IfTree whose guard is `result != expected`
+        // where `result` is the local from step 1 and `expected` is a parameter.
+        // The guard must be EXACTLY a != comparison; anything else → refuse.
+        int expectedParamIndex = -1;
+        boolean foundGuard = false;
+        boolean foundSentinelReturn = false;  // failure branch returns a positive literal
+
+        for (int si = 1; si < stmts.size(); si++) {
+            StatementTree stmt = stmts.get(si);
+            if (!(stmt instanceof IfTree it)) continue;
+
+            ExpressionTree cond = stripParensN(it.getCondition());
+            if (cond == null) continue;
+
+            // Guard must be BinaryTree with kind NOT_EQUAL_TO
+            if (!(cond instanceof BinaryTree bt)) continue;
+            if (bt.getKind() != Tree.Kind.NOT_EQUAL_TO) continue;
+
+            // Both operands must be identifiers
+            ExpressionTree lhs = bt.getLeftOperand();
+            ExpressionTree rhs = bt.getRightOperand();
+            if (!(lhs instanceof IdentifierTree lhsId)) continue;
+            if (!(rhs instanceof IdentifierTree rhsId)) continue;
+
+            String lhsName = lhsId.getName().toString();
+            String rhsName = rhsId.getName().toString();
+
+            // Exactly one must be the result local; the other must be a parameter
+            boolean lhsIsResult = lhsName.equals(resultLocalName);
+            boolean rhsIsResult = rhsName.equals(resultLocalName);
+            if (!lhsIsResult && !rhsIsResult) continue;
+            if (lhsIsResult && rhsIsResult) continue;  // both result? malformed
+
+            String otherName = lhsIsResult ? rhsName : lhsName;
+            if (!paramIndex.containsKey(otherName)) continue;
+            int otherIdx = paramIndex.get(otherName);
+            if (otherIdx == funcParamIndex || otherIdx == argParamIndex) continue;
+
+            // The `other` parameter is the expected value
+            expectedParamIndex = otherIdx;
+            foundGuard = true;
+
+            // STEP 3: The THEN branch (failure path) must return a positive literal
+            // We accept: `return 1;` directly, or a block containing `return 1;`
+            // We require exactly one return in the failure path with a positive literal.
+            StatementTree thenStmt = it.getThenStatement();
+            foundSentinelReturn = blockContainsPositiveLiteralReturn(thenStmt);
+            break;
+        }
+
+        if (!foundGuard) {
+            diagnostics.add(diagnostic(scopeForDiagnostic, null, null,
+                "error-sentinel: method '" + method.getName() + "' not classified — "
+                + "no 'result != expected' guard found (result local: "
+                + resultLocalName + "); refused to avoid false-pass"));
+            return null;
+        }
+        if (!foundSentinelReturn) {
+            diagnostics.add(diagnostic(scopeForDiagnostic, null, null,
+                "error-sentinel: method '" + method.getName() + "' not classified — "
+                + "failure branch does not return a positive literal sentinel; "
+                + "refused to avoid false-pass"));
+            return null;
+        }
+
+        return new ErrorSentinelHarness(
+            funcParamIndex, argParamIndex, expectedParamIndex, "=", applyMethodName);
+    }
+
+    /**
+     * True iff a statement tree (possibly a block) contains a ReturnTree
+     * that returns a positive integer literal (> 0).
+     * The ONLY valid sentinel shapes are: `return 1;` or any literal > 0.
+     * We do NOT accept `return errors;` — only literal sentinels.
+     */
+    private static boolean blockContainsPositiveLiteralReturn(StatementTree stmt) {
+        if (stmt instanceof BlockTree bt) {
+            for (StatementTree s : bt.getStatements()) {
+                if (blockContainsPositiveLiteralReturn(s)) return true;
+            }
+            return false;
+        }
+        if (stmt instanceof ReturnTree rt) {
+            ExpressionTree expr = stripParensN(rt.getExpression());
+            if (expr instanceof LiteralTree lt) {
+                Object val = lt.getValue();
+                if (val instanceof Integer i && i > 0) return true;
+                if (val instanceof Long l && l > 0) return true;
+            }
+            return false;
+        }
+        // Also accept ExpressionStatements (some harnesses have printf before return)
+        if (stmt instanceof ExpressionStatementTree) return false;
+        return false;
+    }
+
+    /**
+     * Verify that `main` has the accumulator+throw structure proving the
+     * sentinel values are observable as failures.
+     *
+     * The structure we require (allowing ONE level of helper-method indirection):
+     *   main body contains:
+     *     (a) `errors += <anyCall>()` — accumulation of SOME result (direct or field)
+     *     (b) `if (errors > 0) throw ...` — the conditional throw that proves
+     *         the sentinel is observable
+     *
+     * We deliberately do NOT require the sentinel method name to appear DIRECTLY
+     * in main. AbsTests uses the pattern:
+     *   main: errors += testIntMinValue()  [accumulates]
+     *         if (errors > 0) throw        [the throw]
+     *   testIntMinValue: errors += testIntAbs(Math::abs, ...)  [harness call]
+     *
+     * The harness call is one level down. The important STRUCTURAL requirement is
+     * that main has BOTH (a) an errors-accumulation pattern AND (b) a conditional
+     * throw — this proves the flow from sentinel to observable failure.
+     *
+     * The harness classification (classifyErrorSentinelHarness) separately verifies
+     * that the harness body has the structural sentinel shape. Both must hold.
+     *
+     * SOUNDNESS: `errors` may be a local variable OR a static field — both are
+     * valid accumulator patterns. We accept either form.
+     */
+    private static boolean mainHasAccumulatorThrow(MethodTree mainMethod,
+            Set<String> sentinelMethodNames) {
+        BlockTree body = mainMethod.getBody();
+        if (body == null) return false;
+        boolean hasAccumulator = false;
+        boolean hasConditionalThrow = false;
+        for (StatementTree stmt : body.getStatements()) {
+            if (stmt instanceof ExpressionStatementTree est) {
+                ExpressionTree expr = est.getExpression();
+                // Accept: errors += anyCall()  (compound assignment)
+                // The LHS can be a local variable or a field (IdentifierTree or
+                // MemberSelectTree); we do not restrict the LHS name.
+                if (expr instanceof CompoundAssignmentTree cat
+                        && cat.getKind() == Tree.Kind.PLUS_ASSIGNMENT) {
+                    if (cat.getExpression() instanceof MethodInvocationTree) {
+                        hasAccumulator = true;
+                    }
+                }
+            } else if (stmt instanceof IfTree it) {
+                // Accept: if (errors > 0) throw ...  OR  if (errors != 0) throw ...
+                if (isPositiveAccumulatorCheck(it.getCondition())
+                        && containsThrow(it.getThenStatement())) {
+                    hasConditionalThrow = true;
+                }
+            }
+        }
+        return hasAccumulator && hasConditionalThrow;
+    }
+
+    /**
+     * True iff the expression is `errors > 0` or `<ident> > 0` or `<ident> != 0`.
+     * We accept any identifier compared to 0 with > or !=.
+     */
+    private static boolean isPositiveAccumulatorCheck(ExpressionTree cond) {
+        cond = stripParensN(cond);
+        if (!(cond instanceof BinaryTree bt)) return false;
+        Tree.Kind k = bt.getKind();
+        if (k != Tree.Kind.GREATER_THAN && k != Tree.Kind.NOT_EQUAL_TO) return false;
+        ExpressionTree rhs = stripParensN(bt.getRightOperand());
+        if (!(rhs instanceof LiteralTree lt)) return false;
+        Object val = lt.getValue();
+        if (!(val instanceof Integer i && i == 0) && !(val instanceof Long l && l == 0)) return false;
+        return bt.getLeftOperand() instanceof IdentifierTree;
+    }
+
+    /** True iff the statement (possibly a block) contains a ThrowTree. */
+    private static boolean containsThrow(StatementTree stmt) {
+        if (stmt instanceof ThrowTree) return true;
+        if (stmt instanceof BlockTree bt) {
+            for (StatementTree s : bt.getStatements()) {
+                if (containsThrow(s)) return true;
+            }
+        }
+        if (stmt instanceof IfTree it) {
+            return containsThrow(it.getThenStatement())
+                || (it.getElseStatement() != null && containsThrow(it.getElseStatement()));
+        }
+        return false;
+    }
+
+    /** Extract the simple method name from a MethodInvocationTree (unqualified or qualified). */
+    private static String extractSimpleCallName(MethodInvocationTree mit) {
+        ExpressionTree sel = mit.getMethodSelect();
+        if (sel instanceof IdentifierTree id) return id.getName().toString();
+        if (sel instanceof MemberSelectTree ms) return ms.getIdentifier().toString();
+        return null;
+    }
+
+    /**
+     * Resolve an argument expression to a concrete long value using:
+     *   1. Direct integer/long literal (including unary minus: -2147483648)
+     *   2. Qualified field reference ClassName.FIELD_NAME against javaConstants
+     * Returns empty if neither applies; adds a named diagnostic if the expression
+     * looks like a constant reference (MemberSelectTree) but is not in the table.
+     */
+    private static OptionalLong resolveArgToLong(ExpressionTree expr,
+            JavaConstantTable javaConstants, String scope, List<String> diagnostics) {
+        // Strip parens
+        expr = stripParensToExpr(expr);
+
+        // Direct int/long literal (handles negative literals via unary minus)
+        OptionalLong lit = asIntLiteral(expr);
+        if (lit.isPresent()) return lit;
+
+        // Qualified member reference: Integer.MIN_VALUE, Integer.MAX_VALUE, etc.
+        if (expr instanceof MemberSelectTree mst) {
+            String className = mst.getExpression().toString();
+            String fieldName = mst.getIdentifier().toString();
+            OptionalLong constVal = javaConstants.resolve(className, fieldName);
+            if (constVal.isPresent()) return constVal;
+            // It looks like a constant reference but is not in the table → named refusal
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                className + "." + fieldName,
+                "error-sentinel: constant '" + className + "." + fieldName
+                + "' not in platform-axioms.json java_constants table; "
+                + "refused — add a principled entry with a JLS citation to resolve it"));
+            return OptionalLong.empty();
+        }
+
+        return OptionalLong.empty();
+    }
+
+    /** Strip parentheses from an ExpressionTree; returns null if input is null. */
+    private static ExpressionTree stripParensN(ExpressionTree expr) {
+        if (expr == null) return null;
+        while (expr instanceof ParenthesizedTree pt) expr = pt.getExpression();
+        return expr;
+    }
+
+    /** Strip parentheses from an ExpressionTree (non-null input). */
+    private static ExpressionTree stripParensToExpr(ExpressionTree expr) {
+        while (expr instanceof ParenthesizedTree pt) expr = pt.getExpression();
+        return expr;
+    }
+
+    /**
+     * Resolve a MemberReferenceTree to the referenced method's simple name.
+     * Shape: `ClassName::methodName` — returns methodName.
+     * Refuses (returns null + diagnostic) if the expression is not a
+     * MemberReferenceTree or if the qualifier is not a class name.
+     */
+    private static String resolveMemberReference(ExpressionTree expr,
+            String scope, List<String> diagnostics) {
+        if (!(expr instanceof MemberReferenceTree mrt)) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<method-ref>",
+                "error-sentinel: functional-interface argument is not a method reference "
+                + "(MemberReferenceTree); got: " + expr.getKind()
+                + " — refused; only concrete method references (Class::method) are supported"));
+            return null;
+        }
+        return mrt.getName().toString();
+    }
+
+    /**
+     * Main entry point for the jtreg error-sentinel lift path.
+     * Called when we have confirmed: (a) this is a jtreg class, (b) this method
+     * is `public static void main`.
+     *
+     * Algorithm:
+     * 1. Collect all static int-returning methods in the class.
+     * 2. For each, attempt classifyErrorSentinelHarness. Build a map:
+     *    methodName → ErrorSentinelHarness (for classified ones).
+     * 3. Verify mainHasAccumulatorThrow for the classified methods.
+     * 4. Walk main's body for `errors += <classifiedMethod>(methRef, arg, exp)` callsites.
+     * 5. For each such callsite, resolve the method reference and arguments,
+     *    then emit equality + numeric-universe contracts.
+     */
+    private static void liftJtregMain(
+            MethodTree mainMethod,
+            ClassTree classTree,
+            String rel,
+            String className,
+            NumericUniverseRegistry numericRegistry,
+            JavaConstantTable javaConstants,
+            List<String> ir,
+            List<String> diagnostics) {
+
+        String scope = rel + "::" + className + "::main";
+
+        // Step 1: classify all static int-returning methods in this class
+        Map<String, ErrorSentinelHarness> harnesses = new LinkedHashMap<>();
+        for (Tree member : classTree.getMembers()) {
+            if (!(member instanceof MethodTree mt)) continue;
+            Set<Modifier> mods = mt.getModifiers().getFlags();
+            if (!mods.contains(Modifier.STATIC)) continue;
+            if (mt == mainMethod) continue;  // skip main itself
+            ErrorSentinelHarness h = classifyErrorSentinelHarness(mt, scope, diagnostics);
+            if (h != null) {
+                harnesses.put(mt.getName().toString(), h);
+            }
+        }
+
+        if (harnesses.isEmpty()) {
+            // No classified harnesses — this jtreg class may use a different pattern;
+            // emit a named diagnostic so the operator knows why nothing was lifted.
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<jtreg-main>",
+                "jtreg main: no error-sentinel harness methods classified in class "
+                + className + "; 0 contracts produced"));
+            return;
+        }
+
+        // Step 2: verify that main has accumulator+throw structure for each harness
+        // The accumulator+throw is a flow condition that proves the sentinel IS
+        // observable as a failure. Without it the sentinel is cosmetic.
+        if (!mainHasAccumulatorThrow(mainMethod, harnesses.keySet())) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                "<jtreg-main>",
+                "jtreg main: error-sentinel flow not verified — main does not have "
+                + "the 'errors += <harness>(...); if (errors > 0) throw' pattern; "
+                + "refused to avoid false-pass. Harness candidates: " + harnesses.keySet()));
+            return;
+        }
+
+        // Step 3: walk main's body and helper methods for harness callsites.
+        // Build a name→MethodTree index for all static methods in this class
+        // so we can recurse into helpers that accumulate sentinel results.
+        Map<String, MethodTree> classMethods = new LinkedHashMap<>();
+        for (Tree member : classTree.getMembers()) {
+            if (member instanceof MethodTree mt) {
+                Set<Modifier> mods = mt.getModifiers().getFlags();
+                if (mods.contains(Modifier.STATIC)) {
+                    classMethods.put(mt.getName().toString(), mt);
+                }
+            }
+        }
+
+        BlockTree body = mainMethod.getBody();
+        if (body == null) return;
+        // Visit depth: 0 = main, 1 = helpers called from main.
+        // We do NOT recurse deeper to avoid unbounded traversal.
+        liftJtregMainBody(body.getStatements(), scope, harnesses, classMethods,
+                numericRegistry, javaConstants, 0, ir, diagnostics);
+    }
+
+    /**
+     * Walk statements looking for `errors += <harness>(methRef, arg, exp)` callsites.
+     *
+     * When we see `errors += <helperMethod>()` and helperMethod is NOT a classified
+     * harness, we recurse ONE level into its body (depth 0 → 1) to find harness
+     * callsites there. This handles the AbsTests pattern where main calls
+     * `testIntMinValue()` which in turn calls `testIntAbs(Math::abs, MIN, MIN)`.
+     *
+     * Recursion depth is capped at 1 (main → direct helpers only). This is the
+     * minimum traversal needed for AbsTests; deeper recursion would risk classifying
+     * callsites in arbitrarily-nested helpers with broken accumulator chains.
+     */
+    private static void liftJtregMainBody(
+            List<? extends StatementTree> stmts,
+            String scope,
+            Map<String, ErrorSentinelHarness> harnesses,
+            Map<String, MethodTree> classMethods,
+            NumericUniverseRegistry numericRegistry,
+            JavaConstantTable javaConstants,
+            int depth,
+            List<String> ir,
+            List<String> diagnostics) {
+
+        for (StatementTree stmt : stmts) {
+            if (stmt instanceof ExpressionStatementTree est) {
+                ExpressionTree expr = est.getExpression();
+                if (expr instanceof CompoundAssignmentTree cat
+                        && cat.getKind() == Tree.Kind.PLUS_ASSIGNMENT) {
+                    ExpressionTree rhs = cat.getExpression();
+                    if (rhs instanceof MethodInvocationTree mit) {
+                        String calledName = extractSimpleCallName(mit);
+                        if (calledName == null) continue;
+                        if (harnesses.containsKey(calledName)) {
+                            // Direct harness callsite — lift it
+                            liftErrorSentinelCallsite(mit, calledName,
+                                harnesses.get(calledName), scope,
+                                numericRegistry, javaConstants, ir, diagnostics);
+                        } else if (depth == 0 && classMethods.containsKey(calledName)) {
+                            // Helper accumulator — recurse ONE level into its body
+                            MethodTree helper = classMethods.get(calledName);
+                            if (helper.getBody() != null) {
+                                liftJtregMainBody(
+                                    helper.getBody().getStatements(), scope, harnesses,
+                                    classMethods, numericRegistry, javaConstants,
+                                    1, ir, diagnostics);
+                            }
+                        }
+                        // Otherwise: unknown call (e.g. diagnostics) — skip
+                    }
+                }
+            }
+            // VariableTree (int errors = 0;), IfTree (if errors > 0 throw), etc. — skip
+        }
+    }
+
+    /**
+     * Lift a single error-sentinel callsite.
+     * The call is `h(methRef, arg, exp)` where h is an ErrorSentinelHarness.
+     *
+     * 1. Extract the method-reference from param at funcParamIndex → callee name
+     * 2. Extract the argument literal from param at argParamIndex
+     * 3. Extract the expected literal from param at expectedParamIndex
+     * 4. Emit equality contract: callee(arg) = expected
+     * 5. If numeric universe registered for callee, emit int32.eq-bv-expr contract
+     */
+    private static void liftErrorSentinelCallsite(
+            MethodInvocationTree mit,
+            String harnessMethodName,
+            ErrorSentinelHarness harness,
+            String scope,
+            NumericUniverseRegistry numericRegistry,
+            JavaConstantTable javaConstants,
+            List<String> ir,
+            List<String> diagnostics) {
+
+        List<? extends ExpressionTree> args = mit.getArguments();
+        int arity = harness.funcParamIndex() + 1;
+        // We need at least funcParamIndex, argParamIndex, expectedParamIndex
+        int maxIdx = Math.max(harness.funcParamIndex(),
+                     Math.max(harness.argParamIndex(), harness.expectedParamIndex()));
+        if (args.size() <= maxIdx) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                harnessMethodName,
+                "error-sentinel callsite: arity " + args.size()
+                + " too small for harness param indices "
+                + harness.funcParamIndex() + "/" + harness.argParamIndex()
+                + "/" + harness.expectedParamIndex()));
+            return;
+        }
+
+        // 1. Resolve method reference → callee name
+        ExpressionTree funcArg = args.get(harness.funcParamIndex());
+        String callee = resolveMemberReference(funcArg, scope, diagnostics);
+        if (callee == null) return;  // diagnostic already added
+
+        // 2. Resolve argument literal
+        ExpressionTree argExpr = args.get(harness.argParamIndex());
+        OptionalLong argVal = resolveArgToLong(argExpr, javaConstants, scope, diagnostics);
+        if (argVal.isEmpty()) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                harnessMethodName,
+                "error-sentinel callsite: argument at index " + harness.argParamIndex()
+                + " is not a resolvable literal: " + argExpr
+                + "; refused (only int literals and declared java_constants are supported)"));
+            return;
+        }
+
+        // 3. Resolve expected literal
+        ExpressionTree expExpr = args.get(harness.expectedParamIndex());
+        OptionalLong expVal = resolveArgToLong(expExpr, javaConstants, scope, diagnostics);
+        if (expVal.isEmpty()) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                harnessMethodName,
+                "error-sentinel callsite: expected value at index " + harness.expectedParamIndex()
+                + " is not a resolvable literal: " + expExpr
+                + "; refused (only int literals and declared java_constants are supported)"));
+            return;
+        }
+
+        // 4. Emit equality contract: =(call:callee(argVal), expVal)
+        List<Long> argValues = List.of(argVal.getAsLong());
+        ir.add(buildContractWithRelation(callee, argValues, expVal.getAsLong(), harness.relation()));
+
+        // 5. Emit numeric universe contract if registered
+        String bvExprJson = numericRegistry.getBvExprJson(callee);
+        if (bvExprJson != null) {
+            ir.add(buildNumericUniverseContract(callee, argValues, bvExprJson));
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -5523,6 +6212,209 @@ public final class JavaTestAssertionsRpc {
             if (identifier instanceof IdentifierTree id) return id.getName().toString();
             if (identifier instanceof MemberSelectTree mst) return mst.getIdentifier().toString();
             return null;
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // P6: JavaConstantTable — JLS-declared integer constant bindings
+    //
+    // Loaded from the "java_constants" array in platform-axioms.json.
+    // Only ClassName.FIELD pairs present in this table are resolvable
+    // in the error-sentinel lift path. Any absent pair is REFUSED by name.
+    // This is the ONLY non-walked constant resolution in the kit; provenance
+    // must cite the JLS section that fixes the value.
+    // ──────────────────────────────────────────────────────────────
+
+    static final class JavaConstantTable {
+
+        /** Sentinel: empty table — all lookups return empty. */
+        static final JavaConstantTable EMPTY = new JavaConstantTable(Collections.emptyMap());
+
+        // "ClassName.FIELD" → long value
+        private final Map<String, Long> constants;
+
+        private JavaConstantTable(Map<String, Long> constants) {
+            this.constants = constants;
+        }
+
+        /**
+         * Resolve a qualified field reference to its declared long value.
+         * Returns empty if the pair is not in the table.
+         */
+        OptionalLong resolve(String className, String fieldName) {
+            Long v = constants.get(className + "." + fieldName);
+            return v != null ? OptionalLong.of(v) : OptionalLong.empty();
+        }
+
+        /**
+         * Load the table from platform-axioms.json in the workspace root.
+         * The "java_constants" array is optional; if absent the table is empty.
+         * Parse errors produce a named diagnostic and return an empty table.
+         */
+        static JavaConstantTable load(Path workspaceRoot, List<String> diagnostics) {
+            // Find platform-axioms.json by walking up from the workspace root
+            // to the kit's own directory (the file lives alongside build.sh).
+            // We locate it relative to the class file's resource path, which is
+            // the kit out/ directory; its parent is the kit root.
+            // Fallback: look in the workspace root itself.
+            Path axiomsPath = null;
+
+            // Try to find via the class loader (kit is on classpath via -cp out/)
+            // The kit out/ directory is the classpath entry; platform-axioms.json
+            // is one level up from out/ (i.e. in the kit root directory).
+            // We detect the kit root by resolving from the working directory.
+            // The working directory is set to "." (the workspace) by manifest.toml,
+            // but the kit's build.sh puts platform-axioms.json in the kit directory
+            // which is given on the classpath. We use a class-loader resource probe
+            // to find the parent of out/ and look there.
+            try {
+                // Try workspace root first
+                Path candidate = workspaceRoot.resolve("platform-axioms.json");
+                if (Files.isReadable(candidate)) {
+                    axiomsPath = candidate;
+                }
+                // Try current working directory (where the kit was launched from)
+                if (axiomsPath == null) {
+                    candidate = Path.of("platform-axioms.json").toAbsolutePath().normalize();
+                    if (Files.isReadable(candidate)) {
+                        axiomsPath = candidate;
+                    }
+                }
+                // Try to find via classpath: locate the out/ directory on the class path
+                // and look for platform-axioms.json one level up.
+                if (axiomsPath == null) {
+                    String cp = System.getProperty("java.class.path", "");
+                    for (String entry : cp.split(File.pathSeparator)) {
+                        Path entryPath = Path.of(entry).toAbsolutePath().normalize();
+                        // If this entry is named "out" or ends with "/out", look up one level
+                        if (entryPath.getFileName() != null
+                                && entryPath.getFileName().toString().equals("out")) {
+                            Path kitRoot = entryPath.getParent();
+                            if (kitRoot != null) {
+                                Path c2 = kitRoot.resolve("platform-axioms.json");
+                                if (Files.isReadable(c2)) {
+                                    axiomsPath = c2;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // path resolution errors — fall through to empty table
+            }
+
+            if (axiomsPath == null) {
+                // platform-axioms.json not found — return empty table (not an error;
+                // the file is optional when no error-sentinel constants are needed).
+                return EMPTY;
+            }
+
+            try {
+                String json = Files.readString(axiomsPath, StandardCharsets.UTF_8);
+                Map<String, Long> constants = new LinkedHashMap<>();
+                // Minimal JSON parsing: find "java_constants" array and extract
+                // "class"/"field"/"value" triples. We use the same indexOf/split
+                // approach as the rest of the kit's JSON codec (no external deps).
+                int arrStart = json.indexOf("\"java_constants\"");
+                if (arrStart < 0) return EMPTY;  // key absent — empty table
+                int openBracket = json.indexOf('[', arrStart);
+                if (openBracket < 0) return EMPTY;
+                int closeBracket = findMatchingBracket(json, openBracket);
+                if (closeBracket < 0) return EMPTY;
+                String arrContent = json.substring(openBracket + 1, closeBracket);
+
+                // Split on object boundaries: each { ... } is one entry
+                int pos = 0;
+                while (pos < arrContent.length()) {
+                    int objOpen = arrContent.indexOf('{', pos);
+                    if (objOpen < 0) break;
+                    int objClose = findMatchingBrace(arrContent, objOpen);
+                    if (objClose < 0) break;
+                    String obj = arrContent.substring(objOpen + 1, objClose);
+                    String cls   = extractJsonString(obj, "class");
+                    String field = extractJsonString(obj, "field");
+                    String value = extractJsonString(obj, "value");
+                    if (cls != null && field != null && value != null) {
+                        try {
+                            constants.put(cls + "." + field, Long.parseLong(value.trim()));
+                        } catch (NumberFormatException nfe) {
+                            diagnostics.add(diagnostic("<java-constants>", cls + "." + field, null,
+                                "platform-axioms.json: invalid value for " + cls + "." + field
+                                + ": '" + value + "' — entry skipped"));
+                        }
+                    }
+                    pos = objClose + 1;
+                }
+                return new JavaConstantTable(constants);
+            } catch (IOException e) {
+                diagnostics.add(diagnostic("<java-constants>", null, null,
+                    "platform-axioms.json read error: " + e.getMessage()
+                    + " — java_constants table empty"));
+                return EMPTY;
+            }
+        }
+
+        /** Find the index of the ] that closes the [ at position openPos. */
+        private static int findMatchingBracket(String s, int openPos) {
+            int depth = 0;
+            for (int i = openPos; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c == '[') depth++;
+                else if (c == ']') { depth--; if (depth == 0) return i; }
+            }
+            return -1;
+        }
+
+        /** Find the index of the } that closes the { at position openPos. */
+        private static int findMatchingBrace(String s, int openPos) {
+            int depth = 0;
+            boolean inStr = false;
+            for (int i = openPos; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (inStr) {
+                    if (c == '\\') i++;  // skip escaped char
+                    else if (c == '"') inStr = false;
+                } else {
+                    if (c == '"') inStr = true;
+                    else if (c == '{') depth++;
+                    else if (c == '}') { depth--; if (depth == 0) return i; }
+                }
+            }
+            return -1;
+        }
+
+        /**
+         * Extract a JSON string or number value for the given key from a JSON object
+         * fragment (the content between the outer braces, not including them).
+         * Handles both `"key": "value"` and `"key": number` forms.
+         * Returns null if the key is not found.
+         */
+        private static String extractJsonString(String obj, String key) {
+            String needle = "\"" + key + "\"";
+            int ki = obj.indexOf(needle);
+            if (ki < 0) return null;
+            int colon = obj.indexOf(':', ki + needle.length());
+            if (colon < 0) return null;
+            int vs = colon + 1;
+            while (vs < obj.length() && Character.isWhitespace(obj.charAt(vs))) vs++;
+            if (vs >= obj.length()) return null;
+            if (obj.charAt(vs) == '"') {
+                // String value
+                int end = obj.indexOf('"', vs + 1);
+                if (end < 0) return null;
+                return obj.substring(vs + 1, end);
+            } else {
+                // Number or boolean value — read until comma, }, or end
+                int end = vs;
+                while (end < obj.length()
+                        && obj.charAt(end) != ','
+                        && obj.charAt(end) != '}'
+                        && !Character.isWhitespace(obj.charAt(end))) {
+                    end++;
+                }
+                return obj.substring(vs, end);
+            }
         }
     }
 

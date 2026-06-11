@@ -1,5 +1,5 @@
 {
-  "comment": "Platform axioms for the Java test-assertions universe walker. Each entry declares a non-walked identity bridge: a method whose byte[]→String or String→String conversion is semantically transparent for the character-set universe, established by JDK specification rather than by walking the method's source (which is not vendored). An entry absent from this file will be refused by name if encountered as a chain-escape in the universe walk.",
+  "comment": "Platform axioms for the Java test-assertions universe walker. Each entry in identity_bridges declares a non-walked identity bridge: a method whose byte[]->String or String->String conversion is semantically transparent for the character-set universe, established by JDK specification rather than by walking the method's source (which is not vendored). An entry absent from this file will be refused by name if encountered as a chain-escape in the universe walk. Each entry in java_constants declares a JLS-specified integer constant binding: a qualified field reference (ClassName.FIELD) whose value is established by the Java Language Specification and is not subject to change across JDK versions. These are the only non-walked constant resolutions; any ClassName.FIELD pair not listed here is refused by name in the error-sentinel lift path.",
   "identity_bridges": [
     {
       "name": "newStringUsAscii",
@@ -10,6 +10,32 @@
       "name": "getBytesUtf8",
       "arity": 1,
       "reason": "StringUtils.getBytesUtf8(s) is String.getBytes(StandardCharsets.UTF_8). For ASCII-range string literals (all code points <= 0x7F) UTF-8 encoding is the identity: each char produces exactly one byte equal to its code point. The argument must be a String literal for the callsite key to be sound; non-literal args are refused."
+    }
+  ],
+  "java_constants": [
+    {
+      "class": "Integer",
+      "field": "MIN_VALUE",
+      "value": -2147483648,
+      "reason": "JLS §4.2.1: Java int is 32-bit two's complement. Integer.MIN_VALUE is the most negative int value, -2^31 = -2147483648. This constant is compile-time fixed by the Java Language Specification and cannot vary across JDK versions or platforms."
+    },
+    {
+      "class": "Integer",
+      "field": "MAX_VALUE",
+      "value": 2147483647,
+      "reason": "JLS §4.2.1: Integer.MAX_VALUE is the largest int value, 2^31 - 1 = 2147483647. Compile-time constant fixed by the Java Language Specification."
+    },
+    {
+      "class": "Long",
+      "field": "MIN_VALUE",
+      "value": -9223372036854775808,
+      "reason": "JLS §4.2.1: Java long is 64-bit two's complement. Long.MIN_VALUE is -2^63 = -9223372036854775808. Compile-time constant fixed by the Java Language Specification."
+    },
+    {
+      "class": "Long",
+      "field": "MAX_VALUE",
+      "value": 9223372036854775807,
+      "reason": "JLS §4.2.1: Long.MAX_VALUE is 2^63 - 1 = 9223372036854775807. Compile-time constant fixed by the Java Language Specification."
     }
   ]
 }

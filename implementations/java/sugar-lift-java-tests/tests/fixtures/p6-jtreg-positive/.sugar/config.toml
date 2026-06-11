@@ -1,0 +1,6 @@
+# Fixture workspace for P6 jtreg error-sentinel positive test.
+# No assertion_source_dirs needed — jtreg path is vocab-free.
+# vendor/jdk21 provides Math.abs body for the G2 numeric universe walk.
+
+[java-test-assertions]
+vendor_source_dirs = ["vendor/jdk21"]
