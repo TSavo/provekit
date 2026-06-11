@@ -252,6 +252,68 @@ def _guard_clause(test: ast.expr, params: list) -> Optional[GuardClause]:
     return None
 
 
+# Non-determinism markers: a body that (transitively, within its module)
+# reaches any of these does NOT return the same value for the same args, so
+# EUF same-args unification would manufacture a false contradiction (two
+# salted hashes of "secret" are unequal). Detection is EVIDENCE-BASED and
+# conservative: we drop unification only when we SEE a marker; unknown or
+# unresolvable bodies stay "pure" (the current sound-conservative behavior).
+_NONDET_ATTRS = frozenset(
+    {
+        "random", "uniform", "randint", "randrange", "choice", "choices",
+        "sample", "shuffle", "getrandbits", "seed", "token_bytes",
+        "token_hex", "token_urlsafe", "urandom", "uuid1", "uuid4",
+        "now", "utcnow", "today", "time", "monotonic", "perf_counter",
+        "gen_salt",
+    }
+)
+_NONDET_MODULES = frozenset({"random", "secrets", "uuid"})
+
+
+@functools.lru_cache(maxsize=None)
+def callee_is_nondeterministic(callee: str) -> bool:
+    """True iff the resolved vendor body transitively (same module, bounded
+    depth) reaches a non-determinism source. Evidence-based: False on any
+    body we cannot resolve, so EUF unification keeps its current
+    sound-conservative behavior where we have no evidence."""
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return False
+    tree, fn, _origin, module_name, _fn_name = resolved
+    module_fns = {
+        s.name: s
+        for s in tree.body
+        if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    return _body_reaches_nondet(fn, module_fns, depth=3, seen=set())
+
+
+def _body_reaches_nondet(fn, module_fns, depth, seen) -> bool:
+    if fn.name in seen or depth <= 0:
+        return False
+    seen.add(fn.name)
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Attribute):
+                if f.attr in _NONDET_ATTRS:
+                    return True
+                if (
+                    isinstance(f.value, ast.Name)
+                    and f.value.id in _NONDET_MODULES
+                ):
+                    return True
+            elif isinstance(f, ast.Name):
+                if f.id in _NONDET_ATTRS:
+                    return True
+                callee_fn = module_fns.get(f.id)
+                if callee_fn is not None and _body_reaches_nondet(
+                    callee_fn, module_fns, depth - 1, seen
+                ):
+                    return True
+    return False
+
+
 def _resolve_vendor_function(callee: str):
     if "." not in callee:
         return None

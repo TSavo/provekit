@@ -813,3 +813,86 @@ def test_connective_operator_dispatch_does_not_NameError():
     # the point is simply that lifting completes without NameError;
     # whatever the classification, no exception escapes.
     assert out is not None
+
+
+# --- EUF dropout on non-deterministic callees (corpus finding: Werkzeug
+# generate_password_hash salted hash made same-args EUF unify two unequal
+# values -> false contradiction) ---
+
+
+def test_nondeterministic_callee_detected(vendor_path):
+    from sugar_lift_py_tests.translate_universe import callee_is_nondeterministic
+
+    callee_is_nondeterministic.cache_clear()
+    vendor_path(
+        "vendnd_salt",
+        '''
+import secrets
+
+
+def gen_salt(n):
+    return "".join(secrets.choice("abc") for _ in range(n))
+
+
+def make_hash(pw):
+    return pw + gen_salt(8)
+''',
+    )
+    # direct marker (secrets.choice in gen_salt) and transitive (make_hash
+    # -> gen_salt -> secrets) both detected.
+    assert callee_is_nondeterministic("vendnd_salt.gen_salt")
+    assert callee_is_nondeterministic("vendnd_salt.make_hash")
+
+
+def test_deterministic_callee_not_flagged(vendor_path):
+    from sugar_lift_py_tests.translate_universe import callee_is_nondeterministic
+
+    callee_is_nondeterministic.cache_clear()
+    vendor_path("vendnd_pure", "def f(x):\n    return x + 1\n")
+    assert not callee_is_nondeterministic("vendnd_pure.f")
+
+
+def test_nondeterministic_callee_drops_euf_unification(vendor_path):
+    from sugar_lift_py_tests.translate_universe import callee_is_nondeterministic
+
+    callee_is_nondeterministic.cache_clear()
+    vendor_path(
+        "vendnd_l2",
+        '''
+import secrets
+
+
+def gen_salt(n):
+    return secrets.token_hex(n)
+
+
+def make_hash(pw):
+    return pw + gen_salt(8)
+''',
+    )
+    # the Werkzeug shape: same-args twice, asserted UNEQUAL. With EUF
+    # dropout the two calls are independent -> NO false contradiction.
+    out = _lift(
+        """
+        import vendnd_l2
+
+        def test_salted():
+            h1 = vendnd_l2.make_hash("secret")
+            h2 = vendnd_l2.make_hash("secret")
+            assert h1 != h2
+        """
+    )
+    # no contract should argument-key make_hash to a shared euf base
+    euf_bases = [
+        d.name for d in out.decls if "make_hash#euf#" in d.name
+    ]
+    assert not euf_bases, euf_bases
+
+
+def test_unresolvable_callee_stays_pure_conservative():
+    from sugar_lift_py_tests.translate_universe import callee_is_nondeterministic
+
+    callee_is_nondeterministic.cache_clear()
+    # no such module: evidence-based detector returns False (keeps current
+    # sound-conservative unification where we have no body to inspect).
+    assert not callee_is_nondeterministic("no_such_module_xyz.f")
