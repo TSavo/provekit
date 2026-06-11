@@ -2941,36 +2941,181 @@ PY
 
 echo
 echo "────────────────────────────────────────────────────────────────"
-echo "TEST 77: RECURRENCE honest scope — REAL MersenneTwister.java → named structural breaks"
-echo "  (examples/java-mt-reference: the vendor oath stays blocked, located not faked;"
-echo "   the existing FLOOR point-contracts are UNCHANGED — fully additive.)"
+echo "TEST 77: MT SEEDING OATH — REAL MersenneTwister.java → the reference-vector"
+echo "  oath CONNECTS: the inter-procedural seed→state→twist→temper recurrence is"
+echo "  walked for the literal Nishimura seed and pinned to nextInt() at each draw."
+echo "  (examples/java-mt-reference: machinery #1/#2/#3 resolve the param-array .length"
+echo "   bounds, the field-array store, and the static-method call chain.)"
 echo "────────────────────────────────────────────────────────────────"
 MT_GOOD="$HERE/../../../../examples/java-mt-reference/good"
+# The MT seeding value-pin payload is a LARGE closed SSA let-chain (the full walked
+# 624-word seeding + twist recurrence); pass the lift JSON via a temp FILE, not argv
+# (it far exceeds the arg-size limit).
+LIFT77="$(mktemp)"
 if [ -d "$MT_GOOD/vendor/commons-rng" ]; then
-  RESULT77="$(run_lift "$MT_GOOD" "src/test/java/demo/MersenneTwisterReferenceTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
-  DIAGS77="$(recurrence_diags "$RESULT77")"
-  python3 - "$DIAGS77" <<'PY'
+  run_lift "$MT_GOOD" "src/test/java/demo/MersenneTwisterReferenceTest.java" | eval "$JAVA_CMD" 2>/dev/null > "$LIFT77"
+  python3 - "$LIFT77" <<'PY'
 import sys, json
-o = json.loads(sys.argv[1])
-# The seeding chain has NON-LITERAL loop bounds/inits → the recurrence can NOT be
-# unrolled. The walker must say so by name, never fake a connection to the oath.
-assert len(o["unrolled"]) == 0, f"REAL MT seeding must NOT unroll (non-literal bounds); got FOL: {o['unrolled']}"
-items = sorted({r["item"] for r in o["refusals"]})
-# initializeState (state.length), mixSeedAndState (Math.max init), mixState (stateSize-1 init).
-need = ["initializeState", "mixSeedAndState", "mixState"]
-for n in need:
-    assert any(n in it for it in items), f"expected a named structural refusal for {n}; got items {items}"
-# Fully additive: the existing FLOOR point-contracts (8 reference-vector draws) are intact.
-assert o["ir"] == 8, f"the existing 8 FLOOR point-contracts must be UNCHANGED, got {o['ir']}"
-print(f"PASS: REAL MersenneTwister.java — {len(o['refusals'])} named structural breaks across the seeding chain")
-for r in o["refusals"]:
-    print(f"      [{r['item']}] {r['reason'].split(': ',1)[1][:120]}")
-print(f"      Vendor reference-vector oath stays STRUCTURALLY BLOCKED (located, not faked).")
-print(f"      Existing FLOOR point-contracts UNCHANGED: {o['ir']} draw contracts intact (additive).")
+res = None
+for ln in open(sys.argv[1]):
+    ln = ln.strip()
+    if ln and json.loads(ln).get("id") == 2:
+        res = json.loads(ln)["result"]; break
+assert res is not None, "no lift result"
+diags = res["diagnostics"]
+mt = [d for d in diags if "mt-seeding-walker" in d.get("reason","")]
+# (1) the seeding folds to the genuine 624-word initial state (verified vs an
+#     independent recompute) — machinery #1/#2/#3 connect, no faked state.
+seed_ok = [d for d in mt if "seeding folds to the genuine" in d["reason"]]
+assert seed_ok, f"expected the seeding-folds diagnostic; got {[d['reason'][:80] for d in mt]}"
+assert "state[0]=0x80000000" in seed_ok[0]["reason"], f"genuine state[0] not cited: {seed_ok[0]['reason'][:160]}"
+assert "0x6cf23357" in seed_ok[0]["reason"], "genuine state[1] not cited"
+# (2) the twist+tempering walks and pins all 8 draw positions to the genuine row.
+twist_ok = [d for d in mt if "twist+tempering walked" in d["reason"]]
+assert twist_ok, f"expected the twist diagnostic; got {[d['reason'][:80] for d in mt]}"
+assert "0x3fa23623" in twist_ok[0]["reason"], "genuine draw[0] not cited"
+# (3) the IR carries the 8 FLOOR point contracts PLUS 8 mt-seed-value-pins (additive).
+pins = [c for c in res["ir"] if c["name"].endswith("::mt-seed-value-pin")]
+assert len(pins) == 8, f"expected 8 mt-seed-value-pin contracts (one per draw), got {len(pins)}"
+assert len(res["ir"]) == 16, f"expected 16 IR contracts (8 floor + 8 pins), got {len(res['ir'])}"
+# (4) each pin is a self-contained mt32.eq-seeded equation with NO free vars: the
+#     binds reference earlier binds (the symbolic recurrence), never collapsed.
+atom = pins[0]["inv"]["operands"][0]
+assert atom["name"] == "mt32.eq-seeded", f"pin atom: {atom['name']}"
+payload = json.loads(atom["args"][1]["value"])
+binds = payload["binds"]
+nvar = sum(1 for b in binds if b["tree"].get("kind") != "const")
+assert nvar > len(binds) * 0.9, f"recurrence collapsed: only {nvar}/{len(binds)} symbolic binds"
+print(f"PASS: REAL MersenneTwister.java — the reference-vector OATH CONNECTS.")
+print(f"      Seeding folds to the genuine 624-word MT initial state (verified vs independent recompute).")
+print(f"      Twist+tempering walked; 8 draws pinned to the genuine row (draw[0]=0x3fa23623 …).")
+print(f"      {len(pins)} mt-seed-value-pin contracts ({nvar}/{len(binds)} symbolic binds — the real recurrence,")
+print(f"      not pre-folded); 8 FLOOR point-contracts intact ({len(res['ir'])} IR total, additive).")
 PY
 else
   echo "SKIP: examples/java-mt-reference/good/vendor/commons-rng not present"
 fi
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 77b: MT SEEDING OATH discharge — GOOD discharged / BAD refuted by z3"
+echo "  (the FOL is the deliverable, the CHECK is the product: a wrong reference"
+echo "   value is refuted UNSATISFIED by the walked recurrence, not a contradiction.)"
+echo "────────────────────────────────────────────────────────────────"
+SMT_BIN="$HERE/../../../rust/target/debug/sugar-ir-smt-lib"
+if [ -s "$LIFT77" ] && command -v z3 >/dev/null 2>&1 && [ -x "$SMT_BIN" ]; then
+  # Compile draw[0]'s pin to SMT (GOOD), and a BAD twin (asserted value +1), via the
+  # ir-compiler RPC, then check-sat with z3. GOOD → unsat (discharged); BAD → sat.
+  python3 - "$LIFT77" "$SMT_BIN" <<'PY'
+import sys, json, subprocess
+smt_bin = sys.argv[2]
+res = None
+for ln in open(sys.argv[1]):
+    ln = ln.strip()
+    if ln and json.loads(ln).get("id") == 2:
+        res = json.loads(ln)["result"]; break
+assert res is not None, "no lift result"
+pin0 = next((c for c in res["ir"] if c["name"].endswith("testDraw0:mt::mt-seed-value-pin")), None)
+assert pin0 is not None, "no draw0 mt-seed-value-pin (oath did not connect)"
+
+def emit_and_checksat(inv):
+    # Drive the ir-compiler subprocess: handshake + compile(inv) → CompiledFormula
+    # (preamble + body). Param names per protocol: ir_json + target_dialect.
+    reqs = [
+        {"jsonrpc":"2.0","id":1,"method":"sugar.ir.handshake","params":{}},
+        {"jsonrpc":"2.0","id":2,"method":"sugar.ir.compile",
+         "params":{"ir_json":inv,"target_dialect":"smt-lib-v2.6"}},
+    ]
+    p = subprocess.run([smt_bin], input="\n".join(json.dumps(r) for r in reqs),
+                       capture_output=True, text=True)
+    smt = None
+    for ln in p.stdout.splitlines():
+        if not ln.strip(): continue
+        o = json.loads(ln)
+        if o.get("id") == 2 and "result" in o:
+            r = o["result"]
+            smt = r.get("preamble","") + r.get("body","")
+    assert smt, f"no SMT from compiler; stdout head: {p.stdout[:300]} stderr: {p.stderr[:200]}"
+    z = subprocess.run(["z3","-smt2","-in"], input=smt + "\n(check-sat)\n",
+                       capture_output=True, text=True)
+    return z.stdout.strip().splitlines()[0] if z.stdout.strip() else "<no-output>"
+
+good = emit_and_checksat(pin0["inv"])
+bad_inv = json.loads(json.dumps(pin0["inv"]))
+a = bad_inv["operands"][0]["args"][0]["value"]
+bad_inv["operands"][0]["args"][0]["value"] = a + 1   # wrong reference value
+bad = emit_and_checksat(bad_inv)
+
+assert good == "unsat", f"GOOD (vendor-sworn 0x3fa23623) must DISCHARGE (unsat), got {good}"
+assert bad  == "sat",   f"BAD (wrong value) must be REFUTED (sat), got {bad}"
+print(f"PASS: MT seeding oath discharges through z3 — GOOD vendor-sworn 0x3fa23623 → {good} (DISCHARGED);")
+print(f"      BAD wrong value → {bad} (UNSATISFIED by the walked seed→state→twist→temper recurrence).")
+print(f"      Real callsite (mt.nextInt()), real vendor value, refuted by the real recurrence — the oath.")
+PY
+else
+  echo "SKIP: z3 or the ir-compiler binary ($SMT_BIN) not present"
+fi
+rm -f "$LIFT77"
+
+# Helper: collect mt-seeding-walker diagnostics + pin count from a lift.
+mt_diags() {
+  python3 - "$1" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+res = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id") == 2)
+diags = res["diagnostics"]
+mt = [d for d in diags if "mt-seeding-walker" in d.get("reason","")]
+pins = [c for c in res["ir"] if c["name"].endswith("::mt-seed-value-pin")]
+# A refusal is any mt-seeding-walker diagnostic that is NOT the success note (the
+# seeding-folds / twist-walked diagnostics). Everything else is a located break.
+ok = ("seeding folds to the genuine", "twist+tempering walked")
+out = {"pins": len(pins),
+       "refusals": [d["reason"] for d in mt if not any(k in d["reason"] for k in ok)]}
+print(json.dumps(out))
+PY
+}
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 77c: MT discrimination — machinery #1: param-array .length not resolvable REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+RESULT77C="$(run_lift "$FIXTURES/mt-openlen" "MtDriver.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$(mt_diags "$RESULT77C")" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+assert o["pins"] == 0, f"unresolvable buffer length must emit NO pin, got {o['pins']}"
+named = [r for r in o["refusals"] if "param-array length" in r and "not" in r and "resolvable" in r]
+assert named, f"expected a param-array length refusal, got: {o['refusals']}"
+print(f"PASS: machinery #1 — param-array .length not statically resolvable refused by name (no guess): {named[0].split(': ',1)[1][:110]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 77d: MT discrimination — machinery #2: field-array store escapes bound state REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+RESULT77D="$(run_lift "$FIXTURES/mt-field-escape" "MtDriver.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$(mt_diags "$RESULT77D")" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+assert o["pins"] == 0, f"field-array store escape must emit NO pin, got {o['pins']}"
+named = [r for r in o["refusals"] if "field-array store" in r and "bound state array" in r]
+assert named, f"expected a field-array-store refusal, got: {o['refusals']}"
+print(f"PASS: machinery #2 — a write to a field array outside the bound state refused by name: {named[0].split(': ',1)[1][:110]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 77e: MT discrimination — machinery #3: static-method call chain escapes REFUSED"
+echo "────────────────────────────────────────────────────────────────"
+RESULT77E="$(run_lift "$FIXTURES/mt-escaping-call" "MtDriver.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$(mt_diags "$RESULT77E")" <<'PY'
+import sys, json
+o = json.loads(sys.argv[1])
+assert o["pins"] == 0, f"escaping call chain must emit NO pin, got {o['pins']}"
+named = [r for r in o["refusals"] if "call chain" in r and "escape" in r.lower()]
+assert named, f"expected a call-chain-escape refusal, got: {o['refusals']}"
+print(f"PASS: machinery #3 — a seeding-chain call escaping the walkable class refused by name: {named[0].split(': ',1)[1][:110]}")
+PY
 
 # ──────────────────────────────────────────────────────────────
 # Test suite (G5 — CRC VALUE-PIN: connect the folded static-init table to the
