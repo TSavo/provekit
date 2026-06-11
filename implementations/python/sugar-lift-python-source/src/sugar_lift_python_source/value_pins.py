@@ -1,0 +1,380 @@
+"""Value-pin admission for module-level bindings.
+
+A value participates in lifted FOL only if it is "inside the house":
+immutable by construction, or confessed by the author. Names never pin;
+values do. The pinned term is the value at the use site, byte-identical
+to the same literal written inline; the binding name is provenance only.
+
+Admission, not detection: an inadmissible candidate produces NO pin plus
+a loud refusal record -- never a wrong row, never a silent drop. Totality
+holds by construction: candidates == admitted + refused.
+"""
+
+from __future__ import annotations
+
+import ast
+from dataclasses import dataclass, field
+from typing import Iterator
+
+from .ir import Json, bool_const, ctor, int_const, none_const, str_const
+
+VALUE_PIN_REFUSAL_KIND = "value-pin-refused"
+FINAL_CONFESSION = "typing.Final"
+
+# Scope boundaries: bindings inside these do not bind module names.
+# (Plain assignment in a function is a local; `global`-declaring functions
+# are handled separately and conservatively below.)
+_SCOPE_BOUNDARY_NODES = (
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.Lambda,
+    ast.ListComp,
+    ast.SetComp,
+    ast.DictComp,
+    ast.GeneratorExp,
+)
+
+
+@dataclass(frozen=True)
+class ValuePin:
+    name: str
+    term: Json
+    line: int
+    confession: str | None
+
+
+@dataclass
+class ValuePinScan:
+    pins: dict[str, ValuePin] = field(default_factory=dict)
+    refusals: list[Json] = field(default_factory=list)
+    candidates: int = 0
+
+    def totality_holds(self) -> bool:
+        return self.candidates == len(self.pins) + len(self.refusals)
+
+
+class _NotAdmissible(Exception):
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+@dataclass(frozen=True)
+class _BindingEvent:
+    name: str
+    line: int
+    description: str
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    name: str
+    value: ast.expr
+    line: int
+    confession: str | None
+
+
+def scan_module_value_pins(tree: ast.Module) -> ValuePinScan:
+    scan = ValuePinScan()
+    candidates = _collect_candidates(tree)
+    events = list(_binding_events(tree))
+    global_decls = _global_declarations(tree)
+    events_by_name: dict[str, list[_BindingEvent]] = {}
+    for event in events:
+        events_by_name.setdefault(event.name, []).append(event)
+
+    scan.candidates = len(candidates)
+    for candidate in candidates.values():
+        refusal_reason = _admission_failure(
+            candidate,
+            events_by_name.get(candidate.name, []),
+            global_decls.get(candidate.name),
+        )
+        if refusal_reason is not None:
+            scan.refusals.append(_pin_refusal(candidate, refusal_reason))
+            continue
+        try:
+            term = _render_value_term(candidate.value)
+        except _NotAdmissible as exc:
+            scan.refusals.append(_pin_refusal(candidate, exc.reason))
+            continue
+        scan.pins[candidate.name] = ValuePin(
+            name=candidate.name,
+            term=term,
+            line=candidate.line,
+            confession=candidate.confession,
+        )
+    assert scan.totality_holds()
+    return scan
+
+
+def _pin_refusal(candidate: _Candidate, reason: str) -> Json:
+    if candidate.confession is not None and _is_rebinding_reason(reason):
+        reason = (
+            f"vendor contradicted their own {candidate.confession} "
+            f"confession: {reason}"
+        )
+    return {
+        "kind": VALUE_PIN_REFUSAL_KIND,
+        "function": None,
+        "line": candidate.line,
+        "name": candidate.name,
+        "reason": reason,
+    }
+
+
+def _is_rebinding_reason(reason: str) -> bool:
+    return reason.startswith("rebound") or reason.startswith("deleted") or reason.startswith(
+        "global declaration"
+    )
+
+
+def _admission_failure(
+    candidate: _Candidate,
+    events: list[_BindingEvent],
+    global_decl_line: int | None,
+) -> str | None:
+    if global_decl_line is not None:
+        return (
+            "global declaration in nested scope at line "
+            f"{global_decl_line} can rebind the name at runtime"
+        )
+    binding_events = [e for e in events if e.line != candidate.line or e.description != "assignment"]
+    own_events = [e for e in events if e.line == candidate.line and e.description == "assignment"]
+    if len(own_events) != 1:
+        # The candidate's own binding statement must be exactly one plain
+        # assignment event; anything else is a scan bookkeeping failure and
+        # must refuse rather than guess.
+        return "rebound: binding site is not a single plain assignment"
+    if binding_events:
+        first = binding_events[0]
+        return f"rebound: {first.description} at line {first.line}"
+    return None
+
+
+def _collect_candidates(tree: ast.Module) -> dict[str, _Candidate]:
+    candidates: dict[str, _Candidate] = {}
+    duplicate_names: set[str] = set()
+    for stmt in tree.body:
+        name_node: ast.Name | None = None
+        value: ast.expr | None = None
+        confession: str | None = None
+        if isinstance(stmt, ast.Assign):
+            if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+                name_node = stmt.targets[0]
+                value = stmt.value
+        elif isinstance(stmt, ast.AnnAssign):
+            if isinstance(stmt.target, ast.Name) and stmt.value is not None:
+                name_node = stmt.target
+                value = stmt.value
+                if _is_final_annotation(stmt.annotation):
+                    confession = FINAL_CONFESSION
+        if name_node is None or value is None:
+            continue
+        if not _is_literal_shaped(value):
+            # Not constructed from written literals: never a candidate.
+            # No row was ever possible, so no refusal is owed.
+            continue
+        if name_node.id in candidates:
+            duplicate_names.add(name_node.id)
+            continue
+        candidates[name_node.id] = _Candidate(
+            name=name_node.id,
+            value=value,
+            line=stmt.lineno,
+            confession=confession,
+        )
+    # A duplicated candidate name surfaces through the binding-event scan
+    # (two assignment events), so the first occurrence remains the candidate
+    # and the rebinding refuses it.
+    _ = duplicate_names
+    return candidates
+
+
+def _is_final_annotation(annotation: ast.expr) -> bool:
+    target = annotation
+    if isinstance(target, ast.Subscript):
+        target = target.value
+    if isinstance(target, ast.Name):
+        return target.id == "Final"
+    if isinstance(target, ast.Attribute):
+        return target.attr == "Final"
+    return False
+
+
+def _is_literal_shaped(node: ast.expr) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return isinstance(node.operand, ast.Constant)
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return all(_is_literal_shaped(element) for element in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            key is not None and _is_literal_shaped(key) and _is_literal_shaped(val)
+            for key, val in zip(node.keys, node.values)
+        )
+    return False
+
+
+def _render_value_term(node: ast.expr) -> Json:
+    """Render an admissible immutable literal to the same term shape the
+    emitter produces for the literal written inline. That identity IS the
+    pin: a pinned name is indistinguishable from its value."""
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, bool):
+            return bool_const(value)
+        if isinstance(value, int):
+            return int_const(value)
+        if isinstance(value, str):
+            return str_const(value)
+        if value is None:
+            return none_const()
+        raise _NotAdmissible(
+            f"no IR term shape for {type(value).__name__} constants"
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        operand = node.operand
+        if isinstance(operand, ast.Constant) and type(operand.value) is int:
+            value = operand.value
+            if isinstance(node.op, ast.USub):
+                value = -value
+            return int_const(value)
+        raise _NotAdmissible("unsupported unary literal")
+    if isinstance(node, ast.Tuple):
+        return ctor(
+            "python:tuple",
+            *[_render_value_term(element) for element in node.elts],
+        )
+    if isinstance(node, (ast.List, ast.Set, ast.Dict)):
+        kind = type(node).__name__.lower()
+        raise _NotAdmissible(f"mutable value ({kind}) cannot pin")
+    raise _NotAdmissible(f"unsupported value shape: {type(node).__name__}")
+
+
+def _binding_events(tree: ast.Module) -> Iterator[_BindingEvent]:
+    """Every module-scope binding event, exhaustively.
+
+    Walks the module statement tree, recursing through compound statements
+    (if/for/while/try/with/match bodies bind module names directly) but
+    stopping at scope boundaries (function/class/lambda/comprehension
+    bindings are not module bindings)."""
+    for stmt in _iter_module_scope_statements(tree.body):
+        yield from _statement_binding_events(stmt)
+
+
+def _iter_module_scope_statements(stmts: list[ast.stmt]) -> Iterator[ast.stmt]:
+    for stmt in stmts:
+        yield stmt
+        if isinstance(stmt, _SCOPE_BOUNDARY_NODES):
+            continue
+        for child_list in _child_statement_lists(stmt):
+            yield from _iter_module_scope_statements(child_list)
+
+
+def _child_statement_lists(stmt: ast.stmt) -> Iterator[list[ast.stmt]]:
+    for field_name, value in ast.iter_fields(stmt):
+        if isinstance(value, list):
+            statements = [item for item in value if isinstance(item, ast.stmt)]
+            if statements:
+                yield statements
+            for item in value:
+                if isinstance(item, ast.ExceptHandler):
+                    yield item.body
+                if isinstance(item, ast.match_case):
+                    yield item.body
+
+
+def _statement_binding_events(stmt: ast.stmt) -> Iterator[_BindingEvent]:
+    if isinstance(stmt, ast.Assign):
+        for target in stmt.targets:
+            for name, line in _target_names(target):
+                yield _BindingEvent(name, line, "assignment")
+    elif isinstance(stmt, ast.AnnAssign):
+        if stmt.value is not None:
+            for name, line in _target_names(stmt.target):
+                yield _BindingEvent(name, line, "assignment")
+    elif isinstance(stmt, ast.AugAssign):
+        for name, line in _target_names(stmt.target):
+            yield _BindingEvent(name, line, "augmented assignment")
+    elif isinstance(stmt, ast.Delete):
+        for target in stmt.targets:
+            for name, line in _target_names(target):
+                yield _BindingEvent(name, line, "deletion")
+    elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
+        for alias in stmt.names:
+            bound = alias.asname or alias.name.split(".")[0]
+            yield _BindingEvent(bound, stmt.lineno, "import rebinding")
+    elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        yield _BindingEvent(stmt.name, stmt.lineno, "function definition")
+    elif isinstance(stmt, ast.ClassDef):
+        yield _BindingEvent(stmt.name, stmt.lineno, "class definition")
+    elif isinstance(stmt, (ast.For, ast.AsyncFor)):
+        for name, line in _target_names(stmt.target):
+            yield _BindingEvent(name, line, "for-loop target binding")
+    elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+        for item in stmt.items:
+            if item.optional_vars is not None:
+                for name, line in _target_names(item.optional_vars):
+                    yield _BindingEvent(name, line, "with-as binding")
+    elif isinstance(stmt, ast.Try):
+        for handler in stmt.handlers:
+            if handler.name:
+                yield _BindingEvent(handler.name, handler.lineno, "except-as binding")
+    elif isinstance(stmt, ast.Match):
+        for case in stmt.cases:
+            yield from _match_pattern_bindings(case.pattern)
+    # Walrus targets anywhere in this statement's expressions, outside
+    # nested scopes, bind module names.
+    yield from _walrus_bindings(stmt)
+
+
+def _match_pattern_bindings(pattern: ast.pattern) -> Iterator[_BindingEvent]:
+    if isinstance(pattern, ast.MatchAs) and pattern.name:
+        yield _BindingEvent(pattern.name, pattern.lineno, "match capture binding")
+    if isinstance(pattern, ast.MatchStar) and pattern.name:
+        yield _BindingEvent(pattern.name, pattern.lineno, "match capture binding")
+    if isinstance(pattern, ast.MatchMapping) and pattern.rest:
+        yield _BindingEvent(pattern.rest, pattern.lineno, "match capture binding")
+    for child in ast.iter_child_nodes(pattern):
+        if isinstance(child, ast.pattern):
+            yield from _match_pattern_bindings(child)
+
+
+def _walrus_bindings(stmt: ast.stmt) -> Iterator[_BindingEvent]:
+    stack: list[ast.AST] = [stmt]
+    while stack:
+        node = stack.pop()
+        if node is not stmt and isinstance(node, _SCOPE_BOUNDARY_NODES):
+            continue
+        if isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+            yield _BindingEvent(node.target.id, node.lineno, "walrus rebinding")
+        # Child statements are visited by the scope iterator themselves;
+        # descending into them here would double-count their walrus events.
+        stack.extend(
+            child
+            for child in ast.iter_child_nodes(node)
+            if not isinstance(child, ast.stmt)
+        )
+
+
+def _target_names(target: ast.expr) -> Iterator[tuple[str, int]]:
+    if isinstance(target, ast.Name):
+        yield target.id, target.lineno
+    elif isinstance(target, ast.Starred):
+        yield from _target_names(target.value)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for element in target.elts:
+            yield from _target_names(element)
+    # Attribute/Subscript targets mutate objects, not module name bindings.
+
+
+def _global_declarations(tree: ast.Module) -> dict[str, int]:
+    declarations: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Global):
+            for name in node.names:
+                declarations.setdefault(name, node.lineno)
+    return declarations

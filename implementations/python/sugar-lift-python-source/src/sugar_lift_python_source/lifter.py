@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .canonical import cid_of_json
+from .value_pins import ValuePin, scan_module_value_pins
 from .ir import (
     Json,
     bool_const,
@@ -136,6 +137,8 @@ def lift_source(source: str, source_path: str) -> LiftResult:
 
     module_path = _module_path(source_path)
     module_globals = _module_global_names(tree)
+    pin_scan = scan_module_value_pins(tree)
+    result.refusals.extend(pin_scan.refusals)
     class_shapes = _lift_class_shapes(tree, module_path)
     collector = _DefinitionCollector(module_path)
     collector.visit(tree)
@@ -150,6 +153,7 @@ def lift_source(source: str, source_path: str) -> LiftResult:
             module_globals,
             result,
             receiver_context=receiver_contexts.get(info.qualname),
+            value_pins=pin_scan.pins,
         )
         if contract is None:
             continue
@@ -578,6 +582,7 @@ class _Emitter:
         source_path: str,
         panic_loci: list[Json],
         attribute_receiver: _AttributeReceiverContext | None = None,
+        value_pins: dict[str, ValuePin] | None = None,
     ) -> None:
         self.fn_name = fn_name
         self.locals = set(locals_)
@@ -586,6 +591,7 @@ class _Emitter:
         self.source_path = source_path
         self.panic_loci = panic_loci
         self.attribute_receiver = attribute_receiver
+        self.value_pins = value_pins or {}
 
     def statements(self, statements: list[ast.stmt]) -> Json:
         emitted: list[Json] = []
@@ -943,6 +949,12 @@ class _Emitter:
         if isinstance(node, ast.Constant):
             return self.constant(node)
         if isinstance(node, ast.Name):
+            if node.id not in self.locals:
+                pin = self.value_pins.get(node.id)
+                if pin is not None:
+                    # The name resolved to a sworn immutable value: the term
+                    # IS the value, and no mutable-global read effect exists.
+                    return pin.term
             self._record_read_if_global(node.id)
             return var(node.id)
         if isinstance(node, ast.BinOp):
@@ -1198,6 +1210,7 @@ def _lift_function(
     result: LiftResult,
     *,
     receiver_context: _AttributeReceiverContext | None = None,
+    value_pins: dict[str, ValuePin] | None = None,
 ) -> Json | None:
     node = info.node
     assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -1236,6 +1249,7 @@ def _lift_function(
             source_path=source_path,
             panic_loci=panic_loci,
             attribute_receiver=receiver_context,
+            value_pins=value_pins,
         )
         body = emitter.statements(node.body)
         return function_contract(
