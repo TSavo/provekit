@@ -305,6 +305,49 @@ mod tests {
         serde_json::json!({"kind": "var", "name": name})
     }
 
+    // REGRESSION (main red since 2026-06-10): `version.to_string() == "1.2.3"`
+    // is a string-routed equality whose subject is a method callresult. The
+    // receiver `v` is the OPAQUE call target, not a string -- only the call
+    // RESULT is String. The ctor-decl pass declares `method:to_string` as
+    // `(Int) String` (opaque receiver -> String result), so the free-var pass
+    // must declare `v` as Int to MATCH. The string-context free-var collector
+    // wrongly marked it String, desyncing the param sort from the var decl;
+    // z3 then rejected the ill-sorted `(method:to_string <String>)` with
+    // `unknown constant method:to_string (String)` -> sound refuse -> every
+    // to_string/Display showcase row (std-core, url, semver, uuid, itertools)
+    // went red.
+    #[test]
+    fn method_callresult_receiver_is_opaque_not_string() {
+        let inv = eq(ctor("method:to_string", vec![var("v")]), string_const("1.2.3"));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            !script.contains("(declare-const v String)"),
+            "receiver var must NOT be String -- only the call result is String:\n{script}"
+        );
+        assert!(
+            script.contains("(declare-const v Int)"),
+            "receiver var must be Int (opaque), matching method:to_string's (Int) param:\n{script}"
+        );
+    }
+
+    #[test]
+    fn method_callresult_string_equality_is_well_sorted_for_z3() {
+        let z3 = which_z3().expect("z3 required for well-sortedness check");
+        let inv = eq(ctor("method:to_string", vec![var("v")]), string_const("1.2.3"));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert!(
+            !out.contains("unknown constant"),
+            "string-routed method-callresult equality must be well-sorted (no unknown constant):\n{out}\n--- script ---\n{script}"
+        );
+        assert!(
+            !out.to_lowercase().contains("error"),
+            "z3 must not error on a well-sorted script:\n{out}\n--- script ---\n{script}"
+        );
+    }
+
     #[test]
     fn mixed_sort_conjunction_is_named_error_not_ill_sorted_script() {
         // H1 [B7]: the same `call:f` ctor equated to a String literal in one

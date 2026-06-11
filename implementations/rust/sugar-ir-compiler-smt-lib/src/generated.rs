@@ -1382,9 +1382,30 @@ fn collect_free_vars_string_term(
             }
         }
         Term::Const { .. } => {}
-        Term::Ctor { args, .. } => {
-            for a in args {
-                collect_free_vars_string_term(a, out, bound);
+        Term::Ctor { name, args } => {
+            if is_builtin_term_operator(name) {
+                // A genuine string operator (`str.++`, `str.len`, ...): its
+                // operands are themselves string-sorted, so they stay in
+                // string context.
+                for a in args {
+                    collect_free_vars_string_term(a, out, bound);
+                }
+            } else {
+                // A non-builtin callresult ctor (`method:to_string`,
+                // `c:callresult_*`) is String-RETURNING, but its ARGUMENTS are
+                // the opaque call receiver/args -- NOT strings. The ctor-decl
+                // pass declares this ctor's params via `known_term_sort` (Int
+                // for a Var), so the free-var pass must collect those arg vars
+                // as Int to MATCH. Marking the receiver String desyncs the
+                // param sort from the var declaration, and z3 rejects the
+                // ill-sorted `(method:to_string <String>)` application with
+                // `unknown constant method:to_string (String)` -- which the
+                // verifier soundly refuses, turning every to_string/Display
+                // showcase row red. Only the ctor's RETURN sort is String
+                // (set by `expected_atomic_arg_sort`).
+                for a in args {
+                    collect_free_vars_term_ctx(a, out, bound, false);
+                }
             }
         }
         Term::Lambda {
