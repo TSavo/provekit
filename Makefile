@@ -310,6 +310,7 @@ SHOWCASE_RUNS = \
 	examples/python-bodyguard-precondition/run.sh \
 	examples/python-guard-shapes/run.sh \
 	examples/python-urlsafe-seam/run.sh \
+	examples/itsdangerous-token-padding/run.sh \
 	examples/forall-vampire-showcase/run.sh \
 	examples/url-showcase/run.sh \
 	examples/semver-showcase/run.sh \
