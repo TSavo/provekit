@@ -376,8 +376,25 @@ test-showcases:
 
 # --- CI alias ----------------------------------------------------------------
 
+.PHONY: self-attest
+# Dogfood the coarse supply-chain pin on sugar's OWN artifacts, driven by a
+# config/manifest (`sugar-release.toml`) -- the declared set of what sugar
+# ships -- NOT a hardcoded per-artifact flag. The artifact rail
+# (`verify --artifact`, binaryCid match) is sound + fail-closed, but a gate
+# nothing arms is a silence read wrong: the manifest-driven producer
+# (`package release`) mints the binaryCid receipts or the perimeter is inert.
+# Attest from the manifest, then re-verify against the pinned receipts --
+# producer -> gate, on the very tool doing the gating.
+self-attest: build-rust
+	@set -e; \
+	tmp=$$(mktemp -d); \
+	$(SUGAR) package release --manifest sugar-release.toml --receipts $$tmp; \
+	$(SUGAR) package release --manifest sugar-release.toml --receipts $$tmp --verify-only; \
+	echo "self-attest: PASS (manifest artifacts pinned + verified)"; \
+	rm -rf $$tmp
+
 .PHONY: ci
-ci: check-cargo-entrypoint test-all test-showcases
+ci: check-cargo-entrypoint test-all test-showcases self-attest
 	@echo ""
 	@echo "==== ci: PASS ===="
 

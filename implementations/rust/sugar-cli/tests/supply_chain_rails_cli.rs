@@ -457,6 +457,78 @@ fn package_attest_arms_the_binary_cid_pin_end_to_end() {
     assert_eq!(badj["reason"], "binaryCid mismatch");
 }
 
+// MANIFEST-DRIVEN ARMING: `sugar package release --manifest M` is the
+// config-driven producer -- the declared set of shippable artifacts, not a
+// hardcoded flag. It attests each declared artifact, and `--verify-only`
+// re-checks current bytes against the pinned binaryCid. Proves the round-trip
+// and that the gate is LIVE: a tampered artifact is rejected.
+#[test]
+fn package_release_manifest_attests_verifies_and_rejects_tamper() {
+    let dir = tmp_dir("release-manifest");
+    let artifact = dir.join("app.bin");
+    write(&artifact, "the real shippable bytes");
+    let manifest = dir.join("sugar-release.toml");
+    write(
+        &manifest,
+        "version = \"9.9.9\"\n[[artifact]]\nname = \"app\"\npath = \"app.bin\"\n",
+    );
+    let receipts = dir.join("receipts");
+
+    let attest = run_sugar(&[
+        "package",
+        "release",
+        "--manifest",
+        manifest.to_str().unwrap(),
+        "--receipts",
+        receipts.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(
+        attest.status.success(),
+        "manifest attest must succeed\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&attest.stdout),
+        String::from_utf8_lossy(&attest.stderr)
+    );
+    assert!(
+        receipts.join("app.release.json").exists(),
+        "a per-artifact receipt must be written"
+    );
+
+    let verify = run_sugar(&[
+        "package",
+        "release",
+        "--manifest",
+        manifest.to_str().unwrap(),
+        "--receipts",
+        receipts.to_str().unwrap(),
+        "--verify-only",
+        "--json",
+    ]);
+    assert!(
+        verify.status.success(),
+        "the real artifact must verify against its pinned receipt"
+    );
+    assert_eq!(parse_stdout(&verify)["ok"], true);
+
+    // Tamper the declared artifact -> verify-only must reject (gate is live).
+    write(&artifact, "tampered bytes");
+    let bad = run_sugar(&[
+        "package",
+        "release",
+        "--manifest",
+        manifest.to_str().unwrap(),
+        "--receipts",
+        receipts.to_str().unwrap(),
+        "--verify-only",
+        "--json",
+    ]);
+    assert!(
+        !bad.status.success(),
+        "a tampered manifest artifact must be rejected"
+    );
+    assert_eq!(parse_stdout(&bad)["ok"], false);
+}
+
 #[test]
 fn verify_artifact_and_policy_runs_both_rails() {
     let dir = tmp_dir("binary-policy-verify");
