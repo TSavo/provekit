@@ -1925,4 +1925,134 @@ print(f"PASS: P5c reassigned local refused by name: {ssa_diags[0]}")
 PY
 
 echo
-echo "== all 50 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST SUITE G3 — instance-universe: construction-semantics walk through \`this\`"
+echo "Pins call:get(x) == ctorValue when getter is a pure final-field return."
+echo "────────────────────────────────────────────────────────────────"
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 51: G3 positive — pure final-field getter emits TWO operands (ctor fact + test claim)"
+echo "────────────────────────────────────────────────────────────────"
+RESULT51="$(run_lift "$FIXTURES" "G3BoxPositiveTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT51" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+
+ir = result["ir"]
+assert len(ir) == 1, f"expected 1 contract, got {len(ir)}: {[c['name'] for c in ir]}"
+c = ir[0]
+
+# Must be location-keyed (contains ::assertion, not #euf#)
+assert "::assertion" in c["name"], f"name should be location-keyed: {c['name']}"
+assert "#euf#" not in c["name"], f"must not be #euf#-federated: {c['name']}"
+
+inv = c["inv"]
+assert inv["kind"] == "and", f"inv.kind: {inv['kind']}"
+ops = inv["operands"]
+assert len(ops) == 2, (
+    f"G3 positive: expected 2 operands (ctor fact + test claim), got {len(ops)}: {ops}")
+
+# Both operands must be atomic '='
+for i, op in enumerate(ops):
+    assert op["kind"] == "atomic" and op["name"] == "=", f"operand[{i}]: {op}"
+
+# Both must have the SAME ctorJson (byte-identical call:get(x) term)
+ctor0 = ops[0]["args"][0]
+ctor1 = ops[1]["args"][0]
+assert ctor0 == ctor1, f"ctorJson not byte-identical: {ctor0} vs {ctor1}"
+
+# operand[0] is the construction fact (value 5 from new G3Box(5))
+const0 = ops[0]["args"][1]
+assert const0["kind"] == "const" and const0["value"] == 5, (
+    f"construction fact should be const(5,Int), got: {const0}")
+
+# operand[1] is the test's claim (assertEquals(5, x.get()))
+const1 = ops[1]["args"][1]
+assert const1["kind"] == "const" and const1["value"] == 5, (
+    f"test claim should be const(5,Int), got: {const1}")
+
+print(f"PASS: G3 positive — 2 operands, both const(5,Int), byte-identical ctorJson: {ctor0['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 52: G3 discrimination — non-final field refused, contract has ONE operand"
+echo "────────────────────────────────────────────────────────────────"
+RESULT52="$(run_lift "$FIXTURES" "G3NonFinalDiscriminationTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT52" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+# Contract must still lift (the test assertion itself is valid)
+assert len(ir) == 1, f"expected 1 contract, got {len(ir)}: {[c['name'] for c in ir]}"
+c = ir[0]
+inv = c["inv"]
+ops = inv["operands"]
+
+# Must have exactly ONE operand (construction refused — non-final field)
+assert len(ops) == 1, (
+    f"G3 non-final discrimination: expected 1 operand (no ctor pin), got {len(ops)}: {ops}")
+
+# Must have a named diagnostic mentioning the refusal
+reasons = [d.get("reason", "") for d in diags]
+refusal_diags = [r for r in reasons if "not final" in r or "construction not pinned" in r]
+assert refusal_diags, (
+    f"expected a diagnostic naming 'not final' or 'construction not pinned', got: {reasons}")
+
+print(f"PASS: G3 non-final discrimination — 1 operand (no pin), refusal: {refusal_diags[0]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 53: G3 discrimination — getter with computation refused, contract has ONE operand"
+echo "────────────────────────────────────────────────────────────────"
+RESULT53="$(run_lift "$FIXTURES" "G3ComputationDiscriminationTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT53" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None
+
+ir = result["ir"]
+
+# Contract must still lift (the test assertion itself is valid)
+assert len(ir) == 1, f"expected 1 contract, got {len(ir)}: {[c['name'] for c in ir]}"
+c = ir[0]
+inv = c["inv"]
+ops = inv["operands"]
+
+# Must have exactly ONE operand (construction refused — getter is not a pure field read)
+assert len(ops) == 1, (
+    f"G3 computation discrimination: expected 1 operand (no ctor pin), got {len(ops)}: {ops}")
+
+print(f"PASS: G3 computation discrimination — 1 operand (computation getter refused, no pin)")
+PY
+
+echo
+echo "== all 53 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3) =="
