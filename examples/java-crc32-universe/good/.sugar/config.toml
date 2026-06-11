@@ -1,0 +1,30 @@
+# java-crc32-universe (GOOD): the vendor's own sworn CRC-32C check value.
+# assertion_source_dirs: JUnit5 framework source for vocabulary derivation.
+# vendor_source_dirs: the vendored OpenJDK java.util.zip.CRC32C source — walked
+#   by the RecurrenceUniverseWalker (which refuses its static-init table-gen by
+#   name; see PROVENANCE.md) and used for type resolution of the CRC32C API.
+[java-test-assertions]
+assertion_source_dirs = ["vendor/junit5"]
+vendor_source_dirs = ["vendor/jdk-crc32c"]
+
+[[plugins]]
+name = "java-test-assertions-lift"
+kind = "lift"
+surface = "java-test-assertions"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+
+[platform_profile]
+language = "java"
+library = "java-crc32-universe-good"
+version = "0.0.0"

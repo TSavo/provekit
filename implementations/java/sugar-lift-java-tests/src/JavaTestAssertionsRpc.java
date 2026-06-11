@@ -5411,6 +5411,58 @@ public final class JavaTestAssertionsRpc {
                 return mods.contains(Modifier.STATIC) && mods.contains(Modifier.FINAL);
             }
 
+            /** The allocated length of an array-field reference, fixed at the
+             *  `new int[N]` / `new int[D][N]` static-init allocation (JLS §12.4).
+             *  `field`        → first dimension N from `field = new int[N]` / `[D][N]`
+             *  `field[<lit>]` → second dimension N from `field = new int[D][N]`
+             *  Returns null if the field is not so allocated. */
+            Integer allocatedArrayLength(ExpressionTree ref) {
+                // field[<lit>].length → second dimension
+                if (ref instanceof ArrayAccessTree aat) {
+                    String base = identName(aat.getExpression());
+                    if (base == null) return null;
+                    List<ExpressionTree> dims = arrayDims(base);
+                    if (dims == null || dims.size() < 2) return null;
+                    return literalDim(dims.get(1));
+                }
+                String fld = identName(ref);
+                if (fld == null) return null;
+                List<ExpressionTree> dims = arrayDims(fld);
+                if (dims == null || dims.isEmpty()) return null;
+                return literalDim(dims.get(0));
+            }
+
+            /** Dimension expressions of a field's `new int[..][..]` initializer. */
+            private List<ExpressionTree> arrayDims(String field) {
+                VariableTree vt = fields.get(field);
+                if (vt == null || !(vt.getInitializer() instanceof NewArrayTree nat)) return null;
+                return new ArrayList<>(nat.getDimensions());
+            }
+
+            private Integer literalDim(ExpressionTree d) {
+                Integer v = literalCharOrInt(stripParens(d));
+                if (v != null) return v;
+                String ident = identName(d);
+                return ident != null ? resolveFieldValue(ident, 0) : null;
+            }
+
+            /** Simple names of this class's int[] / int[][] (any-rank int) fields —
+             *  the construction-site table targets the static-init walk may write. */
+            Set<String> intArrayFieldNames(String cls) {
+                Set<String> out = new LinkedHashSet<>();
+                for (Map.Entry<String, VariableTree> fe : fields.entrySet()) {
+                    if (!cls.equals(fieldOwner.get(fe.getKey()))) continue;
+                    Tree t = fe.getValue().getType();
+                    int rank = 0;
+                    while (t instanceof ArrayTypeTree att) { rank++; t = att.getType(); }
+                    if (rank >= 1 && t instanceof PrimitiveTypeTree ptt
+                            && ptt.getPrimitiveTypeKind() == TypeKind.INT) {
+                        out.add(fe.getKey());
+                    }
+                }
+                return out;
+            }
+
             /** All-literal array initializer values, or null if any entry is non-literal. */
             List<Integer> literalArrayValues(String fieldName) {
                 VariableTree vt = fields.get(fieldName);
@@ -5503,6 +5555,14 @@ public final class JavaTestAssertionsRpc {
                     if (ident != null && !ident.equals(name)) {
                         return resolveFieldValue(ident, depth + 1);
                     }
+                    // Construction-time pure-int builtin fold: `Integer.reverse(X)` /
+                    // `Integer.reverseBytes(X)` where X folds to a const. These are
+                    // total, deterministic, side-effect-free JDK builtins evaluated
+                    // once at class init (JLS §12.4); we QUOTE their definition rather
+                    // than re-derive it. Used by e.g. CRC32C's REVERSED_CRC32C_POLY =
+                    // Integer.reverse(CRC32C_POLY).
+                    Integer folded = foldIntBuiltin(stripParens(init), depth);
+                    if (folded != null) return folded;
                     return null;
                 }
                 // Blank final: find ctor with `this.<name> = <param>` and the
@@ -5521,6 +5581,30 @@ public final class JavaTestAssertionsRpc {
                     if (ident != null) return resolveFieldValue(ident, depth + 1);
                 }
                 return null;
+            }
+
+            /** Constant-fold `Integer.reverse(X)` / `Integer.reverseBytes(X)` where
+             *  X resolves to an int const (literal or static-final). Returns null if
+             *  the call is not one of these pure builtins or X does not fold. */
+            private Integer foldIntBuiltin(ExpressionTree e, int depth) {
+                if (!(e instanceof MethodInvocationTree mit)) return null;
+                if (mit.getArguments().size() != 1) return null;
+                if (!(mit.getMethodSelect() instanceof MemberSelectTree mst)) return null;
+                String recv = identName(mst.getExpression());
+                if (!"Integer".equals(recv)) return null;
+                String op = mst.getIdentifier().toString();
+                ExpressionTree arg = stripParens(mit.getArguments().get(0));
+                Integer x = literalCharOrInt(arg);
+                if (x == null) {
+                    String ident = identName(arg);
+                    if (ident != null) x = resolveFieldValue(ident, depth + 1);
+                }
+                if (x == null) return null;
+                return switch (op) {
+                    case "reverse"      -> Integer.reverse(x);
+                    case "reverseBytes" -> Integer.reverseBytes(x);
+                    default              -> null;
+                };
             }
 
             /** If ctor body contains `this.<field> = <param>`, return the param index. */
@@ -6752,11 +6836,104 @@ public final class JavaTestAssertionsRpc {
             for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
                 String cls = ce.getKey();
                 for (Tree m : ce.getValue().getMembers()) {
-                    if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
-                    String method = mt.getName().toString();
-                    walkMethod(corpus, cls, method, mt, diagnostics);
+                    if (m instanceof MethodTree mt && mt.getBody() != null) {
+                        walkMethod(corpus, cls, mt.getName().toString(), mt, diagnostics);
+                        continue;
+                    }
+                    // CONSTRUCTION-SITE AXIOM (JLS §12.4): a STATIC INITIALIZER
+                    // block is a first-class construction site. The JLS guarantees
+                    // the `static {}` block runs EXACTLY ONCE, in TEXTUAL ORDER,
+                    // BEFORE the first active use of the class — so a static-final
+                    // array filled by a literal-bounded loop in that block has its
+                    // value PRESENT AND FIXED at every subsequent read of the field.
+                    // We do not simulate class loading; we QUOTE that guarantee, the
+                    // same way the `final` gate quotes single-assignment and the
+                    // platform-axioms quote identity bridges. The real vendor CRC
+                    // table-generation locus lives here (e.g. java.util.zip.CRC32C
+                    // builds its lookup table in a `static {}` block), so we WALK it
+                    // as a construction site, constant-folding the table it builds
+                    // into the store; any node that does not fold is REFUSED BY NAME.
+                    if (m instanceof BlockTree blk && blk.isStatic()) {
+                        walkStaticInit(corpus, cls, blk, diagnostics);
+                    }
                 }
             }
+        }
+
+        /**
+         * Walk a STATIC INITIALIZER block as a first-class construction site
+         * (JLS §12.4). We reuse the SAME unroll/interpret machinery the method
+         * walk uses: identify the array targets written by carrier loops, seed the
+         * straight-line preamble, and fully unroll each literal-bounded carrier
+         * loop, constant-folding the table it builds. Any node that does not fold
+         * (non-literal bound, symbolic index, uninterpretable expr) is REFUSED BY
+         * NAME by the shared unroll machinery — never faked, never skipped.
+         *
+         * Array targets here include static-final FIELD arrays of the class (the
+         * table being constructed) and any int[] locals declared in the block. A
+         * two-dimensional target written as `field[<lit>][index]` is folded onto a
+         * per-sub-array key `field[<lit>]` so the 1-D recurrence over that fixed
+         * sub-array constant-folds (the outer index is a literal selecting one
+         * concrete sub-array; a non-literal outer index is refused by name).
+         */
+        private static void walkStaticInit(
+                UniverseWalker.Corpus corpus, String cls, BlockTree blk,
+                List<String> diagnostics) {
+            String method = "<clinit>";
+
+            // Array targets: int[] locals declared in the block + the class's own
+            // static int[] / int[][] fields (the table fields). We track by simple
+            // name; a 2-D field is reached via the `field[<lit>]` sub-array key,
+            // which the store/read path synthesises on demand.
+            Set<String> intArrayLocals = new LinkedHashSet<>();
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitVariable(VariableTree vt, Void x) {
+                    if (isIntArrayType(vt.getType()))
+                        intArrayLocals.add(vt.getName().toString());
+                    return super.visitVariable(vt, x);
+                }
+            }.scan(blk, null);
+            intArrayLocals.addAll(corpus.intArrayFieldNames(cls));
+
+            // Carrier loops: a for-loop whose body stores to a tracked array
+            // (directly `arr[..]=` or via a `field[<lit>][..]=` sub-array store).
+            List<ForLoopTree> carriers = new ArrayList<>();
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitForLoop(ForLoopTree flt, Void x) {
+                    if (loopStoresToAnyArrayOrSub(flt, intArrayLocals)) carriers.add(flt);
+                    return super.visitForLoop(flt, x);
+                }
+            }.scan(blk, null);
+            if (carriers.isEmpty()) return; // not a table-gen-shaped static block
+
+            for (ForLoopTree flt : carriers) {
+                Store store = new Store();
+                seedFromPreamble(blk, flt, store, corpus, cls, method, diagnostics);
+                unrollLoop(flt, store, corpus, cls, method, intArrayLocals, diagnostics);
+            }
+        }
+
+        /** Like loopStoresToAnyArray but also accepts a 2-D sub-array store
+         *  `field[<lit>][idx] = ...` whose base field name is tracked. */
+        private static boolean loopStoresToAnyArrayOrSub(ForLoopTree flt, Set<String> arrays) {
+            final boolean[] hit = {false};
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitAssignment(AssignmentTree at, Void x) {
+                    ExpressionTree lhs = stripP(at.getVariable());
+                    if (lhs instanceof ArrayAccessTree aat) {
+                        ExpressionTree base = stripP(aat.getExpression());
+                        String n = simpleName(base);
+                        if (n != null && arrays.contains(n)) hit[0] = true;
+                        // 2-D: base is itself `field[<lit>]`
+                        if (base instanceof ArrayAccessTree inner) {
+                            String bn = simpleName(stripP(inner.getExpression()));
+                            if (bn != null && arrays.contains(bn)) hit[0] = true;
+                        }
+                    }
+                    return super.visitAssignment(at, x);
+                }
+            }.scan(flt.getStatement(), null);
+            return hit[0];
         }
 
         /**
@@ -6822,6 +6999,18 @@ public final class JavaTestAssertionsRpc {
             }
             String readScalar(String name) { return scalars.get(name); }
             void writeScalar(String name, String tree) { scalars.put(name, tree); }
+
+            /** A deep-enough copy for branch evaluation: scalar + array maps are
+             *  copied (tree JSON strings are immutable), induction binding carried. */
+            Store fork() {
+                Store s = new Store();
+                s.scalars.putAll(this.scalars);
+                for (Map.Entry<String, Map<Integer, String>> e : this.arrays.entrySet())
+                    s.arrays.put(e.getKey(), new LinkedHashMap<>(e.getValue()));
+                s.inductionVar = this.inductionVar;
+                s.inductionVal = this.inductionVal;
+                return s;
+            }
         }
 
         /** True if the for-loop body contains `arr[...] = ...` for some tracked array. */
@@ -7012,19 +7201,195 @@ public final class JavaTestAssertionsRpc {
                     && est.getExpression() instanceof AssignmentTree at) {
                 return execAssign(at, store, corpus, cls, method, arrays, sr, diagnostics);
             }
-            // A conditional in the body is only walkable as the MAG01-gated array
-            // write (handled inside interpret via the ?:/array-gate shape on the
-            // RHS). A standalone `if` statement that performs a store is the twist's
-            // shape we have NOT generalized → refuse by name with the node located.
+            // Compound assignment as a step update: `x >>>= 1`, `x ^= K`, etc.
+            // Desugar `x op= e` → `x = x op e` and write the scalar.
+            if (st instanceof ExpressionStatementTree estc
+                    && estc.getExpression() instanceof CompoundAssignmentTree cat) {
+                return execCompound(cat, store, corpus, cls, method, sr, diagnostics);
+            }
+            // NESTED literal-bounded loop (e.g. CRC32C's inner `for (i=0;i<Byte.SIZE;i++)`
+            // bit loop): unroll it fully against the SAME store, threading scalar
+            // recurrences. Reuses the outer unroll's bound/update gates; any break
+            // (non-literal bound, bad update) is refused by name there.
+            if (st instanceof ForLoopTree nested) {
+                return unrollNested(nested, store, corpus, cls, method, arrays, sr, diagnostics);
+            }
+            // `if (cond) <thenStore> else <elseStore>` where BOTH branches assign the
+            // SAME scalar — the statement form of the keystone's ?:-gate. We fold it
+            // to `scalar = ite(cond, then-tree, else-tree)`. This is the canonical CRC
+            // table-gen twist: `if ((r&1)!=0) r = POLY ^ (r>>>1); else r >>>= 1;`.
             if (st instanceof IfTree it) {
-                refuse(diagnostics, cls, method,
-                        "unroll refused: in-loop `if` statement is not a generalized walkable shape "
-                        + "(branch-gated store) — structural break at IF node `if (" + it.getCondition() + ")`");
-                return false;
+                return execIfGate(it, store, corpus, cls, method, arrays, sr, diagnostics);
             }
             refuse(diagnostics, cls, method,
                     "unroll refused: uninterpretable statement in loop body: " + st.getKind() + " (" + oneLine(st) + ")");
             return false;
+        }
+
+        /** Desugar `x op= e` → write scalar/array `x` with the bv tree of `x op e`. */
+        private static boolean execCompound(
+                CompoundAssignmentTree cat, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, StepResult sr, List<String> diagnostics) {
+            ExpressionTree lhs = stripP(cat.getVariable());
+            String op = switch (cat.getKind()) {
+                case RIGHT_SHIFT_ASSIGNMENT, UNSIGNED_RIGHT_SHIFT_ASSIGNMENT -> "bv32.lshr";
+                case LEFT_SHIFT_ASSIGNMENT  -> "bv32.shl";
+                case AND_ASSIGNMENT         -> "bv32.and";
+                case OR_ASSIGNMENT          -> "bv32.or";
+                case XOR_ASSIGNMENT         -> "bv32.xor";
+                case PLUS_ASSIGNMENT        -> "bv32.add";
+                case MULTIPLY_ASSIGNMENT    -> "bv32.mul";
+                default                     -> null;
+            };
+            if (op == null) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: unsupported compound-assignment operator " + cat.getKind()
+                        + " at `" + oneLine(cat) + "`");
+                return false;
+            }
+            String lhsTree = interpret(lhs, store, corpus, cls, method, sr, diagnostics);
+            if (lhsTree == null) return false;
+            String rhsTree = interpret(cat.getExpression(), store, corpus, cls, method, sr, diagnostics);
+            if (rhsTree == null) return false;
+            String combined = "{\"kind\":\"ctor\",\"name\":\"" + op + "\",\"args\":["
+                    + lhsTree + "," + rhsTree + "]}";
+            String sname = simpleName(lhs);
+            if (sname != null) { store.writeScalar(sname, combined); return true; }
+            refuse(diagnostics, cls, method,
+                    "unroll refused: compound-assignment LHS is not a scalar: " + oneLine(lhs));
+            return false;
+        }
+
+        /** Fully unroll a NESTED literal-bounded loop against the shared store. */
+        private static boolean unrollNested(
+                ForLoopTree flt, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, Set<String> arrays, StepResult sr, List<String> diagnostics) {
+            List<? extends StatementTree> inits = flt.getInitializer();
+            if (inits.size() != 1 || !(inits.get(0) instanceof VariableTree vt)
+                    || vt.getInitializer() == null) {
+                refuse(diagnostics, cls, method, "unroll refused: nested loop init is not a single `int v = <literal>`");
+                return false;
+            }
+            String v = vt.getName().toString();
+            Integer lo = constInt(vt.getInitializer(), corpus);
+            if (!(flt.getCondition() instanceof BinaryTree cond)) {
+                refuse(diagnostics, cls, method, "unroll refused: nested loop condition is not a binary comparison");
+                return false;
+            }
+            Tree.Kind ck = cond.getKind();
+            boolean lt = ck == Tree.Kind.LESS_THAN, le = ck == Tree.Kind.LESS_THAN_EQUAL;
+            if (lo == null || !(lt || le)
+                    || !(stripP(cond.getLeftOperand()) instanceof IdentifierTree li)
+                    || !li.getName().toString().equals(v)) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: nested loop is not `for (int " + v + "=<lit>; " + v + " </<= <lit>; " + v + "++)`");
+                return false;
+            }
+            Integer hi = constInt(stripP(cond.getRightOperand()), corpus);
+            if (hi == null) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: nested loop bound `" + oneLine(cond.getRightOperand())
+                        + "` is not a literal/static-final/.length/Byte.SIZE int — open bound");
+                return false;
+            }
+            List<? extends ExpressionStatementTree> upds = flt.getUpdate();
+            if (upds.size() != 1 || !isPlusOneUpdate(upds.get(0).getExpression(), v)) {
+                refuse(diagnostics, cls, method, "unroll refused: nested loop update is not `" + v + "++`/`++" + v + "`/`" + v + "+=1`");
+                return false;
+            }
+            long endExclusive = le ? (hi + 1L) : (long) hi;
+            // Save/restore the outer induction binding around the nested unroll.
+            String savedVar = store.inductionVar; long savedVal = store.inductionVal;
+            for (long iv = lo; iv < endExclusive; iv++) {
+                store.inductionVar = v;
+                store.inductionVal = iv;
+                if (execBodyInto(flt.getStatement(), store, corpus, cls, method, arrays, sr, diagnostics) == false) {
+                    store.inductionVar = savedVar; store.inductionVal = savedVal;
+                    return false;
+                }
+            }
+            store.inductionVar = savedVar; store.inductionVal = savedVal;
+            return true;
+        }
+
+        /** Execute a (possibly block) body statement into the SAME StepResult. */
+        private static boolean execBodyInto(
+                StatementTree body, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, Set<String> arrays, StepResult sr, List<String> diagnostics) {
+            if (body instanceof BlockTree bt) {
+                for (StatementTree s : bt.getStatements())
+                    if (!execStmt(s, store, corpus, cls, method, arrays, sr, diagnostics)) return false;
+                return true;
+            }
+            return execStmt(body, store, corpus, cls, method, arrays, sr, diagnostics);
+        }
+
+        /** `if (cond) {scalar = A} else {scalar = B}` → `scalar = ite(cond, A, B)`.
+         *  Both branches must assign the SAME single scalar (or compound-assign it);
+         *  any other shape is refused by name. The else branch is required (a
+         *  one-armed gated store is not total → unsound to fold). */
+        private static boolean execIfGate(
+                IfTree it, Store store, UniverseWalker.Corpus corpus,
+                String cls, String method, Set<String> arrays, StepResult sr, List<String> diagnostics) {
+            if (it.getElseStatement() == null) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: one-armed in-loop `if` (no else) is not a total branch-gated "
+                        + "store — structural break at `if (" + oneLine(it.getCondition()) + ")`");
+                return false;
+            }
+            String condBool = interpretBool(it.getCondition(), store, corpus, cls, method, sr, diagnostics);
+            if (condBool == null) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: in-loop `if` guard `" + oneLine(it.getCondition())
+                        + "` is not a walkable bv32 comparison");
+                return false;
+            }
+            String[] thenAssign = singleScalarAssign(it.getThenStatement());
+            String[] elseAssign = singleScalarAssign(it.getElseStatement());
+            if (thenAssign == null || elseAssign == null || !thenAssign[0].equals(elseAssign[0])) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: in-loop `if/else` branches do not both assign the same single "
+                        + "scalar (branch-gated store shape) at `if (" + oneLine(it.getCondition()) + ")`");
+                return false;
+            }
+            String target = thenAssign[0];
+            // Evaluate each branch's resulting scalar tree against a COPY of the store
+            // so neither branch's intermediate write leaks; then combine with ite.
+            Store thenStore = store.fork();
+            if (!execBodyInto(it.getThenStatement(), thenStore, corpus, cls, method, arrays, sr, diagnostics)) return false;
+            Store elseStore = store.fork();
+            if (!execBodyInto(it.getElseStatement(), elseStore, corpus, cls, method, arrays, sr, diagnostics)) return false;
+            String tTree = thenStore.readScalar(target);
+            String fTree = elseStore.readScalar(target);
+            if (tTree == null || fTree == null) {
+                refuse(diagnostics, cls, method,
+                        "unroll refused: in-loop `if/else` branch did not produce a value for `" + target + "`");
+                return false;
+            }
+            store.writeScalar(target,
+                    "{\"kind\":\"ctor\",\"name\":\"bv32.ite\",\"args\":[" + condBool + "," + tTree + "," + fTree + "]}");
+            return true;
+        }
+
+        /** If `st` (or its single block statement) is exactly one assignment or
+         *  compound-assignment to a scalar, return {scalarName}; else null. */
+        private static String[] singleScalarAssign(StatementTree st) {
+            if (st instanceof BlockTree bt) {
+                if (bt.getStatements().size() != 1) return null;
+                st = bt.getStatements().get(0);
+            }
+            if (st instanceof ExpressionStatementTree est) {
+                ExpressionTree e = est.getExpression();
+                if (e instanceof AssignmentTree at) {
+                    String n = simpleName(stripP(at.getVariable()));
+                    return n == null ? null : new String[]{n};
+                }
+                if (e instanceof CompoundAssignmentTree cat) {
+                    String n = simpleName(stripP(cat.getVariable()));
+                    return n == null ? null : new String[]{n};
+                }
+            }
+            return null;
         }
 
         /** `t = <expr>` (scalar) or `arr[<idx>] = <expr>` (array store). */
@@ -7033,10 +7398,11 @@ public final class JavaTestAssertionsRpc {
                 String cls, String method, Set<String> arrays, StepResult sr, List<String> diagnostics) {
             ExpressionTree lhs = stripP(at.getVariable());
             if (lhs instanceof ArrayAccessTree aat) {
-                String arr = simpleName(stripP(aat.getExpression()));
-                if (arr == null || !arrays.contains(arr)) {
+                String arr = arrayStoreKey(stripP(aat.getExpression()), store, corpus, arrays);
+                if (arr == null) {
                     refuse(diagnostics, cls, method,
-                            "unroll refused: array store to non-tracked / non-int[] target `" + oneLine(lhs) + "`");
+                            "unroll refused: array store to non-tracked / non-int[] target `" + oneLine(lhs) + "`"
+                            + " (a 2-D sub-array store requires a LITERAL outer index selecting one concrete table)");
                     return false;
                 }
                 Integer idx = concreteIndex(aat.getIndex(), store, corpus);
@@ -7146,8 +7512,10 @@ public final class JavaTestAssertionsRpc {
                 return varNode(n);
             }
             // Array read: arr[<concrete idx>] → the stored tree at that index.
+            // `arr` may be a 1-D field/local OR a 2-D sub-array `field[<lit>]`,
+            // resolved to the same store key the store path uses.
             if (expr instanceof ArrayAccessTree aat) {
-                String arr = simpleName(stripP(aat.getExpression()));
+                String arr = arrayReadKey(stripP(aat.getExpression()), store, corpus);
                 Integer idx = concreteIndex(aat.getIndex(), store, corpus);
                 if (arr == null || idx == null) {
                     refuseN(diagnostics, cls, method,
@@ -7252,6 +7620,43 @@ public final class JavaTestAssertionsRpc {
             return "{\"kind\":\"ctor\",\"name\":\"" + smt + "\",\"args\":[" + l + "," + r + "]}";
         }
 
+        /** Resolve an array reference expression to a STORE KEY:
+         *   `arr`            (Identifier in `arrays`)        → "arr"
+         *   `field[<lit>]`   (2-D sub-array, base in `arrays`) → "field#<lit>"
+         *  Returns null if the reference is not a tracked array / concrete sub-array.
+         *  A 2-D sub-array with a NON-literal outer index returns null (refused: an
+         *  unresolved outer index cannot select one concrete table soundly). */
+        private static String arrayStoreKey(
+                ExpressionTree ref, Store store, UniverseWalker.Corpus corpus, Set<String> arrays) {
+            ref = stripP(ref);
+            String direct = simpleName(ref);
+            if (direct != null && arrays.contains(direct)) return direct;
+            if (ref instanceof ArrayAccessTree inner) {
+                String base = simpleName(stripP(inner.getExpression()));
+                if (base != null && arrays.contains(base)) {
+                    Integer outer = concreteIndex(inner.getIndex(), store, corpus);
+                    if (outer != null) return base + "#" + outer;
+                }
+            }
+            return null;
+        }
+
+        /** Read-side store key for an array reference: `arr` → "arr";
+         *  `field[<lit>]` → "field#<lit>". Mirrors arrayStoreKey but does not gate
+         *  on the `arrays` tracked-set (a read targets whatever the store holds). */
+        private static String arrayReadKey(
+                ExpressionTree ref, Store store, UniverseWalker.Corpus corpus) {
+            ref = stripP(ref);
+            String direct = simpleName(ref);
+            if (direct != null) return direct;
+            if (ref instanceof ArrayAccessTree inner) {
+                String base = simpleName(stripP(inner.getExpression()));
+                Integer outer = concreteIndex(inner.getIndex(), store, corpus);
+                if (base != null && outer != null) return base + "#" + outer;
+            }
+            return null;
+        }
+
         // ── concrete-index resolution (the soundness boundary) ─────────────
         /** Resolve an index expression to a CONCRETE int, or null if symbolic.
          *  Walkable: int literal; static-final int; the induction var (→ its value);
@@ -7308,6 +7713,28 @@ public final class JavaTestAssertionsRpc {
             }
             if (e instanceof IdentifierTree id && corpus.isStaticFinal(id.getName().toString())) {
                 return corpus.resolveFieldValue(id.getName().toString(), 0);
+            }
+            if (e instanceof MemberSelectTree ms) {
+                String sel = ms.getIdentifier().toString();
+                // `Byte.SIZE` / `Integer.SIZE` / `Long.SIZE` — JLS-fixed bit-width
+                // constants. Quoting a JDK compile-time constant, not deriving it.
+                if (sel.equals("SIZE")) {
+                    String recv = simpleName(ms.getExpression());
+                    if ("Byte".equals(recv))    return Byte.SIZE;     // 8
+                    if ("Short".equals(recv))   return Short.SIZE;    // 16
+                    if ("Integer".equals(recv)) return Integer.SIZE;  // 32
+                    if ("Long".equals(recv))    return Long.SIZE;     // 64
+                    if ("Character".equals(recv)) return Character.SIZE;
+                }
+                // `<arrayField>.length` / `<arrayField>[<lit>].length` — the length
+                // is FIXED AT CONSTRUCTION by the `new int[N]` / `new int[D][N]`
+                // allocation (JLS §12.4: the static-init allocation has already run,
+                // so the dimension is the value every reader sees). Resolve N from
+                // the field's NewArrayTree allocation.
+                if (sel.equals("length")) {
+                    Integer len = corpus.allocatedArrayLength(stripP(ms.getExpression()));
+                    if (len != null) return len;
+                }
             }
             return null;
         }
