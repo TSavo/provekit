@@ -1,0 +1,30 @@
+[[plugins]]
+name = "java-test-assertions-lift"
+kind = "lift"
+surface = "java-test-assertions"
+emit = "ir-document"
+
+[[plugins]]
+name = "java-panama-ffm-lift"
+kind = "lift"
+surface = "java-panama-ffm"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+
+[platform_profile]
+language = "java"
+library = "java-panama-consumer"
+
+# Assertion vocabulary learned from JUnit5 framework source (Phase 2).
+[java-test-assertions]
+assertion_source_dirs = ["vendor/junit5"]

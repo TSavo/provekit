@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Build the Java-native test assertion lifter AND the JUnit witness kit.
-# Requires JDK 21+ (uses com.sun.source compiler tree API).
-# Output: out/ directory with JavaTestAssertionsRpc.class + JavaJunitWitnessRpc.class
+# Build the Java-native lifters. Requires JDK 21+ (com.sun.source tree API).
+# Output: out/ directory with:
+#   - JavaTestAssertionsRpc.class  (contract: assertions, vocab, universes)
+#   - JavaPanamaFfmRpc.class       (P5b: Panama FFM call-edge bridge lifter)
+#   - JavaJunitWitnessRpc.class    (P5a: JUnit witness resolve/recompute)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +20,8 @@ javac \
   --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
   -source 21 -target 21 \
   -d "$OUT" \
-  "$HERE/src/JavaTestAssertionsRpc.java"
+  "$HERE/src/JavaTestAssertionsRpc.java" \
+  "$HERE/src/JavaPanamaFfmRpc.java"
 
 # JavaJunitWitnessRpc: JDK-only, pure Java. Uses --release 21.
 javac \

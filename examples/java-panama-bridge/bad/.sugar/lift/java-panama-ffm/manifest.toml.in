@@ -1,0 +1,12 @@
+name = "java-panama-ffm-lift"
+version = "0.1.0"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+command = ["@KIT_JAVA@", "--add-exports", "jdk.compiler/com.sun.source.tree=ALL-UNNAMED", "--add-exports", "jdk.compiler/com.sun.source.util=ALL-UNNAMED", "--add-exports", "jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED", "-cp", "@KIT_DIR@/out", "JavaPanamaFfmRpc"]
+working_dir = "."
+phase = "consumer"
+
+[capabilities]
+authoring_surfaces = ["java-panama-ffm"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
