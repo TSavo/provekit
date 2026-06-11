@@ -1,0 +1,13 @@
+name = "java-junit-witness-lift"
+version = "0.1.0"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+command = ["@KIT_JAVA@", "-cp", "@KIT_DIR@/out", "JavaJunitWitnessRpc"]
+resolve_witness_command = ["@KIT_JAVA@", "-cp", "@KIT_DIR@/out", "JavaJunitWitnessRpc"]
+resolve_witness_method = "sugar.plugin.resolve_witness"
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["java-junit-witness"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
