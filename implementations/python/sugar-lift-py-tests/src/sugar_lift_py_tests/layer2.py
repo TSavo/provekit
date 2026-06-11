@@ -100,7 +100,10 @@ from .ir import (
     str_const,
     subst_var_in_formula,
 )
-from .translate_universe import translate_universe_for_callee
+from .translate_universe import (
+    guard_universe_for_callee,
+    translate_universe_for_callee,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -3245,6 +3248,55 @@ def _collect_value_scope_assertion_facts(
                     for universe_atom in universe_atoms:
                         if universe_atom not in assertion_atoms_by_base[base]:
                             assertion_atoms_by_base[base].append(universe_atom)
+            # GUARD-THEN-RAISE UNIVERSE (census family #1): a sworn value
+            # from callee(<concrete args>) implies every walked leading
+            # guard did NOT fire -- one negated comparison per clause,
+            # instantiated at this callsite's own argument terms. Assert a
+            # value for a guarded-out input and the conjunction is UNSAT:
+            # you swore a return from a call the vendor's source says
+            # raises.
+            if subject_term is not None and isinstance(subject_term, _Ctor):
+                guards, guard_refusal = guard_universe_for_callee(
+                    origin.callee
+                )
+                if guard_refusal is not None:
+                    out.warnings.append(
+                        LiftWarning(
+                            source_path=source_path,
+                            item_name=f"{test_name}::guard-universe",
+                            reason=(
+                                f"{guard_refusal.callee}: {guard_refusal.reason}"
+                            ),
+                        )
+                    )
+                elif guards is not None:
+                    call_args = (
+                        subject_term.args[1:]
+                        if subject_term.name.startswith("callval_")
+                        else subject_term.args
+                    )
+                    cmp_ctor = {
+                        "<": lt,
+                        "≤": lte,
+                        ">": gt,
+                        "≥": gte,
+                        "=": eq,
+                        "≠": ne,
+                    }
+                    for clause in guards.clauses:
+                        if clause.param_index >= len(call_args):
+                            continue
+                        arg_term = call_args[clause.param_index]
+                        lit_term = (
+                            num(clause.literal)
+                            if isinstance(clause.literal, int)
+                            else str_const(clause.literal)
+                        )
+                        guard_atom = not_(
+                            cmp_ctor[clause.op](arg_term, lit_term)
+                        )
+                        if guard_atom not in assertion_atoms_by_base[base]:
+                            assertion_atoms_by_base[base].append(guard_atom)
     return made
 
 

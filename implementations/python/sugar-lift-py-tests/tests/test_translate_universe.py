@@ -493,3 +493,109 @@ def test_table_flip_changes_values(vendor_path):
     )
     universe, _ = translate_universe_for_callee("vendtbl_flip.status_name")
     assert universe.values == ("active", "paused", "removed")
+
+
+# --- the guard-then-raise family: census #1 (23,082 bodies) ---
+
+VENDOR_GUARDED = '''
+def scale(x, factor):
+    """Guarded vendor fn: x must be non-negative, factor must not be 0."""
+    if x < 0:
+        raise ValueError("negative")
+    if factor == 0:
+        raise ValueError("zero factor")
+    return x * factor
+'''
+
+
+def test_guard_universe_walks(vendor_path):
+    from sugar_lift_py_tests.translate_universe import guard_universe_for_callee
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path("vendguard_ok", VENDOR_GUARDED)
+    guards, refusal = guard_universe_for_callee("vendguard_ok.scale")
+    assert refusal is None
+    assert guards is not None
+    assert len(guards.clauses) == 2
+    assert (guards.clauses[0].param_name, guards.clauses[0].op, guards.clauses[0].literal) == ("x", "<", 0)
+    assert (guards.clauses[1].param_name, guards.clauses[1].op, guards.clauses[1].literal) == ("factor", "=", 0)
+
+
+def test_guard_universe_emits_negated_comparisons(vendor_path):
+    from sugar_lift_py_tests.translate_universe import guard_universe_for_callee
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path("vendguard_l2", VENDOR_GUARDED)
+    out = _lift(
+        """
+        import vendguard_l2
+
+        def test_scale():
+            assert vendguard_l2.scale(-3, 2) == -6
+        """
+    )
+    nots = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            stack = [d.inv]
+            while stack:
+                f = stack.pop()
+                if getattr(f, "kind", None) == "not":
+                    nots.append(f.operands[0])
+                elif getattr(f, "kind", None) == "and":
+                    stack.extend(f.operands)
+    # both guards instantiate at the concrete args (-3, 2):
+    # not(-3 < 0) -- which check will refute -- and not(2 = 0).
+    assert len(nots) == 2
+    names = sorted(n.name for n in nots)
+    assert names == ["<", "="]
+
+
+def test_guard_vendor_vector_firing_guard_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import guard_universe_for_callee
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path("vendguard_bad", VENDOR_GUARDED)
+    vendor_path(
+        "test_vendguard_bad",
+        """
+        import vendguard_bad
+
+        def test_vector():
+            assert vendguard_bad.scale(-1, 2) == -2
+        """,
+    )
+    guards, refusal = guard_universe_for_callee("vendguard_bad.scale")
+    assert guards is None
+    assert refusal is not None and "sample-gate" in refusal.reason
+
+
+def test_unreadable_guards_skip_without_poisoning(vendor_path):
+    from sugar_lift_py_tests.translate_universe import guard_universe_for_callee
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendguard_mixed",
+        '''
+def f(x, y):
+    if complicated(x):
+        raise ValueError("opaque")
+    if y < 0:
+        raise ValueError("negative")
+    return x + y
+''',
+    )
+    guards, refusal = guard_universe_for_callee("vendguard_mixed.f")
+    assert refusal is None
+    assert guards is not None
+    assert len(guards.clauses) == 1
+    assert guards.clauses[0].param_name == "y"
+
+
+def test_unguarded_body_is_not_a_candidate(vendor_path):
+    from sugar_lift_py_tests.translate_universe import guard_universe_for_callee
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path("vendguard_none", "def f(x):\n    return x + 1\n")
+    guards, refusal = guard_universe_for_callee("vendguard_none.f")
+    assert guards is None and refusal is None
