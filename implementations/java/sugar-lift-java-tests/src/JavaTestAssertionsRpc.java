@@ -5928,20 +5928,12 @@ public final class JavaTestAssertionsRpc {
                 String fieldName = extractFieldName(retExpr);
                 if (fieldName == null) return Optional.empty();
 
-                // Step 5: field must be final in rc.className.
+                // Step 5: field must be effectively final in rc.className.
                 VariableTree fieldDecl = findFieldDecl(ct, fieldName);
                 if (fieldDecl == null) return Optional.empty();
-                if (!fieldDecl.getModifiers().getFlags().contains(Modifier.FINAL)) {
-                    diagnostics.add(diagnostic("<instance-universe>", rc.className, methodName,
-                            "instance-universe: field " + fieldName
-                            + " not final — construction not pinned; refusing"));
-                    return Optional.empty();
-                }
-                // Step 5b: field must not be written outside a ctor.
-                if (isFieldMutatedOutsideCtor(ct, fieldName)) {
-                    diagnostics.add(diagnostic("<instance-universe>", rc.className, methodName,
-                            "instance-universe: field " + fieldName
-                            + " assigned outside constructor — pin not safe; refusing"));
+                List<String> efDiags = new ArrayList<>();
+                if (!isEffectivelyFinalField(ct, fieldDecl, fieldName, rc.className, methodName, efDiags)) {
+                    diagnostics.addAll(efDiags);
                     return Optional.empty();
                 }
 
@@ -6015,19 +6007,12 @@ public final class JavaTestAssertionsRpc {
             String fieldName = extractFieldName(retExpr);
             if (fieldName == null) return OptionalLong.empty();
 
-            // Step B5: field must be final.
+            // Step B5: field must be effectively final.
             VariableTree fieldDecl = findFieldDecl(ct, fieldName);
             if (fieldDecl == null) return OptionalLong.empty();
-            if (!fieldDecl.getModifiers().getFlags().contains(Modifier.FINAL)) {
-                diagnostics.add(diagnostic("<instance-universe>", rc.className, outerMethod,
-                        "instance-universe: field " + fieldName
-                        + " not final — construction not pinned; refusing"));
-                return OptionalLong.empty();
-            }
-            if (isFieldMutatedOutsideCtor(ct, fieldName)) {
-                diagnostics.add(diagnostic("<instance-universe>", rc.className, outerMethod,
-                        "instance-universe: field " + fieldName
-                        + " assigned outside constructor — pin not safe; refusing"));
+            List<String> efDiags = new ArrayList<>();
+            if (!isEffectivelyFinalField(ct, fieldDecl, fieldName, rc.className, outerMethod, efDiags)) {
+                diagnostics.addAll(efDiags);
                 return OptionalLong.empty();
             }
 
@@ -6104,48 +6089,188 @@ public final class JavaTestAssertionsRpc {
         }
 
         /**
-         * Scan all non-constructor method bodies in the class for an assignment to `fieldName`.
-         * Returns true if the field is written outside of a constructor (mutation defeats the pin).
+         * Gate: a field is EFFECTIVELY FINAL (pin allowed) iff ALL of:
+         *   A. Has the `final` keyword (compiler-enforced), OR
+         *   B. Is declared `private` (closed membrane) AND passes the total scan:
+         *      B1. No assignment to the field exists anywhere outside constructors
+         *          (full TreeScanner — recurses into every statement shape, including
+         *          for/while/do/try/switch/lambda/anonymous-class bodies).
+         *          Compound operators (+=, ++, --) also count as mutations.
+         *      B2. Within each constructor, the field is assigned at most once on any
+         *          path (conservative: refuse if more than one assignment in the ctor,
+         *          or any assignment inside a loop within the ctor).
+         *
+         * A non-private field with `final` is still accepted (compiler closes the universe).
+         * A non-private field WITHOUT `final` → open membrane → refuse with named diagnostic.
+         *
+         * @param ct         class body
+         * @param fieldDecl  the field's declaration tree
+         * @param fieldName  simple name
+         * @param className  for diagnostics
+         * @param method     for diagnostics
+         * @param diagnostics named refusals appended here
          */
-        private static boolean isFieldMutatedOutsideCtor(ClassTree ct, String fieldName) {
+        private static boolean isEffectivelyFinalField(ClassTree ct, VariableTree fieldDecl,
+                                                       String fieldName, String className,
+                                                       String method, List<String> diagnostics) {
+            Set<Modifier> mods = fieldDecl.getModifiers().getFlags();
+            boolean hasFinal   = mods.contains(Modifier.FINAL);
+            boolean hasPrivate = mods.contains(Modifier.PRIVATE);
+
+            // Path A: final keyword — compiler already enforces single-assignment.
+            if (hasFinal) {
+                // Belt-and-suspenders: even a final field should not be written outside ctor
+                // (defensive against pathological code; the compiler normally prevents this,
+                // but we are walking parsed trees, not type-checked bytecode).
+                if (fieldAssignedOutsideCtor(ct, fieldName)) {
+                    diagnostics.add(diagnostic("<instance-universe>", className, method,
+                            "instance-universe: field " + fieldName
+                            + " assigned outside constructor — pin not safe; refusing"));
+                    return false;
+                }
+                return true;
+            }
+
+            // Path B: no final keyword — require private (closed membrane).
+            if (!hasPrivate) {
+                diagnostics.add(diagnostic("<instance-universe>", className, method,
+                        "instance-universe: field " + fieldName
+                        + " is not private — assignment universe escapes the walked class;"
+                        + " cannot establish effective finality"));
+                return false;
+            }
+
+            // Gate B1: total scan — no assignment outside any constructor.
+            if (fieldAssignedOutsideCtor(ct, fieldName)) {
+                diagnostics.add(diagnostic("<instance-universe>", className, method,
+                        "instance-universe: field " + fieldName
+                        + " assigned outside constructor — not effectively final"));
+                return false;
+            }
+
+            // Gate B2: within each constructor, at most one assignment, not inside a loop.
             for (Tree m : ct.getMembers()) {
                 if (!(m instanceof MethodTree mt)) continue;
-                if (mt.getName().contentEquals("<init>")) continue; // constructors are fine
+                if (!mt.getName().contentEquals("<init>")) continue;
                 if (mt.getBody() == null) continue;
-                if (bodyAssignsField(mt.getBody(), fieldName)) return true;
+                String ctorViolation = ctorAssignmentViolation(mt.getBody(), fieldName);
+                if (ctorViolation != null) {
+                    diagnostics.add(diagnostic("<instance-universe>", className, method,
+                            "instance-universe: field " + fieldName
+                            + " " + ctorViolation + " — not effectively final"));
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /**
+         * Returns true if the field is assigned anywhere in the class body OUTSIDE a constructor.
+         * Uses a full TreeScanner to recurse into every statement shape:
+         * for/while/do/try/switch/lambda/anonymous-class bodies, initializer blocks, etc.
+         * Compound operators (+=, -=, etc.) and pre/post-increment (++/--) also count.
+         */
+        private static boolean fieldAssignedOutsideCtor(ClassTree ct, String fieldName) {
+            for (Tree m : ct.getMembers()) {
+                // Skip constructors.
+                if (m instanceof MethodTree mt && mt.getName().contentEquals("<init>")) continue;
+                // Skip field declarations (initial-value assignment is in the ctor).
+                if (m instanceof VariableTree) continue;
+                // Check method bodies and initializer blocks.
+                boolean[] found = {false};
+                new TreeScanner<Void, Void>() {
+                    @Override
+                    public Void visitAssignment(AssignmentTree node, Void p) {
+                        if (isFieldLhs(node.getVariable(), fieldName)) found[0] = true;
+                        return super.visitAssignment(node, p);
+                    }
+                    @Override
+                    public Void visitCompoundAssignment(CompoundAssignmentTree node, Void p) {
+                        if (isFieldLhs(node.getVariable(), fieldName)) found[0] = true;
+                        return super.visitCompoundAssignment(node, p);
+                    }
+                    @Override
+                    public Void visitUnary(UnaryTree node, Void p) {
+                        Tree.Kind k = node.getKind();
+                        if (k == Tree.Kind.PREFIX_INCREMENT || k == Tree.Kind.PREFIX_DECREMENT
+                                || k == Tree.Kind.POSTFIX_INCREMENT || k == Tree.Kind.POSTFIX_DECREMENT) {
+                            if (isFieldLhs(node.getExpression(), fieldName)) found[0] = true;
+                        }
+                        return super.visitUnary(node, p);
+                    }
+                    // Do NOT recurse into nested class bodies — their fields are a separate scope.
+                    @Override
+                    public Void visitClass(ClassTree node, Void p) { return null; }
+                }.scan(m, null);
+                if (found[0]) return true;
             }
             return false;
         }
 
-        private static boolean bodyAssignsField(BlockTree body, String fieldName) {
-            for (StatementTree st : body.getStatements()) {
-                if (stmtAssignsField(st, fieldName)) return true;
-            }
-            return false;
+        /**
+         * Within a constructor body, check that the field is assigned at most once on any
+         * path and never inside a loop.  Returns a violation message, or null if clean.
+         * Conservative: any assignment inside a for/while/do body is refused.
+         */
+        private static String ctorAssignmentViolation(BlockTree body, String fieldName) {
+            // Count top-level (non-loop-nested) assignments; refuse if any loop contains one.
+            int[] topCount = {0};
+            String[] violation = {null};
+            new TreeScanner<Void, Void>() {
+                private int loopDepth = 0;
+                @Override public Void visitForLoop(ForLoopTree n, Void p) {
+                    loopDepth++; super.visitForLoop(n, p); loopDepth--; return null;
+                }
+                @Override public Void visitEnhancedForLoop(EnhancedForLoopTree n, Void p) {
+                    loopDepth++; super.visitEnhancedForLoop(n, p); loopDepth--; return null;
+                }
+                @Override public Void visitWhileLoop(WhileLoopTree n, Void p) {
+                    loopDepth++; super.visitWhileLoop(n, p); loopDepth--; return null;
+                }
+                @Override public Void visitDoWhileLoop(DoWhileLoopTree n, Void p) {
+                    loopDepth++; super.visitDoWhileLoop(n, p); loopDepth--; return null;
+                }
+                @Override public Void visitAssignment(AssignmentTree node, Void p) {
+                    if (isFieldLhs(node.getVariable(), fieldName)) {
+                        if (loopDepth > 0) {
+                            violation[0] = "assigned inside a loop in constructor";
+                        } else {
+                            topCount[0]++;
+                            if (topCount[0] > 1) violation[0] = "assigned more than once in constructor";
+                        }
+                    }
+                    return super.visitAssignment(node, p);
+                }
+                @Override public Void visitCompoundAssignment(CompoundAssignmentTree node, Void p) {
+                    if (isFieldLhs(node.getVariable(), fieldName)) {
+                        violation[0] = "compound-assigned in constructor";
+                    }
+                    return super.visitCompoundAssignment(node, p);
+                }
+                @Override public Void visitUnary(UnaryTree node, Void p) {
+                    Tree.Kind k = node.getKind();
+                    if ((k == Tree.Kind.PREFIX_INCREMENT || k == Tree.Kind.PREFIX_DECREMENT
+                            || k == Tree.Kind.POSTFIX_INCREMENT || k == Tree.Kind.POSTFIX_DECREMENT)
+                            && isFieldLhs(node.getExpression(), fieldName)) {
+                        violation[0] = "increment/decrement applied to field in constructor";
+                    }
+                    return super.visitUnary(node, p);
+                }
+                // Do not recurse into nested classes.
+                @Override public Void visitClass(ClassTree node, Void p) { return null; }
+            }.scan(body, null);
+            return violation[0];
         }
 
-        private static boolean stmtAssignsField(StatementTree st, String fieldName) {
-            if (st == null) return false;
-            if (st instanceof ExpressionStatementTree est) {
-                ExpressionTree e = est.getExpression();
-                if (e instanceof AssignmentTree at) {
-                    ExpressionTree lhs = at.getVariable();
-                    // `this.field = ...` or bare `field = ...`
-                    if (lhs instanceof MemberSelectTree mst
-                            && mst.getExpression() instanceof IdentifierTree tid
-                            && tid.getName().contentEquals("this")
-                            && mst.getIdentifier().toString().equals(fieldName)) return true;
-                    if (lhs instanceof IdentifierTree id
-                            && id.getName().toString().equals(fieldName)) return true;
-                }
-            } else if (st instanceof BlockTree bt) {
-                for (StatementTree inner : bt.getStatements()) {
-                    if (stmtAssignsField(inner, fieldName)) return true;
-                }
-            } else if (st instanceof IfTree it) {
-                if (stmtAssignsField(it.getThenStatement(), fieldName)) return true;
-                if (stmtAssignsField(it.getElseStatement(), fieldName)) return true;
-            }
+        /** True if expr names the field: `this.fieldName` or bare `fieldName`. */
+        private static boolean isFieldLhs(ExpressionTree expr, String fieldName) {
+            if (expr instanceof MemberSelectTree mst
+                    && mst.getExpression() instanceof IdentifierTree tid
+                    && tid.getName().contentEquals("this")
+                    && mst.getIdentifier().toString().equals(fieldName)) return true;
+            if (expr instanceof IdentifierTree id
+                    && id.getName().toString().equals(fieldName)) return true;
             return false;
         }
 

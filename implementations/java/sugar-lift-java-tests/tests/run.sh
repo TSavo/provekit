@@ -2013,11 +2013,16 @@ ops = inv["operands"]
 assert len(ops) == 1, (
     f"G3 non-final discrimination: expected 1 operand (no ctor pin), got {len(ops)}: {ops}")
 
-# Must have a named diagnostic mentioning the refusal
+# Must have a named diagnostic mentioning the refusal.
+# Accepts old message ("not final"/"construction not pinned") and new effectively-final messages
+# ("not private", "assignment universe escapes", "assigned outside constructor", "not effectively final").
 reasons = [d.get("reason", "") for d in diags]
-refusal_diags = [r for r in reasons if "not final" in r or "construction not pinned" in r]
+refusal_diags = [r for r in reasons if (
+    "not final" in r or "construction not pinned" in r
+    or "not private" in r or "assignment universe escapes" in r
+    or "assigned outside constructor" in r or "not effectively final" in r)]
 assert refusal_diags, (
-    f"expected a diagnostic naming 'not final' or 'construction not pinned', got: {reasons}")
+    f"expected a diagnostic naming field pin refusal, got: {reasons}")
 
 print(f"PASS: G3 non-final discrimination — 1 operand (no pin), refusal: {refusal_diags[0]}")
 PY
@@ -2148,11 +2153,14 @@ diags = result["diagnostics"]
 assert len(ir) == 0, (
     f"Voltron non-final discrimination: expected 0 contracts (chain refused), got {len(ir)}: {ir}")
 
-# Must have a named diagnostic mentioning the non-final field.
+# Must have a named diagnostic mentioning the non-final / open-membrane / outside-ctor refusal.
 reasons = [d.get("reason", "") for d in diags]
-nonfinal_diags = [r for r in reasons if "not final" in r or "construction not pinned" in r]
+nonfinal_diags = [r for r in reasons if (
+    "not final" in r or "construction not pinned" in r
+    or "not private" in r or "assignment universe escapes" in r
+    or "assigned outside constructor" in r or "not effectively final" in r)]
 assert nonfinal_diags, (
-    f"expected a diagnostic naming 'not final' or 'construction not pinned', got: {reasons}")
+    f"expected a diagnostic naming field pin refusal, got: {reasons}")
 
 print(f"PASS: Voltron non-final discrimination — whole chain refused, named diagnostic: {nonfinal_diags[0]}")
 PY
@@ -2188,6 +2196,206 @@ assert chain_diags, (
     f"expected a diagnostic naming chain refusal, got: {reasons}")
 
 print(f"PASS: Voltron computation discrimination — whole chain refused, named diagnostic: {chain_diags[0]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST SUITE EF — effectively-final instance fields (derived from fixedpoint, not keyword)"
+echo "A field is effectively final iff: final keyword OR (private + no outside-ctor assignment"
+echo "+ at most one ctor assignment, not in a loop). The compiler closes the universe for final;"
+echo "private closes it for the scan."
+echo "────────────────────────────────────────────────────────────────"
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 62: EF positive — private keyword-less field, single ctor assignment → TWO operands"
+echo "  EFBox.value: private int value (no final). Vendor never wrote final; fixedpoint proves it."
+echo "────────────────────────────────────────────────────────────────"
+RESULT62="$(run_lift "$FIXTURES" "EFBoxPositiveTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT62" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+assert len(ir) == 1, f"EF positive: expected 1 contract, got {len(ir)}: {ir}"
+c = ir[0]
+assert "::assertion" in c["name"], f"expected location-keyed name: {c['name']}"
+inv = c["inv"]
+ops = inv["operands"]
+assert len(ops) == 2, (
+    f"EF positive: expected 2 operands (ctor fact + test claim), got {len(ops)}: {ops}")
+for i, op in enumerate(ops):
+    assert op["kind"] == "atomic" and op["name"] == "=", f"operand[{i}]: {op}"
+ctor0 = ops[0]["args"][0]
+ctor1 = ops[1]["args"][0]
+assert ctor0 == ctor1, f"ctorJson not byte-identical: {ctor0} vs {ctor1}"
+const0 = ops[0]["args"][1]
+assert const0["kind"] == "const" and const0["value"] == 7, (
+    f"ctor fact should be const(7,Int), got: {const0}")
+const1 = ops[1]["args"][1]
+assert const1["kind"] == "const" and const1["value"] == 7, (
+    f"test claim should be const(7,Int), got: {const1}")
+print(f"PASS: EF positive — 2 operands, both const(7,Int), keyword-less private field pinned: {ctor0['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 63: EF positive (Voltron depth) — two-layer chain, both fields private no-final → TWO operands"
+echo "  EFWrapper.box and EFBox.value: both private without final; both proved by scan."
+echo "────────────────────────────────────────────────────────────────"
+RESULT63="$(run_lift "$FIXTURES" "EFVoltronPositiveTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT63" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+assert len(ir) == 1, f"EF Voltron positive: expected 1 contract, got {len(ir)}: {ir}"
+c = ir[0]
+assert "::assertion" in c["name"], f"expected location-keyed name: {c['name']}"
+inv = c["inv"]
+ops = inv["operands"]
+assert len(ops) == 2, (
+    f"EF Voltron positive: expected 2 operands (ctor fact + test claim), got {len(ops)}: {ops}")
+for i, op in enumerate(ops):
+    assert op["kind"] == "atomic" and op["name"] == "=", f"operand[{i}]: {op}"
+ctor0 = ops[0]["args"][0]
+ctor1 = ops[1]["args"][0]
+assert ctor0 == ctor1, f"receiver term not byte-identical: {ctor0} vs {ctor1}"
+const0 = ops[0]["args"][1]
+assert const0["kind"] == "const" and const0["value"] == 9, (
+    f"ctor fact should be const(9,Int), got: {const0}")
+const1 = ops[1]["args"][1]
+assert const1["kind"] == "const" and const1["value"] == 9, (
+    f"test claim should be const(9,Int), got: {const1}")
+assert len(diags) == 0, f"expected no diagnostics, got: {diags}"
+print(f"PASS: EF Voltron positive — 2 operands, both const(9,Int), two-layer keyword-less chain pinned: {ctor0['name']}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 64: EF discrimination — package-private (open membrane) → 1 operand, named diagnostic"
+echo "  PackagePrivateBox.value: no modifier → assignment universe escapes walked class."
+echo "────────────────────────────────────────────────────────────────"
+RESULT64="$(run_lift "$FIXTURES" "EFOpenMembraneTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT64" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+assert len(ir) == 1, f"EF open-membrane: expected 1 contract, got {len(ir)}: {ir}"
+c = ir[0]
+inv = c["inv"]
+ops = inv["operands"]
+assert len(ops) == 1, (
+    f"EF open-membrane: expected 1 operand (no ctor pin), got {len(ops)}: {ops}")
+reasons = [d.get("reason", "") for d in diags]
+membrane_diags = [r for r in reasons
+    if "not private" in r or "assignment universe escapes" in r or "effective finality" in r]
+assert membrane_diags, (
+    f"expected a diagnostic naming open membrane / not private, got: {reasons}")
+print(f"PASS: EF open-membrane discrimination — 1 operand, diagnostic: {membrane_diags[0][:120]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 65: EF discrimination — private field assigned in for-loop body (scan totality)"
+echo "  MutatedInForBox.value: private, but reset() assigns inside for-body."
+echo "  Old hand-rolled stmtAssignsField had no ForLoopTree case — would have missed this."
+echo "────────────────────────────────────────────────────────────────"
+RESULT65="$(run_lift "$FIXTURES" "EFMutatedInIfTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT65" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+assert len(ir) == 1, f"EF for-body mutation: expected 1 contract, got {len(ir)}: {ir}"
+c = ir[0]
+inv = c["inv"]
+ops = inv["operands"]
+assert len(ops) == 1, (
+    f"EF for-body mutation: expected 1 operand (no ctor pin), got {len(ops)}: {ops}")
+reasons = [d.get("reason", "") for d in diags]
+outside_diags = [r for r in reasons
+    if "assigned outside constructor" in r or "not effectively final" in r]
+assert outside_diags, (
+    f"expected a diagnostic naming outside-constructor assignment, got: {reasons}")
+print(f"PASS: EF for-body mutation discrimination — 1 operand, diagnostic: {outside_diags[0][:120]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 66: EF discrimination — private field with value++ in method (compound mutation)"
+echo "  IncrementBox.value: private, but increment() does this.value++."
+echo "  Old stmtAssignsField only checked AssignmentTree — UnaryTree was invisible."
+echo "────────────────────────────────────────────────────────────────"
+RESULT66="$(run_lift "$FIXTURES" "EFCompoundMutationTest.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT66" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = None
+for line in lines:
+    if not line.strip(): continue
+    obj = json.loads(line)
+    if obj.get("id") == 2:
+        result = obj["result"]
+        break
+assert result is not None, "no lift response"
+
+ir = result["ir"]
+diags = result["diagnostics"]
+
+assert len(ir) == 1, f"EF compound mutation: expected 1 contract, got {len(ir)}: {ir}"
+c = ir[0]
+inv = c["inv"]
+ops = inv["operands"]
+assert len(ops) == 1, (
+    f"EF compound mutation: expected 1 operand (no ctor pin), got {len(ops)}: {ops}")
+reasons = [d.get("reason", "") for d in diags]
+mut_diags = [r for r in reasons
+    if "assigned outside constructor" in r or "not effectively final" in r]
+assert mut_diags, (
+    f"expected a diagnostic naming outside-constructor mutation, got: {reasons}")
+print(f"PASS: EF compound mutation discrimination — 1 operand, diagnostic: {mut_diags[0][:120]}")
 PY
 
 echo
@@ -2402,4 +2610,4 @@ print(f"PASS: P6 method-ref-refusal discrimination -- 0 contracts, named diagnos
 PY
 
 echo
-echo "== all 61 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6) =="
+echo "== all 66 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF) =="
