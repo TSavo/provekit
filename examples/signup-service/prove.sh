@@ -13,8 +13,14 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-SUGAR="${SUGAR:-$REPO/implementations/rust/target/release/sugar}"
+# Use debug binary if release hasn't been built; caller can override via SUGAR=.
+SUGAR="${SUGAR:-$REPO/implementations/rust/target/debug/sugar}"
+[ -x "$SUGAR" ] || SUGAR="$REPO/implementations/rust/target/release/sugar"
 KIT_DIR="$REPO/implementations/java/sugar-lift-java-tests"
+# JUnit5 vendor source for assertion vocab derivation — identical to what the
+# java-assertion-consistency showcase uses. Copied into each work dir so the
+# kit can learn assertEquals=equality from the framework's own source.
+JUNIT5_VENDOR="$KIT_DIR/tests/fixtures/vendor/junit5"
 OUT="$HERE/proofs"; mkdir -p "$OUT"
 
 command -v mvn >/dev/null 2>&1 || { echo "SKIP: no mvn on PATH"; exit 0; }
@@ -25,8 +31,17 @@ cd "$HERE"
 # Drop a minimal .sugar lift config + manifest onto a freshly-unpacked vendor
 # source tree, pointing the java-test-assertions kit at it. Right by
 # construction: the kit reads the unpacked .java through com.sun.source.
+#
+# assertion_source_dirs must point at the JUnit5 (or JUnit4) framework source
+# so the kit can learn assertEquals=equality from the framework's own source
+# (throw-locus derivation). Without it every assertion is refused as
+# "no learned vocabulary" and the perimeter stays at 100%.
 render_manifest() {
   local work="$1" kit="$2" java; java="$(command -v java)"
+  # Copy JUnit5 vendor source into the work dir (under vendor/junit5/).
+  # The kit reads assertion_source_dirs relative to the workspace root.
+  mkdir -p "$work/vendor/junit5"
+  cp "$JUNIT5_VENDOR"/*.java "$work/vendor/junit5/" 2>/dev/null || true
   mkdir -p "$work/.sugar/lift/java-test-assertions"
   cat > "$work/.sugar/config.toml" <<TOML
 [[plugins]]
@@ -41,6 +56,9 @@ default = "z3"
 default = "z3"
 [solvers.z3]
 binary = "z3"
+
+[java-test-assertions]
+assertion_source_dirs = ["vendor/junit5"]
 TOML
   cat > "$work/.sugar/lift/java-test-assertions/manifest.toml" <<TOML
 name = "java-test-assertions-lift"
