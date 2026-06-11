@@ -432,6 +432,9 @@ fn is_bv32_atomic_predicate(name: &str) -> bool {
             | "int32.lte-const"
             | "int32.gt-const"
             | "int32.gte-const"
+            // CRC value-pin (paper 26): a self-contained bv32 equality between the
+            // test's asserted CRC value and the WALKED closed crc-FOL.
+            | "crc32.eq-walked"
     )
 }
 
