@@ -85,3 +85,24 @@ fn json_to_cvalue(value: &Json) -> Result<Arc<CValue>> {
         }
     })
 }
+
+#[cfg(test)]
+mod concept_excision_tests {
+    use super::*;
+
+    // INVARIANCE that makes the concept:* op-prefix excision CID-safe: the
+    // legacy `concept:` prefix is stripped before hashing, so a debared op
+    // name produces the byte-identical op CID. This locks the property the
+    // walk_rpc literal debare (increment 1 of the concept-hub amputation)
+    // relies on -- removing the prefix moves zero proof bytes. When the prefix
+    // and its strip are finally deleted, this test goes with them.
+    #[test]
+    fn legacy_concept_prefix_is_cid_neutral() {
+        for op in ["literal", "comment", "add", "json-parse", "sql-query", "http-request"] {
+            let prefixed = local_op_cid(&format!("concept:{op}")).expect("prefixed");
+            let bare = local_op_cid(op).expect("bare");
+            assert_eq!(prefixed, bare, "concept:{op} must hash identically to {op}");
+            assert!(bare.starts_with("blake3-512:"));
+        }
+    }
+}

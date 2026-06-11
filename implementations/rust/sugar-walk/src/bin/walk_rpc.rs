@@ -8642,7 +8642,7 @@ fn comment_shapes_for_fn_source(src: &str, fn_name: &str) -> Vec<Arc<CValue>> {
 }
 
 fn comment_shape(surface: &str) -> Option<Arc<CValue>> {
-    let op_cid = local_op_cid("concept:comment")?;
+    let op_cid = local_op_cid("comment")?;
     Some(CValue::object([
         (
             "args",
@@ -9385,7 +9385,7 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                 let mut assign_args = vec![target_leaf, shape_of_expr(&init.expr, ctx)];
                 if local_binding_is_mut(local) {
                     // Emit a concept:literal boolean true as the mutability flag.
-                    let Some(op_cid) = local_op_cid("concept:literal") else {
+                    let Some(op_cid) = local_op_cid("literal") else {
                         return non_operation_shape();
                     };
                     assign_args.push(CValue::object([
@@ -9503,7 +9503,7 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Expr::Loop(e) => {
             // `loop { body }` ≡ `while true { body }` — decompose via concept:literal(true).
             let true_lit = {
-                let Some(op_cid) = local_op_cid("concept:literal") else {
+                let Some(op_cid) = local_op_cid("literal") else {
                     return non_operation_shape();
                 };
                 CValue::object([
@@ -10045,7 +10045,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             let Some(decoded) = value.base10_parse::<i64>().ok() else {
                 return non_operation_shape();
             };
-            let Some(op_cid) = local_op_cid("concept:literal") else {
+            let Some(op_cid) = local_op_cid("literal") else {
                 return non_operation_shape();
             };
             let suffix = value.suffix();
@@ -10083,7 +10083,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             // Substrate-canonical: sort + value (the decoded string).
             // Source-form escape choices (`"\\\""` vs `"\""`) are kit
             // presentation, not substrate state.
-            let Some(op_cid) = local_op_cid("concept:literal") else {
+            let Some(op_cid) = local_op_cid("literal") else {
                 return non_operation_shape();
             };
             CValue::object([
@@ -10107,7 +10107,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
         // single-char string). Source spelling (`'a'` vs `'\u{61}'`) is kit
         // presentation; the substrate carries semantic identity only.
         syn::Lit::Char(value) => {
-            let Some(op_cid) = local_op_cid("concept:literal") else {
+            let Some(op_cid) = local_op_cid("literal") else {
                 return non_operation_shape();
             };
             CValue::object([
@@ -10125,7 +10125,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
 }
 
 fn concept_literal_shape(value: Arc<CValue>, sort_cid: &str) -> Arc<CValue> {
-    let Some(op_cid) = local_op_cid("concept:literal") else {
+    let Some(op_cid) = local_op_cid("literal") else {
         return non_operation_shape();
     };
     CValue::object([
@@ -10782,7 +10782,7 @@ async fn fetch_status(url: String) -> i64 {
         assert_eq!(e["target_library_tag"], "reqwest");
         assert_eq!(
             e["op_cid"],
-            local_op_cid("concept:http-request").expect("http-request op cid")
+            local_op_cid("http-request").expect("http-request op cid")
         );
         assert_eq!(e["source_function_name"], "fetch_status");
         assert!(
@@ -11167,7 +11167,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         let tag = &tags[0];
         assert_eq!(
             tag["op_cid"],
-            local_op_cid("concept:json-parse").expect("json op cid")
+            local_op_cid("json-parse").expect("json op cid")
         );
         assert_eq!(tag["library_tag"], "sugar-shim-serde-json-rust");
         assert_eq!(tag["match_tier"], "exact");
@@ -11225,7 +11225,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         let tag = &tags[0];
         assert_eq!(
             tag["op_cid"],
-            local_op_cid("concept:json-parse").expect("json op cid")
+            local_op_cid("json-parse").expect("json op cid")
         );
         assert_eq!(tag["library_tag"], "sugar-shim-serde-json-rust");
         assert_eq!(tag["contract_cid"], contract_cid);
@@ -11285,7 +11285,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         let tag = &tags[0];
         assert_eq!(
             tag["op_cid"],
-            local_op_cid("concept:json-parse").expect("json op cid")
+            local_op_cid("json-parse").expect("json op cid")
         );
         assert_eq!(tag["library_tag"], "sugar-shim-serde-json-rust");
         assert_eq!(tag["contract_cid"], contract_cid);
@@ -11364,7 +11364,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         let tag = &tags[0];
         assert_eq!(
             tag["op_cid"],
-            local_op_cid("concept:json-parse").expect("json op cid")
+            local_op_cid("json-parse").expect("json op cid")
         );
         assert_eq!(tag["contract_cid"], contract_cid);
         assert_eq!(tag["target_proof_cid"], proof_cid);
@@ -11474,8 +11474,8 @@ pub fn sql_execute(c: &i64, q: &str, p: &i64) -> i64 {
         let tags = resp["tags"].as_array().expect("tags array");
         assert_eq!(tags.len(), 2, "expected 2 tags (json + sql): {tags:?}");
         let op_cids: Vec<&str> = tags.iter().filter_map(|t| t["op_cid"].as_str()).collect();
-        assert!(op_cids.contains(&local_op_cid("concept:json-parse").expect("json op cid")));
-        assert!(op_cids.contains(&local_op_cid("concept:sql-execute").expect("sql op cid")));
+        assert!(op_cids.contains(&local_op_cid("json-parse").expect("json op cid")));
+        assert!(op_cids.contains(&local_op_cid("sql-execute").expect("sql op cid")));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -11540,7 +11540,7 @@ pub fn query(conn: &i64, sql: &str) -> i64 {
         assert_eq!(e["family"], "concept:family:sql");
         assert_eq!(
             e["op_cid"],
-            local_op_cid("concept:sql-query").expect("sql-query op cid")
+            local_op_cid("sql-query").expect("sql-query op cid")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -11613,7 +11613,7 @@ pub fn query_stub(_conn: &i64, _sql: &str) -> i64 {
         assert_eq!(memento["family"], "concept:family:sql");
         assert_eq!(
             memento["op_cid"],
-            local_op_cid("concept:sql-query").expect("sql-query op cid")
+            local_op_cid("sql-query").expect("sql-query op cid")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -11694,11 +11694,11 @@ fn query_db(sql: String) -> String {
             .map(|e| e["op_cid"].as_str().expect("op cid"))
             .collect();
         assert!(
-            op_cids.contains(&local_op_cid("concept:http-request").expect("http op cid")),
+            op_cids.contains(&local_op_cid("http-request").expect("http op cid")),
             "{op_cids:?}"
         );
         assert!(
-            op_cids.contains(&local_op_cid("concept:sql-query").expect("sql op cid")),
+            op_cids.contains(&local_op_cid("sql-query").expect("sql op cid")),
             "{op_cids:?}"
         );
 
@@ -11764,7 +11764,7 @@ pub fn add(x: i64, y: i64) -> i64 {
 }
 "#,
         );
-        let add_cid = local_op_cid("concept:add").expect("concept:add cid");
+        let add_cid = local_op_cid("add").expect("concept:add cid");
 
         // Substrate-canonical shape (#1075 federation): operand NAMES are
         // sugar, so scoped param/local references lift as EMPTY structural
@@ -11889,7 +11889,7 @@ pub fn first() -> char {
         );
         assert_eq!(
             shape.get("op_cid").and_then(|v| v.as_str()),
-            local_op_cid("concept:literal"),
+            local_op_cid("literal"),
             "Char literal must lift as concept:literal: {shape}"
         );
         assert_eq!(
@@ -12112,8 +12112,8 @@ pub fn add_via_let(a: i64, b: i64) -> i64 {
 }
 "#,
         );
-        let assign_cid = local_op_cid("concept:assign").expect("assign cid");
-        let add_cid = local_op_cid("concept:add").expect("add cid");
+        let assign_cid = local_op_cid("assign").expect("assign cid");
+        let add_cid = local_op_cid("add").expect("add cid");
 
         // Substrate-canonical shape (#1075 federation):
         // - assign TARGET is kind:symbol "q" — a let-binding NAME is structural
@@ -12169,7 +12169,7 @@ pub fn f(a: i64, b: i64) -> i64 {
         assert_ne!(top_level, let_rhs);
         assert_eq!(
             top_level["op_cid"],
-            json!(local_op_cid("concept:add").expect("add cid")),
+            json!(local_op_cid("add").expect("add cid")),
             "top-level tail expression remains an add shape"
         );
         // #1075 federation: `{ let q = a+b; q }` lifts as concept:assign(q, add).
@@ -12180,7 +12180,7 @@ pub fn f(a: i64, b: i64) -> i64 {
         // operator (assign != add), which is what this test guards.
         assert_eq!(
             let_rhs["op_cid"],
-            json!(local_op_cid("concept:assign").expect("assign cid")),
+            json!(local_op_cid("assign").expect("assign cid")),
             "let+bare-tail-return body collapses to the concept:assign for the let-binding"
         );
         assert_eq!(
@@ -12204,7 +12204,7 @@ pub fn f(a: i64) -> i64 {
 
         assert_eq!(
             shape["op_cid"],
-            json!(local_op_cid("concept:return").expect("return cid"))
+            json!(local_op_cid("return").expect("return cid"))
         );
         assert_no_forbidden_term_shape_fields(&shape);
     }
@@ -12232,7 +12232,7 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
         assert_no_forbidden_term_shape_fields(&shape);
         assert_eq!(
             shape.get("op_cid").and_then(|v| v.as_str()),
-            local_op_cid("concept:conditional"),
+            local_op_cid("conditional"),
             "if-as-tail-expression lifts as concept:conditional: {shape:#?}"
         );
         // Collect every op_cid in the tree — verify the structural
@@ -12518,11 +12518,11 @@ pub fn bitwise_not() -> i64 {
 
         assert_eq!(
             logical_shape["op_cid"],
-            local_op_cid("concept:not").expect("logical not cid")
+            local_op_cid("not").expect("logical not cid")
         );
         assert_eq!(
             bitwise_shape["op_cid"],
-            local_op_cid("concept:bitnot").expect("bitnot cid")
+            local_op_cid("bitnot").expect("bitnot cid")
         );
         assert_ne!(
             logical_shape["op_cid"], bitwise_shape["op_cid"],
@@ -12608,7 +12608,7 @@ pub fn bitwise_not() -> i64 {
     fn collect_comment_surfaces(value: &Value, surfaces: &mut Vec<String>) {
         match value {
             Value::Object(object) => {
-                if object.get("op_cid").and_then(Value::as_str) == local_op_cid("concept:comment") {
+                if object.get("op_cid").and_then(Value::as_str) == local_op_cid("comment") {
                     if let Some(surface) = object
                         .get("args")
                         .and_then(Value::as_array)
