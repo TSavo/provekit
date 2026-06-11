@@ -85,6 +85,12 @@ struct ReleaseManifest {
     version: Option<String>,
     #[serde(default)]
     artifact: Vec<ManifestArtifact>,
+    /// Optional coverage gate: makes the manifest's completeness STRUCTURAL,
+    /// not sworn. With it, every binary the workspace builds must be either
+    /// pinned (an `[[artifact]]`) or explicitly excluded -- a new bin that is
+    /// neither fails the release, so a shippable artifact can never be
+    /// silently left unpinned.
+    coverage: Option<Coverage>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -92,6 +98,73 @@ struct ManifestArtifact {
     name: String,
     path: PathBuf,
     version: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct Coverage {
+    /// Cargo manifest whose workspace bin targets define the shippable
+    /// universe (relative to the release manifest's root).
+    cargo_manifest: String,
+    /// Bin targets deliberately NOT pinned (internal rpc/test/dev bins, or
+    /// deliverables not pinned by this manifest). Each is an explicit
+    /// decision; the gate fails on any bin that is neither pinned nor here.
+    #[serde(default)]
+    exclude: Vec<String>,
+}
+
+/// The accounting: workspace bins that are neither pinned nor excluded. A
+/// non-empty result means the manifest's coverage is incomplete -- a bin can
+/// ship unpinned. Pure, so the totality logic is unit-tested without cargo.
+fn coverage_gaps(workspace_bins: &[String], pinned: &[String], excluded: &[String]) -> Vec<String> {
+    let accounted: std::collections::BTreeSet<&str> = pinned
+        .iter()
+        .chain(excluded.iter())
+        .map(String::as_str)
+        .collect();
+    let mut gaps: Vec<String> = workspace_bins
+        .iter()
+        .filter(|b| !accounted.contains(b.as_str()))
+        .cloned()
+        .collect();
+    gaps.sort();
+    gaps.dedup();
+    gaps
+}
+
+/// Enumerate the workspace's own bin targets (the shippable universe) from
+/// `cargo metadata --no-deps`. This is the STRUCTURAL source of truth -- the
+/// set of binaries the build can produce -- not a hand-list.
+fn workspace_bin_targets(cargo_manifest: &Path) -> Result<Vec<String>, String> {
+    let out = std::process::Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .arg("--manifest-path")
+        .arg(cargo_manifest)
+        .output()
+        .map_err(|e| format!("run cargo metadata: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let meta: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("parse cargo metadata: {e}"))?;
+    let mut bins = Vec::new();
+    for pkg in meta["packages"].as_array().into_iter().flatten() {
+        for target in pkg["targets"].as_array().into_iter().flatten() {
+            let is_bin = target["kind"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|k| k.as_str() == Some("bin"));
+            if is_bin {
+                if let Some(name) = target["name"].as_str() {
+                    bins.push(name.to_string());
+                }
+            }
+        }
+    }
+    Ok(bins)
 }
 
 pub fn run(args: PackageArgs) -> u8 {
@@ -203,6 +276,47 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
         }));
     }
 
+    // Coverage gate: make the manifest's completeness STRUCTURAL. Enumerate
+    // the workspace's bin targets and fail on any that is neither pinned nor
+    // excluded -- so a newly-added shippable binary can never be silently left
+    // out of the manifest.
+    let mut coverage_json = serde_json::Value::Null;
+    if let Some(cov) = &manifest.coverage {
+        let cargo_manifest = root.join(&cov.cargo_manifest);
+        match workspace_bin_targets(&cargo_manifest) {
+            Ok(bins) => {
+                let pinned: Vec<String> =
+                    manifest.artifact.iter().map(|a| a.name.clone()).collect();
+                let gaps = coverage_gaps(&bins, &pinned, &cov.exclude);
+                coverage_json = serde_json::json!({
+                    "ok": gaps.is_empty(),
+                    "workspaceBins": bins.len(),
+                    "pinned": pinned.len(),
+                    "excluded": cov.exclude.len(),
+                    "unaccounted": gaps,
+                });
+                if !gaps.is_empty() {
+                    all_ok = false;
+                    if !args.out_flags.json && !args.out_flags.quiet {
+                        eprintln!(
+                            "  {} coverage: {} workspace bin(s) neither pinned nor excluded: {}",
+                            "FAIL".red().bold(),
+                            gaps.len(),
+                            gaps.join(", ")
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                all_ok = false;
+                coverage_json = serde_json::json!({"ok": false, "error": e});
+                if !args.out_flags.json && !args.out_flags.quiet {
+                    eprintln!("  {} coverage: {e}", "FAIL".red().bold());
+                }
+            }
+        }
+    }
+
     if args.out_flags.json {
         println!(
             "{}",
@@ -210,6 +324,7 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
                 "ok": all_ok,
                 "mode": if args.verify_only { "verify" } else { "attest" },
                 "artifacts": results,
+                "coverage": coverage_json,
             })
         );
     } else if all_ok && !args.out_flags.quiet {
@@ -448,4 +563,45 @@ fn print_package_summary(report: &serde_json::Value) {
             .and_then(|value| value.as_str())
             .unwrap_or("unknown")
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::coverage_gaps;
+
+    fn v(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn coverage_complete_when_every_bin_is_pinned_or_excluded() {
+        let bins = v(&["sugar", "sugar-lift", "coretests_sweep", "witness_rpc"]);
+        let pinned = v(&["sugar", "sugar-lift"]);
+        let excluded = v(&["coretests_sweep", "witness_rpc"]);
+        assert!(coverage_gaps(&bins, &pinned, &excluded).is_empty());
+    }
+
+    #[test]
+    fn a_new_bin_neither_pinned_nor_excluded_is_a_gap() {
+        // The whole point: add a shippable bin, forget the manifest -> FAIL.
+        let bins = v(&["sugar", "sugar-lift", "sugar-newcli"]);
+        let pinned = v(&["sugar", "sugar-lift"]);
+        let excluded = v(&[]);
+        assert_eq!(coverage_gaps(&bins, &pinned, &excluded), v(&["sugar-newcli"]));
+    }
+
+    #[test]
+    fn gaps_are_sorted_and_deduped() {
+        let bins = v(&["z-bin", "a-bin", "z-bin"]);
+        assert_eq!(coverage_gaps(&bins, &[], &[]), v(&["a-bin", "z-bin"]));
+    }
+
+    #[test]
+    fn extra_pins_or_excludes_not_in_workspace_do_not_create_gaps() {
+        // A pinned/excluded name that no longer exists as a bin is harmless;
+        // only UNACCOUNTED workspace bins are gaps.
+        let bins = v(&["sugar"]);
+        let pinned = v(&["sugar", "ghost-removed-bin"]);
+        assert!(coverage_gaps(&bins, &pinned, &[]).is_empty());
+    }
 }
