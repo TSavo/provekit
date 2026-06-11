@@ -2493,8 +2493,8 @@ public final class JavaTestAssertionsRpc {
             }
             case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
-            case "truth" -> liftTruth(mit, methodName, scope, ir, diagnostics);
-            case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, ir, diagnostics);
+            case "truth" -> liftTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
+            case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "null" -> liftNull(mit, methodName, scope, ir, diagnostics);
             case "not_null" -> liftNotNull(mit, methodName, scope, ir, diagnostics);
         }
@@ -2781,6 +2781,7 @@ public final class JavaTestAssertionsRpc {
 
     private static void liftTruth(
             MethodInvocationTree mit, String methodName, String scope,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir, List<String> diagnostics) {
 
         List<? extends ExpressionTree> args = mit.getArguments();
@@ -2792,6 +2793,14 @@ public final class JavaTestAssertionsRpc {
         ExpressionTree condExpr = args.get(0);
         if (args.size() >= 2 && condExpr instanceof LiteralTree lt && lt.getValue() instanceof String) {
             condExpr = args.get(1);
+        }
+
+        // G2b: comparison-bound path — assertTrue(callExpr <op> intLiteral)
+        // or assertTrue(intLiteral <op> callExpr). The predicate is read from
+        // Tree.Kind; operand order is normalised so the call is always args[0].
+        if (condExpr instanceof BinaryTree bt) {
+            liftComparisonBound(bt, methodName, scope, false, numericRegistry, ir, diagnostics);
+            return;
         }
 
         if (!(condExpr instanceof MethodInvocationTree callMit)) {
@@ -2824,6 +2833,7 @@ public final class JavaTestAssertionsRpc {
 
     private static void liftNegatedTruth(
             MethodInvocationTree mit, String methodName, String scope,
+            NumericUniverseRegistry numericRegistry,
             List<String> ir, List<String> diagnostics) {
 
         List<? extends ExpressionTree> args = mit.getArguments();
@@ -2835,6 +2845,12 @@ public final class JavaTestAssertionsRpc {
         ExpressionTree condExpr = args.get(0);
         if (args.size() >= 2 && condExpr instanceof LiteralTree lt && lt.getValue() instanceof String) {
             condExpr = args.get(1);
+        }
+
+        // G2b: assertFalse(callExpr <op> intLiteral) → negate the predicate.
+        if (condExpr instanceof BinaryTree bt) {
+            liftComparisonBound(bt, methodName, scope, true, numericRegistry, ir, diagnostics);
+            return;
         }
 
         if (!(condExpr instanceof MethodInvocationTree callMit)) {
@@ -2863,6 +2879,170 @@ public final class JavaTestAssertionsRpc {
         }
 
         ir.add(buildTruthContract(callee, argValues, false));
+    }
+
+    /**
+     * G2b: lift a comparison-bound assertion from a BinaryTree condition.
+     *
+     * Supported shapes (where fn(int-literals) is a bare call):
+     *   fn(args) <op> intLiteral   → predicate = kindToPredicate(op), call=lhs, lit=rhs
+     *   intLiteral <op> fn(args)   → predicate = kindToPredicate(mirror(op)), call=rhs, lit=lhs
+     *   (normalised so call is always args[0] of the atom)
+     *
+     * When negate=true (assertFalse path), the predicate is flipped:
+     *   assertFalse(x < y)  ≡  x >= y
+     *   assertFalse(x <= y) ≡  x > y
+     *   assertFalse(x > y)  ≡  x <= y
+     *   assertFalse(x >= y) ≡  x < y
+     *
+     * Refusals by name (named diagnostic, not silent):
+     *   - operator is not a comparison kind (e.g. == or &&): refused
+     *   - both sides are calls: refused (two callsites, not a bound)
+     *   - call side has a non-int-literal argument: refused
+     *   - call side is not a bare MethodInvocationTree: refused
+     *   - call side has a qualified callee: refused
+     *   - bound side is not an int literal: refused (non-literal bound)
+     */
+    private static void liftComparisonBound(
+            BinaryTree bt, String methodName, String scope,
+            boolean negate,
+            NumericUniverseRegistry numericRegistry,
+            List<String> ir, List<String> diagnostics) {
+
+        Tree.Kind kind = bt.getKind();
+        // Only lift the four comparison operators.
+        if (kind != Tree.Kind.LESS_THAN && kind != Tree.Kind.LESS_THAN_EQUAL
+                && kind != Tree.Kind.GREATER_THAN && kind != Tree.Kind.GREATER_THAN_EQUAL) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                methodName, methodName + "(comparison-bound) refused: operator "
+                    + kind + " is not a supported comparison (<, <=, >, >=); condition: " + bt));
+            return;
+        }
+
+        ExpressionTree lhs = bt.getLeftOperand();
+        ExpressionTree rhs = bt.getRightOperand();
+
+        boolean lhsIsCall = lhs instanceof MethodInvocationTree;
+        boolean rhsIsCall = rhs instanceof MethodInvocationTree;
+
+        if (lhsIsCall && rhsIsCall) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                methodName, methodName + "(comparison-bound) refused: both operands are calls"
+                    + " (two callsites, not a bound — out of scope for G2b): " + bt));
+            return;
+        }
+
+        // Determine call side and literal side; normalise predicate so call is args[0].
+        MethodInvocationTree callMit;
+        long litVal;
+        String predicate; // the predicate name after normalisation
+
+        if (lhsIsCall) {
+            // call <op> lit
+            callMit = (MethodInvocationTree) lhs;
+            OptionalLong litOpt = asIntLiteral(rhs);
+            if (litOpt.isEmpty()) {
+                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                    methodName, methodName + "(comparison-bound) refused: RHS bound is not an int literal"
+                        + " (non-literal bound is out of scope for G2b): " + rhs));
+                return;
+            }
+            litVal = litOpt.getAsLong();
+            predicate = kindToPredicate(kind); // call <op> lit: predicate is the op as-is
+        } else if (rhsIsCall) {
+            // lit <op> call  →  normalise to call mirror(<op>) lit
+            callMit = (MethodInvocationTree) rhs;
+            OptionalLong litOpt = asIntLiteral(lhs);
+            if (litOpt.isEmpty()) {
+                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                    methodName, methodName + "(comparison-bound) refused: LHS bound is not an int literal"
+                        + " (non-literal bound is out of scope for G2b): " + lhs));
+                return;
+            }
+            litVal = litOpt.getAsLong();
+            predicate = mirrorPredicate(kind); // lit <op> call ⟹ call mirror(op) lit
+        } else {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                methodName, methodName + "(comparison-bound) refused: neither operand is a call: " + bt));
+            return;
+        }
+
+        // If assertFalse, negate the predicate.
+        if (negate) {
+            predicate = negatePredicate(predicate);
+        }
+
+        String callee = methodInvocationName(callMit);
+        if (callee.contains(".")) {
+            diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                methodName, "callee is qualified (" + callee + "); only bare function names lifted"));
+            return;
+        }
+
+        List<? extends ExpressionTree> callArgs = callMit.getArguments();
+        List<Long> argValues = new ArrayList<>();
+        for (ExpressionTree a : callArgs) {
+            OptionalLong val = asIntLiteral(a);
+            if (val.isEmpty()) {
+                diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
+                    methodName, "call arg to " + callee + "(...) is not an int literal: " + a));
+                return;
+            }
+            argValues.add(val.getAsLong());
+        }
+
+        ir.add(buildContractWithRelation(callee, argValues, litVal, predicate));
+        // G2b × G2: also emit the numeric-universe row if the callee is in the
+        // registry. The universe row and the comparison-bound row share the SAME
+        // #euf# contract name → conjoined at prove time. The bv32 contagion pass
+        // then promotes the comparison-bound atom to the bv32 sort so z3 can
+        // reason over both under the bitvector theory.
+        String bvExprJson = numericRegistry.getBvExprJson(callee);
+        if (bvExprJson != null) {
+            ir.add(buildNumericUniverseContract(callee, argValues, bvExprJson));
+        }
+    }
+
+    /** Map Tree.Kind comparison op → SMT predicate name (call is LHS). */
+    private static String kindToPredicate(Tree.Kind kind) {
+        return switch (kind) {
+            case LESS_THAN       -> "<";
+            case LESS_THAN_EQUAL -> "<=";
+            case GREATER_THAN    -> ">";
+            case GREATER_THAN_EQUAL -> ">=";
+            default -> throw new IllegalArgumentException("not a comparison kind: " + kind);
+        };
+    }
+
+    /**
+     * Mirror predicate: for `lit <op> call`, flip direction so call is LHS.
+     * lit < call  ⟹  call > lit   → ">"
+     * lit <= call ⟹  call >= lit  → ">="
+     * lit > call  ⟹  call < lit   → "<"
+     * lit >= call ⟹  call <= lit  → "<="
+     */
+    private static String mirrorPredicate(Tree.Kind kind) {
+        return switch (kind) {
+            case LESS_THAN          -> ">";
+            case LESS_THAN_EQUAL    -> ">=";
+            case GREATER_THAN       -> "<";
+            case GREATER_THAN_EQUAL -> "<=";
+            default -> throw new IllegalArgumentException("not a comparison kind: " + kind);
+        };
+    }
+
+    /**
+     * Negate predicate: assertFalse(x <op> y) ≡ x negated(<op>) y.
+     * ¬(< ) ≡ >=,  ¬(<=) ≡ >,  ¬(> ) ≡ <=,  ¬(>=) ≡ <
+     */
+    private static String negatePredicate(String predicate) {
+        return switch (predicate) {
+            case "<"  -> ">=";
+            case "<=" -> ">";
+            case ">"  -> "<=";
+            case ">=" -> "<";
+            default -> throw new IllegalArgumentException("not a comparison predicate: " + predicate);
+        };
     }
 
     private static void liftNull(

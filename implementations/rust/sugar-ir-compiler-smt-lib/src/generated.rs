@@ -640,6 +640,26 @@ fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
         let subj_rendered = render_bv32_subject(subject)?;
         return Some(format!("(= {} {})", subj_rendered, lit));
     }
+    // G2b: synthetic comparison-bound atoms over bv32 subjects.
+    // int32.{lt,lte,gt,gte}-const(subject, IntConst) → (bvs{lt,le,gt,ge} subject_bv hex)
+    let cmp_smt = match name {
+        "int32.lt-const"  => Some("bvslt"),
+        "int32.lte-const" => Some("bvsle"),
+        "int32.gt-const"  => Some("bvsgt"),
+        "int32.gte-const" => Some("bvsge"),
+        _                 => None,
+    };
+    if let Some(bv_op) = cmp_smt {
+        if args.len() == 2 {
+            let subject = &args[0];
+            let lit = match &args[1] {
+                Term::Const { value, .. } => value.as_i64().map(i32_to_bv32_hex)?,
+                _ => return None,
+            };
+            let subj_rendered = render_bv32_subject(subject)?;
+            return Some(format!("({} {} {})", bv_op, subj_rendered, lit));
+        }
+    }
     None
 }
 
@@ -1438,6 +1458,15 @@ fn collect_predicate_decls_formula(formula: &Formula, out: &mut BTreeMap<String,
 /// The synthetic atom name a promoted bv32 sibling equality carries.
 const BV32_EQ_CONST: &str = "int32.eq-const";
 
+/// Synthetic atom names for promoted bv32 sibling comparison bounds.
+/// These are produced by `apply_bv32_contagion` when a sibling `<`/`<=`/`>`/`>=`
+/// atom appears over a term that is also the subject of an `int32.eq-bv-expr` atom.
+/// The emitter renders them as the corresponding BV signed-comparison operator.
+const BV32_LT_CONST:  &str = "int32.lt-const";
+const BV32_LTE_CONST: &str = "int32.lte-const";
+const BV32_GT_CONST:  &str = "int32.gt-const";
+const BV32_GTE_CONST: &str = "int32.gte-const";
+
 /// Collect the set of ctor subjects (full Term::Ctor) that appear as args[0]
 /// of any `int32.eq-bv-expr` atom in the formula.
 fn collect_bv32_subjects(formula: &Formula, out: &mut Vec<Term>) {
@@ -1500,6 +1529,25 @@ fn promote_bv32_siblings_formula(formula: &Formula, subjects: &[Term]) -> Formul
                 }
                 if let Some(f) = promote(&args[1], &args[0]) {
                     return f;
+                }
+            }
+            // G2b: promote comparison-bound atoms over bv32 subjects.
+            // `<`/`<=`/`>`/`>=` where args[0] is a bv32 subject and args[1]
+            // is an Int literal → synthetic int32.{lt,lte,gt,gte}-const atom.
+            // The call is always normalised to args[0] by the Java lifter.
+            let cmp_synthetic = match name.as_str() {
+                "<"  => Some(BV32_LT_CONST),
+                "<=" => Some(BV32_LTE_CONST),
+                ">"  => Some(BV32_GT_CONST),
+                ">=" => Some(BV32_GTE_CONST),
+                _    => None,
+            };
+            if let Some(synthetic) = cmp_synthetic {
+                if args.len() == 2 && subjects.contains(&args[0]) && is_int_const(&args[1]) {
+                    return Formula::Atomic {
+                        name: synthetic.to_string(),
+                        args: args.clone(),
+                    };
                 }
             }
             formula.clone()
