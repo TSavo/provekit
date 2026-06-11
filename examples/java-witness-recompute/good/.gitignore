@@ -1,0 +1,8 @@
+# Generated artifacts — never commit
+/blake3-512:*.proof
+/.sugar/runs/
+/.sugar/witnesses/
+/.sugar/lift/*/manifest.toml
+/.sugar/lying-resolver/
+/.prove*.json
+/.verify*.json

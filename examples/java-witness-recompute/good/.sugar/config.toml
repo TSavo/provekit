@@ -1,0 +1,20 @@
+[[plugins]]
+name = "java-junit-witness-lift"
+kind = "lift"
+surface = "java-junit-witness"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
+
+[platform_profile]
+language = "java"
+library = "java-witness-recompute-good"
+version = "0.0.0"
