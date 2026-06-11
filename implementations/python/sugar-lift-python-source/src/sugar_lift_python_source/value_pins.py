@@ -110,8 +110,115 @@ def scan_module_value_pins(tree: ast.Module) -> ValuePinScan:
             line=candidate.line,
             confession=candidate.confession,
         )
+    _scan_enum_member_pins(tree, scan)
     assert scan.totality_holds()
     return scan
+
+
+_VALUE_ENUM_BASES = ("IntEnum", "StrEnum")
+_PLAIN_ENUM_BASES = ("Enum", "Flag", "IntFlag")
+
+
+def _enum_base_kind(node: ast.ClassDef) -> Optional[str]:
+    for base in node.bases:
+        name = None
+        if isinstance(base, ast.Name):
+            name = base.id
+        elif isinstance(base, ast.Attribute):
+            name = base.attr
+        if name in _VALUE_ENUM_BASES:
+            return "value"
+        if name in _PLAIN_ENUM_BASES:
+            return "plain"
+    return None
+
+
+def _scan_enum_member_pins(tree: ast.Module, scan: ValuePinScan) -> None:
+    """Class-attribute pins for enum members, keyed 'ClassName.MEMBER'.
+
+    The == dispatch gate decides the scope: a plain Enum member is NOT
+    equal to its value (Color.RED == 1 is False), so pinning it to the
+    literal would be a wrong term -- plain-Enum members REFUSE by name.
+    IntEnum/StrEnum members compare as their values, so they pin. Enum's
+    metaclass forbids member reassignment at runtime, making these the
+    strongest pins in the language; the scan still refuses on any
+    syntactic write to ClassName.MEMBER or cls.MEMBER in the module
+    (belt and suspenders)."""
+    attr_writes = _class_attr_writes(tree)
+    for stmt in tree.body:
+        if not isinstance(stmt, ast.ClassDef):
+            continue
+        kind = _enum_base_kind(stmt)
+        if kind is None:
+            continue
+        for class_stmt in stmt.body:
+            if not (
+                isinstance(class_stmt, ast.Assign)
+                and len(class_stmt.targets) == 1
+                and isinstance(class_stmt.targets[0], ast.Name)
+            ):
+                continue
+            member = class_stmt.targets[0].id
+            if member.startswith("_"):
+                continue
+            dotted = f"{stmt.name}.{member}"
+            candidate = _Candidate(
+                name=dotted,
+                value=class_stmt.value,
+                line=class_stmt.lineno,
+                confession=f"enum.{kind}",
+            )
+            scan.candidates += 1
+            if kind == "plain":
+                scan.refusals.append(
+                    _pin_refusal(
+                        candidate,
+                        "plain Enum member identity is not its value under "
+                        "== (Color.RED == 1 is False); only IntEnum/StrEnum "
+                        "members pin",
+                    )
+                )
+                continue
+            if dotted in attr_writes or f"cls.{member}" in attr_writes:
+                scan.refusals.append(
+                    _pin_refusal(
+                        candidate,
+                        f"rebound: attribute write to {dotted} at line "
+                        f"{attr_writes.get(dotted, attr_writes.get(f'cls.{member}'))}",
+                    )
+                )
+                continue
+            try:
+                term = _render_value_term(class_stmt.value)
+            except _NotAdmissible as exc:
+                scan.refusals.append(_pin_refusal(candidate, exc.reason))
+                continue
+            scan.pins[dotted] = ValuePin(
+                name=dotted,
+                term=term,
+                line=class_stmt.lineno,
+                confession=f"enum.{kind}",
+            )
+
+
+def _class_attr_writes(tree: ast.Module) -> dict:
+    """Every syntactic write target of the shape <Name>.<attr> anywhere in
+    the module (assignment, augmented assignment, deletion), keyed
+    'Name.attr' -> first line. Covers ClassName.MEMBER = ... and
+    cls.MEMBER = ... punctures."""
+    writes: dict = {}
+    for node in ast.walk(tree):
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            targets = [node.target]
+        elif isinstance(node, ast.Delete):
+            targets = node.targets
+        for t in targets:
+            if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name):
+                writes.setdefault(f"{t.value.id}.{t.attr}", node.lineno)
+    return writes
 
 
 def _pin_refusal(candidate: _Candidate, reason: str) -> Json:

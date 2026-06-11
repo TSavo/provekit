@@ -315,3 +315,94 @@ def test_bad_twin_flip_changes_the_lifted_term():
     assert _tree_contains(good.ir, str_const("abc"))
     assert _tree_contains(twin.ir, str_const("abd"))
     assert not _tree_contains(twin.ir, str_const("abc"))
+
+
+# --- rung 1.5: enum member pins via the attribute seam ---
+
+
+def test_int_enum_member_pins():
+    scan = _scan(
+        """
+        from enum import IntEnum
+
+        class Status(IntEnum):
+            OK = 200
+            MISSING = 404
+        """
+    )
+    assert scan.pins["Status.OK"].term == int_const(200)
+    assert scan.pins["Status.MISSING"].confession == "enum.value"
+    assert scan.totality_holds()
+
+
+def test_str_enum_member_pins():
+    scan = _scan(
+        """
+        from enum import StrEnum
+
+        class Color(StrEnum):
+            RED = "red"
+        """
+    )
+    assert scan.pins["Color.RED"].term == str_const("red")
+
+
+def test_plain_enum_member_refuses_by_name():
+    # The == dispatch gate: Color.RED == 1 is False in python; pinning a
+    # plain Enum member to its literal would be a wrong term.
+    scan = _scan(
+        """
+        from enum import Enum
+
+        class Color(Enum):
+            RED = 1
+        """
+    )
+    assert "Color.RED" not in scan.pins
+    reasons = [r["reason"] for r in scan.refusals]
+    assert any("not its value under ==" in r for r in reasons)
+    assert scan.totality_holds()
+
+
+def test_enum_member_attr_write_refuses():
+    scan = _scan(
+        """
+        from enum import IntEnum
+
+        class Status(IntEnum):
+            OK = 200
+
+        Status.OK = 201
+        """
+    )
+    assert "Status.OK" not in scan.pins
+    assert any("attribute write" in r["reason"] for r in scan.refusals)
+
+
+def test_enum_pin_substitutes_at_attribute_access():
+    result = _lift(
+        """
+        from enum import IntEnum
+
+        class Status(IntEnum):
+            OK = 200
+
+        def code():
+            return Status.OK
+        """
+    )
+    assert _tree_contains(result.ir, int_const(200))
+    # no AttributeError panic locus for the pinned access
+    assert not _tree_contains(result.ir, {"kind": "panics"})
+
+
+def test_unpinned_attribute_access_keeps_panic_locus():
+    result = _lift(
+        """
+        import os
+
+        def sep():
+            return os.sep
+        """
+    )
+    assert _tree_contains(result.ir, {"kind": "panics"})
