@@ -386,6 +386,77 @@ fn verify_artifact_rejects_binary_cid_mismatch() {
     );
 }
 
+// ARMING: `sugar package attest` is the production producer of a
+// binaryCid-bearing release proof. Without it the artifact rail is sound but
+// unarmed (no proof pins a binary, so contract-free byte changes pass). This
+// proves the producer arms the gate end-to-end: the real artifact verifies,
+// a tampered one is rejected -- no hand-built proof JSON.
+#[test]
+fn package_attest_arms_the_binary_cid_pin_end_to_end() {
+    let dir = tmp_dir("attest-arm");
+    let artifact = dir.join("package.tgz");
+    let proof = dir.join("release.proof");
+    write(&artifact, "the real shippable bytes");
+
+    let attest = run_sugar(&[
+        "package",
+        "attest",
+        "--artifact",
+        artifact.to_str().unwrap(),
+        "--name",
+        "safe-json",
+        "--version",
+        "1.4.2",
+        "--out",
+        proof.to_str().unwrap(),
+        "--json",
+        "--quiet",
+    ]);
+    assert!(
+        attest.status.success(),
+        "attest must succeed\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&attest.stdout),
+        String::from_utf8_lossy(&attest.stderr)
+    );
+
+    let ok = run_sugar(&[
+        "verify",
+        "--artifact",
+        artifact.to_str().unwrap(),
+        "--proof",
+        proof.to_str().unwrap(),
+        "--json",
+        "--quiet",
+    ]);
+    assert!(
+        ok.status.success(),
+        "the attested artifact must verify\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&ok.stdout),
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    let okj = parse_stdout(&ok);
+    assert_eq!(okj["verdict"], "accepted");
+    assert_eq!(okj["reason"], "binaryCid matched");
+
+    write(&artifact, "tampered bytes");
+    let bad = run_sugar(&[
+        "verify",
+        "--artifact",
+        artifact.to_str().unwrap(),
+        "--proof",
+        proof.to_str().unwrap(),
+        "--json",
+        "--quiet",
+    ]);
+    assert!(
+        !bad.status.success(),
+        "a tampered artifact must be rejected against the attested proof"
+    );
+    let badj = parse_stdout(&bad);
+    assert_eq!(badj["verdict"], "rejected");
+    assert_eq!(badj["reason"], "binaryCid mismatch");
+}
+
 #[test]
 fn verify_artifact_and_policy_runs_both_rails() {
     let dir = tmp_dir("binary-policy-verify");
