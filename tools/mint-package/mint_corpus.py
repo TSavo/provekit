@@ -31,6 +31,13 @@ from tqdm import tqdm  # required: a long batch with no live report is a silence
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def canon(name):
+    """PEP 503 canonical distribution name (matches mint_package.canon)."""
+    import re
+
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def _topo_order(members, venv):
     """Post-order DFS over the dependency DAG: vendor-free leaves first, app
     root last, so every package mints AFTER the deps whose bundles it cites.
@@ -164,8 +171,10 @@ def main():
         name, version = spec.split("==", 1)
         rec = {"package": name, "version": version, "result": None}
         # read the worker's own meta.json -- the receipt is the ground truth,
-        # the subprocess text is only the index to it.
-        meta_path = os.path.join(args.registry, name, version, "meta.json")
+        # the subprocess text is only the index to it. The registry keys by
+        # the PEP 503 canonical name (matching mint_package), so the report
+        # read must canonicalize too or capitalized packages report None.
+        meta_path = os.path.join(args.registry, canon(name), version, "meta.json")
         if os.path.exists(meta_path):
             try:
                 meta = json.load(open(meta_path))
