@@ -4877,6 +4877,135 @@ fn iflet() {
     assert!(rhs.contains("Ok"), "rhs must tag Ok: {rhs}");
 }
 
+// --- matches! discriminant tranche (assert!(matches!(x, Type::Variant))) ---
+
+#[test]
+fn matches_macro_lifts_variant_predicate() {
+    // assert!(matches!(p, Poll::Ready(_))) lifts the SAME discriminant atom a
+    // panic-locus match lifts: variant_of(p) == "variant::Poll::Ready".
+    let src = r#"
+#[test]
+fn t() {
+    let p = poll_it();
+    assert!(matches!(p, Poll::Ready(_)));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/poll.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let (lhs, rhs) = panic_locus_lhs_rhs(&out);
+    assert!(lhs.contains("variant_of"), "lhs must be variant_of(..): {lhs}");
+    assert!(rhs.contains("Poll::Ready"), "rhs must tag Poll::Ready: {rhs}");
+}
+
+#[test]
+fn matches_macro_struct_pattern_lifts() {
+    // A struct pattern with `{ .. }` (the dominant corpus shape) lifts the
+    // discriminant; the value-subpattern is ignored (we lift the weaker,
+    // always-implied discriminant fact).
+    let src = r#"
+#[test]
+fn t() {
+    let rhs = build();
+    assert!(matches!(rhs, IrTerm::Let { .. }));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/lift.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let (lhs, tag) = panic_locus_lhs_rhs(&out);
+    assert!(lhs.contains("variant_of"), "lhs: {lhs}");
+    assert!(tag.contains("IrTerm::Let"), "rhs must tag IrTerm::Let: {tag}");
+}
+
+#[test]
+fn matches_macro_ready_vs_pending_is_contradiction() {
+    // Teeth: claiming the same subject matches two distinct variants yields two
+    // atoms over the same variant_of(subject) with distinct string tags (UNSAT).
+    let src = r#"
+#[test]
+fn t() {
+    let p = poll_it();
+    assert!(matches!(p, Poll::Ready(_)));
+    assert!(matches!(p, Poll::Pending));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/poll.rs");
+    assert_eq!(out.assertions_lifted, 2, "warnings: {:?}", out.skip_reasons);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    let lhs = |f: &Formula| match f {
+        Formula::Atomic { args, .. } => format!("{:?}", args[0]),
+        other => panic!("{other:?}"),
+    };
+    let rhs = |f: &Formula| match f {
+        Formula::Atomic { args, .. } => format!("{:?}", args[1]),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(lhs(&ops[0]), lhs(&ops[1]), "same subject -> same variant_of term");
+    assert_ne!(rhs(&ops[0]), rhs(&ops[1]), "Ready vs Pending tags must differ (teeth)");
+}
+
+#[test]
+fn matches_macro_negation_lifts_negated_predicate() {
+    // assert!(!matches!(p, Poll::Pending)) lifts the negation of the discriminant
+    // atom (routed through the existing Unary(Not) path).
+    let src = r#"
+#[test]
+fn t() {
+    let p = poll_it();
+    assert!(!matches!(p, Poll::Pending));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/poll.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let decl = format!("{:?}", out.decls[0]);
+    assert!(decl.contains("variant_of"), "must carry variant_of: {decl}");
+    assert!(decl.contains("Poll::Pending"), "must tag Poll::Pending: {decl}");
+    assert!(
+        decl.contains("\"not\""),
+        "must be a negated (not-connective) atom: {decl}"
+    );
+}
+
+#[test]
+fn matches_macro_with_guard_refused_by_name() {
+    // Discrimination: a guard changes which values reach the pattern, so passing
+    // does NOT pin the discriminant. Refused by name, not (wrongly) lifted.
+    let src = r#"
+#[test]
+fn t() {
+    let p = poll_it();
+    assert!(matches!(p, Poll::Ready(v) if v > 0));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/poll.rs");
+    assert_eq!(out.assertions_lifted, 0, "guarded matches! must not lift");
+    assert!(
+        out.skip_reasons.iter().any(|r| r.contains("guard")),
+        "refusal must name the guard: {:?}",
+        out.skip_reasons
+    );
+}
+
+#[test]
+fn matches_macro_binding_pattern_refused_by_name() {
+    // Discrimination: a single-segment lowercase pattern is a catch-all BINDING
+    // (always matches), not an unambiguous variant. Refused by name.
+    let src = r#"
+#[test]
+fn t() {
+    let p = poll_it();
+    assert!(matches!(p, anything));
+}
+"#;
+    let out = lift_file(&parse(src), "tests/poll.rs");
+    assert_eq!(out.assertions_lifted, 0, "binding matches! must not lift");
+    assert!(
+        out.skip_reasons.iter().any(|r| r.contains("unambiguous qualified variant")),
+        "refusal must name the ambiguity: {:?}",
+        out.skip_reasons
+    );
+}
+
 // --- unconditional-block recursion (block_on / value-block) tranche ---
 
 #[test]

@@ -77,3 +77,24 @@ adjudicated per the allocation axiom, and 71 honest structural bin-2.
 
 Each slice updates this table with the new number and a one-line why, exactly as
 `GOAL-sugar-proves-sugar.md` requires for K.
+
+> Correction from the corpus read: the `only scalar equality is liftable` (72)
+> bucket was **not** struct-`assert_eq!` — it was dominated by
+> `assert!(matches!(x, Enum::Variant ..))`, a boolean discriminant assertion.
+> Slice 1 drained it as such (below). Struct/tuple componentwise `assert_eq!`
+> remains a later slice under "unsupported term shapes".
+
+## Drain log
+
+- **`matches!` discriminant lift** (slice 1, base main `4221ec1d1`): lift
+  `assert!(matches!(x, Type::Variant ...))` as the construction-semantics
+  discriminant atom `variant_of(x) == "variant::<tag>"` — the SAME atom
+  panic-locus lifting emits, same teeth (two variants = two distinct string
+  constants ⇒ UNSAT). Guards and binding / single-segment / or-patterns are
+  **refused by precise name** (their discriminant is not unambiguous). Result
+  over the 5 crates: lift **85.9% → 87.2%**; `only scalar equality is liftable`
+  **72 → 10**; the unsound `matches!` shapes now read
+  `matches! … not an unambiguous qualified variant` (15) and
+  `matches! with a guard is not a pure discriminant` (13). **silent = 0** held.
+  Negation (`!matches!`) fixed too: it previously fell to an opaque `macro:…`
+  Var (a vacuous lift, no teeth); now lifts the negated discriminant.
