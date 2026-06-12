@@ -917,6 +917,21 @@ class DelegationUniverse:
     vendor_vector_source: Optional[str] = None
 
 
+def _resolve_spec(node, params, env):
+    """A forwarding spec for ``node``: chain names first (shadowing),
+    then params, then ascii literals. None for anything computed."""
+    if isinstance(node, ast.Name):
+        if node.id in env:
+            return env[node.id]
+        if node.id in params:
+            return ("param", params.index(node.id))
+        return None
+    vk = _literal_value_kind(node)
+    if vk is not None:
+        return ("lit", vk[0], vk[1])
+    return None
+
+
 @functools.lru_cache(maxsize=None)
 def delegation_universe_for_callee(
     callee: str,
@@ -952,15 +967,37 @@ def delegation_universe_for_callee(
         )
     ]
     rest, tainted = _strip_guard_prefix(body)
-    if (
-        len(rest) != 1
-        or not isinstance(rest[0], ast.Return)
-        or rest[0].value is None
-    ):
+    if not rest or not isinstance(rest[-1], ast.Return) or rest[-1].value is None:
         return None, None
-    value = rest[0].value
+    value = rest[-1].value
     if not isinstance(value, (ast.Name, ast.Call)):
         return None, None
+    # SSA CHAIN (census return-fn-call, 53k bodies): leading simple
+    # assigns are a substitution environment — `x = a; return g(x)`
+    # forwards a exactly as `return g(a)` does. Linear, no control flow,
+    # so plain left-to-right resolution IS the SSA; a rebound param name
+    # shadows correctly (later reads get the new spec). Any other
+    # preceding statement shape is another family's body.
+    env: dict = {}
+    for stmt in rest[:-1]:
+        if not (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+        ):
+            return None, None  # control flow / unpacking: not this family
+        if any(isinstance(n, ast.NamedExpr) for n in ast.walk(stmt.value)):
+            return refuse(
+                "chain assign value rebinds via walrus (NamedExpr); "
+                "resolution order is no longer the statement order"
+            )
+        spec = _resolve_spec(stmt.value, params, env)
+        if spec is None:
+            return refuse(
+                "chain value is computed (not a parameter, literal, or "
+                "chain name); the forwarded value is not the callsite's"
+            )
+        env[stmt.targets[0].id] = spec
     if tainted:
         return refuse(
             "guard-strip: a stripped guard test rebinds via walrus "
@@ -976,11 +1013,15 @@ def delegation_universe_for_callee(
     if returns != 1:
         return None, None
 
-    # identity: return <param> verbatim
+    # identity: return <param>, possibly through the chain; a name that
+    # chains to a LITERAL is a constant in forwarding clothes
     if isinstance(value, ast.Name):
-        if value.id not in params:
+        spec = _resolve_spec(value, params, env)
+        if spec is None:
             return None, None  # free name: not a forwarding body
-        return universe(kind="identity", param_index=params.index(value.id))
+        if spec[0] == "param":
+            return universe(kind="identity", param_index=spec[1])
+        return universe(kind="chain-constant", args=(spec,))
 
     # method delegation: return <param|literal>.method(<params|literals>)
     # (census return-method-call, 113k bodies). Unlike a function
@@ -1008,18 +1049,14 @@ def delegation_universe_for_callee(
             )
         specs = []
         for node in (value.func.value, *value.args):
-            if isinstance(node, ast.Name) and node.id in params:
-                specs.append(("param", params.index(node.id)))
-                continue
-            vk = _literal_value_kind(node)
-            if vk is not None:
-                specs.append(("lit", vk[0], vk[1]))
-                continue
-            return refuse(
-                "method-delegate receiver/argument is neither a "
-                "parameter nor an ascii literal; the forwarded value is "
-                "not the callsite's"
-            )
+            spec = _resolve_spec(node, params, env)
+            if spec is None:
+                return refuse(
+                    "method-delegate receiver/argument is neither a "
+                    "parameter nor an ascii literal; the forwarded value "
+                    "is not the callsite's"
+                )
+            specs.append(spec)
         return universe(
             kind="delegation-method", delegate=method, args=tuple(specs)
         )
@@ -1127,17 +1164,13 @@ def delegation_universe_for_callee(
         )
     specs = []
     for arg in value.args:
-        if isinstance(arg, ast.Name) and arg.id in params:
-            specs.append(("param", params.index(arg.id)))
-            continue
-        vk = _literal_value_kind(arg)
-        if vk is not None:
-            specs.append(("lit", vk[0], vk[1]))
-            continue
-        return refuse(
-            "delegate argument is neither a parameter nor an ascii "
-            "literal; the forwarded value is not the callsite's"
-        )
+        spec = _resolve_spec(arg, params, env)
+        if spec is None:
+            return refuse(
+                "delegate argument is neither a parameter nor an ascii "
+                "literal; the forwarded value is not the callsite's"
+            )
+        specs.append(spec)
     return universe(kind="delegation", delegate=delegate_q, args=tuple(specs))
 
 
