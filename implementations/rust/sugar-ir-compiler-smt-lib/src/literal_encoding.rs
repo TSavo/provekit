@@ -364,6 +364,27 @@ impl LiteralConstants {
 ///     uninterpreted String const (it would freely model `None == "x"`).
 ///   - `=` between a string const and an int/bool const stays opaque-Int
 ///     (cross-type distinctness is Python-semantics-critical).
+thread_local! {
+    // Ctor subjects that appear in a string-theory PREDICATE atom (chars-in-set,
+    // contains, prefix-of, ...) -- i.e. genuinely forced to the String sort.
+    // Set per-compile. A ctor-subject `=` against a string const string-routes
+    // ONLY when its subject is tainted; otherwise it stays in the sound
+    // opaque-Int regime (so the same ctor used in BOTH a string `=` and an
+    // Int-regime atom -- e.g. `member` -- does not ill-sort the function
+    // declaration, the werkzeug subscript cross-sort). Restricting routing is
+    // strictly more conservative: it never adds string theory where the legacy
+    // Int regime sufficed, so it cannot introduce a falsePass.
+    static STRING_TAINTED: std::cell::RefCell<Vec<Term>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+pub(crate) fn set_string_tainted(subjects: Vec<Term>) {
+    STRING_TAINTED.with(|t| *t.borrow_mut() = subjects);
+}
+
+fn ctor_subject_is_tainted(t: &Term) -> bool {
+    STRING_TAINTED.with(|set| set.borrow().contains(t))
+}
+
 pub(crate) fn routes_to_string_theory(name: &str, args: &[Term]) -> bool {
     if is_string_theory_atomic_predicate(name) {
         return true;
@@ -396,8 +417,12 @@ pub(crate) fn routes_to_string_theory(name: &str, args: &[Term]) -> bool {
     let is_string_like_const =
         |t: &Term| is_string_const(t) || is_bytes_wrapped_string_const(t);
     let is_routable_subject = |t: &Term| {
-        matches!(t, Term::Ctor { name, args } if !(name == "None" && args.is_empty()))
-            || is_string_const(t)
+        // A string const is always a String. A CTOR subject string-routes only
+        // when it is string-tainted (appears in a string-theory predicate);
+        // otherwise it stays opaque-Int, consistent with its other uses.
+        is_string_const(t)
+            || matches!(t, Term::Ctor { name, args }
+                if !(name == "None" && args.is_empty()) && ctor_subject_is_tainted(t))
     };
     (is_string_like_const(&args[0]) && is_routable_subject(&args[1]))
         || (is_string_like_const(&args[1]) && is_routable_subject(&args[0]))
@@ -442,6 +467,13 @@ fn is_bv32_atomic_predicate(name: &str) -> bool {
             // shares sub-terms (no exponential tree blowup).
             | "mt32.eq-seeded"
     )
+}
+
+/// A string-theory PREDICATE that forces its operands to the String sort
+/// (every named string predicate except the routed `=`, which is what we are
+/// deciding). Used to compute the string-tainted subject set.
+pub(crate) fn forces_string_sort(name: &str) -> bool {
+    name != "=" && is_string_theory_atomic_predicate(name)
 }
 
 fn is_string_theory_atomic_predicate(name: &str) -> bool {

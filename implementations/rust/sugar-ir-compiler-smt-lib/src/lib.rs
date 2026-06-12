@@ -351,23 +351,29 @@ mod tests {
 
     #[test]
     fn mixed_sort_conjunction_is_named_error_not_ill_sorted_script() {
-        // H1 [B7]: the same `call:f` ctor equated to a String literal in one
-        // row (String-theory regime -> String return sort) and an Int literal
-        // in another row (legacy regime -> Int return sort). One declare-fun
-        // cannot carry both; emitting would produce an ill-sorted script ->
-        // z3 parse error -> OPAQUE undecidable. The compiler must instead
-        // return a NAMED error at emit time.
+        // H1 [B7]: a GENUINELY String-sorted `call:f` ctor (string-tainted by a
+        // chars-in-set universe over it -> String return sort) equated to an Int
+        // literal in another row (legacy regime -> Int return sort). One
+        // declare-fun cannot carry both; the compiler must return a NAMED error
+        // at emit time rather than an ill-sorted script.
+        //
+        // NOTE: a bare `call:f == "abc"` with NO universe is NOT a mixed-sort
+        // since the string-contagion fix -- the untainted ctor stays opaque-Int
+        // ("abc" -> strlit_), so `call:f == "abc" ∧ call:f == 7` now refutes
+        // cleanly as UNSAT (see genuine_string_vs_int_conflict_still_caught_now_via_distinctness).
+        // The named-error STOP is reserved for the REAL String-vs-Int collision:
+        // a universe forces String, another row forces Int.
         let subject = ctor("call:f", vec![serde_json::json!(
             {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}})]);
-        let string_row = eq(
-            subject.clone(),
-            serde_json::json!({"kind":"const","value":"abc","sort":{"kind":"primitive","name":"String"}}),
+        let universe_row = string_theory_atom(
+            "str.chars-in-set",
+            vec![subject.clone(), string_const("abc")],
         );
         let int_row = eq(
             subject,
             serde_json::json!({"kind":"const","value":7,"sort":{"kind":"primitive","name":"Int"}}),
         );
-        let ir = serde_json::json!({"kind":"and","operands":[string_row, int_row]});
+        let ir = serde_json::json!({"kind":"and","operands":[universe_row, int_row]});
 
         for result in [compile_to_parts(&ir), compile_asserted_to_parts(&ir)] {
             let err = result.expect_err("mixed-sort conjunction must be refused, not emitted");
@@ -855,6 +861,31 @@ mod tests {
     }
 
     #[test]
+    fn werkzeug_subscript_member_plus_string_eq_no_crosssort() {
+        // REGRESSION (Werkzeug test_double_slash_path, the Int/String cross-sort
+        // tail): `"x" not in r.json["A"]` (member, opaque-Int) conjoined with
+        // `r.json["B"] == "y"` (string const). The subscript ctor was String-
+        // routed in the equality but Int in the membership -> one `subscript`
+        // function declared with two return sorts -> z3 "Sorts Int and String
+        // incompatible" -> undecidable. With the string-contagion fix the
+        // subscript is UNTAINTED (no string predicate over it) so the equality
+        // stays opaque-Int, all consistent, z3 returns sat.
+        let z3 = which_z3().expect("z3");
+        let sub = |key: &str| serde_json::json!({"kind":"ctor","name":"subscript","args":[
+            {"kind":"ctor","name":"python:attribute","args":[{"kind":"var","name":"r"},{"kind":"const","value":"json","sort":{"kind":"primitive","name":"String"}}]},
+            {"kind":"const","value":key,"sort":{"kind":"primitive","name":"String"}}]});
+        let inv = serde_json::json!({"kind":"and","operands":[
+            {"kind":"not","operands":[{"kind":"atomic","name":"member","args":[
+                {"kind":"const","value":"double-slash","sort":{"kind":"primitive","name":"String"}}, sub("HTTP_HOST")]}]},
+            {"kind":"atomic","name":"=","args":[sub("PATH_INFO"), {"kind":"const","value":"/double-slash","sort":{"kind":"primitive","name":"String"}}]}]});
+        let parts = compile_asserted_to_parts(&inv).expect("must compile, no mixed-sort");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(!script.contains("String)"), "subscript must NOT be declared String-returning:\n{script}");
+        assert_eq!(run_z3(&z3, &script).trim(), "sat",
+            "the werkzeug shape is consistent, not a sort-error undecidable:\n{script}");
+    }
+
+    #[test]
     fn nonascii_string_equality_is_well_formed_and_consistent() {
         // REGRESSION (Werkzeug corpus mint): a sworn equality over a string
         // with C1 control chars / non-ASCII (UTF-8 header value, IRI, cookie)
@@ -865,7 +896,18 @@ mod tests {
         // "â\u{9c}\u{93}" -- the UTF-8 bytes of U+2713 stored as a 3-char str,
         // exactly werkzeug test_return_type_is_str's "\xe2\x9c\x93".
         let subj = callresult("c:callresult_header_a1", "x");
-        let inv = eq(subj, string_const("\u{e2}\u{9c}\u{93}"));
+        // A universe (chars-not-in-set) over the subject string-TAINTS it, so
+        // the sworn equality routes to string theory -- the case where escaping
+        // matters (a bare equality with no universe now stays opaque-Int since
+        // the string-contagion fix, where the non-ASCII content is an opaque
+        // strlit_ token and escaping is moot).
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom("str.chars-not-in-set", vec![subj.clone(), string_const("+")]),
+                eq(subj, string_const("\u{e2}\u{9c}\u{93}")),
+            ]
+        });
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
         assert!(
@@ -1906,11 +1948,14 @@ mod tests {
     }
 
     #[test]
-    fn genuine_string_vs_int_conflict_still_stops_b7() {
-        // DISCRIMINATION twin: a GENUINE String-vs-Int conflict on the same
-        // ctor (String literal in one row, Int literal in another) must STILL
-        // trip the B7 mixed-sort STOP. The bv32 routing change must not weaken
-        // this. No bv32 atom here — pure String-vs-Int.
+    fn genuine_string_vs_int_conflict_still_caught_now_via_distinctness() {
+        // A `call:f == "x"` (no universe) and `call:f == 5` conflict. Since the
+        // string-contagion fix, the UNTAINTED ctor `== "x"` stays opaque-Int
+        // ("x" -> strlit_), so this is no longer a mixed-sort STOP -- it
+        // compiles and the conflict is caught MORE PRECISELY as UNSAT (a clean
+        // refutation, not an undecidable). Cross-type distinctness
+        // (strlit_("x") distinct from 5) is what convicts it.
+        let z3 = which_z3().expect("z3");
         let call = serde_json::json!({
             "kind": "ctor",
             "name": "call:f",
@@ -1929,15 +1974,13 @@ mod tests {
                 ]}
             ]
         });
-        let result = compile_asserted_to_parts(&inv);
-        assert!(
-            result.is_err(),
-            "genuine String-vs-Int conflict must still trip B7 STOP, but compiled cleanly"
-        );
-        let msg = format!("{:?}", result.err());
-        assert!(
-            msg.contains("mixed-sort") && msg.contains("String vs Int"),
-            "B7 error must name the String-vs-Int conflict, got: {msg}"
+        let parts = compile_asserted_to_parts(&inv)
+            .expect("untainted ctor == string is now opaque-Int, compiles");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert_eq!(
+            run_z3(&z3, &script).trim(),
+            "unsat",
+            "the genuine conflict must still be caught, now as a refutation:\n{script}"
         );
     }
 
