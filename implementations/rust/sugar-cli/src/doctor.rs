@@ -1100,17 +1100,6 @@ fn kit_declaration_evidence(
             Value::String(declaration.kit.version.clone()),
         );
         obj.insert(
-            "effectKinds".to_string(),
-            Value::Array(
-                declaration
-                    .effect_kinds
-                    .iter()
-                    .cloned()
-                    .map(Value::String)
-                    .collect(),
-            ),
-        );
-        obj.insert(
             "rpcMethods".to_string(),
             Value::Array(
                 declaration
@@ -1120,18 +1109,6 @@ fn kit_declaration_evidence(
                     .map(|method| Value::String(method.name.clone()))
                     .collect(),
             ),
-        );
-        obj.insert(
-            "effectLeaves".to_string(),
-            Value::from(declaration.effect_leaves.len() as u64),
-        );
-        obj.insert(
-            "guardPredicates".to_string(),
-            Value::from(declaration.guard_predicates.len() as u64),
-        );
-        obj.insert(
-            "controlCarriers".to_string(),
-            Value::from(declaration.control_carriers.len() as u64),
         );
         obj.insert(
             "residueCategories".to_string(),
@@ -2261,8 +2238,7 @@ mod tests {
         );
     }
 
-    fn valid_panic_freedom_declaration(surface: &str) -> Value {
-        use libsugar::panic_freedom;
+    fn valid_panic_freedom_declaration(_surface: &str) -> Value {
         use sugar_claim_envelope::KIT_DECLARATION_RPC_METHOD;
 
         json!({
@@ -2276,22 +2252,6 @@ mod tests {
                 ]
             },
             "proofResolution": {"strategy": "rpc-proof-bytes"},
-            "effectKinds": ["concept:panic-freedom"],
-            "effectLeaves": [
-                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP, "concept": "concept:panic-freedom.leaf.unwrap"},
-                {"surface": surface, "local": panic_freedom::METHOD_EXPECT, "concept": "concept:panic-freedom.leaf.expect"},
-                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP_ERR, "concept": "concept:panic-freedom.leaf.unwrap-err"}
-            ],
-            "guardPredicates": [
-                {"surface": surface, "local": panic_freedom::IS_OK, "concept": "concept:panic-freedom.result.ok"},
-                {"surface": surface, "local": panic_freedom::IS_ERR, "concept": "concept:panic-freedom.result.err"},
-                {"surface": surface, "local": panic_freedom::IS_SOME, "concept": "concept:panic-freedom.option.some"},
-                {"surface": surface, "local": panic_freedom::IS_NONE, "concept": "concept:panic-freedom.option.none"}
-            ],
-            "controlCarriers": [
-                {"surface": surface, "local": panic_freedom::CF_GUARDED, "concept": "concept:panic-freedom.guard"},
-                {"surface": surface, "local": panic_freedom::CF_ITE, "concept": "concept:panic-freedom.choice"}
-            ],
             "residueCategories": []
         })
     }

@@ -63,10 +63,6 @@ fn lift_rpc_serves_rust_contracts_kit_declaration() {
     assert_method_declared(&declaration, KIT_DECLARATION_RPC_METHOD);
     assert_eq!(declaration.proof_resolution.strategy, "cargo");
     // concept hub removed: the kit no longer declares a concept vocabulary.
-    assert!(declaration.effect_kinds.is_empty());
-    assert!(declaration.effect_leaves.is_empty());
-    assert!(declaration.guard_predicates.is_empty());
-    assert!(declaration.control_carriers.is_empty());
 
     writeln!(
         stdin,

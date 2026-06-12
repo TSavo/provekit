@@ -65,10 +65,6 @@ fn walk_rpc_serves_kit_declaration_over_stdio() {
         "declaration must advertise its declaration RPC method"
     );
     // concept hub removed: the kit no longer declares a concept vocabulary.
-    assert!(declaration.effect_kinds.is_empty());
-    assert!(declaration.effect_leaves.is_empty());
-    assert!(declaration.guard_predicates.is_empty());
-    assert!(declaration.control_carriers.is_empty());
 
     writeln!(
         stdin,

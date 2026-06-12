@@ -81,14 +81,6 @@ pub struct KitDeclaration {
     pub rpc: KitDeclarationRpc,
     #[serde(rename = "proofResolution")]
     pub proof_resolution: KitProofResolution,
-    #[serde(rename = "effectKinds")]
-    pub effect_kinds: Vec<String>,
-    #[serde(rename = "effectLeaves")]
-    pub effect_leaves: Vec<KitDeclarationMapping>,
-    #[serde(rename = "guardPredicates")]
-    pub guard_predicates: Vec<KitDeclarationMapping>,
-    #[serde(rename = "controlCarriers")]
-    pub control_carriers: Vec<KitDeclarationMapping>,
     #[serde(
         rename = "oracleHost",
         default,
@@ -123,13 +115,6 @@ pub struct KitProofResolution {
     pub strategy: String,
     #[serde(rename = "rpcMethod", default, skip_serializing_if = "Option::is_none")]
     pub rpc_method: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KitDeclarationMapping {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface: Option<String>,
-    pub local: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,12 +166,6 @@ impl KitDeclaration {
         if let Some(method) = &self.proof_resolution.rpc_method {
             require_nonempty("proofResolution.rpcMethod", method)?;
         }
-        for effect_kind in &self.effect_kinds {
-            require_nonempty("effectKinds[]", effect_kind)?;
-        }
-        validate_mappings("effectLeaves", &self.effect_leaves)?;
-        validate_mappings("guardPredicates", &self.guard_predicates)?;
-        validate_mappings("controlCarriers", &self.control_carriers)?;
         if let Some(oracle_host) = &self.oracle_host {
             require_nonempty("oracleHost.hostKind", &oracle_host.host_kind)?;
         }
@@ -206,24 +185,10 @@ fn require_nonempty(field: &'static str, value: &str) -> Result<(), KitDeclarati
     }
 }
 
-fn validate_mappings(
-    _category: &'static str,
-    mappings: &[KitDeclarationMapping],
-) -> Result<(), KitDeclarationError> {
-    for mapping in mappings {
-        if let Some(surface) = &mapping.surface {
-            require_nonempty("mapping.surface", surface)?;
-        }
-        require_nonempty("mapping.local", &mapping.local)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod kit_declaration_schema_tests {
     use super::{
-        KitDeclaration, KitDeclarationMapping, KitDeclarationRpc, KitDeclarationRpcMethod,
-        KitIdentity, KitProofResolution,
+        KitDeclaration, KitDeclarationRpc, KitDeclarationRpcMethod, KitIdentity, KitProofResolution,
     };
 
     fn valid_declaration() -> KitDeclaration {
@@ -243,13 +208,6 @@ mod kit_declaration_schema_tests {
                 strategy: "rpc-proof-bytes".to_string(),
                 rpc_method: Some("sugar.plugin.resolve_dependency_proofs".to_string()),
             },
-            effect_kinds: vec!["concept:panic-freedom".to_string()],
-            effect_leaves: vec![KitDeclarationMapping {
-                surface: Some("rust-fn-contracts".to_string()),
-                local: "method:unwrap".to_string(),
-            }],
-            guard_predicates: vec![],
-            control_carriers: vec![],
             oracle_host: None,
             residue_categories: vec![],
         }
@@ -269,34 +227,20 @@ mod kit_declaration_schema_tests {
 
     #[test]
     fn kit_declaration_rejects_missing_required_fields() {
-        let missing_effect_kinds = serde_json::json!({
+        let missing_rpc = serde_json::json!({
             "kit": {"id": "sugar-walk-rpc", "language": "rust", "version": "0.1.0"},
-            "rpc": {"methods": [{"name": "sugar.plugin.kit_declaration", "required": true}]},
-            "proofResolution": {"strategy": "rpc-proof-bytes"}
+            "proofResolution": {"strategy": "rpc-proof-bytes"},
+            "residueCategories": []
         });
 
-        let err = serde_json::from_value::<KitDeclaration>(missing_effect_kinds)
-            .expect_err("effectKinds is required");
+        let err = serde_json::from_value::<KitDeclaration>(missing_rpc)
+            .expect_err("rpc is required");
 
         assert!(
-            err.to_string().contains("effectKinds"),
+            err.to_string().contains("rpc"),
             "error should name missing field: {err}"
         );
     }
-
-    #[test]
-    fn kit_declaration_allows_empty_effect_kinds_for_non_effect_kits() {
-        let mut declaration = valid_declaration();
-        declaration.effect_kinds.clear();
-        declaration.effect_leaves.clear();
-        declaration.guard_predicates.clear();
-        declaration.control_carriers.clear();
-
-        declaration
-            .validate()
-            .expect("emit-only kits may declare no effect vocabulary");
-    }
-
 }
 
 // ---------- DERIVED hash helpers --------------------------------------------

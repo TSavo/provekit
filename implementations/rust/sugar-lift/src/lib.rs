@@ -870,10 +870,6 @@ fn kit_declaration_result() -> serde_json::Value {
         "proofResolution": {
             "strategy": "cargo"
         },
-        "effectKinds": [],
-        "effectLeaves": [],
-        "guardPredicates": [],
-        "controlCarriers": [],
         "residueCategories": []
     })
 }
