@@ -239,7 +239,6 @@ fn handle_line(line: &str) -> Value {
         // body in place. On a CID-misalign (source drift) the oracle REFUSES and
         // the site is reported `outcome:"refused"` with NO write. Same kit, same
         // syn AST machinery, same source-oracle family as lift/recognize.
-        "sugar.plugin.materialize" => materialize(&params),
         // Implication lifter (#97). For every call expression in every
         // function body in the supplied source files, emit a kind:bridge
         // memento that links the call site (sourceSymbol = callee ident)
@@ -4970,283 +4969,6 @@ fn vendor_bindings_from_proofs(project_root: &Path) -> Result<Vec<VendorBinding>
     Ok(bindings)
 }
 
-/// Extract `(library, call)` from a `#[sugar::boundary(library, call)]`
-/// stub. `call` falls back to `api` (older annotations spelled the bound symbol
-/// there) and then to the stub's own fn name. Mirrors python `_boundary_decorator`.
-fn boundary_library_call(item_fn: &syn::ItemFn) -> Option<(String, String)> {
-    let target = extract_boundary_attr(item_fn)?;
-    if target.library.is_empty() {
-        return None;
-    }
-    let call = target
-        .call
-        .or(target.api)
-        .unwrap_or_else(|| item_fn.sig.ident.to_string());
-    if call.is_empty() {
-        return None;
-    }
-    Some((target.library, call))
-}
-
-/// `sugar.plugin.materialize`. Mirrors python `materialize_impl`. Params:
-///   - `project_root`: consumer project containing the `#[sugar::boundary]`
-///     stubs AND the resolved vendor `.proof`s (`.sugar/imports/` + cargo
-///     deps), exactly the proof sources `recognize` reads.
-///   - `source_paths`: consumer files to scan for stubs (relative to project_root).
-///   - `vendor_root` (optional): root the FROZEN memento's `file` path is
-///     relative to (where the LIVE vendor source lives on disk). Defaults to
-///     `project_root`. The oracle resolves the frozen pin against this live
-///     source — drift between the two is what gets REFUSED.
-///   - `write` (optional bool): write the rewritten file in place.
-///
-/// For each `#[sugar::boundary(library, call)]` stub: match a frozen vendor
-/// binding by `(library_tag, source_function_name) == (library, call)`, ask the
-/// SOURCE ORACLE to resolve its body from live disk (CID-verified against the
-/// frozen pin), and rewrite the stub body. On a missing binding or an oracle
-/// refusal (drift): `outcome:"refused"`, no write.
-fn materialize(params: &Value) -> Result<Value, String> {
-    let project_root = params
-        .get("project_root")
-        .and_then(Value::as_str)
-        .ok_or("missing `project_root`")?;
-    let project_root = PathBuf::from(project_root);
-    let source_paths: Vec<String> = params
-        .get("source_paths")
-        .and_then(Value::as_array)
-        .ok_or("missing `source_paths` array")?
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
-    let write = params
-        .get("write")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-
-    let vendor_root = params
-        .get("vendor_root")
-        .and_then(Value::as_str)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| project_root.clone());
-
-    // Frozen pins from the resolved vendor `.proof`s (NOT a live re-lift; that
-    // could never detect drift).
-    let vendor_bindings = vendor_bindings_from_proofs(&project_root)?;
-
-    let mut results: Vec<Value> = Vec::new();
-    for rel_path in &source_paths {
-        let full_path = project_root.join(rel_path);
-        let src = match std::fs::read_to_string(&full_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let file = match syn::parse_file(&src) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-
-        // Collect (stub_fn, library, call) for every boundary stub, top-level
-        // and in nested modules.
-        let mut stubs: Vec<(&syn::ItemFn, String, String)> = Vec::new();
-        collect_boundary_stubs(&file.items, &mut stubs);
-
-        let mut edits: Vec<BoundaryBodyEdit> = Vec::new();
-        let mut file_refused = false;
-        for (stub_fn, library, call) in &stubs {
-            let binding = vendor_bindings
-                .iter()
-                .find(|b| &b.library_tag == library && &b.source_function_name == call);
-            let Some(binding) = binding else {
-                results.push(json!({
-                    "file": rel_path,
-                    "function": stub_fn.sig.ident.to_string(),
-                    "symbol": format!("{library}.{call}"),
-                    "outcome": "refused",
-                    "reason": format!("no vendor sugar binding for `{library}.{call}` in scope"),
-                }));
-                file_refused = true;
-                continue;
-            };
-            match resolve_source_memento(&vendor_root, &binding.memento) {
-                Ok(resolved) => {
-                    let symbol = format!("{library}.{call}");
-                    if let Some(mut edit) =
-                        boundary_body_edit(&src, stub_fn, &resolved.body_text, symbol)
-                    {
-                        // Carry the oracle's recomputed pins for the per-site
-                        // audit record (they equal the frozen pin on a clean
-                        // resolve; this is the receipt of WHICH source filled).
-                        edit.resolved_source_cid = resolved.source_cid.clone();
-                        edit.resolved_template_cid = resolved.template_cid.clone();
-                        edit.param_names = resolved.param_names.clone();
-                        edits.push(edit);
-                    } else {
-                        results.push(json!({
-                            "file": rel_path,
-                            "function": stub_fn.sig.ident.to_string(),
-                            "symbol": format!("{library}.{call}"),
-                            "outcome": "refused",
-                            "reason": "boundary stub body could not be located for rewrite",
-                        }));
-                        file_refused = true;
-                    }
-                }
-                Err(refusal) => {
-                    results.push(json!({
-                        "file": rel_path,
-                        "function": stub_fn.sig.ident.to_string(),
-                        "symbol": format!("{library}.{call}"),
-                        "outcome": "refused",
-                        "reason": refusal.reason,
-                    }));
-                    file_refused = true;
-                }
-            }
-        }
-
-        if edits.is_empty() {
-            continue;
-        }
-        // Refuse the WHOLE file if any site refused: a partially-materialized
-        // file is not exact-or-refuse. Report the materializable sites but do
-        // not write.
-        let new_source = apply_boundary_body_edits(&src, &mut edits);
-        let materialized: Vec<Value> = edits
-            .iter()
-            .map(|e| {
-                json!({
-                    "function": e.function_name,
-                    "symbol": e.symbol,
-                    "source_cid": e.resolved_source_cid,
-                    "template_cid": e.resolved_template_cid,
-                    "param_names": e.param_names,
-                })
-            })
-            .collect();
-        let mut file_result = json!({
-            "file": rel_path,
-            "outcome": "materialized",
-            "materialized": materialized,
-            "new_source": new_source,
-        });
-        if write && !file_refused {
-            if let Err(e) = std::fs::write(&full_path, &new_source) {
-                file_result["write_error"] = json!(e.to_string());
-            }
-        } else if file_refused {
-            // Do not write a file that had any refusal; downgrade the outcome.
-            file_result["outcome"] = json!("refused");
-            file_result["reason"] =
-                json!("one or more boundary sites in this file refused; file not written");
-        }
-        results.push(file_result);
-    }
-
-    Ok(json!({ "results": results }))
-}
-
-fn collect_boundary_stubs<'a>(
-    items: &'a [syn::Item],
-    out: &mut Vec<(&'a syn::ItemFn, String, String)>,
-) {
-    for item in items {
-        match item {
-            syn::Item::Fn(item_fn) => {
-                if let Some((library, call)) = boundary_library_call(item_fn) {
-                    out.push((item_fn, library, call));
-                }
-            }
-            syn::Item::Mod(item_mod) => {
-                if let Some((_, nested)) = &item_mod.content {
-                    collect_boundary_stubs(nested, out);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// A pending body rewrite: replace the byte range of a stub's block-inner source
-/// with the resolved vendor body (re-indented to the stub's block indent).
-struct BoundaryBodyEdit {
-    function_name: String,
-    symbol: String,
-    start_byte: usize,
-    end_byte: usize,
-    replacement: String,
-    resolved_source_cid: String,
-    resolved_template_cid: String,
-    param_names: Vec<String>,
-}
-
-/// Build a body edit that replaces the stub's block-inner source (between the
-/// braces) with the vendor `body_text`, re-indented to one level past the fn's
-/// own indentation. Returns None if the brace span cannot be byte-resolved.
-fn boundary_body_edit(
-    src: &str,
-    stub_fn: &syn::ItemFn,
-    body_text: &str,
-    symbol: String,
-) -> Option<BoundaryBodyEdit> {
-    let open_end = stub_fn.block.brace_token.span.open().end();
-    let close_start = stub_fn.block.brace_token.span.close().start();
-    let start_byte = line_column_to_byte_offset(src, open_end)?;
-    let end_byte = line_column_to_byte_offset(src, close_start)?;
-    if start_byte > end_byte {
-        return None;
-    }
-    // Base indent = the leading whitespace of the line that holds the stub's
-    // closing brace (which is exactly the fn item's own indentation, robust to
-    // `pub fn` where the `fn` token column is past the item indent). Body lines
-    // get base + 4.
-    let base_indent = leading_whitespace_of_line_at(src, end_byte);
-    let body_indent = format!("{base_indent}    ");
-    let mut replacement = String::new();
-    replacement.push('\n');
-    for line in body_text.lines() {
-        if line.trim().is_empty() {
-            replacement.push('\n');
-        } else {
-            replacement.push_str(&body_indent);
-            replacement.push_str(line);
-            replacement.push('\n');
-        }
-    }
-    replacement.push_str(&base_indent);
-    Some(BoundaryBodyEdit {
-        function_name: stub_fn.sig.ident.to_string(),
-        symbol,
-        start_byte,
-        end_byte,
-        replacement,
-        resolved_source_cid: String::new(),
-        resolved_template_cid: String::new(),
-        param_names: Vec::new(),
-    })
-}
-
-/// Leading whitespace of the source line containing byte offset `at`.
-fn leading_whitespace_of_line_at(src: &str, at: usize) -> String {
-    let line_start = src[..at.min(src.len())]
-        .rfind('\n')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    src[line_start..]
-        .chars()
-        .take_while(|c| *c == ' ' || *c == '\t')
-        .collect()
-}
-
-/// Apply body edits bottom-up (by start byte, descending) so earlier edits do
-/// not shift later byte offsets.
-fn apply_boundary_body_edits(src: &str, edits: &mut [BoundaryBodyEdit]) -> String {
-    edits.sort_by(|a, b| b.start_byte.cmp(&a.start_byte));
-    let mut out = src.to_string();
-    for edit in edits.iter() {
-        out.replace_range(edit.start_byte..edit.end_byte, &edit.replacement);
-    }
-    out
-}
-
 fn lift_implications(params: &Value) -> Result<Value, String> {
     use std::collections::HashMap;
 
@@ -6040,7 +5762,6 @@ fn kit_declaration_result() -> Value {
                 {"name": "lift", "required": true},
                 {"name": "shutdown", "required": true},
                 {"name": "sugar.plugin.recognize", "required": false},
-                {"name": "sugar.plugin.materialize", "required": false},
                 {"name": "sugar.plugin.lift_implications", "required": false},
                 {"name": KIT_DECLARATION_RPC_METHOD, "required": false}
             ]
@@ -6427,11 +6148,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 if extract_sugar_attr(item_fn).is_some() {
                     continue;
                 }
-                // `#[sugar::boundary]` stubs are CONSUMERS of a binding, not
-                // producers — never lift them as sugar.
-                if extract_boundary_attr(item_fn).is_some() {
-                    continue;
-                }
                 // Tests are not a vendored surface.
                 if is_rust_test_fn(item_fn) {
                     continue;
@@ -6524,56 +6240,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 }
                 entries.push(entry);
             }
-        }
-
-        // Boundary lane: #[sugar::boundary] annotations. Each marks
-        // a function as the EDGE where a concept binds to a per-language
-        // library. Emitted as `realization-memento` (Boundary variant)
-        // entries so cmd_mint can mint them into the envelope; the
-        // materializer reads them when retargeting downstream consumers
-        // to other languages and substitutes the per-target sister
-        // library at each boundary callsite.
-        for boundary_target in collect_boundary_targets(&file) {
-            let BoundaryTarget {
-                op,
-                library,
-                version,
-                api,
-                call,
-                boundary_contract,
-                loss,
-                source_function_name,
-            } = boundary_target;
-            let op_cid = canonical_local_op_cid(&op)
-                .map_err(|e| format!("derive op cid for boundary `{op}`: {e}"))?;
-            let mut entry = json!({
-                "kind": "realization-memento",
-                "realization_kind": "boundary",
-                "target_language": "rust",
-                "op_cid": op_cid,
-                "library": library,
-                "source_function_name": source_function_name,
-                "loss_record_contribution": {
-                    "form": "literal",
-                    "value": { "entries": loss },
-                },
-            });
-            if let Some(api_str) = api {
-                entry["api"] = json!(api_str);
-            }
-            // The bound vendor symbol (matches the vendor sugar binding's
-            // `source_function_name`); materialize reads it to fill the stub.
-            if let Some(call_str) = call {
-                entry["call"] = json!(call_str);
-            }
-            if let Some(bc) = boundary_contract {
-                entry["boundary_contract"] = json!(bc);
-            }
-            // #1357: parallel to the sugar emission above.
-            if let Some(v) = version {
-                entry["library_version"] = json!(v);
-            }
-            entries.push(entry);
         }
 
         // Module-level item declarations: const, static, struct, enum,
@@ -7494,81 +7160,6 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
     None
 }
 
-/// One `#[sugar::boundary]` target discovered by walking the source.
-/// Each boundary annotation marks a function as the EDGE where a
-/// concept binds to a per-language library. The lifter promotes it to
-/// a `realization-memento` (Boundary variant); the materializer reads
-/// it when retargeting downstream consumers to other languages,
-/// substituting the per-target sister library at that callsite.
-#[derive(Debug, Clone, Default)]
-struct BoundaryTarget {
-    op: String,
-    library: String,
-    /// #1357: optional version pin, parallel to SugarTarget.
-    version: Option<String>,
-    api: Option<String>,
-    /// The vendor function this boundary stub binds to (matches the vendor
-    /// sugar binding's `source_function_name`). Materialize fills the stub
-    /// body from this call's REAL source, resolved by the Source Oracle.
-    /// Falls back to `api` when omitted, since older annotations spelled the
-    /// bound symbol there.
-    call: Option<String>,
-    boundary_contract: Option<String>,
-    loss: Vec<String>,
-    source_function_name: String,
-}
-
-fn collect_boundary_targets(file: &syn::File) -> Vec<BoundaryTarget> {
-    let mut targets = Vec::new();
-    collect_boundary_targets_in_items(&file.items, &mut targets);
-    targets
-}
-
-fn collect_boundary_targets_in_items(items: &[syn::Item], targets: &mut Vec<BoundaryTarget>) {
-    for item in items {
-        match item {
-            syn::Item::Fn(item_fn) => {
-                if let Some(mut parsed) = extract_boundary_attr(item_fn) {
-                    parsed.source_function_name = item_fn.sig.ident.to_string();
-                    targets.push(parsed);
-                }
-            }
-            syn::Item::Mod(module) => {
-                if let Some((_, nested_items)) = &module.content {
-                    collect_boundary_targets_in_items(nested_items, targets);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
-    for attr in &item_fn.attrs {
-        let path = attr.path();
-        let segments: Vec<_> = path.segments.iter().collect();
-        if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "boundary" {
-            if let Ok(meta_list) = attr.meta.require_list() {
-                let args = parse_attr_named_args(&meta_list.tokens);
-                let op = args.string("op").unwrap_or_default();
-                let library = args.string("library").unwrap_or_default();
-                if !op.is_empty() && !library.is_empty() {
-                    return Some(BoundaryTarget {
-                        op,
-                        library,
-                        version: args.string("version"),
-                        api: args.string("api"),
-                        call: args.string("call"),
-                        boundary_contract: args.string("boundary_contract"),
-                        loss: args.string_array("loss"),
-                        source_function_name: String::new(),
-                    });
-                }
-            }
-        }
-    }
-    None
-}
 
 
 #[derive(Debug, Default)]
@@ -10201,26 +9792,6 @@ mod tests {
         assert!(body_source.get("span").is_some());
     }
 
-    #[test]
-    fn boundary_body_edit_reindents_to_stub_level() {
-        let src = "mod m {\n    #[sugar::boundary(op=\"c\", library=\"l\", call=\"f\")]\n    pub fn rev(s: &str) -> String {\n        unimplemented!()\n    }\n}\n";
-        let parsed = syn::parse_file(src).unwrap();
-        let mut stubs: Vec<(&syn::ItemFn, String, String)> = Vec::new();
-        collect_boundary_stubs(&parsed.items, &mut stubs);
-        assert_eq!(stubs.len(), 1, "one nested boundary stub");
-        let (stub_fn, _lib, call) = &stubs[0];
-        assert_eq!(call, "f");
-        let edit = boundary_body_edit(src, stub_fn, "s.chars().rev().collect()", "l.f".into())
-            .expect("edit");
-        let mut edits = vec![edit];
-        let out = apply_boundary_body_edits(src, &mut edits);
-        // The body is indented to the stub's level + 4 (8 spaces inside `mod m`).
-        assert!(
-            out.contains("\n        s.chars().rev().collect()\n"),
-            "reindented body, got:\n{out}"
-        );
-        assert!(!out.contains("unimplemented"), "stub body replaced");
-    }
 
 
     fn panic_loci_for_first_fn(src: &str) -> Vec<Value> {
@@ -11324,41 +10895,6 @@ async fn fetch_status(url: String) -> i64 {
         let _ = fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn boundary_attr_with_family_and_version_emits_into_realization_memento() {
-        let root = temp_workspace("boundary_family_version");
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("create src dir");
-        let src = r#"
-#[sugar::boundary(
-    op = "sql-query",
-    library = "rusqlite",
-    version = "0.39.0",
-    boundary_contract = "boundary:sql-execute",
-)]
-pub fn query_stub(_conn: &i64, _sql: &str) -> i64 {
-    unimplemented!()
-}
-"#;
-        fs::write(src_dir.join("lib.rs"), src).expect("write source");
-        let out = bind_lift(&json!({
-            "workspace_root": root.to_string_lossy(),
-            "source_paths": ["."],
-        }))
-        .expect("bind lift should succeed");
-        let ir = out["ir"].as_array().expect("ir array");
-        let memento = ir
-            .iter()
-            .find(|e| e["kind"] == "realization-memento")
-            .expect("realization memento");
-        assert_eq!(memento["library"], "rusqlite");
-        assert_eq!(memento["library_version"], "0.39.0");
-        assert_eq!(
-            memento["op_cid"],
-            local_op_cid("sql-query").expect("sql-query op cid")
-        );
-        let _ = fs::remove_dir_all(root);
-    }
 
     #[test]
     fn unannotated_fn_produces_zero_sugar_entries() {
