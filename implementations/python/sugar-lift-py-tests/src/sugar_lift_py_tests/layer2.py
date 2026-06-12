@@ -104,6 +104,7 @@ from .ir import (
 from .translate_universe import (
     callee_is_nondeterministic,
     constant_universe_for_callee,
+    delegation_universe_for_callee,
     eval_predicate,
     guard_universe_for_callee,
     predicate_universe_for_callee,
@@ -3257,9 +3258,12 @@ def _universe_conjuncts(
     atom (the contact rule: a universe over a term the assertion never
     mentions is vacuously SAT). Families: translate (chars-not-in-set),
     rstrip (negated suffix-of per char), table-loop (positive chars-in-set),
-    table-subscript (membership disjunction), and guard-then-raise (negated
-    comparisons at the callsite's concrete args). Refused walks surface as
-    loud warnings; non-candidates contribute nothing."""
+    table-subscript (membership disjunction), guard-then-raise (negated
+    comparisons at the callsite's concrete args), return-constant
+    (equality with the literal), return-predicate (ground-evaluated bool),
+    and pure-delegation/identity (equality between call terms in EUF).
+    Refused walks surface as loud warnings; non-candidates contribute
+    nothing."""
     conjuncts: List[Formula] = []
     universe, walk_refusal = translate_universe_for_callee(callee)
     if walk_refusal is not None:
@@ -3392,6 +3396,69 @@ def _universe_conjuncts(
             result = eval_predicate(pred_u.expr, env)
             if result is not None:
                 conjuncts.append(eq(subject_term, bool_const(result)))
+
+        # PURE-DELEGATION + IDENTITY (census families, 57k + the param arm
+        # of return-name's 146k): the body forwards verbatim, so the
+        # output EQUALS the forwarded term — eq between call terms in EUF,
+        # zero new atoms. The delegate term uses the SAME callresult head
+        # a consumer's direct call builds, so claims about f and claims
+        # about g meet in one term and contradictions THROUGH the
+        # delegation edge conjoin and fire UNSAT.
+        deleg_u, deleg_refusal = delegation_universe_for_callee(callee)
+        if deleg_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::delegation-universe",
+                    reason=f"{deleg_refusal.callee}: {deleg_refusal.reason}",
+                )
+            )
+        elif deleg_u is not None:
+            call_args = (
+                subject_term.args[1:]
+                if subject_term.name.startswith("callval_")
+                else subject_term.args
+            )
+            if deleg_u.kind == "identity":
+                if deleg_u.param_index < len(call_args):
+                    conjuncts.append(
+                        eq(subject_term, call_args[deleg_u.param_index])
+                    )
+            elif deleg_u.kind == "delegation-splat":
+                head = _call_result_head(deleg_u.delegate, len(call_args))
+                conjuncts.append(
+                    eq(subject_term, ctor(head, list(call_args)))
+                )
+            else:
+                mapped = []
+                for spec in deleg_u.args:
+                    if spec[0] == "param":
+                        if spec[1] >= len(call_args):
+                            # defaulted at this callsite: the forwarded
+                            # value is not visible here; emit nothing
+                            mapped = None
+                            break
+                        mapped.append(call_args[spec[1]])
+                    else:
+                        _tag, v, k = spec
+                        if k == "int":
+                            mapped.append(num(v))
+                        elif k == "bool":
+                            mapped.append(bool_const(v))
+                        elif k == "str":
+                            mapped.append(str_const(v))
+                        elif k == "none":
+                            mapped.append(ctor("None", []))
+                        else:  # bytes (walk admits ascii only)
+                            mapped.append(
+                                ctor(
+                                    "python:bytes",
+                                    [str_const(v.decode("ascii"))],
+                                )
+                            )
+                if mapped is not None:
+                    head = _call_result_head(deleg_u.delegate, len(mapped))
+                    conjuncts.append(eq(subject_term, ctor(head, mapped)))
     return conjuncts
 
 

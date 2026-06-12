@@ -123,9 +123,12 @@ _NAMED: dict = {
         "EUF method-result equality universe over lifted receiver+args "
         "(the callval_* head already exists kit-side)"
     ),
-    "pure-delegation": _debt(
+    "pure-delegation": _lifted(
+        "delegation_universe_for_callee",
         "delegation equality universe: f(args) == g(mapped args) in EUF, "
-        "zero new atoms — the composition-router edge"
+        "zero new atoms — the composition-router edge",
+        residual="keyword forwarding, imported/attribute delegates, and "
+        "computed arguments refuse by name",
     ),
     "return-fn-call": _debt(
         "call-result equality universe over lifted args (delegation "
@@ -147,9 +150,12 @@ _NAMED: dict = {
         "equality with the unconditioned literal",
         residual="non-ascii bytes literals refuse loudly (named)",
     ),
-    "return-name": _debt(
-        "identity universe (return <param>) and value-pinned-local "
-        "equality (return <local> resolved through value_pins)"
+    "return-name": _lifted(
+        "delegation_universe_for_callee",
+        "identity universe: return <param> swears the output IS the "
+        "argument (eq(subject, call_args[i]))",
+        residual="the value-pinned-local arm owed (return <local> "
+        "resolved through value_pins)",
     ),
     "return-binop": _debt(
         "arithmetic/string-op universe over params+literals (Int and "
