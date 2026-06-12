@@ -3414,13 +3414,18 @@ fn pattern_variant_path(pat: &syn::Pat) -> Option<String> {
 /// with the same teeth (two variants are distinct string constants, so claiming
 /// both is UNSAT).
 ///
-/// SOUND SCOPE: `matches!(x, P)` guarantees x's discriminant equals P's variant
-/// AND that any value-subpatterns of P hold. We lift only the (weaker,
-/// always-implied) discriminant fact, so a value-binding subpattern (`V { f }`,
-/// `V(inner)`) is fine -- the lifted obligation is implied either way. We REFUSE
-/// BY NAME the shapes where the discriminant is NOT unambiguous:
-///   - a guard (`matches!(x, P if g)`): the guard changes which values reach P,
-///     so passing does not pin the discriminant (mirrors `panic_locus_match_entry`);
+/// SOUND SCOPE: `matches!(x, P)` is exactly `match x { P => true, _ => false }`,
+/// so a passing `assert!(matches!(x, P [if g]))` means x matched P (and, if
+/// present, the guard g held) -- the discriminant `variant_of(x) == "variant::P"`
+/// is therefore IMPLIED. We lift only that (weaker, always-implied) discriminant
+/// fact, so both value-binding subpatterns (`V { f }`, `V(inner)`) AND a trailing
+/// GUARD (`P if g`) are fine: the lifted obligation is implied either way, and
+/// dropping g loses only refutation power, never soundness. (This differs from
+/// `panic_locus_match_entry`, which refuses guards: a `match` has multiple arms,
+/// the same pattern can recur with different guards, and which arm a value reaches
+/// is genuinely guard-dependent -- the single-pattern `matches!` macro has no such
+/// ambiguity.) We REFUSE BY NAME only the shapes where the discriminant itself is
+/// NOT unambiguous:
 ///   - an or-pattern (`A | B`): a disjunction is not a single discriminant;
 ///   - a binding / wildcard / single-segment path: a lowercase `foo` is a
 ///     catch-all binding (always matches), and a bare `Foo` is ambiguous between
@@ -3436,28 +3441,25 @@ fn translate_matches_assertion(
         return Ok(None);
     }
     // Parse `subject , pattern (if guard)?` from the macro token stream.
-    let parser = |input: ParseStream| -> syn::Result<(Expr, syn::Pat, bool)> {
+    let parser = |input: ParseStream| -> syn::Result<(Expr, syn::Pat)> {
         let subject: Expr = input.parse()?;
         input.parse::<Token![,]>()?;
         let pat = syn::Pat::parse_multi_with_leading_vert(input)?;
-        let has_guard = input.peek(Token![if]);
-        // Consume any trailing guard tokens so the parse does not error on them;
-        // a guard is refused by name below regardless of its contents.
+        // A trailing `if <guard>` is consumed but NOT modeled: for the ASSERTED
+        // direction, `matches!(x, V if g)` true ⟹ x matches V AND g, so the
+        // discriminant `variant_of(x) == "variant::V"` is IMPLIED regardless of g.
+        // Lifting the discriminant and dropping the guard is therefore SOUND (a
+        // weaker, always-implied fact); not modeling g loses only refutation power,
+        // never soundness -- the same tradeoff `collect_ambient_foralls` makes.
         let _ = input.parse::<proc_macro2::TokenStream>();
-        Ok((subject, pat, has_guard))
+        Ok((subject, pat))
     };
-    let (subject, pat, has_guard) = match Parser::parse2(parser, m.mac.tokens.clone()) {
+    let (subject, pat) = match Parser::parse2(parser, m.mac.tokens.clone()) {
         Ok(v) => v,
         // Not the `matches!(expr, pat)` shape we lift; fall through to the
         // ordinary boolean-assertion paths (which will name their own refusal).
         Err(_) => return Ok(None),
     };
-    if has_guard {
-        return Err(format!(
-            "matches! with a guard is not a pure discriminant; refused by name: `{}`",
-            token_key(expr)
-        ));
-    }
     let Some(variant) = strict_variant_path(&pat) else {
         return Err(format!(
             "matches! pattern is not an unambiguous qualified variant \
