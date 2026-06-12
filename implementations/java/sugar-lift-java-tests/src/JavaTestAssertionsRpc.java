@@ -163,6 +163,14 @@ public final class JavaTestAssertionsRpc {
         // and registers int32.eq-bv-expr universe contracts per method name.
         // Supported shapes: ternary-with-comparison ((a < 0) ? -a : a) → abs BV expression.
         NumericUniverseRegistry numericRegistry = NumericUniverseWalker.loadRegistry(compiler, root, diagnostics);
+
+        // Door 3: Load the @Pattern regex universe from vendor_source_dirs.
+        // The PatternUniverseWalker walks @Pattern(regexp="…") annotations on
+        // String-returning accessors and registers the verbatim regex literal per
+        // method name (only the regular subset; non-regular features refused by
+        // name). Consumed at the string-equality callsite as a str.in-regex row.
+        // Empty registry → byte-identical to before.
+        PatternUniverseRegistry patternRegistry = PatternUniverseWalker.loadRegistry(compiler, root, diagnostics);
         // STRONG TIER (paper 26 seam): per-character block equations walked from
         // the vendor encode body. Built once; consumed at string-literal callsites.
         StrongUniverseRegistry strongRegistry = StrongUniverseWalker.loadRegistry(compiler, root, diagnostics);
@@ -212,7 +220,7 @@ public final class JavaTestAssertionsRpc {
             // contracts already lifted from the other files. Without this, one bad
             // file in a 229-file vendor test tree drops the entire artifact to GAP.
             try {
-                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics);
+                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics);
             } catch (Exception e) {
                 diagnostics.add(diagnostic(rel, null, null,
                     "per-file lift skipped (isolated): "
@@ -1891,6 +1899,7 @@ public final class JavaTestAssertionsRpc {
             MultiFrameworkVocab multiVocab,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            PatternUniverseRegistry patternRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
             MtSeedPinRegistry mtSeedPins,
@@ -1976,7 +1985,7 @@ public final class JavaTestAssertionsRpc {
                 if (decl instanceof ClassTree ct) {
                     walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
                             vocab, frameworkKind, ambiguousFramework,
-                            universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, null);
+                            universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, null);
                 }
             }
         }
@@ -2006,6 +2015,7 @@ public final class JavaTestAssertionsRpc {
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            PatternUniverseRegistry patternRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
             MtSeedPinRegistry mtSeedPins,
@@ -2021,12 +2031,12 @@ public final class JavaTestAssertionsRpc {
         for (Tree member : classTree.getMembers()) {
             if (member instanceof MethodTree mt) {
                 liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry,
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, patternRegistry, strongRegistry,
                         crcValuePins, mtSeedPins, instanceUniverse, javaConstants, classTree, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
                 walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework,
-                        universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, className);
+                        universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, className);
             }
         }
     }
@@ -2047,6 +2057,7 @@ public final class JavaTestAssertionsRpc {
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            PatternUniverseRegistry patternRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
             MtSeedPinRegistry mtSeedPins,
@@ -2124,7 +2135,7 @@ public final class JavaTestAssertionsRpc {
         for (StatementTree stmt : body.getStatements()) {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
-                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse,
+                        vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse,
                         ssaBindings, mutatedLocals, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
@@ -3160,6 +3171,7 @@ public final class JavaTestAssertionsRpc {
             boolean ambiguousFramework,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            PatternUniverseRegistry patternRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
             MtSeedPinRegistry mtSeedPins,
@@ -3279,7 +3291,7 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
@@ -3308,6 +3320,7 @@ public final class JavaTestAssertionsRpc {
             AssertionVocab vocab,
             UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            PatternUniverseRegistry patternRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
             MtSeedPinRegistry mtSeedPins,
@@ -3380,7 +3393,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
-                universeRegistry, numericRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+                universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -3448,7 +3461,7 @@ public final class JavaTestAssertionsRpc {
         // which processes already-resolved MethodInvocationTree nodes — no SSA
         // binding substitution needed; pass empty maps.
         liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
-                UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, StrongUniverseRegistry.EMPTY,
+                UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, PatternUniverseRegistry.EMPTY, StrongUniverseRegistry.EMPTY,
                 CrcValuePinRegistry.EMPTY, MtSeedPinRegistry.EMPTY, Map.of(), Map.of(), InstanceUniverse.EMPTY,
                 Collections.emptyMap(), Collections.emptySet(), ir, diagnostics);
     }
@@ -3484,6 +3497,7 @@ public final class JavaTestAssertionsRpc {
             String relation, String methodName,
             String scope, UniverseRegistry universeRegistry,
             NumericUniverseRegistry numericRegistry,
+            PatternUniverseRegistry patternRegistry,
             StrongUniverseRegistry strongRegistry,
             CrcValuePinRegistry crcValuePins,
             MtSeedPinRegistry mtSeedPins,
@@ -3618,8 +3632,14 @@ public final class JavaTestAssertionsRpc {
                 strArgValues.add(null);
             } else {
                 // G1: accept StringUtils.getBytesUtf8("lit") or "lit".getBytes(...) as string literal.
-                // The callsite identity keys on the literal; note equivalence in diagnostics.
+                // Door 3: ALSO accept a BARE String literal arg — the natural shape for a
+                // @Pattern-validated String accessor (accept("alice_01")) — but ONLY when the
+                // callee is @Pattern-registered. SCOPED so every non-regex callsite path stays
+                // byte-identical (no new string equalities for unregistered callees).
                 Optional<String> sv = asBytesStringLiteral(a);
+                if (sv.isEmpty() && patternRegistry.getRegex(callee) != null) {
+                    sv = asStringLiteral(a);
+                }
                 if (sv.isPresent()) {
                     intArgValues.add(0L); // placeholder (unused in string path)
                     strArgValues.add(sv.get());
@@ -3627,7 +3647,7 @@ public final class JavaTestAssertionsRpc {
                 } else {
                     diagnostics.add(diagnostic(scopePath(scope), scopeClassMethod(scope),
                         methodName, "call arg to " + callee + "(...) is not an int literal or "
-                        + "getBytesUtf8/getBytes(String literal): " + a));
+                        + "getBytesUtf8/getBytes/String literal: " + a));
                     return;
                 }
             }
@@ -3769,6 +3789,16 @@ public final class JavaTestAssertionsRpc {
             if (universeSet != null) {
                 ir.add(buildUniverseContract(callee, intArgValues, strArgValues, argsAreStrings,
                         universeSet));
+            }
+            // Door 3: ALSO emit the @Pattern regex universe row if the callee is a
+            // @Pattern-registered accessor. The consumer's validity claim
+            // (=(getX(...), "lit")) conjoins with str.in-regex(getX(...), <walked
+            // regex>) under the SAME #euf# name. A non-matching input claimed valid
+            // → unsatisfied BY MEMBERSHIP in the walked regular language.
+            String patternRegex = patternRegistry.getRegex(callee);
+            if (patternRegex != null) {
+                ir.add(buildRegexUniverseContract(callee, intArgValues, strArgValues, argsAreStrings,
+                        patternRegex));
             }
             // STRONG TIER (paper 26 seam): if the callee is strong-registered AND
             // the input is a single string literal of length a multiple of 3 (a
@@ -6209,6 +6239,281 @@ public final class JavaTestAssertionsRpc {
         String getBvExprJson(String callee) { return bvExprs.get(callee); }
         boolean isEmpty() { return bvExprs.isEmpty(); }
         Map<String, String> all() { return bvExprs; }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Door 3: PatternUniverseRegistry — @Pattern(regexp="…") regex universe
+    // ──────────────────────────────────────────────────────────────
+
+    /** callee simple-name → the verbatim @Pattern regexp literal (walked from the
+     *  annotation AST). Only REGULAR patterns are registered; a non-regular feature
+     *  is REFUSED BY NAME at walk time and the method is left unregistered (floor
+     *  stands), so a registered regex always lowers to a real RegLan in the emitter. */
+    static final class PatternUniverseRegistry {
+        static final PatternUniverseRegistry EMPTY = new PatternUniverseRegistry(Map.of());
+
+        private final Map<String, String> regexes;
+
+        PatternUniverseRegistry(Map<String, String> regexes) {
+            this.regexes = Map.copyOf(regexes);
+        }
+
+        /** The @Pattern regexp literal for a callee, or null if not registered. */
+        String getRegex(String callee) { return regexes.get(callee); }
+        boolean isEmpty() { return regexes.isEmpty(); }
+        Map<String, String> all() { return regexes; }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Door 3: PatternUniverseWalker — walk @Pattern annotations from vendor source
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * THE LAW: the oath is the VENDOR'S. The regex is the verbatim
+     * `@Pattern(regexp="…")` literal walked from the annotation's AST node
+     * (AnnotationTree → AssignmentTree("regexp") → LiteralTree<String>). Nothing
+     * is hand-authored; if the regexp is not a string-literal AST node, the
+     * method is not registered.
+     *
+     * WALK OR SILENCE, CLOSE THE HOUSE: the regexp string is scanned for
+     * non-regular features (backreference, lookahead/lookbehind, atomic/possessive
+     * group, inline flag, word-boundary anchor). If ANY is present, the walker
+     * REFUSES BY NAME (named diagnostic) and does NOT register — the language is
+     * never approximated; the weak floor stands. Only a fully-regular pattern is
+     * registered, to be lowered by the Rust `regex_regln` authority at emit time.
+     *
+     * Scope: a `@Pattern`-annotated, String-returning, single-parameter accessor
+     * (the JSR-380 idiom: a validated DTO's getter/normalizer). The validity claim
+     * is a consumer equality over that accessor's callresult; the conjoined
+     * `str.in-regex` row refutes a non-matching input claimed valid — by MEMBERSHIP
+     * in the walked regular language, not a within-test contradiction.
+     *
+     * SUPPORTED ANNOTATION SHAPE (others refused/skipped by name):
+     *   - `@Pattern(regexp = "…")`  or  `@Pattern("…")` (single-string-arg form)
+     *   - jakarta.validation.constraints.Pattern AND javax.validation… (both names).
+     */
+    static final class PatternUniverseWalker {
+
+        // Non-regular constructs: substrings whose presence proves the language is
+        // not regular (or silently changes semantics). Detected by a structural
+        // scan that respects escaping. Each maps to a human-named feature.
+        static PatternUniverseRegistry loadRegistry(
+                JavaCompiler compiler, Path workspaceRoot, List<String> diagnostics) {
+            List<Path> vendorDirs;
+            try {
+                vendorDirs = UniverseWalker.readVendorSourceDirs(workspaceRoot);
+            } catch (IOException e) {
+                return PatternUniverseRegistry.EMPTY;
+            }
+            if (vendorDirs.isEmpty()) return PatternUniverseRegistry.EMPTY;
+
+            List<Path> vendorFiles = new ArrayList<>();
+            for (Path dir : vendorDirs) {
+                if (!Files.isDirectory(dir)) continue;
+                try (Stream<Path> walk = Files.walk(dir)) {
+                    walk.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .forEach(vendorFiles::add);
+                } catch (IOException e) {
+                    diagnostics.add(diagnostic("<pattern-universe-walker>", "<pattern-universe-walker>",
+                            dir.toString(), "vendor dir walk error: " + e.getMessage()));
+                }
+            }
+            if (vendorFiles.isEmpty()) return PatternUniverseRegistry.EMPTY;
+
+            DiagnosticCollector<JavaFileObject> dc = new DiagnosticCollector<>();
+            StandardJavaFileManager fm = compiler.getStandardFileManager(dc, null, null);
+            List<String> absFiles = vendorFiles.stream()
+                    .map(p -> p.toAbsolutePath().toString())
+                    .collect(Collectors.toList());
+            Iterable<? extends JavaFileObject> compilationUnits;
+            try {
+                compilationUnits = fm.getJavaFileObjectsFromStrings(absFiles);
+            } catch (Exception e) {
+                diagnostics.add(diagnostic("<pattern-universe-walker>", "<pattern-universe-walker>",
+                        "<init>", "error opening vendor files: " + e.getMessage()));
+                return PatternUniverseRegistry.EMPTY;
+            }
+
+            JavacTask task = (JavacTask) compiler.getTask(
+                    null, fm, dc, List.of("-proc:none"), null, compilationUnits);
+            Iterable<? extends CompilationUnitTree> trees;
+            try {
+                trees = task.parse();
+            } catch (IOException e) {
+                diagnostics.add(diagnostic("<pattern-universe-walker>", "<init>", "<init>",
+                        "parse error: " + e.getMessage()));
+                return PatternUniverseRegistry.EMPTY;
+            }
+
+            Map<String, String> regexes = new LinkedHashMap<>();
+            for (CompilationUnitTree cu : trees) {
+                for (Tree td : cu.getTypeDecls()) {
+                    if (td instanceof ClassTree ct) {
+                        walkClass(ct, regexes, diagnostics);
+                    }
+                }
+            }
+            return new PatternUniverseRegistry(regexes);
+        }
+
+        private static void walkClass(
+                ClassTree ct, Map<String, String> regexes, List<String> diagnostics) {
+            String className = ct.getSimpleName().toString();
+            for (Tree member : ct.getMembers()) {
+                if (!(member instanceof MethodTree mt)) continue;
+                // String-returning accessor (the validated value the consumer claims).
+                if (!returnsString(mt.getReturnType())) continue;
+                String regex = patternRegexpOf(mt.getModifiers().getAnnotations());
+                if (regex == null) continue;
+                String methodName = mt.getName().toString();
+
+                // WALK OR SILENCE: refuse by name on any non-regular feature.
+                String nonRegular = firstNonRegularFeature(regex);
+                if (nonRegular != null) {
+                    diagnostics.add(diagnostic("<pattern-universe-walker>", className, methodName,
+                            "regex universe refused: @Pattern regexp uses " + nonRegular
+                            + " — not a regular language, not rendered (floor stands)"));
+                    continue;
+                }
+                regexes.put(methodName, regex);
+            }
+        }
+
+        /** True iff the return type names String (simple or qualified). */
+        private static boolean returnsString(Tree retType) {
+            if (retType == null) return false;
+            String s = retType.toString();
+            return s.equals("String") || s.equals("java.lang.String")
+                    || s.endsWith(".String");
+        }
+
+        /**
+         * Extract the @Pattern regexp string literal from a member's annotations,
+         * or null if there is no @Pattern with a string-literal regexp.
+         * Accepts both `@Pattern(regexp="…")` and the single-arg `@Pattern("…")`.
+         */
+        static String patternRegexpOf(List<? extends AnnotationTree> anns) {
+            for (AnnotationTree ann : anns) {
+                String type = ann.getAnnotationType().toString();
+                boolean isPattern = type.equals("Pattern")
+                        || type.equals("jakarta.validation.constraints.Pattern")
+                        || type.equals("javax.validation.constraints.Pattern")
+                        || type.endsWith(".Pattern");
+                if (!isPattern) continue;
+                for (ExpressionTree arg : ann.getArguments()) {
+                    if (arg instanceof AssignmentTree at) {
+                        String lhs = at.getVariable().toString();
+                        if (!lhs.equals("regexp")) continue;
+                        ExpressionTree rhs = at.getExpression();
+                        if (rhs instanceof LiteralTree lt && lt.getValue() instanceof String s) {
+                            return s;
+                        }
+                    } else if (arg instanceof LiteralTree lt && lt.getValue() instanceof String s) {
+                        // Single-string-arg form @Pattern("…") (rare; the value IS regexp).
+                        return s;
+                    }
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Structural non-regular-feature scan over a regex literal. Returns a human
+         * name of the FIRST non-regular construct found, or null if the pattern is
+         * (as far as this scan can tell) within the regular subset. This mirrors the
+         * Rust `regex_regln` refusals so the kit refuses BEFORE emitting a row; the
+         * Rust lowering is the authoritative second gate.
+         *
+         * The scan respects backslash-escaping: a metaconstruct preceded by an odd
+         * number of backslashes is a literal, not the construct.
+         */
+        static String firstNonRegularFeature(String re) {
+            int n = re.length();
+            for (int i = 0; i < n; i++) {
+                char c = re.charAt(i);
+                if (c == '\\') {
+                    // Escape: inspect the escaped char for non-regular escapes.
+                    if (i + 1 < n) {
+                        char e = re.charAt(i + 1);
+                        if (e >= '1' && e <= '9') return "a backreference (\\" + e + ")";
+                        if (e == 'k') return "a backreference (\\k<name>)";
+                        if (e == 'b') return "a word-boundary anchor (\\b)";
+                        if (e == 'B') return "a non-word-boundary anchor (\\B)";
+                        if (e == 'A') return "a start-of-input anchor (\\A)";
+                        if (e == 'Z' || e == 'z') return "an end-of-input anchor (\\" + e + ")";
+                        if (e == 'G') return "a match-reset anchor (\\G)";
+                    }
+                    i++; // skip the escaped char
+                    continue;
+                }
+                if (c == '(' && i + 1 < n && re.charAt(i + 1) == '?') {
+                    char m = i + 2 < n ? re.charAt(i + 2) : '\0';
+                    switch (m) {
+                        case ':': break; // non-capturing group — regular
+                        case '=': return "a lookahead (?=…)";
+                        case '!': return "a negative lookahead (?!…)";
+                        case '>': return "an atomic group (?>…)";
+                        case 'P': return "a named-capture/backref (?P…)";
+                        case '<': {
+                            char m2 = i + 3 < n ? re.charAt(i + 3) : '\0';
+                            if (m2 == '=') return "a lookbehind (?<=…)";
+                            if (m2 == '!') return "a negative lookbehind (?<!…)";
+                            return "a named-capture group (?<name>…)";
+                        }
+                        default:
+                            if ("imsxuU".indexOf(m) >= 0) return "an inline flag (?" + m + "…)";
+                            return "an unrecognized group extension (?…)";
+                    }
+                }
+                // Possessive / reluctant quantifier modifiers: a quantifier char
+                // (* + ? } ) followed immediately by + or ? changes match semantics.
+                if ((c == '*' || c == '+' || c == '?' || c == '}') && i + 1 < n) {
+                    char q = re.charAt(i + 1);
+                    if (q == '+') return "a possessive quantifier";
+                    // A lazy/reluctant marker `*?` — but `??` after `?` is also lazy.
+                    if (q == '?' && c != '?') return "a reluctant/lazy quantifier";
+                }
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Door 3: build the @Pattern regex universe contract (str.in-regex).
+     * Same #euf# contract name as the sworn validity equality → conjoined at
+     * prove time. arg[0] = the callresult ctor; arg[1] = a String const carrying
+     * the verbatim @Pattern regexp literal, lowered to z3 RegLan by the Rust
+     * `regex_regln` authority. GOOD (matching input claimed valid) → sat; BAD
+     * (non-matching input claimed valid) → unsat BY MEMBERSHIP in the walked regex.
+     */
+    private static String buildRegexUniverseContract(
+            String callee, List<Long> intArgValues, List<String> strArgValues,
+            boolean argsAreStrings, String regex) {
+
+        String safeName = toSafeName(callee);
+        int arity = intArgValues.size();
+        String argSig = argsAreStrings
+                ? buildArgSigMixed(intArgValues, strArgValues)
+                : intArgValues.stream().map(v -> "i:" + v).collect(Collectors.joining(","));
+        String contractName = callee + "#euf#c:callresult_" + safeName + "_a" + arity
+                + "(" + argSig + ")::assertion";
+
+        String ctorArgs = argsAreStrings
+                ? buildCtorArgsWithStrings(intArgValues, strArgValues)
+                : buildCtorArgs(intArgValues);
+        String ctorJson = "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
+                + ctorArgs + "]}";
+        String regexJson = "{\"kind\":\"const\",\"value\":\"" + esc(regex)
+                + "\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}";
+
+        return "{\"kind\":\"contract\""
+             + ",\"name\":\"" + esc(contractName) + "\""
+             + ",\"outBinding\":\"out\""
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":["
+             + "{\"kind\":\"atomic\",\"name\":\"str.in-regex\",\"args\":["
+             + ctorJson + "," + regexJson + "]}]}}";
     }
 
     // ──────────────────────────────────────────────────────────────

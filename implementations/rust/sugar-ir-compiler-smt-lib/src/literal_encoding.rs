@@ -464,6 +464,7 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "str.is_ascii_control"
             | "str.chars-in-set"
             | "str.chars-not-in-set"
+            | "str.in-regex"
     )
 }
 

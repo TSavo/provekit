@@ -3264,5 +3264,94 @@ else
   echo "SKIP: examples/java-crc32-valuepin/good/vendor/jdk-crc32c not present"
 fi
 
+# ──────────────────────────────────────────────────────────────
+# Door 3 tests (81-83): the @Pattern regex universe.
+# Walk a JSR-380 @Pattern(regexp="…") literal from the annotation AST into a
+# str.in-regex universe row; refuse non-regular features by name; skip a
+# non-literal regexp. Fixture: fixtures/universe-regex/.
+# ──────────────────────────────────────────────────────────────
 echo
-echo "== all 80 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 6 STRONG + 5 G4-RECURRENCE + 3 G5-CRC-VALUEPIN) =="
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 81: @Pattern regex universe — regular pattern walked → str.in-regex row"
+echo "────────────────────────────────────────────────────────────────"
+RESULT81="$(run_lift "$FIXTURES/universe-regex" "RegexUniverseLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
+python3 - "$RESULT81" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id")==2)
+ir = result["ir"]; diags = result["diagnostics"]
+
+def atoms(c): return c["inv"]["operands"]
+
+# accept("alice_01"): equality AND str.in-regex under the SAME #euf# name.
+name = "accept#euf#c:callresult_accept_a1(s:alice_01)::assertion"
+named = [c for c in ir if c["name"] == name]
+eqs   = [c for c in named if atoms(c)[0]["name"] == "="]
+regex = [c for c in named if atoms(c)[0]["name"] == "str.in-regex"]
+assert len(eqs) == 1, f"expected 1 equality named {name}: {[c['name'] for c in ir]}"
+assert len(regex) == 1, f"expected 1 str.in-regex row named {name}: {[(c['name'],atoms(c)[0]['name']) for c in ir]}\ndiags={json.dumps(diags,indent=2)}"
+
+ra = atoms(regex[0])[0]
+# arg[0] = the call:accept ctor subject; equality must share the SAME subject term.
+subject = ra["args"][0]
+assert subject["kind"] == "ctor" and subject["name"] == "call:accept", f"bad subject: {subject}"
+eq_subject = atoms(eqs[0])[0]["args"][0]
+assert eq_subject == subject, "equality and regex row must share the SAME subject term"
+
+# arg[1] = the verbatim @Pattern regex literal walked from the annotation AST.
+regex_const = ra["args"][1]
+assert regex_const["kind"] == "const", f"regex arg must be a const: {regex_const}"
+assert regex_const["value"] == "^[a-z][a-z0-9_]{2,15}$", \
+    f"regex literal must be walked verbatim, got: {regex_const['value']}"
+assert regex_const["sort"]["name"] == "String"
+
+print("PASS: regular @Pattern walked → str.in-regex row, verbatim regex literal, same #euf# subject as the equality")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 82: @Pattern regex universe — non-regular feature REFUSED BY NAME"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT81" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id")==2)
+ir = result["ir"]; diags = result["diagnostics"]
+
+# risky() carries @Pattern(regexp="(a)\\1") — a backreference. The walker must
+# REFUSE BY NAME and emit NO str.in-regex row keyed on risky.
+risky_regex = [c for c in ir
+               if "callresult_risky" in c["name"]
+               and c["inv"]["operands"][0]["name"] == "str.in-regex"]
+assert not risky_regex, f"non-regular @Pattern must emit NO str.in-regex row, got: {[c['name'] for c in risky_regex]}"
+
+named = [d["reason"] for d in diags
+         if "regex universe refused" in (d.get("reason","") or "")
+         and "backreference" in d["reason"]
+         and "not a regular language" in d["reason"]]
+assert named, f"expected a named non-regular refusal, got: {[d.get('reason','') for d in diags]}"
+print(f"PASS: non-regular @Pattern (backreference) refused by name — no str.in-regex row: {named[0][:90]}")
+PY
+
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 83: @Pattern regex universe — non-literal regexp not walked"
+echo "────────────────────────────────────────────────────────────────"
+python3 - "$RESULT81" <<'PY'
+import sys, json
+lines = sys.argv[1].strip().split('\n')
+result = next(json.loads(l)["result"] for l in lines if l.strip() and json.loads(l).get("id")==2)
+ir = result["ir"]
+
+# dynamic() carries @Pattern(regexp=RX) where RX is a constant reference, NOT a
+# string-literal AST node. The walker reads only LiteralTree<String>, so dynamic
+# is not registered → NO str.in-regex row keyed on dynamic.
+dyn_regex = [c for c in ir
+             if "callresult_dynamic" in c["name"]
+             and c["inv"]["operands"][0]["name"] == "str.in-regex"]
+assert not dyn_regex, f"non-literal @Pattern regexp must emit NO str.in-regex row, got: {[c['name'] for c in dyn_regex]}"
+print("PASS: non-literal @Pattern regexp (constant ref, not a string-literal AST node) not walked — no str.in-regex row")
+PY
+
+echo
+echo "== all 83 tests PASS (12 P1-P3 + 7 P4 + 6 P4.5 + 5 G1 + 5 H1 + 5 G2 + 5 G2b + 5 P5c + 3 G3 + 3 Voltron + 5 P6 + 5 EF + 6 STRONG + 5 G4-RECURRENCE + 3 G5-CRC-VALUEPIN + 3 DOOR3-REGEX) =="
