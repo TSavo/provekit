@@ -23,8 +23,9 @@ trusted.
 from __future__ import annotations
 
 import argparse
+import blake3  # the system's one content-address function
 import glob
-import hashlib
+import hashlib  # only to match PyPI's published sha256 of the sdist bytes
 import json
 import os
 import shutil
@@ -318,12 +319,16 @@ def main():
         for r in receipt.get("rows", [])
         if r.get("status") not in ("discharged", None)
     )
-    # sha256-addressed (a meta-level content address of the residual set, not
-    # a substrate proof CID; honestly prefixed so it's never confused with the
-    # blake3-512 bundle CIDs).
+    # blake3-512, the system's ONE content-address function -- the same hash
+    # the substrate uses for every CID. There is no reason to reach for a
+    # different one; the CID is the identity, and the identity scheme is
+    # singular. Same source against the same world -> same perimeter CID; any
+    # change to what we could-not-discharge moves it.
     perimeter_blob = "\n".join(residual).encode()
     perimeter_cid = (
-        "sha256:" + hashlib.sha256(perimeter_blob).hexdigest() if residual else None
+        "blake3-512:" + blake3.blake3(perimeter_blob).digest(length=64).hex()
+        if residual
+        else None
     )
 
     meta = {
