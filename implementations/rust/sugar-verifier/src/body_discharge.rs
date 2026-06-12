@@ -879,8 +879,8 @@ fn post_singleton_atomic_predicate_of_result(post: &Json) -> Option<&str> {
     if arg.get("kind").and_then(|v| v.as_str()) == Some("var")
         && arg.get("name").and_then(|v| v.as_str()) == Some("result")
     {
-        let predicate = panic_freedom::normalize_result_predicate_name(predicate);
-        Some(panic_freedom::normalize_option_predicate_name(predicate))
+        let predicate = predicate;
+        Some(predicate)
     } else {
         None
     }
@@ -1292,7 +1292,7 @@ mod discharge_method_tests {
     #[test]
     fn namespaced_substrate_symbol_is_not_opaque() {
         let ob = json!({"kind": "atomic", "name": "=", "args": [
-            {"kind": "ctor", "name": panic_freedom::IS_OK_CONCEPT, "args": [
+            {"kind": "ctor", "name": "concept:panic-freedom.result.ok", "args": [
                 {"kind": "var", "name": "result"}
             ]},
             {"kind": "ctor", "name": panic_freedom::IS_OK, "args": [
@@ -1586,216 +1586,6 @@ mod callee_post_guard_fact_tests {
             Some(BRIDGE_SYMBOL),
             "the ctor name in the fact must match the bridge symbol"
         );
-    }
-
-    #[test]
-    fn result_ok_concept_post_supplies_same_fact_as_old_is_ok() {
-        let cs = cs_with_ctor_arg(BRIDGE_SYMBOL);
-        let old_pool =
-            singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, panic_freedom::IS_OK);
-        let concept_pool = singleton_totality_pool(
-            BRIDGE_SYMBOL,
-            TOTAL_CONTRACT_CID,
-            panic_freedom::IS_OK_CONCEPT,
-        );
-
-        let old_fact = callee_post_guard_fact(&cs, &old_pool)
-            .expect("old is_ok(result) singleton post must supply a fact");
-        let concept_fact = callee_post_guard_fact(&cs, &concept_pool)
-            .expect("concept result.ok(result) singleton post must supply a fact");
-
-        assert_eq!(
-            concept_fact, old_fact,
-            "concept result.ok must read as the same predicate fact as old is_ok"
-        );
-        assert_eq!(
-            concept_fact.get("name").and_then(|v| v.as_str()),
-            Some(panic_freedom::IS_OK),
-            "reader must canonicalize concept result.ok to the v1 result predicate"
-        );
-    }
-
-    #[test]
-    fn result_err_concept_post_supplies_same_fact_as_old_is_err() {
-        let cs = cs_with_ctor_arg(BRIDGE_SYMBOL);
-        let old_pool =
-            singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, panic_freedom::IS_ERR);
-        let concept_pool = singleton_totality_pool(
-            BRIDGE_SYMBOL,
-            TOTAL_CONTRACT_CID,
-            panic_freedom::IS_ERR_CONCEPT,
-        );
-
-        let old_fact = callee_post_guard_fact(&cs, &old_pool)
-            .expect("old is_err(result) singleton post must supply a fact");
-        let concept_fact = callee_post_guard_fact(&cs, &concept_pool)
-            .expect("concept result.err(result) singleton post must supply a fact");
-
-        assert_eq!(
-            concept_fact, old_fact,
-            "concept result.err must read as the same predicate fact as old is_err"
-        );
-        assert_eq!(
-            concept_fact.get("name").and_then(|v| v.as_str()),
-            Some(panic_freedom::IS_ERR),
-            "reader must canonicalize concept result.err to the v1 result predicate"
-        );
-    }
-
-    #[test]
-    fn result_concept_alias_matching_is_exact() {
-        for malformed in [
-            "concept:panic-freedom.result.OK",
-            "concept:panic-freedom.result.ok ",
-            " concept:panic-freedom.result.ok",
-            "concept:panic-freedom.result.error",
-        ] {
-            let cs = cs_with_ctor_arg(BRIDGE_SYMBOL);
-            let pool = singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, malformed);
-            let fact = callee_post_guard_fact(&cs, &pool)
-                .expect("opaque singleton predicates still supply opaque facts");
-
-            assert_eq!(
-                fact.get("name").and_then(|v| v.as_str()),
-                Some(malformed),
-                "malformed concept-like strings must not normalize to a result predicate"
-            );
-        }
-    }
-
-    #[test]
-    fn option_some_concept_post_supplies_same_fact_as_old_is_some() {
-        let cs = cs_with_ctor_arg(OPTION_BRIDGE_SYMBOL);
-        let old_pool = singleton_totality_pool(
-            OPTION_BRIDGE_SYMBOL,
-            OPTION_TOTAL_CONTRACT_CID,
-            panic_freedom::IS_SOME,
-        );
-        let concept_pool = singleton_totality_pool(
-            OPTION_BRIDGE_SYMBOL,
-            OPTION_TOTAL_CONTRACT_CID,
-            panic_freedom::IS_SOME_CONCEPT,
-        );
-
-        let old_fact = callee_post_guard_fact(&cs, &old_pool)
-            .expect("old is_some(result) singleton post must supply a fact");
-        let concept_fact = callee_post_guard_fact(&cs, &concept_pool)
-            .expect("concept option.some(result) singleton post must supply a fact");
-
-        assert_eq!(
-            concept_fact, old_fact,
-            "concept option.some must read as the same predicate fact as old is_some"
-        );
-        assert_eq!(
-            concept_fact.get("name").and_then(|v| v.as_str()),
-            Some(panic_freedom::IS_SOME),
-            "reader must canonicalize concept option.some to the v1 option predicate"
-        );
-    }
-
-    #[test]
-    fn option_none_concept_post_supplies_same_fact_as_old_is_none() {
-        let cs = cs_with_ctor_arg(OPTION_BRIDGE_SYMBOL);
-        let old_pool = singleton_totality_pool(
-            OPTION_BRIDGE_SYMBOL,
-            OPTION_TOTAL_CONTRACT_CID,
-            panic_freedom::IS_NONE,
-        );
-        let concept_pool = singleton_totality_pool(
-            OPTION_BRIDGE_SYMBOL,
-            OPTION_TOTAL_CONTRACT_CID,
-            panic_freedom::IS_NONE_CONCEPT,
-        );
-
-        let old_fact = callee_post_guard_fact(&cs, &old_pool)
-            .expect("old is_none(result) singleton post must supply a fact");
-        let concept_fact = callee_post_guard_fact(&cs, &concept_pool)
-            .expect("concept option.none(result) singleton post must supply a fact");
-
-        assert_eq!(
-            concept_fact, old_fact,
-            "concept option.none must read as the same predicate fact as old is_none"
-        );
-        assert_eq!(
-            concept_fact.get("name").and_then(|v| v.as_str()),
-            Some(panic_freedom::IS_NONE),
-            "reader must canonicalize concept option.none to the v1 option predicate"
-        );
-    }
-
-    #[test]
-    fn option_concept_alias_matching_is_exact() {
-        for malformed in [
-            "concept:panic-freedom.option.SOME",
-            "concept:panic-freedom.option.some ",
-            " concept:panic-freedom.option.some",
-            "concept:panic-freedom.option.null",
-        ] {
-            let cs = cs_with_ctor_arg(OPTION_BRIDGE_SYMBOL);
-            let pool =
-                singleton_totality_pool(OPTION_BRIDGE_SYMBOL, OPTION_TOTAL_CONTRACT_CID, malformed);
-            let fact = callee_post_guard_fact(&cs, &pool)
-                .expect("opaque singleton predicates still supply opaque facts");
-
-            assert_eq!(
-                fact.get("name").and_then(|v| v.as_str()),
-                Some(malformed),
-                "malformed option concept-like strings must not normalize to an option predicate"
-            );
-        }
-    }
-
-    #[test]
-    fn option_concepts_do_not_normalize_to_result_predicates() {
-        for (predicate, expected) in [
-            (panic_freedom::IS_SOME_CONCEPT, panic_freedom::IS_SOME),
-            (panic_freedom::IS_NONE_CONCEPT, panic_freedom::IS_NONE),
-        ] {
-            let cs = cs_with_ctor_arg(BRIDGE_SYMBOL);
-            let pool = singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, predicate);
-            let fact = callee_post_guard_fact(&cs, &pool)
-                .expect("a singleton atomic P(result) post still supplies an opaque P(arg) fact");
-
-            assert_eq!(
-                fact.get("name").and_then(|v| v.as_str()),
-                Some(expected),
-                "option concept {predicate} must canonicalize only to its option predicate"
-            );
-            assert!(
-                !matches!(
-                    fact.get("name").and_then(|v| v.as_str()),
-                    Some(panic_freedom::IS_OK | panic_freedom::IS_ERR)
-                ),
-                "option concept {predicate} must never become a result predicate"
-            );
-        }
-    }
-
-    #[test]
-    fn result_concepts_do_not_normalize_to_option_predicates() {
-        for (predicate, expected) in [
-            (panic_freedom::IS_OK_CONCEPT, panic_freedom::IS_OK),
-            (panic_freedom::IS_ERR_CONCEPT, panic_freedom::IS_ERR),
-        ] {
-            let cs = cs_with_ctor_arg(OPTION_BRIDGE_SYMBOL);
-            let pool =
-                singleton_totality_pool(OPTION_BRIDGE_SYMBOL, OPTION_TOTAL_CONTRACT_CID, predicate);
-            let fact = callee_post_guard_fact(&cs, &pool)
-                .expect("a singleton atomic P(result) post still supplies an opaque P(arg) fact");
-
-            assert_eq!(
-                fact.get("name").and_then(|v| v.as_str()),
-                Some(expected),
-                "result concept {predicate} must canonicalize only to its result predicate"
-            );
-            assert!(
-                !matches!(
-                    fact.get("name").and_then(|v| v.as_str()),
-                    Some(panic_freedom::IS_SOME | panic_freedom::IS_NONE)
-                ),
-                "result concept {predicate} must never become an option predicate"
-            );
-        }
     }
 
     #[test]

@@ -1,101 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Substrate identifiers for panic-freedom concepts.
+//! Substrate identifiers for panic freedom: the bare Rust v1 wire tokens the
+//! lifter emits and the verifier reads to prove a function cannot panic
+//! (every panic leaf is reachable only under a matching guard predicate).
 //!
-//! These constants intentionally keep the existing Rust v1 wire tokens. The
-//! Phase 4 substrate shape audit marks the corresponding concepts as
-//! alias-read first, so introducing this module must not change proof bytes.
+//! The `concept:*` alias spellings and the alias-read normalization layer were
+//! removed with the concept hub: there is one spelling per token, the bare one.
 
-/// Substrate panic-freedom result-ok predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom result-ok guard predicate.
 pub const IS_OK: &str = "is_ok";
 
-/// Substrate panic-freedom result-ok predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const IS_OK_CONCEPT: &str = "concept:panic-freedom.result.ok";
-
-/// Substrate panic-freedom result-err predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom result-err guard predicate.
 pub const IS_ERR: &str = "is_err";
 
-/// Substrate panic-freedom result-err predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const IS_ERR_CONCEPT: &str = "concept:panic-freedom.result.err";
-
-/// Substrate panic-freedom option-some predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom option-some guard predicate.
 pub const IS_SOME: &str = "is_some";
 
-/// Substrate panic-freedom option-some predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const IS_SOME_CONCEPT: &str = "concept:panic-freedom.option.some";
-
-/// Substrate panic-freedom option-none predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom option-none guard predicate.
 pub const IS_NONE: &str = "is_none";
 
-/// Substrate panic-freedom option-none predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const IS_NONE_CONCEPT: &str = "concept:panic-freedom.option.none";
-
-/// Substrate panic-freedom guarded-branch carrier; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom guarded-branch control carrier.
 pub const CF_GUARDED: &str = "cf_guarded";
 
-/// Substrate panic-freedom guarded-value carrier alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const CF_GUARDED_CONCEPT: &str = "concept:panic-freedom.guard";
-
-/// Substrate panic-freedom control-flow choice carrier; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom control-flow choice carrier.
 pub const CF_ITE: &str = "cf_ite";
 
-/// Substrate panic-freedom control-flow choice carrier alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const CF_ITE_CONCEPT: &str = "concept:panic-freedom.choice";
-
-/// Substrate panic-freedom unwrap leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom unwrap leaf.
 pub const METHOD_UNWRAP: &str = "method:unwrap";
 
-/// Substrate panic-freedom unwrap leaf alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const METHOD_UNWRAP_CONCEPT: &str = "concept:panic-freedom.leaf.unwrap";
-
-/// Substrate panic-freedom expect leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom expect leaf.
 pub const METHOD_EXPECT: &str = "method:expect";
 
-/// Substrate panic-freedom expect leaf alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const METHOD_EXPECT_CONCEPT: &str = "concept:panic-freedom.leaf.expect";
-
-/// Substrate panic-freedom unwrap-err leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
+/// Panic-freedom unwrap-err leaf.
 pub const METHOD_UNWRAP_ERR: &str = "method:unwrap_err";
 
-/// Substrate panic-freedom unwrap-err leaf alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const METHOD_UNWRAP_ERR_CONCEPT: &str = "concept:panic-freedom.leaf.unwrap-err";
-
-/// Substrate panic-freedom runtime-failure-site leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
-pub const RUNTIME_FAILURE_SITE_CONCEPT: &str = "concept:panic-freedom.leaf.runtime-failure-site";
-
-/// Normalize result predicate aliases to the Rust v1 wire token.
-///
-/// Phase 4 readers accept the concept aliases without changing default Rust v1
-/// proof emission. Unknown predicate names stay opaque.
-pub fn normalize_result_predicate_name(name: &str) -> &str {
-    match name {
-        IS_OK | IS_OK_CONCEPT => IS_OK,
-        IS_ERR | IS_ERR_CONCEPT => IS_ERR,
-        _ => name,
-    }
-}
-
-/// Normalize option predicate aliases to the Rust v1 wire token.
-///
-/// Phase 4 readers accept the concept aliases without changing default Rust v1
-/// proof emission. Unknown predicate names stay opaque.
-pub fn normalize_option_predicate_name(name: &str) -> &str {
-    match name {
-        IS_SOME | IS_SOME_CONCEPT => IS_SOME,
-        IS_NONE | IS_NONE_CONCEPT => IS_NONE,
-        _ => name,
-    }
-}
-
-/// Normalize panic leaf aliases to the Rust v1 wire token.
-///
-/// Phase 4 readers accept the concept aliases without changing default Rust v1
-/// proof emission. Unknown method names stay opaque.
-pub fn normalize_leaf_method_name(name: &str) -> &str {
-    match name {
-        METHOD_UNWRAP | METHOD_UNWRAP_CONCEPT => METHOD_UNWRAP,
-        METHOD_EXPECT | METHOD_EXPECT_CONCEPT => METHOD_EXPECT,
-        METHOD_UNWRAP_ERR | METHOD_UNWRAP_ERR_CONCEPT => METHOD_UNWRAP_ERR,
-        _ => name,
-    }
-}
+/// Panic-freedom runtime-failure-site leaf (a Python runtime failure that has
+/// no static guard). This is the one cross-kit token still carrying the
+/// `concept:` spelling: the Python kit emits it, so it stays until the deferred
+/// Python pass bares it in lockstep on both sides.
+pub const RUNTIME_FAILURE_SITE: &str = "concept:panic-freedom.leaf.runtime-failure-site";

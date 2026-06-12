@@ -522,7 +522,7 @@ fn panic_callsite_carries_containing_contract_bundle_not_global_symbol_bundle() 
             property_bundle.into(),
             "src/core/types.rs".into(),
             2137,
-            panic_freedom::normalize_leaf_method_name("method:expect").into(),
+            "method:expect".into(),
         ),
         bridge,
     );
@@ -604,7 +604,7 @@ fn panic_loci_only_contract_becomes_panic_callsite() {
             property_bundle.into(),
             "src/kit_dispatch.rs".into(),
             2130,
-            panic_freedom::normalize_leaf_method_name("method:expect").into(),
+            "method:expect".into(),
         ),
         bridge,
     );
@@ -965,7 +965,7 @@ fn disagreeing_effect_aliases_warn_and_preserve_old_panic_loci() {
             property_bundle.into(),
             "src/lib.rs".into(),
             25,
-            panic_freedom::normalize_leaf_method_name("method:unwrap").into(),
+            "method:unwrap".into(),
         ),
         bridge,
     );
@@ -1053,7 +1053,7 @@ fn formula_backed_panic_locus_warns_once_for_effect_site_disagreement() {
             property_bundle.into(),
             "src/lib.rs".into(),
             25,
-            panic_freedom::normalize_leaf_method_name("method:unwrap").into(),
+            "method:unwrap".into(),
         ),
         bridge,
     );

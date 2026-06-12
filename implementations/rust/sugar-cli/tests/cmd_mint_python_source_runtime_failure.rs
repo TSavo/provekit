@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde_json::{json, Value as Json};
 
-const RUNTIME_FAILURE_SITE_CONCEPT: &str = "concept:panic-freedom.leaf.runtime-failure-site";
+const RUNTIME_FAILURE_SITE: &str = "concept:panic-freedom.leaf.runtime-failure-site";
 
 fn sugar_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sugar"))
@@ -750,7 +750,7 @@ fn python_source_raise_mint_preserves_runtime_failure_locus_and_enumerates_calls
         loci,
         vec![json!({
             "effectKind": "concept:panic-freedom",
-            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "callee": RUNTIME_FAILURE_SITE,
             "subkind": "explicit-raise",
             "exceptionClass": "ValueError",
             "argTerm": {"kind": "var", "name": "ValueError"},
@@ -764,7 +764,7 @@ fn python_source_raise_mint_preserves_runtime_failure_locus_and_enumerates_calls
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),
@@ -804,7 +804,7 @@ fn python_source_access_mint_preserves_runtime_failure_loci_and_enumerates_calls
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -821,7 +821,7 @@ fn python_source_access_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": {
                     "kind": "ctor",
@@ -842,7 +842,7 @@ fn python_source_access_mint_preserves_runtime_failure_loci_and_enumerates_calls
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),
@@ -975,7 +975,7 @@ fn python_source_store_mint_preserves_runtime_failure_loci_and_enumerates_callsi
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-write",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -992,7 +992,7 @@ fn python_source_store_mint_preserves_runtime_failure_loci_and_enumerates_callsi
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": {
                     "kind": "ctor",
@@ -1008,7 +1008,7 @@ fn python_source_store_mint_preserves_runtime_failure_loci_and_enumerates_callsi
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -1025,7 +1025,7 @@ fn python_source_store_mint_preserves_runtime_failure_loci_and_enumerates_callsi
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-write",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -1049,7 +1049,7 @@ fn python_source_store_mint_preserves_runtime_failure_loci_and_enumerates_callsi
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": {
                     "kind": "ctor",
@@ -1065,7 +1065,7 @@ fn python_source_store_mint_preserves_runtime_failure_loci_and_enumerates_callsi
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": {
                     "kind": "ctor",
@@ -1093,7 +1093,7 @@ fn python_source_store_mint_preserves_runtime_failure_loci_and_enumerates_callsi
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),
@@ -1153,7 +1153,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_none())),
                 "file": "slice.py",
@@ -1162,7 +1162,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_var("c"))),
                 "file": "slice.py",
@@ -1171,7 +1171,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_var("b"), ir_none())),
                 "file": "slice.py",
@@ -1180,7 +1180,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_none(), ir_none())),
                 "file": "slice.py",
@@ -1189,7 +1189,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_none(), ir_none())),
                 "file": "slice.py",
@@ -1198,7 +1198,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_inner,
@@ -1208,7 +1208,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(
                     ir_attr(ir_var("obj"), "inner"),
@@ -1220,7 +1220,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_i,
@@ -1230,7 +1230,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_j,
@@ -1240,7 +1240,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(
                     ir_var("xs"),
@@ -1257,7 +1257,7 @@ fn python_source_slice_assign_mint_preserves_runtime_failure_loci_and_enumerates
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),
@@ -1321,7 +1321,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_none())),
                 "file": "slice_access.py",
@@ -1330,7 +1330,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_var("c"))),
                 "file": "slice_access.py",
@@ -1339,7 +1339,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_var("b"), ir_none())),
                 "file": "slice_access.py",
@@ -1348,7 +1348,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_none(), ir_none())),
                 "file": "slice_access.py",
@@ -1357,7 +1357,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_none(), ir_none())),
                 "file": "slice_access.py",
@@ -1366,7 +1366,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_inner,
@@ -1376,7 +1376,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(
                     ir_attr(ir_var("obj"), "inner"),
@@ -1388,7 +1388,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_i,
@@ -1398,7 +1398,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_j,
@@ -1408,7 +1408,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(
                     ir_var("xs"),
@@ -1425,7 +1425,7 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),
@@ -1489,7 +1489,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_none())),
                 "file": "slice_augassign.py",
@@ -1498,7 +1498,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_none())),
                 "file": "slice_augassign.py",
@@ -1507,7 +1507,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_var("c"))),
                 "file": "slice_augassign.py",
@@ -1516,7 +1516,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_var("c"))),
                 "file": "slice_augassign.py",
@@ -1525,7 +1525,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_var("b"), ir_none())),
                 "file": "slice_augassign.py",
@@ -1534,7 +1534,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_var("b"), ir_none())),
                 "file": "slice_augassign.py",
@@ -1543,7 +1543,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_none(), ir_none())),
                 "file": "slice_augassign.py",
@@ -1552,7 +1552,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_none(), ir_none())),
                 "file": "slice_augassign.py",
@@ -1561,7 +1561,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_none(), ir_none())),
                 "file": "slice_augassign.py",
@@ -1570,7 +1570,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_none(), ir_none())),
                 "file": "slice_augassign.py",
@@ -1579,7 +1579,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_inner,
@@ -1589,7 +1589,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(
                     ir_attr(ir_var("obj"), "inner"),
@@ -1601,7 +1601,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(
                     ir_attr(ir_var("obj"), "inner"),
@@ -1613,7 +1613,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_i,
@@ -1623,7 +1623,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_j,
@@ -1633,7 +1633,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(
                     ir_var("xs"),
@@ -1645,7 +1645,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(
                     ir_var("xs"),
@@ -1662,7 +1662,7 @@ fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumera
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     // The proof keeps all seventeen panicLoci rows above. CallSite enumeration
     // deduplicates access/write rows that share callee, file, line, and
@@ -1729,7 +1729,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_none())),
                 "file": "slice_annassign.py",
@@ -1738,7 +1738,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_var("c"))),
                 "file": "slice_annassign.py",
@@ -1747,7 +1747,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_var("b"), ir_none())),
                 "file": "slice_annassign.py",
@@ -1756,7 +1756,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_none(), ir_none())),
                 "file": "slice_annassign.py",
@@ -1765,7 +1765,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_none(), ir_none())),
                 "file": "slice_annassign.py",
@@ -1774,7 +1774,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_inner,
@@ -1784,7 +1784,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": ir_attr(ir_var("obj"), "inner"),
@@ -1794,7 +1794,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(
                     ir_attr(ir_var("obj"), "inner"),
@@ -1806,7 +1806,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_i,
@@ -1816,7 +1816,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_j,
@@ -1826,7 +1826,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": ir_attr(ir_var("obj"), "i"),
@@ -1836,7 +1836,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": ir_attr(ir_var("obj"), "j"),
@@ -1846,7 +1846,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": ir_subscript(
                     ir_var("xs"),
@@ -1863,7 +1863,7 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     // Unlike slice AugAssign, AnnAssign never emits a paired final
     // subscript-access row. The thirteen panicLoci rows above therefore surface
@@ -1929,7 +1929,7 @@ fn python_source_walrus_mint_preserves_rhs_runtime_failure_loci_and_enumerates_c
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": ir_attr(ir_var("obj"), "name"),
@@ -1939,7 +1939,7 @@ fn python_source_walrus_mint_preserves_rhs_runtime_failure_loci_and_enumerates_c
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": xs_key,
                 "file": "walrus.py",
@@ -1948,7 +1948,7 @@ fn python_source_walrus_mint_preserves_rhs_runtime_failure_loci_and_enumerates_c
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(
                     ir_var("xs"),
@@ -1960,7 +1960,7 @@ fn python_source_walrus_mint_preserves_rhs_runtime_failure_loci_and_enumerates_c
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": ir_attr(ir_var("obj"), "flag"),
@@ -1970,7 +1970,7 @@ fn python_source_walrus_mint_preserves_rhs_runtime_failure_loci_and_enumerates_c
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": ir_subscript(ir_var("xs"), ir_var("key")),
                 "file": "walrus.py",
@@ -1984,7 +1984,7 @@ fn python_source_walrus_mint_preserves_rhs_runtime_failure_loci_and_enumerates_c
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),
@@ -2053,7 +2053,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "iter-unpack",
                 "argTerm": tuple_pair,
                 "file": "unpack.py",
@@ -2062,7 +2062,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "iter-unpack",
                 "argTerm": list_pair,
                 "file": "unpack.py",
@@ -2071,7 +2071,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "iter-unpack",
                 "argTerm": tuple_triple,
                 "file": "unpack.py",
@@ -2080,7 +2080,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": obj_pair,
@@ -2090,7 +2090,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "iter-unpack",
                 "argTerm": tuple_obj_pair,
                 "file": "unpack.py",
@@ -2099,7 +2099,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": xs_key,
                 "file": "unpack.py",
@@ -2108,7 +2108,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "iter-unpack",
                 "argTerm": tuple_xs_key,
                 "file": "unpack.py",
@@ -2117,7 +2117,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": xs_slice,
                 "file": "unpack.py",
@@ -2126,7 +2126,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "iter-unpack",
                 "argTerm": tuple_xs_slice,
                 "file": "unpack.py",
@@ -2140,7 +2140,7 @@ fn python_source_unpack_mint_preserves_runtime_failure_loci_and_enumerates_calls
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),
@@ -2200,7 +2200,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2217,7 +2217,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-write",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2234,7 +2234,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": {
                     "kind": "ctor",
@@ -2250,7 +2250,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": {
                     "kind": "ctor",
@@ -2266,7 +2266,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2283,7 +2283,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2307,7 +2307,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-write",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2331,7 +2331,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": {
                     "kind": "ctor",
@@ -2347,7 +2347,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": {
                     "kind": "ctor",
@@ -2370,7 +2370,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": {
                     "kind": "ctor",
@@ -2398,7 +2398,7 @@ fn python_source_augassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     // The proof keeps all ten panicLoci rows above. CallSite enumeration
     // currently deduplicates access/write rows that share callee, file, line,
@@ -2458,7 +2458,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
         vec![
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-write",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2475,7 +2475,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": {
                     "kind": "ctor",
@@ -2491,7 +2491,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2508,7 +2508,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": {
                     "kind": "ctor",
@@ -2524,7 +2524,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-access",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2541,7 +2541,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "attribute-write",
                 "exceptionClass": "AttributeError",
                 "argTerm": {
@@ -2565,7 +2565,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-access",
                 "argTerm": {
                     "kind": "ctor",
@@ -2581,7 +2581,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
             }),
             json!({
                 "effectKind": "concept:panic-freedom",
-                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "callee": RUNTIME_FAILURE_SITE,
                 "subkind": "subscript-write",
                 "argTerm": {
                     "kind": "ctor",
@@ -2609,7 +2609,7 @@ fn python_source_annassign_mint_preserves_runtime_failure_loci_and_enumerates_ca
     let callsites = sugar_verifier::enumerate_callsites::run(&pool);
     let runtime_failure_sites: Vec<_> = callsites
         .iter()
-        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE))
         .collect();
     assert_eq!(
         runtime_failure_sites.len(),

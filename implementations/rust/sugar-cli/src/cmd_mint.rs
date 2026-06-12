@@ -3662,7 +3662,7 @@ mod tests {
         assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
         assert_ne!(
             panic_loci[0]["callee"],
-            panic_freedom::METHOD_UNWRAP_CONCEPT,
+            "concept:panic-freedom.leaf.unwrap",
             "Rust v1 mint writer must not emit the unwrap leaf concept alias"
         );
     }
