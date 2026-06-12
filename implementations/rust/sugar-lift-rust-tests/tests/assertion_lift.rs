@@ -4967,9 +4967,12 @@ fn t() {
 }
 
 #[test]
-fn matches_macro_with_guard_refused_by_name() {
-    // Discrimination: a guard changes which values reach the pattern, so passing
-    // does NOT pin the discriminant. Refused by name, not (wrongly) lifted.
+fn matches_macro_with_guard_lifts_discriminant() {
+    // A passing `matches!(p, Poll::Ready(v) if v > 0)` means p matched
+    // Poll::Ready AND v>0, so the discriminant variant_of(p)=="variant::Poll::Ready"
+    // is IMPLIED. We lift that (sound, weaker) fact and drop the guard; the
+    // single-pattern matches! macro has none of the multi-arm ambiguity that makes
+    // panic-locus refuse guards.
     let src = r#"
 #[test]
 fn t() {
@@ -4978,12 +4981,10 @@ fn t() {
 }
 "#;
     let out = lift_file(&parse(src), "tests/poll.rs");
-    assert_eq!(out.assertions_lifted, 0, "guarded matches! must not lift");
-    assert!(
-        out.skip_reasons.iter().any(|r| r.contains("guard")),
-        "refusal must name the guard: {:?}",
-        out.skip_reasons
-    );
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let (lhs, rhs) = panic_locus_lhs_rhs(&out);
+    assert!(lhs.contains("variant_of"), "lhs must be variant_of(..): {lhs}");
+    assert!(rhs.contains("Poll::Ready"), "rhs must tag Poll::Ready: {rhs}");
 }
 
 #[test]
