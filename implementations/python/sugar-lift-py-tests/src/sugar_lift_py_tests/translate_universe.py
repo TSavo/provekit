@@ -743,6 +743,42 @@ def translate_universe_for_callee(
 
     shape = _translate_return_shape(body)
     if shape is None:
+        # return-replace-literals (census family): a SINGLE-char
+        # .replace(FROM, TO) as the last op removes FROM from the output
+        # entirely (replace is total over its from-string), unless TO is FROM
+        # -- the chars-not-in-set complement, same as translate, literals
+        # inline so no binding scan.
+        replace_pair = _replace_return_shape(body)
+        if replace_pair is not None:
+            frm, to = replace_pair
+            if frm == to:
+                return refuse(
+                    f"replace({frm!r}, {to!r}) is a no-op; no complement claim"
+                )
+            forbidden = frm
+            vectors, vector_source = _vendor_vectors(module_name, fn_name)
+            for vector in vectors:
+                if forbidden in vector:
+                    return refuse(
+                        f"sample-gate: vendor vector {vector!r} from "
+                        f"{vector_source} contains the replaced char "
+                        f"{forbidden!r}; the walk misread the body or the "
+                        "vendor contradicts their own source"
+                    )
+            return (
+                TranslateUniverse(
+                    forbidden=forbidden,
+                    module=module_name,
+                    qualname=f"{module_name}.{fn_name}",
+                    source_path=spec.origin,
+                    lineno=fn.lineno,
+                    table_name="<inline replace from-char>",
+                    kind="chars-not-in-set",
+                    vendor_vectors_checked=len(vectors),
+                    vendor_vector_source=vector_source,
+                ),
+                None,
+            )
         # Second family: a total .rstrip of a bytes literal as the LAST
         # operation -- the token-padding shape (itsdangerous.base64_encode:
         # return urlsafe_b64encode(s).rstrip(b"=")). The claim "output never
@@ -1229,6 +1265,32 @@ def _rstrip_return_shape(body: list) -> Optional[bytes]:
         and isinstance(value.args[0].value, bytes)
     ):
         return value.args[0].value
+    return None
+
+
+def _replace_return_shape(body: list):
+    """Match a body whose LAST statement is return <expr>.replace(FROM, TO)
+    with FROM, TO single-character string literals. replace is total over
+    its from-string, so a SINGLE-char replace removes that char from the
+    output entirely (unless TO reintroduces it) -- the same complement
+    guarantee as translate, no binding scan needed (literals inline).
+    Returns (from_char, to_char) or None."""
+    if not body or not isinstance(body[-1], ast.Return):
+        return None
+    value = body[-1].value
+    if (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and value.func.attr == "replace"
+        and len(value.args) == 2
+        and not value.keywords
+        and all(
+            isinstance(a, ast.Constant) and isinstance(a.value, str)
+            and len(a.value) == 1
+            for a in value.args
+        )
+    ):
+        return value.args[0].value, value.args[1].value
     return None
 
 
