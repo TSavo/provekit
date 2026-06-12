@@ -120,9 +120,14 @@ _NAMED: dict = {
         "case-mapping universe: upper/lower/casefold/title over pinned "
         "unicode tables; charset-complement facts derivable"
     ),
-    "return-method-call": _debt(
-        "EUF method-result equality universe over lifted receiver+args "
-        "(the callval_* head already exists kit-side)"
+    "return-method-call": _lifted(
+        "delegation_universe_for_callee",
+        "method-delegation equality: eq(subject, callval_<method>(recv, "
+        "args...)) — ground instantiations only (no body backs a method "
+        "delegate, so every mapped term must be concrete at the callsite)",
+        residual="computed receivers, keyword forwarding, and symbolic "
+        "instantiations refuse/skip by name; module-attr function calls "
+        "through the receiver slot owed",
     ),
     "pure-delegation": _lifted(
         "delegation_universe_for_callee",

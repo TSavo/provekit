@@ -3430,36 +3430,50 @@ def _universe_conjuncts(
                     eq(subject_term, ctor(head, list(call_args)))
                 )
             else:
-                mapped = []
-                for spec in deleg_u.args:
-                    if spec[0] == "param":
-                        if spec[1] >= len(call_args):
-                            # defaulted at this callsite: the forwarded
-                            # value is not visible here; emit nothing
-                            mapped = None
-                            break
-                        mapped.append(call_args[spec[1]])
-                    else:
-                        _tag, v, k = spec
-                        if k == "int":
-                            mapped.append(num(v))
-                        elif k == "bool":
-                            mapped.append(bool_const(v))
-                        elif k == "str":
-                            mapped.append(str_const(v))
-                        elif k == "none":
-                            mapped.append(ctor("None", []))
-                        else:  # bytes (walk admits ascii only)
-                            mapped.append(
-                                ctor(
-                                    "python:bytes",
-                                    [str_const(v.decode("ascii"))],
-                                )
-                            )
-                if mapped is not None:
+                mapped = _mapped_delegate_args(deleg_u.args, call_args)
+                if mapped is not None and deleg_u.kind == "delegation":
                     head = _call_result_head(deleg_u.delegate, len(mapped))
                     conjuncts.append(eq(subject_term, ctor(head, mapped)))
+                elif mapped is not None:  # delegation-method
+                    # No vendor body backs a method delegate (the
+                    # receiver's type is not static), so the equality
+                    # only bridges GROUND instantiations: every mapped
+                    # term — receiver included — must be a concrete
+                    # literal, the same discipline
+                    # _euf_args_all_concrete enforces for cross-location
+                    # unification.
+                    head = _callval_head(deleg_u.delegate, len(mapped))
+                    term = ctor(head, mapped)
+                    if _euf_args_all_concrete(term):
+                        conjuncts.append(eq(subject_term, term))
     return conjuncts
+
+
+def _mapped_delegate_args(specs, call_args):
+    """Instantiate a delegation universe's arg specs at this callsite's
+    argument terms. None when a forwarded param is defaulted at this
+    callsite (the value is not visible here; emit nothing)."""
+    mapped = []
+    for spec in specs:
+        if spec[0] == "param":
+            if spec[1] >= len(call_args):
+                return None
+            mapped.append(call_args[spec[1]])
+        else:
+            _tag, v, k = spec
+            if k == "int":
+                mapped.append(num(v))
+            elif k == "bool":
+                mapped.append(bool_const(v))
+            elif k == "str":
+                mapped.append(str_const(v))
+            elif k == "none":
+                mapped.append(ctor("None", []))
+            else:  # bytes (walk admits ascii only)
+                mapped.append(
+                    ctor("python:bytes", [str_const(v.decode("ascii"))])
+                )
+    return mapped
 
 
 _PRED_MISSING = object()

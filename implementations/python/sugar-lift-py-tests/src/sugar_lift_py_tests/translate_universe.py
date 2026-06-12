@@ -630,6 +630,12 @@ class DelegationUniverse:
     - ``delegation-splat``: ``def f(*a): return g(*a)`` (optionally
       ``**k`` mirrored) — the delegate receives exactly f's args:
       eq(subject, callresult_<module.g>(call_args)).
+    - ``delegation-method``: ``return <param|literal>.method(...)``
+      (census return-method-call, 113k bodies) —
+      eq(subject, callval_<method>(recv, args...)). No body backs a
+      method delegate, so the emitter additionally requires every
+      mapped term to be a CONCRETE literal at the callsite: the
+      equality only ever bridges ground instantiations.
 
     ∀⊨sample: there is nothing to sample — the body IS the claim (a
     single return of a single forwarding expression; the misread surface
@@ -719,9 +725,51 @@ def delegation_universe_for_callee(
             return None, None  # free name: not a forwarding body
         return universe(kind="identity", param_index=params.index(value.id))
 
+    # method delegation: return <param|literal>.method(<params|literals>)
+    # (census return-method-call, 113k bodies). Unlike a function
+    # delegate there is NO body to read for determinism evidence — the
+    # receiver's type is not static — so the license is narrower: the
+    # method name must not be a nondeterminism marker, and the EMITTER
+    # additionally requires every mapped term to be a concrete literal
+    # at the callsite (_euf_args_all_concrete), so the equality only
+    # ever bridges ground instantiations. Within that, the forwarding
+    # equality is the same documented callval purity tradeoff every
+    # method-call assertion already carries.
+    if isinstance(value.func, ast.Attribute):
+        method = value.func.attr
+        if not isinstance(value.func.value, (ast.Name, ast.Constant)):
+            return None, None  # computed receivers are other families
+        if method in _NONDET_ATTRS:
+            return refuse(
+                f"method delegate .{method} is a nondeterminism marker; "
+                "its call terms must not unify"
+            )
+        if value.keywords:
+            return refuse(
+                "keyword arguments in the delegate call are not yet "
+                "walked (positional mapping only)"
+            )
+        specs = []
+        for node in (value.func.value, *value.args):
+            if isinstance(node, ast.Name) and node.id in params:
+                specs.append(("param", params.index(node.id)))
+                continue
+            vk = _literal_value_kind(node)
+            if vk is not None:
+                specs.append(("lit", vk[0], vk[1]))
+                continue
+            return refuse(
+                "method-delegate receiver/argument is neither a "
+                "parameter nor an ascii literal; the forwarded value is "
+                "not the callsite's"
+            )
+        return universe(
+            kind="delegation-method", delegate=method, args=tuple(specs)
+        )
+
     # delegation: return g(...) with g a stable same-module function
     if not isinstance(value.func, ast.Name):
-        return None, None  # method/attribute callees are other families
+        return None, None  # subscript/lambda callees are other families
     delegate_name = value.func.id
     if delegate_name == fn_name:
         return refuse("self-delegation: the equality would be vacuous")
