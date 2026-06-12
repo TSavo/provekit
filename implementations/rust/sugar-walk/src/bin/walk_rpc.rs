@@ -6526,23 +6526,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             }
         }
 
-        for refuse_target in collect_refuse_targets(&file) {
-            let RefuseTarget {
-                surface,
-                op,
-                reason,
-                would_close_with_cluster,
-            } = refuse_target;
-            entries.push(json!({
-                "kind": "refusal-memento",
-                "target_language": "rust",
-                "surface": surface,
-                "op": op,
-                "reason": reason,
-                "would_close_with_cluster": would_close_with_cluster,
-            }));
-        }
-
         // Boundary lane: #[sugar::boundary] annotations. Each marks
         // a function as the EDGE where a concept binds to a per-language
         // library. Emitted as `realization-memento` (Boundary variant)
@@ -7217,14 +7200,6 @@ struct SugarTarget {
     totality_result_ok: bool,
 }
 
-#[derive(Debug, Clone)]
-struct RefuseTarget {
-    surface: String,
-    op: String,
-    reason: String,
-    would_close_with_cluster: String,
-}
-
 fn collect_bind_lift_targets_with_source(file: &syn::File, source: &str) -> Vec<BindLiftTarget> {
     let mut targets = Vec::new();
     collect_bind_lift_targets_in_items(&file.items, source, &mut targets);
@@ -7437,24 +7412,7 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
     }
 }
 
-fn collect_refuse_targets(file: &syn::File) -> Vec<RefuseTarget> {
-    let mut targets = Vec::new();
-    collect_refuse_targets_in_items(&file.items, &mut targets);
-    targets
-}
 
-fn collect_refuse_targets_in_items(items: &[syn::Item], targets: &mut Vec<RefuseTarget>) {
-    for item in items {
-        if let syn::Item::Mod(module) = item {
-            if let Some(parsed) = extract_refuse_attr(module) {
-                targets.push(parsed);
-            }
-            if let Some((_, nested_items)) = &module.content {
-                collect_refuse_targets_in_items(nested_items, targets);
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 struct SugarAttrParsed {
@@ -7612,35 +7570,6 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
     None
 }
 
-fn extract_refuse_attr(item_mod: &syn::ItemMod) -> Option<RefuseTarget> {
-    for attr in &item_mod.attrs {
-        let path = attr.path();
-        let segments: Vec<_> = path.segments.iter().collect();
-        if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "refuse" {
-            if let Ok(meta_list) = attr.meta.require_list() {
-                let args = parse_attr_named_args(&meta_list.tokens);
-                let surface = args.string("surface").unwrap_or_default();
-                let op = args.string("op").unwrap_or_default();
-                let reason = args.string("reason").unwrap_or_default();
-                let would_close_with_cluster =
-                    args.string("would_close_with_cluster").unwrap_or_default();
-                if !surface.is_empty()
-                    && !op.is_empty()
-                    && !reason.is_empty()
-                    && !would_close_with_cluster.is_empty()
-                {
-                    return Some(RefuseTarget {
-                        surface,
-                        op,
-                        reason,
-                        would_close_with_cluster,
-                    });
-                }
-            }
-        }
-    }
-    None
-}
 
 #[derive(Debug, Default)]
 struct ParsedAttrArgs {
@@ -12826,175 +12755,6 @@ fn is_autocommit(conn: String) -> bool { false }
             .collect();
         assert_eq!(sugar.len(), 1);
         assert_eq!(sugar[0]["observed_dimension"], "autocommit-mode");
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn refuse_attr_emits_refusal_memento_with_all_fields() {
-        let root = temp_workspace("refuse_full");
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("create src dir");
-        let src = r#"
-#[sugar::refuse(
-    surface = "rusqlite::Connection::backup",
-    op = "sql-physical-backup",
-    reason = "SQLite-binary-specific physical backup; N=1 cluster.",
-    would_close_with_cluster = "Connection-level physical-backup method on >=2 SQL drivers",
-)]
-pub mod refused_backup {}
-"#;
-        fs::write(src_dir.join("lib.rs"), src).expect("write source");
-        let out = bind_lift(&json!({
-            "workspace_root": root.to_string_lossy(),
-            "source_paths": ["."],
-        }))
-        .expect("bind lift should succeed");
-        let ir = out["ir"].as_array().expect("ir array");
-        let refusals: Vec<_> = ir
-            .iter()
-            .filter(|e| e["kind"] == "refusal-memento")
-            .collect();
-        assert_eq!(refusals.len(), 1, "expected one refusal-memento entry");
-        let r = &refusals[0];
-        assert_eq!(r["surface"], "rusqlite::Connection::backup");
-        assert_eq!(r["op"], "sql-physical-backup");
-        assert_eq!(
-            r["reason"],
-            "SQLite-binary-specific physical backup; N=1 cluster."
-        );
-        assert_eq!(
-            r["would_close_with_cluster"],
-            "Connection-level physical-backup method on >=2 SQL drivers"
-        );
-        assert_eq!(r["target_language"], "rust");
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn refuse_attr_missing_field_produces_zero_memento() {
-        let root = temp_workspace("refuse_missing");
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("create src dir");
-        let src_missing_reason = r#"
-#[sugar::refuse(
-    surface = "rusqlite::Connection::backup",
-    op = "sql-physical-backup",
-    would_close_with_cluster = "Cross-driver analog",
-)]
-pub mod refused_backup {}
-"#;
-        fs::write(src_dir.join("lib.rs"), src_missing_reason).expect("write source");
-        let out = bind_lift(&json!({
-            "workspace_root": root.to_string_lossy(),
-            "source_paths": ["."],
-        }))
-        .expect("bind lift should succeed");
-        let ir = out["ir"].as_array().expect("ir array");
-        let refusals: Vec<_> = ir
-            .iter()
-            .filter(|e| e["kind"] == "refusal-memento")
-            .collect();
-        assert_eq!(
-            refusals.len(),
-            0,
-            "missing required field must produce zero refusal mementos"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn non_refuse_module_does_not_emit_memento() {
-        let root = temp_workspace("refuse_discrim");
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("create src dir");
-        let src = r#"
-pub mod plain_module {}
-"#;
-        fs::write(src_dir.join("lib.rs"), src).expect("write source");
-        let out = bind_lift(&json!({
-            "workspace_root": root.to_string_lossy(),
-            "source_paths": ["."],
-        }))
-        .expect("bind lift should succeed");
-        let ir = out["ir"].as_array().expect("ir array");
-        let refusals: Vec<_> = ir
-            .iter()
-            .filter(|e| e["kind"] == "refusal-memento")
-            .collect();
-        assert_eq!(refusals.len(), 0);
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn three_speech_acts_compose_in_one_source_file() {
-        // The load-bearing test for PR A: a single Rust source file declares
-        // (1) a substrate-exact binding (sugar with loss = []), (2) a lossy
-        // binding (sugar with loss = ["sync-vs-async"]), and (3) a refusal
-        // (refuse module). One bind_lift call extracts all three.
-        let root = temp_workspace("three_speech_acts");
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("create src dir");
-        let src = r#"
-#[sugar::sugar(op = "sql-execute", library = "rusqlite", loss = [])]
-fn execute(conn: String, sql: String) -> i64 { 0 }
-
-#[sugar::sugar(
-    op = "sql-query",
-    library = "rusqlite",
-    loss = ["sync-vs-async", "row-cardinality"],
-)]
-fn query_row(conn: String, sql: String) -> String { String::new() }
-
-#[sugar::refuse(
-    surface = "rusqlite::Connection::backup",
-    op = "sql-physical-backup",
-    reason = "SQLite-specific; cluster N=1.",
-    would_close_with_cluster = "Cross-driver backup method on >=2 SQL drivers",
-)]
-pub mod refused_backup {}
-"#;
-        fs::write(src_dir.join("lib.rs"), src).expect("write source");
-        let out = bind_lift(&json!({
-            "workspace_root": root.to_string_lossy(),
-            "source_paths": ["."],
-        }))
-        .expect("bind lift should succeed");
-        let ir = out["ir"].as_array().expect("ir array");
-
-        let sugar: Vec<_> = ir
-            .iter()
-            .filter(|e| e["kind"] == "library-sugar-binding-entry")
-            .collect();
-        assert_eq!(sugar.len(), 2, "expected two sugar entries (exact + lossy)");
-
-        let exact = sugar
-            .iter()
-            .find(|e| e["source_function_name"] == "execute")
-            .expect("exact binding present");
-        assert_eq!(
-            exact["loss_record_contribution"]["value"]["entries"],
-            json!([])
-        );
-
-        let lossy = sugar
-            .iter()
-            .find(|e| e["source_function_name"] == "query_row")
-            .expect("lossy binding present");
-        assert_eq!(
-            lossy["loss_record_contribution"]["value"]["entries"],
-            json!(["sync-vs-async", "row-cardinality"])
-        );
-
-        let refusals: Vec<_> = ir
-            .iter()
-            .filter(|e| e["kind"] == "refusal-memento")
-            .collect();
-        assert_eq!(refusals.len(), 1, "expected one refusal-memento entry");
-        assert_eq!(refusals[0]["surface"], "rusqlite::Connection::backup");
 
         let _ = fs::remove_dir_all(root);
     }
