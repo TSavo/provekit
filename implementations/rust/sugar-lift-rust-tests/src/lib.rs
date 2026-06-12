@@ -1724,26 +1724,34 @@ fn for_iter_domain(expr: &Expr) -> &'static str {
     }
 }
 
-/// If `expr` is an iterator quantifier `<coll>.all(|..| ..)` / `<coll>.any(|..| ..)`,
-/// return a provenance-named refusal (literal-collection -> bin-1, opaque -> bin-2),
-/// reusing `for_iter_domain` on the underlying collection. Returns None for any
-/// other call shape (handled by the ordinary term path).
-fn iterator_quantifier_refusal(expr: &Expr) -> Option<String> {
+/// If `expr` is a CLOSURE-BEARING iterator/Option adaptor -- a quantifier
+/// (`.all`/`.any`) or a transform/search (`.map`/`.find`/`.filter`/...) -- return a
+/// provenance-named refusal (literal-collection -> bin-1, opaque -> bin-2), reusing
+/// `for_iter_domain` on the underlying collection. The closure predicate ranges over
+/// the receiver's ELEMENTS, which are runtime data when the receiver is opaque; the
+/// provenance makes that bin-2 PROVEN rather than presumed from the bare `|x|` shape.
+/// Returns None for any non-adaptor call (handled by the ordinary term path).
+fn closure_adaptor_refusal(expr: &Expr) -> Option<String> {
     let Expr::MethodCall(call) = expr else {
         return None;
     };
     let method = call.method.to_string();
-    if method != "all" && method != "any" {
+    let is_adaptor = matches!(
+        method.as_str(),
+        "all" | "any" | "map" | "find" | "filter" | "filter_map" | "find_map" | "position"
+    );
+    if !is_adaptor {
         return None;
     }
-    // Exactly one closure argument is the predicate of the quantifier.
-    if call.args.len() != 1 || !matches!(call.args[0], Expr::Closure(_)) {
+    // At least one closure argument (the predicate / transform). A `.map(path_fn)`
+    // with a function path (not a closure) is left to the ordinary term path.
+    if !call.args.iter().any(|a| matches!(a, Expr::Closure(_))) {
         return None;
     }
     let collection = iter_adaptor_base(&call.receiver);
     let domain = for_iter_domain(collection);
     Some(format!(
-        "iterator quantifier `.{method}(|..| ..)` over {domain}; not yet lifted; \
+        "iterator/option adaptor `.{method}(|..| ..)` over {domain}; not yet lifted; \
          released to layer 0"
     ))
 }
@@ -3053,7 +3061,7 @@ fn translate_bool_assertion(
             // CONSTRUCTION (literal -> bin-1, drainable by unroll) or RUNTIME data
             // (opaque -> bin-2, the membrane), so the bin sort is structural rather
             // than presumed from the bare `|x|` shape.
-            if let Some(reason) = iterator_quantifier_refusal(expr) {
+            if let Some(reason) = closure_adaptor_refusal(expr) {
                 return Err(reason);
             }
             let term = translate_term_in_scope(expr, scope)?;
@@ -4596,6 +4604,14 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
             }))
         }
         Expr::MethodCall(call) => {
+            // A closure-bearing iterator/Option adaptor in TERM position (e.g.
+            // `assert_eq!(opt.map(|v| ..), x)`) refuses with the collection
+            // provenance, not a bare "unsupported term `|v|`" -- so the bin sort is
+            // PROVEN (opaque receiver -> bin-2), not presumed. Same rigor the
+            // bool-assertion path already applies to `.all`/`.any`.
+            if let Some(reason) = closure_adaptor_refusal(expr) {
+                return Err(reason);
+            }
             if call.method == "len" && call.args.is_empty() {
                 if let Some(receiver) = string_or_char_literal_term(&call.receiver) {
                     return Ok(Rc::new(Term::Ctor {
