@@ -698,6 +698,12 @@ def delegation_universe_for_callee(
             "in the vendor module (imported/dynamic delegates are not "
             "walkable from this body alone)"
         )
+    if delegate_fn.decorator_list:
+        return refuse(
+            f"delegate {delegate_name} is decorated; its def body is not "
+            "the runtime callable, so determinism evidence cannot be "
+            "read from it"
+        )
     # binding stability: the name looked up at CALL time must be this def
     # and nothing else — same teeth as the table walks.
     events = [e for e in _binding_events(tree) if e.name == delegate_name]
@@ -902,6 +908,14 @@ def _resolve_vendor_function(callee: str):
         None,
     )
     if fn is None:
+        return None
+    if fn.decorator_list:
+        # A decorated def is NOT its body: the name binds whatever the
+        # decorator returns (caught live 2026-06-12: @negate over
+        # `return True` runs False while the body walk swore True — a
+        # falsePass through every family). Same non-candidate class as a
+        # C extension: the source we can read is not the callable that
+        # runs.
         return None
     return tree, fn, spec.origin, module_name, fn_name
 

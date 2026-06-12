@@ -1672,3 +1672,88 @@ def test_impure_delegate_emits_no_equality_but_warns(vendor_path):
         "delegation-universe" in w.item_name and "nondeterminism" in w.reason
         for w in out.warnings
     ), [(w.item_name, w.reason) for w in out.warnings]
+
+
+# ---------------------------------------------------------------------------
+# Decorated defs are not their bodies (falsePass closed 2026-06-12). The
+# name binds whatever the decorator returns: @negate over `return True`
+# runs False while the body walk swore True — through EVERY family, since
+# they all resolve via _resolve_vendor_function. The fix is at that one
+# chokepoint: a decorated def is the same non-candidate class as a C
+# extension (the source we can read is not the callable that runs).
+# ---------------------------------------------------------------------------
+
+VENDOR_DECORATED = '''
+def negate(fn):
+    def inner(*a, **k):
+        return not fn(*a, **k)
+    return inner
+
+
+@negate
+def truth():
+    return True
+
+
+def plain_truth():
+    return True
+'''
+
+
+def test_decorator_runtime_divergence_is_real(vendor_path):
+    # The evidence, kept executable: the decorated callable and the def
+    # body disagree, which is why resolution below must refuse.
+    import importlib
+
+    vendor_path("venddeco_evidence", VENDOR_DECORATED)
+    mod = importlib.import_module("venddeco_evidence")
+    assert mod.truth() is False  # the decorator negates the body
+    assert mod.plain_truth() is True
+
+
+def test_decorated_vendor_is_not_walkable_any_family(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+        guard_universe_for_callee,
+        predicate_universe_for_callee,
+    )
+
+    vendor_path("venddeco_all", VENDOR_DECORATED)
+    for walk in (
+        constant_universe_for_callee,
+        predicate_universe_for_callee,
+        guard_universe_for_callee,
+        delegation_universe_for_callee,
+    ):
+        walk.cache_clear()
+        u, r = walk("venddeco_all.truth")
+        assert u is None and r is None, (walk.__name__, u, r)
+
+
+def test_undecorated_twin_still_walks(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("venddeco_twin", VENDOR_DECORATED)
+    u, r = constant_universe_for_callee("venddeco_twin.plain_truth")
+    assert r is None and u is not None
+    assert (u.value, u.value_kind) == (True, "bool")
+
+
+def test_decorated_delegate_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeco_deleg",
+        "def wrap(fn):\n    return fn\n\n"
+        "@wrap\ndef g(a):\n    return a\n\n"
+        "def f(a):\n    return g(a)\n",
+    )
+    u, r = delegation_universe_for_callee("venddeco_deleg.f")
+    assert u is None and r is not None and "decorated" in r.reason
