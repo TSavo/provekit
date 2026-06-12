@@ -104,7 +104,6 @@ done
         .expect("load declaration");
 
     assert_eq!(declaration.kit.id, "stub-kit");
-    assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
     assert!(
         fs::read_to_string(marker)
             .expect("marker")
@@ -179,7 +178,6 @@ done
 
     assert_eq!(declaration.kit.id, "python-hypothesis");
     assert_eq!(declaration.kit.language, "python");
-    assert!(declaration.effect_kinds.is_empty());
     assert_eq!(declaration.proof_resolution.strategy, "pip");
 }
 
@@ -216,7 +214,6 @@ done
 
     assert_eq!(declaration.kit.id, "python");
     assert_eq!(declaration.kit.language, "python");
-    assert!(declaration.effect_kinds.is_empty());
     assert_eq!(declaration.proof_resolution.strategy, "pip");
     assert!(declaration
         .rpc

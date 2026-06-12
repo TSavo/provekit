@@ -6050,10 +6050,6 @@ fn kit_declaration_result() -> Value {
         "proofResolution": {
             "strategy": "cargo"
         },
-        "effectKinds": [],
-        "effectLeaves": [],
-        "guardPredicates": [],
-        "controlCarriers": [],
         "residueCategories": []
     })
 }
