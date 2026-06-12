@@ -18,7 +18,7 @@ use sugar_ir_symbolic::{
     and_, atomic_, eq, forall, gt, gte, implies, lt, lte, make_var, ne, not_, num, or_, real_const,
     str_const, ConstValue, ContractDecl, Formula, Sort, Term,
 };
-use syn::parse::{Parse, ParseStream};
+use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
 use syn::{BinOp, Expr, ExprLit, Item, Lit, Pat, Stmt, Token, Type, UnOp};
 
@@ -2878,6 +2878,9 @@ fn translate_bool_assertion(
     if let Some(entry) = translate_float_refinement_assertion(expr, scope, float_widths)? {
         return Ok(entry);
     }
+    if let Some(entry) = translate_matches_assertion(expr, scope)? {
+        return Ok(entry);
+    }
     match expr {
         Expr::Binary(binary) => translate_binary_bool_assertion(binary, scope, float_widths),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
@@ -2890,6 +2893,16 @@ fn translate_bool_assertion(
             if let Some(entry) =
                 translate_float_refinement_assertion(&unary.expr, scope, float_widths)?
             {
+                return Ok(AssertionEntry {
+                    name: entry.name,
+                    atom: not_(entry.atom),
+                });
+            }
+            // `!matches!(x, Type::Variant)` — negate the discriminant atom. This
+            // MUST run before the opaque-term fallback below, which would lower a
+            // `matches!` macro to an unconstrained `macro:...` Var equated to false
+            // (a vacuous lift with no teeth) rather than the real discriminant.
+            if let Some(entry) = translate_matches_assertion(&unary.expr, scope)? {
                 return Ok(AssertionEntry {
                     name: entry.name,
                     atom: not_(entry.atom),
@@ -3391,6 +3404,91 @@ fn pattern_variant_path(pat: &syn::Pat) -> Option<String> {
         syn::Pat::Struct(s) => Some(path_to_variant_string(&s.path)),
         syn::Pat::Ident(id) if id.subpat.is_none() => Some(id.ident.to_string()),
         syn::Pat::Reference(r) => pattern_variant_path(&r.pat),
+        _ => None,
+    }
+}
+
+/// Lift `assert!(matches!(subject, Type::Variant ...))` as a variant-discriminant
+/// assertion: `variant_of(subject) == "variant::<Type::Variant>"` -- the SAME
+/// construction-semantics atom panic-locus lifting emits (`panic_locus_entry`),
+/// with the same teeth (two variants are distinct string constants, so claiming
+/// both is UNSAT).
+///
+/// SOUND SCOPE: `matches!(x, P)` guarantees x's discriminant equals P's variant
+/// AND that any value-subpatterns of P hold. We lift only the (weaker,
+/// always-implied) discriminant fact, so a value-binding subpattern (`V { f }`,
+/// `V(inner)`) is fine -- the lifted obligation is implied either way. We REFUSE
+/// BY NAME the shapes where the discriminant is NOT unambiguous:
+///   - a guard (`matches!(x, P if g)`): the guard changes which values reach P,
+///     so passing does not pin the discriminant (mirrors `panic_locus_match_entry`);
+///   - an or-pattern (`A | B`): a disjunction is not a single discriminant;
+///   - a binding / wildcard / single-segment path: a lowercase `foo` is a
+///     catch-all binding (always matches), and a bare `Foo` is ambiguous between
+///     a unit variant and an associated const -- not an unambiguous `Type::Variant`.
+fn translate_matches_assertion(
+    expr: &Expr,
+    scope: &TemporalScope,
+) -> Result<Option<AssertionEntry>, String> {
+    let Expr::Macro(m) = expr else {
+        return Ok(None);
+    };
+    if !m.mac.path.is_ident("matches") {
+        return Ok(None);
+    }
+    // Parse `subject , pattern (if guard)?` from the macro token stream.
+    let parser = |input: ParseStream| -> syn::Result<(Expr, syn::Pat, bool)> {
+        let subject: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let pat = syn::Pat::parse_multi_with_leading_vert(input)?;
+        let has_guard = input.peek(Token![if]);
+        // Consume any trailing guard tokens so the parse does not error on them;
+        // a guard is refused by name below regardless of its contents.
+        let _ = input.parse::<proc_macro2::TokenStream>();
+        Ok((subject, pat, has_guard))
+    };
+    let (subject, pat, has_guard) = match Parser::parse2(parser, m.mac.tokens.clone()) {
+        Ok(v) => v,
+        // Not the `matches!(expr, pat)` shape we lift; fall through to the
+        // ordinary boolean-assertion paths (which will name their own refusal).
+        Err(_) => return Ok(None),
+    };
+    if has_guard {
+        return Err(format!(
+            "matches! with a guard is not a pure discriminant; refused by name: `{}`",
+            token_key(expr)
+        ));
+    }
+    let Some(variant) = strict_variant_path(&pat) else {
+        return Err(format!(
+            "matches! pattern is not an unambiguous qualified variant \
+             (binding/wildcard/single-segment/or-pattern); refused by name: `{}`",
+            token_key(expr)
+        ));
+    };
+    match panic_locus_entry(&subject, &variant, scope) {
+        Some(entry) => Ok(Some(entry)),
+        None => Err(format!(
+            "matches! subject is not a liftable term: `{}`",
+            token_key(&subject)
+        )),
+    }
+}
+
+/// Strict variant-path extraction for `matches!` discriminant lifting: a
+/// QUALIFIED `Type::Variant` (>= 2 path segments) as a unit, tuple-struct, or
+/// struct pattern, or such a pattern behind a `&`. Returns None for bindings,
+/// wildcards, single-segment paths, and or-patterns -- the caller refuses those
+/// by name. Stricter than `pattern_variant_path` (which accepts bare `Pat::Ident`
+/// bindings and single-segment paths, sound only in its panic-locus call site).
+fn strict_variant_path(pat: &syn::Pat) -> Option<String> {
+    fn qualified(path: &syn::Path) -> Option<String> {
+        (path.segments.len() >= 2).then(|| path_to_variant_string(path))
+    }
+    match pat {
+        syn::Pat::TupleStruct(ts) => qualified(&ts.path),
+        syn::Pat::Struct(s) => qualified(&s.path),
+        syn::Pat::Path(p) => qualified(&p.path),
+        syn::Pat::Reference(r) => strict_variant_path(&r.pat),
         _ => None,
     }
 }
