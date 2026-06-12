@@ -614,6 +614,153 @@ def constant_universe_for_callee(
 
 
 @dataclass(frozen=True)
+class BranchLiteralUniverse:
+    """Census family non-return:If (75k bodies) and the multi-return
+    residual of return-constant: a body whose every Return returns a
+    literal swears the DISJUNCTION — output ∈ {walked literals} — with
+    no condition evaluation at all. Soundness is control-flow-free: any
+    execution that returns at all returns the value of SOME ast.Return
+    node (loops, try, with cannot alter a return value in flight), so
+    the disjunction over all of them holds for every input. Falling off
+    the end (implicit None) is excluded structurally by the terminality
+    check: the body's tail must be Return, Raise, or an If whose both
+    arms are terminal, recursively — the if/elif/else chain shape.
+
+    All literals must share ONE kind: a disjunction mixing str and int
+    equalities over the same subject is the #2103 cross-sort hazard, so
+    mixed-kind bodies refuse by name. The vendor's own vectors gate the
+    walk (a vendor-sworn expected value outside the walked set means the
+    walk misread the body)."""
+
+    values: tuple  # python literal values, deduped, source order
+    value_kind: str  # 'str' | 'int' | 'bool' | 'bytes'
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    vendor_vectors_checked: int = 0
+    vendor_vector_source: Optional[str] = None
+
+
+def _is_terminal_block(stmts: list) -> bool:
+    """A statement list cannot fall off the end iff its last statement is
+    a Return, a Raise, or an If whose both arms are themselves terminal
+    (the if/elif/else chain). While/For/Try/With tails stay non-terminal
+    here — conservative, named in the family residual."""
+    if not stmts:
+        return False
+    last = stmts[-1]
+    if isinstance(last, (ast.Return, ast.Raise)):
+        return True
+    if isinstance(last, ast.If):
+        return _is_terminal_block(last.body) and _is_terminal_block(
+            last.orelse
+        )
+    return False
+
+
+@functools.lru_cache(maxsize=None)
+def branch_literal_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[BranchLiteralUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+
+    def refuse(reason):
+        return None, TranslateWalkRefusal(callee=callee, reason=reason)
+
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    rest, tainted = _strip_guard_prefix(body)
+    returns = [
+        n
+        for stmt in body
+        for n in ast.walk(stmt)
+        if isinstance(n, ast.Return)
+    ]
+    # the family is the MULTI-return shape; single returns belong to the
+    # constant family (no double emission), and generator bodies return
+    # a generator object, never a branch value.
+    if len(returns) < 2 or not _is_terminal_block(rest):
+        return None, None
+    if any(
+        isinstance(n, (ast.Yield, ast.YieldFrom))
+        for stmt in body
+        for n in ast.walk(stmt)
+    ):
+        return None, None
+    if tainted:
+        return refuse(
+            "guard-strip: a stripped guard test rebinds via walrus "
+            "(NamedExpr); the remaining body no longer sees the "
+            "callsite's arguments"
+        )
+    values, kinds = [], set()
+    for node in returns:
+        if node.value is None:
+            return refuse(
+                "bare `return` among literal returns: None would mix "
+                "kinds in one disjunction (cross-sort)"
+            )
+        vk = _literal_value_kind(node.value)
+        if vk is None:
+            return None, None  # a computed branch: not this family
+        value, kind = vk
+        kinds.add(kind)
+        if value not in values:
+            values.append(value)
+    if len(kinds) != 1:
+        return refuse(
+            f"mixed literal kinds {sorted(kinds)} in one disjunction "
+            "over one subject is the cross-sort hazard; refuse"
+        )
+    kind = kinds.pop()
+    if kind == "none":
+        return None, None  # all-None multi-return: constant-None territory
+
+    # ∀⊨sample: every vendor-sworn expected value must be IN the set.
+    vectors, vector_source = _vendor_vectors(module_name, fn_name)
+    checked = 0
+    for vector in vectors:
+        if kind in ("str", "bytes") and isinstance(vector, str):
+            want = (
+                [v.decode("ascii") for v in values]
+                if kind == "bytes"
+                else values
+            )
+            checked += 1
+            if vector not in want:
+                return refuse(
+                    f"sample-gate: vendor vector {vector!r} from "
+                    f"{vector_source} is outside the walked branch set "
+                    f"{values!r}; the walk misread the body"
+                )
+
+    return (
+        BranchLiteralUniverse(
+            values=tuple(values),
+            value_kind=kind,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            vendor_vectors_checked=checked,
+            vendor_vector_source=vector_source,
+        ),
+        None,
+    )
+
+
+@dataclass(frozen=True)
 class DelegationUniverse:
     """Census families pure-delegation (57k bodies) and the param arm of
     return-name (146k bodies): a body that is exactly one ``return``
