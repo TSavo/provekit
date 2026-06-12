@@ -3885,7 +3885,14 @@ fn translate_string_predicate_assertion(
                     }))
                 }
                 "starts_with" | "ends_with" => {
-                    let Some(receiver) = string_or_char_literal_term(&call.receiver) else {
+                    // The receiver is type-guaranteed a string (`starts_with` /
+                    // `ends_with` exist only on str/String), so translate it as a
+                    // TERM -- literal OR opaque (e.g. `cid.starts_with("blake3-512:")`
+                    // where `cid` is a computed value). No type info needed; the
+                    // method's existence proves stringness. The PATTERN must still be
+                    // a literal (the known prefix/suffix). `prefix-of(pattern, recv)`
+                    // is the faithful FOL, teethed against a contradicting claim.
+                    let Ok(receiver) = translate_term_in_scope(&call.receiver, scope) else {
                         return Ok(None);
                     };
                     if call.args.len() != 1 {
