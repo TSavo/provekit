@@ -768,7 +768,12 @@ mod tests {
         let inv = serde_json::json!({
             "kind": "and",
             "operands": [
-                eq(str_len("～～～～～"), int_const(15)),
+                // Five U+FF5E fullwidth tildes. Python len() == 5 (CODE
+                // POINTS). Before the smt_string_char fix these emitted as raw
+                // multibyte UTF-8 and z3 counted 15 (bytes) -- a real
+                // divergence from Python semantics; now \u{ff5e}-escaped, z3
+                // counts 5 code points, matching len().
+                eq(str_len("～～～～～"), int_const(5)),
                 string_theory_atom("str.is_ascii", vec![string_const("banana\0\u{7f}")]),
                 string_theory_atom("str.is_ascii_alphabetic", vec![string_const("A")]),
                 string_theory_atom("str.is_ascii_alphanumeric", vec![string_const("A")]),
@@ -789,8 +794,8 @@ mod tests {
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
         assert!(
-            script.contains("(str.len \"～～～～～\")"),
-            "str.len must lower to z3 string length, got:\n{script}"
+            script.contains("(str.len \"\\u{ff5e}\\u{ff5e}\\u{ff5e}\\u{ff5e}\\u{ff5e}\")"),
+            "str.len subject must \\u-escape non-ASCII (code-point semantics), got:\n{script}"
         );
         assert!(
             script.contains("str.in_re"),
@@ -846,6 +851,32 @@ mod tests {
     /// `buildStringContract` emit over the same `#euf#` contract name.
     fn callresult(name: &str, str_arg: &str) -> serde_json::Value {
         ctor(name, vec![string_const(str_arg)])
+    }
+
+    #[test]
+    fn nonascii_string_equality_is_well_formed_and_consistent() {
+        // REGRESSION (Werkzeug corpus mint): a sworn equality over a string
+        // with C1 control chars / non-ASCII (UTF-8 header value, IRI, cookie)
+        // must emit a WELL-FORMED SMT-LIB literal -- every non-printable-ASCII
+        // code point as \u{...}, never raw -- so z3 returns sat (consistent),
+        // not a parse/sort error miscategorized as a false violation.
+        let z3 = which_z3().expect("z3 required");
+        // "â\u{9c}\u{93}" -- the UTF-8 bytes of U+2713 stored as a 3-char str,
+        // exactly werkzeug test_return_type_is_str's "\xe2\x9c\x93".
+        let subj = callresult("c:callresult_header_a1", "x");
+        let inv = eq(subj, string_const("\u{e2}\u{9c}\u{93}"));
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains("\\u{9c}") && script.contains("\\u{93}") && script.contains("\\u{e2}"),
+            "C1/non-ASCII chars must be \\u{{}}-escaped, not raw:\n{script}"
+        );
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "a lone non-ASCII equality is consistent, not an error/violation: {out}\n{script}"
+        );
     }
 
     #[test]
