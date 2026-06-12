@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use libsugar::concept::panic_freedom;
+use libsugar::panic_freedom;
 
 #[test]
 fn panic_freedom_constants_keep_existing_wire_tokens() {

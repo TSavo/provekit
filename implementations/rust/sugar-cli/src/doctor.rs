@@ -2262,7 +2262,7 @@ mod tests {
     }
 
     fn valid_panic_freedom_declaration(surface: &str) -> Value {
-        use libsugar::concept::panic_freedom;
+        use libsugar::panic_freedom;
         use sugar_claim_envelope::KIT_DECLARATION_RPC_METHOD;
 
         json!({

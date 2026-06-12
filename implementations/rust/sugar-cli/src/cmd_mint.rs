@@ -3010,7 +3010,7 @@ pub fn run(args: MintArgs) -> u8 {
 mod tests {
     use super::*;
     use crate::project_config::PlatformProfile;
-    use libsugar::concept::panic_freedom;
+    use libsugar::panic_freedom;
 
     fn temp_workspace(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()

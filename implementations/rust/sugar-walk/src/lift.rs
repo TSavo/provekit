@@ -27,7 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use libsugar::concept::panic_freedom;
+use libsugar::panic_freedom;
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use sugar_ir_types::{IrFormula, IrTerm, LetBinding};
 use syn::spanned::Spanned;

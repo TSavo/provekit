@@ -6,7 +6,7 @@
 //
 // Mirrors implementations/cpp/.../verifier/enumerate_callsites.cpp.
 
-use libsugar::concept::panic_freedom;
+use libsugar::panic_freedom;
 use serde_json::Value as Json;
 use tracing::{debug, info, warn};
 
@@ -1229,7 +1229,7 @@ mod guard_propagation_tests {
     //! property and is pinned in `sugar-walk`'s lift tests, not here.
 
     use super::*;
-    use libsugar::concept::panic_freedom;
+    use libsugar::panic_freedom;
     use serde_json::json;
 
     // The receiver term the obligation is about (`x` in `x.panic_call()`).
