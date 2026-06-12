@@ -2332,3 +2332,66 @@ def test_branch_literal_emits_disjunction(vendor_path):
     # both walked literals appear as equality disjuncts
     texts = repr(ors)
     assert "'a'" in texts or '"a"' in texts or "value='a'" in texts
+
+
+def test_ifexp_return_walks_as_branch_literal(vendor_path):
+    # the expression form of the branch shape: one return, two leaves
+    vendor_path(
+        "vendbranch_ifexp",
+        'def pick(x):\n    return "a" if x else "b"\n',
+    )
+    u, r = _branch("vendbranch_ifexp.pick")
+    assert r is None and u is not None
+    assert u.values == ("a", "b") and u.value_kind == "str"
+
+
+def test_nested_ifexp_collects_all_leaves(vendor_path):
+    vendor_path(
+        "vendbranch_ifexp2",
+        'def pick(x):\n    return 1 if x > 9 else (2 if x > 5 else 3)\n',
+    )
+    u, r = _branch("vendbranch_ifexp2.pick")
+    assert r is None and u is not None
+    assert u.values == (1, 2, 3)
+
+
+def test_ifexp_and_statement_returns_compose(vendor_path):
+    vendor_path(
+        "vendbranch_ifexp3",
+        'def pick(x):\n'
+        '    if x < 0:\n'
+        '        return "neg"\n'
+        '    return "big" if x > 9 else "small"\n',
+    )
+    u, r = _branch("vendbranch_ifexp3.pick")
+    assert r is None and u is not None
+    assert u.values == ("neg", "big", "small")
+
+
+def test_ifexp_computed_leaf_not_candidate(vendor_path):
+    vendor_path(
+        "vendbranch_ifexp4",
+        'def pick(x):\n    return "a" if x else x\n',
+    )
+    u, r = _branch("vendbranch_ifexp4.pick")
+    assert u is None and r is None
+
+
+def test_ifexp_mixed_kinds_refuse(vendor_path):
+    vendor_path(
+        "vendbranch_ifexp5",
+        'def pick(x):\n    return "a" if x else 1\n',
+    )
+    u, r = _branch("vendbranch_ifexp5.pick")
+    assert u is None and r is not None and "cross-sort" in r.reason
+
+
+def test_walrus_in_ifexp_condition_is_harmless(vendor_path):
+    # a rebinding in the CONDITION has nothing downstream of itself to
+    # poison: the value is one of the literal leaves either way
+    vendor_path(
+        "vendbranch_ifexp6",
+        'def pick(x):\n    return "a" if (x := x + 1) > 5 else "b"\n',
+    )
+    u, r = _branch("vendbranch_ifexp6.pick")
+    assert r is None and u is not None and u.values == ("a", "b")
