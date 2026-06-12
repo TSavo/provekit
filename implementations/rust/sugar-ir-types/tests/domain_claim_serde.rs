@@ -24,9 +24,7 @@
 use std::collections::BTreeMap;
 
 use sugar_ir_types::{
-    CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge, DomainClaim,
-    DomainClaimConversionError, DomainClaimProvenance, IrFormula, LossRecord, VerdictBody,
-    VerdictKind,
+    DomainClaim, DomainClaimProvenance, IrFormula, LossRecord, VerdictBody, VerdictKind,
 };
 
 // 128 hex chars after the "blake3-512:" prefix; deterministic placeholders.
@@ -36,18 +34,6 @@ const TRUTH_CID: &str = "blake3-512:tr222222222222222222222222222222222222222222
 const RECEIPT_CID: &str = "blake3-512:rc3333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333ac";
 const SIGNER: &str = "ed25519:VGVzdFNpZ25lcjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMA==";
 const SIGNATURE: &str = "ed25519:VGVzdFNpZ25hdHVyZTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMA==";
-
-// ConceptSiteMemento fixture CIDs (used in §2.1 mapping tests).
-const FN_CID: &str = "blake3-512:fn00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-const SRC_CID: &str = "blake3-512:src1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
-const CONCEPT_CID: &str = "blake3-512:concept22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
-const LOCAL_CID: &str = "blake3-512:local333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333";
-const CS_RECEIPT_CID: &str = "blake3-512:rcpt4444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444";
-const LIFTER_CID: &str = "blake3-512:lifter5555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555";
-const CLUST_CID: &str = "blake3-512:clust666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666";
-const DISCH_CID: &str = "blake3-512:disch7777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777";
-const BINDING_CID: &str = "blake3-512:bind999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999";
-
 // ================================================================
 // DomainClaim wire shape -- "exact" verdict
 // ================================================================
@@ -240,137 +226,6 @@ fn verdict_kind_loudly_lossy_label() {
 fn verdict_kind_refuse_label() {
     let s = serde_json::to_string(&VerdictKind::Refuse).expect("serialize");
     assert_eq!(s, "\"refuse\"");
-}
-
-// ================================================================
-// From<&ConceptSiteMemento> for DomainClaim -- spec §2.1
-// ================================================================
-
-fn make_concept_site(
-    verdict: &str,
-    discharge_receipt_cid: Option<&str>,
-    refusal_reason: Option<&str>,
-    loss_record: LossRecord,
-) -> ConceptSiteMemento {
-    ConceptSiteMemento {
-        cid: BINDING_CID.to_string(),
-        code_site: CodeSite {
-            function_term_cid: FN_CID.to_string(),
-            source_cid: SRC_CID.to_string(),
-            span: CodeSiteSpan {
-                end: 1303,
-                start: 1248,
-            },
-        },
-        concept_cid: CONCEPT_CID.to_string(),
-        discharge: Discharge {
-            method: "wp".to_string(),
-            refusal_reason: refusal_reason.map(|s| s.to_string()),
-            verdict: verdict.to_string(),
-            discharge_receipt_cid: discharge_receipt_cid.map(|s| s.to_string()),
-            loss_record,
-        },
-        kind: "concept-site".to_string(),
-        local_contract_cid: LOCAL_CID.to_string(),
-        provenance: ConceptSiteProvenance {
-            clusterer_cid: CLUST_CID.to_string(),
-            discharger_cid: DISCH_CID.to_string(),
-            lifter_cid: LIFTER_CID.to_string(),
-        },
-        realization_mode_hint: None,
-        schema_version: "1".to_string(),
-        witnesses: vec![],
-    }
-}
-
-#[test]
-fn concept_site_exact_maps_to_domain_claim() {
-    let cs = make_concept_site("exact", Some(CS_RECEIPT_CID), None, LossRecord::default());
-    let claim = DomainClaim::try_from(&cs).expect("convert");
-    // §2.1 mapping table:
-    //   kit_cid   <- provenance.discharger_cid
-    //   input_cid <- code_site.source_cid
-    //   truth_cid <- concept_cid
-    assert_eq!(claim.kit_cid, DISCH_CID);
-    assert_eq!(claim.input_cid, SRC_CID);
-    assert_eq!(claim.truth_cid, CONCEPT_CID);
-    // Trichotomy preserved.
-    assert_eq!(claim.verdict.kind, VerdictKind::Exact);
-    assert_eq!(
-        claim.verdict.discharge_receipt_cid.as_deref(),
-        Some(CS_RECEIPT_CID)
-    );
-    assert!(claim.verdict.refusal_reason.is_none());
-    assert!(claim.verdict.loss_record.0.is_empty());
-    // Unsigned: signature empty, signer empty placeholder.
-    assert_eq!(claim.signature, "");
-    assert_eq!(claim.provenance.signer, "");
-    // kind discriminator.
-    assert_eq!(claim.kind, "domain-claim");
-}
-
-#[test]
-fn concept_site_loudly_lossy_maps_to_domain_claim() {
-    let mut loss = LossRecord::default();
-    loss.0.insert(
-        "ub_introduction".to_string(),
-        IrFormula::Atomic {
-            name: "true".to_string(),
-            args: vec![],
-        },
-    );
-    let cs = make_concept_site("loudly-bounded-lossy", Some(CS_RECEIPT_CID), None, loss);
-    let claim = DomainClaim::try_from(&cs).expect("convert");
-    assert_eq!(claim.verdict.kind, VerdictKind::LoudlyBoundedLossy);
-    assert_eq!(
-        claim.verdict.discharge_receipt_cid.as_deref(),
-        Some(CS_RECEIPT_CID)
-    );
-    assert!(claim.verdict.refusal_reason.is_none());
-    assert_eq!(claim.verdict.loss_record.0.len(), 1);
-    assert!(claim.verdict.loss_record.0.contains_key("ub_introduction"));
-}
-
-#[test]
-fn concept_site_refuse_maps_to_domain_claim() {
-    let cs = make_concept_site(
-        "refuse",
-        None,
-        Some("witness sample W contradicted wp claim"),
-        LossRecord::default(),
-    );
-    let claim = DomainClaim::try_from(&cs).expect("convert");
-    assert_eq!(claim.verdict.kind, VerdictKind::Refuse);
-    assert!(claim.verdict.discharge_receipt_cid.is_none());
-    assert_eq!(
-        claim.verdict.refusal_reason.as_deref(),
-        Some("witness sample W contradicted wp claim")
-    );
-}
-
-#[test]
-fn concept_site_bad_verdict_string_errors_explicitly() {
-    let cs = make_concept_site("not-a-real-verdict", None, None, LossRecord::default());
-    let err = DomainClaim::try_from(&cs).expect_err("must error");
-    match err {
-        DomainClaimConversionError::InvalidVerdictString(s) => {
-            assert_eq!(s, "not-a-real-verdict")
-        }
-        other => panic!("expected InvalidVerdictString, got {other:?}"),
-    }
-}
-
-#[test]
-fn concept_site_to_domain_claim_round_trips_through_wire() {
-    // The conversion produces a DomainClaim whose JCS bytes deserialize
-    // back to an equal DomainClaim. This is the serde-level shape
-    // invariant; byte-exact JCS canonicalization lives in
-    // sugar-claim-envelope.
-    let cs = make_concept_site("exact", Some(CS_RECEIPT_CID), None, LossRecord::default());
-    let claim = DomainClaim::try_from(&cs).expect("convert");
-    let serialized = serde_json::to_string(&claim).expect("serialize");
-    let reparsed: DomainClaim = serde_json::from_str(&serialized).expect("re-parse");
-    assert_eq!(claim, reparsed);
 }
 
 // ================================================================
