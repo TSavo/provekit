@@ -409,13 +409,10 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
                 return None;
             }
             // Build the RE union over individual chars using str.to_re.
-            // SMT-LIB string literals: '"' -> '""', control chars -> \u{xx}.
+            // SMT-LIB string literals: see smt_string_char (printable ASCII
+            // verbatim, everything else \u{...}).
             let char_re = |ch: char| -> String {
-                let esc = match ch {
-                    '"' => "\"\"".to_string(),
-                    '\u{0}'..='\u{1f}' | '\u{7f}' => format!("\\u{{{:x}}}", ch as u32),
-                    _ => ch.to_string(),
-                };
+                let esc = smt_string_char(ch);
                 format!("(str.to_re \"{}\")", esc)
             };
             let inner = if charset.len() == 1 {
@@ -462,11 +459,7 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
             }
             let subject = emit_string_term(&args[0]);
             let not_contains = |ch: char| -> String {
-                let esc = match ch {
-                    '"' => "\"\"".to_string(),
-                    '\u{0}'..='\u{1f}' | '\u{7f}' => format!("\\u{{{:x}}}", ch as u32),
-                    _ => ch.to_string(),
-                };
+                let esc = smt_string_char(ch);
                 format!("(not (str.contains {} \"{}\"))", subject, esc)
             };
             if charset.len() == 1 {
@@ -1142,16 +1135,25 @@ fn emit_string_term(term: &Term) -> String {
     }
 }
 
+// One SMT-LIB 2.6 string-character escape, shared by every string emitter.
+// The standard admits ONLY printable ASCII (U+0020..U+007E) verbatim, with
+// `"` doubled; EVERY other code point -- C0 controls, DEL, the C1 range, and
+// all non-ASCII -- MUST be a `\u{...}` escape. Emitting such a byte raw
+// produces a malformed literal that z3 rejects or mis-sorts ("Sorts Int and
+// String are incompatible"), which surfaces as a FALSE consistency violation
+// on any vendor test carrying non-ASCII data (UTF-8 headers, IRIs, cookies).
+fn smt_string_char(ch: char) -> String {
+    match ch {
+        '"' => "\"\"".to_string(),
+        '\u{20}'..='\u{7e}' => ch.to_string(),
+        _ => format!("\\u{{{:x}}}", ch as u32),
+    }
+}
+
 fn smt_string_literal(s: &str) -> String {
     let mut out = String::from("\"");
     for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\"\""),
-            '\u{0}'..='\u{1f}' | '\u{7f}' => {
-                out.push_str(&format!("\\u{{{:x}}}", ch as u32));
-            }
-            _ => out.push(ch),
-        }
+        out.push_str(&smt_string_char(ch));
     }
     out.push('"');
     out
