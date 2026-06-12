@@ -1129,6 +1129,44 @@ def _comparison_from_symbol(sym: str, left: Term, right: Term) -> Formula:
     return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
 
 
+def _lift_literal_membership(
+    op: ast.cmpop, left_node: ast.expr, right_node: ast.expr, term_fn
+) -> Optional[Formula]:
+    """``x in (1, 2)`` over a LITERAL tuple/list/set container is exactly
+    the disjunction ``or_(eq(x, 1), eq(x, 2))`` — strictly stronger than
+    the uninterpreted member atom, and the contact surface where a
+    consumer's membership claim meets the branch-literal universes
+    (``f(1) in ("c", "d")`` against a body swearing output ∈ {"a", "b"}
+    conjoins to UNSAT).
+
+    Falls back to None (the documented member atom) for everything else:
+    computed or mixed-kind elements (cross-sort hazard: one subject, two
+    theories), empty containers, dict containers (membership is KEYS),
+    and string containers (containment is SUBSTRING semantics, never
+    element equality)."""
+    from .ir import _ConstBool, _ConstInt, _ConstStr
+
+    if not isinstance(op, (ast.In, ast.NotIn)):
+        return None
+    if not isinstance(right_node, (ast.Tuple, ast.List, ast.Set)):
+        return None
+    if not right_node.elts:
+        return None
+    terms = []
+    for el in right_node.elts:
+        try:
+            terms.append(term_fn(el))
+        except ValueError:
+            return None
+    if len({type(t) for t in terms}) != 1 or not isinstance(
+        terms[0], (_ConstInt, _ConstStr, _ConstBool)
+    ):
+        return None
+    left = term_fn(left_node)
+    disjunction = or_([eq(left, t) for t in terms])
+    return not_(disjunction) if isinstance(op, ast.NotIn) else disjunction
+
+
 def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     identity_sym = _IDENTITY_OP_MAP.get(type(op))
     if identity_sym is not None:
@@ -1550,6 +1588,12 @@ def _translate_chained_compare(node: ast.Compare, translate_term_fn) -> Formula:
     operands: list = [node.left] + list(node.comparators)
     pairs: list = []
     for i, op in enumerate(node.ops):
+        member_formula = _lift_literal_membership(
+            op, operands[i], operands[i + 1], translate_term_fn
+        )
+        if member_formula is not None:
+            pairs.append(member_formula)
+            continue
         l = translate_term_fn(operands[i])
         r = translate_term_fn(operands[i + 1])
         pairs.append(_comparison_from_ast_op(op, l, r))
@@ -1576,6 +1620,11 @@ def _translate_bool_expr(node: ast.expr) -> Formula:
             )
             if approx_formula is not None:
                 return approx_formula
+            member_formula = _lift_literal_membership(
+                node.ops[0], node.left, node.comparators[0], _translate_term
+            )
+            if member_formula is not None:
+                return member_formula
             l = _translate_term(node.left)
             r = _translate_term(node.comparators[0])
             return _comparison_from_ast_op(node.ops[0], l, r)
@@ -4084,6 +4133,11 @@ def _translate_bool_expr_scoped(
             )
             if approx_formula is not None:
                 return approx_formula
+            member_formula = _lift_literal_membership(
+                node.ops[0], node.left, node.comparators[0], _scoped_term_fn
+            )
+            if member_formula is not None:
+                return member_formula
             return _comparison_from_ast_op(
                 node.ops[0],
                 _scoped_term_fn(node.left),
