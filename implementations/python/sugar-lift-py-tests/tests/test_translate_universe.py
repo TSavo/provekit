@@ -1428,11 +1428,16 @@ def test_free_name_return_is_not_identity(vendor_path):
 
 
 def test_rebound_param_is_not_identity(vendor_path):
+    # `x = x + 1; return x` is chain-SHAPED but the chain value is
+    # computed: since the SSA-chain rung this refuses LOUDLY (it used to
+    # be a silent two-statement non-candidate) — and it must never be
+    # identity, which would forward the caller's x unincremented.
     vendor_path(
         "venddeleg_rebind", "def f(x):\n    x = x + 1\n    return x\n"
     )
     u, r = _deleg("venddeleg_rebind.f")
-    assert u is None and r is None  # two statements: not a forwarding body
+    assert u is None
+    assert r is not None and "chain value is computed" in r.reason
 
 
 def test_walrus_guard_delegation_refuses(vendor_path):
@@ -2503,3 +2508,150 @@ def test_collection_universe_contradicts_wrong_tuple(vendor_path):
                     consts.append(v)
     assert "tuple:[1, 2]" in consts, consts  # the vendor's universe
     assert "tuple:[1, 3]" in consts, consts  # the consumer's claim
+
+
+# ---------------------------------------------------------------------------
+# SSA-chain delegation (census return-fn-call, 53k bodies): leading simple
+# assigns are a substitution environment — `x = a; return g(x)` forwards
+# `a` exactly as `return g(a)` does. Linear and control-flow-free, so
+# left-to-right resolution IS the SSA; rebound names shadow correctly.
+# ---------------------------------------------------------------------------
+
+VENDOR_CHAIN = '''
+def g(a, b):
+    return a
+
+
+def f(a):
+    x = a
+    return g(x, 5)
+
+
+def hop(a):
+    x = a
+    y = x
+    return g(y, 5)
+
+
+def shadow(a):
+    a = 7
+    return g(a, a)
+
+
+def ident_chain(a):
+    x = a
+    return x
+
+
+def const_chain(a):
+    x = 5
+    return x
+
+
+def method_chain(s):
+    x = s
+    return x.upper()
+'''
+
+
+def test_chain_assign_feeds_delegation(vendor_path):
+    vendor_path("vendchain_ok", VENDOR_CHAIN)
+    u, r = _deleg("vendchain_ok.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation"
+    assert u.args == (("param", 0), ("lit", 5, "int"))
+
+
+def test_chain_resolves_through_hops(vendor_path):
+    vendor_path("vendchain_hop", VENDOR_CHAIN)
+    u, r = _deleg("vendchain_hop.hop")
+    assert r is None and u.args == (("param", 0), ("lit", 5, "int"))
+
+
+def test_chain_shadowing_param_rebinds(vendor_path):
+    # `a = 7; return g(a, a)`: the runtime forwards 7 regardless of the
+    # caller's a — the spec must be the literal, never the param
+    vendor_path("vendchain_shadow", VENDOR_CHAIN)
+    u, r = _deleg("vendchain_shadow.shadow")
+    assert r is None and u.args == (("lit", 7, "int"), ("lit", 7, "int"))
+
+
+def test_chain_identity(vendor_path):
+    vendor_path("vendchain_id", VENDOR_CHAIN)
+    u, r = _deleg("vendchain_id.ident_chain")
+    assert r is None and u.kind == "identity" and u.param_index == 0
+
+
+def test_chain_constant(vendor_path):
+    vendor_path("vendchain_const", VENDOR_CHAIN)
+    u, r = _deleg("vendchain_const.const_chain")
+    assert r is None and u.kind == "chain-constant"
+    assert u.args == (("lit", 5, "int"),)
+
+
+def test_chain_method_delegation(vendor_path):
+    vendor_path("vendchain_m", VENDOR_CHAIN)
+    u, r = _deleg("vendchain_m.method_chain")
+    assert r is None and u.kind == "delegation-method"
+    assert u.delegate == "upper" and u.args == (("param", 0),)
+
+
+def test_chain_computed_value_refuses(vendor_path):
+    vendor_path(
+        "vendchain_comp",
+        "def g(a):\n    return a\n\n"
+        "def f(a):\n    x = h(a)\n    return g(x)\n",
+    )
+    u, r = _deleg("vendchain_comp.f")
+    assert u is None and r is not None and "chain value is computed" in r.reason
+
+
+def test_chain_walrus_refuses(vendor_path):
+    vendor_path(
+        "vendchain_walrus",
+        "def g(a):\n    return a\n\n"
+        "def f(a):\n    x = (y := a)\n    return g(x)\n",
+    )
+    u, r = _deleg("vendchain_walrus.f")
+    assert u is None and r is not None and "walrus" in r.reason
+
+
+def test_chain_unpack_not_candidate(vendor_path):
+    vendor_path(
+        "vendchain_unpack",
+        "def g(a):\n    return a\n\n"
+        "def f(a, b):\n    x, y = a, b\n    return g(x)\n",
+    )
+    u, r = _deleg("vendchain_unpack.f")
+    assert u is None and r is None
+
+
+def test_chain_constant_emits_equality(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _ConstInt
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path("vendchain_l2", VENDOR_CHAIN)
+    out = _lift(
+        """
+        import vendchain_l2
+
+        def test_c():
+            assert vendchain_l2.const_chain(1) == 9
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fives = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        for a in _iter_conjuncts(d.inv):
+            if getattr(a, "name", None) == "=":
+                args = getattr(a, "args", ())
+                if len(args) == 2 and isinstance(args[1], _ConstInt) and args[1].value == 5:
+                    fives.append(a)
+    # the universe swears == 5; the claim swears == 9: UNSAT shape present
+    assert fives, [d.name for d in out.decls]

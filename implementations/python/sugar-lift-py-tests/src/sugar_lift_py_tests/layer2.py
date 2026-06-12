@@ -3442,6 +3442,12 @@ def _universe_conjuncts(
                 conjuncts.append(
                     eq(subject_term, ctor(head, list(call_args)))
                 )
+            elif deleg_u.kind == "chain-constant":
+                # `x = 5; return x`: the chain resolves the returned
+                # name to a literal — the output EQUALS it, no delegate
+                mapped = _mapped_delegate_args(deleg_u.args, call_args)
+                if mapped is not None:
+                    conjuncts.append(eq(subject_term, mapped[0]))
             else:
                 mapped = _mapped_delegate_args(deleg_u.args, call_args)
                 if mapped is not None and deleg_u.kind == "delegation":

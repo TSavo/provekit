@@ -136,10 +136,16 @@ _NAMED: dict = {
         residual="keyword forwarding, imported/attribute delegates, and "
         "computed arguments refuse by name",
     ),
-    "return-fn-call": _debt(
-        "call-result equality universe over lifted args (delegation "
-        "generalized past single-stmt bodies via SSA over preceding pure "
-        "assigns)"
+    "return-fn-call": _lifted(
+        "delegation_universe_for_callee",
+        "SSA-chain delegation: leading simple assigns form a "
+        "substitution environment — `x = a; return g(x)` forwards "
+        "exactly as `return g(a)`; shadowed params resolve to their "
+        "rebound spec; chains feed identity/delegation/method kinds plus "
+        "the chain-constant arm",
+        residual="computed chain values and walrus assigns refuse by "
+        "name; control flow and unpacking before the return stay "
+        "non-candidates",
     ),
     "return-call-other": _debt(
         "callable-expression universe (subscripted/lambda callees), static "
