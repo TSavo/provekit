@@ -703,7 +703,7 @@ mod tests {
         reason: &str,
     ) -> EffectSiteAnnotation {
         EffectSiteAnnotation {
-            effect_kind: "concept:panic-freedom".to_string(),
+            effect_kind: "panic-freedom".to_string(),
             file: file.to_string(),
             line,
             callee: callee.to_string(),

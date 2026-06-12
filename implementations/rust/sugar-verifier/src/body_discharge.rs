@@ -98,7 +98,6 @@
 
 use serde_json::Value as Json;
 
-use libsugar::panic_freedom;
 use libsugar::core::types::Term;
 use libsugar::wp::{
     self, value_expr_of_term, OpContractInfo, OpContractResolver, SlotInfo, WpError,

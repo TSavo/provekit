@@ -15,10 +15,9 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 use tracing_subscriber::fmt::MakeWriter;
 
-use libsugar::panic_freedom;
 use sugar_verifier::{enumerate_callsites, MementoPool};
 
-const PANIC_EFFECT_KIND: &str = "concept:panic-freedom";
+const PANIC_EFFECT_KIND: &str = "panic-freedom";
 
 #[derive(Clone, Default)]
 struct SharedLog(Arc<Mutex<Vec<u8>>>);

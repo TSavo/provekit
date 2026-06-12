@@ -1557,7 +1557,7 @@ mod tests {
 
     fn valid_effect_site_annotation_args() -> MintEffectSiteAnnotationArgs {
         MintEffectSiteAnnotationArgs {
-            effect_kind: "concept:panic-freedom".into(),
+            effect_kind: "panic-freedom".into(),
             file: "src/lib.rs".into(),
             line: 42,
             callee: "method:unwrap".into(),
@@ -1899,7 +1899,7 @@ mod tests {
         );
         assert_eq!(
             env.pointer("/header/effectKind").and_then(|v| v.as_str()),
-            Some("concept:panic-freedom")
+            Some("panic-freedom")
         );
         assert_eq!(
             env.pointer("/header/file").and_then(|v| v.as_str()),
@@ -1973,7 +1973,7 @@ mod tests {
     #[test]
     fn effect_site_annotation_rejects_missing_required_fields_and_invalid_status() {
         let mut args = MintEffectSiteAnnotationArgs {
-            effect_kind: "concept:panic-freedom".into(),
+            effect_kind: "panic-freedom".into(),
             file: "src/lib.rs".into(),
             line: 42,
             callee: "method:unwrap".into(),

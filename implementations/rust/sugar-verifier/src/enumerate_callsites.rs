@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use crate::types::{memento_body, memento_kind, AttributeSafetyObligation, CallSite, MementoPool};
 
-const PANIC_EFFECT_KIND: &str = "concept:panic-freedom";
+const PANIC_EFFECT_KIND: &str = "panic-freedom";
 
 pub fn run(pool: &MementoPool) -> Vec<CallSite> {
     let _span = tracing::info_span!("enumerate_callsites").entered();
