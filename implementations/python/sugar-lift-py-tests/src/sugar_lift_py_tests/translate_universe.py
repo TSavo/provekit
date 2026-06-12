@@ -779,6 +779,35 @@ def translate_universe_for_callee(
                 ),
                 None,
             )
+        # return-format (census family): an f-string / "...".format() that
+        # starts with literal text guarantees the output STARTS WITH that
+        # prefix (placeholders fill after it; the leading literal is
+        # invariant). Emitted as prefix-of(prefix, output).
+        fmt_prefix = _format_return_prefix(body)
+        if fmt_prefix is not None:
+            vectors, vector_source = _vendor_vectors(module_name, fn_name)
+            for vector in vectors:
+                if not vector.startswith(fmt_prefix):
+                    return refuse(
+                        f"sample-gate: vendor vector {vector!r} from "
+                        f"{vector_source} does not start with the format "
+                        f"prefix {fmt_prefix!r}; the walk misread the body or "
+                        "the vendor contradicts their own source"
+                    )
+            return (
+                TranslateUniverse(
+                    forbidden=fmt_prefix,
+                    module=module_name,
+                    qualname=f"{module_name}.{fn_name}",
+                    source_path=spec.origin,
+                    lineno=fn.lineno,
+                    table_name="<format literal prefix>",
+                    kind="prefix",
+                    vendor_vectors_checked=len(vectors),
+                    vendor_vector_source=vector_source,
+                ),
+                None,
+            )
         # Second family: a total .rstrip of a bytes literal as the LAST
         # operation -- the token-padding shape (itsdangerous.base64_encode:
         # return urlsafe_b64encode(s).rstrip(b"=")). The claim "output never
@@ -1209,6 +1238,40 @@ def _table_piece_chars(src: ast.expr, tree: ast.Module):
         ):
             return True, "".join(el.value for el in v.elts)
         return False, f"table '{name}' is not a str or tuple-of-str literal"
+    return None
+
+
+def _format_return_prefix(body: list) -> Optional[str]:
+    """Census family return-format: a body whose last op is a string format
+    (f-string, or "...".format(...)) starting with LITERAL text. The output
+    is guaranteed to START WITH that literal prefix -- placeholders fill in
+    after it, but the leading literal is invariant. Returns the non-empty
+    prefix or None (format starts with a placeholder, or not a format)."""
+    if not body or not isinstance(body[-1], ast.Return):
+        return None
+    value = body[-1].value
+    if isinstance(value, ast.JoinedStr):
+        if (
+            value.values
+            and isinstance(value.values[0], ast.Constant)
+            and isinstance(value.values[0].value, str)
+        ):
+            return value.values[0].value or None
+        return None
+    if (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and value.func.attr == "format"
+        and isinstance(value.func.value, ast.Constant)
+        and isinstance(value.func.value.value, str)
+    ):
+        import string
+
+        try:
+            first = next(string.Formatter().parse(value.func.value.value), None)
+        except ValueError:
+            return None
+        return (first[0] if first else None) or None
     return None
 
 

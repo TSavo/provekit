@@ -1143,3 +1143,70 @@ def test_replace_vendor_vector_with_char_refuses(vendor_path):
     )
     u, r = translate_universe_for_callee("vendrepl_gate.slugify")
     assert u is None and r is not None and "sample-gate" in r.reason
+
+
+# --- return-format family (literal prefix → prefix-of) ---
+
+VENDOR_FORMAT = '''
+def err(code):
+    return "Error {}".format(code)
+
+
+def ver(a, b):
+    return f"v{a}.{b}"
+
+
+def leading_placeholder(x):
+    return "{}!".format(x)
+'''
+
+
+def test_format_dotformat_prefix(vendor_path):
+    vendor_path("vendfmt_a", VENDOR_FORMAT)
+    u, r = translate_universe_for_callee("vendfmt_a.err")
+    assert r is None and u is not None
+    assert u.kind == "prefix" and u.forbidden == "Error "
+
+
+def test_format_fstring_prefix(vendor_path):
+    vendor_path("vendfmt_b", VENDOR_FORMAT)
+    u, _ = translate_universe_for_callee("vendfmt_b.ver")
+    assert u.kind == "prefix" and u.forbidden == "v"
+
+
+def test_format_leading_placeholder_not_candidate(vendor_path):
+    vendor_path("vendfmt_c", VENDOR_FORMAT)
+    u, r = translate_universe_for_callee("vendfmt_c.leading_placeholder")
+    assert u is None and r is None  # starts with placeholder, no prefix
+
+
+def test_format_emits_prefix_of(vendor_path):
+    vendor_path("vendfmt_l2", VENDOR_FORMAT)
+    out = _lift(
+        """
+        import vendfmt_l2
+
+        def test_err():
+            assert vendfmt_l2.err(404) == "Error 404"
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    atoms = [
+        a
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for a in _iter_conjuncts(d.inv)
+        if a.name == "prefix-of"
+    ]
+    assert atoms and atoms[0].args[0].value == "Error "
+
+
+def test_format_vendor_vector_wrong_prefix_refuses(vendor_path):
+    vendor_path("vendfmt_gate", VENDOR_FORMAT)
+    vendor_path(
+        "test_vendfmt_gate",
+        'import vendfmt_gate\n\ndef test_e():\n    assert vendfmt_gate.err(1) == "Oops 1"\n',
+    )
+    u, r = translate_universe_for_callee("vendfmt_gate.err")
+    assert u is None and r is not None and "sample-gate" in r.reason
