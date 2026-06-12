@@ -8,7 +8,6 @@ pub mod desugar;
 pub mod effect_propagation;
 pub mod ffi;
 pub mod policy_profile_registry;
-pub mod substrate_default_cids;
 pub mod transport;
 pub mod witness_registry;
 pub mod wp;
