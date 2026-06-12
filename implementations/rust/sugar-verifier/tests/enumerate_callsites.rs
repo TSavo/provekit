@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 use tracing_subscriber::fmt::MakeWriter;
 
-use libsugar::concept::panic_freedom;
+use libsugar::panic_freedom;
 use sugar_verifier::{enumerate_callsites, MementoPool};
 
 const PANIC_EFFECT_KIND: &str = "concept:panic-freedom";

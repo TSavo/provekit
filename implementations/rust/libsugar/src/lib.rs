@@ -2,7 +2,7 @@
 
 pub mod canonical;
 pub mod compose;
-pub mod concept;
+pub mod panic_freedom;
 pub mod core;
 pub mod desugar;
 pub mod effect_propagation;

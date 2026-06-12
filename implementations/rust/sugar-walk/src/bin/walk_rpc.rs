@@ -26,7 +26,7 @@ use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
 use libsugar::canonical::local_op_cid as canonical_local_op_cid;
-use libsugar::concept::panic_freedom;
+use libsugar::panic_freedom;
 use quote::ToTokens;
 use serde_json::{json, Value};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
@@ -10132,7 +10132,7 @@ fn cvalue_to_json(v: &CValue) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libsugar::concept::panic_freedom;
+    use libsugar::panic_freedom;
     use libsugar::core::{bind_result_payload, bind_term_document, BindOptions, Term};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;

@@ -98,7 +98,7 @@
 
 use serde_json::Value as Json;
 
-use libsugar::concept::panic_freedom;
+use libsugar::panic_freedom;
 use libsugar::core::types::Term;
 use libsugar::wp::{
     self, value_expr_of_term, OpContractInfo, OpContractResolver, SlotInfo, WpError,
@@ -1430,7 +1430,7 @@ mod callee_post_guard_fact_tests {
     //!   - a `var` arg_term (not a call) does NOT yield a fact (structural).
     use super::*;
     use crate::types::{CallSite, MementoPool};
-    use libsugar::concept::panic_freedom;
+    use libsugar::panic_freedom;
     use serde_json::json;
 
     // CIDs for hand-built contracts in these tests.

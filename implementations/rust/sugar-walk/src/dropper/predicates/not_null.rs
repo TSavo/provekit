@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use libsugar::concept::panic_freedom;
+use libsugar::panic_freedom;
 use sugar_ir_types::{IrFormula, IrTerm};
 
 use crate::dropper::predicate::{
