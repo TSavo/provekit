@@ -61,6 +61,50 @@ by the source — IO/clock/allocator, or here, procedural meta-test scaffolding 
 adjudicated per the allocation axiom, and 71 honest structural bin-2.
 **silent = 0 (hard invariant, held).** Drive drainable bin-1 → 0.
 
+### Frontier correction (after slices 1–2): the 280 was over-counted
+
+Reading the *actual refused corpus* (the `reason_samples`, not the bucket names)
+collapsed the estimate. The two genuinely-cheap families — `matches!`
+discriminant and struct-literal equality — are **drained** (slices 1–2). What
+remains in the "term-shape" and "control-flow" buckets is **not** cheap bin-1:
+
+- **iterator/closure predicates** (≈the entire residual `unsupported term`
+  bucket): `coll.iter().any(|w| w["k"] == lit)`, `.all(|c| c == '0')`,
+  `opt.map(|v| v.as_str())`. These quantify (∃/∀) over collections whose contents
+  are **opaque runtime data**, not source literals. By the construction axiom,
+  ∀-over-non-literal is **bin-2-leaning** — there is no finite construction from
+  written literals to walk. Lifting the literal-collection sub-case
+  (`for x in [a,b,c]`) is real bin-1 but rare in this corpus; the rest needs
+  sound opaque-sorted `forall` encoding (substrate #1717), not a cheap term arm.
+- **`for`-context** (83): every sample iterates an **opaque** collection
+  (`for row in &report.rows`, `for solver in registry`) — same ∀-over-non-literal
+  story. `released to layer 0` is an honest named refusal, not a silent drop.
+- **temporal-identity** (81) and **meta-scaffolding** (71): unchanged —
+  construction-boundary and bin-2 respectively.
+
+**Honest revised number: cheap drainable bin-1 ≈ 0 remaining on this axis** —
+the two clean families are harvested. The residual is (a) quantifier lifting
+over opaque collections (hard, soundness-critical, much of it bin-2 by the
+axiom), (b) temporal-identity via guard-lifter SSA, (c) bin-2 scaffolding named
+forever. **silent = 0 throughout.** This is the expected shape of a converging
+burndown: the cheap constructors drain fast, then the frontier is the genuinely
+hard (quantifiers) and the genuinely IO/bin-2 (the membrane) — exactly the two
+things the goal says should be all that's left.
+
+### Next phase (the fork)
+
+1. **Quantifier lifting** — sound opaque-sorted `forall`/`exists` over a
+   collection term, so `coll.iter().all(|x| P(x))` lifts to `∀x. member(x,coll) → P(x)`
+   and the literal-collection case unrolls. The biggest *real* bin-1 left, but
+   soundness-critical (do not rush).
+2. **Broaden to Python** (the second language) — sugar's Python kit has a lifter
+   (`layer2.py`, `assertion_layer.py`, `value_pins.py`) and a structural-floor
+   test (`test_structural_floor.py`) but **no sweep ledger**. Build the Python
+   total-accounting analog and record its opening bin-1 — directly closes the
+   "only Rust measured" gap toward *three languages*.
+3. **M1 closedness/vacuity gate** — make the existing `vacuous` label a *hard*
+   structural refusal at mint (the precondition for an honest totality claim).
+
 ## Drain order (M3 worklist)
 
 1. **Structural equality** — `only scalar equality is liftable` (72): lift
