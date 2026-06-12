@@ -141,7 +141,7 @@ def main():
     ap.add_argument(
         "--world",
         default=None,
-        help="sha256 of the conjoined resolution (the world's identity); "
+        help="blake3-512 id of the conjoined resolution (the world's identity); "
         "recorded in meta so citation edges are coherence-checkable",
     )
     args = ap.parse_args()
@@ -169,7 +169,7 @@ def main():
 
     if os.path.exists(meta_path) and not args.force:
         prior = json.load(open(meta_path))
-        if prior.get("sdist_sha256") == sdist_sha:
+        if prior.get("vendor_sdist_sha256") == sdist_sha:
             print(
                 f"already minted (resolve-once): {args.spec} "
                 f"sha256={sdist_sha[:16]}... -> {entry}"
@@ -177,7 +177,7 @@ def main():
             return
         sys.exit(
             f"REFUSE: registry holds {args.spec} with a DIFFERENT sdist hash "
-            f"({prior.get('sdist_sha256','?')[:16]} vs {sdist_sha[:16]}); "
+            f"({prior.get('vendor_sdist_sha256','?')[:16]} vs {sdist_sha[:16]}); "
             "same name+version, different bytes is a supply-chain alarm, "
             "not a re-mint. Use --force only if you know why."
         )
@@ -226,7 +226,7 @@ def main():
             {
                 "package": name,
                 "version": version,
-                "sdist_sha256": sdist_sha,
+                "vendor_sdist_sha256": sdist_sha,
                 "result": "no-test-corpus",
                 "note": "the sdist ships no test files; nothing is sworn, "
                 "nothing is minted -- the perimeter is the whole package",
@@ -323,8 +323,10 @@ def main():
         )
     receipt = json.load(open(verify_path))
 
+    bundle_cid = None
     for proof in glob.glob(os.path.join(project, "blake3-512:*.proof")):
         shutil.copy(proof, entry)
+        bundle_cid = os.path.basename(proof).replace(".proof", "")
 
     # PER-BUNDLE ACCOUNTING, not per-pool. `sugar verify --project` loads the
     # imported dep bundles and re-verifies the WHOLE pool, so the receipt's
@@ -384,8 +386,18 @@ def main():
     meta = {
         "package": name,
         "version": version,
-        "sdist_sha256": sdist_sha,
-        "world_sha256": args.world,
+        # THE PROVENANCE SEAM, in two adjacent fields. The hash CHANGES at the
+        # trust boundary, and seeing both here tells the whole chain of custody:
+        #   vendor_sdist_sha256 -- PyPI's OWN published hash of the sdist bytes,
+        #     recomputed by us to confirm the source is what the vendor swore.
+        #     Their attestation, in their hash. This is the only sha256 we keep.
+        #   bundle_cid -- OUR blake3-512 content address of everything we
+        #     derived from that verified source. From here down it is all ours,
+        #     in the system's one hash. The no-vendor axiom in two fields: their
+        #     word verified, then our recomputation.
+        "vendor_sdist_sha256": sdist_sha,
+        "bundle_cid": bundle_cid,
+        "world_id": args.world,
         "test_files": copied,
         "result": "minted",
         # receipt_summary is the OWN (per-bundle) accounting -- import rows

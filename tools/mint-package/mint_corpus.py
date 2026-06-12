@@ -9,8 +9,9 @@ edges dangle. So the corpus is resolved the way the substrate proves:
 the requirement sets are CONSTRAINTS, their union is the CONJUNCTION,
 pip's resolver is the solver, and the resolved set is the MODEL -- one
 world, one version per package, every cross-vendor edge coherent by
-construction. The world's sha256 (sorted name==version lines) is its
-identity and is stamped into every bundle's meta.
+construction. The world's blake3-512 (over sorted name==version lines)
+is its identity and is stamped into every bundle's meta -- our hash, the
+one hash; the only sha256 anywhere is the vendor's own sdist pin.
 
 An unresolvable conjunction is pip telling you the corpus does not fit
 one world -- that is information (partition into strata), never papered
@@ -26,6 +27,7 @@ import os
 import subprocess
 import sys
 
+import blake3  # the system's one content-address function
 from tqdm import tqdm  # required: a long batch with no live report is a silence
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -140,16 +142,17 @@ def main():
     # topological one.
     pins = sorted(f"{n}=={v}" for n, v in members.items())
     order = _topo_order(members, venv)
-    world_sha = hashlib.sha256("\n".join(pins).encode()).hexdigest()
-    world_path = os.path.join(args.registry, ".world", f"{world_sha}.lock")
+    # OUR identity for the conjoined resolution -> blake3-512, the one hash.
+    world_id = "blake3-512:" + blake3.blake3("\n".join(pins).encode()).digest(length=64).hex()
+    world_path = os.path.join(args.registry, ".world", f"{world_id}.lock")
     open(world_path, "w").write("\n".join(pins) + "\n")
-    print(f"WORLD: {len(pins)} packages, sha256={world_sha[:16]}... -> {world_path}")
+    print(f"WORLD: {len(pins)} packages, {world_id[:24]}... -> {world_path}")
 
     # ── mint each member of the model, once, in the shared world ─────────
     # Every member produces a report line (jsonl) AND a tqdm.write summary;
     # the bar's postfix carries the running tally. A long batch with no live
     # report is exactly the silence the doctrine forbids.
-    report_path = os.path.join(args.registry, ".world", f"{world_sha}.report.jsonl")
+    report_path = os.path.join(args.registry, ".world", f"{world_id}.report.jsonl")
     rf = open(report_path, "w")
     results = {}
     counts = {"minted": 0, "cached": 0, "no-tests": 0, "fail": 0}
@@ -162,7 +165,7 @@ def main():
                 spec,
                 "--registry", args.registry,
                 "--venv", venv,
-                "--world", world_sha,
+                "--world", world_id,
             ],
             capture_output=True,
             text=True,
@@ -179,7 +182,7 @@ def main():
             try:
                 meta = json.load(open(meta_path))
                 rec["result"] = meta.get("result")
-                rec["sdist_sha256"] = meta.get("sdist_sha256", "")[:16]
+                rec["sdist_sha256"] = meta.get("vendor_sdist_sha256", "")[:16]
                 rec["test_files"] = meta.get("test_files")
                 rec["receipt"] = meta.get("receipt_summary")
                 rec["assertion_properties"] = meta.get("assertion_properties")
@@ -212,10 +215,10 @@ def main():
         tqdm.write(f"[{bucket:8}] {spec:28} {detail}")
 
     rf.close()
-    summary_path = os.path.join(args.registry, ".world", f"{world_sha}.mints.json")
+    summary_path = os.path.join(args.registry, ".world", f"{world_id}.mints.json")
     json.dump(results, open(summary_path, "w"), indent=2)
     print(
-        f"\nCORPUS COMPLETE: world={world_sha[:16]} "
+        f"\nCORPUS COMPLETE: world={world_id[:16]} "
         f"minted={counts['minted']} cached={counts['cached']} "
         f"no-tests={counts['no-tests']} fail={counts['fail']}"
     )
