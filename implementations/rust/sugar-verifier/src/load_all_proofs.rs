@@ -28,7 +28,7 @@ use crate::types::{memento_body, memento_kind, EffectSiteAnnotation, LoadError, 
 
 const HASH_TAG_PREFIX: &str = "blake3-512:";
 const SIG_TAG_PREFIX: &str = "ed25519:";
-const PANIC_FREEDOM_EFFECT: &str = "concept:panic-freedom";
+const PANIC_FREEDOM_EFFECT: &str = "panic-freedom";
 const EFFECT_SITE_ANNOTATION_LOAD_ERROR_TAG: &str = "[effect-site-annotation]";
 const EFFECT_SITE_ANNOTATION_DUPLICATE_LOAD_ERROR_TAG: &str = "[effect-site-annotation-duplicate]";
 
@@ -560,7 +560,7 @@ mod tests {
     use sugar_claim_envelope::{mint_effect_site_annotation, MintEffectSiteAnnotationArgs};
     use sugar_proof_envelope::{build_proof_envelope, ProofEnvelopeInput};
 
-    const PANIC_EFFECT: &str = "concept:panic-freedom";
+    const PANIC_EFFECT: &str = "panic-freedom";
 
     fn annotation_args(
         effect_kind: &str,

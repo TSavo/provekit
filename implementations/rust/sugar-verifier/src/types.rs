@@ -1168,7 +1168,7 @@ mod tests {
             "method:unwrap".to_string(),
         );
         let annotation = EffectSiteAnnotation {
-            effect_kind: "concept:panic-freedom".to_string(),
+            effect_kind: "panic-freedom".to_string(),
             file: "src/lib.rs".to_string(),
             line: 42,
             callee: "method:unwrap".to_string(),
@@ -1191,7 +1191,7 @@ mod tests {
             .panic_effect_site_annotations
             .get(&key)
             .expect("merge must carry annotation index");
-        assert_eq!(merged.effect_kind, "concept:panic-freedom");
+        assert_eq!(merged.effect_kind, "panic-freedom");
         assert_eq!(merged.status, "residue");
         assert!(left.load_errors.is_empty(), "{:#?}", left.load_errors);
 

@@ -2448,7 +2448,7 @@ reason = "this row exists only in prove output"
             }]
         });
         let annotations = vec![sugar_verifier::types::EffectSiteAnnotation {
-            effect_kind: "concept:panic-freedom".to_string(),
+            effect_kind: "panic-freedom".to_string(),
             file: "src/generated_by_prove.rs".to_string(),
             line: 44,
             callee: "method:unwrap".to_string(),
