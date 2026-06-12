@@ -1989,3 +1989,112 @@ def test_assert_guard_and_none_emit_together(vendor_path):
                 guard_negs.append(a)
     assert none_eqs, [d.name for d in out.decls]
     assert guard_negs, [d.name for d in out.decls]
+
+
+# ---------------------------------------------------------------------------
+# method delegation (census return-method-call, 113k bodies):
+# `return <param|literal>.method(<params|literals>)` swears
+# eq(subject, callval_<method>(recv, args...)). No body backs a method
+# delegate — the receiver's type is not static — so the license is
+# narrower than function delegation: nondeterminism-marker methods refuse
+# by name, and the EMITTER bridges only GROUND instantiations (every
+# mapped term concrete at the callsite).
+# ---------------------------------------------------------------------------
+
+
+def test_method_delegation_walks(vendor_path):
+    vendor_path(
+        "vendmdeleg_ok", "def up(s):\n    return s.upper()\n"
+    )
+    u, r = _deleg("vendmdeleg_ok.up")
+    assert r is None and u is not None
+    assert u.kind == "delegation-method"
+    assert u.delegate == "upper"
+    assert u.args == (("param", 0),)
+
+
+def test_method_delegation_literal_receiver(vendor_path):
+    vendor_path(
+        "vendmdeleg_join", "def j(xs):\n    return ','.join(xs)\n"
+    )
+    u, r = _deleg("vendmdeleg_join.j")
+    assert r is None and u is not None
+    assert u.delegate == "join"
+    assert u.args == (("lit", ",", "str"), ("param", 0))
+
+
+def test_nondet_method_refuses(vendor_path):
+    vendor_path(
+        "vendmdeleg_nd", "def f(x):\n    return x.random()\n"
+    )
+    u, r = _deleg("vendmdeleg_nd.f")
+    assert u is None and r is not None and "nondeterminism marker" in r.reason
+
+
+def test_method_keyword_refuses(vendor_path):
+    vendor_path(
+        "vendmdeleg_kw", "def f(x):\n    return x.get('a', default=1)\n"
+    )
+    u, r = _deleg("vendmdeleg_kw.f")
+    assert u is None and r is not None and "keyword" in r.reason
+
+
+def test_computed_receiver_is_not_a_candidate(vendor_path):
+    vendor_path(
+        "vendmdeleg_deep", "def f(x):\n    return x.attr.m()\n"
+    )
+    u, r = _deleg("vendmdeleg_deep.f")
+    assert u is None and r is None  # other families' shape
+
+
+def test_method_arg_not_param_refuses(vendor_path):
+    vendor_path(
+        "vendmdeleg_comp", "def f(x):\n    return x.count(x + 1)\n"
+    )
+    u, r = _deleg("vendmdeleg_comp.f")
+    assert u is None and r is not None
+    assert "receiver/argument" in r.reason
+
+
+def test_method_delegation_emits_ground_equality(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path("vendmdeleg_l2", "def up(s):\n    return s.upper()\n")
+    out = _lift(
+        """
+        import vendmdeleg_l2
+
+        def test_up():
+            assert vendmdeleg_l2.up("abc") == "x"
+        """
+    )
+    atoms = _delegation_eq_atoms(out, "callval_upper_a1")
+    assert atoms, [d.name for d in out.decls]
+
+
+def test_method_delegation_skips_symbolic_instantiation():
+    # the ground-only gate, exercised at the emission seam directly: a
+    # symbolic receiver term (a _Var) must produce NO delegate equality.
+    import sugar_lift_py_tests.layer2 as l2
+    from sugar_lift_py_tests.ir import ctor as mk_ctor, make_var
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+        DelegationUniverse,
+    )
+
+    u = DelegationUniverse(
+        kind="delegation-method",
+        module="m",
+        qualname="m.up",
+        source_path="m.py",
+        lineno=1,
+        delegate="upper",
+        args=(("param", 0),),
+    )
+    call_args = [make_var("symbolic_receiver")]
+    mapped = l2._mapped_delegate_args(u.args, call_args)
+    term = mk_ctor(l2._callval_head("upper", len(mapped)), mapped)
+    assert not l2._euf_args_all_concrete(term)
