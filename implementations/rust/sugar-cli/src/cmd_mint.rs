@@ -902,6 +902,30 @@ fn contract_bindings_from_producer_responses(
 /// `inv`) lets the lifter prefer a dischargeable dependency contract over a
 /// witnessed-fact one for the same callee. Returns empty when imports/ holds
 /// no dependency proofs.
+/// The dependency .proof CIDs this project conjoins against: the CID-named
+/// bundles under `.sugar/imports/`. Returned sorted+deduped so the vendor
+/// tie (recorded in the bundle's metadata) is a deterministic, order-
+/// independent commitment to the dependency set. The CID IS the filename
+/// (the loader requires CID-named imports), so the basename minus `.proof`
+/// is the dependency bundle's identity verbatim -- no decode needed.
+fn read_conjoined_import_cids(project_root: &Path) -> Vec<String> {
+    let imports_dir = project_root.join(".sugar").join("imports");
+    let mut cids = std::collections::BTreeSet::new();
+    if let Ok(entries) = std::fs::read_dir(&imports_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("proof") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if stem.starts_with("blake3-512:") {
+                        cids.insert(stem.to_string());
+                    }
+                }
+            }
+        }
+    }
+    cids.into_iter().collect()
+}
+
 fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
     // Scope strictly to declared dependency proofs under `.sugar/imports/`.
     // (`load_all_proofs::run` recursively walks the WHOLE crate tree, which
@@ -2449,11 +2473,32 @@ fn mint_ir_document(
         )
     };
 
+    // THE VENDOR TIE: record the set of dependency .proof CIDs this bundle was
+    // conjoined against (the bundles in .sugar/imports/). The conjoining itself
+    // happens in the verification pool by name-coalesce; this metadata records
+    // WHICH dep bundle CIDs were in that pool, so the vendor bundle's IDENTITY
+    // commits to its dependency set. Change a dep's bytes -> its CID changes ->
+    // this manifest changes -> the vendor's bundle CID changes. The tie is
+    // recompute-not-trust: re-mint against the same imports yields the same CID,
+    // against a different dep yields a different one. Sorted+deduped for a
+    // deterministic, order-independent commitment. Metadata is in the envelope
+    // CID but non-normative (verifiers don't use it for logic) -- exactly right,
+    // since the verdict already came from the conjoined pool; this only ties the
+    // identity to the dependency set.
+    let conjoined_imports = read_conjoined_import_cids(project_root);
+    let metadata = if conjoined_imports.is_empty() {
+        None
+    } else {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("sugar.conjoinedImports".to_string(), conjoined_imports.join(","));
+        Some(m)
+    };
+
     let proof_input = ProofEnvelopeInput {
         name: "ir-document".to_string(),
         version: "1.0.0".to_string(),
         binary_cid: None,
-        metadata: None,
+        metadata,
         members,
         signer_cid: proof_signer,
         signer_seed: proof_signer_seed,
@@ -3963,6 +4008,77 @@ mod tests {
 
         assert_eq!(contract_count, 1);
         assert_eq!(bridge_count, 1);
+    }
+
+    #[test]
+    fn mint_ir_document_ties_conjoined_imports_into_bundle_identity() {
+        use std::fs;
+        let root = temp_workspace("mint_import_tie");
+        let out_dir = root.join("out");
+        fs::create_dir_all(&out_dir).expect("out");
+        let imports = root.join(".sugar").join("imports");
+        fs::create_dir_all(&imports).expect("imports");
+        // Two dependency bundles, CID-named (the filename CID IS the identity
+        // the loader uses; content is irrelevant to the tie).
+        let dep_a = "blake3-512:aaaa";
+        let dep_b = "blake3-512:bbbb";
+        fs::write(imports.join(format!("{dep_a}.proof")), b"x").unwrap();
+        fs::write(imports.join(format!("{dep_b}.proof")), b"y").unwrap();
+
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "c",
+            "outBinding": "out",
+            "post": {"kind": "atomic", "name": "p", "args": []}
+        })];
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint");
+
+        // The tie is recorded in the bundle metadata, sorted+deduped.
+        let catalog = sugar_verifier::cbor_decode::decode(&minted.bytes).expect("decode");
+        let conjoined = catalog
+            .as_map()
+            .and_then(|m| m.get("metadata"))
+            .and_then(|v| v.as_map())
+            .and_then(|m| m.get("sugar.conjoinedImports"))
+            .and_then(|v| v.as_tstr())
+            .expect("conjoinedImports metadata");
+        assert_eq!(conjoined, format!("{dep_a},{dep_b}"), "sorted dep CID set");
+
+        // THE DIFFERENTIAL: change the dependency set -> the vendor bundle CID
+        // MUST move. This is the a->b->c identity's enforcement: a bundle
+        // commits to the exact deps it was conjoined against.
+        fs::remove_file(imports.join(format!("{dep_b}.proof"))).unwrap();
+        fs::write(imports.join("blake3-512:cccc.proof"), b"z").unwrap();
+        let minted2 = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint2");
+        assert_ne!(
+            minted.filename_cid, minted2.filename_cid,
+            "a changed dependency set must change the vendor bundle CID"
+        );
+
+        // And re-mint against the SAME dependency set -> identical CID
+        // (recompute-not-trust: the tie is deterministic).
+        let minted3 = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint3");
+        assert_eq!(
+            minted2.filename_cid, minted3.filename_cid,
+            "same dependency set must yield the same vendor bundle CID"
+        );
+
+        // No imports -> no tie (metadata absent), so leaf bundles are unaffected.
+        let leaf_root = temp_workspace("mint_import_tie_leaf");
+        fs::create_dir_all(leaf_root.join("out")).unwrap();
+        let leaf = mint_ir_document(&ir, None, None, None, &leaf_root, &leaf_root.join("out"), true)
+            .expect("leaf mint");
+        let leaf_cat = sugar_verifier::cbor_decode::decode(&leaf.bytes).expect("decode leaf");
+        assert!(
+            leaf_cat
+                .as_map()
+                .and_then(|m| m.get("metadata"))
+                .is_none(),
+            "a leaf with no imports carries no conjoined-imports tie"
+        );
     }
 
     #[test]
