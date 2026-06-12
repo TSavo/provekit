@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn load_all_proofs_ignores_non_panic_effect_site_annotation() {
         let annotation = mint_effect_site_annotation(&annotation_args(
-            "concept:io",
+            "non-panic-effect",
             "src/lib.rs",
             42,
             "read",

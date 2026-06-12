@@ -3031,7 +3031,7 @@ mod tests {
     fn sql_profile() -> PlatformProfile {
         PlatformProfile {
             language: Some("rust".to_string()),
-            family: Some("concept:family:sql".to_string()),
+            family: Some("family:sql".to_string()),
             library: Some("rusqlite".to_string()),
             version: Some("0.39.0".to_string()),
         }
@@ -3046,7 +3046,7 @@ mod tests {
         })];
         stamp_platform_profile(&mut entries, &sql_profile());
         let e = &entries[0];
-        assert_eq!(e["family"], "concept:family:sql");
+        assert_eq!(e["family"], "family:sql");
         assert_eq!(e["library_version"], "0.39.0");
     }
 
@@ -3057,13 +3057,13 @@ mod tests {
             "kind": "library-sugar-binding-entry",
             "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "target_library_tag": "rusqlite",
-            "family": "concept:family:sql-experimental",
+            "family": "family:sql-experimental",
             "library_version": "0.40.0-rc1",
         })];
         stamp_platform_profile(&mut entries, &sql_profile());
         let e = &entries[0];
         assert_eq!(
-            e["family"], "concept:family:sql-experimental",
+            e["family"], "family:sql-experimental",
             "annotation family preserved"
         );
         assert_eq!(
@@ -3082,7 +3082,7 @@ mod tests {
         })];
         stamp_platform_profile(&mut entries, &sql_profile());
         let e = &entries[0];
-        assert_eq!(e["family"], "concept:family:sql");
+        assert_eq!(e["family"], "family:sql");
         assert_eq!(e["library_version"], "0.39.0");
     }
 
@@ -3091,7 +3091,7 @@ mod tests {
         // Profile floats `library`; only family + version get stamped.
         let profile = PlatformProfile {
             language: Some("rust".to_string()),
-            family: Some("concept:family:hash".to_string()),
+            family: Some("family:hash".to_string()),
             library: None,
             version: Some("1".to_string()),
         };
@@ -3102,7 +3102,7 @@ mod tests {
         })];
         stamp_platform_profile(&mut entries, &profile);
         let e = &entries[0];
-        assert_eq!(e["family"], "concept:family:hash");
+        assert_eq!(e["family"], "family:hash");
         assert_eq!(e["library_version"], "1");
         // library not present in profile → not stamped → entry's
         // target_library_tag unchanged (annotation already had "blake3").

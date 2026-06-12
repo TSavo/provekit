@@ -32,7 +32,6 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use clap::ValueEnum;
 use serde_json::{json, Value};
 use sugar_canonicalizer::blake3_512_of;
-use sugar_claim_envelope::{KitDeclaration, KIT_DECLARATION_RPC_METHOD};
 use sugar_verifier::load_all_proofs::ProofBytes;
 
 use crate::doctor_oracle::{
@@ -44,7 +43,6 @@ use crate::floor_runtime_check::{
     floor_runtime_check, FloorCheckMode, FloorCheckSeverity, FloorCheckStatus, FloorRuntimeCheck,
     FloorSignals,
 };
-use crate::kit_declaration::load_kit_declaration_with_command;
 use crate::lift_plugin::{parse_manifest_at, resolved_working_dir_for};
 use crate::project_config::{read_project_config, PluginEntry};
 
@@ -299,24 +297,6 @@ fn check_metadata(
         (
             "kit.consumer_surface.contract",
             "kit.consumer_surface",
-            CheckSeverity::Hard,
-        )
-    } else if name.starts_with("kit-declaration-available:") {
-        (
-            "kit.declaration.available",
-            "kit.declaration",
-            CheckSeverity::Hard,
-        )
-    } else if name.starts_with("kit-declaration-rpc-methods:") {
-        (
-            "kit.declaration.rpc_methods_declared",
-            "kit.declaration",
-            CheckSeverity::Hard,
-        )
-    } else if name.starts_with("kit-declaration-version-consistent:") {
-        (
-            "kit.declaration.version.consistent",
-            "kit.declaration",
             CheckSeverity::Hard,
         )
     } else if name == "dependency-resolver-available" {
@@ -749,12 +729,6 @@ where
         }
     }
 
-    checks.extend(run_kit_declaration_checks(
-        kit_dir,
-        context.mode,
-        &manifest_entries,
-    ));
-
     checks.extend(run_dependency_proof_checks_with_resolver(
         kit_dir, context, resolver,
     ));
@@ -976,305 +950,6 @@ fn requested_oracle_missing_policy(mode: DoctorMode) -> (CheckStatus, CheckSever
 }
 
 
-fn run_kit_declaration_checks(
-    kit_dir: &Path,
-    mode: DoctorMode,
-    manifest_entries: &[(String, String, PathBuf)],
-) -> Vec<Check> {
-    let mut checks = Vec::new();
-    for (surface, kind_dir, manifest_path) in manifest_entries {
-        let manifest = match parse_manifest_at(manifest_path) {
-            Ok(manifest) => manifest,
-            Err(_) => continue,
-        };
-        let resolved_wd = resolved_working_dir_for(kit_dir, &manifest);
-        let check_name = format!("kit-declaration-available:{kind_dir}:{surface}");
-        let started = Instant::now();
-        let declaration =
-            load_kit_declaration_with_command(&manifest.command, resolved_wd.as_deref());
-        let elapsed_ms = started.elapsed().as_millis() as u64;
-
-        match declaration {
-            Ok(declaration) => {
-                checks.push(Check::pass_with_evidence(
-                    &check_name,
-                    format!(
-                        "surface={surface} served kit declaration from kit {}",
-                        declaration.kit.id
-                    ),
-                    kit_declaration_evidence(
-                        kind_dir,
-                        surface,
-                        manifest_path,
-                        &manifest.command,
-                        resolved_wd.as_deref(),
-                        elapsed_ms,
-                        Some(&declaration),
-                    ),
-                ));
-                checks.push(kit_declaration_rpc_methods_check(
-                    mode,
-                    kind_dir,
-                    surface,
-                    manifest_path,
-                    &manifest.command,
-                    resolved_wd.as_deref(),
-                    elapsed_ms,
-                    &declaration,
-                ));
-                checks.push(kit_declaration_version_consistency_check(
-                    mode,
-                    kind_dir,
-                    surface,
-                    manifest_path,
-                    &manifest,
-                    resolved_wd.as_deref(),
-                    elapsed_ms,
-                    &declaration,
-                ));
-            }
-            Err(error) => {
-                let (status, severity) = declaration_failure_policy(mode);
-                checks.push(Check::with_status_and_severity(
-                    &check_name,
-                    status,
-                    severity,
-                    format!("surface={surface} kit declaration RPC unavailable: {error}"),
-                    {
-                        let mut evidence = kit_declaration_evidence(
-                            kind_dir,
-                            surface,
-                            manifest_path,
-                            &manifest.command,
-                            resolved_wd.as_deref(),
-                            elapsed_ms,
-                            None,
-                        );
-                        if let Some(obj) = evidence.as_object_mut() {
-                            obj.insert("error".to_string(), Value::String(error.to_string()));
-                        }
-                        evidence
-                    },
-                ));
-            }
-        }
-    }
-    checks
-}
-
-fn declaration_failure_policy(mode: DoctorMode) -> (CheckStatus, CheckSeverity) {
-    match mode {
-        DoctorMode::Structural => (CheckStatus::Warn, CheckSeverity::Advisory),
-        DoctorMode::Strict | DoctorMode::ReleaseGate => (CheckStatus::Fail, CheckSeverity::Hard),
-    }
-}
-
-fn kit_declaration_evidence(
-    kind_dir: &str,
-    surface: &str,
-    manifest_path: &Path,
-    command: &[String],
-    working_dir: Option<&Path>,
-    elapsed_ms: u64,
-    declaration: Option<&KitDeclaration>,
-) -> Value {
-    let mut evidence = json!({
-        "kind": kind_dir,
-        "surface": surface,
-        "path": manifest_path.display().to_string(),
-        "command": command,
-        "workingDir": working_dir.map(|path| path.display().to_string()),
-        "elapsedMs": elapsed_ms,
-    });
-    if let (Some(obj), Some(declaration)) = (evidence.as_object_mut(), declaration) {
-        obj.insert(
-            "kitId".to_string(),
-            Value::String(declaration.kit.id.clone()),
-        );
-        obj.insert(
-            "language".to_string(),
-            Value::String(declaration.kit.language.clone()),
-        );
-        obj.insert(
-            "version".to_string(),
-            Value::String(declaration.kit.version.clone()),
-        );
-        obj.insert(
-            "rpcMethods".to_string(),
-            Value::Array(
-                declaration
-                    .rpc
-                    .methods
-                    .iter()
-                    .map(|method| Value::String(method.name.clone()))
-                    .collect(),
-            ),
-        );
-        obj.insert(
-            "residueCategories".to_string(),
-            Value::from(declaration.residue_categories.len() as u64),
-        );
-    }
-    evidence
-}
-
-fn kit_declaration_version_consistency_check(
-    mode: DoctorMode,
-    kind_dir: &str,
-    surface: &str,
-    manifest_path: &Path,
-    manifest: &crate::lift_plugin::LiftPluginManifest,
-    working_dir: Option<&Path>,
-    elapsed_ms: u64,
-    declaration: &KitDeclaration,
-) -> Check {
-    let check_name = format!("kit-declaration-version-consistent:{kind_dir}:{surface}");
-    let mut evidence = kit_declaration_evidence(
-        kind_dir,
-        surface,
-        manifest_path,
-        &manifest.command,
-        working_dir,
-        elapsed_ms,
-        Some(declaration),
-    );
-    if let Some(obj) = evidence.as_object_mut() {
-        obj.insert(
-            "manifestPath".to_string(),
-            Value::String(manifest_path.display().to_string()),
-        );
-        obj.insert(
-            "manifestVersion".to_string(),
-            manifest
-                .version
-                .as_ref()
-                .map(|version| Value::String(version.clone()))
-                .unwrap_or(Value::Null),
-        );
-        obj.insert(
-            "runtimeKitId".to_string(),
-            Value::String(declaration.kit.id.clone()),
-        );
-        obj.insert(
-            "runtimeVersion".to_string(),
-            Value::String(declaration.kit.version.clone()),
-        );
-    }
-
-    let Some(manifest_version) = manifest.version.as_deref() else {
-        if let Some(obj) = evidence.as_object_mut() {
-            obj.insert("skipped".to_string(), Value::Bool(true));
-            obj.insert(
-                "reason".to_string(),
-                Value::String("manifest-version-absent".to_string()),
-            );
-        }
-        return Check::skip_with_evidence(
-            &check_name,
-            format!("surface={surface} manifest does not declare a kit version"),
-            evidence,
-        );
-    };
-
-    if manifest_version == declaration.kit.version {
-        Check::pass_with_evidence(
-            &check_name,
-            format!(
-                "surface={surface} manifest version matches runtime kit {} version",
-                declaration.kit.id
-            ),
-            evidence,
-        )
-    } else {
-        let (status, severity) = declaration_failure_policy(mode);
-        Check::with_status_and_severity(
-            &check_name,
-            status,
-            severity,
-            format!(
-                "surface={surface} manifest version {manifest_version} does not match runtime kit {} version {}",
-                declaration.kit.id, declaration.kit.version
-            ),
-            evidence,
-        )
-    }
-}
-
-fn kit_declaration_rpc_methods_check(
-    mode: DoctorMode,
-    kind_dir: &str,
-    surface: &str,
-    manifest_path: &Path,
-    command: &[String],
-    working_dir: Option<&Path>,
-    elapsed_ms: u64,
-    declaration: &KitDeclaration,
-) -> Check {
-    let check_name = format!("kit-declaration-rpc-methods:{kind_dir}:{surface}");
-    let declared = declaration
-        .rpc
-        .methods
-        .iter()
-        .map(|method| method.name.as_str())
-        .collect::<BTreeSet<_>>();
-    let required = ["initialize", "shutdown", KIT_DECLARATION_RPC_METHOD];
-    let missing = required
-        .iter()
-        .copied()
-        .filter(|method| !declared.contains(method))
-        .collect::<Vec<_>>();
-    let mut evidence = kit_declaration_evidence(
-        kind_dir,
-        surface,
-        manifest_path,
-        command,
-        working_dir,
-        elapsed_ms,
-        Some(declaration),
-    );
-    if let Some(obj) = evidence.as_object_mut() {
-        obj.insert(
-            "requiredMethods".to_string(),
-            Value::Array(
-                required
-                    .iter()
-                    .map(|method| Value::String((*method).to_string()))
-                    .collect(),
-            ),
-        );
-        obj.insert(
-            "missingMethods".to_string(),
-            Value::Array(
-                missing
-                    .iter()
-                    .map(|method| Value::String((*method).to_string()))
-                    .collect(),
-            ),
-        );
-    }
-
-    if missing.is_empty() {
-        Check::pass_with_evidence(
-            &check_name,
-            format!("surface={surface} declares required kit RPC methods"),
-            evidence,
-        )
-    } else {
-        let (status, severity) = declaration_failure_policy(mode);
-        Check::with_status_and_severity(
-            &check_name,
-            status,
-            severity,
-            format!(
-                "surface={surface} kit declaration is missing required RPC method(s): {}",
-                missing.join(", ")
-            ),
-            evidence,
-        )
-    }
-}
-
-#[derive(Debug, Clone)]
 struct DependencyResolverInfo {
     kind: String,
     surface: String,
@@ -2629,199 +2304,9 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         assert_modes_match_for_check(kit, "kit.consumer_surface.contract");
     }
 
-    #[test]
-    fn doctor_kit_declaration_available_passes_for_live_rpc() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let plugin = kit.join("kit-declaration-plugin");
-        make_kit_declaration_plugin(
-            &plugin,
-            valid_panic_freedom_declaration("rust-fn-contracts"),
-        );
-        write_declaration_kit(kit, "kit-declaration-plugin");
 
-        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
-        let available = check_by_id(&report, "kit.declaration.available");
-        assert_eq!(available.status, CheckStatus::Pass);
-        assert_eq!(available.severity, CheckSeverity::Hard);
-        assert_eq!(
-            available.evidence.get("surface").and_then(Value::as_str),
-            Some("rust-fn-contracts")
-        );
-        assert_eq!(
-            available.evidence.get("kitId").and_then(Value::as_str),
-            Some("stub-kit")
-        );
-    }
 
-    #[test]
-    fn doctor_kit_declaration_version_consistency_passes_for_matching_manifest() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let plugin = kit.join("kit-version-plugin");
-        make_kit_declaration_plugin(
-            &plugin,
-            valid_panic_freedom_declaration("rust-fn-contracts"),
-        );
-        write_kit(
-            kit,
-            "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"rust-fn-contracts\"\n",
-        );
-        write_manifest_with_version(
-            kit,
-            "lift",
-            "rust-fn-contracts",
-            "\"./kit-version-plugin\"",
-            ".",
-            Some("0.1.0"),
-        );
-
-        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
-
-        let version_check = check_by_id_and_surface(
-            &report,
-            "kit.declaration.version.consistent",
-            "rust-fn-contracts",
-        );
-        assert_eq!(version_check.status, CheckStatus::Pass);
-        assert_eq!(version_check.severity, CheckSeverity::Hard);
-        assert_eq!(
-            version_check
-                .evidence
-                .get("manifestVersion")
-                .and_then(Value::as_str),
-            Some("0.1.0")
-        );
-        assert_eq!(
-            version_check
-                .evidence
-                .get("runtimeKitId")
-                .and_then(Value::as_str),
-            Some("stub-kit")
-        );
-        assert_eq!(
-            version_check
-                .evidence
-                .get("runtimeVersion")
-                .and_then(Value::as_str),
-            Some("0.1.0")
-        );
-        assert!(
-            version_check
-                .evidence
-                .get("manifestPath")
-                .and_then(Value::as_str)
-                .is_some_and(|path| path.ends_with(".sugar/lift/rust-fn-contracts/manifest.toml")),
-            "version check evidence should name the manifest path: {version_check:#?}"
-        );
-    }
-
-    #[test]
-    fn doctor_kit_declaration_version_mismatch_warns_structural_and_fails_strict() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let plugin = kit.join("kit-version-plugin");
-        let mut declaration = valid_panic_freedom_declaration("rust-fn-contracts");
-        declaration["kit"]["version"] = json!("0.2.0");
-        make_kit_declaration_plugin(&plugin, declaration);
-        write_kit(
-            kit,
-            "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"rust-fn-contracts\"\n",
-        );
-        write_manifest_with_version(
-            kit,
-            "lift",
-            "rust-fn-contracts",
-            "\"./kit-version-plugin\"",
-            ".",
-            Some("0.1.0"),
-        );
-
-        let structural = run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
-        let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
-
-        let structural_check = check_by_id_and_surface(
-            &structural,
-            "kit.declaration.version.consistent",
-            "rust-fn-contracts",
-        );
-        let strict_check = check_by_id_and_surface(
-            &strict,
-            "kit.declaration.version.consistent",
-            "rust-fn-contracts",
-        );
-
-        assert_eq!(structural_check.status, CheckStatus::Warn);
-        assert_eq!(structural_check.severity, CheckSeverity::Advisory);
-        assert_eq!(strict_check.status, CheckStatus::Fail);
-        assert_eq!(strict_check.severity, CheckSeverity::Hard);
-        assert!(
-            strict_check.detail.contains("0.1.0") && strict_check.detail.contains("0.2.0"),
-            "mismatch detail should name both versions: {}",
-            strict_check.detail
-        );
-        assert_eq!(
-            strict_check
-                .evidence
-                .get("manifestVersion")
-                .and_then(Value::as_str),
-            Some("0.1.0")
-        );
-        assert_eq!(
-            strict_check
-                .evidence
-                .get("runtimeVersion")
-                .and_then(Value::as_str),
-            Some("0.2.0")
-        );
-        assert_eq!(
-            strict_check
-                .evidence
-                .get("runtimeKitId")
-                .and_then(Value::as_str),
-            Some("stub-kit")
-        );
-    }
-
-    #[test]
-    fn doctor_kit_declaration_version_check_skips_when_manifest_version_absent() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let plugin = kit.join("kit-version-plugin");
-        make_kit_declaration_plugin(
-            &plugin,
-            valid_panic_freedom_declaration("rust-fn-contracts"),
-        );
-        write_declaration_kit(kit, "kit-version-plugin");
-
-        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
-
-        let version_check = check_by_id_and_surface(
-            &report,
-            "kit.declaration.version.consistent",
-            "rust-fn-contracts",
-        );
-        assert_eq!(version_check.status, CheckStatus::Skip);
-        assert_eq!(
-            version_check.evidence.get("reason").and_then(Value::as_str),
-            Some("manifest-version-absent")
-        );
-        assert_eq!(
-            version_check
-                .evidence
-                .get("manifestVersion")
-                .and_then(Value::as_str),
-            None
-        );
-        assert_eq!(
-            version_check
-                .evidence
-                .get("runtimeVersion")
-                .and_then(Value::as_str),
-            Some("0.1.0")
-        );
-    }
 
     fn assert_manifest_declared_authoring_surface_is_collected(surface: &str) {
         let td = TempDir::new().unwrap();
@@ -2844,11 +2329,8 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
-        let available = check_by_id_and_surface(&report, "kit.declaration.available", surface);
+        let available = check_by_id_and_surface(&report, "kit.plugin.command.available", surface);
         assert_eq!(available.status, CheckStatus::Pass);
-        let version =
-            check_by_id_and_surface(&report, "kit.declaration.version.consistent", surface);
-        assert_eq!(version.status, CheckStatus::Pass);
     }
 
     #[test]
@@ -2887,7 +2369,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
-        assert_no_check_by_id_and_surface(&report, "kit.declaration.available", "unclaimed-source");
+        assert_no_check_by_id_and_surface(&report, "kit.plugin.command.available", "unclaimed-source");
     }
 
     #[test]
@@ -2916,7 +2398,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         assert_no_check_by_id_and_surface(
             &report,
-            "kit.declaration.available",
+            "kit.plugin.command.available",
             "empty-authoring-source",
         );
     }
@@ -2947,7 +2429,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         assert_no_check_by_id_and_surface(
             &report,
-            "kit.declaration.available",
+            "kit.plugin.command.available",
             "consumer-authoring-source",
         );
     }
@@ -2978,7 +2460,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         assert_no_check_by_id_and_surface(
             &report,
-            "kit.declaration.available",
+            "kit.plugin.command.available",
             "signed-memento-source",
         );
     }
@@ -3008,7 +2490,7 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
         assert_eq!(
-            count_checks_by_id_and_surface(&report, "kit.declaration.available", "dedupe-source"),
+            count_checks_by_id_and_surface(&report, "kit.plugin.command.available", "dedupe-source"),
             1
         );
     }
@@ -3054,142 +2536,14 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         assert_no_check_by_id_and_surface(
             &report,
-            "kit.declaration.available",
+            "kit.plugin.command.available",
             "missing-authoring",
         );
     }
 
-    #[test]
-    fn doctor_kit_declaration_unsupported_is_warn_in_structural_and_fail_in_strict() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let plugin = kit.join("missing-declaration-plugin");
-        make_kit_declaration_plugin_with_response(
-            &plugin,
-            json!({
-                "jsonrpc": "2.0",
-                "id": 2,
-                "error": {"code": -32601, "message": "method not found: sugar.plugin.kit_declaration"}
-            })
-            .to_string(),
-        );
-        write_declaration_kit(kit, "missing-declaration-plugin");
 
-        let structural = run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
-        let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
-        let structural_available = check_by_id(&structural, "kit.declaration.available");
-        let strict_available = check_by_id(&strict, "kit.declaration.available");
-        assert_eq!(structural_available.status, CheckStatus::Warn);
-        assert_eq!(structural_available.severity, CheckSeverity::Advisory);
-        assert_eq!(strict_available.status, CheckStatus::Fail);
-        assert_eq!(strict_available.severity, CheckSeverity::Hard);
-    }
 
-    #[test]
-    fn doctor_kit_declaration_failure_isolated_per_manifest() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let broken_plugin = kit.join("broken-declaration-plugin");
-        let good_plugin = kit.join("good-declaration-plugin");
-        make_kit_declaration_plugin_with_response(
-            &broken_plugin,
-            json!({
-                "jsonrpc": "2.0",
-                "id": 2,
-                "error": {"code": -32601, "message": "method not found: sugar.plugin.kit_declaration"}
-            })
-            .to_string(),
-        );
-        make_kit_declaration_plugin(
-            &good_plugin,
-            valid_panic_freedom_declaration("rust-fn-contracts"),
-        );
-        write_kit(
-            kit,
-            "[[plugins]]\nname = \"broken\"\nkind = \"lift\"\nsurface = \"broken-surface\"\n\
-             [[plugins]]\nname = \"good\"\nkind = \"lift\"\nsurface = \"rust-fn-contracts\"\n",
-        );
-        write_manifest(
-            kit,
-            "lift",
-            "broken-surface",
-            "\"./broken-declaration-plugin\"",
-            ".",
-        );
-        write_manifest(
-            kit,
-            "lift",
-            "rust-fn-contracts",
-            "\"./good-declaration-plugin\"",
-            ".",
-        );
-
-        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
-
-        let broken_available =
-            check_by_id_and_surface(&report, "kit.declaration.available", "broken-surface");
-        let good_available =
-            check_by_id_and_surface(&report, "kit.declaration.available", "rust-fn-contracts");
-        let good_methods = check_by_id_and_surface(
-            &report,
-            "kit.declaration.rpc_methods_declared",
-            "rust-fn-contracts",
-        );
-        assert_eq!(broken_available.status, CheckStatus::Fail);
-        assert_eq!(good_available.status, CheckStatus::Pass);
-        assert_eq!(good_methods.status, CheckStatus::Pass);
-        assert!(
-            report.checks.iter().all(|check| {
-                check.id != "kit.declaration.rpc_methods_declared"
-                    || check.evidence.get("surface").and_then(Value::as_str)
-                        != Some("broken-surface")
-            }),
-            "broken manifest should not emit follow-on declaration checks: {report:#?}"
-        );
-    }
-
-    #[test]
-    fn doctor_kit_declaration_malformed_response_fails() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let plugin = kit.join("malformed-declaration-plugin");
-        make_kit_declaration_plugin_with_response(&plugin, "not-json".to_string());
-        write_declaration_kit(kit, "malformed-declaration-plugin");
-
-        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
-
-        let available = check_by_id(&report, "kit.declaration.available");
-        assert_eq!(available.status, CheckStatus::Fail);
-        assert!(
-            available.detail.contains("invalid JSON"),
-            "malformed declaration detail should name JSON failure: {}",
-            available.detail
-        );
-    }
-
-    #[test]
-    fn doctor_kit_declaration_required_methods_are_declared() {
-        let td = TempDir::new().unwrap();
-        let kit = td.path();
-        let plugin = kit.join("method-gap-plugin");
-        let mut declaration = valid_panic_freedom_declaration("rust-fn-contracts");
-        declaration["rpc"]["methods"] = json!([
-            {"name": sugar_claim_envelope::KIT_DECLARATION_RPC_METHOD, "required": true}
-        ]);
-        make_kit_declaration_plugin(&plugin, declaration);
-        write_declaration_kit(kit, "method-gap-plugin");
-
-        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
-
-        let methods = check_by_id(&report, "kit.declaration.rpc_methods_declared");
-        assert_eq!(methods.status, CheckStatus::Fail);
-        assert!(
-            methods.detail.contains("initialize"),
-            "required-method failure should name missing initialize: {}",
-            methods.detail
-        );
-    }
 
 
 

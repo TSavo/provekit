@@ -423,7 +423,6 @@ fn recognize_match_item_fn(
         "function_name": item_fn.sig.ident.to_string(),
         "op_cid": body.get("op_cid").cloned().unwrap_or(Value::Null),
         "library_tag": body.get("library_tag").cloned().unwrap_or(Value::Null),
-        "family": body.get("family").cloned().unwrap_or(Value::Null),
         "template_cid": candidate_cid,
         "contract_cid": body.get("contract_cid").cloned().unwrap_or(Value::Null),
         "target_proof_cid": binding
@@ -517,7 +516,6 @@ fn binding_template_from_sugar_entry(
     let mut body = json!({
         "op_cid": op_cid,
         "library_tag": library_tag,
-        "family": entry.get("family").cloned().unwrap_or(Value::Null),
         "template_cid": template_cid,
         "param_names": param_names,
         "contract_cid": entry.get("contract_cid").cloned().unwrap_or(Value::Null),
@@ -6234,7 +6232,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 op,
                 library,
                 version,
-                family,
                 loss,
                 observed_dimension,
                 item_fn,
@@ -6338,16 +6335,13 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             if let Some(observed) = observed_dimension {
                 entry["observed_dimension"] = json!(observed);
             }
-            // #1357: surface the optional version + family pins on the
+            // #1357: surface the optional version pin on the
             // binding entry so downstream materialize dispatch (#1359) can
             // narrow by them. Absent on the annotation → absent in the
             // emitted JSON (NOT empty strings — null/missing is the substrate
             // signal for "this axis floats").
             if let Some(v) = version {
                 entry["library_version"] = json!(v);
-            }
-            if let Some(f) = family {
-                entry["family"] = json!(f);
             }
             entries.push(entry);
 
@@ -6561,7 +6555,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 op,
                 library,
                 version,
-                family,
                 api,
                 call,
                 boundary_contract,
@@ -6596,9 +6589,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             // #1357: parallel to the sugar emission above.
             if let Some(v) = version {
                 entry["library_version"] = json!(v);
-            }
-            if let Some(f) = family {
-                entry["family"] = json!(f);
             }
             entries.push(entry);
         }
@@ -7216,11 +7206,8 @@ struct SugarTarget {
     op: String,
     library: String,
     /// #1357: per-#1355, the @sugar annotation may carry a `version`
-    /// pin (e.g. "0.39.0") and a `family` pin (e.g.
-    /// "concept:family:sql"). Both float when absent; the dispatch
-    /// query in #1359 narrows the candidate set using these when present.
+    /// pin (e.g. "0.39.0"). It floats when absent.
     version: Option<String>,
-    family: Option<String>,
     loss: Vec<String>,
     observed_dimension: Option<String>,
     item_fn: syn::ItemFn,
@@ -7433,7 +7420,6 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
                         op: parsed.op,
                         library: parsed.library,
                         version: parsed.version,
-                        family: parsed.family,
                         loss: parsed.loss,
                         observed_dimension: parsed.observed_dimension,
                         item_fn: item_fn.clone(),
@@ -7476,9 +7462,6 @@ struct SugarAttrParsed {
     library: String,
     /// #1357: optional `version` named arg (e.g. "0.39.0"). Absent ↔ floating.
     version: Option<String>,
-    /// #1357: optional `family` named arg (e.g. "concept:family:sql").
-    /// Absent ↔ floating (the platform_profile or dispatcher may supply it).
-    family: Option<String>,
     loss: Vec<String>,
     observed_dimension: Option<String>,
     /// Phase-2 Tier D-lib: when `totality = "result_ok"`, the minted contract
@@ -7542,7 +7525,6 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
                         op,
                         library,
                         version: args.string("version"),
-                        family: args.string("family"),
                         loss: args.string_array("loss"),
                         observed_dimension: args.string("observed_dimension"),
                         totality: args.string("totality"),
@@ -7564,9 +7546,8 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
 struct BoundaryTarget {
     op: String,
     library: String,
-    /// #1357: optional version and family pins, parallel to SugarTarget.
+    /// #1357: optional version pin, parallel to SugarTarget.
     version: Option<String>,
-    family: Option<String>,
     api: Option<String>,
     /// The vendor function this boundary stub binds to (matches the vendor
     /// sugar binding's `source_function_name`). Materialize fills the stub
@@ -7618,7 +7599,6 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
                         op,
                         library,
                         version: args.string("version"),
-                        family: args.string("family"),
                         api: args.string("api"),
                         call: args.string("call"),
                         boundary_contract: args.string("boundary_contract"),
@@ -10597,7 +10577,7 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "http-request", library = "reqwest")]
 async fn fetch_status(url: String) -> i64 {
     0
 }
@@ -10754,7 +10734,7 @@ async fn fetch_status(url: String) -> i64 {
     #[test]
     fn sugar_body_source_uses_rust_block_span_for_source_cid_without_storing_body() {
         let src = r####"
-#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "http-request", library = "reqwest")]
 async fn render(url: String) -> String {
     let normal = "}";
     let raw = r###"raw } braces { stay"###;
@@ -10796,7 +10776,7 @@ async fn render(url: String) -> String {
     #[test]
     fn sugar_body_source_uses_byte_offsets_for_unicode_source_cid_without_storing_body() {
         let src = r#"
-#[sugar::sugar(op = "concept:unicode", library = "unicode-lib")]
+#[sugar::sugar(op = "unicode", library = "unicode-lib")]
 pub fn snowman() -> &'static str { "☃ } still body" }
 "#;
         let entry = single_sugar_entry_for_source("sugar_body_unicode_byte_offsets", src);
@@ -10812,7 +10792,7 @@ pub fn snowman() -> &'static str { "☃ } still body" }
     #[test]
     fn sugar_body_source_canonicalizes_trimmed_body_for_source_cid_without_storing_body() {
         let src_a = r#"
-#[sugar::sugar(op = "concept:canonical-body", library = "test-lib")]
+#[sugar::sugar(op = "canonical-body", library = "test-lib")]
 pub fn canonical_body() -> i64 {
 
     41 + 1
@@ -10820,7 +10800,7 @@ pub fn canonical_body() -> i64 {
 }
 "#;
         let src_b = r#"
-#[sugar::sugar(op = "concept:canonical-body", library = "test-lib")]
+#[sugar::sugar(op = "canonical-body", library = "test-lib")]
 pub fn canonical_body() -> i64 {    41 + 1    }
 "#;
 
@@ -10848,7 +10828,7 @@ pub fn canonical_body() -> i64 {    41 + 1    }
     #[test]
     fn sugar_body_source_emits_template_cid_without_storing_template() {
         let src = r##"
-#[sugar::sugar(op = "concept:json-parse", library = "serde_json")]
+#[sugar::sugar(op = "json-parse", library = "serde_json")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10889,7 +10869,7 @@ pub fn json_parse(s: &str) -> i64 {
     #[test]
     fn sugar_body_template_canonicalizes_multiple_params_positionally() {
         let src = r##"
-#[sugar::sugar(op = "concept:sql-execute", library = "rusqlite")]
+#[sugar::sugar(op = "sql-execute", library = "rusqlite")]
 pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
     conn.execute(sql, args)
 }
@@ -10932,13 +10912,13 @@ pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
         // Canonical templates with $1/$2 must be byte-identical for two
         // sugar functions that differ only in their parameter names.
         let src_a = r##"
-#[sugar::sugar(op = "concept:noop", library = "ka")]
+#[sugar::sugar(op = "noop", library = "ka")]
 pub fn op(x: &i64, y: &i64) -> i64 {
     x.add(y)
 }
 "##;
         let src_b = r##"
-#[sugar::sugar(op = "concept:noop", library = "kb")]
+#[sugar::sugar(op = "noop", library = "kb")]
 pub fn op(alpha: &i64, beta: &i64) -> i64 {
     alpha.add(beta)
 }
@@ -10970,7 +10950,7 @@ pub fn op(alpha: &i64, beta: &i64) -> i64 {
     fn recognize_emits_exact_tag_for_alpha_equivalent_user_function() {
         // The shim's sugar (what would land in the .proof envelope):
         let sugar_src = r##"
-#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10979,7 +10959,6 @@ pub fn json_parse(s: &str) -> i64 {
         let binding_template = json!({
             "op_cid": sugar_entry["op_cid"],
             "library_tag": sugar_entry["target_library_tag"],
-            "family": sugar_entry.get("family").cloned().unwrap_or(Value::Null),
             "template_cid": sugar_entry["body_source"]["template_cid"],
             "param_names": sugar_entry["body_source"]["param_names"],
             "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
@@ -11026,7 +11005,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_loads_binding_templates_from_imported_proofs() {
         let sugar_src = r##"
-#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11079,7 +11058,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_matches_template_cid_only_imported_proof() {
         let sugar_src = r##"
-#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11139,7 +11118,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_loads_binding_templates_from_cargo_dependency_proofs() {
         let sugar_src = r##"
-#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11217,7 +11196,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_returns_empty_tags_for_non_matching_source() {
         let sugar_src = r##"
-#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11263,13 +11242,13 @@ pub fn json_parse(s: &str) -> i64 {
         // Two binding templates (json + sql shapes). User source contains
         // one match for each. Recognize emits two tags.
         let json_sugar = r##"
-#[sugar::sugar(op = "concept:json-parse", library = "json-lib")]
+#[sugar::sugar(op = "json-parse", library = "json-lib")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
 "##;
         let sql_sugar = r##"
-#[sugar::sugar(op = "concept:sql-execute", library = "sql-lib")]
+#[sugar::sugar(op = "sql-execute", library = "sql-lib")]
 pub fn sql_execute(conn: &i64, sql: &str, args: &i64) -> i64 {
     conn.execute(sql, args)
 }
@@ -11328,7 +11307,7 @@ pub fn sql_execute(c: &i64, q: &str, p: &i64) -> i64 {
         // template's $N markers back to the user's actual variables at
         // tag emission time. The lifter exposes them as a separate field.
         let src = r##"
-#[sugar::sugar(op = "concept:sql-query-row", library = "rusqlite")]
+#[sugar::sugar(op = "sql-query-row", library = "rusqlite")]
 pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
     conn.query_row(sql, params, mapper)
 }
@@ -11345,7 +11324,7 @@ pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
     }
 
     // ---------------------------------------------------------------------
-    // #1357 / #1355: family + version axes on @sugar / @boundary annotations
+    // #1357 / #1355: version axis on @sugar / @boundary annotations
     // ---------------------------------------------------------------------
 
     #[test]
@@ -11355,10 +11334,9 @@ pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::sugar(
-    op = "concept:sql-query",
+    op = "sql-query",
     library = "rusqlite",
     version = "0.39.0",
-    family = "concept:family:sql",
 )]
 pub fn query(conn: &i64, sql: &str) -> i64 {
     0
@@ -11379,7 +11357,6 @@ pub fn query(conn: &i64, sql: &str) -> i64 {
         let e = &sugar[0];
         assert_eq!(e["target_library_tag"], "rusqlite");
         assert_eq!(e["library_version"], "0.39.0");
-        assert_eq!(e["family"], "concept:family:sql");
         assert_eq!(
             e["op_cid"],
             local_op_cid("sql-query").expect("sql-query op cid")
@@ -11389,13 +11366,13 @@ pub fn query(conn: &i64, sql: &str) -> i64 {
 
     #[test]
     fn sugar_attr_without_family_or_version_omits_those_fields() {
-        // Back-compat: existing shims without family/version annotations must
+        // Back-compat: existing shims without version annotations must
         // still mint, with the new fields simply absent (NOT empty strings).
         let root = temp_workspace("sugar_no_family_version");
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "http-request", library = "reqwest")]
 async fn fetch_status(url: String) -> i64 {
     0
 }
@@ -11415,10 +11392,6 @@ async fn fetch_status(url: String) -> i64 {
             e.get("library_version").is_none() || e["library_version"].is_null(),
             "library_version must not be emitted when absent on annotation"
         );
-        assert!(
-            e.get("family").is_none() || e["family"].is_null(),
-            "family must not be emitted when absent on annotation"
-        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -11429,10 +11402,9 @@ async fn fetch_status(url: String) -> i64 {
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::boundary(
-    op = "concept:sql-query",
+    op = "sql-query",
     library = "rusqlite",
     version = "0.39.0",
-    family = "concept:family:sql",
     boundary_contract = "boundary:sql-execute",
 )]
 pub fn query_stub(_conn: &i64, _sql: &str) -> i64 {
@@ -11452,7 +11424,6 @@ pub fn query_stub(_conn: &i64, _sql: &str) -> i64 {
             .expect("realization memento");
         assert_eq!(memento["library"], "rusqlite");
         assert_eq!(memento["library_version"], "0.39.0");
-        assert_eq!(memento["family"], "concept:family:sql");
         assert_eq!(
             memento["op_cid"],
             local_op_cid("sql-query").expect("sql-query op cid")
@@ -11505,12 +11476,12 @@ fn plain_fn(x: i64) -> i64 {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "http-request", library = "reqwest")]
 fn fetch_one(url: String) -> i64 {
     0
 }
 
-#[sugar::sugar(op = "concept:sql-query", library = "rusqlite")]
+#[sugar::sugar(op = "sql-query", library = "rusqlite")]
 fn query_db(sql: String) -> String {
     String::new()
 }
@@ -11553,7 +11524,7 @@ fn query_db(sql: String) -> String {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src_missing_lib = r#"
-#[sugar::sugar(op = "concept:http-request")]
+#[sugar::sugar(op = "http-request")]
 fn missing_lib(url: String) -> i64 { 0 }
 "#;
         fs::write(src_dir.join("lib.rs"), src_missing_lib).expect("write source");
@@ -12774,7 +12745,7 @@ reason = "scope discipline probe"
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::sugar(
-    op = "concept:sql-query",
+    op = "sql-query",
     library = "rusqlite",
     loss = ["sync-vs-async", "row-cardinality"],
 )]
@@ -12806,7 +12777,7 @@ fn query(conn: String, sql: String) -> i64 { 0 }
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(op = "concept:sql-query", library = "rusqlite")]
+#[sugar::sugar(op = "sql-query", library = "rusqlite")]
 fn query(conn: String, sql: String) -> i64 { 0 }
 "#;
         fs::write(src_dir.join("lib.rs"), src).expect("write source");
@@ -12836,7 +12807,7 @@ fn query(conn: String, sql: String) -> i64 { 0 }
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::sugar(
-    op = "concept:contract-observation",
+    op = "contract-observation",
     library = "rusqlite",
     observed_dimension = "autocommit-mode",
 )]
@@ -12867,7 +12838,7 @@ fn is_autocommit(conn: String) -> bool { false }
         let src = r#"
 #[sugar::refuse(
     surface = "rusqlite::Connection::backup",
-    op = "concept:sql-physical-backup",
+    op = "sql-physical-backup",
     reason = "SQLite-binary-specific physical backup; N=1 cluster.",
     would_close_with_cluster = "Connection-level physical-backup method on >=2 SQL drivers",
 )]
@@ -12887,7 +12858,7 @@ pub mod refused_backup {}
         assert_eq!(refusals.len(), 1, "expected one refusal-memento entry");
         let r = &refusals[0];
         assert_eq!(r["surface"], "rusqlite::Connection::backup");
-        assert_eq!(r["op"], "concept:sql-physical-backup");
+        assert_eq!(r["op"], "sql-physical-backup");
         assert_eq!(
             r["reason"],
             "SQLite-binary-specific physical backup; N=1 cluster."
@@ -12909,7 +12880,7 @@ pub mod refused_backup {}
         let src_missing_reason = r#"
 #[sugar::refuse(
     surface = "rusqlite::Connection::backup",
-    op = "concept:sql-physical-backup",
+    op = "sql-physical-backup",
     would_close_with_cluster = "Cross-driver analog",
 )]
 pub mod refused_backup {}
@@ -12968,11 +12939,11 @@ pub mod plain_module {}
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(op = "concept:sql-execute", library = "rusqlite", loss = [])]
+#[sugar::sugar(op = "sql-execute", library = "rusqlite", loss = [])]
 fn execute(conn: String, sql: String) -> i64 { 0 }
 
 #[sugar::sugar(
-    op = "concept:sql-query",
+    op = "sql-query",
     library = "rusqlite",
     loss = ["sync-vs-async", "row-cardinality"],
 )]
@@ -12980,7 +12951,7 @@ fn query_row(conn: String, sql: String) -> String { String::new() }
 
 #[sugar::refuse(
     surface = "rusqlite::Connection::backup",
-    op = "concept:sql-physical-backup",
+    op = "sql-physical-backup",
     reason = "SQLite-specific; cluster N=1.",
     would_close_with_cluster = "Cross-driver backup method on >=2 SQL drivers",
 )]
