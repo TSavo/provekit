@@ -642,6 +642,23 @@ class BranchLiteralUniverse:
     vendor_vector_source: Optional[str] = None
 
 
+def _ifexp_literal_leaves(node):
+    """All literal leaves of a (possibly nested) conditional expression,
+    or None when any leaf is computed. ``"a" if c else "b"`` is the
+    statement-level branch shape in expression form: the value is ONE OF
+    the leaves whichever way the condition goes, so the condition —
+    walrus included — never needs reading (a rebinding in the condition
+    has nothing downstream of itself to poison)."""
+    if isinstance(node, ast.IfExp):
+        body = _ifexp_literal_leaves(node.body)
+        orelse = _ifexp_literal_leaves(node.orelse)
+        if body is None or orelse is None:
+            return None
+        return body + orelse
+    vk = _literal_value_kind(node)
+    return [vk] if vk is not None else None
+
+
 def _is_terminal_block(stmts: list) -> bool:
     """A statement list cannot fall off the end iff its last statement is
     a Return, a Raise, or an If whose both arms are themselves terminal
@@ -687,10 +704,11 @@ def branch_literal_universe_for_callee(
         for n in ast.walk(stmt)
         if isinstance(n, ast.Return)
     ]
-    # the family is the MULTI-return shape; single returns belong to the
-    # constant family (no double emission), and generator bodies return
-    # a generator object, never a branch value.
-    if len(returns) < 2 or not _is_terminal_block(rest):
+    # the family is the MULTI-VALUE shape: several returns, or one return
+    # of a conditional expression (several leaves). A single literal
+    # belongs to the constant family (no double emission), and generator
+    # bodies return a generator object, never a branch value.
+    if not returns or not _is_terminal_block(rest):
         return None, None
     if any(
         isinstance(n, (ast.Yield, ast.YieldFrom))
@@ -698,6 +716,21 @@ def branch_literal_universe_for_callee(
         for n in ast.walk(stmt)
     ):
         return None, None
+    leaf_lists = []
+    for node in returns:
+        if node.value is None:
+            if len(returns) < 2:
+                return None, None
+            return refuse(
+                "bare `return` among literal returns: None would mix "
+                "kinds in one disjunction (cross-sort)"
+            )
+        leaves = _ifexp_literal_leaves(node.value)
+        if leaves is None:
+            return None, None  # a computed branch: not this family
+        leaf_lists.append(leaves)
+    if sum(len(ls) for ls in leaf_lists) < 2:
+        return None, None  # single literal: the constant family's shape
     if tainted:
         return refuse(
             "guard-strip: a stripped guard test rebinds via walrus "
@@ -705,16 +738,7 @@ def branch_literal_universe_for_callee(
             "callsite's arguments"
         )
     values, kinds = [], set()
-    for node in returns:
-        if node.value is None:
-            return refuse(
-                "bare `return` among literal returns: None would mix "
-                "kinds in one disjunction (cross-sort)"
-            )
-        vk = _literal_value_kind(node.value)
-        if vk is None:
-            return None, None  # a computed branch: not this family
-        value, kind = vk
+    for value, kind in (vk for ls in leaf_lists for vk in ls):
         kinds.add(kind)
         if value not in values:
             values.append(value)

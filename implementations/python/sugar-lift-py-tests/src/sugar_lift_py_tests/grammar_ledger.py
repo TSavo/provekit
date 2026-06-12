@@ -173,9 +173,13 @@ _NAMED: dict = {
         residual="predicates over attributes/calls/free names refuse "
         "(named); membership tests (in) owed",
     ),
-    "return-ifexp": _debt(
-        "ite universe: ground-evaluable condition selects the branch at "
-        "the callsite; symbolic condition emits an ite term"
+    "return-ifexp": _lifted(
+        "branch_literal_universe_for_callee",
+        "branch-literal disjunction over the conditional expression's "
+        "literal leaves — the statement branch shape in expression form, "
+        "no condition evaluation",
+        residual="computed leaves stay non-candidates; a ground-evaluated "
+        "ite (exact branch selection at concrete callsites) owed",
     ),
     "return-collection": _debt(
         "collection-constructor universe (tuple/list/dict/set of lifted "
