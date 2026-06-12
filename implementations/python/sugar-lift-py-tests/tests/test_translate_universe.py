@@ -2790,3 +2790,99 @@ def test_raise_locus_contradicts_any_value_claim(vendor_path):
             ):
                 contradictions.append(a)
     assert contradictions, [d.name for d in out.decls]
+
+
+# ---------------------------------------------------------------------------
+# chain-expr (census return-binop, 17k bodies): the returned arithmetic
+# expression as STRUCTURE — eq(subject, ctor("+", ...)) over the same
+# operator ctors the consumer side builds. + - * lower to real Int math
+# substrate-side; / % stay EUF. The emitter bridges only all-Int-const
+# instantiations: '+' on strings is CONCAT by dispatch, and a string
+# leaf under an arithmetic-lowered ctor is the cross-sort mislower.
+# ---------------------------------------------------------------------------
+
+
+def test_binop_return_walks(vendor_path):
+    vendor_path("vendbinop_ok", "def add(a, b):\n    return a + b\n")
+    u, r = _deleg("vendbinop_ok.add")
+    assert r is None and u is not None
+    assert u.kind == "chain-expr"
+    assert u.expr_spec == ("binop", "+", ("param", 0), ("param", 1))
+
+
+def test_nested_binop_with_chain(vendor_path):
+    vendor_path(
+        "vendbinop_nest",
+        "def scale(a, b):\n    x = b\n    return (a + x) * 2\n",
+    )
+    u, r = _deleg("vendbinop_nest.scale")
+    assert r is None and u.expr_spec == (
+        "binop", "*",
+        ("binop", "+", ("param", 0), ("param", 1)),
+        ("lit", 2, "int"),
+    )
+
+
+def test_unsupported_binop_refuses(vendor_path):
+    vendor_path("vendbinop_pow", "def p(a, b):\n    return a ** b\n")
+    u, r = _deleg("vendbinop_pow.p")
+    assert u is None and r is not None and "lowered set" in r.reason
+
+
+def test_computed_binop_leaf_refuses(vendor_path):
+    vendor_path(
+        "vendbinop_comp", "def f(a):\n    return a + g(a)\n"
+    )
+    u, r = _deleg("vendbinop_comp.f")
+    assert u is None and r is not None and "binop leaf" in r.reason
+
+
+def test_binop_emits_arithmetic_equality(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path("vendbinop_l2", "def add(a, b):\n    return a + b\n")
+    out = _lift(
+        """
+        import vendbinop_l2
+
+        def test_add():
+            assert vendbinop_l2.add(2, 3) == 9
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    plus_eqs = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        for a in _iter_conjuncts(d.inv):
+            if getattr(a, "name", None) != "=":
+                continue
+            for side in getattr(a, "args", ()):
+                if getattr(side, "name", None) == "+":
+                    plus_eqs.append(a)
+    # eq(subject, +(2, 3)) conjoined with the claim == 9: Int theory
+    # makes it UNSAT (2 + 3 = 5)
+    assert plus_eqs, [d.name for d in out.decls]
+
+
+def test_binop_skips_string_instantiation():
+    # the ground gate at the emission seam: a string leaf must emit
+    # nothing — '+' over strings is concat by dispatch, not arithmetic
+    import sugar_lift_py_tests.layer2 as l2
+    from sugar_lift_py_tests.ir import str_const, num
+
+    term = l2._expr_spec_term(
+        ("binop", "+", ("param", 0), ("lit", 1, "int")),
+        [str_const("a")],
+    )
+    assert term is not None
+    assert not l2._term_leaves_all_const_int(term)
+    ok = l2._expr_spec_term(
+        ("binop", "+", ("param", 0), ("lit", 1, "int")),
+        [num(4)],
+    )
+    assert l2._term_leaves_all_const_int(ok)

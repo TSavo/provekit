@@ -3503,6 +3503,15 @@ def _universe_conjuncts(
                 conjuncts.append(
                     eq(subject_term, ctor(head, list(call_args)))
                 )
+            elif deleg_u.kind == "chain-expr":
+                # arithmetic structure: + - * lower to real Int math in
+                # the substrate, so a string leaf here would be the
+                # concat-vs-arithmetic dispatch mislower — every mapped
+                # leaf must be an Int constant (ground bridges only,
+                # like method delegation)
+                term = _expr_spec_term(deleg_u.expr_spec, call_args)
+                if term is not None and _term_leaves_all_const_int(term):
+                    conjuncts.append(eq(subject_term, term))
             elif deleg_u.kind == "chain-constant":
                 # `x = 5; return x`: the chain resolves the returned
                 # name to a literal — the output EQUALS it, no delegate
@@ -3527,6 +3536,28 @@ def _universe_conjuncts(
                     if _euf_args_all_concrete(term):
                         conjuncts.append(eq(subject_term, term))
     return conjuncts
+
+
+def _expr_spec_term(spec, call_args):
+    """Instantiate a chain-expr spec tree at this callsite's argument
+    terms. None when a forwarded param is defaulted here."""
+    if isinstance(spec, tuple) and spec and spec[0] == "binop":
+        _tag, op, left, right = spec
+        lt_ = _expr_spec_term(left, call_args)
+        rt_ = _expr_spec_term(right, call_args)
+        if lt_ is None or rt_ is None:
+            return None
+        return ctor(op, [lt_, rt_])
+    mapped = _mapped_delegate_args((spec,), call_args)
+    return None if mapped is None else mapped[0]
+
+
+def _term_leaves_all_const_int(term) -> bool:
+    from .ir import _ConstInt
+
+    if isinstance(term, _Ctor):
+        return all(_term_leaves_all_const_int(a) for a in term.args)
+    return isinstance(term, _ConstInt)
 
 
 def _mapped_delegate_args(specs, call_args):

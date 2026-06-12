@@ -913,6 +913,9 @@ class DelegationUniverse:
     param_index: int = 0
     delegate: str = ""  # qualified module.g for the delegation kinds
     args: tuple = ()  # delegation: ("param", idx) | ("lit", value, kind)
+    # chain-expr: a nested spec tree ("binop", op, left, right) over the
+    # same leaf specs — the returned arithmetic expression as structure
+    expr_spec: tuple = ()
     vendor_vectors_checked: int = 0
     vendor_vector_source: Optional[str] = None
 
@@ -992,6 +995,37 @@ def _resolve_spec(node, params, env):
     return None
 
 
+_BINOP_SPEC_OPS = {
+    ast.Add: "+",
+    ast.Sub: "-",
+    ast.Mult: "*",
+    ast.Div: "/",
+    ast.Mod: "%",
+}
+
+
+def _resolve_expr_spec(node, params, env):
+    """A nested spec tree for an arithmetic return expression: leaves are
+    forwarding specs, interior nodes are ("binop", op, left, right) with
+    op drawn from the SAME operator map the consumer-side term translator
+    uses — both sides build the identical ctor or neither does. None for
+    operators outside the map or computed leaves; the string "REFUSE-OP"
+    marker distinguishes the unsupported-operator case so the caller can
+    refuse loudly rather than fall through."""
+    if isinstance(node, ast.BinOp):
+        op = _BINOP_SPEC_OPS.get(type(node.op))
+        if op is None:
+            return "REFUSE-OP"
+        left = _resolve_expr_spec(node.left, params, env)
+        right = _resolve_expr_spec(node.right, params, env)
+        if left in (None, "REFUSE-OP") or right in (None, "REFUSE-OP"):
+            return left if left == "REFUSE-OP" else (
+                right if right == "REFUSE-OP" else None
+            )
+        return ("binop", op, left, right)
+    return _resolve_spec(node, params, env)
+
+
 @functools.lru_cache(maxsize=None)
 def delegation_universe_for_callee(
     callee: str,
@@ -1030,7 +1064,7 @@ def delegation_universe_for_callee(
     if not rest or not isinstance(rest[-1], ast.Return) or rest[-1].value is None:
         return None, None
     value = rest[-1].value
-    if not isinstance(value, (ast.Name, ast.Call)):
+    if not isinstance(value, (ast.Name, ast.Call, ast.BinOp)):
         return None, None
     # SSA CHAIN (census return-fn-call, 53k bodies): leading simple
     # assigns are a substitution environment — `x = a; return g(x)`
@@ -1072,6 +1106,29 @@ def delegation_universe_for_callee(
     )
     if returns != 1:
         return None, None
+
+    # arithmetic return (census return-binop, 17k bodies): the returned
+    # expression as STRUCTURE — eq(subject, ctor("+", [...])) — using the
+    # same operator ctors the consumer-side translator builds, so the
+    # terms unify syntactically. + - * lower to real Int arithmetic in
+    # the substrate; / and % stay uninterpreted EUF (python float-div and
+    # sign-of-mod semantics never enter; the equality is term-level).
+    # The EMITTER additionally requires every mapped leaf to be an Int
+    # constant: '+' on strings is CONCAT by dispatch, and a string leaf
+    # under an arithmetic-lowered ctor would be the cross-sort mislower.
+    if isinstance(value, ast.BinOp):
+        expr_spec = _resolve_expr_spec(value, params, env)
+        if expr_spec == "REFUSE-OP":
+            return refuse(
+                "binop operator outside the lowered set (+ - * / %); the "
+                "consumer side cannot build the term either"
+            )
+        if expr_spec is None:
+            return refuse(
+                "binop leaf is neither a parameter, literal, nor chain "
+                "name; the computed value is not the callsite's"
+            )
+        return universe(kind="chain-expr", expr_spec=expr_spec)
 
     # identity: return <param>, possibly through the chain; a name that
     # chains to a LITERAL is a constant in forwarding clothes
