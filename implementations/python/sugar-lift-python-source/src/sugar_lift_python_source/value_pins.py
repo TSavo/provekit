@@ -169,6 +169,21 @@ def _scan_enum_member_pins(tree: ast.Module, scan: ValuePinScan) -> None:
                 confession=f"enum.{kind}",
             )
             scan.candidates += 1
+            if stmt.decorator_list:
+                # A decorated ClassDef is NOT the runtime class: the name
+                # binds whatever the decorator returns (caught live
+                # 2026-06-12: a class decorator swapping the enum ran
+                # Color.RED == 99 while the scan pinned 1 — a wrong term
+                # byte-identical to an inline literal). Refuse by name.
+                scan.refusals.append(
+                    _pin_refusal(
+                        candidate,
+                        f"class decorator on {stmt.name}: the ClassDef is "
+                        "not the runtime class; member values cannot be "
+                        "read from the body",
+                    )
+                )
+                continue
             if kind == "plain":
                 scan.refusals.append(
                     _pin_refusal(

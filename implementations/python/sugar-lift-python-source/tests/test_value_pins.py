@@ -406,3 +406,43 @@ def test_unpinned_attribute_access_keeps_panic_locus():
         """
     )
     assert _tree_contains(result.ir, {"kind": "panics"})
+
+
+def test_decorated_enum_class_refuses_by_name():
+    # A decorated ClassDef is NOT the runtime class: the name binds
+    # whatever the decorator returns. Caught live 2026-06-12: a class
+    # decorator swapping the enum ran Color.RED == 99 while the scan
+    # pinned 1 — a wrong term byte-identical to an inline literal.
+    scan = _scan(
+        """
+        from enum import IntEnum
+
+        def shift(cls):
+            class Other(IntEnum):
+                RED = 99
+            return Other
+
+        @shift
+        class Color(IntEnum):
+            RED = 1
+        """
+    )
+    assert "Color.RED" not in scan.pins
+    reasons = [r["reason"] for r in scan.refusals]
+    assert any("class decorator" in r for r in reasons)
+    assert scan.totality_holds()
+
+
+def test_undecorated_enum_twin_still_pins():
+    # the refusal above is the decorator, not collateral: the same class
+    # without the decorator pins.
+    scan = _scan(
+        """
+        from enum import IntEnum
+
+        class Color(IntEnum):
+            RED = 1
+        """
+    )
+    assert scan.pins["Color.RED"].term == int_const(1)
+    assert scan.totality_holds()
