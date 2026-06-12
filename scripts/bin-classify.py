@@ -41,18 +41,18 @@ BIN2_RULES = [
                 r"|assert_kit_declaration|assert_modes_match|assert_malformed"
                 r"|assert_manifest_declared|assert_mapping_absent|assert_no_fn_name"),
      "meta-test scaffolding — a test OF the tooling, not a value construction"),
-    # for-loop over an OPAQUE collection: the lifter now STATES the iterator
-    # provenance (for_iter_domain). An opaque collection's elements are runtime
-    # data, not constructed from source literals -> bin-2 PROVEN (no longer
-    # presumed). A for-loop over a LITERAL range/array says so and matches NO bin-2
-    # rule -> it falls to bin-1 (drainable body-side), which is correct.
-    (re.compile(r"for context over an OPAQUE collection"),
-     "for-loop over an opaque collection — runtime data, not source-constructed"),
-    # Other control-flow contexts (match/if/while/unenumerated) and `.all/.any`
-    # closures do not yet carry provenance -> still PRESUMED, owing the same check.
+    # Provenance-named (PROVEN bin-2): for-loops AND iterator quantifiers
+    # (.all/.any) now STATE "over an OPAQUE collection" (for_iter_domain) -> runtime
+    # data, not constructed from source literals. A "LITERAL" provenance matches NO
+    # bin-2 rule -> it falls to bin-1 (drainable), which is correct.
+    (re.compile(r"over an OPAQUE collection"),
+     "loop / iterator quantifier over an opaque collection — runtime data, not source-constructed"),
+    # Other control-flow contexts (match/if/while/unenumerated) do not yet carry
+    # provenance -> still PRESUMED, owing the same check.
     (re.compile(r"under match context|under if context|under while context"
                 r"|unenumerated statement position"),
      "control-flow-bound assertion (conditional/while/unenumerated) over runtime iteration (bin-2-presumed)"),
+    # Remaining bare-closure refusals (.map/.find/etc.) with no provenance yet.
     (re.compile(r"\|\s*\w+\s*\|"),  # a closure `|x| ...` in the refused term
      "iterator-closure predicate over an opaque collection — vacuous without teeth (bin-2-presumed)"),
 ]
