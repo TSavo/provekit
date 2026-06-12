@@ -510,7 +510,7 @@ mod effect_alias_reader_tests {
 
     #[test]
     fn effect_loci_reader_ignores_non_panic_effect_kind() {
-        let body = json!({"effectLoci": [effect_locus(25, "concept:io")]});
+        let body = json!({"effectLoci": [effect_locus(25, "non-panic-effect")]});
         assert!(panic_loci_from_body(&body).is_empty());
     }
 
@@ -560,7 +560,7 @@ mod effect_alias_reader_tests {
     fn effect_loci_reader_filters_mixed_effect_kinds() {
         let body = json!({
             "effectLoci": [
-                effect_locus(25, "concept:io"),
+                effect_locus(25, "non-panic-effect"),
                 effect_locus(38, PANIC_EFFECT_KIND)
             ]
         });
@@ -582,7 +582,7 @@ mod effect_alias_reader_tests {
 
     #[test]
     fn effect_site_reader_ignores_non_panic_effect_site() {
-        let callsite = json!({"effectSite": "concept:io"});
+        let callsite = json!({"effectSite": "non-panic-effect"});
         assert!(!callsite_is_panic_site(Some(&callsite), "method:unwrap"));
     }
 
@@ -602,7 +602,7 @@ mod effect_alias_reader_tests {
     fn effect_site_reader_preserves_legacy_and_warns_on_disagreement() {
         let callsite = json!({
             "panicSite": true,
-            "effectSite": "concept:io",
+            "effectSite": "non-panic-effect",
             "file": "src/lib.rs",
             "start_line": 25
         });
