@@ -102,6 +102,7 @@ from .ir import (
     subst_var_in_formula,
 )
 from .translate_universe import (
+    branch_literal_universe_for_callee,
     callee_is_nondeterministic,
     constant_universe_for_callee,
     delegation_universe_for_callee,
@@ -3307,6 +3308,36 @@ def _universe_conjuncts(
                     [subject_term, str_const(universe.forbidden)],
                 )
             )
+
+    # BRANCH-LITERAL DISJUNCTION (census non-return:If, 75k bodies, and
+    # the multi-return residual of return-constant): every Return in the
+    # body returns a same-kind literal and the body cannot fall off the
+    # end, so the output is ONE OF the walked literals — no condition
+    # evaluation needed. A consumer asserting any value outside the set
+    # conjoins to UNSAT.
+    branch_u, branch_refusal = branch_literal_universe_for_callee(callee)
+    if branch_refusal is not None:
+        out.warnings.append(
+            LiftWarning(
+                source_path=source_path,
+                item_name=f"{test_name}::branch-literal-universe",
+                reason=f"{branch_refusal.callee}: {branch_refusal.reason}",
+            )
+        )
+    elif branch_u is not None:
+        k = branch_u.value_kind
+        if k == "int":
+            mk = num
+        elif k == "bool":
+            mk = bool_const
+        elif k == "str":
+            mk = str_const
+        else:  # bytes (walk admits ascii only)
+            def mk(v):
+                return ctor("python:bytes", [str_const(v.decode("ascii"))])
+        conjuncts.append(
+            or_([eq(subject_term, mk(v)) for v in branch_u.values])
+        )
     if isinstance(subject_term, _Ctor):
         guards, guard_refusal = guard_universe_for_callee(callee)
         if guard_refusal is not None:

@@ -154,7 +154,7 @@ _NAMED: dict = {
     "return-constant": _lifted(
         "constant_universe_for_callee",
         "equality with the unconditioned literal",
-        residual="non-ascii bytes literals refuse loudly (named)",
+        residual="non-ascii bytes literals refuse loudly (named); multi-return literal bodies lift via the branch-literal disjunction family",
     ),
     "return-name": _lifted(
         "delegation_universe_for_callee",
@@ -217,9 +217,14 @@ _NON_RETURN: dict = {
     ),
     "AugAssign": _debt("binding tail (see Assign)"),
     "AnnAssign": _debt("binding tail (see Assign)"),
-    "If": _debt(
-        "control tail: per-branch return analysis owed — multi-return "
-        "bodies are today's named refusal in every family"
+    "If": _lifted(
+        "branch_literal_universe_for_callee",
+        "branch-literal disjunction: every Return a same-kind literal + "
+        "terminal tail (Return|Raise|If both arms, recursively) — "
+        "output ∈ {walked literals}, no condition evaluation",
+        residual="computed branches, mixed kinds (cross-sort), bare "
+        "returns, and loop/try tails refuse or stay non-candidates by "
+        "name",
     ),
     "While": _debt("control tail (see If)"),
     "For": _debt("control tail (see If)"),

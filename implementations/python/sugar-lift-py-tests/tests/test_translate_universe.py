@@ -2098,3 +2098,237 @@ def test_method_delegation_skips_symbolic_instantiation():
     mapped = l2._mapped_delegate_args(u.args, call_args)
     term = mk_ctor(l2._callval_head("upper", len(mapped)), mapped)
     assert not l2._euf_args_all_concrete(term)
+
+
+# ---------------------------------------------------------------------------
+# branch-literal disjunction (census non-return:If, 75k bodies): every
+# Return returns a same-kind literal and the body cannot fall off the end
+# (terminality: Return | Raise | If with both arms terminal, recursively),
+# so output ∈ {walked literals} — sound with NO condition evaluation: any
+# execution that returns at all returns SOME Return node's value. Mixed
+# kinds refuse by name (the #2103 cross-sort hazard: one subject, two
+# theories).
+# ---------------------------------------------------------------------------
+
+
+def _branch(callee):
+    from sugar_lift_py_tests.translate_universe import (
+        branch_literal_universe_for_callee,
+    )
+
+    branch_literal_universe_for_callee.cache_clear()
+    return branch_literal_universe_for_callee(callee)
+
+
+def test_branch_literal_if_else_walks(vendor_path):
+    vendor_path(
+        "vendbranch_ok",
+        'def pick(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    else:\n'
+        '        return "b"\n',
+    )
+    u, r = _branch("vendbranch_ok.pick")
+    assert r is None and u is not None
+    assert u.values == ("a", "b") and u.value_kind == "str"
+
+
+def test_branch_literal_elif_chain_walks(vendor_path):
+    vendor_path(
+        "vendbranch_chain",
+        "def grade(x):\n"
+        "    if x > 90:\n"
+        "        return 1\n"
+        "    elif x > 50:\n"
+        "        return 2\n"
+        "    else:\n"
+        "        return 3\n",
+    )
+    u, r = _branch("vendbranch_chain.grade")
+    assert r is None and u is not None
+    assert u.values == (1, 2, 3) and u.value_kind == "int"
+
+
+def test_branch_literal_tail_return_walks(vendor_path):
+    # if-without-else followed by a tail return: terminal via the LAST
+    # statement, the if's returns still join the disjunction
+    vendor_path(
+        "vendbranch_tail",
+        'def flag(x):\n'
+        '    if x:\n'
+        '        return "yes"\n'
+        '    return "no"\n',
+    )
+    u, r = _branch("vendbranch_tail.flag")
+    assert r is None and u is not None
+    assert u.values == ("yes", "no")
+
+
+def test_branch_literal_dedupes_repeated_values(vendor_path):
+    vendor_path(
+        "vendbranch_dup",
+        'def same(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return "a"\n',
+    )
+    u, r = _branch("vendbranch_dup.same")
+    assert r is None and u is not None and u.values == ("a",)
+
+
+def test_branch_literal_mixed_kinds_refuse(vendor_path):
+    vendor_path(
+        "vendbranch_mixed",
+        'def odd(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return 1\n',
+    )
+    u, r = _branch("vendbranch_mixed.odd")
+    assert u is None and r is not None and "cross-sort" in r.reason
+
+
+def test_branch_literal_bare_return_refuses(vendor_path):
+    vendor_path(
+        "vendbranch_bare",
+        'def odd(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return\n',
+    )
+    u, r = _branch("vendbranch_bare.odd")
+    assert u is None and r is not None and "bare" in r.reason
+
+
+def test_branch_literal_computed_branch_not_candidate(vendor_path):
+    vendor_path(
+        "vendbranch_comp",
+        'def f(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return x\n',
+    )
+    u, r = _branch("vendbranch_comp.f")
+    assert u is None and r is None
+
+
+def test_branch_literal_loop_tail_not_terminal(vendor_path):
+    # a while-tail can fall off the end -> implicit None would join the
+    # set; the terminality check excludes it (named residual)
+    vendor_path(
+        "vendbranch_loop",
+        'def f(x):\n'
+        '    while x:\n'
+        '        return "a"\n',
+    )
+    u, r = _branch("vendbranch_loop.f")
+    assert u is None and r is None
+
+
+def test_branch_literal_single_return_is_constant_territory(vendor_path):
+    vendor_path(
+        "vendbranch_single", 'def f(x):\n    return "a"\n'
+    )
+    u, r = _branch("vendbranch_single.f")
+    assert u is None and r is None
+
+
+def test_branch_literal_generator_excluded(vendor_path):
+    vendor_path(
+        "vendbranch_gen",
+        'def f(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    yield "b"\n',
+    )
+    u, r = _branch("vendbranch_gen.f")
+    assert u is None and r is None
+
+
+def test_branch_literal_walrus_guard_refuses(vendor_path):
+    vendor_path(
+        "vendbranch_walrus",
+        'def f(x):\n'
+        '    if (x := x + 1) > 99:\n'
+        '        raise ValueError(x)\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return "b"\n',
+    )
+    u, r = _branch("vendbranch_walrus.f")
+    assert u is None and r is not None and "walrus" in r.reason
+
+
+def test_branch_literal_sample_gate_refuses_outside_value(vendor_path):
+    vendor_path(
+        "vendbranch_gate",
+        'def pick(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return "b"\n',
+    )
+    vendor_path(
+        "test_vendbranch_gate",
+        'import vendbranch_gate\n\n'
+        'def test_p():\n'
+        '    assert vendbranch_gate.pick(1) == "z"\n',
+    )
+    u, r = _branch("vendbranch_gate.pick")
+    assert u is None and r is not None and "sample-gate" in r.reason
+
+
+def test_branch_literal_sample_gate_licenses_inside_value(vendor_path):
+    vendor_path(
+        "vendbranch_gate2",
+        'def pick(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return "b"\n',
+    )
+    vendor_path(
+        "test_vendbranch_gate2",
+        'import vendbranch_gate2\n\n'
+        'def test_p():\n'
+        '    assert vendbranch_gate2.pick(1) == "a"\n',
+    )
+    u, r = _branch("vendbranch_gate2.pick")
+    assert r is None and u is not None
+    assert u.vendor_vectors_checked >= 1
+
+
+def test_branch_literal_emits_disjunction(vendor_path):
+    # e2e: the consumer swears pick(1) == "c" — outside the walked set.
+    # The inv must carry the or_ disjunction; conjoined with the claim it
+    # is UNSAT and the wrong value refutes.
+    from sugar_lift_py_tests.translate_universe import (
+        branch_literal_universe_for_callee,
+    )
+
+    branch_literal_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbranch_l2",
+        'def pick(x):\n'
+        '    if x:\n'
+        '        return "a"\n'
+        '    return "b"\n',
+    )
+    out = _lift(
+        """
+        import vendbranch_l2
+
+        def test_pick():
+            assert vendbranch_l2.pick(1) == "c"
+        """
+    )
+    ors = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        for a in getattr(d.inv, "operands", (d.inv,)):
+            if getattr(a, "kind", None) == "or":
+                ors.append(a)
+    assert ors, [d.name for d in out.decls]
+    # both walked literals appear as equality disjuncts
+    texts = repr(ors)
+    assert "'a'" in texts or '"a"' in texts or "value='a'" in texts
