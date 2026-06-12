@@ -4,6 +4,7 @@
 // and emit the raw lifted ProofIR response. Minting is a separate composition
 // step owned by `sugar mint`.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -490,6 +491,20 @@ fn render_source_report_human(report: &LiftSourceReport) -> String {
                             .to_string(),
                     )
                 });
+                let ast_summary = format_ast_type_summary(&loci);
+                if !ast_summary.is_empty() {
+                    out.push_str("  ast types:\n");
+                    for row in ast_summary {
+                        out.push_str(&format!("    {row}\n"));
+                    }
+                }
+                let ast_rollup = format_ast_rollup_summary(&loci);
+                if !ast_rollup.is_empty() {
+                    out.push_str("  ast rollup:\n");
+                    for row in ast_rollup {
+                        out.push_str(&format!("    {row}\n"));
+                    }
+                }
                 for locus in loci {
                     let file = locus
                         .get("file")
@@ -517,6 +532,254 @@ fn render_source_report_human(report: &LiftSourceReport) -> String {
     }
 
     out
+}
+
+#[derive(Clone, Debug)]
+struct AstRollupLocus {
+    status: String,
+    ast_kind: String,
+    ast_path: String,
+}
+
+fn format_ast_type_summary(loci: &[&Value]) -> Vec<String> {
+    let mut by_status: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+    for locus in loci {
+        let Some(ast_kind) = locus.get("ast_kind").and_then(Value::as_str) else {
+            continue;
+        };
+        if ast_kind.is_empty() || ast_kind == "?" {
+            continue;
+        }
+        let status = locus
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unclassified");
+        *by_status
+            .entry(status.to_string())
+            .or_default()
+            .entry(ast_kind.to_string())
+            .or_default() += 1;
+    }
+
+    let mut rows = by_status.into_iter().collect::<Vec<_>>();
+    rows.sort_by_key(|(status, _)| (source_status_order(status), status.clone()));
+    rows.into_iter()
+        .map(|(status, counts)| {
+            let counts = counts
+                .into_iter()
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{status}: {counts}")
+        })
+        .collect()
+}
+
+fn format_ast_rollup_summary(loci: &[&Value]) -> Vec<String> {
+    let ast_loci = loci
+        .iter()
+        .filter_map(|locus| {
+            let ast_kind = locus.get("ast_kind").and_then(Value::as_str)?;
+            if ast_kind.is_empty() || ast_kind == "?" {
+                return None;
+            }
+            let ast_path = locus.get("ast_path").and_then(Value::as_str)?;
+            if ast_path.is_empty() {
+                return None;
+            }
+            Some(AstRollupLocus {
+                status: locus
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unclassified")
+                    .to_string(),
+                ast_kind: ast_kind.to_string(),
+                ast_path: ast_path.to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    if ast_loci.is_empty() {
+        return Vec::new();
+    }
+
+    let mut roots_by_status: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+    let mut constraint_roots_by_status: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+    let mut constraint_children_by_status: BTreeMap<String, BTreeMap<String, i64>> =
+        BTreeMap::new();
+    let mut support_roots_by_status: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+    let mut covered_by_status: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+
+    for (index, locus) in ast_loci.iter().enumerate() {
+        let covered_by_parent = ast_loci
+            .iter()
+            .enumerate()
+            .any(|(candidate_index, candidate)| {
+                candidate_index != index
+                    && candidate.status == locus.status
+                    && dominates_ast_subtree(candidate, locus)
+            });
+        if covered_by_parent {
+            *covered_by_status
+                .entry(locus.status.clone())
+                .or_default()
+                .entry(locus.ast_kind.clone())
+                .or_default() += 1;
+            if is_constraint_ast_kind(&locus.ast_kind) {
+                *constraint_children_by_status
+                    .entry(locus.status.clone())
+                    .or_default()
+                    .entry(locus.ast_kind.clone())
+                    .or_default() += 1;
+            }
+            continue;
+        }
+
+        *roots_by_status
+            .entry(locus.status.clone())
+            .or_default()
+            .entry(locus.ast_kind.clone())
+            .or_default() += 1;
+        if is_constraint_ast_kind(&locus.ast_kind) {
+            *constraint_roots_by_status
+                .entry(locus.status.clone())
+                .or_default()
+                .entry(locus.ast_kind.clone())
+                .or_default() += 1;
+        }
+        if is_support_ast_kind(&locus.ast_kind) {
+            *support_roots_by_status
+                .entry(locus.status.clone())
+                .or_default()
+                .entry(locus.ast_kind.clone())
+                .or_default() += 1;
+        }
+    }
+
+    let mut statuses = roots_by_status.keys().cloned().collect::<Vec<_>>();
+    statuses.sort_by_key(|status| (source_status_order(status), status.clone()));
+    let mut rows = Vec::new();
+    for status in statuses {
+        if let Some(counts) = roots_by_status.get(&status) {
+            rows.push(format!(
+                "{status} roots: {}",
+                format_ast_kind_counts(counts)
+            ));
+        }
+        if let Some(counts) = constraint_roots_by_status.get(&status) {
+            if !counts.is_empty() {
+                rows.push(format!(
+                    "{status} constraint roots: {}",
+                    format_ast_kind_counts(counts)
+                ));
+            }
+        }
+        if let Some(counts) = constraint_children_by_status.get(&status) {
+            if !counts.is_empty() {
+                rows.push(format!(
+                    "{status} constraint children: {}",
+                    format_ast_kind_counts(counts)
+                ));
+            }
+        }
+        if let Some(counts) = support_roots_by_status.get(&status) {
+            if !counts.is_empty() {
+                rows.push(format!(
+                    "{status} support roots: {}",
+                    format_ast_kind_counts(counts)
+                ));
+            }
+        }
+        if let Some(counts) = covered_by_status.get(&status) {
+            if !counts.is_empty() {
+                rows.push(format!(
+                    "{status} covered by parent: {}",
+                    format_ast_kind_counts(counts)
+                ));
+            }
+        }
+    }
+    rows
+}
+
+fn dominates_ast_subtree(parent: &AstRollupLocus, child: &AstRollupLocus) -> bool {
+    let Some(relative_path) = child.ast_path.strip_prefix(&parent.ast_path) else {
+        return false;
+    };
+    if !relative_path.starts_with('.') {
+        return false;
+    }
+    if parent_is_structural_body_container(&parent.ast_kind) && relative_path.starts_with(".body[")
+    {
+        return false;
+    }
+    true
+}
+
+fn parent_is_structural_body_container(ast_kind: &str) -> bool {
+    matches!(ast_kind, "FunctionDef" | "AsyncFunctionDef" | "ClassDef")
+}
+
+fn is_constraint_ast_kind(ast_kind: &str) -> bool {
+    matches!(
+        ast_kind,
+        "Assert"
+            | "Assign"
+            | "AnnAssign"
+            | "AugAssign"
+            | "Await"
+            | "BinOp"
+            | "BoolOp"
+            | "Call"
+            | "Compare"
+            | "Dict"
+            | "DictComp"
+            | "For"
+            | "FormattedValue"
+            | "GeneratorExp"
+            | "If"
+            | "IfExp"
+            | "JoinedStr"
+            | "List"
+            | "ListComp"
+            | "Match"
+            | "Raise"
+            | "Return"
+            | "Set"
+            | "SetComp"
+            | "Subscript"
+            | "Try"
+            | "Tuple"
+            | "UnaryOp"
+            | "While"
+            | "Yield"
+    )
+}
+
+fn is_support_ast_kind(ast_kind: &str) -> bool {
+    matches!(
+        ast_kind,
+        "Import" | "ImportFrom" | "FunctionDef" | "AsyncFunctionDef" | "ClassDef"
+    )
+}
+
+fn format_ast_kind_counts(counts: &BTreeMap<String, i64>) -> String {
+    counts
+        .iter()
+        .map(|(kind, count)| format!("{kind}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn source_status_order(status: &str) -> usize {
+    match status {
+        "warranted" => 0,
+        "refused" => 1,
+        "inactive" => 2,
+        "refuted" => 3,
+        "work" => 4,
+        "unclassified" => 5,
+        _ => 6,
+    }
 }
 
 fn memento_group_key(memento: &Value) -> Option<String> {
@@ -1541,8 +1804,197 @@ mod tests {
             "package itsdangerous at /site-packages/itsdangerous [python.package-source / package-accounting]"
         ));
         assert!(!human.contains("<missing source memento>"));
+        assert!(human
+            .contains("/site-packages/itsdangerous/serializer.py:245 unclassified FunctionDef"));
+    }
+
+    #[test]
+    fn human_report_summarizes_source_ast_types_by_status() {
+        let response = serde_json::json!({
+            "kind": "ir-document",
+            "ir": [],
+            "sourceLedger": {
+                "source_loci": 4,
+                "source_warranted": 0,
+                "source_refused": 0,
+                "source_inactive": 0,
+                "source_refuted": 0,
+                "source_work": 0,
+                "unclassified_source": 4
+            },
+            "sourceAudits": [
+                {
+                    "kind": "source-audit",
+                    "role": "python.package-source",
+                    "universe_kind": "package-accounting",
+                    "package": "vendpkg",
+                    "package_root": "/site-packages/vendpkg",
+                    "contract": {"name": "vendpkg#source-accounting"},
+                    "totals": {
+                        "source_loci": 4,
+                        "source_warranted": 0,
+                        "source_refused": 0,
+                        "source_inactive": 0,
+                        "source_refuted": 0,
+                        "source_work": 0,
+                        "unclassified_source": 4
+                    },
+                    "loci": [
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 10,
+                            "status": "unclassified",
+                            "ast_kind": "Assign"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 11,
+                            "status": "unclassified",
+                            "ast_kind": "If"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 11,
+                            "status": "unclassified",
+                            "ast_kind": "Compare"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 11,
+                            "status": "unclassified",
+                            "ast_kind": "Subscript"
+                        }
+                    ]
+                }
+            ],
+            "sourceMementos": []
+        });
+        let report = source_report_from_lift_response(&response, Some("vendpkg")).expect("report");
+        let human = render_source_report_human(&report);
+
+        assert!(human.contains("  ast types:\n"));
+        assert!(human.contains("    unclassified: Assign=1, Compare=1, If=1, Subscript=1"));
+    }
+
+    #[test]
+    fn human_report_rolls_ast_children_up_to_actionable_parent_shapes() {
+        let response = serde_json::json!({
+            "kind": "ir-document",
+            "ir": [],
+            "sourceLedger": {
+                "source_loci": 10,
+                "source_warranted": 0,
+                "source_refused": 0,
+                "source_inactive": 0,
+                "source_refuted": 0,
+                "source_work": 0,
+                "unclassified_source": 10
+            },
+            "sourceAudits": [
+                {
+                    "kind": "source-audit",
+                    "role": "python.package-source",
+                    "universe_kind": "package-accounting",
+                    "package": "vendpkg",
+                    "package_root": "/site-packages/vendpkg",
+                    "contract": {"name": "vendpkg#source-accounting"},
+                    "totals": {
+                        "source_loci": 10,
+                        "source_warranted": 0,
+                        "source_refused": 0,
+                        "source_inactive": 0,
+                        "source_refuted": 0,
+                        "source_work": 0,
+                        "unclassified_source": 10
+                    },
+                    "loci": [
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 1,
+                            "status": "unclassified",
+                            "ast_kind": "ImportFrom",
+                            "ast_path": "$.module.body[0]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 1,
+                            "status": "unclassified",
+                            "ast_kind": "alias",
+                            "ast_path": "$.module.body[0].names[0]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 3,
+                            "status": "unclassified",
+                            "ast_kind": "FunctionDef",
+                            "ast_path": "$.module.body[1]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 3,
+                            "status": "unclassified",
+                            "ast_kind": "arg",
+                            "ast_path": "$.module.body[1].args.args[0]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 4,
+                            "status": "unclassified",
+                            "ast_kind": "Assign",
+                            "ast_path": "$.module.body[1].body[0]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 4,
+                            "status": "unclassified",
+                            "ast_kind": "Name",
+                            "ast_path": "$.module.body[1].body[0].targets[0]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 5,
+                            "status": "unclassified",
+                            "ast_kind": "If",
+                            "ast_path": "$.module.body[1].body[1]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 5,
+                            "status": "unclassified",
+                            "ast_kind": "Compare",
+                            "ast_path": "$.module.body[1].body[1].test"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 5,
+                            "status": "unclassified",
+                            "ast_kind": "Subscript",
+                            "ast_path": "$.module.body[1].body[1].test.comparators[0]"
+                        },
+                        {
+                            "file": "/site-packages/vendpkg/core.py",
+                            "line": 5,
+                            "status": "unclassified",
+                            "ast_kind": "Name",
+                            "ast_path": "$.module.body[1].body[1].test.comparators[0].value"
+                        }
+                    ]
+                }
+            ],
+            "sourceMementos": []
+        });
+        let report = source_report_from_lift_response(&response, Some("vendpkg")).expect("report");
+        let human = render_source_report_human(&report);
+
+        assert!(human.contains("  ast rollup:\n"));
+        assert!(
+            human.contains("    unclassified roots: Assign=1, FunctionDef=1, If=1, ImportFrom=1")
+        );
+        assert!(human.contains("    unclassified constraint roots: Assign=1, If=1"));
+        assert!(human.contains("    unclassified constraint children: Compare=1, Subscript=1"));
+        assert!(human.contains("    unclassified support roots: FunctionDef=1, ImportFrom=1"));
         assert!(human.contains(
-            "/site-packages/itsdangerous/serializer.py:245 unclassified FunctionDef"
+            "    unclassified covered by parent: Compare=1, Name=2, Subscript=1, alias=1, arg=1"
         ));
     }
 

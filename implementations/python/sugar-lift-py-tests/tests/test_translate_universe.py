@@ -301,6 +301,29 @@ def test_lift_source_exposes_source_audit_countdown(vendor_path):
     assert lifted["sourceAudits"]
 
 
+def test_lift_source_dedupes_shared_fact_source_audits(vendor_path, tmp_path):
+    vendor_path("vendrstrip_dedupe", VENDOR_RSTRIP)
+    source = textwrap.dedent(
+        """
+        import vendrstrip_dedupe
+
+        def test_token():
+            assert vendrstrip_dedupe.b64e("abc") == "abc"
+        """
+    )
+    source_path = tmp_path / "test_mod.py"
+    source_path.write_text(source, encoding="utf-8")
+    lifted = _lift_source(str(source_path), source)
+
+    fact_audits = [
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.test-fact"
+    ]
+    assert len(fact_audits) == 1
+    assert fact_audits[0]["totals"]["source_warranted"] == 1
+
+
 def test_lift_source_emits_package_unclassified_accounting(tmp_path, monkeypatch):
     pkg = tmp_path / "vendpkg_accounting"
     pkg.mkdir()
