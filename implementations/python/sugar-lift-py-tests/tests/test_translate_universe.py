@@ -1340,3 +1340,335 @@ def test_pure_guard_guard_family_still_licenses(vendor_path):
     assert refusal is None
     assert guards is not None
     assert len(guards.clauses) == 1
+
+
+# ---------------------------------------------------------------------------
+# pure-delegation + identity family (census: 57k delegation bodies + the
+# param arm of return-name's 146k). The body forwards verbatim, so the
+# output EQUALS the forwarded term — eq between call terms in EUF, zero
+# new atoms. The license is syntactic (the body IS the claim); every
+# refusal class is named and each is confirmed against a twin that still
+# licenses.
+# ---------------------------------------------------------------------------
+
+VENDOR_DELEG = '''
+def g(a, b):
+    return a + b
+
+
+def f(a, b):
+    return g(b, a)
+
+
+def ident(x):
+    return x
+
+
+def second(a, b):
+    return b
+
+
+def partial(a):
+    return g(a, 5)
+
+
+def forward_all(*args):
+    return g(*args)
+'''
+
+
+def _deleg(callee):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    return delegation_universe_for_callee(callee)
+
+
+def test_identity_walks(vendor_path):
+    vendor_path("venddeleg_ok", VENDOR_DELEG)
+    u, r = _deleg("venddeleg_ok.ident")
+    assert r is None and u is not None
+    assert (u.kind, u.param_index) == ("identity", 0)
+    u2, r2 = _deleg("venddeleg_ok.second")
+    assert r2 is None and (u2.kind, u2.param_index) == ("identity", 1)
+
+
+def test_delegation_walks_with_reordered_params(vendor_path):
+    vendor_path("venddeleg_ok2", VENDOR_DELEG)
+    u, r = _deleg("venddeleg_ok2.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation"
+    assert u.delegate == "venddeleg_ok2.g"
+    assert u.args == (("param", 1), ("param", 0))
+
+
+def test_delegation_walks_with_literal_arg(vendor_path):
+    vendor_path("venddeleg_ok3", VENDOR_DELEG)
+    u, r = _deleg("venddeleg_ok3.partial")
+    assert r is None and u is not None
+    assert u.args == (("param", 0), ("lit", 5, "int"))
+
+
+def test_splat_forwarding_walks(vendor_path):
+    vendor_path("venddeleg_ok4", VENDOR_DELEG)
+    u, r = _deleg("venddeleg_ok4.forward_all")
+    assert r is None and u is not None
+    assert u.kind == "delegation-splat"
+    assert u.delegate == "venddeleg_ok4.g"
+
+
+def test_free_name_return_is_not_identity(vendor_path):
+    vendor_path(
+        "venddeleg_free", "Y = 3\n\ndef f(x):\n    return Y\n"
+    )
+    u, r = _deleg("venddeleg_free.f")
+    assert u is None and r is None  # return-name's pinned-local arm, not ours
+
+
+def test_rebound_param_is_not_identity(vendor_path):
+    vendor_path(
+        "venddeleg_rebind", "def f(x):\n    x = x + 1\n    return x\n"
+    )
+    u, r = _deleg("venddeleg_rebind.f")
+    assert u is None and r is None  # two statements: not a forwarding body
+
+
+def test_walrus_guard_delegation_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_walrus",
+        "def f(x):\n"
+        "    if (x := x + 10) > 100:\n"
+        "        raise ValueError(x)\n"
+        "    return x\n",
+    )
+    u, r = _deleg("venddeleg_walrus.f")
+    assert u is None and r is not None and "walrus" in r.reason
+
+
+def test_pure_guard_identity_still_licenses(vendor_path):
+    vendor_path(
+        "venddeleg_guarded",
+        "def f(x):\n"
+        "    if x > 100:\n"
+        "        raise ValueError(x)\n"
+        "    return x\n",
+    )
+    u, r = _deleg("venddeleg_guarded.f")
+    assert r is None and u is not None and u.kind == "identity"
+
+
+def test_keyword_forwarding_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_kw",
+        "def g(a, b):\n    return a\n\ndef f(a, b):\n    return g(a, b=b)\n",
+    )
+    u, r = _deleg("venddeleg_kw.f")
+    assert u is None and r is not None and "keyword" in r.reason
+
+
+def test_computed_arg_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_computed",
+        "def g(a):\n    return a\n\ndef f(a):\n    return g(a + 1)\n",
+    )
+    u, r = _deleg("venddeleg_computed.f")
+    assert u is None and r is not None
+    assert "neither a parameter nor an ascii literal" in r.reason
+
+
+def test_imported_delegate_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_import",
+        "from os.path import join\n\ndef f(a):\n    return join(a)\n",
+    )
+    u, r = _deleg("venddeleg_import.f")
+    assert u is None and r is not None
+    assert "not a module-level function" in r.reason
+
+
+def test_nondeterministic_delegate_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_nondet",
+        "import random\n\n"
+        "def g(a):\n    return a + random.random()\n\n"
+        "def f(a):\n    return g(a)\n",
+    )
+    u, r = _deleg("venddeleg_nondet.f")
+    assert u is None and r is not None and "nondeterminism" in r.reason
+
+
+def test_rebound_delegate_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_rebound",
+        "def g(a):\n    return a\n\ng = len\n\ndef f(a):\n    return g(a)\n",
+    )
+    u, r = _deleg("venddeleg_rebound.f")
+    assert u is None and r is not None and "binding events" in r.reason
+
+
+def test_global_puncture_delegate_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_glob",
+        "def g(a):\n    return a\n\n"
+        "def swap():\n    global g\n    g = len\n\n"
+        "def f(a):\n    return g(a)\n",
+    )
+    u, r = _deleg("venddeleg_glob.f")
+    assert u is None and r is not None and "global" in r.reason
+
+
+def test_self_delegation_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_self", "def f(a):\n    return f(a)\n"
+    )
+    u, r = _deleg("venddeleg_self.f")
+    assert u is None and r is not None and "self-delegation" in r.reason
+
+
+def test_async_delegate_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_async",
+        "async def g(a):\n    return a\n\ndef f(a):\n    return g(a)\n",
+    )
+    u, r = _deleg("venddeleg_async.f")
+    assert u is None and r is not None and "async" in r.reason
+
+
+def test_splat_with_extra_arg_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_splatx",
+        "def g(*a):\n    return a\n\n"
+        "def f(*args):\n    return g(*args, 1)\n",
+    )
+    u, r = _deleg("venddeleg_splatx.f")
+    assert u is None and r is not None and "splat" in r.reason
+
+
+def test_multiple_returns_not_delegation(vendor_path):
+    vendor_path(
+        "venddeleg_multi",
+        "def g(a):\n    return a\n\n"
+        "def f(a):\n    if a:\n        return g(a)\n    return g(a)\n",
+    )
+    u, r = _deleg("venddeleg_multi.f")
+    assert u is None and r is None  # not a single-return forwarding body
+
+
+def _delegation_eq_atoms(out, delegate_head_fragment):
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    found = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            for a in _iter_conjuncts(d.inv):
+                if getattr(a, "name", None) != "=":
+                    continue
+                for side in getattr(a, "args", ()):
+                    if delegate_head_fragment in getattr(side, "name", ""):
+                        found.append(a)
+    return found
+
+
+def test_delegation_emits_call_term_equality(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path("venddeleg_l2", VENDOR_DELEG)
+    out = _lift(
+        """
+        import venddeleg_l2
+
+        def test_route():
+            assert venddeleg_l2.f(1, 2) == 3
+        """
+    )
+    # the universe ties callresult_<f>(1,2) to callresult_<g>(2,1): claims
+    # about f and claims about g now meet in one term. A consumer swearing
+    # venddeleg_l2.g(2, 1) != 3 elsewhere would conjoin to UNSAT.
+    atoms = _delegation_eq_atoms(out, "callresult_venddeleg_l2_g_a2")
+    assert atoms, [d.name for d in out.decls]
+
+
+def test_identity_universe_contradicts_wrong_claim(vendor_path):
+    # THE BAD TWIN: the consumer swears ident(7) == 8; the identity
+    # universe swears the output IS the argument (== 7). Both equalities
+    # land in the SAME conjoined ::assertion inv — the conjunction is
+    # UNSAT and the wrong claim refutes. (The good twin's universe
+    # conjunct is byte-identical to the consumer's own assertion and is
+    # correctly deduped — the universe adds information exactly when the
+    # claim deviates.)
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _ConstInt
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path("venddeleg_l2i", VENDOR_DELEG)
+    out = _lift(
+        """
+        import venddeleg_l2i
+
+        def test_ident():
+            assert venddeleg_l2i.ident(7) == 8
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    claimed, universe = [], []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            for a in _iter_conjuncts(d.inv):
+                if getattr(a, "name", None) != "=":
+                    continue
+                args = getattr(a, "args", ())
+                if len(args) == 2 and isinstance(args[1], _ConstInt):
+                    (claimed if args[1].value == 8 else universe).append(
+                        (a, args[1].value)
+                    )
+    assert claimed, [d.name for d in out.decls]
+    assert [v for _, v in universe] == [7], universe
+
+
+def test_impure_delegate_emits_no_equality_but_warns(vendor_path):
+    # DEFENSE IN DEPTH, the case only the walk catches: a nondeterminism
+    # source FOUR hops from f (f->g->h->i->random). callee_is_nondeterministic
+    # scans depth 3 from f and clears it, so the assertion still lifts and
+    # argument-keys; the walk then scans depth 3 from the DELEGATE g,
+    # reaches the source, and refuses to equate — surfaced as a loud
+    # warning, never silence. (One hop closer and the callee gate itself
+    # de-keys the call before any universe is consulted — also covered:
+    # test_nondeterministic_delegate_refuses exercises the walk directly.)
+    from sugar_lift_py_tests.translate_universe import (
+        callee_is_nondeterministic,
+        delegation_universe_for_callee,
+    )
+
+    callee_is_nondeterministic.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_l2bad",
+        "import random\n\n"
+        "def i(a):\n    return a + random.random()\n\n"
+        "def h(a):\n    return i(a)\n\n"
+        "def g(a):\n    return h(a)\n\n"
+        "def f(a):\n    return g(a)\n",
+    )
+    assert not callee_is_nondeterministic("venddeleg_l2bad.f")
+    out = _lift(
+        """
+        import venddeleg_l2bad
+
+        def test_route():
+            assert venddeleg_l2bad.f(1) == 2
+        """
+    )
+    atoms = _delegation_eq_atoms(out, "callresult_venddeleg_l2bad_g")
+    assert not atoms
+    assert any(
+        "delegation-universe" in w.item_name and "nondeterminism" in w.reason
+        for w in out.warnings
+    ), [(w.item_name, w.reason) for w in out.warnings]

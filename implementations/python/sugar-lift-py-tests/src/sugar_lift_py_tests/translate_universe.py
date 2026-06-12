@@ -562,6 +562,223 @@ def constant_universe_for_callee(
     )
 
 
+@dataclass(frozen=True)
+class DelegationUniverse:
+    """Census families pure-delegation (57k bodies) and the param arm of
+    return-name (146k bodies): a body that is exactly one ``return``
+    forwarding to a parameter or to a same-module function call swears an
+    EQUALITY between call terms — the composition-router edge, in EUF,
+    with zero new atoms.
+
+    - ``identity``:        ``return <param>`` — callee(args)[i-th param]
+      IS the output: eq(subject, call_args[param_index]).
+    - ``delegation``:      ``return g(<params/literals>)`` —
+      eq(subject, callresult_<module.g>(mapped args)); the consumer's own
+      claims about g key to the SAME term, so a contradiction THROUGH the
+      delegation edge conjoins and fires UNSAT.
+    - ``delegation-splat``: ``def f(*a): return g(*a)`` (optionally
+      ``**k`` mirrored) — the delegate receives exactly f's args:
+      eq(subject, callresult_<module.g>(call_args)).
+
+    ∀⊨sample: there is nothing to sample — the body IS the claim (a
+    single return of a single forwarding expression; the misread surface
+    is the multiple-return case, which the totality check excludes
+    structurally). vendor_vectors_checked stays 0 with a None source,
+    said plainly: the license is syntactic.
+
+    The walk rests on the same purity tradeoff every call-term already
+    carries (same callee + same args → same value), tightened where we
+    have evidence: a delegate whose body transitively reaches a
+    nondeterminism source REFUSES by name instead of equating."""
+
+    kind: str  # "identity" | "delegation" | "delegation-splat"
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    param_index: int = 0
+    delegate: str = ""  # qualified module.g for the delegation kinds
+    args: tuple = ()  # delegation: ("param", idx) | ("lit", value, kind)
+    vendor_vectors_checked: int = 0
+    vendor_vector_source: Optional[str] = None
+
+
+@functools.lru_cache(maxsize=None)
+def delegation_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[DelegationUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+
+    def refuse(reason):
+        return None, TranslateWalkRefusal(callee=callee, reason=reason)
+
+    def universe(**kw):
+        return (
+            DelegationUniverse(
+                module=module_name,
+                qualname=f"{module_name}.{fn_name}",
+                source_path=spec_origin,
+                lineno=fn.lineno,
+                **kw,
+            ),
+            None,
+        )
+
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    rest, tainted = _strip_guard_prefix(body)
+    if (
+        len(rest) != 1
+        or not isinstance(rest[0], ast.Return)
+        or rest[0].value is None
+    ):
+        return None, None
+    value = rest[0].value
+    if not isinstance(value, (ast.Name, ast.Call)):
+        return None, None
+    if tainted:
+        return refuse(
+            "guard-strip: a stripped guard test rebinds via walrus "
+            "(NamedExpr); the remaining body no longer sees the "
+            "callsite's arguments"
+        )
+    returns = sum(
+        1
+        for stmt in body
+        for n in ast.walk(stmt)
+        if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+    )
+    if returns != 1:
+        return None, None
+
+    # identity: return <param> verbatim
+    if isinstance(value, ast.Name):
+        if value.id not in params:
+            return None, None  # free name: not a forwarding body
+        return universe(kind="identity", param_index=params.index(value.id))
+
+    # delegation: return g(...) with g a stable same-module function
+    if not isinstance(value.func, ast.Name):
+        return None, None  # method/attribute callees are other families
+    delegate_name = value.func.id
+    if delegate_name == fn_name:
+        return refuse("self-delegation: the equality would be vacuous")
+    delegate_fn = next(
+        (
+            stmt
+            for stmt in tree.body
+            if isinstance(stmt, ast.FunctionDef)
+            and stmt.name == delegate_name
+        ),
+        None,
+    )
+    if delegate_fn is None:
+        if any(
+            isinstance(stmt, ast.AsyncFunctionDef)
+            and stmt.name == delegate_name
+            for stmt in tree.body
+        ):
+            return refuse(
+                f"delegate {delegate_name} is async: the call term is a "
+                "coroutine, not the awaited value"
+            )
+        return refuse(
+            f"delegate {delegate_name} is not a module-level function "
+            "in the vendor module (imported/dynamic delegates are not "
+            "walkable from this body alone)"
+        )
+    # binding stability: the name looked up at CALL time must be this def
+    # and nothing else — same teeth as the table walks.
+    events = [e for e in _binding_events(tree) if e.name == delegate_name]
+    if len(events) != 1:
+        return refuse(
+            f"delegate {delegate_name} has {len(events)} module-level "
+            "binding events; the name does not stably denote the def"
+        )
+    if delegate_name in _global_declarations(tree):
+        return refuse(
+            f"delegate {delegate_name} is rebindable through a global "
+            "declaration puncture"
+        )
+    module_fns = {
+        s.name: s
+        for s in tree.body
+        if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    if _body_reaches_nondet(delegate_fn, module_fns, depth=3, seen=set()):
+        return refuse(
+            f"delegate {delegate_name} transitively reaches a "
+            "nondeterminism source; equating its call terms would launder "
+            "state through EUF"
+        )
+    delegate_q = f"{module_name}.{delegate_name}"
+
+    # splat forwarding: signature exactly (*a) / (*a, **k), call mirrors it
+    fa = fn.args
+    is_splat_sig = (
+        not fa.posonlyargs
+        and not fa.args
+        and not fa.kwonlyargs
+        and fa.vararg is not None
+    )
+    if is_splat_sig:
+        call_ok = (
+            len(value.args) == 1
+            and isinstance(value.args[0], ast.Starred)
+            and isinstance(value.args[0].value, ast.Name)
+            and value.args[0].value.id == fa.vararg.arg
+        )
+        kw_ok = not value.keywords or (
+            fa.kwarg is not None
+            and len(value.keywords) == 1
+            and value.keywords[0].arg is None
+            and isinstance(value.keywords[0].value, ast.Name)
+            and value.keywords[0].value.id == fa.kwarg.arg
+        )
+        if call_ok and kw_ok:
+            return universe(kind="delegation-splat", delegate=delegate_q)
+        return refuse(
+            "splat signature without exact splat forwarding; the "
+            "delegate's arguments are not f's arguments"
+        )
+
+    if value.keywords:
+        return refuse(
+            "keyword arguments in the delegate call are not yet walked "
+            "(positional mapping only)"
+        )
+    if fa.vararg is not None or fa.kwarg is not None:
+        return refuse(
+            "mixed vararg signature: the positional mapping cannot "
+            "account for every callsite shape"
+        )
+    specs = []
+    for arg in value.args:
+        if isinstance(arg, ast.Name) and arg.id in params:
+            specs.append(("param", params.index(arg.id)))
+            continue
+        vk = _literal_value_kind(arg)
+        if vk is not None:
+            specs.append(("lit", vk[0], vk[1]))
+            continue
+        return refuse(
+            "delegate argument is neither a parameter nor an ascii "
+            "literal; the forwarded value is not the callsite's"
+        )
+    return universe(kind="delegation", delegate=delegate_q, args=tuple(specs))
+
+
 def _guard_clause(test: ast.expr, params: list) -> Optional[GuardClause]:
     if not (
         isinstance(test, ast.Compare)
