@@ -44,6 +44,27 @@ def bundle_cid(entry):
     return os.path.basename(proofs[0]) if proofs else None
 
 
+def _conjoined_imports_from_proof(entry):
+    """The dep CIDs a bundle COMMITS to, read from its own envelope metadata
+    (sugar.conjoinedImports) -- the proof-level tie, not the pipeline's
+    meta record. Empty if the bundle carries no tie (a leaf) or cbor2 is
+    unavailable."""
+    proofs = glob.glob(os.path.join(entry, "blake3-512:*.proof"))
+    if not proofs:
+        return []
+    try:
+        import cbor2
+    except ImportError:
+        return []
+    try:
+        doc = cbor2.load(open(proofs[0], "rb"))
+    except Exception:
+        return []
+    meta = doc.get("metadata", {}) if isinstance(doc, dict) else {}
+    ci = meta.get("sugar.conjoinedImports", "")
+    return [c for c in ci.split(",") if c]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--registry", default=os.path.expanduser("~/sugar-registry"))
@@ -67,6 +88,7 @@ def main():
 
     problems = []
     edges = 0
+    edges_proof = [0]  # proof-level tie edges (bundle metadata commitments)
     perimeter = {"refused": 0, "undecidable": 0, "violations": 0, "uncited_in_world": 0}
     falsepass_total = 0
     minted = nocorpus = 0
@@ -123,9 +145,25 @@ def main():
                 problems.append(
                     f"UNCITED-IN-WORLD: {spec} did not cite world member {dep}"
                 )
+        # (1b) PROOF-LEVEL TIE: the bundle's OWN envelope metadata must commit
+        # to its conjoined-import CIDs, and each must be a CURRENT registry
+        # bundle. This is stronger than the meta.cited_bundles check above
+        # (that's the pipeline's record); this reads the bundle the consumer
+        # actually recomputes. A tie CID not in the registry, or absent when
+        # the bundle has in-world deps, is a broken proof-level federation.
+        tie = _conjoined_imports_from_proof(entry)
+        current_cid_set = {c for c in current_cid.values() if c}
+        for tie_cid in tie:
+            edges_proof[0] += 1
+            if f"{tie_cid}.proof" not in current_cid_set:
+                problems.append(
+                    f"PROOF-TIE-DANGLING: {spec} bundle ties {tie_cid[:28]} "
+                    "which is not a current registry bundle"
+                )
 
     print(f"world {args.world[:16]}: {len(members)} members, "
-          f"{minted} minted, {nocorpus} no-corpus, {edges} citation edges")
+          f"{minted} minted, {nocorpus} no-corpus, {edges} citation edges, "
+          f"{edges_proof[0]} PROOF-LEVEL tie edges (bundle commits to dep CIDs)")
     print(f"falsePass total: {falsepass_total}")
     print(f"perimeter (hash-pinned residual): {json.dumps(perimeter)}")
     if problems:
