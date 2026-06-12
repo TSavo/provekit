@@ -795,6 +795,35 @@ def test_pattern5_local_assignment_scopes_pytest_assertion():
     assert consequent.args[1].value == 42
 
 
+def test_value_scope_facts_carry_lean_source_memento():
+    out = _lift("""
+        def test_parse_value_scope():
+            actual = parse_int("42")
+            assert actual == 42
+    """)
+    by_name = {d.name: d for d in out.decls}
+    facts_name = next(name for name in by_name if name.endswith("::facts"))
+    assertion_name = next(name for name in by_name if name.endswith("::assertion"))
+    facts = by_name[facts_name]
+    assertion = by_name[assertion_name]
+
+    assert len(facts.source_warrants) == 1
+    warrant = facts.source_warrants[0]
+    assert warrant["kind"] == "source-memento"
+    assert warrant["role"] == "python.test-fact"
+    assert warrant["claimName"] == facts_name
+    assert warrant["contractName"] == assertion_name
+    assert warrant["source_function_name"] == "test_parse_value_scope"
+    assert warrant["file"] == "t.py"
+    assert warrant["source_cid"].startswith("blake3-512:")
+    assert warrant["template_cid"].startswith("blake3-512:")
+    assert warrant["span"]["start_line"] == 4
+    assert "body_text" not in warrant
+    assert "ast_template" not in warrant
+
+    assert assertion.source_warrants == [warrant]
+
+
 def test_pattern5_if_else_scopes_assertion_to_each_branch():
     # BINDING-FORM EUF SUBSTITUTION: the if-branch binds ``actual = parse_int(raw)``
     # (symbolic arg -> location-keyed, unchanged); the else-branch binds

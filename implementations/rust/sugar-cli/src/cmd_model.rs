@@ -188,7 +188,10 @@ pub fn run(args: ModelArgs) -> u8 {
     let dq = match emit_derive_query(&bv_tree, &args.inputs) {
         Ok(q) => q,
         Err(e) => {
-            eprintln!("{}: derive query emission failed: {e}", "error".red().bold());
+            eprintln!(
+                "{}: derive query emission failed: {e}",
+                "error".red().bold()
+            );
             return EXIT_USER_ERROR;
         }
     };
@@ -266,13 +269,20 @@ pub fn run(args: ModelArgs) -> u8 {
             }
         };
         if let Err(e) = std::fs::write(path, &json_str) {
-            eprintln!("{}: writing receipt to {:?}: {e}", "error".red().bold(), path);
+            eprintln!(
+                "{}: writing receipt to {:?}: {e}",
+                "error".red().bold(),
+                path
+            );
             return EXIT_SOLVER_FAIL;
         }
     }
 
     if args.out.json {
-        println!("{}", serde_json::to_string_pretty(&receipt).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&receipt).unwrap_or_default()
+        );
     } else {
         println!();
         println!("  {}", "z3.model derive result".bold());
@@ -320,13 +330,19 @@ struct BlocksDeriveReceipt {
 fn run_blocks_derive(args: &ModelArgs, payload_json: &str) -> u8 {
     // Validate the payload is JSON before handing it on (named refusal).
     if serde_json::from_str::<Json>(payload_json).is_err() {
-        eprintln!("{}: --blocks-payload is not valid JSON", "error".red().bold());
+        eprintln!(
+            "{}: --blocks-payload is not valid JSON",
+            "error".red().bold()
+        );
         return EXIT_USER_ERROR;
     }
     let dq = match emit_blocks_derive_query(payload_json) {
         Ok(q) => q,
         Err(e) => {
-            eprintln!("{}: blocks derive emission failed: {e}", "error".red().bold());
+            eprintln!(
+                "{}: blocks derive emission failed: {e}",
+                "error".red().bold()
+            );
             return EXIT_USER_ERROR;
         }
     };
@@ -349,7 +365,11 @@ fn run_blocks_derive(args: &ModelArgs, payload_json: &str) -> u8 {
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}: could not spawn z3 ({}): {e}", "error".red().bold(), args.z3);
+            eprintln!(
+                "{}: could not spawn z3 ({}): {e}",
+                "error".red().bold(),
+                args.z3
+            );
             return EXIT_SOLVER_FAIL;
         }
     };
@@ -409,7 +429,11 @@ fn run_blocks_derive(args: &ModelArgs, payload_json: &str) -> u8 {
         match serde_json::to_string_pretty(&receipt) {
             Ok(s) => {
                 if let Err(e) = std::fs::write(path, &s) {
-                    eprintln!("{}: writing receipt to {:?}: {e}", "error".red().bold(), path);
+                    eprintln!(
+                        "{}: writing receipt to {:?}: {e}",
+                        "error".red().bold(),
+                        path
+                    );
                     return EXIT_SOLVER_FAIL;
                 }
             }
@@ -421,13 +445,19 @@ fn run_blocks_derive(args: &ModelArgs, payload_json: &str) -> u8 {
     }
 
     if args.out.json {
-        println!("{}", serde_json::to_string_pretty(&receipt).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&receipt).unwrap_or_default()
+        );
     } else {
         println!();
         println!("  {}", "z3.model strong-tier string derive".bold());
         println!("  z3 verdict     : {}", verdict.green().bold());
         println!("  z3 model       : {model_line}");
-        println!("  derived string : {}", format!("\"{derived}\"").green().bold());
+        println!(
+            "  derived string : {}",
+            format!("\"{derived}\"").green().bold()
+        );
         println!();
         println!(
             "  {} z3.model DERIVES {} from the walked block equations — derived, not executed.",
@@ -592,7 +622,10 @@ mod tests {
         let mut out = Vec::new();
         collect_universe_bv_trees(&body, &mut out);
         assert_eq!(out.len(), 1, "should collect exactly one bv_tree");
-        assert_eq!(out[0]["name"], "bv32.ite", "must collect args[1] (the bv_tree)");
+        assert_eq!(
+            out[0]["name"], "bv32.ite",
+            "must collect args[1] (the bv_tree)"
+        );
     }
 
     #[test]
@@ -602,7 +635,10 @@ mod tests {
         });
         let mut out = Vec::new();
         collect_universe_bv_trees(&body, &mut out);
-        assert!(out.is_empty(), "no universe atom -> empty (the refuse path)");
+        assert!(
+            out.is_empty(),
+            "no universe atom -> empty (the refuse path)"
+        );
     }
 
     #[test]
@@ -617,7 +653,11 @@ mod tests {
                 distinct.push(t);
             }
         }
-        assert_eq!(distinct.len(), 1, "same definition at N call-sites = one distinct tree");
+        assert_eq!(
+            distinct.len(),
+            1,
+            "same definition at N call-sites = one distinct tree"
+        );
     }
 
     #[test]
@@ -633,7 +673,11 @@ mod tests {
                 distinct.push(t);
             }
         }
-        assert_eq!(distinct.len(), 2, "two different definitions stay distinct -> ambiguous");
+        assert_eq!(
+            distinct.len(),
+            2,
+            "two different definitions stay distinct -> ambiguous"
+        );
     }
 
     #[test]
@@ -642,17 +686,25 @@ mod tests {
         // definitions must refuse, not first-match. We build the catalog with
         // the same encoder the minter uses so extract_bv_tree_from_proof reads it.
         let body_abs = member_with_universe(-5, abs_tree());
-        let body_neg = member_with_universe(-5, serde_json::json!(
-            {"kind": "ctor", "name": "bv32.neg", "args": [{"kind": "var", "name": "a"}]}));
+        let body_neg = member_with_universe(
+            -5,
+            serde_json::json!(
+            {"kind": "ctor", "name": "bv32.neg", "args": [{"kind": "var", "name": "a"}]}),
+        );
         let proof_bytes = encode_two_member_catalog(&body_abs, &body_neg);
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("sugar-derive-ambiguous-{}.proof", std::process::id()));
+        let path = dir.join(format!(
+            "sugar-derive-ambiguous-{}.proof",
+            std::process::id()
+        ));
         std::fs::write(&path, &proof_bytes).expect("write tmp proof");
         let r = extract_bv_tree_from_proof(&path);
         let _ = std::fs::remove_file(&path);
         let err = r.expect_err("ambiguous proof must refuse");
-        assert!(err.contains("ambiguous") && err.contains("2 distinct"),
-            "refusal must name the ambiguity, got: {err}");
+        assert!(
+            err.contains("ambiguous") && err.contains("2 distinct"),
+            "refusal must name the ambiguity, got: {err}"
+        );
     }
 
     // Encode a minimal CBOR catalog with two members, mirroring the on-disk
@@ -728,6 +780,8 @@ mod tests {
         let rv = &dq.result_var;
         assert!(dq.smt.contains(&format!("(get-value ({rv}))")));
         assert!(dq.smt.contains("(assert (= a #x80000000))"));
-        assert!(dq.smt.contains(&format!("(assert (= {rv} (ite (bvslt a #x00000000) (bvneg a) a)))")));
+        assert!(dq.smt.contains(&format!(
+            "(assert (= {rv} (ite (bvslt a #x00000000) (bvneg a) a)))"
+        )));
     }
 }

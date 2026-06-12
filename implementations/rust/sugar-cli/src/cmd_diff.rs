@@ -132,7 +132,12 @@ impl Summary {
 /// One side's total accounting, as read from a sweep ledger: every assertion
 /// macro in the corpus, binned. `assert_macros - discharged` is the residual
 /// (the dark half); `unaccounted` is the silent drop count, which must be 0
-/// for the ledger to mean anything at all. `assertion_multiset_cid` is the content
+/// for the ledger to mean anything at all. `unclassified_source` is the same
+/// totality check over source loci: every source candidate must be classified as
+/// warranted or refused, never silently outside the denominator.
+/// Source count fields are optional for compatibility with assertion-only
+/// ledgers; once present, the diff renders them as the coverage countdown.
+/// `assertion_multiset_cid` is the content
 /// identity of the whole assertion surface (None on pre-member-CID ledgers),
 /// so the dark half is diffable by MEMBER, not only by cardinality: a
 /// count-preserving swap moves the multiset-CID even when count and distinct-set both hold (multiplicity counts).
@@ -142,6 +147,13 @@ pub struct Residual {
     pub discharged: i64,
     pub refused: i64,
     pub unaccounted: i64,
+    pub source_loci: Option<i64>,
+    pub source_warranted: Option<i64>,
+    pub source_refused: Option<i64>,
+    pub source_inactive: Option<i64>,
+    pub source_refuted: Option<i64>,
+    pub source_work: Option<i64>,
+    pub unclassified_source: Option<i64>,
     pub assertion_multiset_cid: Option<String>,
 }
 
@@ -152,11 +164,42 @@ impl Residual {
                 .and_then(|n| n.as_i64())
                 .ok_or_else(|| format!("ledger missing integer field '{name}'"))
         };
+        let optional_field = |name: &str| -> Option<i64> { v.get(name).and_then(|n| n.as_i64()) };
+        let source_loci = optional_field("source_loci");
+        let source_warranted = optional_field("source_warranted");
+        let source_refused = optional_field("source_refused");
+        let source_inactive = optional_field("source_inactive");
+        let source_refuted = optional_field("source_refuted");
+        let source_work = optional_field("source_work");
+        let unclassified_source = optional_field("unclassified_source");
+        let has_source_axis = source_loci.is_some()
+            || source_warranted.is_some()
+            || source_refused.is_some()
+            || source_inactive.is_some()
+            || source_refuted.is_some()
+            || source_work.is_some()
+            || unclassified_source.is_some();
+        let assertion_field = |name: &str| -> Result<i64, String> {
+            match optional_field(name) {
+                Some(n) => Ok(n),
+                None if has_source_axis => Ok(0),
+                None => field(name),
+            }
+        };
         Ok(Residual {
-            assert_macros: field("assert_macros")?,
-            discharged: field("discharged")?,
-            refused: field("refused")?,
-            unaccounted: field("unaccounted")?,
+            assert_macros: assertion_field("assert_macros")?,
+            discharged: assertion_field("discharged")?,
+            refused: assertion_field("refused")?,
+            unaccounted: assertion_field("unaccounted")?,
+            source_loci,
+            source_warranted,
+            source_refused,
+            source_inactive,
+            source_refuted,
+            source_work,
+            // Optional: absent on assertion-only ledgers. Once present, diff
+            // treats it as a totality axis and fails if AFTER drops it.
+            unclassified_source,
             // Optional: absent on ledgers minted before per-member CIDs.
             assertion_multiset_cid: v
                 .get("assertion_multiset_cid")
@@ -171,12 +214,30 @@ impl Residual {
     pub fn undischarged(&self) -> i64 {
         self.assert_macros - self.discharged
     }
+
+    pub fn unclassified_source_count(&self) -> i64 {
+        self.unclassified_source.unwrap_or(0)
+    }
+
+    pub fn source_axis_present(&self) -> bool {
+        self.source_loci.is_some()
+            || self.source_warranted.is_some()
+            || self.source_refused.is_some()
+            || self.source_inactive.is_some()
+            || self.source_refuted.is_some()
+            || self.source_work.is_some()
+            || self.unclassified_source.is_some()
+    }
 }
 
 /// Residual gate policy, parallel to `gate_ok` but over the dark half:
 ///   silent           fail always: AFTER has unaccounted assertions, so the
 ///                    ledger's own totality claim is broken. No flag bypasses
 ///                    a silent drop.
+///   source-silent    fail always: AFTER has unclassified source loci, or AFTER
+///                    dropped the source-classification axis that BEFORE had.
+///                    Coverage cannot count down to zero if the denominator can
+///                    silently shrink.
 ///   default          fail iff the residual grew (a proof regression).
 ///   --require BUMP    growth is MAJOR; `--require major` may accept it.
 ///   --frozen          fail iff the accounting moved at all, even improvement.
@@ -193,6 +254,12 @@ pub fn residual_gate_ok(
     frozen: bool,
 ) -> Result<bool, String> {
     if after.unaccounted > 0 {
+        return Ok(false);
+    }
+    if before.source_axis_present() && !after.source_axis_present() {
+        return Ok(false);
+    }
+    if after.unclassified_source_count() > 0 {
         return Ok(false);
     }
     if frozen {
@@ -272,13 +339,15 @@ pub fn render_markdown(
         } else {
             "**MOVED**"
         };
+        let source = source_axis_summary(rb, ra);
         out.push_str(&format!(
-            "**Residual (the unproven set):** undischarged {} → {} ({:+}) · silent {} → {} · members {}\n\n",
+            "**Residual (the unproven set):** undischarged {} → {} ({:+}) · silent {} → {}{} · members {}\n\n",
             rb.undischarged(),
             ra.undischarged(),
             ra.undischarged() - rb.undischarged(),
             rb.unaccounted,
             ra.unaccounted,
+            source,
             members
         ));
     }
@@ -329,6 +398,75 @@ fn short(cid: &str) -> String {
 
 fn names(set: &BTreeSet<String>) -> String {
     set.iter().cloned().collect::<Vec<_>>().join(", ")
+}
+
+fn source_axis_summary(before: &Residual, after: &Residual) -> String {
+    if !before.source_axis_present() && !after.source_axis_present() {
+        return String::new();
+    }
+    let mut parts = Vec::new();
+    push_source_axis_part(
+        &mut parts,
+        "source-loci",
+        before.source_loci,
+        after.source_loci,
+    );
+    push_source_axis_part(
+        &mut parts,
+        "warranted",
+        before.source_warranted,
+        after.source_warranted,
+    );
+    push_source_axis_part(
+        &mut parts,
+        "refused",
+        before.source_refused,
+        after.source_refused,
+    );
+    push_source_axis_part(
+        &mut parts,
+        "inactive",
+        before.source_inactive,
+        after.source_inactive,
+    );
+    push_source_axis_part(
+        &mut parts,
+        "refuted",
+        before.source_refuted,
+        after.source_refuted,
+    );
+    push_source_axis_part(&mut parts, "work", before.source_work, after.source_work);
+    push_source_axis_part(
+        &mut parts,
+        "unclassified",
+        before.unclassified_source,
+        after.unclassified_source,
+    );
+    format!(" · {}", parts.join(" · "))
+}
+
+fn push_source_axis_part(
+    parts: &mut Vec<String>,
+    label: &str,
+    before: Option<i64>,
+    after: Option<i64>,
+) {
+    if before.is_none() && after.is_none() {
+        return;
+    }
+    parts.push(format!(
+        "{label} {} → {}",
+        source_axis_value(before, false),
+        source_axis_value(after, true)
+    ));
+}
+
+fn source_axis_value(value: Option<i64>, after: bool) -> String {
+    match value {
+        Some(n) => n.to_string(),
+        None if after => "MISSING".into(),
+        None => "n/a".into(),
+    }
 }
 
 /// Pure comparison: classify every behavior CID across both tables. This is the
@@ -482,12 +620,13 @@ pub fn run(args: DiffArgs) -> u8 {
                             "MOVED"
                         };
                         println!(
-                            "residual: undischarged {} -> {} ({:+}); silent {} -> {}; members {}",
+                            "residual: undischarged {} -> {} ({:+}); silent {} -> {}{}; members {}",
                             rb.undischarged(),
                             ra.undischarged(),
                             ra.undischarged() - rb.undischarged(),
                             rb.unaccounted,
                             ra.unaccounted,
+                            source_axis_summary(&rb, &ra),
                             members
                         );
                     }
@@ -534,6 +673,15 @@ pub fn run(args: DiffArgs) -> u8 {
                     eprintln!(
                         "silent: AFTER ledger has {} unaccounted assertion(s); a silent drop is never green",
                         ra.unaccounted
+                    );
+                } else if rb.source_axis_present() && !ra.source_axis_present() {
+                    eprintln!(
+                        "source-silent: AFTER ledger dropped the source-classification axis; source loci must be warranted or refused"
+                    );
+                } else if ra.unclassified_source_count() > 0 {
+                    eprintln!(
+                        "source-silent: AFTER ledger has {} unclassified source locus/loci; source must be warranted or refused",
+                        ra.unclassified_source_count()
                     );
                 } else if args.frozen {
                     if rb.assertion_multiset_cid != ra.assertion_multiset_cid {
@@ -621,6 +769,42 @@ mod tests {
         let md = render_markdown(&s, Some(&(before, after)), true, false, None, true);
         assert!(md.contains("undischarged"), "{md}");
         assert!(md.contains("member"), "member status surfaced: {md}");
+    }
+
+    #[test]
+    fn markdown_includes_source_accounting_countdown() {
+        let a = table(&[("f", "c1")]);
+        let s = summarize(&a, &a);
+        let before = Residual::from_ledger(&serde_json::json!({
+            "assert_macros": 100, "discharged": 80,
+            "refused": 20, "unaccounted": 0,
+            "source_loci": 48,
+            "source_warranted": 8,
+            "source_refused": 21,
+            "source_inactive": 19,
+            "source_refuted": 0,
+            "source_work": 0,
+            "unclassified_source": 2
+        }))
+        .unwrap();
+        let after = Residual::from_ledger(&serde_json::json!({
+            "assert_macros": 100, "discharged": 80,
+            "refused": 20, "unaccounted": 0,
+            "source_loci": 48,
+            "source_warranted": 10,
+            "source_refused": 22,
+            "source_inactive": 16,
+            "source_refuted": 0,
+            "source_work": 0,
+            "unclassified_source": 0
+        }))
+        .unwrap();
+        let md = render_markdown(&s, Some(&(before, after)), true, true, None, false);
+        assert!(md.contains("source-loci 48 → 48"), "{md}");
+        assert!(md.contains("warranted 8 → 10"), "{md}");
+        assert!(md.contains("refused 21 → 22"), "{md}");
+        assert!(md.contains("inactive 19 → 16"), "{md}");
+        assert!(md.contains("unclassified 2 → 0"), "{md}");
     }
 
     #[test]
@@ -797,6 +981,13 @@ mod tests {
             discharged,
             refused,
             unaccounted,
+            source_loci: None,
+            source_warranted: None,
+            source_refused: None,
+            source_inactive: None,
+            source_refuted: None,
+            source_work: None,
+            unclassified_source: None,
             assertion_multiset_cid: None,
         }
     }
@@ -815,6 +1006,40 @@ mod tests {
     }
 
     #[test]
+    fn residual_parses_unclassified_source_axis() {
+        let ledger = serde_json::json!({
+            "assert_macros": 10, "discharged": 7,
+            "refused": 3, "unaccounted": 0,
+            "unclassified_source": 4
+        });
+        let r = Residual::from_ledger(&ledger).expect("parses");
+        assert_eq!(r.unclassified_source, Some(4));
+    }
+
+    #[test]
+    fn residual_parses_source_only_kit_ledger() {
+        let ledger = serde_json::json!({
+            "source_loci": 48,
+            "source_warranted": 10,
+            "source_refused": 22,
+            "source_inactive": 16,
+            "source_refuted": 0,
+            "source_work": 0,
+            "unclassified_source": 0
+        });
+        let r = Residual::from_ledger(&ledger).expect("source-only kit ledger parses");
+        assert_eq!(r.assert_macros, 0);
+        assert_eq!(r.discharged, 0);
+        assert_eq!(r.refused, 0);
+        assert_eq!(r.unaccounted, 0);
+        assert_eq!(r.source_loci, Some(48));
+        assert_eq!(r.source_warranted, Some(10));
+        assert_eq!(r.source_refused, Some(22));
+        assert_eq!(r.source_inactive, Some(16));
+        assert_eq!(r.unclassified_source, Some(0));
+    }
+
+    #[test]
     fn residual_missing_field_is_an_error() {
         let ledger = serde_json::json!({"assert_macros": 10, "discharged": 9});
         assert!(Residual::from_ledger(&ledger).is_err());
@@ -826,6 +1051,44 @@ mod tests {
         let after = res(100, 90, 9, 1);
         assert_eq!(residual_gate_ok(&before, &after, None, false), Ok(false));
         assert_eq!(residual_gate_ok(&before, &after, None, true), Ok(false));
+        assert_eq!(
+            residual_gate_ok(&before, &after, Some("major"), false),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn unclassified_source_in_after_fails_every_residual_gate() {
+        let before = Residual::from_ledger(&serde_json::json!({
+            "assert_macros": 100, "discharged": 80,
+            "refused": 20, "unaccounted": 0,
+            "unclassified_source": 0
+        }))
+        .unwrap();
+        let after = Residual::from_ledger(&serde_json::json!({
+            "assert_macros": 100, "discharged": 90,
+            "refused": 10, "unaccounted": 0,
+            "unclassified_source": 1
+        }))
+        .unwrap();
+        assert_eq!(residual_gate_ok(&before, &after, None, false), Ok(false));
+        assert_eq!(residual_gate_ok(&before, &after, None, true), Ok(false));
+        assert_eq!(
+            residual_gate_ok(&before, &after, Some("major"), false),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn dropping_source_classification_axis_fails_residual_gate() {
+        let before = Residual::from_ledger(&serde_json::json!({
+            "assert_macros": 100, "discharged": 80,
+            "refused": 20, "unaccounted": 0,
+            "unclassified_source": 3
+        }))
+        .unwrap();
+        let after = res(100, 80, 20, 0);
+        assert_eq!(residual_gate_ok(&before, &after, None, false), Ok(false));
         assert_eq!(
             residual_gate_ok(&before, &after, Some("major"), false),
             Ok(false)
@@ -884,6 +1147,13 @@ mod tests {
             discharged: d,
             refused: r,
             unaccounted: u,
+            source_loci: None,
+            source_warranted: None,
+            source_refused: None,
+            source_inactive: None,
+            source_refuted: None,
+            source_work: None,
+            unclassified_source: None,
             assertion_multiset_cid: Some(cid.to_string()),
         }
     }

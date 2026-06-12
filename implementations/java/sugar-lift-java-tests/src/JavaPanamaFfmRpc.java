@@ -54,9 +54,11 @@ public final class JavaPanamaFfmRpc {
                 response = switch (method) {
                     case "initialize"                      -> ok(id, initializeResult());
                     case "sugar.plugin.kit_declaration"   -> ok(id, kitDeclarationResult());
+                    case "sugar.plugin.resolve_dependency_proofs" -> ok(id,
+                            JavaDependencyProofResolver.resolveDependencyProofs(line));
                     case "lift"                            -> ok(id, lift(line));
                     case "shutdown", "sugar.plugin.shutdown" -> ok(id, "null");
-                    default -> error(id, -32603, "unknown method: " + method);
+                    default -> error(id, -32601, "unknown method: " + method);
                 };
             } catch (Exception e) {
                 response = error(id, -32603, e.getMessage() == null ? e.toString() : e.getMessage());
@@ -88,10 +90,12 @@ public final class JavaPanamaFfmRpc {
             + "\"rpc\":{\"methods\":["
             + "{\"name\":\"initialize\",\"required\":true},"
             + "{\"name\":\"sugar.plugin.kit_declaration\",\"required\":true},"
+            + "{\"name\":\"sugar.plugin.resolve_dependency_proofs\",\"required\":false},"
             + "{\"name\":\"lift\",\"required\":true},"
             + "{\"name\":\"shutdown\",\"required\":false}"
             + "]},"
-            + "\"proofResolution\":{\"strategy\":\"panama-ffm-call-edge\"},"
+            + "\"proofResolution\":{\"strategy\":\"maven\","
+            + "\"rpcMethod\":\"sugar.plugin.resolve_dependency_proofs\"},"
             + "\"effectKinds\":[],\"effectLeaves\":[],\"guardPredicates\":[],"
             + "\"controlCarriers\":[],\"residueCategories\":[]"
             + "}";

@@ -206,7 +206,11 @@ mod tests {
     #[test]
     fn solve_with_model_abs_min_value() {
         use sugar_ir_compiler_smt_lib::derive_query::emit_derive_query;
-        if std::process::Command::new("z3").arg("--version").output().is_err() {
+        if std::process::Command::new("z3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             eprintln!("z3 absent: skipping solve_with_model test");
             return;
         }
@@ -236,8 +240,16 @@ mod tests {
         let dq = emit_derive_query(&bv_tree, &[i32::MIN]).expect("emit");
         let result = solve_with_model("z3", &dq.smt, &dq.result_var, None);
 
-        assert!(result.error.is_empty(), "unexpected error: {}", result.error);
-        assert_eq!(result.verdict_line, "sat", "expected sat, got: {:?}", result.verdict_line);
+        assert!(
+            result.error.is_empty(),
+            "unexpected error: {}",
+            result.error
+        );
+        assert_eq!(
+            result.verdict_line, "sat",
+            "expected sat, got: {:?}",
+            result.verdict_line
+        );
         assert_eq!(
             result.derived_value,
             Some(i32::MIN),
@@ -249,7 +261,11 @@ mod tests {
 
     #[test]
     fn nonzero_exit_is_an_honest_error_not_a_fabricated_value() {
-        if std::process::Command::new("z3").arg("--version").output().is_err() {
+        if std::process::Command::new("z3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             eprintln!("z3 absent: skipping solver-error test");
             return;
         }
@@ -265,8 +281,18 @@ mod tests {
             result.error,
             result.verdict_line
         );
-        assert!(result.error.contains("non-zero"), "error must name the failure: {}", result.error);
-        assert_eq!(result.derived_value, None, "must NOT fabricate a derived value on solver failure");
-        assert!(result.verdict_line.is_empty(), "must NOT report a verdict on solver failure");
+        assert!(
+            result.error.contains("non-zero"),
+            "error must name the failure: {}",
+            result.error
+        );
+        assert_eq!(
+            result.derived_value, None,
+            "must NOT fabricate a derived value on solver failure"
+        );
+        assert!(
+            result.verdict_line.is_empty(),
+            "must NOT report a verdict on solver failure"
+        );
     }
 }

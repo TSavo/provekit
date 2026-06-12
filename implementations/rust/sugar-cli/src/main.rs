@@ -254,6 +254,12 @@ pub struct LiftArgs {
     /// Ask the configured lifter for proof-producing host-language library-sugar bindings.
     #[arg(long, conflicts_with = "identify_only")]
     pub library_bindings: bool,
+    /// Print the lifter's source-audit countdown instead of the raw ProofIR term JSON.
+    #[arg(long, conflicts_with_all = ["output", "identify_only", "library_bindings"])]
+    pub report: bool,
+    /// Restrict --report to source audits whose contract name contains this string.
+    #[arg(long = "contract", requires = "report")]
+    pub contract: Option<String>,
     #[command(flatten)]
     pub out: OutputFlags,
 }

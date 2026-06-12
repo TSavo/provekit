@@ -37,6 +37,82 @@ fi
 "$VENV/bin/python" -c "import itsdangerous; print('vendor:', 'itsdangerous', itsdangerous.__version__ if hasattr(itsdangerous,'__version__') else '(installed)')" || {
   echo "FAIL: vendor install"; exit 1; }
 
+audit_good_source() {
+  echo
+  echo "== source audit: sugar lift --report itsdangerous.encoding.base64_encode =="
+  local report
+  report="$(mktemp)"
+  ( cd "$HERE/good" && "$BIN" lift --report --json . ) > "$report" || {
+    echo "FAIL: source audit lift report"
+    rm -f "$report"
+    return 1
+  }
+  python3 - "$report" <<'PY' || {
+import json, sys
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+ledger = result.get("sourceLedger") or {}
+audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.translate-universe"
+    and "base64_encode" in audit.get("contract", {}).get("name", "")
+]
+if len(audits) != 1:
+    raise SystemExit(f"FAIL: expected one base64_encode universe source audit, got {len(audits)}")
+audit = audits[0]
+totals = audit["totals"]
+if totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: base64 source dig has unclassified source: totals={totals}")
+package_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.package-source"
+    and audit.get("package") == "itsdangerous"
+]
+if len(package_audits) != 1:
+    raise SystemExit(f"FAIL: expected one itsdangerous package accounting audit, got {len(package_audits)}")
+package_totals = package_audits[0]["totals"]
+if package_totals.get("unclassified_source", 0) <= 0:
+    raise SystemExit(f"FAIL: itsdangerous package audit did not expose unclassified source: {package_totals}")
+if ledger.get("unclassified_source") != package_totals.get("unclassified_source"):
+    raise SystemExit(f"FAIL: package unclassified source not reflected in ledger: ledger={ledger} package={package_totals}")
+if audit.get("universe_kind") != "no-suffix-chars":
+    raise SystemExit(f"FAIL: expected no-suffix-chars audit, got {audit.get('universe_kind')}")
+if "body_text" in audit["source_memento"] or "ast_template" in audit["source_memento"]:
+    raise SystemExit("FAIL: source audit memento embeds source/template body")
+mementos = result.get("sourceMementos") or []
+roles = {m.get("role") for m in mementos}
+if "python.translate-universe" not in roles:
+    raise SystemExit(f"FAIL: lift report missing python source mementos: roles={sorted(str(r) for r in roles)}")
+memento = next(m for m in mementos if m.get("role") == "python.translate-universe")
+if not memento.get("claimName", "").endswith("::assertion") or not memento.get("contractName", "").endswith("::assertion"):
+    raise SystemExit(f"FAIL: source memento does not link to assertion contract: {memento!r}")
+if "body_text" in memento or "ast_template" in memento:
+    raise SystemExit(f"FAIL: source memento embeds source/template body: {memento!r}")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Attribute"
+    and locus.get("ast_path") == "$.body[2].value.func"
+    for locus in audit["loci"]
+):
+    raise SystemExit("FAIL: rstrip AST path was not warranted")
+print(
+    "source audit base64:",
+    f"loci={totals['source_loci']}",
+    f"warranted={totals['source_warranted']}",
+    f"refused={totals['source_refused']}",
+    f"unclassified={totals['unclassified_source']}",
+)
+print(
+    "source audit package:",
+    f"loci={package_totals['source_loci']}",
+    f"unclassified={package_totals['unclassified_source']}",
+)
+PY
+    rm -f "$report"
+    return 1
+  }
+  rm -f "$report"
+}
+
 echo "== build the CLI =="
 cargo build --manifest-path "$REPO/implementations/rust/Cargo.toml" -p sugar-cli --bin sugar >/dev/null || {
   echo "FAIL: sugar build"; exit 1; }
@@ -83,6 +159,7 @@ PY
 }
 
 fail=0
+audit_good_source || fail=1
 run_twin good discharged || fail=1
 run_twin bad refused || fail=1
 

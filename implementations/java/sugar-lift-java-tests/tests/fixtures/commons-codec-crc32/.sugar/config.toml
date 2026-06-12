@@ -1,0 +1,3 @@
+[java-test-assertions]
+assertion_source_dirs = ["../vendor/junit5"]
+vendor_source_dirs = ["vendor/commons-codec"]

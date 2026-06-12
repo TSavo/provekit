@@ -50,6 +50,7 @@ public final class JavaJunitWitnessRpc {
     private static final String SURFACE        = "java-junit-witness";
     private static final String VERSION        = "0.1.0";
     private static final String RESOLVE_METHOD = "sugar.plugin.resolve_witness";
+    private static final String DEP_PROOF_METHOD = "sugar.plugin.resolve_dependency_proofs";
     private static final String KIT_DECL       = "sugar.plugin.kit_declaration";
 
     // ── Entry point ────────────────────────────────────────────────────────────
@@ -81,7 +82,9 @@ public final class JavaJunitWitnessRpc {
                 case KIT_DECL        -> ok(id, kitDeclarationResult());
                 case "lift"          -> ok(id, lift(req));
                 case RESOLVE_METHOD  -> ok(id, resolveWitness(req));
-                case "shutdown"      -> {
+                case DEP_PROOF_METHOD -> ok(id,
+                        JavaDependencyProofResolver.resolveDependencyProofs(req));
+                case "shutdown", "sugar.plugin.shutdown" -> {
                     System.out.println("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":null}");
                     System.out.flush();
                     yield null; // signals main() to stop
@@ -203,10 +206,12 @@ public final class JavaJunitWitnessRpc {
              + "{\"name\":\"initialize\",\"required\":true},"
              + "{\"name\":\"" + KIT_DECL + "\",\"required\":true},"
              + "{\"name\":\"lift\",\"required\":true},"
+             + "{\"name\":\"" + DEP_PROOF_METHOD + "\",\"required\":false},"
              + "{\"name\":\"" + RESOLVE_METHOD + "\",\"required\":false},"
              + "{\"name\":\"shutdown\",\"required\":false}"
              + "]},"
-             + "\"proofResolution\":{\"strategy\":\"junit\"},"
+             + "\"proofResolution\":{\"strategy\":\"maven\","
+             + "\"rpcMethod\":\"" + DEP_PROOF_METHOD + "\"},"
              + "\"effectKinds\":[],\"effectLeaves\":[],\"guardPredicates\":[],"
              + "\"controlCarriers\":[],\"residueCategories\":[]}";
     }

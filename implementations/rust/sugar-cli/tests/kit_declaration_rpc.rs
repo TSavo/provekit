@@ -112,7 +112,6 @@ done
     );
 }
 
-
 #[test]
 fn loader_reports_missing_kit_declaration_method() {
     let td = TempDir::new().expect("tempdir");

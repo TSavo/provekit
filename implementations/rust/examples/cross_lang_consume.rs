@@ -135,6 +135,7 @@ fn run() -> Result<(), String> {
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             class_shapes: Vec::new(),
+            source_warrants: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),

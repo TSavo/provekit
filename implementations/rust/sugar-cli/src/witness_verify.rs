@@ -119,8 +119,7 @@ pub fn verify_witnesses(project_root: &Path, pool: &MementoPool) -> Vec<WitnessV
             ed25519_verify_string(signer, signature, witness_cid.as_bytes())
         } else {
             // WitnessMemento family: mark over the sealed {cid, observed_at}.
-            let attested =
-                sugar_ir_types::witness_attestation_payload(&witness_cid, observed_at);
+            let attested = sugar_ir_types::witness_attestation_payload(&witness_cid, observed_at);
             ed25519_verify_string(signer, signature, &attested)
         };
         if !signature_ok {
@@ -566,8 +565,7 @@ mod tests {
         } else if observed_at.is_empty() {
             ed25519_verify_string(signer, signature, witness_cid.as_bytes())
         } else {
-            let attested =
-                sugar_ir_types::witness_attestation_payload(witness_cid, observed_at);
+            let attested = sugar_ir_types::witness_attestation_payload(witness_cid, observed_at);
             ed25519_verify_string(signer, signature, &attested)
         }
     }

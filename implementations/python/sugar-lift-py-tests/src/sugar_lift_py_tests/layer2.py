@@ -69,9 +69,10 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from .ir import (
     ContractDecl,
@@ -114,6 +115,25 @@ from .translate_universe import (
     translate_universe_for_callee,
 )
 
+try:
+    from sugar_lift_python_source.bind_lifter import (
+        _body_source_locator as _source_oracle_body_source_locator,
+        source_memento_of as _source_oracle_memento_of,
+    )
+except ModuleNotFoundError:
+    import sys
+    from pathlib import Path
+
+    _SIBLING_SOURCE_SRC = (
+        Path(__file__).resolve().parents[3] / "sugar-lift-python-source" / "src"
+    )
+    if str(_SIBLING_SOURCE_SRC) not in sys.path:
+        sys.path.insert(0, str(_SIBLING_SOURCE_SRC))
+    from sugar_lift_python_source.bind_lifter import (
+        _body_source_locator as _source_oracle_body_source_locator,
+        source_memento_of as _source_oracle_memento_of,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Data shapes
@@ -125,6 +145,18 @@ class LiftWarning:
     source_path: str
     item_name: str
     reason: str
+
+
+def _empty_source_ledger() -> dict[str, int]:
+    return {
+        "source_loci": 0,
+        "source_warranted": 0,
+        "source_refused": 0,
+        "source_inactive": 0,
+        "source_refuted": 0,
+        "source_work": 0,
+        "unclassified_source": 0,
+    }
 
 
 @dataclass
@@ -155,6 +187,8 @@ class Layer2Output:
     raises_lifted: int = 0
     raises_skipped: int = 0
     implications: List["ImplicationDecl"] = field(default_factory=list)
+    source_audits: List[dict[str, Any]] = field(default_factory=list)
+    source_ledger: dict[str, int] = field(default_factory=_empty_source_ledger)
 
 
 @dataclass
@@ -243,9 +277,10 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
         helpers = _collect_helpers(tree)
         test_fns = list(_iter_test_functions(tree))
         for fn, class_name in test_fns:
-            _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
+            _classify_and_lift(fn, source_path, source, helpers, out, class_name=class_name)
 
         _coalesce_same_named_decls(out)
+        _refresh_source_accounting(out)
     finally:
         _CURRENT_MODULE_ALIASES = prev_aliases
         _CURRENT_FROM_IMPORT_MEMBERS = prev_members
@@ -358,9 +393,420 @@ def _coalesce_same_named_decls(out: Layer2Output) -> None:
             continue
         invs = [d.inv for d in group]
         merged_inv = invs[0] if len(invs) == 1 else and_(invs)
-        new_decls.append(ContractDecl(name=name, inv=merged_inv))
+        source_warrants: List[dict] = []
+        for d in group:
+            for warrant in d.source_warrants:
+                _append_unique_source_warrant(source_warrants, warrant)
+        new_decls.append(
+            ContractDecl(name=name, inv=merged_inv, source_warrants=source_warrants)
+        )
 
     out.decls = new_decls
+
+
+def _refresh_source_accounting(out: Layer2Output) -> None:
+    audits: List[dict[str, Any]] = []
+    ledger = _empty_source_ledger()
+    seen: Set[Tuple[str, str]] = set()
+
+    for decl in out.decls:
+        for warrant in decl.source_warrants:
+            key = (
+                decl.name,
+                json.dumps(warrant, sort_keys=True, separators=(",", ":")),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            audit = _source_audit_for_warrant(decl.name, warrant, out)
+            audits.append(audit)
+            totals = audit["totals"]
+            for field in ledger:
+                ledger[field] += int(totals.get(field, 0))
+
+    out.source_audits = audits
+    out.source_ledger = ledger
+
+
+def _source_audit_for_warrant(
+    contract_name: str,
+    warrant: dict[str, Any],
+    out: Layer2Output,
+) -> dict[str, Any]:
+    source_memento = _lean_source_memento(warrant)
+    role = _string_field(warrant, "role")
+    universe_kind = _string_field(warrant, "universe_kind")
+    table_name = _string_field(warrant, "table_name")
+    file = _string_field(source_memento, "file")
+    loci: List[dict[str, Any]] = []
+
+    try:
+        _, root = _resolve_source_memento_for_accounting(source_memento)
+        loci = _source_loci_for_memento(
+            source_memento,
+            root,
+            role,
+            universe_kind,
+        )
+    except Exception as exc:
+        out.warnings.append(
+            LiftWarning(
+                file or "<source>",
+                contract_name,
+                f"source-audit: source oracle refused SourceMemento: {exc}",
+            )
+        )
+        loci.append(
+            _source_line_locus(
+                file,
+                _source_memento_start_line(source_memento),
+                "refused",
+                role,
+                universe_kind,
+            )
+        )
+
+    audit: dict[str, Any] = {
+        "kind": "source-audit",
+        "language": "python",
+        "contract": {"name": contract_name},
+        "role": role,
+        "universe_kind": universe_kind,
+        "source_memento": source_memento,
+        "loci": loci,
+        "totals": _source_totals(loci),
+    }
+    if table_name:
+        audit["table_name"] = table_name
+    return audit
+
+
+def _resolve_source_memento_for_accounting(memento: dict[str, Any]) -> Tuple[dict[str, Any], str]:
+    try:
+        from sugar_lift_python_source.source_oracle import (
+            SourceOracleRefusal,
+            importlib_package_root,
+            resolve_source_memento,
+        )
+    except ModuleNotFoundError:
+        import sys
+        from pathlib import Path
+
+        sibling_src = (
+            Path(__file__).resolve().parents[3] / "sugar-lift-python-source" / "src"
+        )
+        if str(sibling_src) not in sys.path:
+            sys.path.insert(0, str(sibling_src))
+        from sugar_lift_python_source.source_oracle import (
+            SourceOracleRefusal,
+            importlib_package_root,
+            resolve_source_memento,
+        )
+
+    roots = ["", os.getcwd()]
+    package_root = importlib_package_root(_string_field(memento, "file"))
+    if package_root is not None:
+        roots.append(package_root)
+
+    last: Optional[Exception] = None
+    for root in roots:
+        try:
+            resolved = resolve_source_memento(root, memento)
+            return resolved, root
+        except SourceOracleRefusal as exc:
+            last = exc
+    if last is not None:
+        raise last
+    raise RuntimeError("no root resolved the source memento")
+
+
+def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"kind": "source-memento"}
+    for field_name in (
+        "file",
+        "source_function_name",
+        "span",
+        "source_cid",
+        "template_cid",
+        "param_names",
+    ):
+        if field_name not in warrant:
+            continue
+        value = warrant[field_name]
+        if field_name == "span" and isinstance(value, dict):
+            out[field_name] = dict(value)
+        elif field_name == "param_names" and isinstance(value, list):
+            out[field_name] = list(value)
+        else:
+            out[field_name] = value
+    return out
+
+
+def _source_line_locus(
+    file: str,
+    line: int,
+    status: str,
+    role: str,
+    universe_kind: str,
+    *,
+    ast_kind: Optional[str] = None,
+    ast_path: Optional[str] = None,
+    span: Optional[dict[str, int]] = None,
+    reason: str = "",
+) -> dict[str, Any]:
+    locus_span = span or {
+        "start_line": line,
+        "start_col": 0,
+        "end_line": line,
+        "end_col": 0,
+    }
+    locus: dict[str, Any] = {
+        "kind": "source-line",
+        "file": file,
+        "line": line,
+        "span": dict(locus_span),
+        "line_range": [locus_span["start_line"], locus_span["end_line"]],
+        "ast_path": ast_path or f"$.line[{line}]",
+        "status": status,
+        "role": role,
+        "universe_kind": universe_kind,
+    }
+    if ast_kind:
+        locus["ast_kind"] = ast_kind
+    if reason:
+        locus["reason"] = reason
+    return locus
+
+
+def _source_loci_for_memento(
+    source_memento: dict[str, Any],
+    root: str,
+    role: str,
+    universe_kind: str,
+) -> List[dict[str, Any]]:
+    file = _string_field(source_memento, "file")
+    if role != "python.translate-universe":
+        return [
+            _source_line_locus(file, line, "warranted", role, universe_kind)
+            for line in _source_memento_lines(source_memento)
+        ]
+
+    path = os.path.join(root, file) if root else file
+    with open(path, "r", encoding="utf-8") as fh:
+        source = fh.read()
+    tree = ast.parse(source, filename=path)
+    fn = _locate_source_function_for_accounting(tree, source_memento)
+    if fn is None:
+        return [
+            _source_line_locus(
+                file,
+                _source_memento_start_line(source_memento),
+                "refused",
+                role,
+                universe_kind,
+                reason="source function not found after source-oracle resolution",
+            )
+        ]
+
+    loci: List[dict[str, Any]] = []
+    for index, stmt in enumerate(fn.body):
+        status, reason = _classify_translate_source_statement(stmt)
+        for node, ast_path in _iter_ast_nodes_with_paths(stmt, f"$.body[{index}]"):
+            if not hasattr(node, "lineno"):
+                continue
+            loci.append(
+                _source_line_locus(
+                    file,
+                    getattr(node, "lineno", _source_memento_start_line(source_memento)),
+                    status,
+                    role,
+                    universe_kind,
+                    ast_kind=type(node).__name__,
+                    ast_path=ast_path,
+                    span=_ast_node_span(node),
+                    reason=reason,
+                )
+            )
+    return loci
+
+
+def _iter_ast_nodes_with_paths(
+    node: ast.AST,
+    path: str,
+):
+    yield node, path
+    for field_name, value in ast.iter_fields(node):
+        if isinstance(value, ast.AST):
+            yield from _iter_ast_nodes_with_paths(value, f"{path}.{field_name}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                if isinstance(item, ast.AST):
+                    yield from _iter_ast_nodes_with_paths(
+                        item,
+                        f"{path}.{field_name}[{index}]",
+                    )
+
+
+def _ast_node_span(node: ast.AST) -> dict[str, int]:
+    start_line = getattr(node, "lineno", 0)
+    start_col = getattr(node, "col_offset", 0)
+    end_line = getattr(node, "end_lineno", start_line)
+    end_col = getattr(node, "end_col_offset", start_col)
+    return {
+        "start_line": start_line,
+        "start_col": start_col,
+        "end_line": end_line,
+        "end_col": end_col,
+    }
+
+
+def _source_memento_for_statement(
+    fn: ast.FunctionDef,
+    stmt: ast.stmt,
+    source_path: str,
+    source: str,
+    *,
+    role: str,
+    claim_name: str,
+    contract_name: str,
+) -> Optional[dict[str, Any]]:
+    try:
+        full = _source_oracle_body_source_locator(
+            fn,
+            source_path,
+            source.splitlines(keepends=True),
+        )
+        memento = dict(_source_oracle_memento_of(full))
+    except Exception:
+        return None
+    memento["kind"] = "source-memento"
+    memento["role"] = role
+    memento["claimName"] = claim_name
+    memento["contractName"] = contract_name
+    memento["source_function_name"] = fn.name
+    memento["span"] = _ast_node_span(stmt)
+    memento.pop("body_text", None)
+    memento.pop("ast_template", None)
+    return memento
+
+
+def _locate_source_function_for_accounting(
+    tree: ast.AST,
+    source_memento: dict[str, Any],
+) -> Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]]:
+    function_name = _string_field(source_memento, "source_function_name")
+    span = source_memento.get("span") if isinstance(source_memento.get("span"), dict) else {}
+    start = _int_field(span, "start_line", 0)
+    matches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and (not function_name or node.name == function_name)
+    ]
+    if not matches:
+        return None
+    if start > 0:
+        for node in matches:
+            node_start = min((d.lineno for d in node.decorator_list), default=node.lineno)
+            node_end = node.end_lineno or node.lineno
+            if node_start <= start <= node_end:
+                return node
+    return matches[0]
+
+
+def _classify_translate_source_statement(stmt: ast.stmt) -> Tuple[str, str]:
+    if _is_docstring_stmt(stmt):
+        return "refused", "docstring metadata is non-normative for the emitted relation"
+    if _is_translate_return(stmt):
+        return "warranted", "emitted into python.translate-universe"
+    if _is_rstrip_return(stmt):
+        return "warranted", "emitted into python no-suffix-chars universe"
+    return "refused", "not part of the emitted translate-universe relation"
+
+
+def _is_docstring_stmt(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Constant)
+        and isinstance(stmt.value.value, str)
+    )
+
+
+def _is_translate_return(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Return):
+        return False
+    value = stmt.value
+    if not isinstance(value, ast.Call):
+        return False
+    func = value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "translate"
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+    )
+
+
+def _is_rstrip_return(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Return):
+        return False
+    value = stmt.value
+    if not isinstance(value, ast.Call):
+        return False
+    func = value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "rstrip"
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Constant)
+        and isinstance(value.args[0].value, (bytes, str))
+    )
+
+
+def _source_totals(loci: List[dict[str, Any]]) -> dict[str, int]:
+    totals = _empty_source_ledger()
+    totals["source_loci"] = len(loci)
+    for locus in loci:
+        status = locus.get("status")
+        if status == "warranted":
+            totals["source_warranted"] += 1
+        elif status == "refused":
+            totals["source_refused"] += 1
+        elif status == "inactive":
+            totals["source_inactive"] += 1
+        elif status == "refuted":
+            totals["source_refuted"] += 1
+        elif status == "work":
+            totals["source_work"] += 1
+        else:
+            totals["unclassified_source"] += 1
+    return totals
+
+
+def _source_memento_lines(memento: dict[str, Any]) -> range:
+    span = memento.get("span") if isinstance(memento.get("span"), dict) else {}
+    start = _int_field(span, "start_line", 0)
+    end = _int_field(span, "end_line", start)
+    if start <= 0:
+        return range(0, 1)
+    if end < start:
+        end = start
+    return range(start, end + 1)
+
+
+def _source_memento_start_line(memento: dict[str, Any]) -> int:
+    span = memento.get("span") if isinstance(memento.get("span"), dict) else {}
+    return _int_field(span, "start_line", 0)
+
+
+def _string_field(obj: dict[str, Any], field_name: str) -> str:
+    value = obj.get(field_name)
+    return value if isinstance(value, str) else ""
+
+
+def _int_field(obj: dict[str, Any], field_name: str, default: int) -> int:
+    value = obj.get(field_name)
+    return value if isinstance(value, int) else default
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +911,7 @@ def _strip_self(stmts: Sequence[ast.stmt], fn: ast.FunctionDef) -> List[ast.stmt
 def _classify_and_lift(
     fn: ast.FunctionDef,
     source_path: str,
+    source: str,
     helpers: Dict[str, _HelperDef],
     out: Layer2Output,
     class_name: Optional[str] = None,
@@ -530,7 +977,7 @@ def _classify_and_lift(
         )
         return
 
-    if _classify_value_scope(body, test_name, source_path, out):
+    if _classify_value_scope(fn, body, test_name, source_path, source, out):
         return
 
     # PATTERN 7: pytest.raises blocks — must fire before mixed-body so any
@@ -2717,6 +3164,7 @@ def _classify_characterization(
     # value-scope path, same contact rule. Injected AFTER the liftability
     # check so universes never rescue an otherwise-released test.
     universe_extras: List[Formula] = []
+    source_warrants: List[dict] = []
     for stmt, atom in lifted_pairs:
         calls = _collect_assertion_calls(stmt)
         if len(calls) != 1:
@@ -2728,14 +3176,21 @@ def _classify_characterization(
         if subject is None:
             continue
         for conjunct in _universe_conjuncts(
-            origin.callee, subject, out, source_path, test_name
+            origin.callee,
+            subject,
+            out,
+            source_path,
+            test_name,
+            source_warrants=source_warrants,
         ):
             if conjunct not in atoms and conjunct not in universe_extras:
                 universe_extras.append(conjunct)
     atoms = atoms + universe_extras
 
     inv = atoms[0] if len(atoms) == 1 else and_(atoms)
-    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.decls.append(
+        ContractDecl(name=test_name, inv=inv, source_warrants=source_warrants)
+    )
     out.lifted += 1
     out.characterization_lifted += 1
     if skipped:
@@ -2978,9 +3433,11 @@ def _classify_parametrize(
 
 
 def _classify_value_scope(
+    fn: ast.FunctionDef,
     body: Sequence[ast.stmt],
     test_name: str,
     source_path: str,
+    source: str,
     out: Layer2Output,
 ) -> bool:
     scopes: List[_ValueScope] = [_ValueScope()]
@@ -2996,6 +3453,7 @@ def _classify_value_scope(
     # conjoin logic: and(=(y,None), ≠(y,None)) lands in one memento -> UNSAT.
     # Order is preserved so the conjunction is deterministic.
     assertion_atoms_by_base: Dict[str, List[Formula]] = {}
+    source_warrants_by_base: Dict[str, List[dict]] = {}
     base_order: List[str] = []
 
     for stmt in body:
@@ -3010,7 +3468,10 @@ def _classify_value_scope(
                 implications,
                 used_names,
                 assertion_atoms_by_base,
+                source_warrants_by_base,
                 base_order,
+                fn,
+                source,
                 out,
             )
             assertion_index += 1
@@ -3054,7 +3515,13 @@ def _classify_value_scope(
         atoms = assertion_atoms_by_base[base]
         conjoined_inv = atoms[0] if len(atoms) == 1 else and_(atoms)
         assertion_name = f"{base}::assertion"
-        decls.append(ContractDecl(name=assertion_name, inv=conjoined_inv))
+        decls.append(
+            ContractDecl(
+                name=assertion_name,
+                inv=conjoined_inv,
+                source_warrants=source_warrants_by_base.get(base, []),
+            )
+        )
 
     out.claimed_tests.add(test_name)
     out.seen += 1
@@ -3197,7 +3664,10 @@ def _collect_value_scope_assertion_facts(
     implications: List[ImplicationDecl],
     used_names: Set[str],
     assertion_atoms_by_base: Dict[str, List[Formula]],
+    source_warrants_by_base: Dict[str, List[dict]],
     base_order: List[str],
+    fn: ast.FunctionDef,
+    source: str,
     out: Layer2Output,
 ) -> int:
     """Collect ::facts contracts and implication wiring for one assertion
@@ -3219,20 +3689,42 @@ def _collect_value_scope_assertion_facts(
             implication_name = _unique_contract_name(
                 f"{base}::facts-implies-assertion", used_names
             )
+            assertion_name = f"{base}::assertion"
+            fact_warrant = _source_memento_for_statement(
+                fn,
+                stmt,
+                source_path,
+                source,
+                role="python.test-fact",
+                claim_name=facts_name,
+                contract_name=assertion_name,
+            )
             fact_formula = facts[0] if len(facts) == 1 else and_(facts)
-            decls.append(ContractDecl(name=facts_name, inv=fact_formula))
+            fact_warrants = [fact_warrant] if fact_warrant is not None else []
+            decls.append(
+                ContractDecl(
+                    name=facts_name,
+                    inv=fact_formula,
+                    source_warrants=fact_warrants,
+                )
+            )
             # Accumulate assertion formula for this base; the conjoined
             # ::assertion contract is emitted once at the end of
             # _classify_value_scope so all assertions about the same
             # call-site subject land in one inv.
             if base not in assertion_atoms_by_base:
                 assertion_atoms_by_base[base] = []
+                source_warrants_by_base[base] = []
                 base_order.append(base)
+            if fact_warrant is not None:
+                _append_unique_source_warrant(
+                    source_warrants_by_base[base],
+                    fact_warrant,
+                )
             assertion_atoms_by_base[base].append(assertion)
             # Wire the implication antecedent to the (not-yet-emitted)
             # conjoined assertion name; the contract will exist in the
             # same .proof bundle by the time the verifier loads it.
-            assertion_name = f"{base}::assertion"
             implications.append(
                 ImplicationDecl(
                     name=implication_name,
@@ -3267,7 +3759,12 @@ def _collect_value_scope_assertion_facts(
             subject_term = _assertion_call_subject(assertion) or origin.euf_term
             if subject_term is not None:
                 for conjunct in _universe_conjuncts(
-                    origin.callee, subject_term, out, source_path, test_name
+                    origin.callee,
+                    subject_term,
+                    out,
+                    source_path,
+                    test_name,
+                    source_warrants=source_warrants_by_base[base],
                 ):
                     if conjunct not in assertion_atoms_by_base[base]:
                         assertion_atoms_by_base[base].append(conjunct)
@@ -3280,6 +3777,7 @@ def _universe_conjuncts(
     out: Layer2Output,
     source_path: str,
     test_name: str,
+    source_warrants: Optional[List[dict]] = None,
 ) -> List[Formula]:
     """Every walked universe for ``callee``, instantiated at
     ``subject_term`` -- the call-shaped side of the assertion's OWN equality
@@ -3334,6 +3832,11 @@ def _universe_conjuncts(
                     "str.chars-not-in-set",
                     [subject_term, str_const(universe.forbidden)],
                 )
+            )
+        if source_warrants is not None and universe.source_memento is not None:
+            _append_unique_source_warrant(
+                source_warrants,
+                _source_warrant_for_translate_universe(universe),
             )
 
     # BRANCH-LITERAL DISJUNCTION (census non-return:If, 75k bodies, and
@@ -3536,6 +4039,21 @@ def _universe_conjuncts(
                     if _euf_args_all_concrete(term):
                         conjuncts.append(eq(subject_term, term))
     return conjuncts
+
+
+def _source_warrant_for_translate_universe(universe) -> dict:
+    warrant = dict(universe.source_memento or {})
+    warrant["kind"] = "source-memento"
+    warrant["role"] = "python.translate-universe"
+    warrant["source_function_name"] = universe.qualname.rsplit(".", 1)[-1]
+    warrant["universe_kind"] = universe.kind
+    warrant["table_name"] = universe.table_name
+    return warrant
+
+
+def _append_unique_source_warrant(warrants: List[dict], warrant: dict) -> None:
+    if warrant not in warrants:
+        warrants.append(warrant)
 
 
 def _expr_spec_term(spec, call_args):

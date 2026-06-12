@@ -742,10 +742,7 @@ fn panic_locus_for<'a>(
     let callee = callee;
     panic_loci.iter().find(|locus| {
         locus.get("argTerm") == Some(arg)
-            && locus
-                .get("callee")
-                .and_then(|v| v.as_str())
-                == Some(callee)
+            && locus.get("callee").and_then(|v| v.as_str()) == Some(callee)
     })
 }
 
@@ -1107,10 +1104,7 @@ fn walk_term(
     //     under it. A branch the kit did not wrap (unrecognized guard) carries
     //     no `cf_guarded`, so a partial inside it stays honestly undecidable.
     //   * any other ctor: descends args with the path condition unchanged.
-    if matches!(
-        name.as_str(),
-        panic_freedom::CF_GUARDED
-    ) {
+    if matches!(name.as_str(), panic_freedom::CF_GUARDED) {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             let guard = args.first();
             let value = args.get(1);
@@ -1134,10 +1128,7 @@ fn walk_term(
             // The guard term itself is a predicate over the receiver, not a
             // call value; do not descend it as a callsite source.
         }
-    } else if matches!(
-        name.as_str(),
-        panic_freedom::CF_ITE
-    ) {
+    } else if matches!(name.as_str(), panic_freedom::CF_ITE) {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             // arg0: the condition term, evaluated in the enclosing context. It
             // introduces no path fact (the dominating fact rides cf_guarded).

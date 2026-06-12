@@ -205,7 +205,10 @@ fn collect_vars(term: &Json, out: &mut Vec<String>) {
 ///   For Math.abs: one input (the argument `a`).
 ///
 /// Returns the `DeriveQuery` containing the SMT script.
-pub fn emit_derive_query(bv_tree_json: &Json, inputs: &[i32]) -> Result<DeriveQuery, DeriveQueryError> {
+pub fn emit_derive_query(
+    bv_tree_json: &Json,
+    inputs: &[i32],
+) -> Result<DeriveQuery, DeriveQueryError> {
     // Collect var names in DFS order.
     let mut var_names: Vec<String> = Vec::new();
     collect_vars(bv_tree_json, &mut var_names);
@@ -257,12 +260,14 @@ pub fn emit_derive_query(bv_tree_json: &Json, inputs: &[i32]) -> Result<DeriveQu
     // Render the bv_tree SYMBOLICALLY (vars stay as var names) for the
     // universe definition assertion:
     //   (assert (= r (ite (bvslt a #x00000000) (bvneg a) a)))
-    let bv_expr_symbolic = render_bv_term(bv_tree_json, None).ok_or_else(|| {
-        DeriveQueryError("could not render bv_tree symbolically".into())
-    })?;
+    let bv_expr_symbolic = render_bv_term(bv_tree_json, None)
+        .ok_or_else(|| DeriveQueryError("could not render bv_tree symbolically".into()))?;
 
     // Assert the universe definition: r = bv_expr(symbolic vars).
-    smt.push_str(&format!("(assert (= {} {}))\n", result_var, bv_expr_symbolic));
+    smt.push_str(&format!(
+        "(assert (= {} {}))\n",
+        result_var, bv_expr_symbolic
+    ));
 
     // Assert each var = its concrete input.
     for (vname, &inp) in var_names.iter().zip(inputs.iter()) {
@@ -398,17 +403,22 @@ mod blocks_derive_tests {
             {"kind":"var","name":"b2"}]
         });
         let idx = |sh: i64| {
-            let shifted = if sh == 0 { acc.clone() } else {
+            let shifted = if sh == 0 {
+                acc.clone()
+            } else {
                 serde_json::json!({"kind":"ctor","name":"bv32.lshr","args":[acc.clone(),{"kind":"const","value":sh}]})
             };
             serde_json::json!({"kind":"ctor","name":"bv32.and","args":[shifted,{"kind":"const","value":63}]})
         };
         let table: Vec<i64> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-            .chars().map(|c| c as i64).collect();
+            .chars()
+            .map(|c| c as i64)
+            .collect();
         serde_json::json!({
             "input_bytes":[98,97,114], "vars":["b0","b1","b2"],
             "per_char":[idx(18),idx(12),idx(6),idx(0)], "table": table
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[test]
@@ -421,7 +431,10 @@ mod blocks_derive_tests {
 
     #[test]
     fn parse_string_model() {
-        assert_eq!(parse_model_string("((subj \"YmFy\"))", "subj").unwrap(), "YmFy");
+        assert_eq!(
+            parse_model_string("((subj \"YmFy\"))", "subj").unwrap(),
+            "YmFy"
+        );
         assert!(parse_model_string("((other \"x\"))", "subj").is_none());
     }
 
@@ -434,16 +447,32 @@ mod blocks_derive_tests {
             return;
         }
         let dq = emit_blocks_derive_query(&bar_payload()).expect("emit");
-        let mut child = Command::new("z3").args(["-smt2","-in"])
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-            .spawn().expect("spawn z3");
-        child.stdin.as_mut().unwrap().write_all(dq.smt.as_bytes()).unwrap();
+        let mut child = Command::new("z3")
+            .args(["-smt2", "-in"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn z3");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(dq.smt.as_bytes())
+            .unwrap();
         let out = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
-        let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+        let lines: Vec<&str> = stdout
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect();
         assert_eq!(lines[0], "sat", "must be sat; got {stdout:?}");
         let derived = parse_model_string(lines[1], &dq.result_var).expect("parse");
-        assert_eq!(derived, "YmFy", "z3.model derives encode(\"bar\") = \"YmFy\"");
+        assert_eq!(
+            derived, "YmFy",
+            "z3.model derives encode(\"bar\") = \"YmFy\""
+        );
     }
 }
 
@@ -482,19 +511,49 @@ mod tests {
         let dq = emit_derive_query(&tree, &[i32::MIN]).expect("emit");
         let rv = &dq.result_var;
         // The result symbol is the reserved (collision-free) token, not `r`.
-        assert_eq!(rv, "__sugar_derive_result__", "result symbol must be the reserved token");
+        assert_eq!(
+            rv, "__sugar_derive_result__",
+            "result symbol must be the reserved token"
+        );
         // Must declare the arg var and the result var.
-        assert!(dq.smt.contains("(declare-const a (_ BitVec 32))"), "missing a decl:\n{}", dq.smt);
-        assert!(dq.smt.contains(&format!("(declare-const {rv} (_ BitVec 32))")), "missing result decl:\n{}", dq.smt);
+        assert!(
+            dq.smt.contains("(declare-const a (_ BitVec 32))"),
+            "missing a decl:\n{}",
+            dq.smt
+        );
+        assert!(
+            dq.smt
+                .contains(&format!("(declare-const {rv} (_ BitVec 32))")),
+            "missing result decl:\n{}",
+            dq.smt
+        );
         // Universe definition must be symbolic.
-        assert!(dq.smt.contains(&format!("(assert (= {rv} (ite (bvslt a #x00000000) (bvneg a) a)))")),
-            "universe definition wrong:\n{}", dq.smt);
+        assert!(
+            dq.smt.contains(&format!(
+                "(assert (= {rv} (ite (bvslt a #x00000000) (bvneg a) a)))"
+            )),
+            "universe definition wrong:\n{}",
+            dq.smt
+        );
         // Input assertion: MIN_VALUE = #x80000000.
-        assert!(dq.smt.contains("(assert (= a #x80000000))"), "input assertion wrong:\n{}", dq.smt);
+        assert!(
+            dq.smt.contains("(assert (= a #x80000000))"),
+            "input assertion wrong:\n{}",
+            dq.smt
+        );
         // Must end with check-sat + get-value over the result symbol.
-        assert!(dq.smt.contains(&format!("(check-sat)\n(get-value ({rv}))\n")), "missing check-sat/get-value:\n{}", dq.smt);
+        assert!(
+            dq.smt
+                .contains(&format!("(check-sat)\n(get-value ({rv}))\n")),
+            "missing check-sat/get-value:\n{}",
+            dq.smt
+        );
         // QF_BV header.
-        assert!(dq.smt.starts_with("(set-logic QF_BV)\n"), "must start with QF_BV:\n{}", dq.smt);
+        assert!(
+            dq.smt.starts_with("(set-logic QF_BV)\n"),
+            "must start with QF_BV:\n{}",
+            dq.smt
+        );
     }
 
     #[test]
@@ -516,15 +575,36 @@ mod tests {
         });
         let dq = emit_derive_query(&tree, &[i32::MIN]).expect("emit");
         let rv = &dq.result_var;
-        assert_ne!(rv, "r", "result symbol must NOT be `r` when the universe uses `r`");
+        assert_ne!(
+            rv, "r",
+            "result symbol must NOT be `r` when the universe uses `r`"
+        );
         // The universe var `r` is declared as a BitVec, distinct from the result.
-        assert!(dq.smt.contains("(declare-const r (_ BitVec 32))"), "universe var r must be declared:\n{}", dq.smt);
-        assert!(dq.smt.contains(&format!("(declare-const {rv} (_ BitVec 32))")), "result var must be declared:\n{}", dq.smt);
+        assert!(
+            dq.smt.contains("(declare-const r (_ BitVec 32))"),
+            "universe var r must be declared:\n{}",
+            dq.smt
+        );
+        assert!(
+            dq.smt
+                .contains(&format!("(declare-const {rv} (_ BitVec 32))")),
+            "result var must be declared:\n{}",
+            dq.smt
+        );
         // The input assertion binds the universe var `r` to MIN_VALUE.
-        assert!(dq.smt.contains("(assert (= r #x80000000))"), "universe var r must bind to input:\n{}", dq.smt);
+        assert!(
+            dq.smt.contains("(assert (= r #x80000000))"),
+            "universe var r must bind to input:\n{}",
+            dq.smt
+        );
         // The universe definition binds the result symbol to ite over `r`.
-        assert!(dq.smt.contains(&format!("(assert (= {rv} (ite (bvslt r #x00000000) (bvneg r) r)))")),
-            "result must equal ite over universe var r:\n{}", dq.smt);
+        assert!(
+            dq.smt.contains(&format!(
+                "(assert (= {rv} (ite (bvslt r #x00000000) (bvneg r) r)))"
+            )),
+            "result must equal ite over universe var r:\n{}",
+            dq.smt
+        );
     }
 
     #[test]
@@ -537,10 +617,15 @@ mod tests {
             "args": [{"kind": "var", "name": "__sugar_derive_result__"}]
         });
         let result = emit_derive_query(&tree, &[5]);
-        assert!(result.is_err(), "must refuse when universe uses the reserved token");
+        assert!(
+            result.is_err(),
+            "must refuse when universe uses the reserved token"
+        );
         let msg = result.unwrap_err().0;
-        assert!(msg.contains("collision") && msg.contains("__sugar_derive_result__"),
-            "refusal must name the collision: {msg}");
+        assert!(
+            msg.contains("collision") && msg.contains("__sugar_derive_result__"),
+            "refusal must name the collision: {msg}"
+        );
     }
 
     #[test]
@@ -549,7 +634,10 @@ mod tests {
         let result = emit_derive_query(&tree, &[]);
         assert!(result.is_err(), "should error on arity mismatch");
         let msg = result.unwrap_err().0;
-        assert!(msg.contains("1 var") || msg.contains("var(s)"), "error: {msg}");
+        assert!(
+            msg.contains("1 var") || msg.contains("var(s)"),
+            "error: {msg}"
+        );
     }
 
     #[test]
@@ -608,7 +696,12 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn z3");
-        child.stdin.take().unwrap().write_all(dq.smt.as_bytes()).expect("write");
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(dq.smt.as_bytes())
+            .expect("write");
         let out = child.wait_with_output().expect("wait");
         let stdout = String::from_utf8_lossy(&out.stdout);
 
@@ -617,13 +710,20 @@ mod tests {
             .map(|l| l.trim_end_matches('\r'))
             .filter(|l| !l.is_empty())
             .collect();
-        assert!(lines.len() >= 2, "expected at least 2 lines, got: {stdout:?}");
-        assert_eq!(lines[0], "sat", "z3 must return sat for the abs derive query; got: {stdout:?}");
+        assert!(
+            lines.len() >= 2,
+            "expected at least 2 lines, got: {stdout:?}"
+        );
+        assert_eq!(
+            lines[0], "sat",
+            "z3 must return sat for the abs derive query; got: {stdout:?}"
+        );
 
         let derived = parse_model_value(lines[1], &dq.result_var)
             .unwrap_or_else(|| panic!("could not parse model value from: {:?}", lines[1]));
         assert_eq!(
-            derived, i32::MIN,
+            derived,
+            i32::MIN,
             "z3.model derives abs(MIN_VALUE) = -2147483648 (two's complement truth); got {derived}"
         );
     }

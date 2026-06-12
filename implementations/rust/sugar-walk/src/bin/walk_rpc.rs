@@ -5773,7 +5773,6 @@ fn kit_declaration_result() -> Value {
     })
 }
 
-
 fn bind_lift(params: &Value) -> Result<Value, String> {
     if lift_emit_mode(params) == Some("ir-document") {
         return function_contract_lift(params);
@@ -7078,8 +7077,6 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
     }
 }
 
-
-
 #[derive(Debug, Clone, Default)]
 struct SugarAttrParsed {
     op: String,
@@ -7159,8 +7156,6 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
     }
     None
 }
-
-
 
 #[derive(Debug, Default)]
 struct ParsedAttrArgs {
@@ -9628,8 +9623,8 @@ fn cvalue_to_json(v: &CValue) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libsugar::panic_freedom;
     use libsugar::core::{bind_result_payload, bind_term_document, BindOptions, Term};
+    use libsugar::panic_freedom;
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -9791,8 +9786,6 @@ mod tests {
         );
         assert!(body_source.get("span").is_some());
     }
-
-
 
     fn panic_loci_for_first_fn(src: &str) -> Vec<Value> {
         let file = syn::parse_file(src).expect("source parses");
@@ -10894,7 +10887,6 @@ async fn fetch_status(url: String) -> i64 {
         );
         let _ = fs::remove_dir_all(root);
     }
-
 
     #[test]
     fn unannotated_fn_produces_zero_sugar_entries() {

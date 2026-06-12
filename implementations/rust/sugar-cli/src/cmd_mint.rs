@@ -271,6 +271,7 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
     let mut merged_implications: Vec<Value> = Vec::new();
     let mut merged_authorities: Vec<Value> = Vec::new();
     let mut merged_witnesses: Vec<Value> = Vec::new();
+    let mut merged_source_mementos: Vec<Value> = Vec::new();
     let mut oracle_observation = OracleObservation::default();
     // Content-shape dedup keys (NOT names). See `canonical_dedup_key`.
     let mut seen_content: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -351,6 +352,14 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
         if let Some(arr) = entry.response.get("witnesses").and_then(|v| v.as_array()) {
             merged_witnesses.extend(arr.iter().cloned());
         }
+        if let Some(arr) = entry
+            .response
+            .get("sourceMementos")
+            .or_else(|| entry.response.get("source_mementos"))
+            .and_then(|v| v.as_array())
+        {
+            merged_source_mementos.extend(arr.iter().cloned());
+        }
     }
     let bridges_emitted = merged_ir
         .iter()
@@ -380,6 +389,9 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
     }
     if !merged_witnesses.is_empty() {
         merged["witnesses"] = Value::Array(merged_witnesses);
+    }
+    if !merged_source_mementos.is_empty() {
+        merged["sourceMementos"] = Value::Array(merged_source_mementos);
     }
     Ok(merged)
 }
@@ -1345,12 +1357,17 @@ fn mint_lift_response(
             let authorities = lift_resp.get("authorities").and_then(|v| v.as_array());
             let implications = lift_resp.get("implications").and_then(|v| v.as_array());
             let witnesses = lift_resp.get("witnesses").and_then(|v| v.as_array());
+            let source_mementos = lift_resp
+                .get("sourceMementos")
+                .or_else(|| lift_resp.get("source_mementos"))
+                .and_then(|v| v.as_array());
             debug!(
                 ir_entries = ir.len(),
                 "mint: minting ir-document into .proof bundle"
             );
-            let minted = mint_ir_document(
+            let minted = mint_ir_document_with_source_mementos(
                 ir,
+                source_mementos,
                 authorities,
                 implications,
                 witnesses,
@@ -1704,6 +1721,28 @@ fn mint_ir_document(
     out_dir: &Path,
     quiet: bool,
 ) -> Result<MintedIrDocument, String> {
+    mint_ir_document_with_source_mementos(
+        ir,
+        None,
+        authorities,
+        implications,
+        witnesses,
+        project_root,
+        out_dir,
+        quiet,
+    )
+}
+
+fn mint_ir_document_with_source_mementos(
+    ir: &[Value],
+    source_mementos: Option<&Vec<Value>>,
+    authorities: Option<&Vec<Value>>,
+    implications: Option<&Vec<Value>>,
+    witnesses: Option<&Vec<Value>>,
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+) -> Result<MintedIrDocument, String> {
     use std::collections::BTreeMap;
 
     #[derive(Clone)]
@@ -1767,6 +1806,13 @@ fn mint_ir_document(
         .filter(|s| !s.is_empty());
     let witness_cids_by_contract =
         emit_witnesses_by_contract(witnesses, project_root, out_dir, quiet)?;
+
+    if let Some(source_mementos) = source_mementos {
+        for source_memento in source_mementos {
+            let (cid, bytes) = mint_source_memento(source_memento, None)?;
+            members.entry(cid).or_insert(bytes);
+        }
+    }
 
     if let Some(authorities) = authorities {
         for authority in authorities {
@@ -2075,6 +2121,24 @@ fn mint_ir_document(
             }
             None => Vec::new(),
         };
+        let source_warrants_value = decl
+            .get("sourceWarrants")
+            .or_else(|| decl.get("source_warrants"));
+        match source_warrants_value {
+            Some(Value::Array(arr)) => {
+                for source_memento in arr {
+                    let (cid, bytes) = mint_source_memento(source_memento, Some(&name))?;
+                    members.entry(cid).or_insert(bytes);
+                }
+            }
+            Some(value) => {
+                return Err(format!(
+                    "contract `{name}`: sourceWarrants must be an array, got {}",
+                    json_type_name(value)
+                ));
+            }
+            None => {}
+        }
         let body_policy = body_discharge_policy_from_fields(
             decl.get("bodyDischargeEligible")
                 .or_else(|| decl.get("body_discharge_eligible")),
@@ -2181,6 +2245,7 @@ fn mint_ir_document(
             body_discharge_refusal_reason: body_discharge_refusal_reason.clone(),
             panic_loci,
             class_shapes,
+            source_warrants: Vec::new(),
         };
 
         let ccid = contract_cid(&args);
@@ -2474,7 +2539,10 @@ fn mint_ir_document(
         None
     } else {
         let mut m = std::collections::BTreeMap::new();
-        m.insert("sugar.conjoinedImports".to_string(), conjoined_imports.join(","));
+        m.insert(
+            "sugar.conjoinedImports".to_string(),
+            conjoined_imports.join(","),
+        );
         Some(m)
     };
 
@@ -2584,7 +2652,87 @@ fn mint_witness_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     Ok((cid, canonical.into_bytes()))
 }
 
+fn mint_source_memento(
+    decl: &Value,
+    default_contract_name: Option<&str>,
+) -> Result<(String, Vec<u8>), String> {
+    let mut body = decl
+        .get("source_memento")
+        .or_else(|| decl.get("sourceMemento"))
+        .cloned()
+        .unwrap_or_else(|| decl.clone());
+    let body_obj = body
+        .as_object_mut()
+        .ok_or_else(|| "`source-memento` must be an object".to_string())?;
+    body_obj
+        .entry("kind".to_string())
+        .or_insert_with(|| json!("source-memento"));
+    if body_obj.get("kind").and_then(Value::as_str) != Some("source-memento") {
+        return Err("`source-memento.kind` must be `source-memento`".to_string());
+    }
+    for forbidden in ["body_text", "ast_template", "bodyText", "astTemplate"] {
+        if body_obj.contains_key(forbidden) {
+            return Err(format!(
+                "`source-memento` must be lean; forbidden inline field `{forbidden}` present"
+            ));
+        }
+    }
+    for field in [
+        "role",
+        "universe_kind",
+        "table_name",
+        "contractName",
+        "claimName",
+        "eufName",
+    ] {
+        if !body_obj.contains_key(field) {
+            if let Some(value) = decl.get(field).cloned() {
+                body_obj.insert(field.to_string(), value);
+            }
+        }
+    }
+    if let Some(contract_name) = default_contract_name {
+        body_obj
+            .entry("contractName".to_string())
+            .or_insert_with(|| json!(contract_name));
+        body_obj
+            .entry("claimName".to_string())
+            .or_insert_with(|| json!(contract_name));
+    }
+    let source_cid = body_obj
+        .get("source_cid")
+        .or_else(|| body_obj.get("sourceCid"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "`source-memento` missing non-empty `source_cid`".to_string())?
+        .to_string();
 
+    let mut header = serde_json::Map::new();
+    header.insert("kind".to_string(), json!("source-memento"));
+    header.insert("sourceCid".to_string(), json!(source_cid));
+    for (header_field, body_field) in [
+        ("claimName", "claimName"),
+        ("contractName", "contractName"),
+        ("eufName", "eufName"),
+        ("file", "file"),
+        ("role", "role"),
+        ("sourceFunctionName", "source_function_name"),
+        ("universeKind", "universe_kind"),
+    ] {
+        if let Some(value) = body_obj.get(body_field).cloned() {
+            header.insert(header_field.to_string(), value);
+        }
+    }
+
+    let envelope = json!({
+        "body": body,
+        "header": Value::Object(header),
+        "schemaVersion": "1",
+    });
+    let canonical = encode_jcs(&json_to_cvalue(&envelope));
+    let cid = blake3_512_of(canonical.as_bytes());
+    Ok((cid, canonical.into_bytes()))
+}
 
 /// Reduce a function-contract `fnName` to the bare symbol a harvested call
 /// ctor uses. Rust walk emits the bare ident already (`double`), so this is
@@ -2989,7 +3137,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn stamp_with_partial_profile_only_fills_pinned_axes() {
         // Profile floats `library`; only family + version get stamped.
@@ -3052,7 +3199,6 @@ mod tests {
             "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
     }
-
 
     #[test]
     fn resolve_kit_reads_project_config_aliases() {
@@ -3427,6 +3573,22 @@ mod tests {
             .unwrap_or_else(|| panic!("contract header `{name}` not found"))
     }
 
+    fn source_memento_members(catalog: &sugar_verifier::cbor_decode::CborValue) -> Vec<Value> {
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+        members
+            .values()
+            .filter_map(|member| member.as_bstr())
+            .filter_map(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+            .filter(|envelope| {
+                envelope.pointer("/header/kind").and_then(|v| v.as_str()) == Some("source-memento")
+            })
+            .collect()
+    }
+
     fn minted_panic_locus_contract_header(panic_loci: Option<Value>) -> Value {
         let (bytes, _, _) = mint_from_ir_document(
             &function_contract_with_panic_loci(panic_loci),
@@ -3543,8 +3705,7 @@ mod tests {
         assert_eq!(panic_loci, &[locus]);
         assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
         assert_ne!(
-            panic_loci[0]["callee"],
-            "concept:panic-freedom.leaf.unwrap",
+            panic_loci[0]["callee"], "concept:panic-freedom.leaf.unwrap",
             "Rust v1 mint writer must not emit the unwrap leaf concept alias"
         );
     }
@@ -3913,8 +4074,7 @@ mod tests {
             "outBinding": "out",
             "post": {"kind": "atomic", "name": "p", "args": []}
         })];
-        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
-            .expect("mint");
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint");
 
         // The tie is recorded in the bundle metadata, sorted+deduped.
         let catalog = sugar_verifier::cbor_decode::decode(&minted.bytes).expect("decode");
@@ -3932,8 +4092,8 @@ mod tests {
         // commits to the exact deps it was conjoined against.
         fs::remove_file(imports.join(format!("{dep_b}.proof"))).unwrap();
         fs::write(imports.join("blake3-512:cccc.proof"), b"z").unwrap();
-        let minted2 = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
-            .expect("mint2");
+        let minted2 =
+            mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint2");
         assert_ne!(
             minted.filename_cid, minted2.filename_cid,
             "a changed dependency set must change the vendor bundle CID"
@@ -3941,8 +4101,8 @@ mod tests {
 
         // And re-mint against the SAME dependency set -> identical CID
         // (recompute-not-trust: the tie is deterministic).
-        let minted3 = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
-            .expect("mint3");
+        let minted3 =
+            mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint3");
         assert_eq!(
             minted2.filename_cid, minted3.filename_cid,
             "same dependency set must yield the same vendor bundle CID"
@@ -3951,14 +4111,19 @@ mod tests {
         // No imports -> no tie (metadata absent), so leaf bundles are unaffected.
         let leaf_root = temp_workspace("mint_import_tie_leaf");
         fs::create_dir_all(leaf_root.join("out")).unwrap();
-        let leaf = mint_ir_document(&ir, None, None, None, &leaf_root, &leaf_root.join("out"), true)
-            .expect("leaf mint");
+        let leaf = mint_ir_document(
+            &ir,
+            None,
+            None,
+            None,
+            &leaf_root,
+            &leaf_root.join("out"),
+            true,
+        )
+        .expect("leaf mint");
         let leaf_cat = sugar_verifier::cbor_decode::decode(&leaf.bytes).expect("decode leaf");
         assert!(
-            leaf_cat
-                .as_map()
-                .and_then(|m| m.get("metadata"))
-                .is_none(),
+            leaf_cat.as_map().and_then(|m| m.get("metadata")).is_none(),
             "a leaf with no imports carries no conjoined-imports tie"
         );
     }
@@ -4008,6 +4173,136 @@ mod tests {
                 .pointer("/metadata/library")
                 .and_then(|v| v.as_str()),
             Some("libsugar")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mint_ir_document_mints_contract_source_warrants_as_envelope_members() {
+        let root = temp_workspace("mint_contract_source_warrants_envelope");
+        let out_dir = root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        let contract_name = "Codec.encode#euf#c:callresult_encode_a1(s:bar)::assertion";
+        let source_warrant = json!({
+            "kind": "source-memento",
+            "role": "java.strong-universe",
+            "file": "src/Codec.java",
+            "source_function_name": "encode",
+            "source_cid": format!("blake3-512:{}", "a".repeat(128)),
+            "template_cid": format!("blake3-512:{}", "b".repeat(128)),
+            "span": {"start_line": 10, "start_col": 4, "end_line": 14, "end_col": 5},
+            "param_names": ["input"]
+        });
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": contract_name,
+            "outBinding": "out",
+            "inv": {"kind": "atomic", "name": "str.chars-in-set", "args": []},
+            "sourceWarrants": [source_warrant]
+        })];
+
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint ir-document");
+        let catalog = sugar_verifier::cbor_decode::decode(&minted.bytes).expect("decode proof");
+        let header = contract_header(&catalog, contract_name);
+        assert!(
+            header.get("sourceWarrants").is_none(),
+            "source mementos belong in the proof envelope, not the contract header: {header:#?}"
+        );
+
+        let mementos = source_memento_members(&catalog);
+        assert_eq!(mementos.len(), 1);
+        let memento = &mementos[0];
+        assert_eq!(
+            memento.pointer("/header/kind").and_then(|v| v.as_str()),
+            Some("source-memento")
+        );
+        assert_eq!(
+            memento
+                .pointer("/header/contractName")
+                .and_then(|v| v.as_str()),
+            Some(contract_name)
+        );
+        assert_eq!(
+            memento
+                .pointer("/header/claimName")
+                .and_then(|v| v.as_str()),
+            Some(contract_name)
+        );
+        assert_eq!(
+            memento.pointer("/header/role").and_then(|v| v.as_str()),
+            Some("java.strong-universe")
+        );
+        assert_eq!(
+            memento.pointer("/header/file").and_then(|v| v.as_str()),
+            Some("src/Codec.java")
+        );
+        assert_eq!(
+            memento.pointer("/body/source_cid").and_then(|v| v.as_str()),
+            Some(format!("blake3-512:{}", "a".repeat(128)).as_str())
+        );
+        assert!(
+            memento.pointer("/body/body_text").is_none()
+                && memento.pointer("/body/ast_template").is_none(),
+            "source mementos must be lean, not decompressed source: {memento:#?}"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mint_ir_document_mints_top_level_source_mementos_as_envelope_members() {
+        let root = temp_workspace("mint_top_level_source_mementos_envelope");
+        let out_dir = root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        let source_mementos = vec![json!({
+            "kind": "source-memento",
+            "role": "java.fact",
+            "file": "src/test/java/CodecTest.java",
+            "source_function_name": "encodeBase64_fixedpoint",
+            "source_cid": format!("blake3-512:{}", "c".repeat(128)),
+            "template_cid": format!("blake3-512:{}", "d".repeat(128)),
+            "claimName": "Codec.encode#euf#c:callresult_encode_a1(s:bar)::assertion",
+            "span": {"start_line": 44, "start_col": 8, "end_line": 44, "end_col": 48}
+        })];
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "Codec.encode#euf#c:callresult_encode_a1(s:bar)::assertion",
+            "outBinding": "out",
+            "inv": {"kind": "atomic", "name": "=", "args": []}
+        })];
+
+        let minted = mint_ir_document_with_source_mementos(
+            &ir,
+            Some(&source_mementos),
+            None,
+            None,
+            None,
+            &root,
+            &out_dir,
+            true,
+        )
+        .expect("mint ir-document");
+        let catalog = sugar_verifier::cbor_decode::decode(&minted.bytes).expect("decode proof");
+        let mementos = source_memento_members(&catalog);
+        assert_eq!(mementos.len(), 1);
+        let memento = &mementos[0];
+        assert_eq!(
+            memento
+                .pointer("/header/claimName")
+                .and_then(|v| v.as_str()),
+            Some("Codec.encode#euf#c:callresult_encode_a1(s:bar)::assertion")
+        );
+        assert_eq!(
+            memento.pointer("/header/role").and_then(|v| v.as_str()),
+            Some("java.fact")
+        );
+        assert_eq!(
+            memento
+                .pointer("/header/sourceCid")
+                .and_then(|v| v.as_str()),
+            Some(format!("blake3-512:{}", "c".repeat(128)).as_str())
         );
 
         let _ = std::fs::remove_dir_all(root);
@@ -4176,6 +4471,7 @@ mod tests {
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             class_shapes: Vec::new(),
+            source_warrants: Vec::new(),
         })
         .expect("mint contract");
         let mut env: Value =

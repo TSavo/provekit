@@ -949,7 +949,6 @@ fn requested_oracle_missing_policy(mode: DoctorMode) -> (CheckStatus, CheckSever
     }
 }
 
-
 struct DependencyResolverInfo {
     kind: String,
     surface: String,
@@ -2304,10 +2303,6 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         assert_modes_match_for_check(kit, "kit.consumer_surface.contract");
     }
 
-
-
-
-
     fn assert_manifest_declared_authoring_surface_is_collected(surface: &str) {
         let td = TempDir::new().unwrap();
         let kit = td.path();
@@ -2369,7 +2364,11 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
 
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
-        assert_no_check_by_id_and_surface(&report, "kit.plugin.command.available", "unclaimed-source");
+        assert_no_check_by_id_and_surface(
+            &report,
+            "kit.plugin.command.available",
+            "unclaimed-source",
+        );
     }
 
     #[test]
@@ -2490,7 +2489,11 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
         let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
         assert_eq!(
-            count_checks_by_id_and_surface(&report, "kit.plugin.command.available", "dedupe-source"),
+            count_checks_by_id_and_surface(
+                &report,
+                "kit.plugin.command.available",
+                "dedupe-source"
+            ),
             1
         );
     }
@@ -2540,12 +2543,6 @@ in the job, not on this crate. Not a live regression guard. Tracked in #1926."]
             "missing-authoring",
         );
     }
-
-
-
-
-
-
 
     #[test]
     fn structural_dependency_resolver_available_passes_with_binary_evidence() {

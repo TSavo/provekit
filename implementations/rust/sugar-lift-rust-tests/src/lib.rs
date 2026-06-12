@@ -3658,7 +3658,12 @@ fn translate_matches_assertion(
         // accessor. This is the meaningful claim (`Some(Widen)` vs `Some(Halt)`),
         // so we lift the conjunction, not just the trivial outer `Some`.
         if let Some((wrapper, inner)) = wrapped_variant(&pat) {
-            return Ok(wrapped_variant_entry(&subject, &wrapper, inner.as_deref(), scope));
+            return Ok(wrapped_variant_entry(
+                &subject,
+                &wrapper,
+                inner.as_deref(),
+                scope,
+            ));
         }
         return Err(format!(
             "matches! pattern is not an unambiguous qualified variant \
@@ -3727,9 +3732,12 @@ fn wrapped_variant_entry(
         name: "variant_of".to_string(),
         args: vec![payload],
     });
-    let inner_atom =
-        assertion_entry_from_eq(inner_lhs, str_const(format!("variant::{inner_variant}")), scope)
-            .atom;
+    let inner_atom = assertion_entry_from_eq(
+        inner_lhs,
+        str_const(format!("variant::{inner_variant}")),
+        scope,
+    )
+    .atom;
     Some(AssertionEntry {
         name: outer.name,
         atom: and_(vec![outer.atom, inner_atom]),
@@ -4918,7 +4926,9 @@ fn find_const_expr(expr: &Expr) -> Option<&Expr> {
 /// (`[0; LEN]`) returns None and is refused by name upstream.
 fn repeat_count_literal(len: &Expr) -> Option<usize> {
     match len {
-        Expr::Lit(ExprLit { lit: Lit::Int(i), .. }) => i.base10_parse::<usize>().ok(),
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(i), ..
+        }) => i.base10_parse::<usize>().ok(),
         Expr::Paren(p) => repeat_count_literal(&p.expr),
         Expr::Group(g) => repeat_count_literal(&g.expr),
         _ => None,

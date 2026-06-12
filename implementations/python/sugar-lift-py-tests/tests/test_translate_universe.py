@@ -14,6 +14,7 @@ for p in (str(PY_TESTS_SRC), str(PKG_SRC)):
         sys.path.insert(0, p)
 
 from sugar_lift_py_tests.layer2 import lift_file_layer2
+from sugar_lift_py_tests.lsp import _lift_source
 from sugar_lift_py_tests.translate_universe import translate_universe_for_callee
 
 VENDOR_TRANSLATE = '''
@@ -186,6 +187,183 @@ def test_universe_row_emitted_for_translate_callee(vendor_path):
     assert any(d.name.endswith("::assertion") and "urlsafe" in d.name for d in out.decls)
 
 
+def test_universe_assertion_carries_source_warrant(vendor_path):
+    vendor_path("venduniv_warrant", VENDOR_TRANSLATE)
+    out = _lift(
+        """
+        import venduniv_warrant
+
+        def test_urlsafe():
+            assert venduniv_warrant.urlsafe("abc") == "abc"
+        """
+    )
+
+    decl = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion") and "venduniv_warrant.urlsafe" in d.name
+    )
+    roles = {warrant.get("role") for warrant in decl.source_warrants}
+    assert {"python.test-fact", "python.translate-universe"} <= roles
+    warrant = next(
+        warrant
+        for warrant in decl.source_warrants
+        if warrant.get("role") == "python.translate-universe"
+    )
+    assert warrant["kind"] == "source-memento"
+    assert warrant["role"] == "python.translate-universe"
+    assert warrant["source_function_name"] == "urlsafe"
+    assert warrant["file"].endswith("venduniv_warrant.py")
+    assert warrant["source_cid"].startswith("blake3-512:")
+    assert warrant["template_cid"].startswith("blake3-512:")
+    assert warrant["span"]["start_line"] > 0
+    assert "body_text" not in warrant
+    assert "ast_template" not in warrant
+
+    assert out.source_ledger["source_loci"] > 0
+    assert out.source_ledger["source_warranted"] > 0
+    assert out.source_ledger["source_refused"] >= 0
+    assert out.source_ledger["source_inactive"] == 0
+    assert out.source_ledger["source_refuted"] == 0
+    assert out.source_ledger["source_work"] == 0
+    assert out.source_ledger["unclassified_source"] == 0
+    assert out.source_audits
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["contract"]["name"] == decl.name
+        and audit["role"] == "python.translate-universe"
+    )
+    assert audit["kind"] == "source-audit"
+    assert audit["language"] == "python"
+    assert audit["source_memento"]["kind"] == "source-memento"
+    assert "body_text" not in audit["source_memento"]
+    assert "ast_template" not in audit["source_memento"]
+    assert audit["totals"]["source_loci"] == len(audit["loci"])
+    assert audit["totals"]["source_inactive"] == 0
+    assert audit["totals"]["unclassified_source"] == 0
+    assert {locus["status"] for locus in audit["loci"]} <= {"warranted", "refused"}
+    for locus in audit["loci"]:
+        assert locus.get("ast_path", "").startswith("$.body"), locus
+        assert locus.get("span", {}).get("start_line", 0) > 0, locus
+        assert locus.get("line_range") == [
+            locus["span"]["start_line"],
+            locus["span"]["end_line"],
+        ], locus
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Attribute"
+        and locus.get("ast_path") == "$.body[1].value.func"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "refused" and locus.get("ast_kind") == "Expr"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_lift_source_exposes_source_audit_countdown(vendor_path):
+    vendor_path("venduniv_wire", VENDOR_TRANSLATE)
+    lifted = _lift_source(
+        "test_mod.py",
+        textwrap.dedent(
+            """
+            import venduniv_wire
+
+            def test_urlsafe():
+                assert venduniv_wire.urlsafe("abc") == "abc"
+            """
+        ),
+    )
+
+    source_ledger = lifted["sourceLedger"]
+    assert source_ledger["source_loci"] > 0
+    assert source_ledger["source_warranted"] > 0
+    assert source_ledger["source_refused"] > 0
+    assert source_ledger["source_inactive"] == 0
+    assert source_ledger["unclassified_source"] == 0
+    assert lifted["sourceMementos"]
+    rpc_memento = next(
+        m
+        for m in lifted["sourceMementos"]
+        if m.get("role") == "python.translate-universe"
+    )
+    assert rpc_memento["kind"] == "source-memento"
+    assert rpc_memento["claimName"].endswith("::assertion")
+    assert rpc_memento["contractName"].endswith("::assertion")
+    assert rpc_memento["source_cid"].startswith("blake3-512:")
+    assert "body_text" not in rpc_memento
+    assert "ast_template" not in rpc_memento
+    assert lifted["sourceAudits"]
+
+
+def test_lift_source_emits_package_unclassified_accounting(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_accounting"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def _inner(s):
+                return s
+
+
+            def b64e(s):
+                return _inner(s).rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    (pkg / "extra.py").write_text(
+        textwrap.dedent(
+            """
+            def skipped(value):
+                return value + "!"
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source(
+        "test_mod.py",
+        textwrap.dedent(
+            """
+            import vendpkg_accounting.encoding as enc
+
+            def test_token():
+                assert enc.b64e("abc") == "abc"
+            """
+        ),
+    )
+
+    package_audits = [
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    ]
+    assert len(package_audits) == 1
+    audit = package_audits[0]
+    assert audit["package"] == "vendpkg_accounting"
+    assert audit["totals"]["source_loci"] == len(audit["loci"])
+    assert audit["totals"]["source_warranted"] == 0
+    assert audit["totals"]["source_refused"] == 0
+    assert audit["totals"]["unclassified_source"] == len(audit["loci"])
+    assert audit["totals"]["unclassified_source"] > 0
+    assert lifted["sourceLedger"]["unclassified_source"] >= audit["totals"]["unclassified_source"]
+    assert any(
+        locus["status"] == "unclassified"
+        and locus["file"].endswith("vendpkg_accounting/extra.py")
+        and locus.get("ast_kind") == "FunctionDef"
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_universe_row_emitted_once_per_base_across_tests(vendor_path):
     # Same callee + same concrete args in TWO test functions: the bases
     # collapse cross-location (EUF), and the bundle must carry exactly ONE
@@ -296,6 +474,44 @@ def test_rstrip_emits_negated_suffix_conjunct(vendor_path):
                         suffix_atoms.append(inner)
     assert len(suffix_atoms) == 1
     assert suffix_atoms[0].args[0].value == "="
+
+
+def test_rstrip_source_audit_warrants_return_shape(vendor_path):
+    vendor_path("vendrstrip_audit", VENDOR_RSTRIP)
+    out = _lift(
+        """
+        import vendrstrip_audit
+
+        def test_token():
+            assert vendrstrip_audit.b64e("abc") == "abc"
+        """
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.translate-universe"
+        and audit["universe_kind"] == "no-suffix-chars"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Assign"
+        and locus.get("ast_path") == "$.body[0]"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        and locus.get("ast_path") == "$.body[1]"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Attribute"
+        and locus.get("ast_path") == "$.body[1].value.func"
+        for locus in audit["loci"]
+    ), audit
 
 
 def test_rstrip_vendor_vector_endswith_refuses(vendor_path):
