@@ -2278,19 +2278,19 @@ mod tests {
             "proofResolution": {"strategy": "rpc-proof-bytes"},
             "effectKinds": ["concept:panic-freedom"],
             "effectLeaves": [
-                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP, "concept": panic_freedom::METHOD_UNWRAP_CONCEPT},
-                {"surface": surface, "local": panic_freedom::METHOD_EXPECT, "concept": panic_freedom::METHOD_EXPECT_CONCEPT},
-                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP_ERR, "concept": panic_freedom::METHOD_UNWRAP_ERR_CONCEPT}
+                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP, "concept": "concept:panic-freedom.leaf.unwrap"},
+                {"surface": surface, "local": panic_freedom::METHOD_EXPECT, "concept": "concept:panic-freedom.leaf.expect"},
+                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP_ERR, "concept": "concept:panic-freedom.leaf.unwrap-err"}
             ],
             "guardPredicates": [
-                {"surface": surface, "local": panic_freedom::IS_OK, "concept": panic_freedom::IS_OK_CONCEPT},
-                {"surface": surface, "local": panic_freedom::IS_ERR, "concept": panic_freedom::IS_ERR_CONCEPT},
-                {"surface": surface, "local": panic_freedom::IS_SOME, "concept": panic_freedom::IS_SOME_CONCEPT},
-                {"surface": surface, "local": panic_freedom::IS_NONE, "concept": panic_freedom::IS_NONE_CONCEPT}
+                {"surface": surface, "local": panic_freedom::IS_OK, "concept": "concept:panic-freedom.result.ok"},
+                {"surface": surface, "local": panic_freedom::IS_ERR, "concept": "concept:panic-freedom.result.err"},
+                {"surface": surface, "local": panic_freedom::IS_SOME, "concept": "concept:panic-freedom.option.some"},
+                {"surface": surface, "local": panic_freedom::IS_NONE, "concept": "concept:panic-freedom.option.none"}
             ],
             "controlCarriers": [
-                {"surface": surface, "local": panic_freedom::CF_GUARDED, "concept": panic_freedom::CF_GUARDED_CONCEPT},
-                {"surface": surface, "local": panic_freedom::CF_ITE, "concept": panic_freedom::CF_ITE_CONCEPT}
+                {"surface": surface, "local": panic_freedom::CF_GUARDED, "concept": "concept:panic-freedom.guard"},
+                {"surface": surface, "local": panic_freedom::CF_ITE, "concept": "concept:panic-freedom.choice"}
             ],
             "residueCategories": []
         })

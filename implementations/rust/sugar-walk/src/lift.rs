@@ -640,8 +640,8 @@ fn branch_guard_head(cond_head: &str, else_branch: bool) -> Option<&'static str>
     let head = if method_head.is_some() {
         head
     } else {
-        let head = panic_freedom::normalize_result_predicate_name(head);
-        panic_freedom::normalize_option_predicate_name(head)
+        let head = head;
+        head
     };
     match (head, else_branch) {
         (panic_freedom::IS_SOME, false) | (panic_freedom::IS_NONE, true) => {
@@ -4025,118 +4025,6 @@ mod tests {
     }
 
     #[test]
-    fn branch_guard_head_accepts_result_concept_aliases_as_read_only_inputs() {
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_OK_CONCEPT, false),
-            Some(panic_freedom::IS_OK)
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_OK_CONCEPT, true),
-            Some(panic_freedom::IS_ERR)
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_ERR_CONCEPT, false),
-            Some(panic_freedom::IS_ERR)
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_ERR_CONCEPT, true),
-            Some(panic_freedom::IS_OK)
-        );
-    }
-
-    #[test]
-    fn branch_guard_head_accepts_option_concept_aliases_as_read_only_inputs() {
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_SOME_CONCEPT, false),
-            Some(panic_freedom::IS_SOME)
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_SOME_CONCEPT, true),
-            Some(panic_freedom::IS_NONE)
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_NONE_CONCEPT, false),
-            Some(panic_freedom::IS_NONE)
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_NONE_CONCEPT, true),
-            Some(panic_freedom::IS_SOME)
-        );
-    }
-
-    #[test]
-    fn branch_guard_head_option_concept_complements_match_old_names() {
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_SOME_CONCEPT, true),
-            branch_guard_head(panic_freedom::IS_SOME, true),
-            "negated concept option.some must compute the same complement as negated is_some"
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_NONE_CONCEPT, true),
-            branch_guard_head(panic_freedom::IS_NONE, true),
-            "negated concept option.none must compute the same complement as negated is_none"
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_SOME_CONCEPT, false),
-            branch_guard_head(panic_freedom::IS_SOME, false),
-            "positive concept option.some must compute the same guard as is_some"
-        );
-        assert_eq!(
-            branch_guard_head(panic_freedom::IS_NONE_CONCEPT, false),
-            branch_guard_head(panic_freedom::IS_NONE, false),
-            "positive concept option.none must compute the same guard as is_none"
-        );
-    }
-
-    #[test]
-    fn branch_guard_head_result_concept_aliases_are_exact() {
-        assert_eq!(
-            branch_guard_head("concept:panic-freedom.result.OK", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head("concept:panic-freedom.result.ok ", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head(" concept:panic-freedom.result.ok", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head("concept:panic-freedom.result.error", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head("method:concept:panic-freedom.result.ok", false),
-            None
-        );
-    }
-
-    #[test]
-    fn branch_guard_head_option_concept_aliases_are_exact() {
-        assert_eq!(
-            branch_guard_head("concept:panic-freedom.option.SOME", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head("concept:panic-freedom.option.some ", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head(" concept:panic-freedom.option.some", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head("concept:panic-freedom.option.null", false),
-            None
-        );
-        assert_eq!(
-            branch_guard_head("method:concept:panic-freedom.option.some", false),
-            None
-        );
-    }
-
-    #[test]
     fn branch_guard_head_refuses_unrecognized_and_negated_is_empty() {
         // `!is_empty` establishes no partial's pre -> no guard.
         assert_eq!(branch_guard_head("is_empty", true), None);
@@ -4238,7 +4126,7 @@ mod tests {
         let json = serde_json::to_string(&eq).unwrap();
         assert!(json.contains("cf_ite"), "must lift to a cf_ite: {json}");
         assert!(
-            !json.contains(panic_freedom::CF_ITE_CONCEPT),
+            !json.contains("concept:panic-freedom.choice"),
             "Rust v1 emission must keep the old choice carrier: {json}"
         );
         assert!(
@@ -4246,7 +4134,7 @@ mod tests {
             "guarded branches must carry cf_guarded wrappers: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::CF_GUARDED_CONCEPT),
+            !json.contains("concept:panic-freedom.guard"),
             "Rust v1 emission must keep the old cf_guarded carrier: {json}"
         );
         assert!(
@@ -4258,11 +4146,11 @@ mod tests {
             "Rust v1 emission must keep the old unwrap leaf token: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::METHOD_UNWRAP_CONCEPT),
+            !json.contains("concept:panic-freedom.leaf.unwrap"),
             "Rust v1 emission must not write the leaf concept alias: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::IS_SOME_CONCEPT),
+            !json.contains("concept:panic-freedom.option.some"),
             "Rust v1 emission must keep the old option predicate: {json}"
         );
         assert!(
@@ -4270,7 +4158,7 @@ mod tests {
             "else-branch guard is the complement is_none: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::IS_NONE_CONCEPT),
+            !json.contains("concept:panic-freedom.option.none"),
             "Rust v1 emission must keep the old option complement: {json}"
         );
     }
@@ -4322,11 +4210,11 @@ mod tests {
             "Rust v1 writer must keep emitting the old unwrap leaf token: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::METHOD_UNWRAP_CONCEPT),
+            !json.contains("concept:panic-freedom.leaf.unwrap"),
             "Rust v1 writer must not emit the unwrap leaf concept alias: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::IS_OK_CONCEPT),
+            !json.contains("concept:panic-freedom.result.ok"),
             "Rust v1 writer must keep emitting the old result predicate token: {json}"
         );
     }
@@ -4356,11 +4244,11 @@ mod tests {
             "Rust v1 writer must keep emitting the old expect leaf token: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::METHOD_EXPECT_CONCEPT),
+            !json.contains("concept:panic-freedom.leaf.expect"),
             "Rust v1 writer must not emit the expect leaf concept alias: {json}"
         );
         assert!(
-            !json.contains(panic_freedom::IS_OK_CONCEPT),
+            !json.contains("concept:panic-freedom.result.ok"),
             "Rust v1 writer must keep emitting the old result predicate token: {json}"
         );
     }

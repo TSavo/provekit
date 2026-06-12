@@ -171,7 +171,7 @@ fn callsite_from_panic_locus(
         .get("callee")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())?;
-    let callee = panic_freedom::normalize_leaf_method_name(callee);
+    let callee = callee;
     let file = locus
         .get("file")
         .and_then(|v| v.as_str())
@@ -318,7 +318,7 @@ fn attribute_safety_callsite_from_locus(
         .and_then(|v| v.as_u64())
         .map(|n| n as usize);
     Some(CallSite {
-        bridge_ir_name: panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT.to_string(),
+        bridge_ir_name: panic_freedom::RUNTIME_FAILURE_SITE.to_string(),
         bridge_target_cid: String::new(),
         bridge_source_layer: String::new(),
         bridge_target_layer: String::new(),
@@ -337,7 +337,7 @@ fn attribute_safety_callsite_from_locus(
         guard_facts: path_cond.to_vec(),
         file,
         line,
-        callee: Some(panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT.to_string()),
+        callee: Some(panic_freedom::RUNTIME_FAILURE_SITE.to_string()),
         panic_site: true,
         attribute_safety: Some(safety),
     })
@@ -352,7 +352,6 @@ fn warn_if_panic_callsite_alias_disagrees_for_locus(
         .get("callee")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .map(panic_freedom::normalize_leaf_method_name)
     else {
         return;
     };
@@ -740,13 +739,12 @@ fn panic_locus_for<'a>(
     panic_loci: &'a [Json],
 ) -> Option<&'a Json> {
     let arg = arg_term?;
-    let callee = panic_freedom::normalize_leaf_method_name(callee);
+    let callee = callee;
     panic_loci.iter().find(|locus| {
         locus.get("argTerm") == Some(arg)
             && locus
                 .get("callee")
                 .and_then(|v| v.as_str())
-                .map(panic_freedom::normalize_leaf_method_name)
                 == Some(callee)
     })
 }
@@ -758,7 +756,7 @@ fn callsite_scoped_bridge_for_locus<'a>(
     locus: &Json,
 ) -> Option<&'a Json> {
     let bundle = callsite_bundle_cid?;
-    let callee = panic_freedom::normalize_leaf_method_name(callee);
+    let callee = callee;
     let file = locus.get("file").and_then(|v| v.as_str())?;
     let line = locus
         .get("line")
@@ -779,7 +777,7 @@ fn callsite_scoped_bridge_for_arg_terms<'a>(
     arg_terms: &[Json],
 ) -> Option<&'a Json> {
     let bundle = callsite_bundle_cid?;
-    let callee = panic_freedom::normalize_leaf_method_name(callee);
+    let callee = callee;
     let mut matched = None;
     for ((bridge_bundle, _file, _line, bridge_callee), bridge) in &pool.bridges_by_callsite {
         if bridge_bundle != bundle || bridge_callee != callee {
@@ -870,7 +868,7 @@ fn walk_term(
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
-    let bridge_name = panic_freedom::normalize_leaf_method_name(&name).to_string();
+    let bridge_name = name.to_string();
     let arg_terms = t
         .get("args")
         .and_then(|v| v.as_array())
@@ -934,7 +932,6 @@ fn walk_term(
             .get("sourceSymbol")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .map(panic_freedom::normalize_leaf_method_name)
             .map(str::to_string);
         let panic_site = callsite_is_panic_site(bridge_callsite, &bridge_name);
         // PANIC-LOCUS PRESERVATION (#1745): a panic site reads its line/col/file
@@ -1112,7 +1109,7 @@ fn walk_term(
     //   * any other ctor: descends args with the path condition unchanged.
     if matches!(
         name.as_str(),
-        panic_freedom::CF_GUARDED | panic_freedom::CF_GUARDED_CONCEPT
+        panic_freedom::CF_GUARDED
     ) {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             let guard = args.first();
@@ -1139,7 +1136,7 @@ fn walk_term(
         }
     } else if matches!(
         name.as_str(),
-        panic_freedom::CF_ITE | panic_freedom::CF_ITE_CONCEPT
+        panic_freedom::CF_ITE
     ) {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             // arg0: the condition term, evaluated in the enclosing context. It
@@ -1629,30 +1626,6 @@ mod guard_propagation_tests {
     }
 
     #[test]
-    fn concept_guarded_threads_the_opaque_atom_verbatim() {
-        let body = guarded_carrier(
-            panic_freedom::CF_GUARDED_CONCEPT,
-            pred("pred_a"),
-            panic_call(),
-        );
-        let sites = run(&pool_with_post(body));
-        assert_eq!(
-            enumerated_call(&sites).guard_facts,
-            vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
-            "the substrate guarded-value carrier must read exactly like cf_guarded"
-        );
-    }
-
-    #[test]
-    fn old_and_concept_guarded_carriers_are_equivalent() {
-        assert_eq!(
-            guard_facts_for_carrier(panic_freedom::CF_GUARDED),
-            guard_facts_for_carrier(panic_freedom::CF_GUARDED_CONCEPT),
-            "old and substrate guarded carriers must produce identical guard facts"
-        );
-    }
-
-    #[test]
     fn misspelled_concept_guarded_carrier_does_not_match() {
         let sites = run(&pool_with_post(guarded_carrier(
             "concept:panic-freedom.gaurd",
@@ -1723,7 +1696,7 @@ mod guard_propagation_tests {
     #[test]
     fn concept_choice_condition_introduces_no_fact_only_the_wrapper_does() {
         let body = choice_carrier(
-            panic_freedom::CF_ITE_CONCEPT,
+            "concept:panic-freedom.choice",
             pred("some_condition"),
             cf_guarded(pred("pred_a"), panic_call()),
             cf_guarded(pred("pred_b"), json!({ "kind": "lit", "value": 0 })),
@@ -1738,20 +1711,6 @@ mod guard_propagation_tests {
         assert!(
             call.containing_atomic.is_none(),
             "the substrate choice carrier must stop outer atomic threading like the old choice carrier"
-        );
-    }
-
-    #[test]
-    fn old_and_concept_choice_carriers_are_equivalent() {
-        assert_eq!(
-            guarded_choice_callsite_shape(panic_freedom::CF_ITE),
-            guarded_choice_callsite_shape(panic_freedom::CF_ITE_CONCEPT),
-            "old and substrate choice carriers must produce identical callsite shape"
-        );
-        assert_eq!(
-            direct_choice_containing_atomic(panic_freedom::CF_ITE),
-            direct_choice_containing_atomic(panic_freedom::CF_ITE_CONCEPT),
-            "old and substrate choice carriers must both stop outer atomic threading"
         );
     }
 
@@ -1831,156 +1790,14 @@ mod guard_propagation_tests {
     }
 
     #[test]
-    fn leaf_method_concept_aliases_enumerate_with_canonical_callsites() {
-        for (method, concept) in [
-            (
-                panic_freedom::METHOD_UNWRAP,
-                panic_freedom::METHOD_UNWRAP_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_EXPECT,
-                panic_freedom::METHOD_EXPECT_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_UNWRAP_ERR,
-                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
-            ),
-        ] {
-            let body = cf_guarded(pred("pred_a"), leaf_call(concept));
-            let sites = run(&pool_with_leaf_scoped_panic_bridge(body, method));
-            let cs = leaf_callsite(&sites, method);
-            assert_eq!(
-                cs.bridge_ir_name, method,
-                "concept leaf input must enumerate with the canonical old method token"
-            );
-            assert_eq!(
-                cs.callee.as_deref(),
-                Some(method),
-                "callsite callee output must stay canonical for {concept}"
-            );
-            assert_eq!(
-                cs.bridge_target_cid, "blake3-512:right-callsite-target",
-                "concept leaf input must select the old-key callsite-scoped bridge"
-            );
-            assert_eq!(
-                cs.guard_facts,
-                vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
-                "formula-walk alias enumeration must preserve dominating guard facts; \
-                 panicLoci-only fallback would lose them for {concept}"
-            );
-            assert_eq!(cs.file.as_deref(), Some("src/lib.rs"));
-            assert_eq!(cs.line, Some(10));
-        }
-    }
-
-    #[test]
-    fn panic_locus_for_leaf_concept_input_matches_old_locus_key() {
-        let arg = recv();
-        for (method, concept) in [
-            (
-                panic_freedom::METHOD_UNWRAP,
-                panic_freedom::METHOD_UNWRAP_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_EXPECT,
-                panic_freedom::METHOD_EXPECT_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_UNWRAP_ERR,
-                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
-            ),
-        ] {
-            let loci = vec![json!({
-                "argTerm": arg,
-                "callee": method,
-                "file": "src/lib.rs",
-                "line": 10,
-            })];
-            let locus = panic_locus_for(concept, Some(&arg), &loci)
-                .unwrap_or_else(|| panic!("concept leaf {concept} must match old locus {method}"));
-            assert_eq!(locus["callee"], method);
-        }
-    }
-
-    #[test]
-    fn callsite_scoped_bridge_for_locus_leaf_concept_input_uses_old_key() {
-        let locus = json!({
-            "argTerm": recv(),
-            "callee": panic_freedom::METHOD_UNWRAP,
-            "file": "src/lib.rs",
-            "line": 10,
-        });
-        let pool = pool_with_leaf_scoped_panic_bridge(
-            leaf_call(panic_freedom::METHOD_UNWRAP_CONCEPT),
-            panic_freedom::METHOD_UNWRAP,
-        );
-        let bridge = callsite_scoped_bridge_for_locus(
-            &pool,
-            Some("blake3-512:caller-bundle"),
-            panic_freedom::METHOD_UNWRAP_CONCEPT,
-            &locus,
-        )
-        .expect("concept leaf input must locate the old-key scoped bridge");
-        let body = memento_body(bridge).expect("bridge body");
-        assert_eq!(
-            body["targetContractCid"],
-            "blake3-512:right-callsite-target"
-        );
-    }
-
-    #[test]
-    fn panic_loci_concept_leaf_rows_surface_canonical_method_callsites() {
-        for (method, concept) in [
-            (
-                panic_freedom::METHOD_UNWRAP,
-                panic_freedom::METHOD_UNWRAP_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_EXPECT,
-                panic_freedom::METHOD_EXPECT_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_UNWRAP_ERR,
-                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
-            ),
-        ] {
-            let pool = pool_with_leaf_scoped_panic_bridge_and_locus(
-                json!({ "kind": "lit", "value": 0 }),
-                method,
-                concept,
-            );
-            let locus = json!({
-                "argTerm": recv(),
-                "callee": concept,
-                "file": "src/lib.rs",
-                "line": 10,
-            });
-            let cs = callsite_from_panic_locus(
-                &locus,
-                "caller_self_post",
-                "blake3-512:caller",
-                &pool,
-                Some("blake3-512:caller-bundle"),
-            )
-            .unwrap_or_else(|| panic!("concept panicLoci row must surface {method}"));
-            assert_eq!(cs.bridge_ir_name, method);
-            assert_eq!(cs.callee.as_deref(), Some(method));
-            assert_eq!(
-                cs.bridge_target_cid, "blake3-512:right-callsite-target",
-                "concept panicLoci row must use the old-key scoped bridge"
-            );
-        }
-    }
-
-    #[test]
     fn malformed_leaf_concept_tokens_do_not_match_method_bridges() {
         for bad_name in [
             " concept:panic-freedom.leaf.unwrap",
             "concept:panic-freedom.leaf.unwrap ",
             "concept:panic-freedom.leaf.Unwrap",
             "concept:panic-freedom.leaf.unwrap_err",
-            panic_freedom::IS_SOME_CONCEPT,
-            panic_freedom::IS_OK_CONCEPT,
+            "concept:panic-freedom.option.some",
+            "concept:panic-freedom.result.ok",
         ] {
             let body = cf_guarded(pred("pred_a"), leaf_call(bad_name));
             let sites = run(&pool_with_leaf_scoped_panic_bridge(
