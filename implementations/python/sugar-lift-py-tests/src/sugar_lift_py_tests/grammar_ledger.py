@@ -169,9 +169,16 @@ _NAMED: dict = {
         residual="the value-pinned-local arm owed (return <local> "
         "resolved through value_pins)",
     ),
-    "return-binop": _debt(
-        "arithmetic/string-op universe over params+literals (Int and "
-        "String theories already in the substrate)"
+    "return-binop": _lifted(
+        "delegation_universe_for_callee",
+        "chain-expr: the returned arithmetic expression as structure — "
+        "eq(subject, ctor('+', ...)) over the consumer side's own "
+        "operator ctors; + - * lower to real Int math, / % stay EUF; "
+        "all-Int-const instantiations only ('+' on strings is concat by "
+        "dispatch — the cross-sort mislower)",
+        residual="string concatenation universe owed (str.++ exists "
+        "substrate-side); operators outside + - * / % refuse by name; "
+        "symbolic instantiations skip",
     ),
     "return-predicate": _lifted(
         "predicate_universe_for_callee",
