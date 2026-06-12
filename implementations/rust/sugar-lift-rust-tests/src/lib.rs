@@ -1724,6 +1724,47 @@ fn for_iter_domain(expr: &Expr) -> &'static str {
     }
 }
 
+/// If `expr` is an iterator quantifier `<coll>.all(|..| ..)` / `<coll>.any(|..| ..)`,
+/// return a provenance-named refusal (literal-collection -> bin-1, opaque -> bin-2),
+/// reusing `for_iter_domain` on the underlying collection. Returns None for any
+/// other call shape (handled by the ordinary term path).
+fn iterator_quantifier_refusal(expr: &Expr) -> Option<String> {
+    let Expr::MethodCall(call) = expr else {
+        return None;
+    };
+    let method = call.method.to_string();
+    if method != "all" && method != "any" {
+        return None;
+    }
+    // Exactly one closure argument is the predicate of the quantifier.
+    if call.args.len() != 1 || !matches!(call.args[0], Expr::Closure(_)) {
+        return None;
+    }
+    let collection = iter_adaptor_base(&call.receiver);
+    let domain = for_iter_domain(collection);
+    Some(format!(
+        "iterator quantifier `.{method}(|..| ..)` over {domain}; not yet lifted; \
+         released to layer 0"
+    ))
+}
+
+/// Strip a trailing element-producing adaptor (`.iter()`, `.into_iter()`,
+/// `.iter_mut()`, `.chars()`, `.bytes()`, `.keys()`, `.values()`) to reveal the
+/// underlying collection expression, so its literal/opaque provenance can be read.
+fn iter_adaptor_base(expr: &Expr) -> &Expr {
+    if let Expr::MethodCall(c) = expr {
+        if c.args.is_empty()
+            && matches!(
+                c.method.to_string().as_str(),
+                "iter" | "into_iter" | "iter_mut" | "chars" | "bytes" | "keys" | "values"
+            )
+        {
+            return iter_adaptor_base(&c.receiver);
+        }
+    }
+    expr
+}
+
 fn refuse_nested_asserts_in_stmts(stmts: &[Stmt], context: &str, skipped: &mut Vec<String>) {
     let count = count_asserts_in_stmts(stmts);
     for _ in 0..count {
@@ -3006,6 +3047,15 @@ fn translate_bool_assertion(
             }
         }
         Expr::Call(_) | Expr::MethodCall(_) | Expr::Await(_) | Expr::Field(_) => {
+            // `<coll>.all(|x| ..)` / `.any(|x| ..)` is an iterator quantifier
+            // (∀ / ∃ over the receiver's elements). We do not yet LIFT it, but we
+            // pay the provenance debt: name whether the collection is a finite
+            // CONSTRUCTION (literal -> bin-1, drainable by unroll) or RUNTIME data
+            // (opaque -> bin-2, the membrane), so the bin sort is structural rather
+            // than presumed from the bare `|x|` shape.
+            if let Some(reason) = iterator_quantifier_refusal(expr) {
+                return Err(reason);
+            }
             let term = translate_term_in_scope(expr, scope)?;
             if is_refinement_predicate_term(term.as_ref()) {
                 return Err(format!(
