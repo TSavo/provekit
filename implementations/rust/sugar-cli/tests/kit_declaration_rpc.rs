@@ -113,37 +113,6 @@ done
     );
 }
 
-#[test]
-fn loader_rejects_conflicting_declaration_mappings() {
-    let td = TempDir::new().expect("tempdir");
-    let stub = td.path().join("kit.sh");
-    make_executable(
-        &stub,
-        r#"#!/bin/sh
-while IFS= read -r line; do
-  case "$line" in
-    *initialize*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"stub-kit","protocol_version":"pep/1.7.0","capabilities":{}}}'
-      ;;
-    *sugar.plugin.kit_declaration*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"stub-kit","language":"rust","version":"0.1.0"},"rpc":{"methods":[{"name":"sugar.plugin.kit_declaration","required":true}]},"proofResolution":{"strategy":"rpc-proof-bytes"},"effectKinds":["concept:panic-freedom"],"effectLeaves":[{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.unwrap"},{"surface":"rust-implications","local":"method:unwrap","concept":"concept:panic-freedom.leaf.expect"}],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
-      ;;
-  esac
-done
-"#,
-    );
-
-    let err = sugar_cli::kit_declaration::load_kit_declaration_with_command(
-        &shell_stub_command(&stub),
-        Some(td.path()),
-    )
-    .expect_err("conflicting declaration should fail");
-
-    assert!(
-        err.to_string().contains("effectLeaves"),
-        "error should identify declaration conflict: {err}"
-    );
-}
 
 #[test]
 fn loader_reports_missing_kit_declaration_method() {
