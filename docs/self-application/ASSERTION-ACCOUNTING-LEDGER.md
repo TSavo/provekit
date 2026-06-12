@@ -215,3 +215,28 @@ rebindable values that the axiom says cannot be pinned). The open Python gap is
 elsewhere — sugar's own pytest `assert` statements are lifted by *no* mechanism
 today (the assertion lifter is vendor-vocab-only); a plain-`assert` lifter is the
 Python analog of the Rust assertion sweep, and the real next Python build.
+
+## Java (third language) — resolution: a thin kit, not a self-application corpus
+
+The "across all three languages" clause does **not** map symmetrically. sugar's
+*live* Java is **three files** — the kit RPC implementation under
+`implementations/java/sugar-lift-java-tests/src/` (`JavaTestAssertionsRpc.java`,
+`JavaPanamaFfmRpc.java`, `JavaJunitWitnessRpc.java`). Every `provekit-lift-java-*`
+module directory is an **empty stub** (only a `target/` build dir survives), stale
+from the pre-rename era.
+
+Those three files are a **lifter**, not assert-bearing business logic. The Java
+kit is exercised by the `run.sh` fixture suite (83 tests) lifting **vendor** Java
+— that proves *the product works*, not *sugar proves its own Java*. There is no
+Java `@Test`/`assertEquals` self-test corpus the way Rust has `#[test]` asserts
+and Python has source value-pins. So the Rust/Python self-application axes have
+**no Java analog** — there is nothing of sugar's own Java for a Java assertion
+lifter to lift.
+
+Honest reading of the finish line, then: *sugar proves sugar wherever sugar has
+substantial constructible code.* That is **Rust** (deep: `sugar-cli`/`libsugar`,
+both the `coretests_sweep` assertion axis and the `sugar self-check` K axis) and
+**Python** (source value-pins). Java's footprint is a thin kit, named as such;
+its correctness is carried by the fixture suite, not by self-application. Forcing
+a "Java self-application number" would be a hollow metric — the honest move is to
+name the asymmetry, not manufacture symmetry.
