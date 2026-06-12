@@ -1003,3 +1003,84 @@ def constant_universe_for_callee_clear():
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 
     constant_universe_for_callee.cache_clear()
+
+
+# --- return-predicate family (census #2, 24k bodies): ground eval at args ---
+
+VENDOR_PRED = '''
+def is_neg(x):
+    return x < 0
+
+
+def in_range(x):
+    return 0 <= x and x < 100
+
+
+def is_empty(s):
+    return s == ""
+'''
+
+
+def test_predicate_universe_walks(vendor_path):
+    from sugar_lift_py_tests.translate_universe import predicate_universe_for_callee
+
+    predicate_universe_for_callee.cache_clear()
+    vendor_path("vendpred_ok", VENDOR_PRED)
+    u, r = predicate_universe_for_callee("vendpred_ok.is_neg")
+    assert r is None and u is not None and u.params == ("x",)
+
+
+def test_predicate_ground_eval(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        predicate_universe_for_callee,
+        eval_predicate,
+    )
+
+    predicate_universe_for_callee.cache_clear()
+    vendor_path("vendpred_eval", VENDOR_PRED)
+    u, _ = predicate_universe_for_callee("vendpred_eval.is_neg")
+    assert eval_predicate(u.expr, {"x": 5}) is False
+    assert eval_predicate(u.expr, {"x": -3}) is True
+    rng, _ = predicate_universe_for_callee("vendpred_eval.in_range")
+    assert eval_predicate(rng.expr, {"x": 50}) is True
+    assert eval_predicate(rng.expr, {"x": 200}) is False
+
+
+def test_predicate_emits_bool_equality_at_callsite(vendor_path):
+    from sugar_lift_py_tests.translate_universe import predicate_universe_for_callee
+    from sugar_lift_py_tests.ir import bool_const
+
+    predicate_universe_for_callee.cache_clear()
+    vendor_path("vendpred_l2", VENDOR_PRED)
+    out = _lift(
+        """
+        import vendpred_l2
+
+        def test_neg():
+            assert vendpred_l2.is_neg(5) == False
+        """
+    )
+    # the universe should compute is_neg(5)==False and conjoin subject==False
+    falses = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            stack = [d.inv]
+            while stack:
+                f = stack.pop()
+                if getattr(f, "name", None) == "=" and bool_const(False) in getattr(f, "args", ()):
+                    falses.append(f)
+                elif getattr(f, "kind", None) in ("and", "or", "not"):
+                    stack.extend(f.operands)
+    assert falses
+
+
+def test_predicate_impure_not_candidate(vendor_path):
+    from sugar_lift_py_tests.translate_universe import predicate_universe_for_callee
+
+    predicate_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendpred_impure",
+        "def f(x):\n    return helper(x) < 0\n",
+    )
+    u, r = predicate_universe_for_callee("vendpred_impure.f")
+    assert u is None and r is None  # call in predicate -> not purely evaluable

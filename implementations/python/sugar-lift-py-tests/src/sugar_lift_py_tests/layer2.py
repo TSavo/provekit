@@ -104,7 +104,9 @@ from .ir import (
 from .translate_universe import (
     callee_is_nondeterministic,
     constant_universe_for_callee,
+    eval_predicate,
     guard_universe_for_callee,
+    predicate_universe_for_callee,
     translate_universe_for_callee,
 )
 
@@ -3350,7 +3352,57 @@ def _universe_conjuncts(
                 lit = None
             if lit is not None:
                 conjuncts.append(eq(subject_term, lit))
+
+        # RETURN-PREDICATE (census family, 24k bodies): the body returns a
+        # pure boolean over its params. At THIS callsite's concrete args the
+        # predicate ground-evaluates -- evaluating the vendor's own body at
+        # the consumer's input, recompute not solver-invention -- so the
+        # output EQUALS that bool. Emit subject == bool; a consumer asserting
+        # the opposite truth value refutes.
+        pred_u, _pred_refusal = predicate_universe_for_callee(callee)
+        if pred_u is not None:
+            call_args = (
+                subject_term.args[1:]
+                if subject_term.name.startswith("callval_")
+                else subject_term.args
+            )
+            env = {}
+            for i, pname in enumerate(pred_u.params):
+                if i < len(call_args):
+                    pv = _term_python_value(call_args[i])
+                    if pv is not _PRED_MISSING:
+                        env[pname] = pv
+            result = eval_predicate(pred_u.expr, env)
+            if result is not None:
+                conjuncts.append(eq(subject_term, bool_const(result)))
     return conjuncts
+
+
+_PRED_MISSING = object()
+
+
+def _term_python_value(term):
+    """The python value carried by a concrete literal term, for ground-
+    evaluating a vendor predicate at a callsite. _PRED_MISSING for anything
+    non-concrete (then the predicate is not evaluated here)."""
+    from .ir import _ConstInt, _ConstStr, _ConstBool
+
+    if isinstance(term, _ConstInt):
+        return term.value
+    if isinstance(term, _ConstBool):
+        return term.value
+    if isinstance(term, _ConstStr):
+        return term.value
+    if isinstance(term, _Ctor):
+        if term.name == "None":
+            return None
+        if (
+            term.name == "python:bytes"
+            and len(term.args) == 1
+            and isinstance(term.args[0], _ConstStr)
+        ):
+            return term.args[0].value
+    return _PRED_MISSING
 
 
 def _assertion_callsite_context(

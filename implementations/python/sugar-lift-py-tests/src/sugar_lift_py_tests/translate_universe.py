@@ -300,6 +300,163 @@ def _literal_value_kind(node):
     return None
 
 
+@dataclass(frozen=True)
+class PredicateUniverse:
+    """Census family return-predicate (24k bodies): a body that returns a
+    PURE boolean expression over its parameters. At a CONCRETE callsite the
+    expression evaluates to a ground bool -- evaluating the vendor's own
+    body at the consumer's input (recompute, not solver-invention) -- so the
+    output EQUALS that bool. expr is the ast.expr template; params the
+    positional names; the emitter binds args->params and evaluates."""
+
+    expr: object  # ast.expr (boolean over params/literals)
+    params: tuple
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    vendor_vectors_checked: int = 0
+    vendor_vector_source: Optional[str] = None
+
+
+_MISSING = object()
+
+
+def _is_pure_predicate(node, params) -> bool:
+    """The return expression is a boolean over ONLY parameter names and
+    literals, combined with comparisons / and / or / not. Anything else
+    (calls, attributes, subscripts, free names) is not purely evaluable at a
+    concrete callsite, so it is not a candidate."""
+    if isinstance(node, ast.Compare):
+        return all(
+            _is_pure_operand(x, params)
+            for x in [node.left, *node.comparators]
+        ) and all(
+            isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq))
+            for op in node.ops
+        )
+    if isinstance(node, ast.BoolOp):
+        return all(_is_pure_predicate(v, params) for v in node.values)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return _is_pure_predicate(node.operand, params)
+    return False
+
+
+def _is_pure_operand(node, params) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in params
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, (int, str, bool)) or node.value is None
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return (
+            isinstance(node.operand, ast.Constant)
+            and type(node.operand.value) is int
+        )
+    return False
+
+
+def _operand_value(node, env):
+    if isinstance(node, ast.Name):
+        return env.get(node.id, _MISSING)
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        if isinstance(node.operand, ast.Constant):
+            return -node.operand.value
+    return _MISSING
+
+
+def eval_predicate(node, env):
+    """Ground-evaluate a pure predicate AST against env (param name -> python
+    value). Returns a bool, or None when a value is missing / types mismatch
+    (then no universe is emitted at that callsite -- conservative)."""
+    try:
+        if isinstance(node, ast.Compare):
+            left = _operand_value(node.left, env)
+            if left is _MISSING:
+                return None
+            for op, comp in zip(node.ops, node.comparators):
+                right = _operand_value(comp, env)
+                if right is _MISSING:
+                    return None
+                if not _CMP_EVAL[_CMP_SYMBOL[type(op)]](left, right):
+                    return False
+                left = right
+            return True
+        if isinstance(node, ast.BoolOp):
+            vals = [eval_predicate(v, env) for v in node.values]
+            if any(v is None for v in vals):
+                return None
+            return all(vals) if isinstance(node.op, ast.And) else any(vals)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            v = eval_predicate(node.operand, env)
+            return None if v is None else (not v)
+    except TypeError:
+        return None
+    return None
+
+
+@functools.lru_cache(maxsize=None)
+def predicate_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[PredicateUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+    params = tuple(a.arg for a in fn.args.args)
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    rest = []
+    seen = False
+    for stmt in body:
+        if (
+            not seen
+            and isinstance(stmt, ast.If)
+            and len(stmt.body) == 1
+            and isinstance(stmt.body[0], ast.Raise)
+            and not stmt.orelse
+        ):
+            continue
+        seen = True
+        rest.append(stmt)
+    if (
+        len(rest) != 1
+        or not isinstance(rest[0], ast.Return)
+        or rest[0].value is None
+    ):
+        return None, None
+    expr = rest[0].value
+    if not _is_pure_predicate(expr, params):
+        return None, None
+    returns = sum(
+        1
+        for stmt in body
+        for n in ast.walk(stmt)
+        if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+    )
+    if returns != 1:
+        return None, None
+    return (
+        PredicateUniverse(
+            expr=expr,
+            params=params,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+        ),
+        None,
+    )
+
+
 @functools.lru_cache(maxsize=None)
 def constant_universe_for_callee(
     callee: str,
