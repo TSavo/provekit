@@ -6050,56 +6050,14 @@ fn kit_declaration_result() -> Value {
         "proofResolution": {
             "strategy": "cargo"
         },
-        "effectKinds": ["concept:panic-freedom"],
-        "effectLeaves": kit_declaration_panic_effect_leaves(),
-        "guardPredicates": kit_declaration_panic_guard_predicates(),
-        "controlCarriers": kit_declaration_panic_control_carriers(),
+        "effectKinds": [],
+        "effectLeaves": [],
+        "guardPredicates": [],
+        "controlCarriers": [],
         "residueCategories": []
     })
 }
 
-const RUST_FN_CONTRACTS_SURFACE: &str = "rust-fn-contracts";
-
-fn kit_declaration_mapping(local: &str, concept: &str) -> Value {
-    json!({
-        "surface": RUST_FN_CONTRACTS_SURFACE,
-        "local": local,
-        "concept": concept
-    })
-}
-
-fn kit_declaration_panic_effect_leaves() -> Vec<Value> {
-    vec![
-        kit_declaration_mapping(
-            panic_freedom::METHOD_UNWRAP,
-            panic_freedom::METHOD_UNWRAP_CONCEPT,
-        ),
-        kit_declaration_mapping(
-            panic_freedom::METHOD_EXPECT,
-            panic_freedom::METHOD_EXPECT_CONCEPT,
-        ),
-        kit_declaration_mapping(
-            panic_freedom::METHOD_UNWRAP_ERR,
-            panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
-        ),
-    ]
-}
-
-fn kit_declaration_panic_guard_predicates() -> Vec<Value> {
-    vec![
-        kit_declaration_mapping(panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
-        kit_declaration_mapping(panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
-        kit_declaration_mapping(panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
-        kit_declaration_mapping(panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
-    ]
-}
-
-fn kit_declaration_panic_control_carriers() -> Vec<Value> {
-    vec![
-        kit_declaration_mapping(panic_freedom::CF_GUARDED, panic_freedom::CF_GUARDED_CONCEPT),
-        kit_declaration_mapping(panic_freedom::CF_ITE, panic_freedom::CF_ITE_CONCEPT),
-    ]
-}
 
 fn bind_lift(params: &Value) -> Result<Value, String> {
     if lift_emit_mode(params) == Some("ir-document") {
@@ -10359,54 +10317,6 @@ mod tests {
         assert!(!out.contains("unimplemented"), "stub body replaced");
     }
 
-    const RUST_FN_CONTRACTS_SURFACE: &str = "rust-fn-contracts";
-
-    fn assert_kit_declaration_mappings(
-        category: &str,
-        mappings: &[sugar_claim_envelope::KitDeclarationMapping],
-        expected: &[(&str, &str)],
-    ) {
-        assert_eq!(
-            mappings.len(),
-            expected.len(),
-            "{category} should declare exactly the expected mappings: {mappings:#?}"
-        );
-
-        let mut locals = BTreeSet::new();
-        for mapping in mappings {
-            assert_eq!(
-                mapping.surface.as_deref(),
-                Some(RUST_FN_CONTRACTS_SURFACE),
-                "{category} mapping should be owned by rust-fn-contracts: {mapping:#?}"
-            );
-            assert!(
-                locals.insert(mapping.local.clone()),
-                "{category} must not duplicate local mapping {}",
-                mapping.local
-            );
-        }
-
-        for (local, _concept) in expected {
-            assert!(
-                mappings.iter().any(|mapping| {
-                    mapping.surface.as_deref() == Some(RUST_FN_CONTRACTS_SURFACE)
-                        && mapping.local == *local
-                }),
-                "{category} missing mapping {local}: {mappings:#?}"
-            );
-        }
-    }
-
-    fn assert_mapping_absent(
-        category: &str,
-        mappings: &[sugar_claim_envelope::KitDeclarationMapping],
-        local: &str,
-    ) {
-        assert!(
-            !mappings.iter().any(|mapping| mapping.local == local),
-            "{category} must not contain {local}: {mappings:#?}"
-        );
-    }
 
     fn panic_loci_for_first_fn(src: &str) -> Vec<Value> {
         let file = syn::parse_file(src).expect("source parses");
@@ -10676,65 +10586,13 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
     }
 
     #[test]
-    fn kit_declaration_result_declares_rust_panic_freedom_vocabulary() {
+    fn kit_declaration_result_is_valid_without_concept_vocabulary() {
         let declaration: sugar_claim_envelope::KitDeclaration =
             serde_json::from_value(kit_declaration_result()).expect("kit declaration shape");
 
         declaration.validate().expect("valid kit declaration");
         assert_eq!(declaration.kit.id, "sugar-walk-rpc");
         assert_eq!(declaration.kit.language, "rust");
-        assert_eq!(
-            declaration.effect_kinds,
-            vec!["concept:panic-freedom".to_string()]
-        );
-
-        assert_kit_declaration_mappings(
-            "effectLeaves",
-            &declaration.effect_leaves,
-            &[
-                (
-                    panic_freedom::METHOD_UNWRAP,
-                    panic_freedom::METHOD_UNWRAP_CONCEPT,
-                ),
-                (
-                    panic_freedom::METHOD_EXPECT,
-                    panic_freedom::METHOD_EXPECT_CONCEPT,
-                ),
-                (
-                    panic_freedom::METHOD_UNWRAP_ERR,
-                    panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
-                ),
-            ],
-        );
-        assert_kit_declaration_mappings(
-            "guardPredicates",
-            &declaration.guard_predicates,
-            &[
-                (panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
-                (panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
-                (panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
-                (panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
-            ],
-        );
-        assert_kit_declaration_mappings(
-            "controlCarriers",
-            &declaration.control_carriers,
-            &[
-                (panic_freedom::CF_GUARDED, panic_freedom::CF_GUARDED_CONCEPT),
-                (panic_freedom::CF_ITE, panic_freedom::CF_ITE_CONCEPT),
-            ],
-        );
-
-        assert_mapping_absent(
-            "guardPredicates",
-            &declaration.guard_predicates,
-            panic_freedom::METHOD_UNWRAP,
-        );
-        assert_mapping_absent(
-            "controlCarriers",
-            &declaration.control_carriers,
-            panic_freedom::METHOD_UNWRAP,
-        );
     }
 
     #[test]

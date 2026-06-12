@@ -42,7 +42,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use libsugar::concept::panic_freedom;
 use std::rc::Rc;
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use sugar_claim_envelope::{
@@ -871,29 +870,12 @@ fn kit_declaration_result() -> serde_json::Value {
         "proofResolution": {
             "strategy": "cargo"
         },
-        "effectKinds": ["concept:panic-freedom"],
+        "effectKinds": [],
         "effectLeaves": [],
-        "guardPredicates": kit_declaration_guard_predicates(),
+        "guardPredicates": [],
         "controlCarriers": [],
         "residueCategories": []
     })
-}
-
-fn kit_declaration_mapping(local: &str, concept: &str) -> serde_json::Value {
-    serde_json::json!({
-        "surface": RUST_CONTRACTS_SURFACE,
-        "local": local,
-        "concept": concept
-    })
-}
-
-fn kit_declaration_guard_predicates() -> Vec<serde_json::Value> {
-    vec![
-        kit_declaration_mapping(panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
-        kit_declaration_mapping(panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
-        kit_declaration_mapping(panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
-        kit_declaration_mapping(panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
-    ]
 }
 
 /// Serialize a `ContractDecl` as a `kind: "contract"` JSON memento in
