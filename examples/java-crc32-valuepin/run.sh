@@ -110,6 +110,31 @@ ir = result.get("ir", [])
 vps = [c for c in ir if c["name"].endswith("::crc-value-pin")]
 if not vps:
     raise SystemExit("FAIL: no ::crc-value-pin contract emitted (the value-pin rung did not connect)")
+warrants = vps[0].get("sourceWarrants")
+if not isinstance(warrants, list) or len(warrants) != 1:
+    raise SystemExit(f"FAIL: expected one source warrant on crc value-pin, got {warrants!r}")
+warrant = warrants[0]
+if warrant.get("role") != "java.crc-value-pin" or warrant.get("universe_kind") != "crc32.eq-walked":
+    raise SystemExit(f"FAIL: wrong crc source warrant envelope: {warrant!r}")
+if "bodyText" in warrant or "body_text" in warrant or "templateJson" in warrant or "ast_template" in warrant:
+    raise SystemExit("FAIL: crc source warrant embeds source/template body")
+crc_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "java.crc-value-pin"
+]
+if len(crc_audits) != 1:
+    raise SystemExit(f"FAIL: expected one crc source audit, got {len(crc_audits)}")
+crc_audit = crc_audits[0]
+totals = crc_audit.get("totals", {})
+if totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: crc source audit has unclassified source: {totals!r}")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "EXPRESSION_STATEMENT"
+    and "crc32.eq-walked" in locus.get("reason", "")
+    for locus in crc_audit.get("loci", [])
+):
+    raise SystemExit("FAIL: crc update assignment was not warranted in source audit")
 atom = vps[0]["inv"]["operands"][0]
 if atom["name"] != "crc32.eq-walked":
     raise SystemExit("FAIL: value-pin atom is not crc32.eq-walked: " + atom["name"])
@@ -152,6 +177,13 @@ print(f"   walked crc-FOL = the vendor's static-init table + stateful update(int
 print(f"     \"123456789\" + getValue() inversion; NO free vars (genuinely closed).")
 print(f"   constant-folds to {folded:#010x} == the vendor-sworn 0xE3069283 (the oath).")
 print(f"   GOOD asserts {asserted:#010x} → DISCHARGES against the walked computation.")
+print(
+    "   source audit:",
+    f"loci={totals['source_loci']}",
+    f"warranted={totals['source_warranted']}",
+    f"refused={totals['source_refused']}",
+    f"unclassified={totals['unclassified_source']}",
+)
 for d in result.get("diagnostics", []):
     r = d.get("reason","") or ""
     if "value-pin refused" in r or "crc value-pin" in r:

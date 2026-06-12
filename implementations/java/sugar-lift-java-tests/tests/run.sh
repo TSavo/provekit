@@ -62,6 +62,42 @@ JAVA_CMD="java \
   --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
   -cp $OUT JavaTestAssertionsRpc"
 
+echo
+echo "────────────────────────────────────────────────────────────────"
+echo "TEST 0: dependency proof resolution from Maven-style jar resource"
+echo "────────────────────────────────────────────────────────────────"
+TMP_DEP="$(mktemp -d)"
+mkdir -p "$TMP_DEP/META-INF/sugar"
+printf '%s' 'vendor-proof-catalog-bytes' > "$TMP_DEP/META-INF/sugar/sugar.proof"
+(cd "$TMP_DEP" && jar cf "$TMP_DEP/vendor-proof.jar" META-INF/sugar/sugar.proof)
+RESULT0="$(python3 - "$FIXTURES" <<'PY' | java \
+  --add-exports jdk.compiler/com.sun.source.tree=ALL-UNNAMED \
+  --add-exports jdk.compiler/com.sun.source.util=ALL-UNNAMED \
+  --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+  -cp "$OUT:$TMP_DEP/vendor-proof.jar" JavaTestAssertionsRpc 2>/dev/null
+import json, sys
+workspace_root = sys.argv[1]
+print(json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}))
+print(json.dumps({"jsonrpc":"2.0","id":2,"method":"sugar.plugin.resolve_dependency_proofs","params":{
+    "project_root": workspace_root,
+}}))
+print(json.dumps({"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}}))
+PY
+)"
+python3 - "$RESULT0" <<'PY'
+import base64, json, sys
+responses = [json.loads(line) for line in sys.argv[1].splitlines() if line.strip()]
+resp = next((obj for obj in responses if obj.get("id") == 2), None)
+assert resp is not None, responses
+assert "error" not in resp, resp
+proofs = resp["result"]["proofs"]
+assert len(proofs) == 1, proofs
+proof = proofs[0]
+assert base64.b64decode(proof["bytes_base64"]) == b"vendor-proof-catalog-bytes", proof
+assert proof["source"].endswith("vendor-proof.jar!META-INF/sugar/sugar.proof"), proof
+print("PASS: dependency proof resolver loaded Maven-style jar resource bytes")
+PY
+
 # run_lift <workspace_root> <source_path_relative_to_workspace>
 # Sends initialize + lift(workspace_root, [source_path]) + shutdown to the kit.
 run_lift() {
@@ -2926,7 +2962,7 @@ PY
 
 echo
 echo "────────────────────────────────────────────────────────────────"
-echo "TEST 76: RECURRENCE discrimination — statement-level branch-gated `if` store REFUSED"
+echo 'TEST 76: RECURRENCE discrimination — statement-level branch-gated `if` store REFUSED'
 echo "────────────────────────────────────────────────────────────────"
 RESULT76="$(run_lift "$FIXTURES/recurrence-ifstore" "RecurrenceLift.java" | eval "$JAVA_CMD" 2>/dev/null)"
 DIAGS76="$(recurrence_diags "$RESULT76")"
@@ -3156,6 +3192,32 @@ for ln in open(sys.argv[1]):
 assert o is not None, "no lift result"
 vps = [c for c in o["ir"] if c["name"].endswith("::crc-value-pin")]
 assert len(vps) == 1, f"expected 1 value-pin contract, got {len(vps)}"
+warrants = vps[0].get("sourceWarrants")
+assert isinstance(warrants, list) and len(warrants) == 1, vps[0]
+warrant = warrants[0]
+assert warrant["kind"] == "source-memento", warrant
+assert warrant["role"] == "java.crc-value-pin", warrant
+assert warrant["universe_kind"] == "crc32.eq-walked", warrant
+assert warrant["source_function_name"] in {"update", "getValue"}, warrant
+assert "bodyText" not in warrant and "body_text" not in warrant, warrant
+assert "templateJson" not in warrant and "ast_template" not in warrant, warrant
+source_ledger = o.get("sourceLedger")
+assert isinstance(source_ledger, dict), o
+assert source_ledger["unclassified_source"] == 0, source_ledger
+crc_audits = [
+    audit for audit in o.get("sourceAudits", [])
+    if audit["role"] == "java.crc-value-pin"
+]
+assert len(crc_audits) == 1, crc_audits
+crc_audit = crc_audits[0]
+assert crc_audit["totals"]["unclassified_source"] == 0, crc_audit
+assert crc_audit["totals"]["source_warranted"] > 0, crc_audit
+assert any(
+    locus["status"] == "warranted"
+    and locus.get("ast_kind") == "EXPRESSION_STATEMENT"
+    and "crc32.eq-walked" in locus.get("reason", "")
+    for locus in crc_audit["loci"]
+), crc_audit
 atom = vps[0]["inv"]["operands"][0]
 assert atom["name"] == "crc32.eq-walked", f"value-pin atom: {atom['name']}"
 asserted = atom["args"][0]["value"] & 0xffffffff

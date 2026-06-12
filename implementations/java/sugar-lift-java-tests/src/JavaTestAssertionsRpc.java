@@ -84,9 +84,11 @@ public final class JavaTestAssertionsRpc {
                 response = switch (method) {
                     case "initialize"                   -> ok(id, initializeResult());
                     case "sugar.plugin.kit_declaration" -> ok(id, kitDeclarationResult());
+                    case "sugar.plugin.resolve_dependency_proofs" -> ok(id,
+                            JavaDependencyProofResolver.resolveDependencyProofs(line));
                     case "lift"                         -> ok(id, lift(line));
-                    case "shutdown"                     -> ok(id, "null");
-                    default -> error(id, -32603, "unknown method: " + method);
+                    case "shutdown", "sugar.plugin.shutdown" -> ok(id, "null");
+                    default -> error(id, -32601, "unknown method: " + method);
                 };
             } catch (Exception e) {
                 response = error(id, -32603, e.getMessage() == null ? e.toString() : e.getMessage());
@@ -116,10 +118,12 @@ public final class JavaTestAssertionsRpc {
              + "\"rpc\":{\"methods\":["
              + "{\"name\":\"initialize\",\"required\":true},"
              + "{\"name\":\"sugar.plugin.kit_declaration\",\"required\":true},"
+             + "{\"name\":\"sugar.plugin.resolve_dependency_proofs\",\"required\":false},"
              + "{\"name\":\"lift\",\"required\":true},"
              + "{\"name\":\"shutdown\",\"required\":false}"
              + "]},"
-             + "\"proofResolution\":{\"strategy\":\"junit\"},"
+             + "\"proofResolution\":{\"strategy\":\"maven\","
+             + "\"rpcMethod\":\"sugar.plugin.resolve_dependency_proofs\"},"
              + "\"effectKinds\":[],\"effectLeaves\":[],\"guardPredicates\":[],"
              + "\"controlCarriers\":[],\"residueCategories\":[]}";
     }
@@ -143,7 +147,7 @@ public final class JavaTestAssertionsRpc {
         if (compiler == null) {
             diagnostics.add(diagnostic("<kit>", "<kit>", "<kit>",
                     "no JavaCompiler available (not running under a JDK)"));
-            return irDocument(ir, diagnostics);
+            return irDocument(ir, diagnostics, SourceAccounting.EMPTY);
         }
 
         // Load assertion vocabularies per framework for this workspace.
@@ -220,7 +224,7 @@ public final class JavaTestAssertionsRpc {
             // contracts already lifted from the other files. Without this, one bad
             // file in a 229-file vendor test tree drops the entire artifact to GAP.
             try {
-                liftFile(compiler, abs, rel, multiVocab, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics);
+                liftFile(compiler, root, abs, rel, multiVocab, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics);
             } catch (Exception e) {
                 diagnostics.add(diagnostic(rel, null, null,
                     "per-file lift skipped (isolated): "
@@ -228,7 +232,8 @@ public final class JavaTestAssertionsRpc {
             }
         }
 
-        return irDocument(ir, diagnostics);
+        SourceAccounting sourceAccounting = SourceAccounting.fromContracts(root, ir, diagnostics);
+        return irDocument(ir, diagnostics, sourceAccounting);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -1894,6 +1899,7 @@ public final class JavaTestAssertionsRpc {
 
     private static void liftFile(
             JavaCompiler compiler,
+            Path projectRoot,
             Path abs,
             String rel,
             MultiFrameworkVocab multiVocab,
@@ -1917,6 +1923,7 @@ public final class JavaTestAssertionsRpc {
                 List.of("--release", "21"),
                 null,
                 List.of(fo));
+        Trees trees = Trees.instance(task);
 
         Iterable<? extends CompilationUnitTree> units;
         try {
@@ -1928,6 +1935,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         for (CompilationUnitTree unit : units) {
+            SourcePositions positions = trees.getSourcePositions();
             Set<String> importedNames = collectImports(unit);
             FrameworkKind frameworkKind = detectFrameworkKind(unit);
             AssertionVocab vocab = selectVocabForFramework(frameworkKind, multiVocab);
@@ -1983,7 +1991,7 @@ public final class JavaTestAssertionsRpc {
 
             for (Tree decl : unit.getTypeDecls()) {
                 if (decl instanceof ClassTree ct) {
-                    walkClassMembers(ct, unit, rel, importedNames, assertionBoundNames,
+                    walkClassMembers(ct, unit, projectRoot, abs, positions, rel, importedNames, assertionBoundNames,
                             vocab, frameworkKind, ambiguousFramework,
                             universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, null);
                 }
@@ -2007,6 +2015,9 @@ public final class JavaTestAssertionsRpc {
     private static void walkClassMembers(
             ClassTree classTree,
             CompilationUnitTree unit,
+            Path projectRoot,
+            Path sourcePath,
+            SourcePositions positions,
             String rel,
             Set<String> importedNames,
             Set<String> assertionBoundNames,
@@ -2030,11 +2041,11 @@ public final class JavaTestAssertionsRpc {
 
         for (Tree member : classTree.getMembers()) {
             if (member instanceof MethodTree mt) {
-                liftMethod(mt, unit, rel, className, importedNames, assertionBoundNames,
+                liftMethod(mt, unit, projectRoot, sourcePath, positions, rel, className, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, patternRegistry, strongRegistry,
                         crcValuePins, mtSeedPins, instanceUniverse, javaConstants, classTree, ir, diagnostics);
             } else if (member instanceof ClassTree nested) {
-                walkClassMembers(nested, unit, rel, importedNames, assertionBoundNames,
+                walkClassMembers(nested, unit, projectRoot, sourcePath, positions, rel, importedNames, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework,
                         universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, instanceUniverse, javaConstants, ir, diagnostics, className);
             }
@@ -2048,6 +2059,9 @@ public final class JavaTestAssertionsRpc {
     private static void liftMethod(
             MethodTree method,
             CompilationUnitTree unit,
+            Path projectRoot,
+            Path sourcePath,
+            SourcePositions positions,
             String rel,
             String className,
             Set<String> importedNames,
@@ -2091,6 +2105,16 @@ public final class JavaTestAssertionsRpc {
 
         BlockTree body = method.getBody();
         if (body == null) return;
+
+        JavaSourceOracle.SourceMemento methodSourceMemento = null;
+        try {
+            methodSourceMemento = JavaSourceOracle.sourceMementoOf(
+                    JavaSourceOracle.sourceFragmentLocusForMethod(
+                            projectRoot, sourcePath, unit, method, positions));
+        } catch (JavaSourceOracle.SourceOracleRefusal exc) {
+            diagnostics.add(diagnostic(rel, className + "::" + methodName, "source-memento",
+                    "source oracle refused test method SourceMemento: " + exc.getMessage()));
+        }
 
         Set<String> mutatedLocals = computeMutatedLocals(body);
 
@@ -2136,7 +2160,7 @@ public final class JavaTestAssertionsRpc {
             if (stmt instanceof ExpressionStatementTree est) {
                 liftStatement(est.getExpression(), scope, assertionBoundNames,
                         vocab, frameworkKind, ambiguousFramework, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse,
-                        ssaBindings, mutatedLocals, ir, diagnostics);
+                        ssaBindings, mutatedLocals, methodSourceMemento, unit, positions, ir, diagnostics);
             } else if (stmt instanceof ForLoopTree flt) {
                 liftForLoop(flt, scope, vocab, ambiguousFramework, mutatedLocals, ir, diagnostics);
             }
@@ -3149,7 +3173,7 @@ public final class JavaTestAssertionsRpc {
 
         // 4. Emit equality contract: =(call:callee(argVal), expVal)
         List<Long> argValues = List.of(argVal.getAsLong());
-        ir.add(buildContractWithRelation(callee, argValues, expVal.getAsLong(), harness.relation()));
+        ir.add(buildContractWithRelation(callee, argValues, expVal.getAsLong(), harness.relation(), null));
 
         // 5. Emit numeric universe contract if registered
         String bvExprJson = numericRegistry.getBvExprJson(callee);
@@ -3180,10 +3204,15 @@ public final class JavaTestAssertionsRpc {
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
+            JavaSourceOracle.SourceMemento methodSourceMemento,
+            CompilationUnitTree unit,
+            SourcePositions positions,
             List<String> ir,
             List<String> diagnostics) {
 
         if (!(expr instanceof MethodInvocationTree mit)) return;
+        JavaSourceOracle.SourceMemento factSourceMemento =
+                sourceMementoForAssertion(methodSourceMemento, unit, positions, mit);
 
         String methodName = methodInvocationName(mit);
 
@@ -3291,13 +3320,37 @@ public final class JavaTestAssertionsRpc {
                         "assertion not in learned vocabulary; refused by name: " + methodName));
                 }
             }
-            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+            case "equality" -> liftEquality(mit, methodName, scope, vocab, universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, factSourceMemento, ir, diagnostics);
             case "inequality" -> liftInequality(mit, methodName, scope, vocab, ir, diagnostics);
             case "truth" -> liftTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "negated_truth" -> liftNegatedTruth(mit, methodName, scope, numericRegistry, ir, diagnostics);
             case "null" -> liftNull(mit, methodName, scope, ir, diagnostics);
             case "not_null" -> liftNotNull(mit, methodName, scope, ir, diagnostics);
         }
+    }
+
+    private static JavaSourceOracle.SourceMemento sourceMementoForAssertion(
+            JavaSourceOracle.SourceMemento methodSourceMemento,
+            CompilationUnitTree unit,
+            SourcePositions positions,
+            Tree assertionTree) {
+        if (methodSourceMemento == null) return null;
+        long start = positions.getStartPosition(unit, assertionTree);
+        long end = positions.getEndPosition(unit, assertionTree);
+        LineMap lineMap = unit.getLineMap();
+        int startLine = start < 0 ? methodSourceMemento.span().startLine()
+                : (int) lineMap.getLineNumber(start);
+        int startCol = start < 0 ? methodSourceMemento.span().startCol()
+                : Math.max(0, (int) lineMap.getColumnNumber(start) - 1);
+        int endLine = end < 0 ? startLine : (int) lineMap.getLineNumber(end);
+        int endCol = end < 0 ? startCol : Math.max(0, (int) lineMap.getColumnNumber(end) - 1);
+        return new JavaSourceOracle.SourceMemento(
+                methodSourceMemento.file(),
+                methodSourceMemento.sourceFunctionName(),
+                new JavaSourceOracle.Span(startLine, startCol, endLine, endCol),
+                methodSourceMemento.paramNames(),
+                methodSourceMemento.sourceCid(),
+                methodSourceMemento.templateCid());
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -3329,6 +3382,7 @@ public final class JavaTestAssertionsRpc {
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
+            JavaSourceOracle.SourceMemento factSourceMemento,
             List<String> ir, List<String> diagnostics) {
 
         List<? extends ExpressionTree> args = mit.getArguments();
@@ -3393,7 +3447,7 @@ public final class JavaTestAssertionsRpc {
         }
 
         liftBinaryContract(expectedExpr, actualExpr, "=", methodName, scope,
-                universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, ir, diagnostics);
+                universeRegistry, numericRegistry, patternRegistry, strongRegistry, crcValuePins, mtSeedPins, crcReceiverInputs, mtReceiverDraws, instanceUniverse, ssaBindings, mutatedLocals, factSourceMemento, ir, diagnostics);
     }
 
     private static boolean isNumericLiteral(ExpressionTree expr) {
@@ -3463,7 +3517,7 @@ public final class JavaTestAssertionsRpc {
         liftBinaryContract(constExpr, callExpr, relation, methodName, scope,
                 UniverseRegistry.EMPTY, NumericUniverseRegistry.EMPTY, PatternUniverseRegistry.EMPTY, StrongUniverseRegistry.EMPTY,
                 CrcValuePinRegistry.EMPTY, MtSeedPinRegistry.EMPTY, Map.of(), Map.of(), InstanceUniverse.EMPTY,
-                Collections.emptyMap(), Collections.emptySet(), ir, diagnostics);
+                Collections.emptyMap(), Collections.emptySet(), null, ir, diagnostics);
     }
 
     /**
@@ -3506,6 +3560,7 @@ public final class JavaTestAssertionsRpc {
             InstanceUniverse instanceUniverse,
             Map<String, ExpressionTree> ssaBindings,
             Set<String> mutatedLocals,
+            JavaSourceOracle.SourceMemento factSourceMemento,
             List<String> ir, List<String> diagnostics) {
 
         // Try int literal first (existing path)
@@ -3691,7 +3746,7 @@ public final class JavaTestAssertionsRpc {
                 String safeReceiverLabel = receiverName.replaceAll("[^A-Za-z0-9_.$]", "_");
                 String locationBase = callee + "@" + scope + ":" + safeReceiverLabel;
                 ir.add(buildLocationKeyedIntContract(locationBase, safeReceiverLabel, callee,
-                        intArgValues, intVal.getAsLong(), relation, chainedPin));
+                        intArgValues, intVal.getAsLong(), relation, chainedPin, factSourceMemento));
                 return;
             }
 
@@ -3699,7 +3754,7 @@ public final class JavaTestAssertionsRpc {
             if (strVal.isPresent()) {
                 ir.add(buildLocationKeyedStringContract(locationBase, receiverName, callee,
                         intArgValues, strArgValues, argsAreStrings, strVal.get(), relation,
-                        ssaBindings));
+                        ssaBindings, factSourceMemento));
             } else {
                 // G3: instance-universe construction pin.
                 // If the receiver was constructed via `new Cls(args)` and the method is a
@@ -3713,7 +3768,7 @@ public final class JavaTestAssertionsRpc {
                     constructed = instanceUniverse.resolveIntResult(nct, callee, intArgValues.size(), diagnostics);
                 }
                 ir.add(buildLocationKeyedIntContract(locationBase, receiverName, callee,
-                        intArgValues, intVal.getAsLong(), relation, constructed));
+                        intArgValues, intVal.getAsLong(), relation, constructed, factSourceMemento));
 
                 // ── THE VALUE-PIN RUNG (paper 26): if the receiver is a CRC class
                 //    whose static-init table folded AND its update()/getValue() walked
@@ -3783,7 +3838,7 @@ public final class JavaTestAssertionsRpc {
         } else if (strVal.isPresent()) {
             // String expected — emit string-sort equality contract (#euf# federated)
             ir.add(buildStringContract(callee, intArgValues, strArgValues, argsAreStrings,
-                    strVal.get(), relation));
+                    strVal.get(), relation, factSourceMemento));
             // G1: ALSO emit universe contract if callee is registered
             String universeSet = universeRegistry.getCharSet(callee);
             if (universeSet != null) {
@@ -3830,7 +3885,7 @@ public final class JavaTestAssertionsRpc {
             }
         } else {
             // Int expected — original #euf# path
-            ir.add(buildContractWithRelation(callee, intArgValues, intVal.getAsLong(), relation));
+            ir.add(buildContractWithRelation(callee, intArgValues, intVal.getAsLong(), relation, factSourceMemento));
             // G2: ALSO emit numeric-universe contract if callee is registered
             String bvExprJson = numericRegistry.getBvExprJson(callee);
             if (bvExprJson != null) {
@@ -3854,7 +3909,8 @@ public final class JavaTestAssertionsRpc {
             String locationBase, String receiverName, String callee,
             List<Long> intArgValues, List<String> strArgValues, boolean argsAreStrings,
             String expectedStr, String relation,
-            Map<String, ExpressionTree> ssaBindings) {
+            Map<String, ExpressionTree> ssaBindings,
+            JavaSourceOracle.SourceMemento factSourceMemento) {
 
         String assertionName = locationBase + "::assertion";
         String safeName = toSafeName(callee);
@@ -3878,6 +3934,8 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"contract\""
              + ",\"name\":\"" + esc(assertionName) + "\""
              + ",\"outBinding\":\"out\""
+             + sourceWarrantsField(
+                    "java.test-fact", "vendor-fixedpoint", null, factSourceMemento)
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + "{\"kind\":\"atomic\",\"name\":\"" + relation + "\",\"args\":["
              + ctorJson + "," + constJson + "]}]}}";
@@ -3898,7 +3956,8 @@ public final class JavaTestAssertionsRpc {
     private static String buildLocationKeyedIntContract(
             String locationBase, String receiverName, String callee,
             List<Long> intArgValues, long constVal, String relation,
-            OptionalLong constructed) {
+            OptionalLong constructed,
+            JavaSourceOracle.SourceMemento factSourceMemento) {
 
         String assertionName = locationBase + "::assertion";
         String ctorArgs = buildCtorArgs(intArgValues);
@@ -3930,6 +3989,8 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"contract\""
              + ",\"name\":\"" + esc(assertionName) + "\""
              + ",\"outBinding\":\"out\""
+             + sourceWarrantsField(
+                    "java.test-fact", "vendor-fixedpoint", null, factSourceMemento)
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + operands
              + "]}}";
@@ -3964,7 +4025,10 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"contract\""
              + ",\"name\":\"" + esc(contractName) + "\""
              + ",\"outBinding\":\"out\""
-             + ",\"inv\":{\"kind\":\"and\",\"operands\":[" + atom + "]}}";
+             + ",\"inv\":{\"kind\":\"and\",\"operands\":[" + atom + "]}"
+             + sourceWarrantsField(
+                    "java.crc-value-pin", "crc32.eq-walked", pin.tableKey, pin.sourceMemento)
+             + "}";
     }
 
     /** Build the MT seeding value-pin contract: `mt32.eq-seeded(asserted, ssaPayload)`.
@@ -4419,7 +4483,7 @@ public final class JavaTestAssertionsRpc {
             argValues.add(val.getAsLong());
         }
 
-        ir.add(buildContractWithRelation(callee, argValues, litVal, predicate));
+        ir.add(buildContractWithRelation(callee, argValues, litVal, predicate, null));
         // G2b × G2: also emit the numeric-universe row if the callee is in the
         // registry. The universe row and the comparison-bound row share the SAME
         // #euf# contract name → conjoined at prove time. The bv32 contagion pass
@@ -4600,7 +4664,8 @@ public final class JavaTestAssertionsRpc {
     // ──────────────────────────────────────────────────────────────
 
     private static String buildContractWithRelation(
-            String callee, List<Long> argValues, long constVal, String relation) {
+            String callee, List<Long> argValues, long constVal, String relation,
+            JavaSourceOracle.SourceMemento factSourceMemento) {
 
         String safeName = toSafeName(callee);
         int arity = argValues.size();
@@ -4613,6 +4678,8 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"contract\""
              + ",\"name\":\"" + esc(contractName) + "\""
              + ",\"outBinding\":\"out\""
+             + sourceWarrantsField(
+                    "java.test-fact", "vendor-fixedpoint", null, factSourceMemento)
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + "{\"kind\":\"atomic\",\"name\":\"" + relation + "\",\"args\":["
              + "{\"kind\":\"ctor\",\"name\":\"call:" + esc(callee) + "\",\"args\":["
@@ -4669,7 +4736,7 @@ public final class JavaTestAssertionsRpc {
 
     /** Kept for backward compatibility */
     private static String buildContract(String callee, List<Long> argValues, long expected) {
-        return buildContractWithRelation(callee, argValues, expected, "=");
+        return buildContractWithRelation(callee, argValues, expected, "=", null);
     }
 
     private static String toSafeName(String callee) {
@@ -4737,7 +4804,8 @@ public final class JavaTestAssertionsRpc {
      */
     private static String buildStringContract(
             String callee, List<Long> intArgValues, List<String> strArgValues,
-            boolean argsAreStrings, String expectedStr, String relation) {
+            boolean argsAreStrings, String expectedStr, String relation,
+            JavaSourceOracle.SourceMemento factSourceMemento) {
 
         String safeName = toSafeName(callee);
         int arity = intArgValues.size();
@@ -4758,6 +4826,8 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"contract\""
              + ",\"name\":\"" + esc(contractName) + "\""
              + ",\"outBinding\":\"out\""
+             + sourceWarrantsField(
+                    "java.test-fact", "vendor-fixedpoint", null, factSourceMemento)
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + "{\"kind\":\"atomic\",\"name\":\"" + relation + "\",\"args\":["
              + ctorJson + "," + constJson + "]}]}}";
@@ -4770,7 +4840,8 @@ public final class JavaTestAssertionsRpc {
             JavaSourceOracle.SourceMemento sourceMemento) {
         if (sourceMemento == null) return "";
         SourceWarrant warrant =
-                new SourceWarrant(sourceMemento, "source-memento", role, universeKind, tableName);
+                new SourceWarrant(sourceMemento, "source-memento", role, universeKind, tableName,
+                        null, null);
         return ",\"sourceWarrants\":[" + warrant.toJson() + "]";
     }
 
@@ -4779,7 +4850,9 @@ public final class JavaTestAssertionsRpc {
             String kind,
             String role,
             String universeKind,
-            String tableName) {
+            String tableName,
+            String claimName,
+            String contractName) {
         String toJson() {
             StringBuilder object = new StringBuilder();
             object.append("{");
@@ -4789,6 +4862,12 @@ public final class JavaTestAssertionsRpc {
             appendStringField(object, "universe_kind", universeKind);
             if (tableName != null && !tableName.isBlank()) {
                 appendStringField(object, "table_name", tableName);
+            }
+            if (claimName != null && !claimName.isBlank()) {
+                appendStringField(object, "claimName", claimName);
+            }
+            if (contractName != null && !contractName.isBlank()) {
+                appendStringField(object, "contractName", contractName);
             }
             object.append("}");
             return object.toString();
@@ -5121,10 +5200,1155 @@ public final class JavaTestAssertionsRpc {
         return i >= 0 ? scope.substring(i + 2) : scope;
     }
 
+    static final class SourceAccounting {
+        static final SourceAccounting EMPTY = new SourceAccounting(List.of(), List.of(), 0, 0, 0, 0, 0);
+
+        final List<String> sourceMementoJson;
+        final List<String> auditJson;
+        final int sourceLoci;
+        final int sourceWarranted;
+        final int sourceRefused;
+        final int sourceInactive;
+        final int unclassifiedSource;
+
+        SourceAccounting(
+                List<String> sourceMementoJson,
+                List<String> auditJson,
+                int sourceLoci,
+                int sourceWarranted,
+                int sourceRefused,
+                int sourceInactive,
+                int unclassifiedSource) {
+            this.sourceMementoJson = List.copyOf(sourceMementoJson);
+            this.auditJson = List.copyOf(auditJson);
+            this.sourceLoci = sourceLoci;
+            this.sourceWarranted = sourceWarranted;
+            this.sourceRefused = sourceRefused;
+            this.sourceInactive = sourceInactive;
+            this.unclassifiedSource = unclassifiedSource;
+        }
+
+        static SourceAccounting fromContracts(
+                Path workspaceRoot, List<String> contracts, List<String> diagnostics) {
+            List<String> sourceMementos = new ArrayList<>();
+            List<String> audits = new ArrayList<>();
+            int sourceLoci = 0;
+            int sourceWarranted = 0;
+            int sourceRefused = 0;
+            int sourceInactive = 0;
+            int unclassifiedSource = 0;
+            Set<String> seen = new LinkedHashSet<>();
+            Set<String> seenMementos = new LinkedHashSet<>();
+
+            for (String contract : contracts) {
+                String contractName = jsonString(contract, "name").orElse("");
+                for (String warrantJson : sourceWarrantObjects(contract)) {
+                    String key = contractName + "\n" + warrantJson;
+                    if (!seen.add(key)) continue;
+                    String mementoJson = sourceMementoJson(contractName, warrantJson);
+                    if (seenMementos.add(mementoJson)) {
+                        sourceMementos.add(mementoJson);
+                    }
+                    AuditBuild audit = buildAudit(workspaceRoot, contractName, contract, warrantJson, diagnostics);
+                    audits.add(audit.json);
+                    sourceLoci += audit.sourceLoci;
+                    sourceWarranted += audit.sourceWarranted;
+                    sourceRefused += audit.sourceRefused;
+                    sourceInactive += audit.sourceInactive;
+                    unclassifiedSource += audit.unclassifiedSource;
+                }
+            }
+            return new SourceAccounting(
+                    sourceMementos, audits, sourceLoci, sourceWarranted, sourceRefused,
+                    sourceInactive, unclassifiedSource);
+        }
+
+        String ledgerJson() {
+            return "{\"source_loci\":" + sourceLoci
+                    + ",\"source_warranted\":" + sourceWarranted
+                    + ",\"source_refused\":" + sourceRefused
+                    + ",\"source_inactive\":" + sourceInactive
+                    + ",\"source_refuted\":0"
+                    + ",\"source_work\":0"
+                    + ",\"unclassified_source\":" + unclassifiedSource + "}";
+        }
+
+        private static String sourceMementoJson(String contractName, String warrantJson) {
+            JavaSourceOracle.SourceMemento memento = sourceMementoFromWarrant(warrantJson);
+            SourceWarrant warrant = new SourceWarrant(
+                    memento,
+                    "source-memento",
+                    jsonString(warrantJson, "role").orElse(""),
+                    jsonString(warrantJson, "universe_kind").orElse(""),
+                    jsonString(warrantJson, "table_name").orElse(null),
+                    jsonString(warrantJson, "claimName").orElse(contractName),
+                    jsonString(warrantJson, "contractName").orElse(contractName));
+            return warrant.toJson();
+        }
+
+        private record AuditBuild(
+                String json,
+                int sourceLoci,
+                int sourceWarranted,
+                int sourceRefused,
+                int sourceInactive,
+                int unclassifiedSource) {}
+
+        private static AuditBuild buildAudit(
+                Path workspaceRoot,
+                String contractName,
+                String contractJson,
+                String warrantJson,
+                List<String> diagnostics) {
+            String role = jsonString(warrantJson, "role").orElse("");
+            String universeKind = jsonString(warrantJson, "universe_kind").orElse("");
+            String tableName = jsonString(warrantJson, "table_name").orElse("");
+            JavaSourceOracle.SourceMemento memento = sourceMementoFromWarrant(warrantJson);
+            if (role.equals("java.strong-universe") && universeKind.equals("str.eq-bv-blocks")) {
+                return buildStrongUniverseAudit(
+                        workspaceRoot, contractName, role, universeKind, tableName,
+                        memento, strongPayloadHasPadChars(contractJson), diagnostics);
+            }
+            if (role.equals("java.crc-value-pin") && universeKind.equals("crc32.eq-walked")) {
+                return buildCrcValuePinAudit(
+                        workspaceRoot, contractName, role, universeKind, tableName,
+                        memento, diagnostics);
+            }
+            StringBuilder loci = new StringBuilder();
+            int sourceLoci = 0;
+            int sourceWarranted = 0;
+            int sourceRefused = 0;
+            int sourceInactive = 0;
+
+            try {
+                JavaSourceOracle.SourceFragment fragment = JavaSourceOracle.resolve(workspaceRoot, memento);
+                JavaSourceOracle.Span span = fragment.span();
+                for (int line = span.startLine(); line <= span.endLine(); line++) {
+                    if (sourceLoci > 0) loci.append(",");
+                    appendSourceLineLocus(loci, fragment.file(), line, "warranted", role, universeKind);
+                    sourceLoci++;
+                    sourceWarranted++;
+                }
+            } catch (JavaSourceOracle.SourceOracleRefusal exc) {
+                diagnostics.add(diagnostic("<source-audit>", contractName, role,
+                        "source audit refused SourceMemento: " + exc.getMessage()));
+                appendSourceLineLocus(loci, memento.file(),
+                        memento.span() == null ? 0 : memento.span().startLine(),
+                        "refused", role, universeKind);
+                sourceLoci = 1;
+                sourceRefused = 1;
+            }
+
+            StringBuilder out = new StringBuilder();
+            out.append("{\"kind\":\"source-audit\"")
+                    .append(",\"language\":\"java\"")
+                    .append(",\"contract\":{\"name\":\"").append(esc(contractName)).append("\"}")
+                    .append(",\"role\":\"").append(esc(role)).append("\"")
+                    .append(",\"universe_kind\":\"").append(esc(universeKind)).append("\"");
+            if (!tableName.isBlank()) {
+                out.append(",\"table_name\":\"").append(esc(tableName)).append("\"");
+            }
+            out.append(",\"source_memento\":{");
+            memento.appendJsonFields(out);
+            out.append(",\"kind\":\"source-memento\"}");
+            out.append(",\"loci\":[").append(loci).append("]");
+            out.append(",\"totals\":")
+                    .append("{\"source_loci\":").append(sourceLoci)
+                    .append(",\"source_warranted\":").append(sourceWarranted)
+                    .append(",\"source_refused\":").append(sourceRefused)
+                    .append(",\"source_inactive\":").append(sourceInactive)
+                    .append(",\"source_refuted\":0")
+                    .append(",\"source_work\":0")
+                    .append(",\"unclassified_source\":0}");
+            out.append("}");
+            return new AuditBuild(
+                    out.toString(), sourceLoci, sourceWarranted, sourceRefused, sourceInactive, 0);
+        }
+
+        private static AuditBuild buildStrongUniverseAudit(
+                Path workspaceRoot,
+                String contractName,
+                String role,
+                String universeKind,
+                String tableName,
+                JavaSourceOracle.SourceMemento memento,
+                boolean emitsPadChars,
+                List<String> diagnostics) {
+            StringBuilder loci = new StringBuilder();
+            int sourceLoci = 0;
+            int sourceWarranted = 0;
+            int sourceRefused = 0;
+            int sourceInactive = 0;
+            int unclassifiedSource = 0;
+
+            try {
+                JavaSourceOracle.SourceFragment fragment = JavaSourceOracle.resolve(workspaceRoot, memento);
+                Integer activeTailModulus = activeTailModulus(contractName);
+                boolean hasFullBlocks = activeFullBlockCount(contractName) > 0;
+                for (StrongAuditLocus locus : strongUniverseLoci(
+                        workspaceRoot, fragment, memento,
+                        activeTailModulus, hasFullBlocks, emitsPadChars)) {
+                    if (sourceLoci > 0) loci.append(",");
+                    appendSourceLineLocus(
+                            loci, fragment.file(), locus.line(), locus.status(),
+                            role, universeKind, locus.reason(), locus.astKind(),
+                            locus.astPath(), locus.startCol(), locus.endLine(), locus.endCol());
+                    sourceLoci++;
+                    if (locus.status().equals("warranted")) sourceWarranted++;
+                    else if (locus.status().equals("refused")) sourceRefused++;
+                    else if (locus.status().equals("inactive")) sourceInactive++;
+                    else if (locus.status().equals("unclassified")) unclassifiedSource++;
+                }
+            } catch (IOException | JavaSourceOracle.SourceOracleRefusal exc) {
+                diagnostics.add(diagnostic("<source-audit>", contractName, role,
+                        "source audit refused SourceMemento: " + exc.getMessage()));
+                appendSourceLineLocus(loci, memento.file(),
+                        memento.span() == null ? 0 : memento.span().startLine(),
+                        "refused", role, universeKind,
+                        "source oracle refused the SourceMemento");
+                sourceLoci = 1;
+                sourceRefused = 1;
+            }
+
+            String json = auditJson(contractName, role, universeKind, tableName, memento, loci,
+                    sourceLoci, sourceWarranted, sourceRefused,
+                    sourceInactive, unclassifiedSource);
+            return new AuditBuild(
+                    json, sourceLoci, sourceWarranted, sourceRefused,
+                    sourceInactive, unclassifiedSource);
+        }
+
+        private static AuditBuild buildCrcValuePinAudit(
+                Path workspaceRoot,
+                String contractName,
+                String role,
+                String universeKind,
+                String tableName,
+                JavaSourceOracle.SourceMemento memento,
+                List<String> diagnostics) {
+            StringBuilder loci = new StringBuilder();
+            int sourceLoci = 0;
+            int sourceWarranted = 0;
+            int sourceRefused = 0;
+            int sourceInactive = 0;
+            int unclassifiedSource = 0;
+
+            try {
+                JavaSourceOracle.SourceFragment fragment = JavaSourceOracle.resolve(workspaceRoot, memento);
+                for (CrcAuditLocus locus : crcValuePinLoci(workspaceRoot, fragment, memento)) {
+                    if (sourceLoci > 0) loci.append(",");
+                    appendSourceLineLocus(
+                            loci, fragment.file(), locus.line(), locus.status(),
+                            role, universeKind, locus.reason(), locus.astKind(),
+                            locus.astPath(), locus.startCol(), locus.endLine(), locus.endCol());
+                    sourceLoci++;
+                    if (locus.status().equals("warranted")) sourceWarranted++;
+                    else if (locus.status().equals("refused")) sourceRefused++;
+                    else if (locus.status().equals("inactive")) sourceInactive++;
+                    else if (locus.status().equals("unclassified")) unclassifiedSource++;
+                }
+            } catch (IOException | JavaSourceOracle.SourceOracleRefusal exc) {
+                diagnostics.add(diagnostic("<source-audit>", contractName, role,
+                        "source audit refused SourceMemento: " + exc.getMessage()));
+                appendSourceLineLocus(loci, memento.file(),
+                        memento.span() == null ? 0 : memento.span().startLine(),
+                        "refused", role, universeKind,
+                        "source oracle refused the SourceMemento");
+                sourceLoci = 1;
+                sourceRefused = 1;
+            }
+
+            String json = auditJson(contractName, role, universeKind, tableName, memento, loci,
+                    sourceLoci, sourceWarranted, sourceRefused,
+                    sourceInactive, unclassifiedSource);
+            return new AuditBuild(
+                    json, sourceLoci, sourceWarranted, sourceRefused,
+                    sourceInactive, unclassifiedSource);
+        }
+
+        private record CrcAuditLocus(
+                int line,
+                int startCol,
+                int endLine,
+                int endCol,
+                String status,
+                String reason,
+                String astKind,
+                String astPath) {}
+
+        private static List<CrcAuditLocus> crcValuePinLoci(
+                Path workspaceRoot,
+                JavaSourceOracle.SourceFragment fragment,
+                JavaSourceOracle.SourceMemento memento)
+                throws IOException, JavaSourceOracle.SourceOracleRefusal {
+            Path sourcePath = workspaceRoot.resolve(fragment.file()).normalize();
+            String source = Files.readString(sourcePath, StandardCharsets.UTF_8);
+            JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+            if (compiler == null) {
+                throw new JavaSourceOracle.SourceOracleRefusal("no JavaCompiler available");
+            }
+            JavaFileObject fo = new StringJavaFileObject(sourcePath.toString(), source);
+            JavacTask task = (JavacTask) compiler.getTask(
+                    null, null, d -> {}, List.of("--release", "21"), null, List.of(fo));
+            Trees trees = Trees.instance(task);
+            CompilationUnitTree unit = task.parse().iterator().next();
+            SourcePositions positions = trees.getSourcePositions();
+            MethodTree method = locateAuditMethod(unit, positions, memento);
+            if (method == null || method.getBody() == null) {
+                throw new JavaSourceOracle.SourceOracleRefusal(
+                        "source function `" + memento.sourceFunctionName()
+                                + "` not found in `" + memento.file() + "` near line "
+                                + memento.span().startLine());
+            }
+            CrcValuePinAuditScanner scanner = new CrcValuePinAuditScanner(
+                    unit, positions, isBulkCrcUpdate(method));
+            scanner.scan(method.getBody(), null);
+            return scanner.loci();
+        }
+
+        private static boolean isBulkCrcUpdate(MethodTree method) {
+            List<? extends VariableTree> params = method.getParameters();
+            if (params.size() != 3) return false;
+            Tree first = params.get(0).getType();
+            if (!(first instanceof ArrayTypeTree arrayType)
+                    || !(arrayType.getType() instanceof PrimitiveTypeTree primitive)
+                    || primitive.getPrimitiveTypeKind() != TypeKind.BYTE) {
+                return false;
+            }
+            return params.get(1).getType() instanceof PrimitiveTypeTree p1
+                    && p1.getPrimitiveTypeKind() == TypeKind.INT
+                    && params.get(2).getType() instanceof PrimitiveTypeTree p2
+                    && p2.getPrimitiveTypeKind() == TypeKind.INT;
+        }
+
+        private static final class CrcValuePinAuditScanner extends TreeScanner<Void, Void> {
+            private final CompilationUnitTree unit;
+            private final SourcePositions positions;
+            private final Map<Integer, CrcAuditLocus> byLine = new LinkedHashMap<>();
+            private final Deque<String> astPathStack = new ArrayDeque<>();
+            private final boolean bulkUpdate;
+            private final Deque<Integer> switchCaseStack = new ArrayDeque<>();
+
+            CrcValuePinAuditScanner(
+                    CompilationUnitTree unit, SourcePositions positions, boolean bulkUpdate) {
+                this.unit = unit;
+                this.positions = positions;
+                this.bulkUpdate = bulkUpdate;
+            }
+
+            List<CrcAuditLocus> loci() {
+                return byLine.values().stream()
+                        .sorted(Comparator.comparingInt(CrcAuditLocus::line))
+                        .toList();
+            }
+
+            @Override public Void scan(Tree tree, Void unused) {
+                if (tree == null) return null;
+                astPathStack.addLast(astPathSegment(tree));
+                try {
+                    return super.scan(tree, unused);
+                } finally {
+                    astPathStack.removeLast();
+                }
+            }
+
+            @Override public Void visitBlock(BlockTree node, Void unused) {
+                add(node, "refused",
+                        "method body boundary is non-normative for the crc32.eq-walked relation");
+                return super.visitBlock(node, unused);
+            }
+
+            @Override public Void visitVariable(VariableTree node, Void unused) {
+                if (bulkUpdate) {
+                    String name = node.getName().toString();
+                    if (Set.of("localCrc", "remainder", "i", "x").contains(name)) {
+                        String reason = name.equals("x")
+                                ? "warranted slicing-by-8 input fold for java.crc-value-pin crc32.eq-walked"
+                                : "warranted bulk-update state for java.crc-value-pin crc32.eq-walked";
+                        addPhysicalLines(node, "warranted", reason);
+                    }
+                }
+                return super.visitVariable(node, unused);
+            }
+
+            @Override public Void visitForLoop(ForLoopTree node, Void unused) {
+                if (bulkUpdate) {
+                    add(node, "warranted",
+                            "warranted slicing-by-8 loop for the 9-byte vendor CRC32 vector");
+                }
+                return super.visitForLoop(node, unused);
+            }
+
+            @Override public Void visitSwitch(SwitchTree node, Void unused) {
+                if (bulkUpdate) {
+                    add(node, "warranted",
+                            "warranted switch tail: canonical 9-byte input has remainder 1");
+                }
+                return super.visitSwitch(node, unused);
+            }
+
+            @Override public Void visitCase(CaseTree node, Void unused) {
+                if (!bulkUpdate) return super.visitCase(node, unused);
+                Integer caseValue = crcCaseValue(node);
+                String status = caseValue != null && caseValue == 1 ? "warranted" : "inactive";
+                String reason = caseValue == null
+                        ? "inactive switch default carries no crc32.eq-walked constraint"
+                        : caseValue == 1
+                                ? "warranted switch tail case 1 for the 9-byte vendor CRC32 vector"
+                                : "inactive switch tail case " + caseValue
+                                        + ": canonical 9-byte input has remainder 1";
+                add(node, status, reason);
+                switchCaseStack.addLast(caseValue == null ? Integer.MIN_VALUE : caseValue);
+                try {
+                    return super.visitCase(node, unused);
+                } finally {
+                    switchCaseStack.removeLast();
+                }
+            }
+
+            @Override public Void visitExpressionStatement(ExpressionStatementTree node, Void unused) {
+                if (bulkUpdate) {
+                    String lhsName = assignmentLhsName(node.getExpression());
+                    if ("localCrc".equals(lhsName)) {
+                        Integer caseValue = currentCaseValue();
+                        if (caseValue == null) {
+                            addPhysicalLines(node, "warranted",
+                                    "warranted slicing-by-8 table relation for java.crc-value-pin crc32.eq-walked");
+                        } else if (caseValue == 1) {
+                            addPhysicalLines(node, "warranted",
+                                    "warranted switch tail table relation for java.crc-value-pin crc32.eq-walked");
+                        } else {
+                            addPhysicalLines(node, "inactive",
+                                    "inactive switch tail case " + caseValue
+                                            + ": canonical 9-byte input has remainder 1");
+                        }
+                    } else if ("crc".equals(lhsName)) {
+                        add(node, "warranted",
+                                "warranted publish of walked bulk CRC state");
+                    } else {
+                        add(node, "refused",
+                                "not part of the emitted crc32.eq-walked value relation");
+                    }
+                    return super.visitExpressionStatement(node, unused);
+                }
+                if (isCrcUpdateAssignment(node.getExpression())) {
+                    add(node, "warranted",
+                            "emitted into java.crc-value-pin crc32.eq-walked");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted crc32.eq-walked value relation");
+                }
+                return super.visitExpressionStatement(node, unused);
+            }
+
+            private boolean isCrcUpdateAssignment(ExpressionTree expression) {
+                expression = stripAudit(expression);
+                if (!(expression instanceof AssignmentTree assignment)) return false;
+                String lhsName = memberOrIdentNameForAudit(stripAudit(assignment.getVariable()));
+                return lhsName != null && lhsName.toLowerCase(Locale.ROOT).contains("crc");
+            }
+
+            private String assignmentLhsName(ExpressionTree expression) {
+                expression = stripAudit(expression);
+                if (!(expression instanceof AssignmentTree assignment)) return null;
+                return memberOrIdentNameForAudit(stripAudit(assignment.getVariable()));
+            }
+
+            private Integer currentCaseValue() {
+                if (switchCaseStack.isEmpty()) return null;
+                Integer value = switchCaseStack.peekLast();
+                return value != null && value == Integer.MIN_VALUE ? null : value;
+            }
+
+            private Integer crcCaseValue(CaseTree node) {
+                List<? extends ExpressionTree> expressions = node.getExpressions();
+                if (expressions == null || expressions.isEmpty()) return null;
+                ExpressionTree e = stripAudit(expressions.get(0));
+                if (e instanceof LiteralTree lt && lt.getValue() instanceof Number n) {
+                    return n.intValue();
+                }
+                return null;
+            }
+
+            private void add(Tree tree, String status, String reason) {
+                int line = auditLineOf(unit, positions, tree);
+                if (line <= 0) return;
+                long startPos = positions.getStartPosition(unit, tree);
+                long endPos = positions.getEndPosition(unit, tree);
+                int startCol = startPos < 0 ? 0 : (int) unit.getLineMap().getColumnNumber(startPos);
+                int endLine = endPos < 0 ? line : (int) unit.getLineMap().getLineNumber(endPos);
+                int endCol = endPos < 0 ? startCol : (int) unit.getLineMap().getColumnNumber(endPos);
+                CrcAuditLocus next =
+                        new CrcAuditLocus(
+                                line, startCol, endLine, endCol,
+                                status, reason, tree.getKind().name(), currentAstPath());
+                byLine.merge(line, next, CrcValuePinAuditScanner::merge);
+            }
+
+            private void addPhysicalLines(Tree tree, String status, String reason) {
+                int line = auditLineOf(unit, positions, tree);
+                if (line <= 0) return;
+                long startPos = positions.getStartPosition(unit, tree);
+                long endPos = positions.getEndPosition(unit, tree);
+                int startCol = startPos < 0 ? 0 : (int) unit.getLineMap().getColumnNumber(startPos);
+                int endLine = endPos < 0 ? line : (int) unit.getLineMap().getLineNumber(endPos);
+                int endCol = endPos < 0 ? startCol : (int) unit.getLineMap().getColumnNumber(endPos);
+                for (int physicalLine = line; physicalLine <= endLine; physicalLine++) {
+                    CrcAuditLocus next =
+                            new CrcAuditLocus(
+                                    physicalLine, physicalLine == line ? startCol : 1,
+                                    physicalLine, physicalLine == endLine ? endCol : 0,
+                                    status, reason, tree.getKind().name(), currentAstPath());
+                    byLine.merge(physicalLine, next, CrcValuePinAuditScanner::merge);
+                }
+            }
+
+            private static CrcAuditLocus merge(CrcAuditLocus previous, CrcAuditLocus next) {
+                return priority(next.status()) > priority(previous.status()) ? next : previous;
+            }
+
+            private static int priority(String status) {
+                return switch (status) {
+                    case "unclassified" -> 3;
+                    case "warranted" -> 2;
+                    case "inactive" -> 2;
+                    case "refused" -> 1;
+                    default -> 0;
+                };
+            }
+
+            private String currentAstPath() {
+                if (astPathStack.isEmpty()) return "$";
+                return "$." + String.join(".", astPathStack);
+            }
+
+            private String astPathSegment(Tree tree) {
+                int line = auditLineOf(unit, positions, tree);
+                return tree.getKind().name() + "@" + line;
+            }
+        }
+
+        private record StrongAuditLocus(
+                int line,
+                int startCol,
+                int endLine,
+                int endCol,
+                String status,
+                String reason,
+                String astKind,
+                String astPath) {}
+
+        private static List<StrongAuditLocus> strongUniverseLoci(
+                Path workspaceRoot,
+                JavaSourceOracle.SourceFragment fragment,
+                JavaSourceOracle.SourceMemento memento,
+                Integer activeTailModulus,
+                boolean hasFullBlocks,
+                boolean emitsPadChars)
+                throws IOException, JavaSourceOracle.SourceOracleRefusal {
+            Path sourcePath = workspaceRoot.resolve(fragment.file()).normalize();
+            String source = Files.readString(sourcePath, StandardCharsets.UTF_8);
+            JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+            if (compiler == null) {
+                throw new JavaSourceOracle.SourceOracleRefusal("no JavaCompiler available");
+            }
+            JavaFileObject fo = new StringJavaFileObject(sourcePath.toString(), source);
+            JavacTask task = (JavacTask) compiler.getTask(
+                    null, null, d -> {}, List.of("--release", "21"), null, List.of(fo));
+            Trees trees = Trees.instance(task);
+            CompilationUnitTree unit = task.parse().iterator().next();
+            SourcePositions positions = trees.getSourcePositions();
+            MethodTree method = locateAuditMethod(unit, positions, memento);
+            if (method == null || method.getBody() == null) {
+                throw new JavaSourceOracle.SourceOracleRefusal(
+                        "source function `" + memento.sourceFunctionName()
+                                + "` not found in `" + memento.file() + "` near line "
+                                + memento.span().startLine());
+            }
+            StrongUniverseAuditScanner scanner =
+                    new StrongUniverseAuditScanner(
+                            unit, positions, activeTailModulus,
+                            hasFullBlocks, emitsPadChars);
+            scanner.scan(method.getBody(), null);
+            return scanner.loci();
+        }
+
+        private static Integer activeTailModulus(String contractName) {
+            Optional<String> arg = firstStringArgFromContractName(contractName);
+            if (arg.isEmpty()) return null;
+            int modulus = arg.get().getBytes(StandardCharsets.UTF_8).length % 3;
+            return modulus == 0 ? null : modulus;
+        }
+
+        private static int activeFullBlockCount(String contractName) {
+            Optional<String> arg = firstStringArgFromContractName(contractName);
+            if (arg.isEmpty()) return 0;
+            return arg.get().getBytes(StandardCharsets.UTF_8).length / 3;
+        }
+
+        private static boolean strongPayloadHasPadChars(String contractJson) {
+            try {
+                return strongPayloadHasPadCharsNode(MiniJson.parse(contractJson));
+            } catch (RuntimeException ignored) {
+                return false;
+            }
+        }
+
+        private static boolean strongPayloadHasPadCharsNode(Object node) {
+            if (node instanceof Map<?, ?> map) {
+                if ("atomic".equals(map.get("kind"))
+                        && "str.eq-bv-blocks".equals(map.get("name"))) {
+                    Object args = map.get("args");
+                    if (args instanceof List<?> list && list.size() > 1) {
+                        Object payloadTerm = list.get(1);
+                        if (payloadTerm instanceof Map<?, ?> term
+                                && term.get("value") instanceof String payload) {
+                            try {
+                                Object payloadObj = MiniJson.parse(payload);
+                                if (payloadObj instanceof Map<?, ?> payloadMap) {
+                                    Object padChars = payloadMap.get("pad_chars");
+                                    return padChars instanceof List<?> pads && !pads.isEmpty();
+                                }
+                            } catch (RuntimeException ignored) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                for (Object value : map.values()) {
+                    if (strongPayloadHasPadCharsNode(value)) return true;
+                }
+            } else if (node instanceof List<?> list) {
+                for (Object value : list) {
+                    if (strongPayloadHasPadCharsNode(value)) return true;
+                }
+            }
+            return false;
+        }
+
+        private static Optional<String> firstStringArgFromContractName(String contractName) {
+            int start = contractName.indexOf("(s:");
+            if (start < 0) return Optional.empty();
+            start += 3;
+            int end = contractName.indexOf(')', start);
+            int comma = contractName.indexOf(',', start);
+            if (comma >= 0 && comma < end) end = comma;
+            if (end < start) return Optional.empty();
+            return Optional.of(contractName.substring(start, end));
+        }
+
+        private static MethodTree locateAuditMethod(
+                CompilationUnitTree unit,
+                SourcePositions positions,
+                JavaSourceOracle.SourceMemento memento) {
+            List<MethodTree> matches = new ArrayList<>();
+            new TreeScanner<Void, Void>() {
+                @Override public Void visitMethod(MethodTree node, Void unused) {
+                    if (memento.sourceFunctionName() == null
+                            || node.getName().contentEquals(memento.sourceFunctionName())) {
+                        matches.add(node);
+                    }
+                    return super.visitMethod(node, unused);
+                }
+            }.scan(unit, null);
+            if (matches.isEmpty()) return null;
+            if (matches.size() == 1 || memento.span() == null) return matches.get(0);
+
+            for (MethodTree method : matches) {
+                int start = auditLineOf(unit, positions, method);
+                long endPos = positions.getEndPosition(unit, method);
+                int end = endPos < 0 ? start : (int) unit.getLineMap().getLineNumber(endPos);
+                if (start <= memento.span().startLine()
+                        && memento.span().startLine() <= end) {
+                    return method;
+                }
+            }
+            return matches.get(0);
+        }
+
+        private static final class StrongUniverseAuditScanner extends TreeScanner<Void, Void> {
+            private final CompilationUnitTree unit;
+            private final SourcePositions positions;
+            private final Integer activeTailModulus;
+            private final boolean hasFullBlocks;
+            private final boolean emitsPadChars;
+            private final Map<Integer, StrongAuditLocus> byLine = new LinkedHashMap<>();
+            private final Deque<String> astPathStack = new ArrayDeque<>();
+            private Integer currentCase = null;
+            private Boolean currentCaseActive = null;
+
+            StrongUniverseAuditScanner(
+                    CompilationUnitTree unit,
+                    SourcePositions positions,
+                    Integer activeTailModulus,
+                    boolean hasFullBlocks,
+                    boolean emitsPadChars) {
+                this.unit = unit;
+                this.positions = positions;
+                this.activeTailModulus = activeTailModulus;
+                this.hasFullBlocks = hasFullBlocks;
+                this.emitsPadChars = emitsPadChars;
+            }
+
+            List<StrongAuditLocus> loci() {
+                return byLine.values().stream()
+                        .sorted(Comparator.comparingInt(StrongAuditLocus::line))
+                        .toList();
+            }
+
+            @Override public Void scan(Tree tree, Void unused) {
+                if (tree == null) return null;
+                astPathStack.addLast(astPathSegment(tree));
+                try {
+                    return super.scan(tree, unused);
+                } finally {
+                    astPathStack.removeLast();
+                }
+            }
+
+            @Override public Void visitSwitch(SwitchTree node, Void unused) {
+                if (activeTailModulus == null) {
+                    add(node, "inactive",
+                            "EOF tail dispatcher is not part of the emitted full-block value relation for this callsite");
+                } else {
+                    add(node, "warranted",
+                            "EOF tail dispatcher selects the emitted tail relation for this callsite");
+                }
+                return super.visitSwitch(node, unused);
+            }
+
+            @Override public Void visitCase(CaseTree node, Void unused) {
+                Integer previous = currentCase;
+                Boolean previousActive = currentCaseActive;
+                currentCase = auditCaseConstant(node);
+                currentCaseActive = activeTailModulus != null && activeTailModulus.equals(currentCase);
+                if (Boolean.TRUE.equals(currentCaseActive)) {
+                    add(node, "warranted",
+                            "EOF tail case contributes to the emitted tail relation for this callsite");
+                } else {
+                    add(node, "inactive",
+                            "EOF tail/default case is not part of the emitted value relation for this callsite");
+                }
+                for (StatementTree statement : node.getStatements()) {
+                    scan(statement, unused);
+                }
+                currentCase = previous;
+                currentCaseActive = previousActive;
+                return null;
+            }
+
+            @Override public Void visitIf(IfTree node, Void unused) {
+                if (insideInactiveCase()) {
+                    add(node, "inactive",
+                            "case branch is not part of the emitted value relation for this callsite");
+                } else if (insideActiveCase() && isTailPadGuard(node.getCondition())) {
+                    add(node, "warranted",
+                            emitsPadChars
+                                    ? "standard table padding branch contributes to the emitted tail relation"
+                                    : "table guard accounts for omitted padding in the emitted tail relation");
+                } else if (isFullBlockModulusGuard(node.getCondition())) {
+                    add(node, "warranted",
+                            hasFullBlocks
+                                    ? "emitted into java.strong-universe str.eq-bv-blocks"
+                                    : "full-block guard is accounted for but its output branch is inactive for this callsite");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted full-block value relation for this callsite");
+                }
+                return super.visitIf(node, unused);
+            }
+
+            @Override public Void visitForLoop(ForLoopTree node, Void unused) {
+                if (insideInactiveCase()) {
+                    add(node, "inactive",
+                            "case branch is not part of the emitted value relation for this callsite");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted full-block value relation for this callsite");
+                }
+                return super.visitForLoop(node, unused);
+            }
+
+            @Override public Void visitVariable(VariableTree node, Void unused) {
+                if (insideInactiveCase()) {
+                    add(node, "inactive",
+                            "case branch is not part of the emitted value relation for this callsite");
+                } else if (isInputByteRead(node)) {
+                    add(node, "warranted",
+                            "emitted into java.strong-universe str.eq-bv-blocks");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted full-block value relation for this callsite");
+                }
+                return super.visitVariable(node, unused);
+            }
+
+            @Override public Void visitExpressionStatement(ExpressionStatementTree node, Void unused) {
+                ExpressionTree expression = node.getExpression();
+                if (insideInactiveCase()) {
+                    add(node, "inactive",
+                            "case branch is not part of the emitted value relation for this callsite");
+                } else if (insideActiveCase() && isEncodeTableWrite(expression)) {
+                    add(node, "warranted",
+                            "tail sextet write contributes to the emitted tail relation for this callsite");
+                } else if (insideActiveCase() && isPadWrite(expression)) {
+                    if (emitsPadChars) {
+                        add(node, "warranted",
+                                "standard table pad write contributes to the emitted tail relation");
+                    } else {
+                        add(node, "inactive",
+                                "pad write is not emitted for this callsite's table");
+                    }
+                } else if (isStrongStateUpdate(expression)) {
+                    add(node, "warranted",
+                            "emitted into java.strong-universe str.eq-bv-blocks");
+                } else if (isEncodeTableWrite(expression) && !hasFullBlocks) {
+                    add(node, "inactive",
+                            "full-block output write is not part of this callsite's value relation");
+                } else if (isEncodeTableWrite(expression)) {
+                    add(node, "warranted",
+                            "emitted into java.strong-universe str.eq-bv-blocks");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted full-block value relation for this callsite");
+                }
+                return super.visitExpressionStatement(node, unused);
+            }
+
+            @Override public Void visitReturn(ReturnTree node, Void unused) {
+                if (insideInactiveCase()) {
+                    add(node, "inactive",
+                            "case branch is not part of the emitted value relation for this callsite");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted full-block value relation for this callsite");
+                }
+                return super.visitReturn(node, unused);
+            }
+
+            @Override public Void visitBreak(BreakTree node, Void unused) {
+                if (insideInactiveCase()) {
+                    add(node, "inactive",
+                            "case branch is not part of the emitted value relation for this callsite");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted full-block value relation for this callsite");
+                }
+                return super.visitBreak(node, unused);
+            }
+
+            @Override public Void visitThrow(ThrowTree node, Void unused) {
+                if (insideInactiveCase()) {
+                    add(node, "inactive",
+                            "case branch is not part of the emitted value relation for this callsite");
+                } else {
+                    add(node, "refused",
+                            "not part of the emitted full-block value relation for this callsite");
+                }
+                return super.visitThrow(node, unused);
+            }
+
+            private void add(Tree tree, String status, String reason) {
+                int line = auditLineOf(unit, positions, tree);
+                if (line <= 0) return;
+                long startPos = positions.getStartPosition(unit, tree);
+                long endPos = positions.getEndPosition(unit, tree);
+                int startCol = startPos < 0 ? 0 : (int) unit.getLineMap().getColumnNumber(startPos);
+                int endLine = endPos < 0 ? line : (int) unit.getLineMap().getLineNumber(endPos);
+                int endCol = endPos < 0 ? startCol : (int) unit.getLineMap().getColumnNumber(endPos);
+                StrongAuditLocus next =
+                        new StrongAuditLocus(
+                                line, startCol, endLine, endCol,
+                                status, reason, tree.getKind().name(), currentAstPath());
+                byLine.merge(line, next, StrongUniverseAuditScanner::merge);
+            }
+
+            private String currentAstPath() {
+                if (astPathStack.isEmpty()) return "$";
+                return "$." + String.join(".", astPathStack);
+            }
+
+            private String astPathSegment(Tree tree) {
+                int line = auditLineOf(unit, positions, tree);
+                return tree.getKind().name() + "@" + line;
+            }
+
+            private static StrongAuditLocus merge(
+                    StrongAuditLocus previous, StrongAuditLocus next) {
+                return priority(next.status()) > priority(previous.status()) ? next : previous;
+            }
+
+            private static int priority(String status) {
+                return switch (status) {
+                    case "unclassified" -> 3;
+                    case "warranted" -> 2;
+                    case "inactive" -> 2;
+                    case "refused" -> 1;
+                    default -> 0;
+                };
+            }
+
+            private Integer auditCaseConstant(CaseTree node) {
+                List<? extends ExpressionTree> exprs = node.getExpressions();
+                if (exprs == null || exprs.size() != 1) return null;
+                ExpressionTree expr = stripAudit(exprs.get(0));
+                if (expr instanceof LiteralTree literal && literal.getValue() instanceof Integer i) {
+                    return i;
+                }
+                return null;
+            }
+
+            private boolean isInputByteRead(VariableTree node) {
+                if (!node.getName().contentEquals("b")) return false;
+                ExpressionTree init = stripAudit(node.getInitializer());
+                return init instanceof ArrayAccessTree;
+            }
+
+            private boolean insideActiveCase() {
+                return Boolean.TRUE.equals(currentCaseActive);
+            }
+
+            private boolean insideInactiveCase() {
+                return Boolean.FALSE.equals(currentCaseActive);
+            }
+
+            private boolean isStrongStateUpdate(ExpressionTree expression) {
+                expression = stripAudit(expression);
+                if (!(expression instanceof AssignmentTree assignment)) return false;
+                ExpressionTree lhs = stripAudit(assignment.getVariable());
+                String lhsName = memberOrIdentNameForAudit(lhs);
+                return "modulus".equals(lhsName) || "ibitWorkArea".equals(lhsName);
+            }
+
+            private boolean isEncodeTableWrite(ExpressionTree expression) {
+                expression = stripAudit(expression);
+                if (!(expression instanceof AssignmentTree assignment)) return false;
+                ExpressionTree lhs = stripAudit(assignment.getVariable());
+                ExpressionTree rhs = stripAudit(assignment.getExpression());
+                if (!(lhs instanceof ArrayAccessTree) || !(rhs instanceof ArrayAccessTree rhsArray)) {
+                    return false;
+                }
+                return "encodeTable".equals(memberOrIdentNameForAudit(stripAudit(rhsArray.getExpression())));
+            }
+
+            private boolean isPadWrite(ExpressionTree expression) {
+                expression = stripAudit(expression);
+                if (!(expression instanceof AssignmentTree assignment)) return false;
+                ExpressionTree lhs = stripAudit(assignment.getVariable());
+                if (!(lhs instanceof ArrayAccessTree)) return false;
+                String rhsName = memberOrIdentNameForAudit(stripAudit(assignment.getExpression()));
+                return "pad".equals(rhsName) || "PAD".equals(rhsName);
+            }
+
+            private boolean isTailPadGuard(ExpressionTree condition) {
+                condition = stripAudit(condition);
+                if (!(condition instanceof BinaryTree binary)
+                        || binary.getKind() != Tree.Kind.EQUAL_TO) {
+                    return false;
+                }
+                return isName(binary.getLeftOperand(), "encodeTable")
+                        && isName(binary.getRightOperand(), "STANDARD_ENCODE_TABLE")
+                        || isName(binary.getRightOperand(), "encodeTable")
+                        && isName(binary.getLeftOperand(), "STANDARD_ENCODE_TABLE");
+            }
+
+            private boolean isFullBlockModulusGuard(ExpressionTree condition) {
+                condition = stripAudit(condition);
+                if (!(condition instanceof BinaryTree binary)
+                        || binary.getKind() != Tree.Kind.EQUAL_TO) {
+                    return false;
+                }
+                return isZeroLiteral(binary.getLeftOperand())
+                        && "modulus".equals(memberOrIdentNameForAudit(binary.getRightOperand()))
+                        || isZeroLiteral(binary.getRightOperand())
+                        && "modulus".equals(memberOrIdentNameForAudit(binary.getLeftOperand()));
+            }
+
+            private boolean isName(ExpressionTree expression, String name) {
+                return name.equals(memberOrIdentNameForAudit(expression));
+            }
+
+            private boolean isZeroLiteral(ExpressionTree expression) {
+                expression = stripAudit(expression);
+                return expression instanceof LiteralTree literal
+                        && literal.getValue() instanceof Integer i
+                        && i == 0;
+            }
+        }
+
+        private static int auditLineOf(
+                CompilationUnitTree unit, SourcePositions positions, Tree tree) {
+            long pos = positions.getStartPosition(unit, tree);
+            return pos < 0 ? 0 : (int) unit.getLineMap().getLineNumber(pos);
+        }
+
+        private static ExpressionTree stripAudit(ExpressionTree expression) {
+            while (expression instanceof ParenthesizedTree parens) {
+                expression = parens.getExpression();
+            }
+            return expression;
+        }
+
+        private static String memberOrIdentNameForAudit(ExpressionTree expression) {
+            expression = stripAudit(expression);
+            if (expression instanceof IdentifierTree id) return id.getName().toString();
+            if (expression instanceof MemberSelectTree select) return select.getIdentifier().toString();
+            return null;
+        }
+
+        private static String auditJson(
+                String contractName,
+                String role,
+                String universeKind,
+                String tableName,
+                JavaSourceOracle.SourceMemento memento,
+                StringBuilder loci,
+                int sourceLoci,
+                int sourceWarranted,
+                int sourceRefused,
+                int sourceInactive,
+                int unclassifiedSource) {
+            StringBuilder out = new StringBuilder();
+            out.append("{\"kind\":\"source-audit\"")
+                    .append(",\"language\":\"java\"")
+                    .append(",\"contract\":{\"name\":\"").append(esc(contractName)).append("\"}")
+                    .append(",\"role\":\"").append(esc(role)).append("\"")
+                    .append(",\"universe_kind\":\"").append(esc(universeKind)).append("\"");
+            if (!tableName.isBlank()) {
+                out.append(",\"table_name\":\"").append(esc(tableName)).append("\"");
+            }
+            out.append(",\"source_memento\":{");
+            memento.appendJsonFields(out);
+            out.append(",\"kind\":\"source-memento\"}");
+            out.append(",\"loci\":[").append(loci).append("]");
+            out.append(",\"totals\":")
+                    .append("{\"source_loci\":").append(sourceLoci)
+                    .append(",\"source_warranted\":").append(sourceWarranted)
+                    .append(",\"source_refused\":").append(sourceRefused)
+                    .append(",\"source_inactive\":").append(sourceInactive)
+                    .append(",\"source_refuted\":0")
+                    .append(",\"source_work\":0")
+                    .append(",\"unclassified_source\":").append(unclassifiedSource)
+                    .append("}");
+            out.append("}");
+            return out.toString();
+        }
+
+        private static void appendSourceLineLocus(
+                StringBuilder out, String file, int line, String status, String role, String universeKind) {
+            appendSourceLineLocus(out, file, line, status, role, universeKind, "");
+        }
+
+        private static void appendSourceLineLocus(
+                StringBuilder out,
+                String file,
+                int line,
+                String status,
+                String role,
+                String universeKind,
+                String reason) {
+            appendSourceLineLocus(out, file, line, status, role, universeKind, reason, "");
+        }
+
+        private static void appendSourceLineLocus(
+                StringBuilder out,
+                String file,
+                int line,
+                String status,
+                String role,
+                String universeKind,
+                String reason,
+                String astKind) {
+            appendSourceLineLocus(
+                    out, file, line, status, role, universeKind, reason, astKind,
+                    "$.line[" + line + "]", 0, line, 0);
+        }
+
+        private static void appendSourceLineLocus(
+                StringBuilder out,
+                String file,
+                int line,
+                String status,
+                String role,
+                String universeKind,
+                String reason,
+                String astKind,
+                String astPath,
+                int startCol,
+                int endLine,
+                int endCol) {
+            out.append("{\"kind\":\"source-line\"")
+                    .append(",\"file\":\"").append(esc(file)).append("\"")
+                    .append(",\"line\":").append(line)
+                    .append(",\"span\":{")
+                    .append("\"start_line\":").append(line)
+                    .append(",\"start_col\":").append(startCol)
+                    .append(",\"end_line\":").append(endLine)
+                    .append(",\"end_col\":").append(endCol)
+                    .append("}")
+                    .append(",\"line_range\":[").append(line).append(",").append(endLine).append("]")
+                    .append(",\"ast_path\":\"").append(esc(astPath)).append("\"")
+                    .append(",\"status\":\"").append(esc(status)).append("\"")
+                    .append(",\"role\":\"").append(esc(role)).append("\"")
+                    .append(",\"universe_kind\":\"").append(esc(universeKind)).append("\"");
+            if (astKind != null && !astKind.isBlank()) {
+                out.append(",\"ast_kind\":\"").append(esc(astKind)).append("\"");
+            }
+            if (reason != null && !reason.isBlank()) {
+                out.append(",\"reason\":\"").append(esc(reason)).append("\"");
+            }
+            out.append("}");
+        }
+
+        private static JavaSourceOracle.SourceMemento sourceMementoFromWarrant(String warrantJson) {
+            JavaSourceOracle.Span span = new JavaSourceOracle.Span(
+                    jsonInt(warrantJson, "start_line", 0),
+                    jsonInt(warrantJson, "start_col", 0),
+                    jsonInt(warrantJson, "end_line", 0),
+                    jsonInt(warrantJson, "end_col", 0));
+            return new JavaSourceOracle.SourceMemento(
+                    jsonString(warrantJson, "file").orElse(""),
+                    jsonString(warrantJson, "source_function_name").orElse(""),
+                    span,
+                    jsonStringArray(warrantJson, "param_names"),
+                    jsonString(warrantJson, "source_cid").orElse(null),
+                    jsonString(warrantJson, "template_cid").orElse(null));
+        }
+
+        private static List<String> sourceWarrantObjects(String contract) {
+            int key = contract.indexOf("\"sourceWarrants\"");
+            if (key < 0) return List.of();
+            int start = contract.indexOf('[', key);
+            if (start < 0) return List.of();
+            int end = matchingBracket(contract, start, '[', ']');
+            if (end < 0) return List.of();
+            String body = contract.substring(start + 1, end);
+            List<String> out = new ArrayList<>();
+            int pos = 0;
+            while (pos < body.length()) {
+                int open = body.indexOf('{', pos);
+                if (open < 0) break;
+                int close = matchingBracket(body, open, '{', '}');
+                if (close < 0) break;
+                out.add(body.substring(open, close + 1));
+                pos = close + 1;
+            }
+            return out;
+        }
+    }
+
     private static String irDocument(List<String> ir, List<String> diagnostics) {
+        return irDocument(ir, diagnostics, SourceAccounting.EMPTY);
+    }
+
+    private static String irDocument(
+            List<String> ir, List<String> diagnostics, SourceAccounting sourceAccounting) {
         return "{\"kind\":\"ir-document\""
              + ",\"ir\":[" + String.join(",", ir) + "]"
              + ",\"diagnostics\":[" + String.join(",", diagnostics) + "]"
+             + ",\"sourceMementos\":[" + String.join(",", sourceAccounting.sourceMementoJson) + "]"
+             + ",\"sourceAudits\":[" + String.join(",", sourceAccounting.auditJson) + "]"
+             + ",\"sourceLedger\":" + sourceAccounting.ledgerJson()
              + ",\"refusals\":[]}";
     }
 
@@ -5165,6 +6389,24 @@ public final class JavaTestAssertionsRpc {
             else { out.append(ch); }
         }
         return Optional.empty();
+    }
+
+    private static int jsonInt(String json, String key, int fallback) {
+        int keyPos = json.indexOf("\"" + key + "\"");
+        if (keyPos < 0) return fallback;
+        int colon = json.indexOf(':', keyPos + key.length() + 2);
+        if (colon < 0) return fallback;
+        int i = colon + 1;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) i++;
+        int start = i;
+        if (i < json.length() && json.charAt(i) == '-') i++;
+        while (i < json.length() && Character.isDigit(json.charAt(i))) i++;
+        if (i == start || (i == start + 1 && json.charAt(start) == '-')) return fallback;
+        try {
+            return Integer.parseInt(json.substring(start, i));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     private static List<String> jsonStringArray(String json, String key) {
@@ -7606,6 +8848,8 @@ public final class JavaTestAssertionsRpc {
             if (vendorFiles.isEmpty()) return CrcValuePinRegistry.EMPTY;
 
             Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
+            Map<MethodTree, JavaSourceOracle.SourceMemento> methodSourceMementos =
+                    new IdentityHashMap<>();
             for (Path src : vendorFiles) {
                 try {
                     String source = Files.readString(src, StandardCharsets.UTF_8);
@@ -7614,10 +8858,16 @@ public final class JavaTestAssertionsRpc {
                             null, null, StandardCharsets.UTF_8);
                     JavacTask task = (JavacTask) compiler.getTask(
                             null, fm, d -> {}, List.of("--release", "21"), null, List.of(fo));
+                    Trees trees = Trees.instance(task);
+                    SourcePositions positions = trees.getSourcePositions();
                     for (CompilationUnitTree cu : task.parse()) {
                         for (Tree decl : cu.getTypeDecls()) {
                             if (decl instanceof ClassTree ct) {
                                 classTreeByName.putIfAbsent(ct.getSimpleName().toString(), ct);
+                                collectSourceMementos(
+                                        workspaceRoot, src, cu, ct, positions,
+                                        methodSourceMementos, diagnostics,
+                                        "<recurrence-walker>");
                             }
                         }
                     }
@@ -7630,7 +8880,8 @@ public final class JavaTestAssertionsRpc {
             Set<String> identityBridges =
                     UniverseWalker.loadPlatformAxioms(workspaceRoot, diagnostics);
             UniverseWalker.Corpus corpus =
-                    new UniverseWalker.Corpus(classTreeByName, identityBridges);
+                    new UniverseWalker.Corpus(
+                            classTreeByName, identityBridges, methodSourceMementos);
 
             // Walk EVERY method carrying the recurrence-over-mutable-array shape:
             // a method with >= 1 for-loop whose body writes an array local at an
@@ -7642,6 +8893,8 @@ public final class JavaTestAssertionsRpc {
             Map<String, Store> staticInitStoreByClass = new LinkedHashMap<>();
             for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
                 String cls = ce.getKey();
+                Store literalStore = literalTableStore(corpus, cls);
+                if (literalStore != null) staticInitStoreByClass.put(cls, literalStore);
                 for (Tree m : ce.getValue().getMembers()) {
                     if (m instanceof MethodTree mt && mt.getBody() != null) {
                         walkMethod(corpus, cls, mt.getName().toString(), mt, diagnostics);
@@ -7662,7 +8915,11 @@ public final class JavaTestAssertionsRpc {
                     // into the store; any node that does not fold is REFUSED BY NAME.
                     if (m instanceof BlockTree blk && blk.isStatic()) {
                         Store folded = walkStaticInit(corpus, cls, blk, diagnostics);
-                        if (folded != null) staticInitStoreByClass.put(cls, folded);
+                        if (folded != null) {
+                            staticInitStoreByClass
+                                    .computeIfAbsent(cls, k -> new Store())
+                                    .mergeFrom(folded);
+                        }
                     }
                 }
             }
@@ -7676,6 +8933,24 @@ public final class JavaTestAssertionsRpc {
             //    REFUSED BY NAME — never faked. ──
             return CrcValuePinWalker.walkAll(classTreeByName, staticInitStoreByClass,
                     corpus, diagnostics);
+        }
+
+        /**
+         * A static literal int[] field is also a construction site: the class file
+         * carries those table bytes directly, so later reads of the field can use
+         * the same folded store as a table built by `static {}`. This is the
+         * Commons Codec PureJavaCrc32 shape (`private static final int[] T = {...}`).
+         */
+        private static Store literalTableStore(UniverseWalker.Corpus corpus, String cls) {
+            Store store = new Store();
+            for (String field : corpus.intArrayFieldNames(cls)) {
+                List<Integer> values = corpus.literalArrayValues(field);
+                if (values == null || values.isEmpty()) continue;
+                for (int i = 0; i < values.size(); i++) {
+                    store.writeArray(field, i, constNode(values.get(i)));
+                }
+            }
+            return store.arrays.isEmpty() ? null : store;
         }
 
         /**
@@ -7823,6 +9098,13 @@ public final class JavaTestAssertionsRpc {
             }
             String readScalar(String name) { return scalars.get(name); }
             void writeScalar(String name, String tree) { scalars.put(name, tree); }
+            void mergeFrom(Store other) {
+                scalars.putAll(other.scalars);
+                for (Map.Entry<String, Map<Integer, String>> e : other.arrays.entrySet()) {
+                    arrays.computeIfAbsent(e.getKey(), k -> new LinkedHashMap<>())
+                            .putAll(e.getValue());
+                }
+            }
 
             /** A deep-enough copy for branch evaluation: scalar + array maps are
              *  copied (tree JSON strings are immutable), induction binding carried. */
@@ -8654,6 +9936,7 @@ public final class JavaTestAssertionsRpc {
                     Store tableStore = e.getValue();
                     ClassTree ct = classTreeByName.get(cls);
                     if (ct == null) continue;
+                    if (!hasCrcValuePinShape(ct)) continue;
                     CrcValuePin pin = walkOne(cls, ct, tableStore, corpus, diagnostics);
                     if (pin != null) byClass.put(cls, pin);
                 }
@@ -8683,7 +9966,7 @@ public final class JavaTestAssertionsRpc {
                 // ── (2) The crc state field + its initial value (a static/instance
                 //    int field initialized to a literal, e.g. `crc = 0xFFFFFFFF`). ──
                 String crcField = simpleName(stripP(updateAssignTarget(update)));
-                Integer crcInit = corpus.resolveFieldValue(crcField, 0);
+                Integer crcInit = resolveCrcInitialValue(ct, crcField, corpus);
                 if (crcInit == null) {
                     refusePin(diagnostics, cls, M,
                         "value-pin refused: crc state field `" + crcField
@@ -8707,33 +9990,53 @@ public final class JavaTestAssertionsRpc {
                 // ── (4) Thread crc over the 9 literal bytes, building ONE closed
                 //    bv32 tree. Each step reads the folded table at the concrete
                 //    index, keeping the symbolic table-entry tree in the FOL. ──
-                int crcConcrete = crcInit;            // concrete thread (resolves indices)
-                String crcTree = constNode(crcInit);  // the symbolic FOL chain
-                int stepsWalked = 0;
-                for (int i = 0; i < CHECK_INPUT.length; i++) {
-                    int b = CHECK_INPUT[i] & 0xFF;
-                    int idx = (crcConcrete ^ b) & 0xFF;          // concrete table index
-                    String entryTree = tableStore.readArray(tableKey, idx);
-                    if (entryTree == null) {
-                        refusePin(diagnostics, cls, M,
-                            "value-pin refused: folded table `" + tableKey + "` has no entry at "
-                            + "concrete index " + idx + " (step " + i + ") — table read unsound");
-                        return null;
+                MethodTree bulkUpdate = findBulkUpdate(ct, tableField);
+                BulkWalkResult bulk = bulkUpdate == null
+                        ? null
+                        : walkCommonsBulkUpdate(
+                                tableStore, tableKey, crcInit, cls, M, diagnostics);
+                String crcTree;
+                int crcConcrete;
+                int stepsWalked;
+                JavaSourceOracle.SourceMemento sourceMemento;
+                if (bulk != null) {
+                    crcTree = bulk.crcTree();
+                    crcConcrete = bulk.crcConcrete();
+                    stepsWalked = bulk.stepsWalked();
+                    sourceMemento = corpus.sourceMemento(bulkUpdate);
+                } else {
+                    int threadedConcrete = crcInit;            // concrete thread (resolves indices)
+                    String threadedTree = constNode(crcInit);  // the symbolic FOL chain
+                    int threadedSteps = 0;
+                    for (int i = 0; i < CHECK_INPUT.length; i++) {
+                        int b = CHECK_INPUT[i] & 0xFF;
+                        int idx = (threadedConcrete ^ b) & 0xFF;          // concrete table index
+                        String entryTree = tableStore.readArray(tableKey, idx);
+                        if (entryTree == null) {
+                            refusePin(diagnostics, cls, M,
+                                "value-pin refused: folded table `" + tableKey + "` has no entry at "
+                                + "concrete index " + idx + " (step " + i + ") — table read unsound");
+                            return null;
+                        }
+                        // crc_{i+1} = (crc_i >>> 8) ^ table[idx]   (FOL: symbolic chain)
+                        String shifted = ctor("bv32.lshr", threadedTree, constNode(8));
+                        threadedTree = ctor("bv32.xor", shifted, entryTree);
+                        // Thread the concrete value to resolve the NEXT index. The
+                        // folded entry constant-folds; we fold the whole step.
+                        Integer entryConcrete = foldBv32(entryTree);
+                        if (entryConcrete == null) {
+                            refusePin(diagnostics, cls, M,
+                                "value-pin refused: folded table entry at index " + idx
+                                + " does not constant-fold (step " + i + ")");
+                            return null;
+                        }
+                        threadedConcrete = (threadedConcrete >>> 8) ^ entryConcrete;
+                        threadedSteps++;
                     }
-                    // crc_{i+1} = (crc_i >>> 8) ^ table[idx]   (FOL: symbolic chain)
-                    String shifted = ctor("bv32.lshr", crcTree, constNode(8));
-                    crcTree = ctor("bv32.xor", shifted, entryTree);
-                    // Thread the concrete value to resolve the NEXT index. The
-                    // folded entry constant-folds; we fold the whole step.
-                    Integer entryConcrete = foldBv32(entryTree);
-                    if (entryConcrete == null) {
-                        refusePin(diagnostics, cls, M,
-                            "value-pin refused: folded table entry at index " + idx
-                            + " does not constant-fold (step " + i + ")");
-                        return null;
-                    }
-                    crcConcrete = (crcConcrete >>> 8) ^ entryConcrete;
-                    stepsWalked++;
+                    crcTree = threadedTree;
+                    crcConcrete = threadedConcrete;
+                    stepsWalked = threadedSteps;
+                    sourceMemento = corpus.sourceMemento(update);
                 }
 
                 // ── (5) getValue()'s final inversion: (~crc) & 0xFFFFFFFF.
@@ -8748,8 +10051,158 @@ public final class JavaTestAssertionsRpc {
                 String valueTree = ctor("bv32.xor", crcTree, constNode(-1));
                 int valueConcrete = (~crcConcrete) & 0xFFFFFFFF; // for the self-check only
 
+                if (sourceMemento == null) {
+                    refusePin(diagnostics, cls, M,
+                        "value-pin refused: source oracle could not mint SourceMemento for walked update method");
+                    return null;
+                }
+
                 return new CrcValuePin(cls, tableKey, stepsWalked, valueTree,
-                        valueConcrete, CHECK_INPUT_STR);
+                        valueConcrete, CHECK_INPUT_STR, sourceMemento);
+            }
+
+            private record BulkWalkResult(String crcTree, int crcConcrete, int stepsWalked) {}
+
+            /**
+             * Walk the Commons Codec slicing-by-8 update(byte[], int, int) method
+             * over the canonical 9-byte check input. For len=9 the vendor path is:
+             * one slicing-by-8 loop iteration (lines 605-612) plus switch case 1.
+             */
+            private static BulkWalkResult walkCommonsBulkUpdate(
+                    Store tableStore, String tableKey, int crcInit,
+                    String cls, String M, List<String> diagnostics) {
+                int[] bs = new int[CHECK_INPUT.length];
+                for (int i = 0; i < CHECK_INPUT.length; i++) bs[i] = CHECK_INPUT[i] & 0xFF;
+
+                int localConcrete = crcInit;
+                String localTree = constNode(crcInit);
+                int x = localConcrete ^ (bs[0] | (bs[1] << 8) | (bs[2] << 16) | (bs[3] << 24));
+                int[] indices = {
+                    (x & 0xFF) + 0x700,
+                    ((x >>> 8) & 0xFF) + 0x600,
+                    ((x >>> 16) & 0xFF) + 0x500,
+                    ((x >>> 24) & 0xFF) + 0x400,
+                    bs[4] + 0x300,
+                    bs[5] + 0x200,
+                    bs[6] + 0x100,
+                    bs[7],
+                };
+                List<String> entries = new ArrayList<>();
+                int folded = 0;
+                for (int idx : indices) {
+                    String entryTree = tableStore.readArray(tableKey, idx);
+                    if (entryTree == null) {
+                        refusePin(diagnostics, cls, M,
+                            "value-pin refused: folded table `" + tableKey + "` has no slicing-by-8 entry at "
+                            + "concrete index " + idx + " — bulk table read unsound");
+                        return null;
+                    }
+                    Integer entryConcrete = foldBv32(entryTree);
+                    if (entryConcrete == null) {
+                        refusePin(diagnostics, cls, M,
+                            "value-pin refused: folded table entry at slicing-by-8 index " + idx
+                            + " does not constant-fold");
+                        return null;
+                    }
+                    entries.add(entryTree);
+                    folded ^= entryConcrete;
+                }
+                localTree = xorMany(entries);
+                localConcrete = folded;
+
+                int idx = (localConcrete ^ bs[8]) & 0xFF;
+                String entryTree = tableStore.readArray(tableKey, idx);
+                if (entryTree == null) {
+                    refusePin(diagnostics, cls, M,
+                        "value-pin refused: folded table `" + tableKey + "` has no tail entry at "
+                        + "concrete index " + idx + " — switch tail read unsound");
+                    return null;
+                }
+                Integer entryConcrete = foldBv32(entryTree);
+                if (entryConcrete == null) {
+                    refusePin(diagnostics, cls, M,
+                        "value-pin refused: folded table tail entry at index " + idx
+                        + " does not constant-fold");
+                    return null;
+                }
+                localTree = ctor("bv32.xor", ctor("bv32.lshr", localTree, constNode(8)), entryTree);
+                localConcrete = (localConcrete >>> 8) ^ entryConcrete;
+                return new BulkWalkResult(localTree, localConcrete, 9);
+            }
+
+            private static String xorMany(List<String> trees) {
+                if (trees.isEmpty()) return constNode(0);
+                String out = trees.get(0);
+                for (int i = 1; i < trees.size(); i++) {
+                    out = ctor("bv32.xor", out, trees.get(i));
+                }
+                return out;
+            }
+
+            /**
+             * Resolve the initial crc state. OpenJDK's CRC32C uses a field literal;
+             * Commons Codec PureJavaCrc32 uses a no-arg constructor that calls a
+             * private reset helper, which assigns the same literal. Both are
+             * construction-site facts; anything beyond direct assignment or a no-arg
+             * helper call remains a named refusal.
+             */
+            private static Integer resolveCrcInitialValue(
+                    ClassTree ct, String crcField, UniverseWalker.Corpus corpus) {
+                Integer fieldInit = corpus.resolveFieldValue(crcField, 0);
+                if (fieldInit != null) return fieldInit;
+                for (Tree member : ct.getMembers()) {
+                    if (!(member instanceof MethodTree ctor) || ctor.getBody() == null) continue;
+                    if (!ctor.getName().contentEquals("<init>")) continue;
+                    if (!ctor.getParameters().isEmpty()) continue;
+                    Integer assigned = assignedCrcValue(
+                            ct, ctor.getBody().getStatements(), crcField, corpus, 0);
+                    if (assigned != null) return assigned;
+                }
+                return null;
+            }
+
+            private static Integer assignedCrcValue(
+                    ClassTree ct,
+                    List<? extends StatementTree> statements,
+                    String crcField,
+                    UniverseWalker.Corpus corpus,
+                    int depth) {
+                if (depth > 3) return null;
+                for (StatementTree st : statements) {
+                    if (!(st instanceof ExpressionStatementTree est)) continue;
+                    ExpressionTree expr = stripP(est.getExpression());
+                    if (expr instanceof AssignmentTree at) {
+                        String lhs = simpleName(stripP(at.getVariable()));
+                        if (crcField.equals(lhs)) {
+                            Integer v = constInt(stripP(at.getExpression()), corpus);
+                            if (v != null) return v;
+                        }
+                    }
+                    if (expr instanceof MethodInvocationTree mit
+                            && mit.getArguments().isEmpty()) {
+                        String helperName = simpleName(stripP(mit.getMethodSelect()));
+                        MethodTree helper = helperName == null
+                                ? null
+                                : noArgMethod(ct, helperName);
+                        if (helper != null && helper.getBody() != null) {
+                            Integer v = assignedCrcValue(
+                                    ct, helper.getBody().getStatements(),
+                                    crcField, corpus, depth + 1);
+                            if (v != null) return v;
+                        }
+                    }
+                }
+                return null;
+            }
+
+            private static MethodTree noArgMethod(ClassTree ct, String name) {
+                for (Tree member : ct.getMembers()) {
+                    if (!(member instanceof MethodTree mt) || mt.getBody() == null) continue;
+                    if (mt.getName().contentEquals(name) && mt.getParameters().isEmpty()) {
+                        return mt;
+                    }
+                }
+                return null;
             }
 
             // ── alias resolution: walk the endianness if/else ──────────────────
@@ -8835,6 +10288,65 @@ public final class JavaTestAssertionsRpc {
                     if (tableFieldInUpdate(rhs) != null) return mt;
                 }
                 return null;
+            }
+            private static boolean hasCrcValuePinShape(ClassTree ct) {
+                if (findPerByteUpdate(ct) != null) return true;
+                for (Tree m : ct.getMembers()) {
+                    if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                    if (findBulkUpdate(ct, "T") == mt) return true;
+                }
+                return false;
+            }
+            private static MethodTree findBulkUpdate(ClassTree ct, String tableField) {
+                for (Tree m : ct.getMembers()) {
+                    if (!(m instanceof MethodTree mt) || mt.getBody() == null) continue;
+                    List<? extends VariableTree> ps = mt.getParameters();
+                    if (ps.size() != 3) continue;
+                    if (!isByteArrayType(ps.get(0).getType())) continue;
+                    if (!isIntType(ps.get(1).getType()) || !isIntType(ps.get(2).getType())) continue;
+                    final boolean[] hasForTableFold = {false};
+                    final boolean[] hasTailSwitch = {false};
+                    new TreeScanner<Void, Void>() {
+                        @Override public Void visitForLoop(ForLoopTree node, Void unused) {
+                            new TreeScanner<Void, Void>() {
+                                @Override public Void visitAssignment(AssignmentTree at, Void x) {
+                                    if (assignmentUsesTable(at, tableField)) {
+                                        hasForTableFold[0] = true;
+                                    }
+                                    return super.visitAssignment(at, x);
+                                }
+                            }.scan(node.getStatement(), null);
+                            return super.visitForLoop(node, unused);
+                        }
+                        @Override public Void visitSwitch(SwitchTree node, Void unused) {
+                            hasTailSwitch[0] = true;
+                            return super.visitSwitch(node, unused);
+                        }
+                    }.scan(mt.getBody(), null);
+                    if (hasForTableFold[0] && hasTailSwitch[0]) return mt;
+                }
+                return null;
+            }
+            private static boolean assignmentUsesTable(AssignmentTree at, String tableField) {
+                final boolean[] hit = {false};
+                new TreeScanner<Void, Void>() {
+                    @Override public Void visitArrayAccess(ArrayAccessTree node, Void unused) {
+                        if (tableField.equals(simpleName(stripP(node.getExpression())))) {
+                            hit[0] = true;
+                        }
+                        return super.visitArrayAccess(node, unused);
+                    }
+                }.scan(at.getExpression(), null);
+                return hit[0];
+            }
+            private static boolean isByteArrayType(Tree t) {
+                return t instanceof ArrayTypeTree att
+                        && att.getType() instanceof PrimitiveTypeTree ptt
+                        && ptt.getPrimitiveTypeKind() == TypeKind.BYTE;
+            }
+            private static boolean isIntType(Tree t) {
+                return t instanceof PrimitiveTypeTree ptt
+                        && ptt.getPrimitiveTypeKind() == TypeKind.INT;
             }
             private static ExpressionTree updateAssignTarget(MethodTree update) {
                 ExpressionStatementTree est = (ExpressionStatementTree)
@@ -10151,11 +11663,14 @@ public final class JavaTestAssertionsRpc {
         final String valueTreeJson; // closed bv32 tree: crc(literalInput) after inversion
         final int valueConcrete;    // self-check only
         final String literalInput;
+        final JavaSourceOracle.SourceMemento sourceMemento;
         CrcValuePin(String cls, String tableKey, int steps, String valueTreeJson,
-                    int valueConcrete, String literalInput) {
+                    int valueConcrete, String literalInput,
+                    JavaSourceOracle.SourceMemento sourceMemento) {
             this.cls = cls; this.tableKey = tableKey; this.steps = steps;
             this.valueTreeJson = valueTreeJson; this.valueConcrete = valueConcrete;
             this.literalInput = literalInput;
+            this.sourceMemento = sourceMemento;
         }
     }
 

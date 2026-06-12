@@ -16,6 +16,7 @@ javac \
   --release 21 \
   -proc:none \
   -d "$OUT" \
+  "$HERE/src/JavaDependencyProofResolver.java" \
   "$HERE/src/JavaJunitWitnessRpc.java"
 
 # JavaTestAssertionsRpc and JavaSourceOracle use com.sun.source (jdk.compiler
@@ -28,6 +29,7 @@ javac \
   -source 21 -target 21 \
   -cp "$OUT" \
   -d "$OUT" \
+  "$HERE/src/JavaDependencyProofResolver.java" \
   "$HERE/src/JavaTestAssertionsRpc.java" \
   "$HERE/src/JavaPanamaFfmRpc.java" \
   "$HERE/src/JavaSourceOracle.java"

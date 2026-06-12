@@ -155,6 +155,46 @@ def _implications_to_json(layer2) -> List[Dict[str, Any]]:
     ]
 
 
+def _empty_source_ledger() -> Dict[str, int]:
+    return {
+        "source_loci": 0,
+        "source_warranted": 0,
+        "source_refused": 0,
+        "source_inactive": 0,
+        "source_refuted": 0,
+        "source_work": 0,
+        "unclassified_source": 0,
+    }
+
+
+def _merge_source_ledger(dst: Dict[str, int], src: Dict[str, Any]) -> None:
+    for field in dst:
+        dst[field] += int(src.get(field, 0))
+
+
+def _source_mementos_from_decls(decls: List[Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for decl in decls:
+        if not isinstance(decl, ContractDecl):
+            continue
+        for warrant in getattr(decl, "source_warrants", []):
+            if not isinstance(warrant, dict):
+                continue
+            memento = dict(warrant)
+            memento["kind"] = "source-memento"
+            memento.setdefault("claimName", decl.name)
+            memento.setdefault("contractName", decl.name)
+            memento.pop("body_text", None)
+            memento.pop("ast_template", None)
+            key = json.dumps(memento, sort_keys=True, separators=(",", ":"))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(memento)
+    return out
+
+
 def _lift_source(path: str, source: str) -> Dict[str, Any]:
     decls: List[Any] = []
 
@@ -209,6 +249,9 @@ def _lift_source(path: str, source: str) -> Dict[str, Any]:
         "callEdges": call_edges_array,
         "warnings": [w.__dict__ for w in layer2.warnings + production_walk.warnings],
         "implications": _implications_to_json(layer2) + _implications_to_json(production_walk),
+        "sourceMementos": _source_mementos_from_decls(decls),
+        "sourceAudits": list(layer2.source_audits),
+        "sourceLedger": dict(layer2.source_ledger),
     }
 
 
@@ -241,6 +284,9 @@ def handle_parse(msg_id: Any, params: dict) -> None:
                     "callEdges": lifted["callEdges"],
                     "warnings": lifted["warnings"],
                     "implications": lifted["implications"],
+                    "sourceMementos": lifted["sourceMementos"],
+                    "sourceAudits": lifted["sourceAudits"],
+                    "sourceLedger": lifted["sourceLedger"],
                 },
             }
         )
@@ -291,6 +337,9 @@ def handle_lift(msg_id: Any, params: dict) -> None:
         decls: List[Any] = []
         warnings: List[Any] = []
         implications: List[Any] = []
+        source_mementos: List[Any] = []
+        source_audits: List[Any] = []
+        source_ledger = _empty_source_ledger()
         for path in _iter_python_files(workspace_root, source_paths):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -306,6 +355,9 @@ def handle_lift(msg_id: Any, params: dict) -> None:
             decls.extend(lifted["decls"])
             warnings.extend(lifted["warnings"])
             implications.extend(lifted["implications"])
+            source_mementos.extend(lifted["sourceMementos"])
+            source_audits.extend(lifted["sourceAudits"])
+            _merge_source_ledger(source_ledger, lifted["sourceLedger"])
 
         ir: List[Any] = []
         if decls:
@@ -319,8 +371,11 @@ def handle_lift(msg_id: Any, params: dict) -> None:
                     "kind": "ir-document",
                     "ir": ir,
                     "implications": implications,
+                    "sourceMementos": source_mementos,
                     "diagnostics": [],
                     "warnings": warnings,
+                    "sourceAudits": source_audits,
+                    "sourceLedger": source_ledger,
                 },
             }
         )
