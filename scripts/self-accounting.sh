@@ -61,14 +61,21 @@ printf "   TOTAL  asserts=%s lifted=%s refused=%s SILENT=%s\n" "$r_assert" "$r_l
 echo
 echo "## Python (source value-pin axis: scan_module_value_pins)"
 python3 - <<'PY' || fail=1
-import ast, glob, sys
+import ast, glob, os, sys
 sys.path.insert(0, "implementations/python/sugar-lift-python-source/src")
 from sugar_lift_python_source.value_pins import scan_module_value_pins
 roots = ["implementations/python/sugar-lift-python-source/src",
          "implementations/python/sugar-lift-py-tests/src"]
 c=p=r=0; files=0; bad=[]
+# Canonical lines content-address Python's self-proof SURFACE: which names are
+# pinned, which reasons refused, per file. A change in pins/refusals moves the CID
+# (a count-preserving swap still moves it). This is the Python analog of the Rust
+# sweep's assertion_multiset_cid -- so Python's self-proof is CONTENT-ADDRESSED,
+# and federation by CID falls out for free (no hub): a stranger recomputes this CID
+# and it lands byte-identical, because Python's blake3 == sugar's blake3_512_of.
+lines = []
 for root in roots:
-    for path in glob.glob(root + "/**/*.py", recursive=True):
+    for path in sorted(glob.glob(root + "/**/*.py", recursive=True)):
         try:
             s = scan_module_value_pins(ast.parse(open(path, encoding="utf-8").read()))
         except Exception:
@@ -77,12 +84,27 @@ for root in roots:
         if not s.totality_holds():
             bad.append(path)
         c += s.candidates; p += len(s.pins); r += len(s.refusals)
+        rel = os.path.relpath(path)
+        for name in sorted(s.pins):
+            lines.append(f"pin\t{rel}\t{name}")
+        for ref in s.refusals:
+            reason = (ref.get("reason") or ref.get("kind") or "") if isinstance(ref, dict) else str(ref)
+            lines.append(f"refuse\t{rel}\t{reason}")
 print(f"   files={files} candidates={c} pinned={p} refused={r} "
       f"SILENT={c - p - r}")
 if bad:
     print(f"   FAIL: totality_holds() False in {bad[:5]}")
     raise SystemExit(1)
 print("   totality_holds() True for every file (silent = 0, structural)")
+# Content-address the self-proof surface, in sugar's canonical hash (blake3-512).
+try:
+    import blake3
+    lines.sort()
+    canonical = "\n".join(lines).encode("utf-8")
+    cid = "blake3-512:" + blake3.blake3(canonical).digest(length=64).hex()
+    print(f"   pythonSelfAccountingCid: {cid}")
+except ImportError:
+    print("   pythonSelfAccountingCid: (install the `blake3` module to content-address)")
 PY
 
 echo
