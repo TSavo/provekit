@@ -306,6 +306,26 @@ def main():
         for r in receipt.get("rows", [])
         if "::assertion" in str(r.get("property", ""))
     )
+
+    # THE PERIMETER, HASH-PINNED: the residual is every row NOT discharged --
+    # the refused, undecidable, and violated obligations, named by property.
+    # Content-address the sorted set so the perimeter is a single recomputable
+    # CID, not an estimate: two mints of the same source against the same world
+    # have the same perimeter CID, and any change to what we could-not-discharge
+    # moves it. This is the complement of the total accounting, pinned.
+    residual = sorted(
+        f"{r.get('status')}:{r.get('property')}"
+        for r in receipt.get("rows", [])
+        if r.get("status") not in ("discharged", None)
+    )
+    # sha256-addressed (a meta-level content address of the residual set, not
+    # a substrate proof CID; honestly prefixed so it's never confused with the
+    # blake3-512 bundle CIDs).
+    perimeter_blob = "\n".join(residual).encode()
+    perimeter_cid = (
+        "sha256:" + hashlib.sha256(perimeter_blob).hexdigest() if residual else None
+    )
+
     meta = {
         "package": name,
         "version": version,
@@ -326,6 +346,11 @@ def main():
         "assertion_properties": universes,
         "cited_bundles": cited,
         "uncited_deps": dep_misses,
+        "perimeter": {
+            "cid": perimeter_cid,
+            "count": len(residual),
+            "rows": residual,
+        },
     }
     json.dump(meta, open(meta_path, "w"), indent=2)
     shutil.rmtree(work, ignore_errors=True)
