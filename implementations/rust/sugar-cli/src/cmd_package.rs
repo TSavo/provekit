@@ -183,6 +183,54 @@ fn read_pinned_dep_vectors_cid(receipt_path: &Path) -> Result<String, String> {
         })
 }
 
+/// Name the build-environment IO that determines an artifact's `binaryCid` but is
+/// NOT the source itself: the toolchain, the host target, the build profile, and
+/// the source commit. Together with the pinned dependency vectors, these are the
+/// COMPLETE input set, so a stranger can reproduce the `binaryCid` under the NAMED
+/// conditions (recomputable, not sworn). This is the "name every IO" half: each
+/// input is reported with its value, or the explicit string `"unavailable"` if the
+/// tool that reports it is absent -- NEVER silently omitted (a missing input read
+/// as present is a silence read wrong). It carries no raw clock: every field is
+/// rederivable/checkable (a stranger can run `rustc -vV`, check out the commit), so
+/// there is no unsigned IO baked in. Testimony, not a pin: a different builder's
+/// environment is fine; the receipt states the conditions THIS `binaryCid`
+/// reproduces under.
+/// Extract a `key: value` field from `rustc -vV` output (e.g. `release: 1.96.0`).
+/// Pure, so the parsing is unit-tested without a toolchain.
+fn parse_rustc_field(vv: &str, key: &str) -> Option<String> {
+    vv.lines()
+        .find_map(|l| l.strip_prefix(key).map(|v| v.trim().to_string()))
+}
+
+fn gather_build_inputs(root: &Path) -> serde_json::Value {
+    let rustc_vv = std::process::Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+    let from_rustc = |key: &str| -> String {
+        rustc_vv
+            .as_ref()
+            .and_then(|s| parse_rustc_field(s, key))
+            .unwrap_or_else(|| "unavailable".to_string())
+    };
+    let git_commit = std::process::Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unavailable".to_string());
+    serde_json::json!({
+        "rustcVersion": from_rustc("release: "),
+        "hostTarget": from_rustc("host: "),
+        "profile": "release",
+        "gitCommit": git_commit,
+    })
+}
+
 /// The accounting: workspace bins that are neither pinned nor excluded. A
 /// non-empty result means the manifest's coverage is incomplete -- a bin can
 /// ship unpinned. Pure, so the totality logic is unit-tested without cargo.
@@ -453,6 +501,44 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
         }
     }
 
+    // Build-input testimony: NAME every input that determines the artifacts'
+    // binaryCid but is not the source itself -- toolchain, host target, profile,
+    // source commit. With the dependency vectors pinned above, this completes the
+    // input set, so the binaryCid is reproducible under the NAMED conditions
+    // (recomputable, not sworn). Testimony, not a gate: attest records the
+    // conditions; verify-only reads them back (a different builder's env is fine,
+    // the receipt states what THIS binaryCid reproduces under). Every field is
+    // rederivable -- no unsigned clock baked in.
+    let build_inputs_path = receipts.join("build-inputs.release.json");
+    let build_inputs_json = if args.verify_only {
+        match std::fs::read_to_string(&build_inputs_path) {
+            Ok(t) => serde_json::from_str::<serde_json::Value>(&t)
+                .ok()
+                .and_then(|v| v.get("buildInputs").cloned())
+                .unwrap_or(serde_json::Value::Null),
+            Err(_) => serde_json::Value::Null,
+        }
+    } else {
+        let inputs = gather_build_inputs(&root);
+        let receipt = serde_json::json!({"kind": "BuildInputsReceipt", "buildInputs": inputs});
+        if let Ok(s) = serde_json::to_string_pretty(&receipt) {
+            let _ = std::fs::write(&build_inputs_path, s);
+        }
+        inputs
+    };
+    if !args.out_flags.json && !args.out_flags.quiet {
+        if let Some(obj) = build_inputs_json.as_object() {
+            let get = |k: &str| obj.get(k).and_then(|v| v.as_str()).unwrap_or("?");
+            println!(
+                "  {} build-inputs (rustc {}, {}, commit {})",
+                "ok".green(),
+                get("rustcVersion"),
+                get("hostTarget"),
+                &get("gitCommit").chars().take(12).collect::<String>(),
+            );
+        }
+    }
+
     if args.out_flags.json {
         println!(
             "{}",
@@ -462,6 +548,7 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
                 "artifacts": results,
                 "coverage": coverage_json,
                 "dependencies": dependencies_json,
+                "buildInputs": build_inputs_json,
             })
         );
     } else if all_ok && !args.out_flags.quiet {
@@ -779,6 +866,24 @@ checksum = "bbbb"
     fn lockfile_without_packages_is_a_named_error() {
         let err = dependency_vectors_cid_of_text("version = 4\n").unwrap_err();
         assert!(err.contains("no [[package]] entries"), "{err}");
+    }
+
+    #[test]
+    fn rustc_field_parse_reads_release_and_host() {
+        let vv = "rustc 1.96.0 (abc 2026-01-01)\n\
+                  binary: rustc\n\
+                  commit-hash: abc\n\
+                  host: x86_64-apple-darwin\n\
+                  release: 1.96.0\n\
+                  LLVM version: 19.1.0\n";
+        assert_eq!(super::parse_rustc_field(vv, "release: ").as_deref(), Some("1.96.0"));
+        assert_eq!(
+            super::parse_rustc_field(vv, "host: ").as_deref(),
+            Some("x86_64-apple-darwin")
+        );
+        // A field the output does not carry is None (-> the caller names it
+        // "unavailable", never silently present).
+        assert_eq!(super::parse_rustc_field(vv, "nonesuch: "), None);
     }
 
     #[test]
