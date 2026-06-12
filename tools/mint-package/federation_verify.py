@@ -109,9 +109,9 @@ def main():
             continue
         minted += 1
         # (2) one world
-        if meta.get("world_sha256") not in (args.world, None):
+        if meta.get("world_id") not in (args.world, None):
             problems.append(
-                f"WRONG-WORLD: {spec} stamped {str(meta.get('world_sha256'))[:16]} "
+                f"WRONG-WORLD: {spec} stamped {str(meta.get('world_id'))[:24]} "
                 f"!= {args.world[:16]}"
             )
         # (3) falsePass=0
