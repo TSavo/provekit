@@ -1149,18 +1149,46 @@ fn try_lift_for_loop_forall(
         Pat::Ident(p) if p.subpat.is_none() => p.ident.to_string(),
         _ => return None,
     };
-    // The iterator must be a range with both bounds present; we transcribe it as
-    // the guard. (Open ranges / runtime collections are not yet read here.)
-    let Expr::Range(range) = &*f.expr else {
-        return None;
-    };
-    let (start_expr, end_expr) = match (&range.start, &range.end) {
-        (Some(s), Some(e)) => (s, e),
+    // The iterator domain must be a FINITE CONSTRUCTION: a closed integer range
+    // `a..b` (transcribed as a forall guard) or a literal array `[e0, e1, ...]`
+    // (unrolled over its constructed element terms). A runtime collection
+    // (`for x in v`) is NOT constructed from source literals -- it is left to the
+    // for-context refusal (named bin-2 by `for_iter_domain`).
+    enum ForDomain {
+        Range {
+            start: Rc<Term>,
+            end: Rc<Term>,
+            inclusive: bool,
+        },
+        Array(Vec<Rc<Term>>),
+    }
+    let domain = match &*f.expr {
+        Expr::Range(range) => {
+            let (Some(start_expr), Some(end_expr)) = (&range.start, &range.end) else {
+                return None;
+            };
+            ForDomain::Range {
+                start: translate_term_in_scope(start_expr, scope).ok()?,
+                end: translate_term_in_scope(end_expr, scope).ok()?,
+                inclusive: matches!(range.limits, syn::RangeLimits::Closed(_)),
+            }
+        }
+        Expr::Array(arr) => {
+            // An empty array means the loop never runs -> nothing is asserted
+            // (vacuously). Leave it to the refusal path rather than emit a vacuous
+            // `true`. Each element must translate, or the domain is not fully
+            // constructed and we refuse.
+            if arr.elems.is_empty() {
+                return None;
+            }
+            let mut elems = Vec::with_capacity(arr.elems.len());
+            for e in &arr.elems {
+                elems.push(translate_term_in_scope(e, scope).ok()?);
+            }
+            ForDomain::Array(elems)
+        }
         _ => return None,
     };
-    let start = translate_term_in_scope(start_expr, scope).ok()?;
-    let end = translate_term_in_scope(end_expr, scope).ok()?;
-    let inclusive = matches!(range.limits, syn::RangeLimits::Closed(_));
 
     // Lift the body through the normal collector. Truth-table-or-gutter: every
     // body assert must lift cleanly (none refused, none missing) or we refuse
@@ -1198,19 +1226,39 @@ fn try_lift_for_loop_forall(
     }
     let body_conj = and_(body_entries.iter().map(|e| e.atom.clone()).collect());
 
-    // forall x:Int. ( start <= x (< | <=) end ) => body[var := x]
-    let bound_var = var.clone();
-    let quantified = forall(Sort::int(), move |x| {
-        let lower = lte(start.clone(), x.clone());
-        let upper = if inclusive {
-            lte(x.clone(), end.clone())
-        } else {
-            lt(x.clone(), end.clone())
-        };
-        let guard = and_(vec![lower, upper]);
-        let body = subst_var_in_formula(&body_conj, &bound_var, &x);
-        implies(guard, body)
-    });
+    let quantified = match domain {
+        // forall x:Int. ( start <= x (< | <=) end ) => body[var := x]
+        ForDomain::Range {
+            start,
+            end,
+            inclusive,
+        } => {
+            let bound_var = var.clone();
+            forall(Sort::int(), move |x| {
+                let lower = lte(start.clone(), x.clone());
+                let upper = if inclusive {
+                    lte(x.clone(), end.clone())
+                } else {
+                    lt(x.clone(), end.clone())
+                };
+                let guard = and_(vec![lower, upper]);
+                let body = subst_var_in_formula(&body_conj, &bound_var, &x);
+                implies(guard, body)
+            })
+        }
+        // `for x in [e0, e1, ...]` is exactly the FINITE conjunction
+        // body[x:=e0] ∧ body[x:=e1] ∧ ... -- a complete unroll over the constructed
+        // element terms, every instance concrete (full point-wise teeth). This is
+        // the construction axiom directly: the domain is allocated at formation, so
+        // `∀x ∈ {e_i}. body` IS the finite conjunction, no quantifier needed.
+        ForDomain::Array(elems) => {
+            let instances = elems
+                .iter()
+                .map(|e| subst_var_in_formula(&body_conj, &var, e))
+                .collect();
+            and_(instances)
+        }
+    };
     Some((quantified, n_body, var))
 }
 
