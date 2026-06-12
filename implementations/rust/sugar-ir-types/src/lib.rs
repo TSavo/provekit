@@ -1107,67 +1107,15 @@ fn legacy_object_is_sugar_carrier(object: &serde_json::Map<String, serde_json::V
 // ============================================================
 
 // ============================================================
-// MANUAL EXTENSION BLOCK -- concept-site layer (PR-A of multi-PR landing)
-// Source of truth:
-//   protocol/specs/2026-05-12-concept-site-memento.md §1
-//   protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.4 (loss-record)
+// Discharge verdict (the trichotomy carrier).
 //
-// This block adds the ConceptSiteMemento substrate primitive: the
-// content-addressed binding between a user code-site and a catalog concept,
-// carrying a verdict in the trichotomy {exact, loudly-bounded-lossy, refuse}
-// and a per-dimension loss_record characterizing any non-empty loss.
-//
-// Per JCS canonicalization (2026-04-30-canonicalization-grammar.md), serde
-// field order MUST equal the locked alphabetical order from the spec §3.1
-// inside each object. Optional fields are omitted from the serialized JSON
-// when None.
-//
-// The CID-determining bytes for a ConceptSiteMemento are JCS(header) with
-// `cid` elided; that JCS encoding lives in sugar-claim-envelope
-// (sugar-ir-types has no JCS encoder). Byte-pin tests for the CID
-// belong in that crate; this crate carries serde round-trip tests only.
+// The concept-site binding layer (ConceptSiteMemento and its code-site /
+// witness-ref / provenance types) was removed with the concept hub: there
+// is no cross-language transport and no binding of a callsite to a hub
+// concept; contracts meet at the callsite by EUF. The Discharge verdict
+// type survives because it is the substrate's trichotomy carrier
+// {exact, loudly-bounded-lossy, refuse}, used throughout verification.
 // ============================================================
-
-/// The byte span inside a canonical source artifact identifying the code-site.
-///
-/// Locked JCS key order: end, start.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CodeSiteSpan {
-    pub end: u64,
-    pub start: u64,
-}
-
-/// A user code-site: which function it lives in, which source it lives in,
-/// and where inside that source.
-///
-/// Source of truth: 2026-05-12-concept-site-memento.md §1 `code-site`.
-///
-/// Locked JCS key order: function_term_cid, source_cid, span.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CodeSite {
-    #[serde(rename = "function_term_cid")]
-    pub function_term_cid: String,
-    #[serde(rename = "source_cid")]
-    pub source_cid: String,
-    pub span: CodeSiteSpan,
-}
-
-/// A pointer to a `WitnessMemento` with a per-site confidence interval.
-///
-/// `ci_basis_points` is an integer in [0, 10000]; 9500 means 95.00%
-/// confidence at this site under the recorded witness policy. Witness
-/// propagation per the spec §0.3: tests attached to ONE site become
-/// witnesses at the concept level and propagate by reference through
-/// `concept_cid` to every binding citing the concept.
-///
-/// Locked JCS key order: ci_basis_points, witness_cid.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WitnessRef {
-    #[serde(rename = "ci_basis_points")]
-    pub ci_basis_points: u16,
-    #[serde(rename = "witness_cid")]
-    pub witness_cid: String,
-}
 
 /// The discharge verdict for a binding. Exactly one of three.
 ///
@@ -1198,61 +1146,6 @@ pub struct Discharge {
     /// dimension"; the spec requires that shape for `exact`.
     #[serde(rename = "loss_record")]
     pub loss_record: LossRecord,
-}
-
-/// The three producer CIDs for a `ConceptSiteMemento`.
-///
-/// Locked JCS key order: clusterer_cid, discharger_cid, lifter_cid.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConceptSiteProvenance {
-    #[serde(rename = "clusterer_cid")]
-    pub clusterer_cid: String,
-    #[serde(rename = "discharger_cid")]
-    pub discharger_cid: String,
-    #[serde(rename = "lifter_cid")]
-    pub lifter_cid: String,
-}
-
-/// The content-addressed binding between a user code-site and a catalog
-/// concept, carrying a discharge verdict in the trichotomy.
-///
-/// Source of truth: protocol/specs/2026-05-12-concept-site-memento.md §1
-///
-/// Locked JCS key order (header fields, alphabetical):
-///   cid, code_site, concept_cid, discharge, kind, local_contract_cid,
-///   provenance, realization_mode_hint (omitted when absent),
-///   schemaVersion, witnesses.
-///
-/// This struct represents the `header` layer per
-/// 2026-05-03-substrate-layers-envelope-header-body.md; envelope + metadata
-/// layers are carried by the wrapping envelope structures defined in
-/// sugar-claim-envelope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConceptSiteMemento {
-    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
-    pub cid: String,
-    #[serde(rename = "code_site")]
-    pub code_site: CodeSite,
-    /// The `ConceptAbstractionMemento.cid` this site binds to.
-    #[serde(rename = "concept_cid")]
-    pub concept_cid: String,
-    pub discharge: Discharge,
-    /// MUST be "concept-site".
-    pub kind: String,
-    /// The `FunctionContractMemento.cid` for the user-lifted contract.
-    #[serde(rename = "local_contract_cid")]
-    pub local_contract_cid: String,
-    pub provenance: ConceptSiteProvenance,
-    /// Non-normative deployment-policy hint: "witness" | "emitter" | "monitor".
-    /// OMITTED when the discharger does not opinion.
-    #[serde(rename = "realization_mode_hint")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub realization_mode_hint: Option<String>,
-    /// MUST be "1".
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-    /// Per-site witness samples with confidence intervals. MAY be empty.
-    pub witnesses: Vec<WitnessRef>,
 }
 
 // ============================================================
@@ -4340,60 +4233,6 @@ impl std::fmt::Display for DomainClaimConversionError {
 }
 
 impl std::error::Error for DomainClaimConversionError {}
-
-/// Parse a `Discharge.verdict` wire-string into a `VerdictKind`.
-///
-/// This parser is INFALLIBLE on well-formed source mementos: the source
-/// memento's own validator rejects out-of-trichotomy verdict strings before
-/// the memento is minted. A failure here indicates a substrate invariant
-/// violation upstream (spec §2.4).
-fn parse_verdict_kind(s: &str) -> Result<VerdictKind, DomainClaimConversionError> {
-    match s {
-        "exact" => Ok(VerdictKind::Exact),
-        "loudly-bounded-lossy" => Ok(VerdictKind::LoudlyBoundedLossy),
-        "refuse" => Ok(VerdictKind::Refuse),
-        other => Err(DomainClaimConversionError::InvalidVerdictString(
-            other.to_string(),
-        )),
-    }
-}
-
-/// `ConceptSiteMemento -> DomainClaim` (spec §2.1).
-///
-/// Mapping:
-///   * `kit_cid`   <- `provenance.discharger_cid`
-///   * `input_cid` <- `code_site.source_cid`
-///   * `truth_cid` <- `concept_cid`
-///   * `verdict`   <- `discharge` (trichotomy preserved by construction)
-///
-/// The produced claim is UNSIGNED: `signature` is the empty string and
-/// `provenance.signer` / `provenance.declared_at` carry zero-value
-/// placeholders. Envelope-layer signers fill these in at mint time before
-/// computing the wire-form CID.
-impl TryFrom<&ConceptSiteMemento> for DomainClaim {
-    type Error = DomainClaimConversionError;
-
-    fn try_from(m: &ConceptSiteMemento) -> Result<Self, Self::Error> {
-        let kind = parse_verdict_kind(&m.discharge.verdict)?;
-        let verdict = VerdictBody {
-            discharge_receipt_cid: m.discharge.discharge_receipt_cid.clone(),
-            kind,
-            loss_record: m.discharge.loss_record.clone(),
-            refusal_reason: m.discharge.refusal_reason.clone(),
-        };
-        let provenance = DomainClaimProvenance {
-            declared_at: String::new(),
-            signer: String::new(),
-        };
-        Ok(Self::unsigned(
-            m.provenance.discharger_cid.clone(),
-            m.code_site.source_cid.clone(),
-            m.concept_cid.clone(),
-            verdict,
-            provenance,
-        ))
-    }
-}
 
 // ============================================================
 // End manual extension block -- DomainClaim normalization (PR-A)
