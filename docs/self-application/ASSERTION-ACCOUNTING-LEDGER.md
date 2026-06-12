@@ -1,4 +1,9 @@
-# Assertion-accounting ledger — total accounting over sugar's own Rust tree
+# Assertion-accounting ledger — total accounting over sugar's own tree
+
+> **Two languages measured (silent = 0 in both).** Rust below (test-assertion
+> lift axis); **Python** in the [Python section](#python-second-language-value-pin-axis)
+> (source value-pin axis). Both hold silent = 0 *structurally* and have their
+> residual sorted to named bin-1 / bin-2 — the shape the finish-line metric wants.
 
 The companion axis to [`GOAL-sugar-proves-sugar.md`](./GOAL-sugar-proves-sugar.md).
 That doc tracks **K** (panic-safe call sites discharged via sound reasoning,
@@ -97,11 +102,11 @@ things the goal says should be all that's left.
    collection term, so `coll.iter().all(|x| P(x))` lifts to `∀x. member(x,coll) → P(x)`
    and the literal-collection case unrolls. The biggest *real* bin-1 left, but
    soundness-critical (do not rush).
-2. **Broaden to Python** (the second language) — sugar's Python kit has a lifter
-   (`layer2.py`, `assertion_layer.py`, `value_pins.py`) and a structural-floor
-   test (`test_structural_floor.py`) but **no sweep ledger**. Build the Python
-   total-accounting analog and record its opening bin-1 — directly closes the
-   "only Rust measured" gap toward *three languages*.
+2. **Broaden to Python** (the second language) — **DONE** (see the
+   [Python section](#python-second-language-value-pin-axis)): the value-pin axis
+   is measured (63 candidates, 42 pinned, 21 bin-2, silent = 0). Remaining Python
+   build: a plain-`assert` (pytest) lifter — sugar's own Python *test* assertions
+   are lifted by no mechanism today.
 3. **M1 closedness/vacuity gate** — make the existing `vacuous` label a *hard*
    structural refusal at mint (the precondition for an honest totality claim).
 
@@ -152,3 +157,61 @@ Each slice updates this table with the new number and a one-line why, exactly as
   pinned from the literal); an untranslatable field propagates its own named Err.
   Result over the 5 crates: lift **87.2% → 87.8%** (+16 lifted, −16 refused);
   `assert_eq!: unsupported term` **42 → 29**. **silent = 0** held.
+
+## Python (second language) — value-pin axis
+
+Closing the "only Rust measured" gap. Python's self-application does **not** go
+through the test-assertion lifter: sugar's own Python tests use plain pytest
+`assert`, while `assertion_layer`/`lift_test_file` target a vendor `assert_*`
+vocab learned from testing modules (numpy.testing-style) — a different (vendor)
+surface. The Python **source** total-accounting mechanism is `value_pins`
+(`scan_module_value_pins`), with its own structural floor
+(`test_structural_floor.py`: `_unaccounted_grammar() == {}` — silent = 0 by an
+exhaustive grammar visit, the same discipline as Rust's `coretests_sweep`).
+
+### Recompute it yourself (no oracle, pure source)
+
+```python
+import ast, glob, sys
+sys.path.insert(0, "implementations/python/sugar-lift-python-source/src")
+from sugar_lift_python_source.value_pins import scan_module_value_pins
+c=p=r=0
+for root in ["implementations/python/sugar-lift-python-source/src",
+             "implementations/python/sugar-lift-py-tests/src"]:
+    for path in glob.glob(root+"/**/*.py", recursive=True):
+        s = scan_module_value_pins(ast.parse(open(path).read()))
+        assert s.totality_holds()          # candidates == pins + refusals (silent = 0)
+        c += s.candidates; p += len(s.pins); r += len(s.refusals)
+print(c, p, r)   # 63 42 21
+```
+
+### Opening baseline (main, 2026-06-11), 40 files
+
+| | candidates | pinned | refused | SILENT |
+|---|---:|---:|---:|---:|
+| sugar Python source | 63 | 42 (66.7%) | 21 | **0** |
+
+`totality_holds()` is **True for every file** — silent = 0 structurally, not
+sampled.
+
+### The 21 refused, decomposed — already ~all bin-2
+
+| reason | count | bin |
+|---|---:|---|
+| `mutable value (dict) cannot pin` | 9 | bin-2 |
+| `mutable value (set) cannot pin` | 7 | bin-2 |
+| `mutable value (list) cannot pin` | 3 | bin-2 |
+| `global declaration in nested scope can rebind` | 2 | bin-2 |
+
+Every refusal is the **construction / allocation axiom in the Python teeth**: a
+mutable container (dict/set/list) is not allocated-as-fixed at formation — it can
+be mutated after the contract forms — so it is genuinely *not value-pinnable*
+(bin-2), exactly as Rust refuses mutated receivers ("ambiguous temporal
+identity"). A rebindable global is the binding-time form of the same rule.
+
+**Drainable bin-1 ≈ 0 on this axis too.** The Python value-pin self-accounting
+is already at the goal shape: silent = 0, residual = named bin-2 (mutable /
+rebindable values that the axiom says cannot be pinned). The open Python gap is
+elsewhere — sugar's own pytest `assert` statements are lifted by *no* mechanism
+today (the assertion lifter is vendor-vocab-only); a plain-`assert` lifter is the
+Python analog of the Rust assertion sweep, and the real next Python build.
