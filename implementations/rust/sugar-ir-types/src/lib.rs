@@ -4752,127 +4752,15 @@ mod composition_refusal_tests {
 // ============================================================
 
 // ============================================================
-// Manual extension: migration async rewrite receipt
+// Witness memento + memento validation.
 //
-// Substrate-only types for the paper 22 async migration demo receipt.
-// This block adds parse, validate, and index support so malformed receipt
-// JSON fails closed at load time.
+// The cross-language migration receipt types (MigrateReceiptEnvelope and the
+// per-language migration mementos) were removed with the concept hub: there
+// is no cross-language migration; contracts meet at the callsite by EUF.
+// WitnessMemento survives (witnesses are kept as signed evidence), along with
+// MigrationReceiptError (the shared memento-validation error -- name retained
+// for now) and the require_*/migration_cid_without_keys helpers it uses.
 // ============================================================
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AggregateSummaryMemento {
-    pub cid: String,
-    pub halted: usize,
-    pub kind: String,
-    pub lossy: usize,
-    pub refused: usize,
-    pub rewritten: usize,
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-    pub widened: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MigrationSourceLocation {
-    pub column: usize,
-    pub file: String,
-    pub line: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MigrationEffectDelta {
-    pub after: String,
-    pub before: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MigrationConceptSiteMemento {
-    #[serde(rename = "after_source_location")]
-    pub after_source_location: MigrationSourceLocation,
-    #[serde(rename = "before_source_location")]
-    pub before_source_location: MigrationSourceLocation,
-    pub cid: String,
-    #[serde(rename = "concept_cid")]
-    pub concept_cid: String,
-    #[serde(rename = "effect_delta")]
-    pub effect_delta: MigrationEffectDelta,
-    #[serde(rename = "function_cid")]
-    pub function_cid: String,
-    pub kind: String,
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-    #[serde(rename = "source_binding_cid")]
-    pub source_binding_cid: String,
-    #[serde(rename = "target_binding_cid")]
-    pub target_binding_cid: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HaltMemento {
-    #[serde(rename = "admitting_sig")]
-    pub admitting_sig: String,
-    pub cid: String,
-    #[serde(rename = "function_cid")]
-    pub function_cid: String,
-    pub kind: String,
-    pub reason: String,
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RefusalMemento {
-    pub cid: String,
-    #[serde(rename = "forbidding_contract")]
-    pub forbidding_contract: String,
-    #[serde(rename = "function_cid")]
-    pub function_cid: String,
-    pub kind: String,
-    pub reason: String,
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LossRecordMemento {
-    #[serde(rename = "callsite_cid")]
-    pub callsite_cid: String,
-    pub cid: String,
-    pub kind: String,
-    #[serde(rename = "loss_dimension")]
-    pub loss_dimension: String,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[serde(rename = "loss_dimensions")]
-    pub loss_dimensions: BTreeMap<String, IrFormula>,
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-    #[serde(rename = "substituted_body")]
-    pub substituted_body: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LanguageTransitionMemento {
-    pub cid: String,
-    #[serde(rename = "function_language_source")]
-    pub function_language_source: String,
-    #[serde(rename = "function_language_target")]
-    pub function_language_target: String,
-    #[serde(rename = "function_name_source")]
-    pub function_name_source: String,
-    #[serde(rename = "function_name_target")]
-    pub function_name_target: String,
-    pub kind: String,
-    #[serde(rename = "naming_convention")]
-    pub naming_convention: String,
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-    #[serde(rename = "signature_equivalence")]
-    pub signature_equivalence: String,
-    #[serde(rename = "source_signature_cid")]
-    pub source_signature_cid: String,
-    #[serde(rename = "target_signature_cid")]
-    pub target_signature_cid: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WitnessMemento {
@@ -4894,78 +4782,6 @@ pub struct WitnessMemento {
     pub signed_by: Option<String>,
     pub signature: Option<String>,
     pub cid: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CrossLanguageWitnessPair {
-    #[serde(rename = "concept_site_cid")]
-    pub concept_site_cid: String,
-    #[serde(rename = "equivalence_outcome")]
-    pub equivalence_outcome: String,
-    #[serde(rename = "source_witness_cid")]
-    pub source_witness_cid: String,
-    #[serde(rename = "target_witness_cid")]
-    pub target_witness_cid: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MigrateReceiptSignature {
-    #[serde(rename = "key_source")]
-    pub key_source: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<String>,
-    pub signed: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signer: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MigrateReceiptEnvelope {
-    #[serde(rename = "aggregate_summary")]
-    pub aggregate_summary: AggregateSummaryMemento,
-    #[serde(rename = "concept_sites")]
-    pub concept_sites: Vec<MigrationConceptSiteMemento>,
-    #[serde(rename = "halt_mementos")]
-    pub halt_mementos: Vec<HaltMemento>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "language_transitions")]
-    pub language_transitions: Vec<LanguageTransitionMemento>,
-    #[serde(rename = "loss_records")]
-    pub loss_records: Vec<LossRecordMemento>,
-    #[serde(rename = "promotion_decisions")]
-    pub promotion_decisions: Vec<PromotionDecisionMemento>,
-    #[serde(rename = "refusal_mementos")]
-    pub refusal_mementos: Vec<RefusalMemento>,
-    #[serde(rename = "root_cid")]
-    pub root_cid: String,
-    #[serde(rename = "schemaVersion")]
-    pub schema_version: String,
-    pub signature: MigrateReceiptSignature,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "cross_language_witness_pairs")]
-    pub cross_language_witness_pairs: Vec<CrossLanguageWitnessPair>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub witnesses: Vec<WitnessMemento>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MigrateReceiptIndex {
-    #[serde(rename = "aggregate_cid")]
-    pub aggregate_cid: String,
-    #[serde(rename = "concept_site_cids")]
-    pub concept_site_cids: Vec<String>,
-    #[serde(rename = "halt_cids")]
-    pub halt_cids: Vec<String>,
-    #[serde(rename = "loss_record_cids")]
-    pub loss_record_cids: Vec<String>,
-    #[serde(rename = "promotion_decision_cids")]
-    pub promotion_decision_cids: Vec<String>,
-    #[serde(rename = "refusal_cids")]
-    pub refusal_cids: Vec<String>,
-    #[serde(rename = "root_cid")]
-    pub root_cid: String,
-    #[serde(rename = "witness_cids")]
-    pub witness_cids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4995,99 +4811,6 @@ impl From<serde_json::Error> for MigrationReceiptError {
     }
 }
 
-impl AggregateSummaryMemento {
-    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["cid"])
-    }
-
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_kind(&self.kind, "aggregate-summary")?;
-        require_schema(&self.schema_version)?;
-        require_matching_cid(&self.cid, self.recompute_cid()?, "AggregateSummaryMemento")
-    }
-}
-
-impl MigrationConceptSiteMemento {
-    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["cid"])
-    }
-
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_kind(&self.kind, "concept-site")?;
-        require_schema(&self.schema_version)?;
-        require_non_empty(&self.source_binding_cid, "source_binding_cid")?;
-        require_non_empty(&self.target_binding_cid, "target_binding_cid")?;
-        require_matching_cid(
-            &self.cid,
-            self.recompute_cid()?,
-            "MigrationConceptSiteMemento",
-        )
-    }
-}
-
-impl HaltMemento {
-    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["cid"])
-    }
-
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_kind(&self.kind, "halt")?;
-        require_schema(&self.schema_version)?;
-        require_non_empty(&self.admitting_sig, "admitting_sig")?;
-        require_matching_cid(&self.cid, self.recompute_cid()?, "HaltMemento")
-    }
-}
-
-impl RefusalMemento {
-    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["cid"])
-    }
-
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_kind(&self.kind, "refusal")?;
-        require_schema(&self.schema_version)?;
-        require_non_empty(&self.forbidding_contract, "forbidding_contract")?;
-        require_matching_cid(&self.cid, self.recompute_cid()?, "RefusalMemento")
-    }
-}
-
-impl LossRecordMemento {
-    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["cid"])
-    }
-
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_kind(&self.kind, "loss-record")?;
-        require_schema(&self.schema_version)?;
-        require_non_empty(&self.loss_dimension, "loss_dimension")?;
-        require_non_empty(&self.substituted_body, "substituted_body")?;
-        require_matching_cid(&self.cid, self.recompute_cid()?, "LossRecordMemento")
-    }
-}
-
-impl LanguageTransitionMemento {
-    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["cid"])
-    }
-
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_kind(&self.kind, "language-transition")?;
-        require_schema(&self.schema_version)?;
-        require_non_empty(&self.function_language_source, "function_language_source")?;
-        require_non_empty(&self.function_language_target, "function_language_target")?;
-        require_non_empty(&self.function_name_source, "function_name_source")?;
-        require_non_empty(&self.function_name_target, "function_name_target")?;
-        require_non_empty(&self.naming_convention, "naming_convention")?;
-        require_non_empty(&self.signature_equivalence, "signature_equivalence")?;
-        require_non_empty(&self.source_signature_cid, "source_signature_cid")?;
-        require_non_empty(&self.target_signature_cid, "target_signature_cid")?;
-        require_matching_cid(
-            &self.cid,
-            self.recompute_cid()?,
-            "LanguageTransitionMemento",
-        )
-    }
-}
 
 /// The deterministic bytes a witness signature attests: the discharge CID
 /// PLUS the observation timestamp. The CID is the THEOREM-mode convergence
@@ -5158,122 +4881,6 @@ impl WitnessMemento {
         }
         require_matching_cid(&self.cid, self.recompute_cid()?, "WitnessMemento")
     }
-}
-
-impl CrossLanguageWitnessPair {
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_non_empty(&self.concept_site_cid, "concept_site_cid")?;
-        require_non_empty(&self.source_witness_cid, "source_witness_cid")?;
-        require_non_empty(&self.target_witness_cid, "target_witness_cid")?;
-        match self.equivalence_outcome.as_str() {
-            "pass" | "fail" | "inconclusive" => Ok(()),
-            other => Err(MigrationReceiptError::new(format!(
-                "CrossLanguageWitnessPair outcome {other} is not pass, fail, or inconclusive"
-            ))),
-        }
-    }
-}
-
-impl MigrateReceiptEnvelope {
-    pub fn parse_json_str(text: &str) -> Result<Self, MigrationReceiptError> {
-        let receipt: Self = serde_json::from_str(text)?;
-        receipt.validate()?;
-        Ok(receipt)
-    }
-
-    pub fn recompute_root_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["root_cid", "signature"])
-    }
-
-    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
-        require_schema(&self.schema_version)?;
-        self.aggregate_summary.validate()?;
-        require_matching_cid(
-            &self.root_cid,
-            self.recompute_root_cid()?,
-            "MigrateReceiptEnvelope",
-        )?;
-        if self.aggregate_summary.rewritten != self.concept_sites.len() {
-            return Err(MigrationReceiptError::new(
-                "aggregate rewritten count mismatch",
-            ));
-        }
-        if self.aggregate_summary.widened != self.promotion_decisions.len() {
-            return Err(MigrationReceiptError::new(
-                "aggregate widened count mismatch",
-            ));
-        }
-        if self.aggregate_summary.halted != self.halt_mementos.len() {
-            return Err(MigrationReceiptError::new(
-                "aggregate halted count mismatch",
-            ));
-        }
-        if self.aggregate_summary.refused != self.refusal_mementos.len() {
-            return Err(MigrationReceiptError::new(
-                "aggregate refused count mismatch",
-            ));
-        }
-        if self.aggregate_summary.lossy != self.loss_records.len() {
-            return Err(MigrationReceiptError::new("aggregate lossy count mismatch"));
-        }
-        for site in &self.concept_sites {
-            site.validate()?;
-        }
-        for transition in &self.language_transitions {
-            transition.validate()?;
-        }
-        for decision in &self.promotion_decisions {
-            decision.validate().map_err(|err| {
-                MigrationReceiptError::new(format!("PromotionDecisionMemento: {err}"))
-            })?;
-            let actual = decision
-                .recompute_header_cid()
-                .map_err(|err| MigrationReceiptError::new(err.to_string()))?;
-            require_matching_cid(&decision.header.cid, actual, "PromotionDecisionMemento")?;
-        }
-        for halt in &self.halt_mementos {
-            halt.validate()?;
-        }
-        for refusal in &self.refusal_mementos {
-            refusal.validate()?;
-        }
-        for loss in &self.loss_records {
-            loss.validate()?;
-        }
-        for witness in &self.witnesses {
-            witness.validate()?;
-        }
-        for pair in &self.cross_language_witness_pairs {
-            pair.validate()?;
-        }
-        Ok(())
-    }
-
-    pub fn index(&self) -> Result<MigrateReceiptIndex, MigrationReceiptError> {
-        self.validate()?;
-        Ok(MigrateReceiptIndex {
-            aggregate_cid: self.aggregate_summary.cid.clone(),
-            concept_site_cids: self.concept_sites.iter().map(|m| m.cid.clone()).collect(),
-            halt_cids: self.halt_mementos.iter().map(|m| m.cid.clone()).collect(),
-            loss_record_cids: self.loss_records.iter().map(|m| m.cid.clone()).collect(),
-            promotion_decision_cids: self
-                .promotion_decisions
-                .iter()
-                .map(|m| m.header.cid.clone())
-                .collect(),
-            refusal_cids: self
-                .refusal_mementos
-                .iter()
-                .map(|m| m.cid.clone())
-                .collect(),
-            root_cid: self.root_cid.clone(),
-            witness_cids: self.witnesses.iter().map(|m| m.cid.clone()).collect(),
-        })
-    }
-}
-
-pub fn parse_migrate_receipt(text: &str) -> Result<MigrateReceiptEnvelope, MigrationReceiptError> {
-    MigrateReceiptEnvelope::parse_json_str(text)
 }
 
 fn require_kind(actual: &str, expected: &str) -> Result<(), MigrationReceiptError> {
@@ -5379,7 +4986,7 @@ fn migration_json_to_canonical(
 }
 
 // ============================================================
-// End manual extension block -- migration async rewrite receipt
+// End witness memento + memento validation block
 // ============================================================
 
 // ============================================================
