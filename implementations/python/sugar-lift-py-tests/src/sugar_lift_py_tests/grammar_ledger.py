@@ -181,9 +181,15 @@ _NAMED: dict = {
         residual="computed leaves stay non-candidates; a ground-evaluated "
         "ite (exact branch selection at concrete callsites) owed",
     ),
-    "return-collection": _debt(
-        "collection-constructor universe (tuple/list/dict/set of lifted "
-        "elements; needs container term vocabulary kit-side)"
+    "return-collection": _lifted(
+        "collection_literal_canonical",
+        "collection-literal equality: one canonical content string shared "
+        "with the consumer-side term translator — universe and claim are "
+        "byte-identical by construction",
+        residual="computed elements, unpacking, nesting, and multi-return "
+        "collections stay non-candidates; literal-membership disjunction "
+        "(x in (1,2) as equalities, not an uninterpreted member atom) "
+        "owed",
     ),
     "return-attribute": _debt(
         "attribute-projection universe: enum members pin today via "

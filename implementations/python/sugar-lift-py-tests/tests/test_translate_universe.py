@@ -2395,3 +2395,111 @@ def test_walrus_in_ifexp_condition_is_harmless(vendor_path):
     )
     u, r = _branch("vendbranch_ifexp6.pick")
     assert r is None and u is not None and u.values == ("a", "b")
+
+
+# ---------------------------------------------------------------------------
+# collection-literal constant arm (census return-collection, 54k bodies):
+# a literal tuple/list/dict/set of literal leaves is ONE fixed value; the
+# canonical content string is built in exactly one place
+# (collection_literal_canonical) and shared with the consumer-side term
+# translator, so the universe equality and consumer claims are
+# byte-identical by construction. repr-based leaves make 1 and True
+# distinct (false-refusal direction only, never a wrong discharge).
+# ---------------------------------------------------------------------------
+
+
+def _const(callee):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    return constant_universe_for_callee(callee)
+
+
+def test_tuple_return_pins_canonical(vendor_path):
+    vendor_path("vendcoll_t", "def pair():\n    return (1, 2)\n")
+    u, r = _const("vendcoll_t.pair")
+    assert r is None and u is not None
+    assert (u.value, u.value_kind) == ("tuple:[1, 2]", "collection")
+
+
+def test_list_and_tuple_canonicals_are_distinct(vendor_path):
+    vendor_path(
+        "vendcoll_lt",
+        "def t():\n    return (1, 2)\n\ndef l():\n    return [1, 2]\n",
+    )
+    ut, _ = _const("vendcoll_lt.t")
+    ul, _ = _const("vendcoll_lt.l")
+    assert ut.value != ul.value
+    assert ul.value == "list:[1, 2]"
+
+
+def test_dict_return_pins_canonical(vendor_path):
+    vendor_path(
+        "vendcoll_d", "def conf():\n    return {'b': 2, 'a': 1}\n"
+    )
+    u, r = _const("vendcoll_d.conf")
+    assert r is None and u is not None
+    # sorted by key repr: insertion order does not leak into the canonical
+    assert u.value == "dict:" + repr({"a": 1, "b": 2})
+
+
+def test_set_return_dedupes_and_sorts(vendor_path):
+    vendor_path(
+        "vendcoll_s", "def tags():\n    return {'b', 'a', 'b'}\n"
+    )
+    u, r = _const("vendcoll_s.tags")
+    assert r is None and u is not None
+    assert u.value == "set:['a', 'b']"
+
+
+def test_computed_element_not_a_candidate(vendor_path):
+    vendor_path(
+        "vendcoll_comp", "def f(x):\n    return (1, x)\n"
+    )
+    u, r = _const("vendcoll_comp.f")
+    assert u is None and r is None
+
+
+def test_nested_collection_not_a_candidate(vendor_path):
+    vendor_path(
+        "vendcoll_nest", "def f():\n    return ((1, 2), 3)\n"
+    )
+    u, r = _const("vendcoll_nest.f")
+    assert u is None and r is None
+
+
+def test_collection_universe_contradicts_wrong_tuple(vendor_path):
+    # bad twin e2e: vendor returns (1, 2); the consumer swears (1, 3).
+    # Both equalities land in one inv over DISTINCT opaque constants —
+    # UNSAT, the wrong tuple refutes. This also proves the consumer side
+    # now LIFTS tuple-literal equality claims (it loud-refused before).
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendcoll_l2", "def pair():\n    return (1, 2)\n")
+    out = _lift(
+        """
+        import vendcoll_l2
+
+        def test_pair():
+            assert vendcoll_l2.pair() == (1, 3)
+        """
+    )
+    consts = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        for a in _iter_conjuncts(d.inv):
+            if getattr(a, "name", None) != "=":
+                continue
+            for side in getattr(a, "args", ()):
+                v = getattr(side, "value", None)
+                if isinstance(v, str) and v.startswith("tuple:"):
+                    consts.append(v)
+    assert "tuple:[1, 2]" in consts, consts  # the vendor's universe
+    assert "tuple:[1, 3]" in consts, consts  # the consumer's claim
