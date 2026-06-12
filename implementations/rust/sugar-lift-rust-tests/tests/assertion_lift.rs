@@ -5007,6 +5007,61 @@ fn t() {
     );
 }
 
+#[test]
+fn matches_macro_nested_some_lifts_inner_discriminant() {
+    // matches!(x, Some(Decision::Widen { .. })) lifts BOTH the outer Some
+    // discriminant and the inner Widen discriminant (the meaningful claim).
+    let src = r#"
+#[test]
+fn t() {
+    let d = lookup();
+    assert!(matches!(d, Some(Decision::Widen { .. })));
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let decl = format!("{:?}", out.decls[0]);
+    assert!(decl.contains("variant::Some"), "outer Some discriminant: {decl}");
+    assert!(decl.contains("payload:Some"), "payload accessor: {decl}");
+    assert!(decl.contains("variant::Decision::Widen"), "inner discriminant: {decl}");
+}
+
+#[test]
+fn matches_macro_nested_some_distinct_inner_is_contradiction() {
+    // Teeth: same subject claimed Some(Widen) AND Some(Halt) -> two atoms over the
+    // same payload:Some(d) with distinct inner tags -> UNSAT.
+    let src = r#"
+#[test]
+fn t() {
+    let d = lookup();
+    assert!(matches!(d, Some(Decision::Widen { .. })));
+    assert!(matches!(d, Some(Decision::Halt { .. })));
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 2, "warnings: {:?}", out.skip_reasons);
+    let decl = format!("{:?}", out.decls[0]);
+    assert!(decl.contains("Decision::Widen"), "Widen present: {decl}");
+    assert!(decl.contains("Decision::Halt"), "Halt present: {decl}");
+}
+
+#[test]
+fn matches_macro_some_wildcard_lifts_outer_only() {
+    // matches!(x, Some(_)) pins only that x is Some (no inner discriminant).
+    let src = r#"
+#[test]
+fn t() {
+    let d = lookup();
+    assert!(matches!(d, Some(_)));
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let (lhs, rhs) = panic_locus_lhs_rhs(&out);
+    assert!(lhs.contains("variant_of"), "lhs: {lhs}");
+    assert!(rhs.contains("variant::Some"), "rhs must tag Some: {rhs}");
+}
+
 // --- array-repeat literal tranche (assert_eq!(x, [elem; N])) ---
 
 #[test]

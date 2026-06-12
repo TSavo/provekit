@@ -3548,6 +3548,15 @@ fn translate_matches_assertion(
         Err(_) => return Ok(None),
     };
     let Some(variant) = strict_variant_path(&pat) else {
+        // NESTED WRAPPER: `matches!(x, Some(Inner::V))` / `Ok(..)` / `Err(..)`.
+        // The single-segment wrapper is a known prelude variant (so `variant_of(x)
+        // == "variant::Some"` is unambiguous), and its inner pattern -- when a
+        // qualified variant -- pins the payload's discriminant via the payload
+        // accessor. This is the meaningful claim (`Some(Widen)` vs `Some(Halt)`),
+        // so we lift the conjunction, not just the trivial outer `Some`.
+        if let Some((wrapper, inner)) = wrapped_variant(&pat) {
+            return Ok(wrapped_variant_entry(&subject, &wrapper, inner.as_deref(), scope));
+        }
         return Err(format!(
             "matches! pattern is not an unambiguous qualified variant \
              (binding/wildcard/single-segment/or-pattern); refused by name: `{}`",
@@ -3561,6 +3570,67 @@ fn translate_matches_assertion(
             token_key(&subject)
         )),
     }
+}
+
+/// A nested known-wrapper pattern `Some(P)` / `Ok(P)` / `Err(P)`: returns the
+/// single-segment wrapper variant name and the inner variant IF the inner pattern
+/// is itself a qualified `Type::Variant` (else `None` -- a `Some(_)` / `Some(x)`
+/// still pins the OUTER wrapper, but carries no inner discriminant). The wrapper
+/// must be one of the prelude tuple variants whose single-segment name is
+/// unambiguously a variant, not a const/binding.
+fn wrapped_variant(pat: &syn::Pat) -> Option<(String, Option<String>)> {
+    match pat {
+        syn::Pat::Reference(r) => wrapped_variant(&r.pat),
+        syn::Pat::TupleStruct(ts) if ts.path.segments.len() == 1 && ts.elems.len() == 1 => {
+            let wrapper = ts.path.segments[0].ident.to_string();
+            if !matches!(wrapper.as_str(), "Some" | "Ok" | "Err") {
+                return None;
+            }
+            Some((wrapper, strict_variant_path(&ts.elems[0])))
+        }
+        _ => None,
+    }
+}
+
+/// Build the nested-wrapper discriminant entry:
+///   `variant_of(subject) == "variant::<wrapper>"`  (always), AND
+///   `variant_of(payload:<wrapper>(subject)) == "variant::<inner>"`  (if inner is
+///   a qualified variant).
+/// The payload accessor `payload:<wrapper>(subject)` is an uninterpreted Ctor; by
+/// congruence, two claims about the same subject's payload share it, so asserting
+/// two distinct inner variants is UNSAT (the teeth). The contract NAME keys on the
+/// subject (via the outer entry), so siblings about the same subject conjoin.
+fn wrapped_variant_entry(
+    subject: &Expr,
+    wrapper: &str,
+    inner: Option<&str>,
+    scope: &TemporalScope,
+) -> Option<AssertionEntry> {
+    let subject_term = translate_term_in_scope(subject, scope).ok()?;
+    let outer_lhs = Rc::new(Term::Ctor {
+        name: "variant_of".to_string(),
+        args: vec![subject_term.clone()],
+    });
+    let outer = assertion_entry_from_eq(outer_lhs, str_const(format!("variant::{wrapper}")), scope);
+    let Some(inner_variant) = inner else {
+        // `Some(_)` / `Some(x)`: only the outer wrapper is pinned.
+        return Some(outer);
+    };
+    let payload = Rc::new(Term::Ctor {
+        name: format!("payload:{wrapper}"),
+        args: vec![subject_term],
+    });
+    let inner_lhs = Rc::new(Term::Ctor {
+        name: "variant_of".to_string(),
+        args: vec![payload],
+    });
+    let inner_atom =
+        assertion_entry_from_eq(inner_lhs, str_const(format!("variant::{inner_variant}")), scope)
+            .atom;
+    Some(AssertionEntry {
+        name: outer.name,
+        atom: and_(vec![outer.atom, inner_atom]),
+    })
 }
 
 /// Strict variant-path extraction for `matches!` discriminant lifting: a
