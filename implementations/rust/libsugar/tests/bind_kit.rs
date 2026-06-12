@@ -245,7 +245,7 @@ fn candidate_cluster_manifest_counts_candidates_not_witnesses() {
 }
 
 #[test]
-fn bind_gap_record_emits_wp_rule_refusal() {
+fn bind_witnessless_entry_is_loudly_bounded_lossy() {
     let input = witnessless_concept_input("add");
 
     let named = bind_term_document(
@@ -256,26 +256,20 @@ fn bind_gap_record_emits_wp_rule_refusal() {
     )
     .expect("bind succeeds");
     let named_json = serde_json::to_value(&named).expect("named term serializes");
-    let gap = named_json["gapRecords"]
+    let term = named_json["terms"]
         .as_array()
-        .expect("gapRecords array")
+        .expect("terms array")
         .first()
-        .expect("gap record emitted");
+        .expect("one term");
 
-    assert_eq!(gap["kind"], "TransportGapMemento");
-    assert_eq!(gap["gap_kind"], "wp-rule-mismatch");
-    assert!(gap["source_op_cid"]
-        .as_str()
-        .expect("source op cid")
-        .starts_with("blake3-512:"));
-    assert!(gap["target_op"]
-        .as_str()
-        .expect("target op")
-        .starts_with("op-"));
+    // No signed witness evidence -> the trichotomy verdict is loudly-bounded-lossy.
+    // (There is no transport gap record: contracts meet at the callsite by EUF.)
+    assert_eq!(term["dischargeVerdict"], "loudly-bounded-lossy");
+    assert!(named_json.get("gapRecords").is_none());
 }
 
 #[test]
-fn bind_gap_record_not_emitted_for_exact_witnessed_entry() {
+fn bind_witnessed_entry_is_exact() {
     let named = bind_term_document(
         &bind_input_value(),
         &BindOptions {
@@ -284,6 +278,11 @@ fn bind_gap_record_not_emitted_for_exact_witnessed_entry() {
     )
     .expect("bind succeeds");
     let named_json = serde_json::to_value(&named).expect("named term serializes");
+    let term = named_json["terms"]
+        .as_array()
+        .expect("terms array")
+        .first()
+        .expect("one term");
 
-    assert!(named_json.get("gapRecords").is_none());
+    assert_eq!(term["dischargeVerdict"], "exact");
 }

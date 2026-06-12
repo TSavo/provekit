@@ -243,7 +243,7 @@ fn bind_file_and_pipe_forms_are_byte_equivalent() {
 }
 
 #[test]
-fn bind_cli_emits_wp_rule_refusal_gap() {
+fn bind_cli_witnessless_entry_is_loudly_bounded_lossy() {
     let mut child = Command::new(sugar_bin())
         .arg("bind")
         .stdin(Stdio::piped())
@@ -264,14 +264,14 @@ fn bind_cli_emits_wp_rule_refusal_gap() {
     let named =
         named_term_document_from_bind_payload(&payload).expect("bind payload recovers named term");
     let named = serde_json::to_value(named).expect("named term serializes");
-    let gap = named["gapRecords"][0].as_object().expect("gap object");
 
-    assert_eq!(
-        gap["source_op_cid"],
-        "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    );
-    assert!(gap["target_op"]
-        .as_str()
-        .expect("target op")
-        .starts_with("op-"));
+    // No signed witness evidence -> loudly-bounded-lossy verdict, and no transport
+    // gap record (contracts meet at the callsite by EUF).
+    let term = named["terms"]
+        .as_array()
+        .expect("terms array")
+        .first()
+        .expect("one term");
+    assert_eq!(term["dischargeVerdict"], "loudly-bounded-lossy");
+    assert!(named.get("gapRecords").is_none());
 }

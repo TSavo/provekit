@@ -5,10 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use sugar_canonicalizer::blake3_512_of;
-use sugar_ir_types::{
-    GapKind, IrFormula, IrTerm, OptionStatus, ResolutionOption, ResolutionOptionKind, Sort,
-    TransportGapMemento,
-};
+use sugar_ir_types::{IrFormula, IrTerm, Sort};
 use thiserror::Error;
 
 use super::primitives::address;
@@ -235,8 +232,6 @@ pub struct BindContractWitness {
 pub struct NamedTermDocument {
     #[serde(rename = "candidateClusterManifest", default)]
     pub candidate_cluster_manifest: CandidateClusterManifest,
-    #[serde(default, rename = "gapRecords", skip_serializing_if = "Vec::is_empty")]
-    pub gap_records: Vec<Json>,
     pub kind: String,
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
@@ -388,7 +383,6 @@ pub fn bind_term_document(
 
     let mut seen_names: BTreeSet<String> = BTreeSet::new();
     let mut terms = Vec::with_capacity(entries.len());
-    let mut gap_records = Vec::new();
     for (idx, entry) in entries.into_iter().enumerate() {
         let term_shape_cid = if entry.term_shape_cid.trim().is_empty() {
             crate::canonical::json_cid(&entry.term_shape)
@@ -401,13 +395,6 @@ pub fn bind_term_document(
         let name = unique_name(&base_name, &mut seen_names);
         let site_memento_cid = site_cid(&entry, &name, &term_shape_cid)?;
         let witnesses = named_witnesses(&entry);
-        if witnesses.is_empty() {
-            gap_records.push(wp_rule_synthesis_gap_record(
-                &source_language,
-                &op_cid,
-                &name,
-            )?);
-        }
         let fn_name = entry.fn_name;
         terms.push(NamedTerm {
             op_cid,
@@ -448,7 +435,6 @@ pub fn bind_term_document(
 
     Ok(NamedTermDocument {
         candidate_cluster_manifest,
-        gap_records,
         kind: "named-term-document".to_string(),
         schema_version: "1".to_string(),
         source_language,
@@ -1115,54 +1101,6 @@ fn site_cid(_entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<
     crate::canonical::json_cid(&value).map_err(|e| BindError::Failed(e.to_string()))
 }
 
-fn wp_rule_synthesis_gap_record(
-    source_lang: &str,
-    source_op_cid: &str,
-    operator_label: &str,
-) -> Result<Json, BindError> {
-    let target_op = normalize_operator_label(operator_label);
-    let gap = TransportGapMemento {
-        fn_name: format!(
-            "gap:{}:bind:to:{}:wp-rule",
-            source_lang,
-            target_op.trim_start_matches("concept:")
-        ),
-        gap_kind: GapKind::WpRuleMismatch,
-        kind: "TransportGapMemento".to_string(),
-        reason: None,
-        reason_note: Some(
-            "bind refused to synthesize a wp_rule without lifted contract evidence".to_string(),
-        ),
-        resolution_options: vec![ResolutionOption {
-            dual_view_cid: None,
-            loss: None,
-            loss_severity: None,
-            option_kind: ResolutionOptionKind::AcceptPermanent,
-            partial_morphism_cid: None,
-            precondition: None,
-            representation_map_delta: None,
-            respec_target_to: None,
-            split_targets: None,
-            status: OptionStatus::Deferred,
-            tradeoff:
-                "provide source evidence or a catalog wp_rule before treating the bind as exact"
-                    .to_string(),
-        }],
-        schema_version: "1".to_string(),
-        signature: None,
-        source_lang: source_lang.to_string(),
-        source_op_cid: source_op_cid.to_string(),
-        target_op,
-        target_op_cid: None,
-    };
-    serde_json::to_value(gap)
-        .map_err(|error| BindError::Failed(format!("serialize wp_rule gap: {error}")))
-}
-
-fn normalize_operator_label(name: &str) -> String {
-    name.to_string()
-}
-
 fn primitive_sort(name: &str) -> Sort {
     Sort::Primitive {
         name: name.to_string(),
@@ -1487,7 +1425,6 @@ mod tests {
         fn document(function: &str) -> NamedTermDocument {
             NamedTermDocument {
                 candidate_cluster_manifest: CandidateClusterManifest::default(),
-                gap_records: vec![],
                 kind: "named-term-document".to_string(),
                 schema_version: "1".to_string(),
                 source_language: "rust".to_string(),
@@ -1529,7 +1466,6 @@ mod tests {
     fn named_term_document_omits_empty_source_provenance_fields() {
         let document = NamedTermDocument {
             candidate_cluster_manifest: CandidateClusterManifest::default(),
-            gap_records: vec![],
             kind: "named-term-document".to_string(),
             schema_version: "1".to_string(),
             source_language: "rust".to_string(),
