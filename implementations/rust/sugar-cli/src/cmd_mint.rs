@@ -2270,10 +2270,6 @@ fn mint_ir_document(
                     let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
                     members.entry(cid).or_insert(bytes);
                 }
-                Some("refusal-memento") => {
-                    let (cid, bytes) = mint_refusal_memento(decl)?;
-                    members.entry(cid).or_insert(bytes);
-                }
                 Some("realization-memento") => {
                     let (cid, bytes) = mint_realization_memento(decl)?;
                     members.entry(cid).or_insert(bytes);
@@ -2295,10 +2291,6 @@ fn mint_ir_document(
             match decl.get("kind").and_then(|v| v.as_str()) {
                 Some("library-sugar-binding-entry") => {
                     let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
-                    members.entry(cid).or_insert(bytes);
-                }
-                Some("refusal-memento") => {
-                    let (cid, bytes) = mint_refusal_memento(decl)?;
                     members.entry(cid).or_insert(bytes);
                 }
                 Some("realization-memento") => {
@@ -2600,36 +2592,6 @@ fn mint_witness_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     Ok((cid, canonical.into_bytes()))
 }
 
-fn mint_refusal_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
-    let target_language = required_str(decl, "target_language", "refusal-memento")?;
-    let surface = required_str(decl, "surface", "refusal-memento")?;
-    let op = required_str(decl, "op", "refusal-memento")?;
-    let reason = required_str(decl, "reason", "refusal-memento")?;
-    let would_close_with_cluster =
-        required_str(decl, "would_close_with_cluster", "refusal-memento")?;
-
-    if reason.trim().is_empty() {
-        return Err("`refusal-memento` missing non-empty `reason`".to_string());
-    }
-    if would_close_with_cluster.trim().is_empty() {
-        return Err("`refusal-memento` missing non-empty `would_close_with_cluster`".to_string());
-    }
-
-    let envelope = json!({
-        "body": decl,
-        "header": {
-            "op": op,
-            "kind": "refusal-memento",
-            "surface": surface,
-            "targetLanguage": target_language,
-            "wouldCloseWithCluster": would_close_with_cluster,
-        },
-        "schemaVersion": "1",
-    });
-    let canonical = encode_jcs(&json_to_cvalue(&envelope));
-    let cid = blake3_512_of(canonical.as_bytes());
-    Ok((cid, canonical.into_bytes()))
-}
 
 /// Mint a `realization-memento` (Boundary variant) into the envelope.
 /// Emitted by `walk_rpc` for each `#[sugar::boundary]` annotation
