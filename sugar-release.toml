@@ -21,6 +21,15 @@ path = "implementations/rust/target/release/sugar"
 name = "sugar-lift"
 path = "implementations/rust/target/release/sugar-lift"
 
+# Dependency-vector pin: the SUPPLY CHAIN is pinned TOTAL, not sworn. `release`
+# content-addresses the COMPLETE Cargo.lock dependency closure (every package's
+# name/version/source/checksum) into one `dependencyVectorsCid`; `--verify-only`
+# re-derives it and fails closed on any drift. Conjunctive -- a changed, added,
+# or removed dependency moves the CID (N-1 of N pinned is zero), so the xz-class
+# "one quiet dep" hole becomes a loud mismatch, not a silent acceptance.
+[dependencies]
+lockfile = "implementations/rust/Cargo.lock"
+
 # Coverage gate: completeness is STRUCTURAL, not sworn. Every bin the workspace
 # builds (cargo metadata --no-deps) must be either pinned above or listed here.
 # A newly-added bin that is neither FAILS `package release` -- so a shippable

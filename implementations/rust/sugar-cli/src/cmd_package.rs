@@ -91,6 +91,18 @@ struct ReleaseManifest {
     /// neither fails the release, so a shippable artifact can never be
     /// silently left unpinned.
     coverage: Option<Coverage>,
+    /// Optional dependency-vector pin: content-addresses the COMPLETE Cargo.lock
+    /// dependency closure (every `[[package]]`), so the supply chain is pinned
+    /// TOTAL, not sworn. Conjunctive -- a changed/added/removed dep moves the CID
+    /// (N-1 of N pinned is zero, the xz-class hole closed).
+    dependencies: Option<DependencyPin>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DependencyPin {
+    /// Cargo.lock whose `[[package]]` entries are the dependency vectors to pin
+    /// (relative to the release manifest's root).
+    lockfile: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -110,6 +122,65 @@ struct Coverage {
     /// decision; the gate fails on any bin that is neither pinned nor here.
     #[serde(default)]
     exclude: Vec<String>,
+}
+
+/// Content-address the COMPLETE dependency closure from a Cargo.lock: one
+/// canonical line per `[[package]]` (`name\tversion\tsource\tchecksum`), sorted,
+/// blake3-512 over the join. CONJUNCTIVE by construction -- the CID is over EVERY
+/// dependency, so adding, removing, or version/checksum-changing ANY one moves the
+/// CID (N-1 of N pinned is zero: a single unpinned dep is the xz-class hole, and
+/// here there is no such hole because the pin is the whole set at once). Returns
+/// `(cid, vector_count)`. Path/workspace deps carry no source/checksum; their
+/// identity is `(name, version)` with empty trailing fields -- still pinned, never
+/// dropped. Pure given the file bytes, so it is unit-testable without a registry.
+fn dependency_vectors_cid(lockfile: &Path) -> Result<(String, usize), String> {
+    let text = std::fs::read_to_string(lockfile)
+        .map_err(|e| format!("read lockfile {}: {e}", lockfile.display()))?;
+    dependency_vectors_cid_of_text(&text)
+        .map_err(|e| format!("lockfile {}: {e}", lockfile.display()))
+}
+
+fn dependency_vectors_cid_of_text(text: &str) -> Result<(String, usize), String> {
+    let parsed: toml::Value = toml::from_str(text).map_err(|e| format!("parse: {e}"))?;
+    let packages = parsed
+        .get("package")
+        .and_then(|p| p.as_array())
+        .ok_or_else(|| "no [[package]] entries".to_string())?;
+    let mut lines: Vec<String> = Vec::with_capacity(packages.len());
+    for pkg in packages {
+        let field = |k: &str| pkg.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        lines.push(format!(
+            "{}\t{}\t{}\t{}",
+            field("name"),
+            field("version"),
+            field("source"),
+            field("checksum"),
+        ));
+    }
+    // Sort so the CID is canonical (lockfile package order is not guaranteed
+    // stable across cargo versions); dups are kept (a real duplicate vector is a
+    // distinct row, so a count-preserving swap still moves the CID).
+    lines.sort();
+    let canonical = lines.join("\n");
+    Ok((blake3_512_of(canonical.as_bytes()), lines.len()))
+}
+
+/// Read the pinned `dependencyVectorsCid` from a DependencyVectorsReceipt.
+fn read_pinned_dep_vectors_cid(receipt_path: &Path) -> Result<String, String> {
+    let text = std::fs::read_to_string(receipt_path)
+        .map_err(|e| format!("read dependency-vectors receipt {}: {e}", receipt_path.display()))?;
+    let receipt: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("parse dependency-vectors receipt {}: {e}", receipt_path.display()))?;
+    receipt
+        .get("dependencyVectorsCid")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .ok_or_else(|| {
+            format!(
+                "receipt {} missing dependencyVectorsCid",
+                receipt_path.display()
+            )
+        })
 }
 
 /// The accounting: workspace bins that are neither pinned nor excluded. A
@@ -317,6 +388,71 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
         }
     }
 
+    // Dependency-vector pin: make the SUPPLY CHAIN total. Content-address the
+    // complete Cargo.lock dependency closure; a changed/added/removed dep moves
+    // the CID (conjunctive, N-1 of N is zero). attest writes the pin receipt;
+    // verify-only re-derives and fails closed on any drift -- the xz-class hole
+    // becomes a loud mismatch instead of a silent acceptance.
+    let mut dependencies_json = serde_json::Value::Null;
+    if let Some(dep) = &manifest.dependencies {
+        let lockfile = root.join(&dep.lockfile);
+        let receipt_path = receipts.join("dependency-vectors.release.json");
+        match dependency_vectors_cid(&lockfile) {
+            Ok((cid, count)) => {
+                let outcome: Result<(), String> = if args.verify_only {
+                    match read_pinned_dep_vectors_cid(&receipt_path) {
+                        Ok(pinned) if pinned == cid => Ok(()),
+                        Ok(pinned) => Err(format!(
+                            "dependencyVectorsCid mismatch (pinned {pinned}, observed {cid}) \
+                             -- the dependency closure drifted"
+                        )),
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    let receipt = serde_json::json!({
+                        "kind": "DependencyVectorsReceipt",
+                        "lockfile": dep.lockfile,
+                        "vectorCount": count,
+                        "dependencyVectorsCid": cid,
+                    });
+                    serde_json::to_string_pretty(&receipt)
+                        .map_err(|e| format!("serialize dependency-vectors receipt: {e}"))
+                        .and_then(|s| {
+                            std::fs::write(&receipt_path, s)
+                                .map_err(|e| format!("write {}: {e}", receipt_path.display()))
+                        })
+                };
+                match outcome {
+                    Ok(()) => {
+                        dependencies_json = serde_json::json!({
+                            "ok": true,
+                            "vectorCount": count,
+                            "dependencyVectorsCid": cid,
+                        });
+                        if !args.out_flags.json && !args.out_flags.quiet {
+                            let verb = if args.verify_only { "verified" } else { "attested" };
+                            println!("  {} dependency-vectors ({count} pinned, {verb})", "ok".green());
+                        }
+                    }
+                    Err(reason) => {
+                        all_ok = false;
+                        dependencies_json = serde_json::json!({"ok": false, "error": reason});
+                        if !args.out_flags.json && !args.out_flags.quiet {
+                            eprintln!("  {} dependency-vectors: {reason}", "FAIL".red().bold());
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                all_ok = false;
+                dependencies_json = serde_json::json!({"ok": false, "error": e});
+                if !args.out_flags.json && !args.out_flags.quiet {
+                    eprintln!("  {} dependency-vectors: {e}", "FAIL".red().bold());
+                }
+            }
+        }
+    }
+
     if args.out_flags.json {
         println!(
             "{}",
@@ -325,6 +461,7 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
                 "mode": if args.verify_only { "verify" } else { "attest" },
                 "artifacts": results,
                 "coverage": coverage_json,
+                "dependencies": dependencies_json,
             })
         );
     } else if all_ok && !args.out_flags.quiet {
@@ -567,10 +704,81 @@ fn print_package_summary(report: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::coverage_gaps;
+    use super::{coverage_gaps, dependency_vectors_cid_of_text};
 
     fn v(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    const LOCK_A: &str = r#"
+version = 4
+[[package]]
+name = "anyhow"
+version = "1.0.86"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaaa"
+[[package]]
+name = "serde"
+version = "1.0.203"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb"
+[[package]]
+name = "sugar-cli"
+version = "0.1.0"
+"#;
+
+    #[test]
+    fn dep_vectors_cid_is_deterministic_and_order_independent() {
+        // Same packages, different source order -> same CID (sorted canonical).
+        let reordered = r#"
+version = 4
+[[package]]
+name = "serde"
+version = "1.0.203"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb"
+[[package]]
+name = "sugar-cli"
+version = "0.1.0"
+[[package]]
+name = "anyhow"
+version = "1.0.86"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaaa"
+"#;
+        let (cid_a, n_a) = dependency_vectors_cid_of_text(LOCK_A).expect("parse");
+        let (cid_b, n_b) = dependency_vectors_cid_of_text(reordered).expect("parse");
+        assert_eq!(n_a, 3);
+        assert_eq!(cid_a, cid_b, "package order must not change the CID");
+        assert!(cid_a.starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn a_changed_dependency_moves_the_cid_conjunctive() {
+        // The whole point: bump ONE dep's version/checksum -> the CID moves (N-1
+        // of N pinned is zero; a single quiet dep change cannot pass).
+        let bumped = LOCK_A.replace("1.0.86", "1.0.99");
+        let (cid_a, _) = dependency_vectors_cid_of_text(LOCK_A).expect("parse");
+        let (cid_b, _) = dependency_vectors_cid_of_text(&bumped).expect("parse");
+        assert_ne!(cid_a, cid_b, "a version bump must move the dependency-vectors CID");
+
+        // Removing a dep also moves it (the closure is not the same set).
+        let removed = r#"
+version = 4
+[[package]]
+name = "serde"
+version = "1.0.203"
+checksum = "bbbb"
+"#;
+        let (cid_c, n_c) = dependency_vectors_cid_of_text(removed).expect("parse");
+        assert_ne!(cid_a, cid_c, "removing a dep must move the CID");
+        assert_eq!(n_c, 1);
+    }
+
+    #[test]
+    fn lockfile_without_packages_is_a_named_error() {
+        let err = dependency_vectors_cid_of_text("version = 4\n").unwrap_err();
+        assert!(err.contains("no [[package]] entries"), "{err}");
     }
 
     #[test]
