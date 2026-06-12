@@ -407,14 +407,11 @@ def _coalesce_same_named_decls(out: Layer2Output) -> None:
 def _refresh_source_accounting(out: Layer2Output) -> None:
     audits: List[dict[str, Any]] = []
     ledger = _empty_source_ledger()
-    seen: Set[Tuple[str, str]] = set()
+    seen: Set[str] = set()
 
     for decl in out.decls:
         for warrant in decl.source_warrants:
-            key = (
-                decl.name,
-                json.dumps(warrant, sort_keys=True, separators=(",", ":")),
-            )
+            key = json.dumps(warrant, sort_keys=True, separators=(",", ":"))
             if key in seen:
                 continue
             seen.add(key)
