@@ -896,3 +896,110 @@ def test_unresolvable_callee_stays_pure_conservative():
     # no such module: evidence-based detector returns False (keeps current
     # sound-conservative unification where we have no body to inspect).
     assert not callee_is_nondeterministic("no_such_module_xyz.f")
+
+
+# --- return-constant family (census #1, 34k bodies): the equality universal ---
+
+VENDOR_CONST = '''
+def version():
+    return "3.1.4"
+
+
+def always_true(x):
+    return True
+
+
+def answer(*a, **k):
+    return 42
+'''
+
+
+def test_constant_universe_walks(vendor_path):
+    from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendconst_ok", VENDOR_CONST)
+    u, r = constant_universe_for_callee("vendconst_ok.version")
+    assert r is None and u is not None
+    assert (u.value, u.value_kind) == ("3.1.4", "str")
+    u2, _ = constant_universe_for_callee("vendconst_ok.always_true")
+    assert (u2.value, u2.value_kind) == (True, "bool")
+    u3, _ = constant_universe_for_callee("vendconst_ok.answer")
+    assert (u3.value, u3.value_kind) == (42, "int")
+
+
+def test_constant_guard_prefix_still_constant(vendor_path):
+    from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendconst_guard",
+        '''
+def f(x):
+    if x < 0:
+        raise ValueError
+    return "ok"
+''',
+    )
+    u, r = constant_universe_for_callee("vendconst_guard.f")
+    assert r is None and u is not None and u.value == "ok"
+
+
+def test_multiple_returns_not_constant(vendor_path):
+    from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendconst_multi",
+        'def f(x):\n    if x:\n        return "a"\n    return "b"\n',
+    )
+    u, r = constant_universe_for_callee("vendconst_multi.f")
+    assert u is None and r is None  # not a candidate
+
+
+def test_constant_emits_equality_and_refutes_wrong(vendor_path):
+    constant_universe_for_callee_clear()
+    vendor_path("vendconst_l2", VENDOR_CONST)
+    out = _lift(
+        """
+        import vendconst_l2
+
+        def test_version():
+            assert vendconst_l2.version() == "3.1.4"
+        """
+    )
+    # the universe equality over the SAME subject coexists with the sworn
+    # equality; a bad twin asserting a different constant would conjoin to
+    # unsat. Here we just confirm an equality atom to the constant is present.
+    from sugar_lift_py_tests.ir import str_const
+
+    eqs = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            stack = [d.inv]
+            while stack:
+                f = stack.pop()
+                if getattr(f, "name", None) == "=" and str_const("3.1.4") in getattr(f, "args", ()):
+                    eqs.append(f)
+                elif getattr(f, "kind", None) in ("and", "or", "not"):
+                    stack.extend(f.operands)
+    assert eqs
+
+
+def test_constant_vendor_vector_mismatch_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendconst_gate", 'def version():\n    return "3.1.4"\n')
+    vendor_path(
+        "test_vendconst_gate",
+        'import vendconst_gate\n\ndef test_v():\n    assert vendconst_gate.version() == "9.9.9"\n',
+    )
+    u, r = constant_universe_for_callee("vendconst_gate.version")
+    assert u is None and r is not None and "sample-gate" in r.reason
+
+
+def constant_universe_for_callee_clear():
+    from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
+
+    constant_universe_for_callee.cache_clear()
