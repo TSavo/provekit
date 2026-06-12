@@ -3788,7 +3788,7 @@ public final class JavaTestAssertionsRpc {
             String universeSet = universeRegistry.getCharSet(callee);
             if (universeSet != null) {
                 ir.add(buildUniverseContract(callee, intArgValues, strArgValues, argsAreStrings,
-                        universeSet));
+                        universeSet, universeRegistry.sourceWarrantFor(callee)));
             }
             // Door 3: ALSO emit the @Pattern regex universe row if the callee is a
             // @Pattern-registered accessor. The consumer's validity claim
@@ -4763,6 +4763,42 @@ public final class JavaTestAssertionsRpc {
              + ctorJson + "," + constJson + "]}]}}";
     }
 
+    private static String sourceWarrantsField(
+            String role,
+            String universeKind,
+            String tableName,
+            JavaSourceOracle.SourceMemento sourceMemento) {
+        if (sourceMemento == null) return "";
+        SourceWarrant warrant =
+                new SourceWarrant(sourceMemento, "source-memento", role, universeKind, tableName);
+        return ",\"sourceWarrants\":[" + warrant.toJson() + "]";
+    }
+
+    private record SourceWarrant(
+            JavaSourceOracle.SourceMemento sourceMemento,
+            String kind,
+            String role,
+            String universeKind,
+            String tableName) {
+        String toJson() {
+            StringBuilder object = new StringBuilder();
+            object.append("{");
+            sourceMemento.appendJsonFields(object);
+            appendStringField(object, "kind", kind);
+            appendStringField(object, "role", role);
+            appendStringField(object, "universe_kind", universeKind);
+            if (tableName != null && !tableName.isBlank()) {
+                appendStringField(object, "table_name", tableName);
+            }
+            object.append("}");
+            return object.toString();
+        }
+
+        private static void appendStringField(StringBuilder object, String key, String value) {
+            object.append(",\"").append(key).append("\":\"").append(esc(value)).append("\"");
+        }
+    }
+
     /**
      * G1: Build a universe membership contract (str.chars-in-set).
      * The atom asserts the callresult is a member of the walked character set.
@@ -4774,7 +4810,8 @@ public final class JavaTestAssertionsRpc {
      */
     private static String buildUniverseContract(
             String callee, List<Long> intArgValues, List<String> strArgValues,
-            boolean argsAreStrings, String charSet) {
+            boolean argsAreStrings, String charSet,
+            JavaSourceOracle.SourceMemento sourceWarrant) {
 
         String safeName = toSafeName(callee);
         int arity = intArgValues.size();
@@ -4795,6 +4832,8 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"contract\""
              + ",\"name\":\"" + esc(contractName) + "\""
              + ",\"outBinding\":\"out\""
+             + sourceWarrantsField(
+                    "java.weak-universe", "str.chars-in-set", callee, sourceWarrant)
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + "{\"kind\":\"atomic\",\"name\":\"str.chars-in-set\",\"args\":["
              + ctorJson + "," + setJson + "]}]}}";
@@ -4999,6 +5038,9 @@ public final class JavaTestAssertionsRpc {
         return "{\"kind\":\"contract\""
              + ",\"name\":\"" + esc(contractName) + "\""
              + ",\"outBinding\":\"out\""
+             + sourceWarrantsField(
+                    "java.strong-universe", "str.eq-bv-blocks", "encode",
+                    strong.sourceMemento())
              + ",\"inv\":{\"kind\":\"and\",\"operands\":["
              + "{\"kind\":\"atomic\",\"name\":\"str.eq-bv-blocks\",\"args\":["
              + ctorJson + "," + payloadConst
@@ -5237,6 +5279,35 @@ public final class JavaTestAssertionsRpc {
         return sb.toString();
     }
 
+    private static void collectSourceMementos(
+            Path workspaceRoot,
+            Path sourcePath,
+            CompilationUnitTree unit,
+            ClassTree cls,
+            SourcePositions positions,
+            Map<MethodTree, JavaSourceOracle.SourceMemento> out,
+            List<String> diagnostics,
+            String walkerName) {
+        for (Tree member : cls.getMembers()) {
+            if (member instanceof MethodTree mt) {
+                try {
+                    JavaSourceOracle.SourceFragmentLocus locus =
+                            JavaSourceOracle.sourceFragmentLocusForMethod(
+                                    workspaceRoot, sourcePath, unit, mt, positions);
+                    out.put(mt, JavaSourceOracle.sourceMementoOf(locus));
+                } catch (JavaSourceOracle.SourceOracleRefusal exc) {
+                    diagnostics.add(diagnostic(walkerName, cls.getSimpleName().toString(),
+                            mt.getName().toString(),
+                            "source oracle refused SourceMemento: " + exc.getMessage()));
+                }
+            } else if (member instanceof ClassTree nested) {
+                collectSourceMementos(
+                        workspaceRoot, sourcePath, unit, nested, positions,
+                        out, diagnostics, walkerName);
+            }
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────
     // G1: UniverseRegistry — maps bare method name → walked char set
     // ──────────────────────────────────────────────────────────────
@@ -5250,16 +5321,23 @@ public final class JavaTestAssertionsRpc {
      * No entry = universe walk refused for that callee.
      */
     static final class UniverseRegistry {
-        static final UniverseRegistry EMPTY = new UniverseRegistry(Map.of());
+        static final UniverseRegistry EMPTY = new UniverseRegistry(Map.of(), Map.of());
 
         private final Map<String, String> charSets; // callee simple-name → sorted charset
+        private final Map<String, JavaSourceOracle.SourceMemento> sourceWarrants;
 
-        UniverseRegistry(Map<String, String> charSets) {
+        UniverseRegistry(
+                Map<String, String> charSets,
+                Map<String, JavaSourceOracle.SourceMemento> sourceWarrants) {
             this.charSets = Map.copyOf(charSets);
+            this.sourceWarrants = Map.copyOf(sourceWarrants);
         }
 
         /** Return the universe char-set for a callee, or null if not registered. */
         String getCharSet(String callee) { return charSets.get(callee); }
+        JavaSourceOracle.SourceMemento sourceWarrantFor(String callee) {
+            return sourceWarrants.get(callee);
+        }
         boolean isEmpty() { return charSets.isEmpty(); }
         Map<String, String> all() { return charSets; }
     }
@@ -5539,6 +5617,8 @@ public final class JavaTestAssertionsRpc {
             // Map: simple class name → (compilationUnit, classTree)
             Map<String, CompilationUnitTree> unitByClass = new LinkedHashMap<>();
             Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
+            Map<MethodTree, JavaSourceOracle.SourceMemento> methodSourceMementos =
+                    new IdentityHashMap<>();
 
             for (Path src : vendorFiles) {
                 try {
@@ -5549,12 +5629,18 @@ public final class JavaTestAssertionsRpc {
                     JavacTask task = (JavacTask) compiler.getTask(
                             null, fm, d -> {}, List.of("--release", "21"),
                             null, List.of(fo));
+                    Trees trees = Trees.instance(task);
+                    SourcePositions positions = trees.getSourcePositions();
                     for (CompilationUnitTree cu : task.parse()) {
                         for (Tree decl : cu.getTypeDecls()) {
                             if (decl instanceof ClassTree ct) {
                                 String name = ct.getSimpleName().toString();
                                 unitByClass.put(name, cu);
                                 classTreeByName.put(name, ct);
+                                collectSourceMementos(
+                                        workspaceRoot, src, cu, ct, positions,
+                                        methodSourceMementos, diagnostics,
+                                        "<universe-walker>");
                             }
                         }
                     }
@@ -5567,7 +5653,7 @@ public final class JavaTestAssertionsRpc {
 
             if (classTreeByName.isEmpty()) return UniverseRegistry.EMPTY;
 
-            Corpus corpus = new Corpus(classTreeByName, identityBridges);
+            Corpus corpus = new Corpus(classTreeByName, identityBridges, methodSourceMementos);
 
             // ── Step 2: discover table selectors from the vendor's own AST ──
             // A selector is `<field> = <condIdent> ? <tableIdentA> : <tableIdentB>`
@@ -5622,6 +5708,7 @@ public final class JavaTestAssertionsRpc {
             // condition evaluates. byte[]-returning methods are never registered:
             // str.chars-in-set is a String-sorted predicate.
             Map<String, String> registry = new LinkedHashMap<>();
+            Map<String, JavaSourceOracle.SourceMemento> sourceWarrants = new LinkedHashMap<>();
             Set<String> ambiguous = new HashSet<>();
             for (Map.Entry<String, ClassTree> ce : classTreeByName.entrySet()) {
                 for (Tree m : ce.getValue().getMembers()) {
@@ -5644,6 +5731,12 @@ public final class JavaTestAssertionsRpc {
                     }
                     java.util.TreeSet<Character> cs = tableChars.get(tbl);
                     if (cs == null) continue; // table refused upstream (named there)
+                    JavaSourceOracle.SourceMemento sourceWarrant = corpus.sourceMemento(mt);
+                    if (sourceWarrant == null) {
+                        diagnostics.add(diagnostic("<universe-walker>", ce.getKey(), mName,
+                            "universe walk refused: source oracle could not mint SourceMemento"));
+                        continue;
+                    }
                     StringBuilder sb = new StringBuilder();
                     for (char c : cs) sb.append(c);
                     String charSet = sb.toString();
@@ -5658,11 +5751,15 @@ public final class JavaTestAssertionsRpc {
                         continue;
                     }
                     registry.put(mName, charSet);
+                    sourceWarrants.put(mName, sourceWarrant);
                 }
             }
-            for (String a : ambiguous) registry.remove(a);
+            for (String a : ambiguous) {
+                registry.remove(a);
+                sourceWarrants.remove(a);
+            }
 
-            return new UniverseRegistry(registry);
+            return new UniverseRegistry(registry, sourceWarrants);
         }
 
         /** A walked table selector: `<lhsField> = <condParam> ? <trueTable> : <falseTable>`. */
@@ -5744,12 +5841,21 @@ public final class JavaTestAssertionsRpc {
             final Map<String, String> fieldOwner = new LinkedHashMap<>();        // simple name → class
             final Map<String, MethodTree> statics = new LinkedHashMap<>();       // name/arity → tree
             final Map<String, List<MethodTree>> ctors = new LinkedHashMap<>();   // class → ctors
+            final Map<MethodTree, JavaSourceOracle.SourceMemento> methodSourceMementos;
             /** H1 [B4/B5]: method names declared as identity bridges in platform-axioms.json */
             final Set<String> identityBridges;
 
             Corpus(Map<String, ClassTree> classes, Set<String> identityBridges) {
+                this(classes, identityBridges, Map.of());
+            }
+
+            Corpus(
+                    Map<String, ClassTree> classes,
+                    Set<String> identityBridges,
+                    Map<MethodTree, JavaSourceOracle.SourceMemento> methodSourceMementos) {
                 this.classes = classes;
                 this.identityBridges = identityBridges;
+                this.methodSourceMementos = new IdentityHashMap<>(methodSourceMementos);
                 for (Map.Entry<String, ClassTree> ce : classes.entrySet()) {
                     for (Tree m : ce.getValue().getMembers()) {
                         if (m instanceof VariableTree vt) {
@@ -5765,6 +5871,10 @@ public final class JavaTestAssertionsRpc {
                         }
                     }
                 }
+            }
+
+            JavaSourceOracle.SourceMemento sourceMemento(MethodTree method) {
+                return methodSourceMementos.get(method);
             }
 
             String ownerOf(String field) {
@@ -6757,11 +6867,11 @@ public final class JavaTestAssertionsRpc {
     /** A strong-tier entry: the resolved table (ordered codepoints) for a callee. */
     static final class StrongUniverseRegistry {
         static final StrongUniverseRegistry EMPTY =
-                new StrongUniverseRegistry(Map.of(), null, List.of());
+                new StrongUniverseRegistry(Map.of(), null, List.of(), null);
 
         static final StrongUniverseRegistry EMPTY_TAILS =
                 new StrongUniverseRegistry(Map.of(), null, List.of(),
-                        Map.of(), Map.of(), Map.of(), null, Map.of());
+                        Map.of(), Map.of(), Map.of(), null, Map.of(), null);
 
         /** callee simple-name → ordered table codepoints (index → codepoint). */
         private final Map<String, List<Integer>> tableByCallee;
@@ -6782,11 +6892,14 @@ public final class JavaTestAssertionsRpc {
         /** modulus → the pad-guard table's 64 literal codepoints (e.g. STANDARD).
          *  Used to decide, by CODEPOINT match, whether a callee's table is padded. */
         private final Map<Integer, List<Integer>> padGuardTableCps;
+        /** Source memento for the walked encode body that produced the equations. */
+        private final JavaSourceOracle.SourceMemento sourceMemento;
 
         StrongUniverseRegistry(Map<String, List<Integer>> tableByCallee,
-                List<String> blockIndexTrees, List<String> blockVarNames) {
+                List<String> blockIndexTrees, List<String> blockVarNames,
+                JavaSourceOracle.SourceMemento sourceMemento) {
             this(tableByCallee, blockIndexTrees, blockVarNames,
-                    Map.of(), Map.of(), Map.of(), null, Map.of());
+                    Map.of(), Map.of(), Map.of(), null, Map.of(), sourceMemento);
         }
 
         StrongUniverseRegistry(Map<String, List<Integer>> tableByCallee,
@@ -6794,7 +6907,8 @@ public final class JavaTestAssertionsRpc {
                 Map<Integer, List<String>> tailIndexTrees,
                 Map<Integer, String> tailPadGuardTable,
                 Map<Integer, Integer> tailPadCount, Integer padCodepoint,
-                Map<Integer, List<Integer>> padGuardTableCps) {
+                Map<Integer, List<Integer>> padGuardTableCps,
+                JavaSourceOracle.SourceMemento sourceMemento) {
             this.tableByCallee = Map.copyOf(tableByCallee);
             this.blockIndexTrees = blockIndexTrees == null ? null : List.copyOf(blockIndexTrees);
             this.blockVarNames = List.copyOf(blockVarNames);
@@ -6803,6 +6917,7 @@ public final class JavaTestAssertionsRpc {
             this.tailPadCount = Map.copyOf(tailPadCount);
             this.padCodepoint = padCodepoint;
             this.padGuardTableCps = Map.copyOf(padGuardTableCps);
+            this.sourceMemento = sourceMemento;
         }
 
         boolean isEmpty() {
@@ -6818,6 +6933,7 @@ public final class JavaTestAssertionsRpc {
         String tailPadGuardTable(int modulus) { return tailPadGuardTable.get(modulus); }
         int tailPadCount(int modulus) { return tailPadCount.getOrDefault(modulus, 0); }
         Integer padCodepoint() { return padCodepoint; }
+        JavaSourceOracle.SourceMemento sourceMemento() { return sourceMemento; }
         /** True iff the vendor pads this modulus tail AND the given callee table
          *  (by codepoint identity) is the very table the pad guard names. The pad
          *  is table-specific: urlsafe skips it, so urlsafe callees get NO pad. */
@@ -6866,6 +6982,8 @@ public final class JavaTestAssertionsRpc {
 
             // Parse into the SAME corpus shape the weak tier uses.
             Map<String, ClassTree> classTreeByName = new LinkedHashMap<>();
+            Map<MethodTree, JavaSourceOracle.SourceMemento> methodSourceMementos =
+                    new IdentityHashMap<>();
             for (Path src : vendorFiles) {
                 try {
                     String source = Files.readString(src, StandardCharsets.UTF_8);
@@ -6874,10 +6992,16 @@ public final class JavaTestAssertionsRpc {
                             null, null, StandardCharsets.UTF_8);
                     JavacTask task = (JavacTask) compiler.getTask(
                             null, fm, d -> {}, List.of("--release", "21"), null, List.of(fo));
+                    Trees trees = Trees.instance(task);
+                    SourcePositions positions = trees.getSourcePositions();
                     for (CompilationUnitTree cu : task.parse()) {
                         for (Tree decl : cu.getTypeDecls()) {
                             if (decl instanceof ClassTree ct) {
                                 classTreeByName.putIfAbsent(ct.getSimpleName().toString(), ct);
+                                collectSourceMementos(
+                                        workspaceRoot, src, cu, ct, positions,
+                                        methodSourceMementos, diagnostics,
+                                        "<strong-universe-walker>");
                             }
                         }
                     }
@@ -6895,7 +7019,8 @@ public final class JavaTestAssertionsRpc {
             Set<String> identityBridges =
                     UniverseWalker.loadPlatformAxioms(workspaceRoot, diagnostics);
             UniverseWalker.Corpus corpus =
-                    new UniverseWalker.Corpus(classTreeByName, identityBridges);
+                    new UniverseWalker.Corpus(
+                            classTreeByName, identityBridges, methodSourceMementos);
 
             List<UniverseWalker.Selector> selectors =
                     UniverseWalker.findSelectors(corpus, diagnostics);
@@ -6959,7 +7084,7 @@ public final class JavaTestAssertionsRpc {
 
             return new StrongUniverseRegistry(tableByCallee, eqns.indexTrees, eqns.varNames,
                     eqns.tailIndexTrees, eqns.tailPadGuardTable, eqns.tailPadCount,
-                    eqns.padCodepoint, padGuardTableCps);
+                    eqns.padCodepoint, padGuardTableCps, eqns.sourceMemento);
         }
 
         /** The per-char index equations for one full 3-byte block, plus the
@@ -6978,15 +7103,18 @@ public final class JavaTestAssertionsRpc {
             /** The resolved pad codepoint (AST-walked, e.g. PAD_DEFAULT='='=61), or
              *  null if the pad ident had no walkable literal value. */
             final Integer padCodepoint;
+            final JavaSourceOracle.SourceMemento sourceMemento;
             BlockEquations(List<String> indexTrees, List<String> varNames,
                     Map<Integer, List<String>> tailIndexTrees,
                     Map<Integer, String> tailPadGuardTable,
-                    Map<Integer, Integer> tailPadCount, Integer padCodepoint) {
+                    Map<Integer, Integer> tailPadCount, Integer padCodepoint,
+                    JavaSourceOracle.SourceMemento sourceMemento) {
                 this.indexTrees = indexTrees; this.varNames = varNames;
                 this.tailIndexTrees = tailIndexTrees;
                 this.tailPadGuardTable = tailPadGuardTable;
                 this.tailPadCount = tailPadCount;
                 this.padCodepoint = padCodepoint;
+                this.sourceMemento = sourceMemento;
             }
         }
 
@@ -7021,6 +7149,7 @@ public final class JavaTestAssertionsRpc {
             // arithmetic shape is the one we symbolically execute.
             AccFinder acc = null;
             String encodeOwner = null;
+            MethodTree encodeMethod = null;
             int candidates = 0;
             for (Map.Entry<String, ClassTree> ce : corpus.classes.entrySet()) {
                 for (Tree m : ce.getValue().getMembers()) {
@@ -7034,7 +7163,7 @@ public final class JavaTestAssertionsRpc {
                     f.scan(mt.getBody(), null);
                     if (f.workLocal != null && f.shiftAmount == 8
                             && f.fullBlockIndexExprs != null && f.fullBlockIndexExprs.size() == 4) {
-                        acc = f; encodeOwner = ce.getKey();
+                        acc = f; encodeOwner = ce.getKey(); encodeMethod = mt;
                     }
                 }
             }
@@ -7047,6 +7176,12 @@ public final class JavaTestAssertionsRpc {
                 diagnostics.add(diagnostic("<strong-universe-walker>", "<vendor>", "encode",
                         "strong universe refused: no encode body carries the full-block shape "
                         + "(`work = (work << 8) + b` accumulation + 4 `encodeTable[...]` extractions)"));
+                return null;
+            }
+            JavaSourceOracle.SourceMemento sourceMemento = corpus.sourceMemento(encodeMethod);
+            if (sourceMemento == null) {
+                diagnostics.add(diagnostic("<strong-universe-walker>", encodeOwner, "encode",
+                        "strong universe refused: source oracle could not mint SourceMemento"));
                 return null;
             }
 
@@ -7116,7 +7251,7 @@ public final class JavaTestAssertionsRpc {
             }
 
             return new BlockEquations(indexTrees, varNames, tailTrees,
-                    acc.tailPadGuardTable, acc.tailPadCount, padCp);
+                    acc.tailPadGuardTable, acc.tailPadCount, padCp, sourceMemento);
         }
 
         /**

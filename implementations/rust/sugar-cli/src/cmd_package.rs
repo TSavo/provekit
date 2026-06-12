@@ -167,10 +167,18 @@ fn dependency_vectors_cid_of_text(text: &str) -> Result<(String, usize), String>
 
 /// Read the pinned `dependencyVectorsCid` from a DependencyVectorsReceipt.
 fn read_pinned_dep_vectors_cid(receipt_path: &Path) -> Result<String, String> {
-    let text = std::fs::read_to_string(receipt_path)
-        .map_err(|e| format!("read dependency-vectors receipt {}: {e}", receipt_path.display()))?;
-    let receipt: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("parse dependency-vectors receipt {}: {e}", receipt_path.display()))?;
+    let text = std::fs::read_to_string(receipt_path).map_err(|e| {
+        format!(
+            "read dependency-vectors receipt {}: {e}",
+            receipt_path.display()
+        )
+    })?;
+    let receipt: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "parse dependency-vectors receipt {}: {e}",
+            receipt_path.display()
+        )
+    })?;
     receipt
         .get("dependencyVectorsCid")
         .and_then(|v| v.as_str())
@@ -266,8 +274,8 @@ fn workspace_bin_targets(cargo_manifest: &Path) -> Result<Vec<String>, String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let meta: serde_json::Value = serde_json::from_slice(&out.stdout)
-        .map_err(|e| format!("parse cargo metadata: {e}"))?;
+    let meta: serde_json::Value =
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("parse cargo metadata: {e}"))?;
     let mut bins = Vec::new();
     for pkg in meta["packages"].as_array().into_iter().flatten() {
         for target in pkg["targets"].as_array().into_iter().flatten() {
@@ -377,14 +385,24 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
         let artifact_path = root.join(&art.path);
         let receipt_path = receipts.join(format!("{}.release.json", art.name));
 
-        let outcome = release_one(&art.name, &version, &artifact_path, &receipt_path, args.verify_only);
+        let outcome = release_one(
+            &art.name,
+            &version,
+            &artifact_path,
+            &receipt_path,
+            args.verify_only,
+        );
         if let Err(reason) = &outcome {
             all_ok = false;
             if !args.out_flags.json && !args.out_flags.quiet {
                 eprintln!("  {} {}: {}", "FAIL".red().bold(), art.name, reason);
             }
         } else if !args.out_flags.json && !args.out_flags.quiet {
-            let verb = if args.verify_only { "verified" } else { "attested" };
+            let verb = if args.verify_only {
+                "verified"
+            } else {
+                "attested"
+            };
             println!("  {} {} ({verb})", "ok".green(), art.name);
         }
         results.push(serde_json::json!({
@@ -478,8 +496,15 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
                             "dependencyVectorsCid": cid,
                         });
                         if !args.out_flags.json && !args.out_flags.quiet {
-                            let verb = if args.verify_only { "verified" } else { "attested" };
-                            println!("  {} dependency-vectors ({count} pinned, {verb})", "ok".green());
+                            let verb = if args.verify_only {
+                                "verified"
+                            } else {
+                                "attested"
+                            };
+                            println!(
+                                "  {} dependency-vectors ({count} pinned, {verb})",
+                                "ok".green()
+                            );
                         }
                     }
                     Err(reason) => {
@@ -552,7 +577,11 @@ fn run_release(args: PackageReleaseArgs) -> u8 {
             })
         );
     } else if all_ok && !args.out_flags.quiet {
-        let verb = if args.verify_only { "verified" } else { "attested + verified" };
+        let verb = if args.verify_only {
+            "verified"
+        } else {
+            "attested + verified"
+        };
         println!(
             "{}: {} artifact(s) {verb}",
             "package release".green().bold(),
@@ -847,7 +876,10 @@ checksum = "aaaa"
         let bumped = LOCK_A.replace("1.0.86", "1.0.99");
         let (cid_a, _) = dependency_vectors_cid_of_text(LOCK_A).expect("parse");
         let (cid_b, _) = dependency_vectors_cid_of_text(&bumped).expect("parse");
-        assert_ne!(cid_a, cid_b, "a version bump must move the dependency-vectors CID");
+        assert_ne!(
+            cid_a, cid_b,
+            "a version bump must move the dependency-vectors CID"
+        );
 
         // Removing a dep also moves it (the closure is not the same set).
         let removed = r#"
@@ -876,7 +908,10 @@ checksum = "bbbb"
                   host: x86_64-apple-darwin\n\
                   release: 1.96.0\n\
                   LLVM version: 19.1.0\n";
-        assert_eq!(super::parse_rustc_field(vv, "release: ").as_deref(), Some("1.96.0"));
+        assert_eq!(
+            super::parse_rustc_field(vv, "release: ").as_deref(),
+            Some("1.96.0")
+        );
         assert_eq!(
             super::parse_rustc_field(vv, "host: ").as_deref(),
             Some("x86_64-apple-darwin")
@@ -900,7 +935,10 @@ checksum = "bbbb"
         let bins = v(&["sugar", "sugar-lift", "sugar-newcli"]);
         let pinned = v(&["sugar", "sugar-lift"]);
         let excluded = v(&[]);
-        assert_eq!(coverage_gaps(&bins, &pinned, &excluded), v(&["sugar-newcli"]));
+        assert_eq!(
+            coverage_gaps(&bins, &pinned, &excluded),
+            v(&["sugar-newcli"])
+        );
     }
 
     #[test]

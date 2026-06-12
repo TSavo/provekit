@@ -4894,8 +4894,14 @@ fn t() {
     let out = lift_file(&parse(src), "src/x.rs");
     assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
     let decl = format!("{:?}", out.decls[0]);
-    assert!(decl.contains("prefix-of") || decl.contains("prefix"), "must be prefix-of: {decl}");
-    assert!(decl.contains("blake3-512:"), "must carry the literal prefix: {decl}");
+    assert!(
+        decl.contains("prefix-of") || decl.contains("prefix"),
+        "must be prefix-of: {decl}"
+    );
+    assert!(
+        decl.contains("blake3-512:"),
+        "must carry the literal prefix: {decl}"
+    );
 }
 
 // --- bare boolean place tranche (assert!(flag)) ---
@@ -4937,8 +4943,14 @@ fn t() {
     // negation to false, so the two cannot both hold (flag==true ∧ flag==false).
     let dump = format!("{:?}", out.decls[0]);
     assert!(dump.contains("flag"), "{dump}");
-    assert!(dump.contains("Bool(true)"), "assert!(flag) -> flag==true: {dump}");
-    assert!(dump.contains("Bool(false)"), "assert!(!flag) -> flag==false: {dump}");
+    assert!(
+        dump.contains("Bool(true)"),
+        "assert!(flag) -> flag==true: {dump}"
+    );
+    assert!(
+        dump.contains("Bool(false)"),
+        "assert!(!flag) -> flag==false: {dump}"
+    );
 }
 
 // --- matches! discriminant tranche (assert!(matches!(x, Type::Variant))) ---
@@ -4957,8 +4969,14 @@ fn t() {
     let out = lift_file(&parse(src), "tests/poll.rs");
     assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
     let (lhs, rhs) = panic_locus_lhs_rhs(&out);
-    assert!(lhs.contains("variant_of"), "lhs must be variant_of(..): {lhs}");
-    assert!(rhs.contains("Poll::Ready"), "rhs must tag Poll::Ready: {rhs}");
+    assert!(
+        lhs.contains("variant_of"),
+        "lhs must be variant_of(..): {lhs}"
+    );
+    assert!(
+        rhs.contains("Poll::Ready"),
+        "rhs must tag Poll::Ready: {rhs}"
+    );
 }
 
 #[test]
@@ -4977,7 +4995,10 @@ fn t() {
     assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
     let (lhs, tag) = panic_locus_lhs_rhs(&out);
     assert!(lhs.contains("variant_of"), "lhs: {lhs}");
-    assert!(tag.contains("IrTerm::Let"), "rhs must tag IrTerm::Let: {tag}");
+    assert!(
+        tag.contains("IrTerm::Let"),
+        "rhs must tag IrTerm::Let: {tag}"
+    );
 }
 
 #[test]
@@ -5004,8 +5025,16 @@ fn t() {
         Formula::Atomic { args, .. } => format!("{:?}", args[1]),
         other => panic!("{other:?}"),
     };
-    assert_eq!(lhs(&ops[0]), lhs(&ops[1]), "same subject -> same variant_of term");
-    assert_ne!(rhs(&ops[0]), rhs(&ops[1]), "Ready vs Pending tags must differ (teeth)");
+    assert_eq!(
+        lhs(&ops[0]),
+        lhs(&ops[1]),
+        "same subject -> same variant_of term"
+    );
+    assert_ne!(
+        rhs(&ops[0]),
+        rhs(&ops[1]),
+        "Ready vs Pending tags must differ (teeth)"
+    );
 }
 
 #[test]
@@ -5023,7 +5052,10 @@ fn t() {
     assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
     let decl = format!("{:?}", out.decls[0]);
     assert!(decl.contains("variant_of"), "must carry variant_of: {decl}");
-    assert!(decl.contains("Poll::Pending"), "must tag Poll::Pending: {decl}");
+    assert!(
+        decl.contains("Poll::Pending"),
+        "must tag Poll::Pending: {decl}"
+    );
     assert!(
         decl.contains("\"not\""),
         "must be a negated (not-connective) atom: {decl}"
@@ -5047,8 +5079,14 @@ fn t() {
     let out = lift_file(&parse(src), "tests/poll.rs");
     assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
     let (lhs, rhs) = panic_locus_lhs_rhs(&out);
-    assert!(lhs.contains("variant_of"), "lhs must be variant_of(..): {lhs}");
-    assert!(rhs.contains("Poll::Ready"), "rhs must tag Poll::Ready: {rhs}");
+    assert!(
+        lhs.contains("variant_of"),
+        "lhs must be variant_of(..): {lhs}"
+    );
+    assert!(
+        rhs.contains("Poll::Ready"),
+        "rhs must tag Poll::Ready: {rhs}"
+    );
 }
 
 #[test]
@@ -5065,7 +5103,9 @@ fn t() {
     let out = lift_file(&parse(src), "tests/poll.rs");
     assert_eq!(out.assertions_lifted, 0, "binding matches! must not lift");
     assert!(
-        out.skip_reasons.iter().any(|r| r.contains("unambiguous qualified variant")),
+        out.skip_reasons
+            .iter()
+            .any(|r| r.contains("unambiguous qualified variant")),
         "refusal must name the ambiguity: {:?}",
         out.skip_reasons
     );
@@ -5085,9 +5125,15 @@ fn t() {
     let out = lift_file(&parse(src), "src/x.rs");
     assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
     let decl = format!("{:?}", out.decls[0]);
-    assert!(decl.contains("variant::Some"), "outer Some discriminant: {decl}");
+    assert!(
+        decl.contains("variant::Some"),
+        "outer Some discriminant: {decl}"
+    );
     assert!(decl.contains("payload:Some"), "payload accessor: {decl}");
-    assert!(decl.contains("variant::Decision::Widen"), "inner discriminant: {decl}");
+    assert!(
+        decl.contains("variant::Decision::Widen"),
+        "inner discriminant: {decl}"
+    );
 }
 
 #[test]
@@ -5141,7 +5187,10 @@ fn t() { let x = mk(); assert_eq!(x, [0xabu8, 0xabu8, 0xabu8]); }
 "#;
     let dr = format!("{:?}", lift_file(&parse(repeat), "src/x.rs").decls[0]);
     let de = format!("{:?}", lift_file(&parse(explicit), "src/x.rs").decls[0]);
-    assert_eq!(dr, de, "[e; N] must lift congruently to the N-fold explicit array");
+    assert_eq!(
+        dr, de,
+        "[e; N] must lift congruently to the N-fold explicit array"
+    );
 }
 
 #[test]
@@ -5163,7 +5212,11 @@ fn t() {
         Formula::Atomic { args, .. } => format!("{:?}", args[1]),
         other => panic!("{other:?}"),
     };
-    assert_ne!(rhs(&ops[0]), rhs(&ops[1]), "0xab vs 0xcd repeats must differ (teeth)");
+    assert_ne!(
+        rhs(&ops[0]),
+        rhs(&ops[1]),
+        "0xab vs 0xcd repeats must differ (teeth)"
+    );
 }
 
 #[test]
@@ -5178,9 +5231,14 @@ fn t() {
 }
 "#;
     let out = lift_file(&parse(src), "src/x.rs");
-    assert_eq!(out.assertions_lifted, 0, "non-literal-length repeat must not lift");
+    assert_eq!(
+        out.assertions_lifted, 0,
+        "non-literal-length repeat must not lift"
+    );
     assert!(
-        out.skip_reasons.iter().any(|r| r.contains("non-literal length")),
+        out.skip_reasons
+            .iter()
+            .any(|r| r.contains("non-literal length")),
         "refusal must name the non-literal length: {:?}",
         out.skip_reasons
     );
@@ -5243,7 +5301,11 @@ fn t() {
         Formula::Atomic { args, .. } => format!("{:?}", args[1]),
         other => panic!("{other:?}"),
     };
-    assert_ne!(rhs(&ops[0]), rhs(&ops[1]), "Int vs Bool literals must differ (teeth)");
+    assert_ne!(
+        rhs(&ops[0]),
+        rhs(&ops[1]),
+        "Int vs Bool literals must differ (teeth)"
+    );
 }
 
 #[test]
@@ -5260,7 +5322,9 @@ fn t() {
     let out = lift_file(&parse(src), "src/x.rs");
     assert_eq!(out.assertions_lifted, 0, "..rest struct must not lift");
     assert!(
-        out.skip_reasons.iter().any(|r| r.contains("..rest") || r.contains("not fully pinned")),
+        out.skip_reasons
+            .iter()
+            .any(|r| r.contains("..rest") || r.contains("not fully pinned")),
         "refusal must name the ..rest: {:?}",
         out.skip_reasons
     );
@@ -5471,7 +5535,9 @@ fn t() {
     let out = lift_file(&parse(src), "tests/loop.rs");
     assert_eq!(out.assertions_lifted, 0, "opaque loop must stay refused");
     assert!(
-        out.skip_reasons.iter().any(|r| r.contains("OPAQUE collection")),
+        out.skip_reasons
+            .iter()
+            .any(|r| r.contains("OPAQUE collection")),
         "refusal must name the opaque-collection provenance: {:?}",
         out.skip_reasons
     );

@@ -358,7 +358,13 @@ def _coalesce_same_named_decls(out: Layer2Output) -> None:
             continue
         invs = [d.inv for d in group]
         merged_inv = invs[0] if len(invs) == 1 else and_(invs)
-        new_decls.append(ContractDecl(name=name, inv=merged_inv))
+        source_warrants: List[dict] = []
+        for d in group:
+            for warrant in d.source_warrants:
+                _append_unique_source_warrant(source_warrants, warrant)
+        new_decls.append(
+            ContractDecl(name=name, inv=merged_inv, source_warrants=source_warrants)
+        )
 
     out.decls = new_decls
 
@@ -2717,6 +2723,7 @@ def _classify_characterization(
     # value-scope path, same contact rule. Injected AFTER the liftability
     # check so universes never rescue an otherwise-released test.
     universe_extras: List[Formula] = []
+    source_warrants: List[dict] = []
     for stmt, atom in lifted_pairs:
         calls = _collect_assertion_calls(stmt)
         if len(calls) != 1:
@@ -2728,14 +2735,21 @@ def _classify_characterization(
         if subject is None:
             continue
         for conjunct in _universe_conjuncts(
-            origin.callee, subject, out, source_path, test_name
+            origin.callee,
+            subject,
+            out,
+            source_path,
+            test_name,
+            source_warrants=source_warrants,
         ):
             if conjunct not in atoms and conjunct not in universe_extras:
                 universe_extras.append(conjunct)
     atoms = atoms + universe_extras
 
     inv = atoms[0] if len(atoms) == 1 else and_(atoms)
-    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.decls.append(
+        ContractDecl(name=test_name, inv=inv, source_warrants=source_warrants)
+    )
     out.lifted += 1
     out.characterization_lifted += 1
     if skipped:
@@ -2996,6 +3010,7 @@ def _classify_value_scope(
     # conjoin logic: and(=(y,None), ≠(y,None)) lands in one memento -> UNSAT.
     # Order is preserved so the conjunction is deterministic.
     assertion_atoms_by_base: Dict[str, List[Formula]] = {}
+    source_warrants_by_base: Dict[str, List[dict]] = {}
     base_order: List[str] = []
 
     for stmt in body:
@@ -3010,6 +3025,7 @@ def _classify_value_scope(
                 implications,
                 used_names,
                 assertion_atoms_by_base,
+                source_warrants_by_base,
                 base_order,
                 out,
             )
@@ -3054,7 +3070,13 @@ def _classify_value_scope(
         atoms = assertion_atoms_by_base[base]
         conjoined_inv = atoms[0] if len(atoms) == 1 else and_(atoms)
         assertion_name = f"{base}::assertion"
-        decls.append(ContractDecl(name=assertion_name, inv=conjoined_inv))
+        decls.append(
+            ContractDecl(
+                name=assertion_name,
+                inv=conjoined_inv,
+                source_warrants=source_warrants_by_base.get(base, []),
+            )
+        )
 
     out.claimed_tests.add(test_name)
     out.seen += 1
@@ -3197,6 +3219,7 @@ def _collect_value_scope_assertion_facts(
     implications: List[ImplicationDecl],
     used_names: Set[str],
     assertion_atoms_by_base: Dict[str, List[Formula]],
+    source_warrants_by_base: Dict[str, List[dict]],
     base_order: List[str],
     out: Layer2Output,
 ) -> int:
@@ -3227,6 +3250,7 @@ def _collect_value_scope_assertion_facts(
             # call-site subject land in one inv.
             if base not in assertion_atoms_by_base:
                 assertion_atoms_by_base[base] = []
+                source_warrants_by_base[base] = []
                 base_order.append(base)
             assertion_atoms_by_base[base].append(assertion)
             # Wire the implication antecedent to the (not-yet-emitted)
@@ -3267,7 +3291,12 @@ def _collect_value_scope_assertion_facts(
             subject_term = _assertion_call_subject(assertion) or origin.euf_term
             if subject_term is not None:
                 for conjunct in _universe_conjuncts(
-                    origin.callee, subject_term, out, source_path, test_name
+                    origin.callee,
+                    subject_term,
+                    out,
+                    source_path,
+                    test_name,
+                    source_warrants=source_warrants_by_base[base],
                 ):
                     if conjunct not in assertion_atoms_by_base[base]:
                         assertion_atoms_by_base[base].append(conjunct)
@@ -3280,6 +3309,7 @@ def _universe_conjuncts(
     out: Layer2Output,
     source_path: str,
     test_name: str,
+    source_warrants: Optional[List[dict]] = None,
 ) -> List[Formula]:
     """Every walked universe for ``callee``, instantiated at
     ``subject_term`` -- the call-shaped side of the assertion's OWN equality
@@ -3334,6 +3364,11 @@ def _universe_conjuncts(
                     "str.chars-not-in-set",
                     [subject_term, str_const(universe.forbidden)],
                 )
+            )
+        if source_warrants is not None and universe.source_memento is not None:
+            _append_unique_source_warrant(
+                source_warrants,
+                _source_warrant_for_translate_universe(universe),
             )
 
     # BRANCH-LITERAL DISJUNCTION (census non-return:If, 75k bodies, and
@@ -3536,6 +3571,21 @@ def _universe_conjuncts(
                     if _euf_args_all_concrete(term):
                         conjuncts.append(eq(subject_term, term))
     return conjuncts
+
+
+def _source_warrant_for_translate_universe(universe) -> dict:
+    warrant = dict(universe.source_memento or {})
+    warrant["kind"] = "source-memento"
+    warrant["role"] = "python.translate-universe"
+    warrant["source_function_name"] = universe.qualname.rsplit(".", 1)[-1]
+    warrant["universe_kind"] = universe.kind
+    warrant["table_name"] = universe.table_name
+    return warrant
+
+
+def _append_unique_source_warrant(warrants: List[dict], warrant: dict) -> None:
+    if warrant not in warrants:
+        warrants.append(warrant)
 
 
 def _expr_spec_term(spec, call_args):

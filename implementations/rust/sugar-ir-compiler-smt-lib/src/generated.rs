@@ -674,11 +674,11 @@ fn render_bv_index_json(
                 Some(format!("({} {} {})", smt_op, l, r))
             };
             match name {
-                "bv32.and"  => bin("bvand"),
-                "bv32.or"   => bin("bvor"),
-                "bv32.shl"  => bin("bvshl"),
+                "bv32.and" => bin("bvand"),
+                "bv32.or" => bin("bvor"),
+                "bv32.shl" => bin("bvshl"),
                 "bv32.lshr" => bin("bvlshr"),
-                "bv32.add"  => bin("bvadd"),
+                "bv32.add" => bin("bvadd"),
                 _ => None, // any other op = unwalkable here; drop rather than approximate
             }
         }
@@ -856,7 +856,10 @@ fn i32_to_bv32_hex(v: i64) -> String {
 
 /// Render a BV32 expression tree, substituting var nodes from `subst`.
 /// Returns None if the tree contains an unrecognised node shape.
-fn emit_bv32_term(term: &Term, subst: &std::collections::HashMap<String, String>) -> Option<String> {
+fn emit_bv32_term(
+    term: &Term,
+    subst: &std::collections::HashMap<String, String>,
+) -> Option<String> {
     match term {
         Term::Var { name } => subst.get(name.as_str()).cloned(),
         Term::Const { value, .. } => {
@@ -869,9 +872,9 @@ fn emit_bv32_term(term: &Term, subst: &std::collections::HashMap<String, String>
         Term::Ctor { name, args } => match name.as_str() {
             "bv32.ite" if args.len() == 3 => {
                 // condition (Bool-sorted bvslt), true-branch, false-branch
-                let cond  = emit_bv32_bool_term(&args[0], subst)?;
-                let tb    = emit_bv32_term(&args[1], subst)?;
-                let fb    = emit_bv32_term(&args[2], subst)?;
+                let cond = emit_bv32_bool_term(&args[0], subst)?;
+                let tb = emit_bv32_term(&args[1], subst)?;
+                let fb = emit_bv32_term(&args[2], subst)?;
                 Some(format!("(ite {} {} {})", cond, tb, fb))
             }
             "bv32.neg" if args.len() == 1 => {
@@ -931,7 +934,10 @@ fn emit_bv32_term(term: &Term, subst: &std::collections::HashMap<String, String>
 }
 
 /// Render a BV32 Bool-sorted sub-expression (comparison operators).
-fn emit_bv32_bool_term(term: &Term, subst: &std::collections::HashMap<String, String>) -> Option<String> {
+fn emit_bv32_bool_term(
+    term: &Term,
+    subst: &std::collections::HashMap<String, String>,
+) -> Option<String> {
     match term {
         Term::Ctor { name, args } => match name.as_str() {
             "bv32.slt" if args.len() == 2 => {
@@ -998,7 +1004,11 @@ fn render_bv32_subject(subject: &Term) -> Option<String> {
     if subj_bv_args.is_empty() {
         Some(smt_quote(subj_name).to_string())
     } else {
-        Some(format!("({} {})", smt_quote(subj_name), subj_bv_args.join(" ")))
+        Some(format!(
+            "({} {})",
+            smt_quote(subj_name),
+            subj_bv_args.join(" ")
+        ))
     }
 }
 
@@ -1043,8 +1053,7 @@ fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
             _ => return None,
         };
         let node: serde_json::Value = serde_json::from_str(json_str).ok()?;
-        let empty: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+        let empty: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let walked = render_crc_bv_json(&node, &empty)?;
         return Some(format!("(= {} {})", asserted, walked));
     }
@@ -1129,11 +1138,11 @@ fn emit_bv32_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
     // G2b: synthetic comparison-bound atoms over bv32 subjects.
     // int32.{lt,lte,gt,gte}-const(subject, IntConst) → (bvs{lt,le,gt,ge} subject_bv hex)
     let cmp_smt = match name {
-        "int32.lt-const"  => Some("bvslt"),
+        "int32.lt-const" => Some("bvslt"),
         "int32.lte-const" => Some("bvsle"),
-        "int32.gt-const"  => Some("bvsgt"),
+        "int32.gt-const" => Some("bvsgt"),
         "int32.gte-const" => Some("bvsge"),
-        _                 => None,
+        _ => None,
     };
     if let Some(bv_op) = cmp_smt {
         if args.len() == 2 {
@@ -1747,15 +1756,19 @@ fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, Ctor
                     // args[0] must be a Ctor; its args (the int literals at the
                     // call-site) are rendered as BV32 hex by emit_bv32_theory_atomic,
                     // so we must declare the ctor with BV32 argument sorts too.
-                    if let Term::Ctor { name: subj_name, args: subj_args } = &args[0] {
+                    if let Term::Ctor {
+                        name: subj_name,
+                        args: subj_args,
+                    } = &args[0]
+                    {
                         let arity = subj_args.len();
-                        let arg_sorts: Vec<String> = (0..arity)
-                            .map(|_| bv32_sort.to_string())
-                            .collect();
-                        out.entry(subj_name.clone()).or_insert_with(|| CtorSignature {
-                            args: arg_sorts,
-                            ret: bv32_sort.to_string(),
-                        });
+                        let arg_sorts: Vec<String> =
+                            (0..arity).map(|_| bv32_sort.to_string()).collect();
+                        out.entry(subj_name.clone())
+                            .or_insert_with(|| CtorSignature {
+                                args: arg_sorts,
+                                ret: bv32_sort.to_string(),
+                            });
                     }
                 }
                 return;
@@ -1985,9 +1998,9 @@ const BV32_EQ_CONST: &str = "int32.eq-const";
 /// These are produced by `apply_bv32_contagion` when a sibling `<`/`<=`/`>`/`>=`
 /// atom appears over a term that is also the subject of an `int32.eq-bv-expr` atom.
 /// The emitter renders them as the corresponding BV signed-comparison operator.
-const BV32_LT_CONST:  &str = "int32.lt-const";
+const BV32_LT_CONST: &str = "int32.lt-const";
 const BV32_LTE_CONST: &str = "int32.lte-const";
-const BV32_GT_CONST:  &str = "int32.gt-const";
+const BV32_GT_CONST: &str = "int32.gt-const";
 const BV32_GTE_CONST: &str = "int32.gte-const";
 
 /// Collect the set of ctor subjects (full Term::Ctor) that appear as args[0]
@@ -2059,11 +2072,11 @@ fn promote_bv32_siblings_formula(formula: &Formula, subjects: &[Term]) -> Formul
             // is an Int literal → synthetic int32.{lt,lte,gt,gte}-const atom.
             // The call is always normalised to args[0] by the Java lifter.
             let cmp_synthetic = match name.as_str() {
-                "<"  => Some(BV32_LT_CONST),
+                "<" => Some(BV32_LT_CONST),
                 "<=" => Some(BV32_LTE_CONST),
-                ">"  => Some(BV32_GT_CONST),
+                ">" => Some(BV32_GT_CONST),
                 ">=" => Some(BV32_GTE_CONST),
-                _    => None,
+                _ => None,
             };
             if let Some(synthetic) = cmp_synthetic {
                 if args.len() == 2 && subjects.contains(&args[0]) && is_int_const(&args[1]) {
@@ -2477,7 +2490,10 @@ mod b64_strong_tests {
             ],
             "table": std_table(),
         });
-        Term::Const { value: serde_json::Value::String(payload.to_string()), sort: s("String") }
+        Term::Const {
+            value: serde_json::Value::String(payload.to_string()),
+            sort: s("String"),
+        }
     }
 
     fn subject() -> Term {
@@ -2493,18 +2509,44 @@ mod b64_strong_tests {
     #[test]
     fn new_bv_ops_render() {
         let subst: std::collections::HashMap<String, String> =
-            [("b0".to_string(), "#x00000062".to_string())].into_iter().collect();
+            [("b0".to_string(), "#x00000062".to_string())]
+                .into_iter()
+                .collect();
         let mk = |op: &str| Term::Ctor {
             name: op.into(),
-            args: vec![Term::Var { name: "b0".into() }, Term::Const { value: serde_json::json!(8), sort: s("Int") }],
+            args: vec![
+                Term::Var { name: "b0".into() },
+                Term::Const {
+                    value: serde_json::json!(8),
+                    sort: s("Int"),
+                },
+            ],
         };
-        assert_eq!(emit_bv32_term(&mk("bv32.shl"), &subst).unwrap(),  "(bvshl #x00000062 #x00000008)");
-        assert_eq!(emit_bv32_term(&mk("bv32.lshr"), &subst).unwrap(), "(bvlshr #x00000062 #x00000008)");
-        assert_eq!(emit_bv32_term(&mk("bv32.or"), &subst).unwrap(),   "(bvor #x00000062 #x00000008)");
-        assert_eq!(emit_bv32_term(&mk("bv32.add"), &subst).unwrap(),  "(bvadd #x00000062 #x00000008)");
+        assert_eq!(
+            emit_bv32_term(&mk("bv32.shl"), &subst).unwrap(),
+            "(bvshl #x00000062 #x00000008)"
+        );
+        assert_eq!(
+            emit_bv32_term(&mk("bv32.lshr"), &subst).unwrap(),
+            "(bvlshr #x00000062 #x00000008)"
+        );
+        assert_eq!(
+            emit_bv32_term(&mk("bv32.or"), &subst).unwrap(),
+            "(bvor #x00000062 #x00000008)"
+        );
+        assert_eq!(
+            emit_bv32_term(&mk("bv32.add"), &subst).unwrap(),
+            "(bvadd #x00000062 #x00000008)"
+        );
         // Recurrence keystone ops (paper 26): multiply + xor for MT-style seeding.
-        assert_eq!(emit_bv32_term(&mk("bv32.mul"), &subst).unwrap(),  "(bvmul #x00000062 #x00000008)");
-        assert_eq!(emit_bv32_term(&mk("bv32.xor"), &subst).unwrap(),  "(bvxor #x00000062 #x00000008)");
+        assert_eq!(
+            emit_bv32_term(&mk("bv32.mul"), &subst).unwrap(),
+            "(bvmul #x00000062 #x00000008)"
+        );
+        assert_eq!(
+            emit_bv32_term(&mk("bv32.xor"), &subst).unwrap(),
+            "(bvxor #x00000062 #x00000008)"
+        );
     }
 
     #[test]
@@ -2514,10 +2556,18 @@ mod b64_strong_tests {
         //   mt = 1812433253 * (mt ^ (mt >> 30)) + i      (i concrete = 1)
         // over a prior scalar `mt` substituted to a bv32 literal.
         let subst: std::collections::HashMap<String, String> =
-            [("mt".to_string(), "#x012bd6e8".to_string())].into_iter().collect();
+            [("mt".to_string(), "#x012bd6e8".to_string())]
+                .into_iter()
+                .collect();
         let v = || Term::Var { name: "mt".into() };
-        let c = |n: i64| Term::Const { value: serde_json::json!(n), sort: s("Int") };
-        let ctor = |name: &str, args: Vec<Term>| Term::Ctor { name: name.into(), args };
+        let c = |n: i64| Term::Const {
+            value: serde_json::json!(n),
+            sort: s("Int"),
+        };
+        let ctor = |name: &str, args: Vec<Term>| Term::Ctor {
+            name: name.into(),
+            args,
+        };
         // mt >> 30
         let shifted = ctor("bv32.lshr", vec![v(), c(30)]);
         // mt ^ (mt >> 30)
@@ -2539,18 +2589,31 @@ mod b64_strong_tests {
         //   (y & 1) == 1 ? MAG01[1] : MAG01[0]
         // → bv32.ite(bv32.eq(bv32.and(y,1),1), 0x9908b0df, 0x0)
         let subst: std::collections::HashMap<String, String> =
-            [("y".to_string(), "#x00000003".to_string())].into_iter().collect();
+            [("y".to_string(), "#x00000003".to_string())]
+                .into_iter()
+                .collect();
         let v = || Term::Var { name: "y".into() };
-        let c = |n: i64| Term::Const { value: serde_json::json!(n), sort: s("Int") };
-        let ctor = |name: &str, args: Vec<Term>| Term::Ctor { name: name.into(), args };
+        let c = |n: i64| Term::Const {
+            value: serde_json::json!(n),
+            sort: s("Int"),
+        };
+        let ctor = |name: &str, args: Vec<Term>| Term::Ctor {
+            name: name.into(),
+            args,
+        };
         let low = ctor("bv32.and", vec![v(), c(1)]);
         let cond = ctor("bv32.eq", vec![low, c(1)]);
         let ite = ctor("bv32.ite", vec![cond, c(0x9908b0dfu32 as i64), c(0)]);
         let rendered = emit_bv32_term(&ite, &subst).expect("MAG01 gate must render");
         // bvand then = compare then ite over the two MAG01 entries.
-        assert!(rendered.starts_with("(ite (= (bvand #x00000003 #x00000001) #x00000001)"),
-            "gate must render as ite over the low-bit equality: {rendered}");
-        assert!(rendered.contains("#x9908b0df"), "MAG01[1] entry missing: {rendered}");
+        assert!(
+            rendered.starts_with("(ite (= (bvand #x00000003 #x00000001) #x00000001)"),
+            "gate must render as ite over the low-bit equality: {rendered}"
+        );
+        assert!(
+            rendered.contains("#x9908b0df"),
+            "MAG01[1] entry missing: {rendered}"
+        );
     }
 
     #[test]
@@ -2559,22 +2622,52 @@ mod b64_strong_tests {
             .expect("str.eq-bv-blocks must render");
         // Subject equality, let-bound bytes, four chars via str.from_code, the
         // walked ops, and the 6-bit mask all present.
-        assert!(rendered.starts_with("(= "), "must be an equality: {rendered}");
-        assert!(rendered.contains("(let ((b0 #x00000062) (b1 #x00000061) (b2 #x00000072))"),
-            "bytes must be let-bound to the literal's UTF-8 bytes: {rendered}");
-        assert!(rendered.contains("str.from_code"), "char bridge missing: {rendered}");
-        assert_eq!(rendered.matches("str.from_code").count(), 4, "exactly 4 output chars: {rendered}");
-        assert!(rendered.contains("bvlshr"), "extraction shift op missing: {rendered}");
-        assert!(rendered.contains("bvshl"),  "accumulation shift op missing: {rendered}");
-        assert!(rendered.contains("bvadd"),  "accumulation add op missing: {rendered}");
-        assert!(rendered.contains("#x0000003f"), "MASK_6BITS (0x3f) missing: {rendered}");
+        assert!(
+            rendered.starts_with("(= "),
+            "must be an equality: {rendered}"
+        );
+        assert!(
+            rendered.contains("(let ((b0 #x00000062) (b1 #x00000061) (b2 #x00000072))"),
+            "bytes must be let-bound to the literal's UTF-8 bytes: {rendered}"
+        );
+        assert!(
+            rendered.contains("str.from_code"),
+            "char bridge missing: {rendered}"
+        );
+        assert_eq!(
+            rendered.matches("str.from_code").count(),
+            4,
+            "exactly 4 output chars: {rendered}"
+        );
+        assert!(
+            rendered.contains("bvlshr"),
+            "extraction shift op missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("bvshl"),
+            "accumulation shift op missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("bvadd"),
+            "accumulation add op missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("#x0000003f"),
+            "MASK_6BITS (0x3f) missing: {rendered}"
+        );
         // The table-ite must carry walked codepoints, e.g. 'Y'=89, 'm'=109.
-        assert!(rendered.contains(" 89 "), "table codepoint 89 ('Y') missing: {rendered}");
+        assert!(
+            rendered.contains(" 89 "),
+            "table codepoint 89 ('Y') missing: {rendered}"
+        );
     }
 
     #[test]
     fn malformed_payload_drops_atom() {
-        let bad = Term::Const { value: serde_json::Value::String("not json".into()), sort: s("String") };
+        let bad = Term::Const {
+            value: serde_json::Value::String("not json".into()),
+            sort: s("String"),
+        };
         assert!(emit_b64_strong_blocks(&subject(), &bad).is_none());
     }
 
@@ -2586,7 +2679,9 @@ mod b64_strong_tests {
     fn run_claim(claim: &str) -> String {
         use std::io::Write;
         use std::process::{Command, Stdio};
-        let subj = Term::Var { name: "subj".into() };
+        let subj = Term::Var {
+            name: "subj".into(),
+        };
         let atom = emit_string_theory_atomic("str.eq-bv-blocks", &[subj, bar_payload()]).unwrap();
         let claim_lit = format!("\"{}\"", claim);
         // Assert the strong-tier definition AND the sworn equality over the same
@@ -2595,10 +2690,19 @@ mod b64_strong_tests {
             "(set-logic ALL)\n(declare-const subj String)\n\
              (assert {atom})\n(assert (= subj {claim_lit}))\n(check-sat)\n"
         );
-        let mut child = Command::new("z3").args(["-smt2","-in"])
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-            .spawn().expect("spawn z3");
-        child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+        let mut child = Command::new("z3")
+            .args(["-smt2", "-in"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn z3");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(script.as_bytes())
+            .unwrap();
         let out = child.wait_with_output().unwrap();
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
@@ -2611,11 +2715,17 @@ mod b64_strong_tests {
             return;
         }
         let good = run_claim("YmFy");
-        assert!(good.starts_with("sat"),  "GOOD claim YmFy must be sat; got: {good}");
+        assert!(
+            good.starts_with("sat"),
+            "GOOD claim YmFy must be sat; got: {good}"
+        );
         // ZmFy is alphabet-valid (every char in the standard table) but WRONG.
         // Only the block equations can refute it.
         let bad = run_claim("ZmFy");
-        assert!(bad.starts_with("unsat"), "alphabet-valid-but-wrong ZmFy must be unsat; got: {bad}");
+        assert!(
+            bad.starts_with("unsat"),
+            "alphabet-valid-but-wrong ZmFy must be unsat; got: {bad}"
+        );
     }
 
     // ── PHASE 2: mod-3 tail emitter (sextet chars + AST-resolved '=' pad) ──
@@ -2665,7 +2775,10 @@ mod b64_strong_tests {
             "table": std_table(),
             "pad_chars": [61],
         });
-        Term::Const { value: serde_json::Value::String(payload.to_string()), sort: s("String") }
+        Term::Const {
+            value: serde_json::Value::String(payload.to_string()),
+            sort: s("String"),
+        }
     }
     fn tail1_payload() -> Term {
         // "f" = [102]; case 1: >>2, <<4 ; + 2 '=' pads.
@@ -2679,37 +2792,90 @@ mod b64_strong_tests {
             "table": std_table(),
             "pad_chars": [61, 61],
         });
-        Term::Const { value: serde_json::Value::String(payload.to_string()), sort: s("String") }
+        Term::Const {
+            value: serde_json::Value::String(payload.to_string()),
+            sort: s("String"),
+        }
     }
 
     #[test]
     fn tail_emits_pad_chars_as_literal_codepoints() {
-        let r2 = emit_string_theory_atomic("str.eq-bv-blocks",
-            &[Term::Var { name: "subj".into() }, tail2_payload()]).unwrap();
+        let r2 = emit_string_theory_atomic(
+            "str.eq-bv-blocks",
+            &[
+                Term::Var {
+                    name: "subj".into(),
+                },
+                tail2_payload(),
+            ],
+        )
+        .unwrap();
         // 3 sextet + 1 pad = 4 chars; pad rendered as (str.from_code 61).
-        assert_eq!(r2.matches("str.from_code").count(), 4, "2-byte tail: 3 sextet + 1 pad: {r2}");
-        assert!(r2.contains("(str.from_code 61)"), "pad '=' (61) literal char missing: {r2}");
-        let r1 = emit_string_theory_atomic("str.eq-bv-blocks",
-            &[Term::Var { name: "subj".into() }, tail1_payload()]).unwrap();
+        assert_eq!(
+            r2.matches("str.from_code").count(),
+            4,
+            "2-byte tail: 3 sextet + 1 pad: {r2}"
+        );
+        assert!(
+            r2.contains("(str.from_code 61)"),
+            "pad '=' (61) literal char missing: {r2}"
+        );
+        let r1 = emit_string_theory_atomic(
+            "str.eq-bv-blocks",
+            &[
+                Term::Var {
+                    name: "subj".into(),
+                },
+                tail1_payload(),
+            ],
+        )
+        .unwrap();
         // 2 sextet + 2 pad = 4 chars.
-        assert_eq!(r1.matches("str.from_code").count(), 4, "1-byte tail: 2 sextet + 2 pad: {r1}");
-        assert_eq!(r1.matches("(str.from_code 61)").count(), 2, "two pad chars expected: {r1}");
+        assert_eq!(
+            r1.matches("str.from_code").count(),
+            4,
+            "1-byte tail: 2 sextet + 2 pad: {r1}"
+        );
+        assert_eq!(
+            r1.matches("(str.from_code 61)").count(),
+            2,
+            "two pad chars expected: {r1}"
+        );
     }
 
     fn run_tail_claim(payload: Term, claim: &str) -> String {
         use std::io::Write;
         use std::process::{Command, Stdio};
-        let atom = emit_string_theory_atomic("str.eq-bv-blocks",
-            &[Term::Var { name: "subj".into() }, payload]).unwrap();
+        let atom = emit_string_theory_atomic(
+            "str.eq-bv-blocks",
+            &[
+                Term::Var {
+                    name: "subj".into(),
+                },
+                payload,
+            ],
+        )
+        .unwrap();
         let script = format!(
             "(set-logic ALL)\n(declare-const subj String)\n\
              (assert {atom})\n(assert (= subj \"{claim}\"))\n(check-sat)\n"
         );
-        let mut child = Command::new("z3").args(["-smt2","-in"])
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-            .spawn().expect("spawn z3");
-        child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
-        String::from_utf8_lossy(&child.wait_with_output().unwrap().stdout).trim().to_string()
+        let mut child = Command::new("z3")
+            .args(["-smt2", "-in"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn z3");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(script.as_bytes())
+            .unwrap();
+        String::from_utf8_lossy(&child.wait_with_output().unwrap().stdout)
+            .trim()
+            .to_string()
     }
 
     #[test]
@@ -2720,21 +2886,31 @@ mod b64_strong_tests {
             return;
         }
         // 2-byte tail "ba" -> "YmE=". GOOD claim sat.
-        assert!(run_tail_claim(tail2_payload(), "YmE=").starts_with("sat"),
-            "GOOD 2-byte tail YmE= must be sat");
+        assert!(
+            run_tail_claim(tail2_payload(), "YmE=").starts_with("sat"),
+            "GOOD 2-byte tail YmE= must be sat"
+        );
         // "YmX=" is alphabet-valid (Y,m,X all in table; '=' is the sworn pad) but
         // WRONG (3rd char should be E, not X). Weak tier would discharge it; only
         // the tail sextet equations refute it.
-        assert!(run_tail_claim(tail2_payload(), "YmX=").starts_with("unsat"),
-            "alphabet-valid-but-wrong padded YmX= must be unsat");
+        assert!(
+            run_tail_claim(tail2_payload(), "YmX=").starts_with("unsat"),
+            "alphabet-valid-but-wrong padded YmX= must be unsat"
+        );
         // A claim with the WRONG pad count ("YmEX" instead of "YmE=") is refuted
         // by the pinned pad char.
-        assert!(run_tail_claim(tail2_payload(), "YmEX").starts_with("unsat"),
-            "wrong-pad YmEX must be unsat (pad char pinned)");
+        assert!(
+            run_tail_claim(tail2_payload(), "YmEX").starts_with("unsat"),
+            "wrong-pad YmEX must be unsat (pad char pinned)"
+        );
         // 1-byte tail "f" -> "Zg==". GOOD sat; alphabet-valid lie "ZX==" unsat.
-        assert!(run_tail_claim(tail1_payload(), "Zg==").starts_with("sat"),
-            "GOOD 1-byte tail Zg== must be sat");
-        assert!(run_tail_claim(tail1_payload(), "ZX==").starts_with("unsat"),
-            "alphabet-valid-but-wrong padded ZX== must be unsat");
+        assert!(
+            run_tail_claim(tail1_payload(), "Zg==").starts_with("sat"),
+            "GOOD 1-byte tail Zg== must be sat"
+        );
+        assert!(
+            run_tail_claim(tail1_payload(), "ZX==").starts_with("unsat"),
+            "alphabet-valid-but-wrong padded ZX== must be unsat"
+        );
     }
 }

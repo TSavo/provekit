@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use sugar_claim_envelope::{
-    mint_contract, Authoring, ClaimEnvelopeError, MintContractArgs, MintedEnvelope,
+    contract_cid, mint_contract, Authoring, ClaimEnvelopeError, MintContractArgs, MintedEnvelope,
 };
 use sugar_proof_envelope::Ed25519Seed;
 
@@ -185,6 +185,7 @@ fn args_with(
         body_discharge_refusal_reason: None,
         panic_loci: Vec::new(),
         class_shapes: Vec::new(),
+        source_warrants: Vec::new(),
         contract_name: "demo".into(),
         pre,
         post,
@@ -347,6 +348,54 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
 
 fn parse_envelope(m: &MintedEnvelope) -> serde_json::Value {
     serde_json::from_slice(&m.canonical_bytes).expect("json parse")
+}
+
+#[test]
+fn source_warrants_round_trip_without_changing_contract_cid() {
+    let mut args = args_with(None, None, Some(inv_true()));
+    let cid_without_warrant = contract_cid(&args);
+    args.source_warrants = vec![Value::object([
+        ("kind", Value::string("source-memento")),
+        ("role", Value::string("java.strong-universe")),
+        ("file", Value::string("src/Codec.java")),
+        ("source_function_name", Value::string("encode")),
+        (
+            "source_cid",
+            Value::string(format!("blake3-512:{}", "a".repeat(128))),
+        ),
+        (
+            "template_cid",
+            Value::string(format!("blake3-512:{}", "b".repeat(128))),
+        ),
+        (
+            "span",
+            Value::object([
+                ("start_line", Value::integer(10)),
+                ("start_col", Value::integer(4)),
+                ("end_line", Value::integer(14)),
+                ("end_col", Value::integer(5)),
+            ]),
+        ),
+    ])];
+
+    assert_eq!(
+        contract_cid(&args),
+        cid_without_warrant,
+        "source warrants are provenance, not logical contract identity"
+    );
+
+    let minted = mint_contract(&args).expect("mint");
+    assert_eq!(minted.contract_cid, cid_without_warrant);
+    let env = parse_envelope(&minted);
+    let warrants = env
+        .pointer("/header/sourceWarrants")
+        .and_then(|v| v.as_array())
+        .expect("sourceWarrants header array");
+    assert_eq!(warrants.len(), 1);
+    assert_eq!(warrants[0]["kind"], "source-memento");
+    assert_eq!(warrants[0]["file"], "src/Codec.java");
+    assert!(warrants[0].get("body_text").is_none());
+    assert!(warrants[0].get("ast_template").is_none());
 }
 
 // preHash / postHash / invHash are pure tooling-convenience derivations

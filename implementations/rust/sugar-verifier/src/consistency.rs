@@ -1126,10 +1126,24 @@ mod tests {
         // SAME callsite name -> one obligation -> and(<10, <5) -> SAT (e.g. 4)
         // -> the two bounds are the same contract and they agree.
         let mut pool = MementoPool::default();
-        insert_contract(&mut pool, "blake3-512:vendor10", name, lt(callg.clone(), int(10)));
-        insert_contract(&mut pool, "blake3-512:consumer5", name, lt(callg.clone(), int(5)));
+        insert_contract(
+            &mut pool,
+            "blake3-512:vendor10",
+            name,
+            lt(callg.clone(), int(10)),
+        );
+        insert_contract(
+            &mut pool,
+            "blake3-512:consumer5",
+            name,
+            lt(callg.clone(), int(5)),
+        );
         let res = verify_consistency(&pool, &plan, &reg);
-        assert_eq!(res.len(), 1, "vendor<10 and consumer<5 are ONE contract: {res:?}");
+        assert_eq!(
+            res.len(),
+            1,
+            "vendor<10 and consumer<5 are ONE contract: {res:?}"
+        );
         assert_eq!(
             res[0].verdict,
             ObligationVerdict::Discharged,
@@ -1146,8 +1160,18 @@ mod tests {
         // because it never thought of them as two separate things.
         let gtp = |a: Json, b: Json| json!({"kind":"atomic","name":">","args":[a, b]});
         let mut pool = MementoPool::default();
-        insert_contract(&mut pool, "blake3-512:vendorGt10", name, gtp(callg.clone(), int(10)));
-        insert_contract(&mut pool, "blake3-512:consumerLt5", name, lt(callg.clone(), int(5)));
+        insert_contract(
+            &mut pool,
+            "blake3-512:vendorGt10",
+            name,
+            gtp(callg.clone(), int(10)),
+        );
+        insert_contract(
+            &mut pool,
+            "blake3-512:consumerLt5",
+            name,
+            lt(callg.clone(), int(5)),
+        );
         let res = verify_consistency(&pool, &plan, &reg);
         assert_eq!(res.len(), 1, "still ONE contract: {res:?}");
         assert_eq!(

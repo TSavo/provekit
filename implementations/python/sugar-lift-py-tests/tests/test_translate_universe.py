@@ -186,6 +186,35 @@ def test_universe_row_emitted_for_translate_callee(vendor_path):
     assert any(d.name.endswith("::assertion") and "urlsafe" in d.name for d in out.decls)
 
 
+def test_universe_assertion_carries_source_warrant(vendor_path):
+    vendor_path("venduniv_warrant", VENDOR_TRANSLATE)
+    out = _lift(
+        """
+        import venduniv_warrant
+
+        def test_urlsafe():
+            assert venduniv_warrant.urlsafe("abc") == "abc"
+        """
+    )
+
+    decl = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion") and "venduniv_warrant.urlsafe" in d.name
+    )
+    assert len(decl.source_warrants) == 1
+    warrant = decl.source_warrants[0]
+    assert warrant["kind"] == "source-memento"
+    assert warrant["role"] == "python.translate-universe"
+    assert warrant["source_function_name"] == "urlsafe"
+    assert warrant["file"].endswith("venduniv_warrant.py")
+    assert warrant["source_cid"].startswith("blake3-512:")
+    assert warrant["template_cid"].startswith("blake3-512:")
+    assert warrant["span"]["start_line"] > 0
+    assert "body_text" not in warrant
+    assert "ast_template" not in warrant
+
+
 def test_universe_row_emitted_once_per_base_across_tests(vendor_path):
     # Same callee + same concrete args in TWO test functions: the bases
     # collapse cross-location (EUF), and the bundle must carry exactly ONE

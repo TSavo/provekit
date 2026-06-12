@@ -414,8 +414,7 @@ pub(crate) fn routes_to_string_theory(name: &str, args: &[Term]) -> bool {
                 && is_string_const(&args[0])
         )
     };
-    let is_string_like_const =
-        |t: &Term| is_string_const(t) || is_bytes_wrapped_string_const(t);
+    let is_string_like_const = |t: &Term| is_string_const(t) || is_bytes_wrapped_string_const(t);
     let is_routable_subject = |t: &Term| {
         // A string const is always a String. A CTOR subject string-routes only
         // when it is string-tainted (appears in a string-theory predicate);

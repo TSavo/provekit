@@ -233,8 +233,8 @@ mod kit_declaration_schema_tests {
             "residueCategories": []
         });
 
-        let err = serde_json::from_value::<KitDeclaration>(missing_rpc)
-            .expect_err("rpc is required");
+        let err =
+            serde_json::from_value::<KitDeclaration>(missing_rpc).expect_err("rpc is required");
 
         assert!(
             err.to_string().contains("rpc"),
@@ -479,6 +479,11 @@ pub struct MintContractArgs {
     /// evidence for the verifier's attribute-safety discharge arm. Empty omits
     /// the key so class-free units keep their existing bytes.
     pub class_shapes: Vec<Arc<Value>>,
+    /// Source-oracle warrants for universe/generalized claims. These are lean
+    /// SourceMementos: file + span + source/template CIDs, never source text.
+    /// They are signed provenance carried in the contract header after the
+    /// logical content CID is computed, so they do not change `contract_cid`.
+    pub source_warrants: Vec<Arc<Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -981,6 +986,12 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
         kind_specific.push((
             "classShapes".into(),
             Value::array(args.class_shapes.clone()),
+        ));
+    }
+    if !args.source_warrants.is_empty() {
+        kind_specific.push((
+            "sourceWarrants".into(),
+            Value::array(args.source_warrants.clone()),
         ));
     }
     // Execution-witness evidence: PROVENANCE (how-discharged), carried in the
@@ -1726,6 +1737,7 @@ mod tests {
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             class_shapes: Vec::new(),
+            source_warrants: Vec::new(),
             contract_name: "x".into(),
             pre: None,
             post: None,
@@ -1777,6 +1789,7 @@ mod tests {
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             class_shapes: Vec::new(),
+            source_warrants: Vec::new(),
             contract_name: "parseInt".into(),
             pre: Some(pre),
             post: None,
@@ -1813,6 +1826,7 @@ mod tests {
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             class_shapes: Vec::new(),
+            source_warrants: Vec::new(),
             contract_name: "checked_add_u8.postcondition".into(),
             pre: None,
             post: Some(post),
@@ -2021,6 +2035,7 @@ mod tests {
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             class_shapes: Vec::new(),
+            source_warrants: Vec::new(),
             contract_name: name.into(),
             pre: None,
             post: Some(post),

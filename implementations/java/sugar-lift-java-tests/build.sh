@@ -11,23 +11,25 @@ OUT="${1:-$HERE/out}"
 
 mkdir -p "$OUT"
 
-# JavaTestAssertionsRpc uses com.sun.source (jdk.compiler module). We compile
-# without --release because --add-exports is incompatible with --release for
-# system modules. Written to JDK 21 language level.
-javac \
-  --add-exports jdk.compiler/com.sun.source.tree=ALL-UNNAMED \
-  --add-exports jdk.compiler/com.sun.source.util=ALL-UNNAMED \
-  --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
-  -source 21 -target 21 \
-  -d "$OUT" \
-  "$HERE/src/JavaTestAssertionsRpc.java" \
-  "$HERE/src/JavaPanamaFfmRpc.java"
-
 # JavaJunitWitnessRpc: JDK-only, pure Java. Uses --release 21.
 javac \
   --release 21 \
   -proc:none \
   -d "$OUT" \
   "$HERE/src/JavaJunitWitnessRpc.java"
+
+# JavaTestAssertionsRpc and JavaSourceOracle use com.sun.source (jdk.compiler
+# module). We compile without --release because --add-exports is incompatible
+# with --release for system modules. Written to JDK 21 language level.
+javac \
+  --add-exports jdk.compiler/com.sun.source.tree=ALL-UNNAMED \
+  --add-exports jdk.compiler/com.sun.source.util=ALL-UNNAMED \
+  --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+  -source 21 -target 21 \
+  -cp "$OUT" \
+  -d "$OUT" \
+  "$HERE/src/JavaTestAssertionsRpc.java" \
+  "$HERE/src/JavaPanamaFfmRpc.java" \
+  "$HERE/src/JavaSourceOracle.java"
 
 echo "Built to $OUT"

@@ -66,7 +66,10 @@ impl std::error::Error for RegexError {}
 /// `(str.in_re subject …)`.
 pub fn regex_to_regln(pattern: &str) -> Result<String, RegexError> {
     let chars: Vec<char> = pattern.chars().collect();
-    let mut p = Parser { chars: &chars, pos: 0 };
+    let mut p = Parser {
+        chars: &chars,
+        pos: 0,
+    };
     let node = p.parse_alternation()?;
     if p.pos != chars.len() {
         return Err(RegexError::Malformed(format!(
@@ -88,7 +91,10 @@ enum Node {
     /// Any character (the dot). Lowered to the non-newline complement.
     AnyChar,
     /// A character class: ranges/singletons, optionally negated.
-    Class { items: Vec<ClassItem>, negated: bool },
+    Class {
+        items: Vec<ClassItem>,
+        negated: bool,
+    },
     /// Concatenation of nodes (re.++).
     Concat(Vec<Node>),
     /// Alternation of nodes (re.union).
@@ -130,7 +136,11 @@ impl Node {
                                 format!("(str.to_re \"{}\")", esc_smt_str(*c))
                             }
                             ClassItem::Range(a, b) => {
-                                format!("(re.range \"{}\" \"{}\")", esc_smt_str(*a), esc_smt_str(*b))
+                                format!(
+                                    "(re.range \"{}\" \"{}\")",
+                                    esc_smt_str(*a),
+                                    esc_smt_str(*b)
+                                )
                             }
                         })
                         .collect::<Vec<_>>(),
@@ -301,9 +311,7 @@ impl<'a> Parser<'a> {
         // lazy/reluctant marker (X*?) silently changes match semantics — refuse
         // by name rather than render a language the author did not write.
         match self.peek() {
-            Some('+') => Err(RegexError::NotRegular(
-                "possessive quantifier".to_string(),
-            )),
+            Some('+') => Err(RegexError::NotRegular("possessive quantifier".to_string())),
             Some('?') => Err(RegexError::NotRegular(
                 "reluctant/lazy quantifier".to_string(),
             )),
@@ -332,7 +340,9 @@ impl<'a> Parser<'a> {
             Node::Loop(Box::new(atom), lo, Some(lo))
         };
         if !self.eat('}') {
-            return Err(RegexError::Malformed("unterminated { } quantifier".to_string()));
+            return Err(RegexError::Malformed(
+                "unterminated { } quantifier".to_string(),
+            ));
         }
         Ok(node)
     }
@@ -396,14 +406,14 @@ impl<'a> Parser<'a> {
                 // Lookahead (?= (?! , lookbehind (?<= (?<! — NOT regular.
                 Some('=') => return Err(RegexError::NotRegular("lookahead (?=…)".to_string())),
                 Some('!') => {
-                    return Err(RegexError::NotRegular("negative lookahead (?!…)".to_string()))
+                    return Err(RegexError::NotRegular(
+                        "negative lookahead (?!…)".to_string(),
+                    ))
                 }
                 Some('<') => {
                     let m2 = self.chars.get(self.pos + 2).copied();
                     return match m2 {
-                        Some('=') => {
-                            Err(RegexError::NotRegular("lookbehind (?<=…)".to_string()))
-                        }
+                        Some('=') => Err(RegexError::NotRegular("lookbehind (?<=…)".to_string())),
                         Some('!') => Err(RegexError::NotRegular(
                             "negative lookbehind (?<!…)".to_string(),
                         )),
@@ -421,9 +431,7 @@ impl<'a> Parser<'a> {
                     ))
                 }
                 // (?>…) atomic group — not regular.
-                Some('>') => {
-                    return Err(RegexError::NotRegular("atomic group (?>…)".to_string()))
-                }
+                Some('>') => return Err(RegexError::NotRegular("atomic group (?>…)".to_string())),
                 // Inline flags (?i) (?s) (?m)… silently change semantics — refuse.
                 Some(c) if "imsxuU".contains(c) => {
                     return Err(RegexError::NotRegular(format!("inline flag (?{c}…)")))
@@ -522,7 +530,9 @@ impl<'a> Parser<'a> {
             // Backreference \1..\9 — NOT regular.
             '1'..='9' => Err(RegexError::NotRegular(format!("backreference \\{c}"))),
             // \k<name> backreference.
-            'k' => Err(RegexError::NotRegular("backreference \\k<name>".to_string())),
+            'k' => Err(RegexError::NotRegular(
+                "backreference \\k<name>".to_string(),
+            )),
             // Predefined classes.
             'd' => Ok(class_digit(false)),
             'D' => Ok(class_digit(true)),
@@ -541,8 +551,12 @@ impl<'a> Parser<'a> {
             // they are NOT a regular-language operator in the str.in_re model.
             'b' => Err(RegexError::NotRegular("word boundary \\b".to_string())),
             'B' => Err(RegexError::NotRegular("non-word-boundary \\B".to_string())),
-            'A' => Err(RegexError::NotRegular("start-of-input anchor \\A".to_string())),
-            'Z' | 'z' => Err(RegexError::NotRegular("end-of-input anchor \\Z".to_string())),
+            'A' => Err(RegexError::NotRegular(
+                "start-of-input anchor \\A".to_string(),
+            )),
+            'Z' | 'z' => Err(RegexError::NotRegular(
+                "end-of-input anchor \\Z".to_string(),
+            )),
             'G' => Err(RegexError::NotRegular("match-reset anchor \\G".to_string())),
             // Otherwise: an escaped metacharacter or literal.
             other => Ok(Node::Lit(other)),
@@ -654,7 +668,10 @@ mod tests {
 
     #[test]
     fn literal_string() {
-        assert_eq!(ok("foo"), "(re.++ (str.to_re \"f\") (str.to_re \"o\") (str.to_re \"o\"))");
+        assert_eq!(
+            ok("foo"),
+            "(re.++ (str.to_re \"f\") (str.to_re \"o\") (str.to_re \"o\"))"
+        );
     }
 
     #[test]
@@ -736,7 +753,10 @@ mod tests {
     #[test]
     fn escaped_metachar_literal() {
         assert_eq!(ok("\\."), "(str.to_re \".\")");
-        assert_eq!(ok("a\\+b"), "(re.++ (str.to_re \"a\") (str.to_re \"+\") (str.to_re \"b\"))");
+        assert_eq!(
+            ok("a\\+b"),
+            "(re.++ (str.to_re \"a\") (str.to_re \"+\") (str.to_re \"b\"))"
+        );
     }
 
     #[test]
@@ -751,59 +771,89 @@ mod tests {
     #[test]
     fn refuse_backreference() {
         let e = regex_to_regln("(a)\\1").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("backreference")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("backreference")),
+            "{e}"
+        );
     }
 
     #[test]
     fn refuse_lookahead() {
         let e = regex_to_regln("foo(?=bar)").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("lookahead")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("lookahead")),
+            "{e}"
+        );
     }
 
     #[test]
     fn refuse_negative_lookahead() {
         let e = regex_to_regln("foo(?!bar)").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("lookahead")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("lookahead")),
+            "{e}"
+        );
     }
 
     #[test]
     fn refuse_lookbehind() {
         let e = regex_to_regln("(?<=foo)bar").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("lookbehind")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("lookbehind")),
+            "{e}"
+        );
     }
 
     #[test]
     fn refuse_atomic_group() {
         let e = regex_to_regln("(?>ab)").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("atomic")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("atomic")),
+            "{e}"
+        );
     }
 
     #[test]
     fn refuse_possessive() {
         let e = regex_to_regln("a*+").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("possessive")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("possessive")),
+            "{e}"
+        );
     }
 
     #[test]
     fn refuse_word_boundary() {
         let e = regex_to_regln("\\bfoo\\b").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("boundary")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("boundary")),
+            "{e}"
+        );
     }
 
     #[test]
     fn refuse_inline_flag() {
         let e = regex_to_regln("(?i)foo").unwrap_err();
-        assert!(matches!(e, RegexError::NotRegular(ref s) if s.contains("inline flag")), "{e}");
+        assert!(
+            matches!(e, RegexError::NotRegular(ref s) if s.contains("inline flag")),
+            "{e}"
+        );
     }
 
     #[test]
     fn malformed_unterminated_group() {
-        assert!(matches!(regex_to_regln("(ab").unwrap_err(), RegexError::Malformed(_)));
+        assert!(matches!(
+            regex_to_regln("(ab").unwrap_err(),
+            RegexError::Malformed(_)
+        ));
     }
 
     #[test]
     fn malformed_unterminated_class() {
-        assert!(matches!(regex_to_regln("[a-z").unwrap_err(), RegexError::Malformed(_)));
+        assert!(matches!(
+            regex_to_regln("[a-z").unwrap_err(),
+            RegexError::Malformed(_)
+        ));
     }
 
     // ── The SPOTLIGHT regex: a permissive email pattern ──

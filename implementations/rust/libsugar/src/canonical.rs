@@ -98,7 +98,14 @@ mod concept_excision_tests {
     // and its strip are finally deleted, this test goes with them.
     #[test]
     fn legacy_concept_prefix_is_cid_neutral() {
-        for op in ["literal", "comment", "add", "json-parse", "sql-query", "http-request"] {
+        for op in [
+            "literal",
+            "comment",
+            "add",
+            "json-parse",
+            "sql-query",
+            "http-request",
+        ] {
             let prefixed = local_op_cid(&format!("concept:{op}")).expect("prefixed");
             let bare = local_op_cid(op).expect("bare");
             assert_eq!(prefixed, bare, "concept:{op} must hash identically to {op}");

@@ -13,11 +13,11 @@ use sugar_ir_compiler::{
     Capabilities, CompileError, CompiledFormula, IrCompiler, PROTOCOL_VERSION,
 };
 
+pub mod derive_query;
 mod generated;
 mod isinstance_encoding;
 mod literal_encoding;
 pub mod regex_regln;
-pub mod derive_query;
 
 pub const DIALECT: &str = "smt-lib-v2.6";
 pub const COMPILER_NAME: &str = "smt-lib-reference";
@@ -152,9 +152,7 @@ fn walk_mixed_sort(
     use sugar_ir_types::{IrFormula, IrTerm};
     match formula {
         IrFormula::Atomic { name, args } => {
-            let is_real_ctor = |t: &IrTerm| {
-                matches!(t, IrTerm::Ctor { name, args } if !(name == "None" && args.is_empty()))
-            };
+            let is_real_ctor = |t: &IrTerm| matches!(t, IrTerm::Ctor { name, args } if !(name == "None" && args.is_empty()));
             if literal_encoding::routes_to_string_theory(name, args) {
                 // String regime: every non-None ctor in this atom gets SMT
                 // `String` return sort from the string-theory emitter.
@@ -197,9 +195,9 @@ fn walk_mixed_sort(
         IrFormula::And { operands }
         | IrFormula::Or { operands }
         | IrFormula::Not { operands }
-        | IrFormula::Implies { operands } => {
-            operands.iter().try_for_each(|o| walk_mixed_sort(o, regimes))
-        }
+        | IrFormula::Implies { operands } => operands
+            .iter()
+            .try_for_each(|o| walk_mixed_sort(o, regimes)),
         IrFormula::Forall { body, .. }
         | IrFormula::Exists { body, .. }
         | IrFormula::Choice { body, .. } => walk_mixed_sort(body, regimes),
@@ -319,7 +317,10 @@ mod tests {
     // went red.
     #[test]
     fn method_callresult_receiver_is_opaque_not_string() {
-        let inv = eq(ctor("method:to_string", vec![var("v")]), string_const("1.2.3"));
+        let inv = eq(
+            ctor("method:to_string", vec![var("v")]),
+            string_const("1.2.3"),
+        );
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
         assert!(
@@ -335,7 +336,10 @@ mod tests {
     #[test]
     fn method_callresult_string_equality_is_well_sorted_for_z3() {
         let z3 = which_z3().expect("z3 required for well-sortedness check");
-        let inv = eq(ctor("method:to_string", vec![var("v")]), string_const("1.2.3"));
+        let inv = eq(
+            ctor("method:to_string", vec![var("v")]),
+            string_const("1.2.3"),
+        );
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
         let out = run_z3(&z3, &script);
@@ -363,8 +367,11 @@ mod tests {
         // cleanly as UNSAT (see genuine_string_vs_int_conflict_still_caught_now_via_distinctness).
         // The named-error STOP is reserved for the REAL String-vs-Int collision:
         // a universe forces String, another row forces Int.
-        let subject = ctor("call:f", vec![serde_json::json!(
-            {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}})]);
+        let subject = ctor(
+            "call:f",
+            vec![serde_json::json!(
+            {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}})],
+        );
         let universe_row = string_theory_atom(
             "str.chars-in-set",
             vec![subject.clone(), string_const("abc")],
@@ -397,8 +404,11 @@ mod tests {
         // on satisfiability). The detector must not over-trigger.
         let mk = |v: i64| {
             eq(
-                ctor("call:f", vec![serde_json::json!(
-                    {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}})]),
+                ctor(
+                    "call:f",
+                    vec![serde_json::json!(
+                    {"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}})],
+                ),
                 serde_json::json!({"kind":"const","value":v,"sort":{"kind":"primitive","name":"Int"}}),
             )
         };
@@ -408,8 +418,11 @@ mod tests {
         // And the all-String twin: same ctor equated to two String literals.
         let mks = |s: &str| {
             eq(
-                ctor("call:g", vec![serde_json::json!(
-                    {"kind":"const","value":"x","sort":{"kind":"primitive","name":"String"}})]),
+                ctor(
+                    "call:g",
+                    vec![serde_json::json!(
+                    {"kind":"const","value":"x","sort":{"kind":"primitive","name":"String"}})],
+                ),
                 serde_json::json!({"kind":"const","value":s,"sort":{"kind":"primitive","name":"String"}}),
             )
         };
@@ -871,18 +884,26 @@ mod tests {
         // subscript is UNTAINTED (no string predicate over it) so the equality
         // stays opaque-Int, all consistent, z3 returns sat.
         let z3 = which_z3().expect("z3");
-        let sub = |key: &str| serde_json::json!({"kind":"ctor","name":"subscript","args":[
+        let sub = |key: &str| {
+            serde_json::json!({"kind":"ctor","name":"subscript","args":[
             {"kind":"ctor","name":"python:attribute","args":[{"kind":"var","name":"r"},{"kind":"const","value":"json","sort":{"kind":"primitive","name":"String"}}]},
-            {"kind":"const","value":key,"sort":{"kind":"primitive","name":"String"}}]});
+            {"kind":"const","value":key,"sort":{"kind":"primitive","name":"String"}}]})
+        };
         let inv = serde_json::json!({"kind":"and","operands":[
             {"kind":"not","operands":[{"kind":"atomic","name":"member","args":[
                 {"kind":"const","value":"double-slash","sort":{"kind":"primitive","name":"String"}}, sub("HTTP_HOST")]}]},
             {"kind":"atomic","name":"=","args":[sub("PATH_INFO"), {"kind":"const","value":"/double-slash","sort":{"kind":"primitive","name":"String"}}]}]});
         let parts = compile_asserted_to_parts(&inv).expect("must compile, no mixed-sort");
         let script = format!("{}{}", parts.preamble, parts.body);
-        assert!(!script.contains("String)"), "subscript must NOT be declared String-returning:\n{script}");
-        assert_eq!(run_z3(&z3, &script).trim(), "sat",
-            "the werkzeug shape is consistent, not a sort-error undecidable:\n{script}");
+        assert!(
+            !script.contains("String)"),
+            "subscript must NOT be declared String-returning:\n{script}"
+        );
+        assert_eq!(
+            run_z3(&z3, &script).trim(),
+            "sat",
+            "the werkzeug shape is consistent, not a sort-error undecidable:\n{script}"
+        );
     }
 
     #[test]
@@ -1145,10 +1166,7 @@ mod tests {
         // REFUSE BY NAME (backstop): a non-regular regex (lookahead) must NOT
         // render an approximated language. The emitter drops the atom; the row
         // never becomes an uninterpreted predicate.
-        let inv = string_theory_atom(
-            "str.in-regex",
-            vec![var("r"), string_const("foo(?=bar)")],
-        );
+        let inv = string_theory_atom("str.in-regex", vec![var("r"), string_const("foo(?=bar)")]);
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
         assert!(
@@ -1224,14 +1242,11 @@ mod tests {
         // STRUCTURAL: conjunction of negated str.contains, sorted+deduped,
         // quote escaped, no opaque strlit_ laundering, no uninterpreted
         // predicate fallback; the lone row is SAT (empty string qualifies).
-        let inv =
-            string_theory_atom("str.chars-not-in-set", vec![var("r"), string_const("/+/")]);
+        let inv = string_theory_atom("str.chars-not-in-set", vec![var("r"), string_const("/+/")]);
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
         assert!(
-            script.contains(
-                "(and (not (str.contains r \"+\")) (not (str.contains r \"/\")))"
-            ),
+            script.contains("(and (not (str.contains r \"+\")) (not (str.contains r \"/\")))"),
             "round-trip rendering wrong (must sort+dedup to +,/):\n{script}"
         );
         assert!(
@@ -1243,8 +1258,7 @@ mod tests {
                 && !script.contains("(declare-fun |str.chars-not-in-set|"),
             "chars-not-in-set must be a theory lowering, not an uninterpreted predicate:\n{script}"
         );
-        let single =
-            string_theory_atom("str.chars-not-in-set", vec![var("r"), string_const("+")]);
+        let single = string_theory_atom("str.chars-not-in-set", vec![var("r"), string_const("+")]);
         let single_parts = compile_asserted_to_parts(&single).expect("compile");
         let single_script = format!("{}{}", single_parts.preamble, single_parts.body);
         assert!(
@@ -1857,8 +1871,13 @@ mod tests {
         let inv = abs_bv_atom(-2147483648);
         let parts = compile_asserted_to_parts(&inv).expect("compile");
         let script = format!("{}{}", parts.preamble, parts.body);
-        for forbidden in &["declare-fun bv32", "declare-fun |bv32", "declare-fun bvslt",
-                            "declare-fun bvneg", "declare-fun ite"] {
+        for forbidden in &[
+            "declare-fun bv32",
+            "declare-fun |bv32",
+            "declare-fun bvslt",
+            "declare-fun bvneg",
+            "declare-fun ite",
+        ] {
             assert!(
                 !script.contains(forbidden),
                 "BV32 operator must not be declared as uninterpreted: {forbidden}\n{script}"

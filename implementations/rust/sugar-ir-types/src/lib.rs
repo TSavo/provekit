@@ -7,7 +7,6 @@
 use serde::{Deserialize, Serialize};
 use sugar_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 
-
 // Manual extension (not codegen): CLI-side canonicalization of ProofIR for
 // behavior identity. The kits emit ProofIR; the substrate computes the canonical
 // form before hashing. Alpha + pure-let normal form, solver-free.
@@ -4436,7 +4435,6 @@ impl From<serde_json::Error> for MigrationReceiptError {
         Self::new(err.to_string())
     }
 }
-
 
 /// The deterministic bytes a witness signature attests: the discharge CID
 /// PLUS the observation timestamp. The CID is the THEOREM-mode convergence

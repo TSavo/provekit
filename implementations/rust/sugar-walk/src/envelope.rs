@@ -187,6 +187,7 @@ pub fn mint_args(
         // identity or invalidate existing proofs.
         panic_loci,
         class_shapes: Vec::new(),
+        source_warrants: Vec::new(),
     })
 }
 
@@ -289,8 +290,7 @@ mod tests {
         assert_eq!(panic_loci[0]["panicLine"], expected_panic_line);
         assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
         assert_ne!(
-            panic_loci[0]["callee"],
-            "concept:panic-freedom.leaf.unwrap",
+            panic_loci[0]["callee"], "concept:panic-freedom.leaf.unwrap",
             "Rust v1 envelope writer must not emit the unwrap leaf concept alias"
         );
     }
@@ -389,8 +389,7 @@ mod tests {
         assert_eq!(panic_loci[0]["panicLine"], 3);
         assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
         assert_ne!(
-            panic_loci[0]["callee"],
-            "concept:panic-freedom.leaf.unwrap",
+            panic_loci[0]["callee"], "concept:panic-freedom.leaf.unwrap",
             "Rust v1 envelope writer must not emit the unwrap leaf concept alias"
         );
     }

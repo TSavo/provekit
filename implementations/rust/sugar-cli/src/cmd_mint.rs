@@ -2075,6 +2075,19 @@ fn mint_ir_document(
             }
             None => Vec::new(),
         };
+        let source_warrants_value = decl
+            .get("sourceWarrants")
+            .or_else(|| decl.get("source_warrants"));
+        let source_warrants: Vec<Arc<CValue>> = match source_warrants_value {
+            Some(Value::Array(arr)) => arr.iter().map(json_to_cvalue).collect(),
+            Some(value) => {
+                return Err(format!(
+                    "contract `{name}`: sourceWarrants must be an array, got {}",
+                    json_type_name(value)
+                ));
+            }
+            None => Vec::new(),
+        };
         let body_policy = body_discharge_policy_from_fields(
             decl.get("bodyDischargeEligible")
                 .or_else(|| decl.get("body_discharge_eligible")),
@@ -2181,6 +2194,7 @@ fn mint_ir_document(
             body_discharge_refusal_reason: body_discharge_refusal_reason.clone(),
             panic_loci,
             class_shapes,
+            source_warrants,
         };
 
         let ccid = contract_cid(&args);
@@ -2474,7 +2488,10 @@ fn mint_ir_document(
         None
     } else {
         let mut m = std::collections::BTreeMap::new();
-        m.insert("sugar.conjoinedImports".to_string(), conjoined_imports.join(","));
+        m.insert(
+            "sugar.conjoinedImports".to_string(),
+            conjoined_imports.join(","),
+        );
         Some(m)
     };
 
@@ -2583,8 +2600,6 @@ fn mint_witness_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     let cid = blake3_512_of(canonical.as_bytes());
     Ok((cid, canonical.into_bytes()))
 }
-
-
 
 /// Reduce a function-contract `fnName` to the bare symbol a harvested call
 /// ctor uses. Rust walk emits the bare ident already (`double`), so this is
@@ -2989,7 +3004,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn stamp_with_partial_profile_only_fills_pinned_axes() {
         // Profile floats `library`; only family + version get stamped.
@@ -3052,7 +3066,6 @@ mod tests {
             "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
     }
-
 
     #[test]
     fn resolve_kit_reads_project_config_aliases() {
@@ -3543,8 +3556,7 @@ mod tests {
         assert_eq!(panic_loci, &[locus]);
         assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
         assert_ne!(
-            panic_loci[0]["callee"],
-            "concept:panic-freedom.leaf.unwrap",
+            panic_loci[0]["callee"], "concept:panic-freedom.leaf.unwrap",
             "Rust v1 mint writer must not emit the unwrap leaf concept alias"
         );
     }
@@ -3913,8 +3925,7 @@ mod tests {
             "outBinding": "out",
             "post": {"kind": "atomic", "name": "p", "args": []}
         })];
-        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
-            .expect("mint");
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint");
 
         // The tie is recorded in the bundle metadata, sorted+deduped.
         let catalog = sugar_verifier::cbor_decode::decode(&minted.bytes).expect("decode");
@@ -3932,8 +3943,8 @@ mod tests {
         // commits to the exact deps it was conjoined against.
         fs::remove_file(imports.join(format!("{dep_b}.proof"))).unwrap();
         fs::write(imports.join("blake3-512:cccc.proof"), b"z").unwrap();
-        let minted2 = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
-            .expect("mint2");
+        let minted2 =
+            mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint2");
         assert_ne!(
             minted.filename_cid, minted2.filename_cid,
             "a changed dependency set must change the vendor bundle CID"
@@ -3941,8 +3952,8 @@ mod tests {
 
         // And re-mint against the SAME dependency set -> identical CID
         // (recompute-not-trust: the tie is deterministic).
-        let minted3 = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
-            .expect("mint3");
+        let minted3 =
+            mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint3");
         assert_eq!(
             minted2.filename_cid, minted3.filename_cid,
             "same dependency set must yield the same vendor bundle CID"
@@ -3951,14 +3962,19 @@ mod tests {
         // No imports -> no tie (metadata absent), so leaf bundles are unaffected.
         let leaf_root = temp_workspace("mint_import_tie_leaf");
         fs::create_dir_all(leaf_root.join("out")).unwrap();
-        let leaf = mint_ir_document(&ir, None, None, None, &leaf_root, &leaf_root.join("out"), true)
-            .expect("leaf mint");
+        let leaf = mint_ir_document(
+            &ir,
+            None,
+            None,
+            None,
+            &leaf_root,
+            &leaf_root.join("out"),
+            true,
+        )
+        .expect("leaf mint");
         let leaf_cat = sugar_verifier::cbor_decode::decode(&leaf.bytes).expect("decode leaf");
         assert!(
-            leaf_cat
-                .as_map()
-                .and_then(|m| m.get("metadata"))
-                .is_none(),
+            leaf_cat.as_map().and_then(|m| m.get("metadata")).is_none(),
             "a leaf with no imports carries no conjoined-imports tie"
         );
     }
@@ -4008,6 +4024,50 @@ mod tests {
                 .pointer("/metadata/library")
                 .and_then(|v| v.as_str()),
             Some("libsugar")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mint_ir_document_forwards_contract_source_warrants_to_header() {
+        let root = temp_workspace("mint_contract_source_warrants_forward");
+        let out_dir = root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        let source_warrant = json!({
+            "kind": "source-memento",
+            "role": "java.strong-universe",
+            "file": "src/Codec.java",
+            "source_function_name": "encode",
+            "source_cid": format!("blake3-512:{}", "a".repeat(128)),
+            "template_cid": format!("blake3-512:{}", "b".repeat(128)),
+            "span": {"start_line": 10, "start_col": 4, "end_line": 14, "end_col": 5},
+            "param_names": ["input"]
+        });
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "Codec.encode#euf#c:callresult_encode_a1(s:bar)::assertion",
+            "outBinding": "out",
+            "inv": {"kind": "atomic", "name": "str.chars-in-set", "args": []},
+            "sourceWarrants": [source_warrant]
+        })];
+
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint ir-document");
+        let catalog = sugar_verifier::cbor_decode::decode(&minted.bytes).expect("decode proof");
+        let header = contract_header(
+            &catalog,
+            "Codec.encode#euf#c:callresult_encode_a1(s:bar)::assertion",
+        );
+        let warrants = header["sourceWarrants"]
+            .as_array()
+            .expect("sourceWarrants header array");
+        assert_eq!(warrants.len(), 1);
+        assert_eq!(warrants[0]["role"], "java.strong-universe");
+        assert_eq!(warrants[0]["file"], "src/Codec.java");
+        assert!(
+            warrants[0].get("body_text").is_none() && warrants[0].get("ast_template").is_none(),
+            "source warrants must be lean mementos, not decompressed source: {warrants:#?}"
         );
 
         let _ = std::fs::remove_dir_all(root);
@@ -4176,6 +4236,7 @@ mod tests {
             body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             class_shapes: Vec::new(),
+            source_warrants: Vec::new(),
         })
         .expect("mint contract");
         let mut env: Value =

@@ -103,15 +103,12 @@ impl PredicateDescriptor for NotNullPredicate {
 fn is_guard_for(formula: &IrFormula, var_name: &str) -> bool {
     match formula {
         IrFormula::Atomic { name, args } => {
-            name.as_str() == panic_freedom::IS_SOME
-                && has_var(args, var_name)
+            name.as_str() == panic_freedom::IS_SOME && has_var(args, var_name)
         }
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    return name.as_str()
-                        == panic_freedom::IS_NONE
-                        && has_var(args, var_name);
+                    return name.as_str() == panic_freedom::IS_NONE && has_var(args, var_name);
                 }
             }
             false
@@ -136,8 +133,7 @@ fn formula_contains_guard_for(formula: &IrFormula, var_name: &str) -> bool {
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    let is_guard = name.as_str()
-                        == panic_freedom::IS_NONE;
+                    let is_guard = name.as_str() == panic_freedom::IS_NONE;
                     let has_var = args.iter().any(|t| match t {
                         IrTerm::Var { name } => name == var_name,
                         _ => false,

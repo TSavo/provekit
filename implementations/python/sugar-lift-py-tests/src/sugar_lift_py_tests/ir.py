@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Any, List, Optional, Tuple, Union
 
-from .canonicalizer import Value, varr, vint, vobj, vstr, vnull
+from .canonicalizer import Value, varr, vbool, vint, vobj, vstr, vnull
 
 
 # Sort ----------------------------------------------------------------------
@@ -318,6 +318,7 @@ class ContractDecl:
     inv: Optional[Formula] = None
     out_binding: str = "out"
     evidence: Optional[EvidenceTerm] = None
+    source_warrants: List[dict[str, Any]] = field(default_factory=list)
 
 
 # To-Value (canonicalizer Value tree) --------------------------------------
@@ -513,7 +514,7 @@ def contract_decl_to_value(d: ContractDecl) -> Value:
     Mirrors the Rust `marshal_declarations` shape, but as a Value tree so
     the JCS pass produces byte-equal output to Rust's value-tree path.
     Locked key order: kind, name, outBinding, [pre?], [post?], [inv?],
-    [evidence?].
+    [evidence?], [sourceWarrants?].
     """
     pairs: List[Tuple[str, Value]] = [
         ("kind", vstr("contract")),
@@ -528,7 +529,32 @@ def contract_decl_to_value(d: ContractDecl) -> Value:
         pairs.append(("inv", formula_to_value(d.inv)))
     if d.evidence is not None:
         pairs.append(("evidence", evidence_to_value(d.evidence)))
+    if d.source_warrants:
+        pairs.append(
+            (
+                "sourceWarrants",
+                varr([_json_like_to_value(warrant) for warrant in d.source_warrants]),
+            )
+        )
     return vobj(pairs)
+
+
+def _json_like_to_value(value: Any) -> Value:
+    if value is None:
+        return vnull()
+    if isinstance(value, bool):
+        return vbool(value)
+    if isinstance(value, int):
+        return vint(value)
+    if isinstance(value, str):
+        return vstr(value)
+    if isinstance(value, list):
+        return varr([_json_like_to_value(item) for item in value])
+    if isinstance(value, tuple):
+        return varr([_json_like_to_value(item) for item in value])
+    if isinstance(value, dict):
+        return vobj([(str(k), _json_like_to_value(v)) for k, v in value.items()])
+    raise TypeError(f"unsupported source warrant JSON value: {type(value)!r}")
 
 
 def declarations_to_value(

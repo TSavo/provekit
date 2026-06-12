@@ -26,7 +26,7 @@ import ast
 import functools
 import importlib.util
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 try:
     from sugar_lift_python_source.value_pins import (
@@ -34,6 +34,10 @@ try:
         _binding_events,
         _Candidate,
         _global_declarations,
+    )
+    from sugar_lift_python_source.bind_lifter import (
+        _body_source_locator,
+        source_memento_of,
     )
 except ModuleNotFoundError:  # repo checkout without editable installs
     import sys
@@ -51,6 +55,10 @@ except ModuleNotFoundError:  # repo checkout without editable installs
         _binding_events,
         _Candidate,
         _global_declarations,
+    )
+    from sugar_lift_python_source.bind_lifter import (
+        _body_source_locator,
+        source_memento_of,
     )
 
 
@@ -83,6 +91,8 @@ class TranslateUniverse:
     vendor_vector_source: Optional[str] = None
     # member-of-values payload: the pinned tuple's string elements.
     values: tuple = ()
+    # Lean SourceMemento: locus + source/template CIDs, never source text.
+    source_memento: Optional[dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -1511,6 +1521,7 @@ def translate_universe_for_callee(
     )
     if fn is None:
         return None, None
+    source_memento = _source_memento_for_function(fn, spec.origin, source)
 
     body = [
         stmt
@@ -1559,6 +1570,7 @@ def translate_universe_for_callee(
                     kind="chars-not-in-set",
                     vendor_vectors_checked=len(vectors),
                     vendor_vector_source=vector_source,
+                    source_memento=source_memento,
                 ),
                 None,
             )
@@ -1588,6 +1600,7 @@ def translate_universe_for_callee(
                     kind="prefix",
                     vendor_vectors_checked=len(vectors),
                     vendor_vector_source=vector_source,
+                    source_memento=source_memento,
                 ),
                 None,
             )
@@ -1645,6 +1658,7 @@ def translate_universe_for_callee(
                         kind="chars-in-set",
                         vendor_vectors_checked=len(vectors),
                         vendor_vector_source=vector_source,
+                        source_memento=source_memento,
                     ),
                     None,
                 )
@@ -1703,6 +1717,7 @@ def translate_universe_for_callee(
                     vendor_vectors_checked=len(vectors),
                     vendor_vector_source=vector_source,
                     values=tuple(values),
+                    source_memento=source_memento,
                 ),
                 None,
             )
@@ -1733,6 +1748,7 @@ def translate_universe_for_callee(
                 kind="no-suffix-chars",
                 vendor_vectors_checked=len(vectors),
                 vendor_vector_source=vector_source,
+                source_memento=source_memento,
             ),
             None,
         )
@@ -1805,9 +1821,22 @@ def translate_universe_for_callee(
             table_name=table_name,
             vendor_vectors_checked=len(vectors),
             vendor_vector_source=vector_source,
+            source_memento=source_memento,
         ),
         None,
     )
+
+
+def _source_memento_for_function(
+    fn: ast.FunctionDef,
+    source_path: str,
+    source: str,
+) -> Optional[dict[str, Any]]:
+    try:
+        full = _body_source_locator(fn, source_path, source.splitlines(keepends=True))
+        return dict(source_memento_of(full))
+    except Exception:
+        return None
 
 
 def _vendor_vectors(
