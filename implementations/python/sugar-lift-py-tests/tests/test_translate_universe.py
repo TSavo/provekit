@@ -2655,3 +2655,138 @@ def test_chain_constant_emits_equality(vendor_path):
                     fives.append(a)
     # the universe swears == 5; the claim swears == 9: UNSAT shape present
     assert fives, [d.name for d in out.decls]
+
+
+# ---------------------------------------------------------------------------
+# raise locus (census non-return:Raise, 30k bodies): zero Return/Yield +
+# a terminal tail means every path raises — no value exists, so any
+# sworn value equality carries the canonical contradiction (0 = 1). The
+# guard family's complement, total instead of clause-wise.
+# ---------------------------------------------------------------------------
+
+
+def _raise_locus(callee):
+    from sugar_lift_py_tests.translate_universe import (
+        raise_locus_universe_for_callee,
+    )
+
+    raise_locus_universe_for_callee.cache_clear()
+    return raise_locus_universe_for_callee(callee)
+
+
+def test_bare_raise_body_walks(vendor_path):
+    vendor_path(
+        "vendraise_ok",
+        "def boom(x):\n    raise ValueError(x)\n",
+    )
+    u, r = _raise_locus("vendraise_ok.boom")
+    assert r is None and u is not None
+
+
+def test_if_else_both_raise_walks(vendor_path):
+    vendor_path(
+        "vendraise_both",
+        "def boom(x):\n"
+        "    if x:\n"
+        "        raise ValueError(x)\n"
+        "    else:\n"
+        "        raise TypeError(x)\n",
+    )
+    u, r = _raise_locus("vendraise_both.boom")
+    assert r is None and u is not None
+
+
+def test_prefix_then_tail_raise_walks(vendor_path):
+    vendor_path(
+        "vendraise_prefix",
+        "def boom(x):\n"
+        "    msg = format(x)\n"
+        "    raise ValueError(msg)\n",
+    )
+    u, r = _raise_locus("vendraise_prefix.boom")
+    assert r is None and u is not None
+
+
+def test_fall_off_path_not_candidate(vendor_path):
+    # the guarded raise without an else can fall off the end -> None
+    vendor_path(
+        "vendraise_fall",
+        "def maybe(x):\n    if x:\n        raise ValueError(x)\n",
+    )
+    u, r = _raise_locus("vendraise_fall.maybe")
+    assert u is None and r is None
+
+
+def test_try_wrapped_raise_not_candidate(vendor_path):
+    # a handler may swallow the raise and fall off -> None can exist
+    vendor_path(
+        "vendraise_try",
+        "def maybe(x):\n"
+        "    try:\n"
+        "        raise ValueError(x)\n"
+        "    except ValueError:\n"
+        "        pass\n",
+    )
+    u, r = _raise_locus("vendraise_try.maybe")
+    assert u is None and r is None
+
+
+def test_any_return_not_candidate(vendor_path):
+    vendor_path(
+        "vendraise_ret",
+        "def maybe(x):\n"
+        "    if x:\n"
+        "        return 1\n"
+        "    raise ValueError(x)\n",
+    )
+    u, r = _raise_locus("vendraise_ret.maybe")
+    assert u is None and r is None
+
+
+def test_generator_raise_not_candidate(vendor_path):
+    # calling a generator function returns a generator object: a value
+    vendor_path(
+        "vendraise_gen",
+        "def gen(x):\n    yield x\n    raise ValueError(x)\n",
+    )
+    u, r = _raise_locus("vendraise_gen.gen")
+    assert u is None and r is None
+
+
+def test_raise_locus_contradicts_any_value_claim(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        raise_locus_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _ConstInt
+
+    raise_locus_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendraise_l2", "def boom(x):\n    raise ValueError(x)\n"
+    )
+    out = _lift(
+        """
+        import vendraise_l2
+
+        def test_boom():
+            assert vendraise_l2.boom(1) == 3
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    contradictions = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        for a in _iter_conjuncts(d.inv):
+            if getattr(a, "name", None) != "=":
+                continue
+            args = getattr(a, "args", ())
+            if (
+                len(args) == 2
+                and isinstance(args[0], _ConstInt)
+                and isinstance(args[1], _ConstInt)
+                and args[0].value == 0
+                and args[1].value == 1
+            ):
+                contradictions.append(a)
+    assert contradictions, [d.name for d in out.decls]
