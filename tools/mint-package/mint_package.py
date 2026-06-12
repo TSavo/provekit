@@ -68,6 +68,30 @@ def _ensure_kit_venv(registry):
     return kit_py
 
 
+def _imported_properties(registry, cited):
+    """Every obligation `property` that belongs to an imported dependency
+    bundle, read from each cited dep's stored verify.json in the registry.
+    A dep's pool is transitive-closed (it was minted with its own imports),
+    so the union over DIRECT deps already covers the whole import closure.
+    These properties are the dep bundles' own obligations -- excluding them
+    leaves exactly this package's own rows."""
+    props = set()
+    for cite in cited:
+        dep = cite.split(":", 1)[0]
+        for verify_path in glob.glob(
+            os.path.join(registry, canon(dep), "*", "verify.json")
+        ):
+            try:
+                doc = json.load(open(verify_path))
+            except (OSError, ValueError):
+                continue
+            for r in doc.get("rows", []):
+                p = r.get("property")
+                if p:
+                    props.add(str(p))
+    return props
+
+
 def _direct_dependencies(venv, package):
     """Direct runtime dependency distribution names of `package`, read from
     the resolved venv's installed metadata (Requires-Dist). Normalized to
@@ -302,21 +326,47 @@ def main():
     for proof in glob.glob(os.path.join(project, "blake3-512:*.proof")):
         shutil.copy(proof, entry)
 
-    universes = sum(
-        1
+    # PER-BUNDLE ACCOUNTING, not per-pool. `sugar verify --project` loads the
+    # imported dep bundles and re-verifies the WHOLE pool, so the receipt's
+    # rows are the entire import closure, not this package's own obligations.
+    # A dep's rows belong to the DEP's bundle, not ours. Since deps are minted
+    # leaves-up and each dep's pool is itself transitive-closed, this package's
+    # OWN rows are its pool MINUS the union of its direct deps' pools (keyed by
+    # property identity). The imports are dischargers of our cross-package
+    # calls, never obligations we re-claim.
+    import_props = _imported_properties(args.registry, cited)
+    own_rows = [
+        r
         for r in receipt.get("rows", [])
-        if "::assertion" in str(r.get("property", ""))
-    )
+        if str(r.get("property", "")) not in import_props
+    ]
 
-    # THE PERIMETER, HASH-PINNED: the residual is every row NOT discharged --
-    # the refused, undecidable, and violated obligations, named by property.
-    # Content-address the sorted set so the perimeter is a single recomputable
-    # CID, not an estimate: two mints of the same source against the same world
-    # have the same perimeter CID, and any change to what we could-not-discharge
-    # moves it. This is the complement of the total accounting, pinned.
+    def _own_count(*statuses):
+        return sum(1 for r in own_rows if r.get("status") in statuses)
+
+    universes = sum(
+        1 for r in own_rows if "::assertion" in str(r.get("property", ""))
+    )
+    own_split = (receipt.get("dischargeSplit") or {})
+    own_summary = {
+        "ownRows": len(own_rows),
+        "discharged": _own_count("discharged"),
+        "refused": _own_count("refused"),
+        "violations": _own_count("unsatisfied", "violation", "violated"),
+        "undecidable": _own_count("undecidable"),
+        # falsePass is per-row (dischargeMethod), the invariant that never moves
+        "falsePass": sum(
+            1 for r in own_rows if r.get("dischargeMethod") == "falsePass"
+        ),
+    }
+
+    # THE PERIMETER, HASH-PINNED: the residual is every OWN row NOT discharged
+    # -- the refused, undecidable, and violated obligations of THIS bundle,
+    # named by property. Content-addressed (blake3-512, the system's one hash)
+    # so the residual is a single recomputable CID, not an estimate.
     residual = sorted(
         f"{r.get('status')}:{r.get('property')}"
-        for r in receipt.get("rows", [])
+        for r in own_rows
         if r.get("status") not in ("discharged", None)
     )
     # blake3-512, the system's ONE content-address function -- the same hash
@@ -338,15 +388,23 @@ def main():
         "world_sha256": args.world,
         "test_files": copied,
         "result": "minted",
+        # receipt_summary is the OWN (per-bundle) accounting -- import rows
+        # excluded, so a dep's obligations are never re-counted as ours. The
+        # dischargeSplit.falsePass shape is preserved for downstream readers.
         "receipt_summary": {
+            "discharged": own_summary["discharged"],
+            "refused": own_summary["refused"],
+            "violations": own_summary["violations"],
+            "dischargeSplit": {
+                "undecidable": own_summary["undecidable"],
+                "falsePass": own_summary["falsePass"],
+            },
+        },
+        # pool view = the whole import closure sugar verify produced; kept for
+        # context, never conflated with own.
+        "pool_receipt_summary": {
             k: receipt.get(k)
-            for k in (
-                "totalCallsites",
-                "discharged",
-                "violations",
-                "refused",
-                "dischargeSplit",
-            )
+            for k in ("totalCallsites", "discharged", "violations", "refused", "dischargeSplit")
         },
         "assertion_properties": universes,
         "cited_bundles": cited,
