@@ -130,7 +130,6 @@ pub struct KitDeclarationMapping {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<String>,
     pub local: String,
-    pub concept: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,30 +207,14 @@ fn require_nonempty(field: &'static str, value: &str) -> Result<(), KitDeclarati
 }
 
 fn validate_mappings(
-    category: &'static str,
+    _category: &'static str,
     mappings: &[KitDeclarationMapping],
 ) -> Result<(), KitDeclarationError> {
-    let mut seen = std::collections::BTreeMap::<(Option<String>, String), String>::new();
     for mapping in mappings {
         if let Some(surface) = &mapping.surface {
             require_nonempty("mapping.surface", surface)?;
         }
         require_nonempty("mapping.local", &mapping.local)?;
-        require_nonempty("mapping.concept", &mapping.concept)?;
-        let key = (mapping.surface.clone(), mapping.local.clone());
-        if let Some(existing) = seen.get(&key) {
-            if existing != &mapping.concept {
-                return Err(KitDeclarationError::ConflictingMapping {
-                    category,
-                    surface: key.0,
-                    local: key.1,
-                    first: existing.clone(),
-                    second: mapping.concept.clone(),
-                });
-            }
-        } else {
-            seen.insert(key, mapping.concept.clone());
-        }
     }
     Ok(())
 }
@@ -264,7 +247,6 @@ mod kit_declaration_schema_tests {
             effect_leaves: vec![KitDeclarationMapping {
                 surface: Some("rust-fn-contracts".to_string()),
                 local: "method:unwrap".to_string(),
-                concept: "concept:panic-freedom.leaf.unwrap".to_string(),
             }],
             guard_predicates: vec![],
             control_carriers: vec![],
@@ -315,33 +297,6 @@ mod kit_declaration_schema_tests {
             .expect("emit-only kits may declare no effect vocabulary");
     }
 
-    #[test]
-    fn kit_declaration_allows_exact_duplicate_mapping_but_rejects_conflict() {
-        let mut declaration = valid_declaration();
-        let duplicate = declaration.effect_leaves[0].clone();
-        declaration.effect_leaves.push(duplicate);
-        declaration
-            .validate()
-            .expect("exact duplicate declaration is harmless");
-
-        declaration.effect_leaves.push(KitDeclarationMapping {
-            surface: Some("rust-fn-contracts".to_string()),
-            local: "method:unwrap".to_string(),
-            concept: "concept:panic-freedom.leaf.expect".to_string(),
-        });
-
-        let err = declaration
-            .validate()
-            .expect_err("conflicting scoped mapping must fail");
-        assert!(
-            err.to_string().contains("effectLeaves"),
-            "error should identify the mapping category: {err}"
-        );
-        assert!(
-            err.to_string().contains("method:unwrap"),
-            "error should identify the local key: {err}"
-        );
-    }
 }
 
 // ---------- DERIVED hash helpers --------------------------------------------

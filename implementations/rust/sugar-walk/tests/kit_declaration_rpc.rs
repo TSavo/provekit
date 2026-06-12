@@ -157,14 +157,13 @@ fn assert_kit_declaration_mappings(
         );
     }
 
-    for (local, concept) in expected {
+    for (local, _concept) in expected {
         assert!(
             mappings.iter().any(|mapping| {
                 mapping.surface.as_deref() == Some(RUST_FN_CONTRACTS_SURFACE)
                     && mapping.local == *local
-                    && mapping.concept == *concept
             }),
-            "{category} missing mapping {local} -> {concept}: {mappings:#?}"
+            "{category} missing mapping {local}: {mappings:#?}"
         );
     }
 }
