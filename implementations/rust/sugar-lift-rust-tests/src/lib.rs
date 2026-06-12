@@ -1526,17 +1526,52 @@ fn collect_assertion_entries(
                     *macros_lifted += n;
                 } else {
                     // Provenance for the bin-1/bin-2 sort: a refused for-loop is
-                    // either over a CONSTRUCTED domain (a literal range/array -- the
-                    // forall lift exists, so the refusal is body-side: bin-1,
-                    // drainable) or over an OPAQUE collection whose elements are
-                    // RUNTIME data not constructed from source literals (bin-2, the
-                    // membrane). State which, so the classification is structural in
-                    // the refusal itself, not presumed downstream.
+                    // either over a CONSTRUCTED domain (literal range/array -- the
+                    // forall lift exists, so the refusal is body-side) or over an
+                    // OPAQUE collection (RUNTIME data, bin-2). For a literal domain
+                    // the refusal is body-side -- but the BODY itself may assert over
+                    // OPAQUE runtime data (e.g. `assert_eq!(some_call().get(k), ..)`),
+                    // which is bin-2 EVEN WITH a literal domain: the iterated values
+                    // are literals, but the ASSERTED values are runtime. So re-run the
+                    // body collector and read its own refusal reasons: if any body
+                    // assert refused over OPAQUE data, the loop is bin-2; otherwise it
+                    // is a genuine missing-constructor bin-1 (let-SSA / format! / ...).
                     let domain = for_iter_domain(&f.expr);
                     let count = count_asserts_in_stmts(&f.body.stmts);
+                    let tag = if domain.contains("LITERAL") {
+                        let mut be = Vec::new();
+                        let mut bs = Vec::new();
+                        let mut bl = 0usize;
+                        let mut bh = HashSet::new();
+                        collect_assertion_entries(
+                            &f.body.stmts,
+                            temporal_scope.local_scope(),
+                            options,
+                            reducer,
+                            float_widths,
+                            &mut be,
+                            &mut bs,
+                            &mut bl,
+                            &mut bh,
+                            macro_depth,
+                        );
+                        let body_over_opaque = bs.iter().any(|r| {
+                            r.contains("OPAQUE")
+                                || r.contains("ambiguous temporal identity")
+                                || r.contains("mutable container")
+                        });
+                        if body_over_opaque {
+                            "a LITERAL array but with a body assertion over OPAQUE runtime data"
+                                .to_string()
+                        } else {
+                            domain.to_string()
+                        }
+                    } else {
+                        domain.to_string()
+                    };
                     for _ in 0..count {
                         skipped.push(format!(
-                            "assertion under for context over {domain}; \
+                            "assertion under for context over {tag}; \
                              not unconditional point-wise; released to layer 0"
                         ));
                     }
