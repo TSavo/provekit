@@ -3287,6 +3287,15 @@ def _universe_conjuncts(
             conjuncts.append(
                 or_([eq(subject_term, str_const(v)) for v in universe.values])
             )
+        elif universe.kind == "prefix":
+            # return-format: the output starts with the format's literal
+            # prefix. prefix-of(prefix, subject).
+            conjuncts.append(
+                atomic(
+                    "prefix-of",
+                    [str_const(universe.forbidden), subject_term],
+                )
+            )
         else:
             conjuncts.append(
                 atomic(
