@@ -5006,6 +5006,86 @@ fn t() {
     );
 }
 
+// --- struct-literal equality tranche (assert_eq!(x, Type { f: v })) ---
+
+#[test]
+fn struct_literal_equality_lifts() {
+    // assert_eq!(s, Sort::Primitive { name: "Int" }) lifts the RHS as a Ctor
+    // term keyed by the path with a sorted field sub-ctor.
+    let src = r#"
+#[test]
+fn t() {
+    let s = translate();
+    assert_eq!(s, Sort::Primitive { name: "Int" });
+}
+"#;
+    let out = lift_file(&parse(src), "src/sort_translate.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let decl = format!("{:?}", out.decls[0]);
+    assert!(decl.contains("struct:Sort::Primitive"), "ctor name: {decl}");
+    assert!(decl.contains("field:name"), "field sub-ctor: {decl}");
+    assert!(decl.contains("Int"), "field value: {decl}");
+}
+
+#[test]
+fn struct_literal_field_order_is_canonical() {
+    // Same value, different source field order -> SAME term (fields sorted).
+    let a = r#"
+#[test]
+fn t() { let s = f(); assert_eq!(s, Pair { a: 1, b: 2 }); }
+"#;
+    let b = r#"
+#[test]
+fn t() { let s = f(); assert_eq!(s, Pair { b: 2, a: 1 }); }
+"#;
+    let da = format!("{:?}", lift_file(&parse(a), "src/x.rs").decls[0]);
+    let db = format!("{:?}", lift_file(&parse(b), "src/x.rs").decls[0]);
+    assert_eq!(da, db, "field order must not change the canonical term");
+}
+
+#[test]
+fn struct_literal_distinct_variants_are_contradiction() {
+    // Teeth: the same subject equated to two distinct struct literals yields two
+    // distinct Ctor RHS terms over the same LHS (UNSAT).
+    let src = r#"
+#[test]
+fn t() {
+    let s = f();
+    assert_eq!(s, Sort::Primitive { name: "Int" });
+    assert_eq!(s, Sort::Primitive { name: "Bool" });
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 2, "warnings: {:?}", out.skip_reasons);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    let rhs = |f: &Formula| match f {
+        Formula::Atomic { args, .. } => format!("{:?}", args[1]),
+        other => panic!("{other:?}"),
+    };
+    assert_ne!(rhs(&ops[0]), rhs(&ops[1]), "Int vs Bool literals must differ (teeth)");
+}
+
+#[test]
+fn struct_literal_with_rest_refused_by_name() {
+    // Discrimination: `..base` means the value is not fully pinned -> refused.
+    let src = r#"
+#[test]
+fn t() {
+    let base = mk();
+    let s = f();
+    assert_eq!(s, Config { name: "x", ..base });
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 0, "..rest struct must not lift");
+    assert!(
+        out.skip_reasons.iter().any(|r| r.contains("..rest") || r.contains("not fully pinned")),
+        "refusal must name the ..rest: {:?}",
+        out.skip_reasons
+    );
+}
+
 // --- unconditional-block recursion (block_on / value-block) tranche ---
 
 #[test]
