@@ -193,9 +193,10 @@ _NAMED: dict = {
         "with the consumer-side term translator — universe and claim are "
         "byte-identical by construction",
         residual="computed elements, unpacking, nesting, and multi-return "
-        "collections stay non-candidates; literal-membership disjunction "
-        "(x in (1,2) as equalities, not an uninterpreted member atom) "
-        "owed",
+        "collections stay non-candidates (literal-membership disjunction "
+        "shipped: x in (1,2) lifts as equalities over tuple/list/set "
+        "literals; str/dict/mixed-kind containers stay on the member "
+        "atom by semantics)",
     ),
     "return-attribute": _debt(
         "attribute-projection universe: enum members pin today via "

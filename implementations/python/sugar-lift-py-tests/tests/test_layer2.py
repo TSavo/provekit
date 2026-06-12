@@ -4365,3 +4365,108 @@ def test_with_body_consistent_pair_lifted():
     atoms = _flatten_and(out.decls[0].inv)
     # Each with-block contributes one atom (f1$0 != None and f2$0 != None)
     assert len(atoms) >= 2, f"expected at least 2 atoms (one per with-block); got {atoms}"
+
+
+# ---------------------------------------------------------------------------
+# literal-membership disjunction: `x in (1, 2)` over a LITERAL
+# tuple/list/set is exactly or_(eq(x,1), eq(x,2)) — strictly stronger
+# than the uninterpreted member atom, and the contact surface where
+# consumer membership claims meet the branch-literal universes. Strings
+# (SUBSTRING semantics), dicts (KEYS), mixed kinds (cross-sort), and
+# computed elements all stay on the conservative atom.
+# ---------------------------------------------------------------------------
+
+
+def _formulas_of_kind(out, kind):
+    found = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        stack = [d.inv]
+        while stack:
+            f = stack.pop()
+            if getattr(f, "kind", None) == kind:
+                found.append(f)
+            ops = getattr(f, "operands", None)
+            if ops:
+                stack.extend(ops)
+    return found
+
+
+def _member_atoms(out):
+    atoms = []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        stack = [d.inv]
+        while stack:
+            f = stack.pop()
+            if getattr(f, "name", None) == "member":
+                atoms.append(f)
+            ops = getattr(f, "operands", None)
+            if ops:
+                stack.extend(ops)
+    return atoms
+
+
+def test_literal_tuple_membership_lifts_as_disjunction():
+    out = lift_file_layer2(
+        "def test_m():\n    x = 2\n    assert x in (1, 2)\n",
+        "test_mod.py",
+    )
+    assert _formulas_of_kind(out, "or"), [d.name for d in out.decls]
+    assert not _member_atoms(out)
+
+
+def test_not_in_lifts_as_negated_disjunction():
+    out = lift_file_layer2(
+        "def test_m():\n    x = 5\n    assert x not in (1, 2)\n",
+        "test_mod.py",
+    )
+    assert _formulas_of_kind(out, "not"), [d.name for d in out.decls]
+    assert _formulas_of_kind(out, "or")
+    assert not _member_atoms(out)
+
+
+def test_string_container_stays_member_atom():
+    # `"a" in "abc"` is SUBSTRING containment, never element equality —
+    # a disjunction here would be a wrong lift, not a weak one
+    out = lift_file_layer2(
+        'def test_m():\n    x = "a"\n    assert x in "abc"\n',
+        "test_mod.py",
+    )
+    assert _member_atoms(out), [d.name for d in out.decls]
+    assert not _formulas_of_kind(out, "or")
+
+
+def test_mixed_kind_container_stays_member_atom():
+    out = lift_file_layer2(
+        'def test_m():\n    x = 1\n    assert x in (1, "a")\n',
+        "test_mod.py",
+    )
+    assert _member_atoms(out)
+    assert not _formulas_of_kind(out, "or")
+
+
+def test_dict_container_stays_member_atom():
+    out = lift_file_layer2(
+        "def test_m():\n    x = 1\n    assert x in {1: 'a'}\n",
+        "test_mod.py",
+    )
+    assert _member_atoms(out)
+    assert not _formulas_of_kind(out, "or")
+
+
+def test_contradictory_membership_disjunctions_share_subject():
+    # x in (1, 2) and x not in (1, 2): the SAME disjunction positively
+    # and negated — propositionally UNSAT, the discrimination that
+    # justified the member atom now holds for the stronger lift too
+    out = lift_file_layer2(
+        "def test_m():\n"
+        "    x = 1\n"
+        "    assert x in (1, 2)\n"
+        "    assert x not in (1, 2)\n",
+        "test_mod.py",
+    )
+    ors = _formulas_of_kind(out, "or")
+    assert len(ors) >= 2
