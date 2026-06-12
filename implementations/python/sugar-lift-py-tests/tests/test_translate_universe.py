@@ -1210,3 +1210,133 @@ def test_format_vendor_vector_wrong_prefix_refuses(vendor_path):
     )
     u, r = translate_universe_for_callee("vendfmt_gate.err")
     assert u is None and r is not None and "sample-gate" in r.reason
+
+
+# ---------------------------------------------------------------------------
+# Walrus-in-guard soundness (falsePass closed 2026-06-12). A NamedExpr in a
+# stripped guard's test REBINDS a name before the remaining body runs:
+# `if (x := x + 10) > 100: raise` then `return x > 5` returns True for
+# f(1) at runtime, while ground-evaluating the return expression at the
+# callsite's argument computes False — an emitted equality would DISCHARGE
+# a wrong claim. Every strip site must refuse; each refusal is confirmed
+# against a pure twin that still licenses (the refusal is the walrus, not
+# collateral).
+# ---------------------------------------------------------------------------
+
+VENDOR_WALRUS_PREDICATE = '''
+def f(x):
+    if (x := x + 10) > 100:
+        raise ValueError(x)
+    return x > 5
+'''
+
+VENDOR_PURE_PREDICATE = '''
+def f(x):
+    if x > 100:
+        raise ValueError(x)
+    return x > 5
+'''
+
+VENDOR_WALRUS_CONSTANT = '''
+def f(x):
+    if (x := x + 10) > 100:
+        raise ValueError(x)
+    return "v"
+'''
+
+VENDOR_PURE_CONSTANT = '''
+def f(x):
+    if x > 100:
+        raise ValueError(x)
+    return "v"
+'''
+
+
+def test_walrus_guard_predicate_runtime_divergence_is_real(vendor_path):
+    # The evidence, kept executable: the runtime and the naive ground-eval
+    # disagree, which is exactly why the walk below must refuse.
+    import importlib
+
+    vendor_path("vendwalrus_evidence", VENDOR_WALRUS_PREDICATE)
+    mod = importlib.import_module("vendwalrus_evidence")
+    assert mod.f(1) is True  # x rebinds to 11; 11 > 5
+    # naive evaluation of the return expression at the callsite's arg:
+    assert (1 > 5) is False  # what a stripped-guard walk would emit
+
+
+def test_walrus_guard_predicate_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        predicate_universe_for_callee,
+    )
+
+    predicate_universe_for_callee.cache_clear()
+    vendor_path("vendwalrus_pred", VENDOR_WALRUS_PREDICATE)
+    universe, refusal = predicate_universe_for_callee("vendwalrus_pred.f")
+    assert universe is None
+    assert refusal is not None
+    assert "walrus" in refusal.reason
+
+
+def test_pure_guard_predicate_still_licenses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        predicate_universe_for_callee,
+    )
+
+    predicate_universe_for_callee.cache_clear()
+    vendor_path("vendpure_pred", VENDOR_PURE_PREDICATE)
+    universe, refusal = predicate_universe_for_callee("vendpure_pred.f")
+    assert refusal is None
+    assert universe is not None
+    assert universe.params == ("x",)
+
+
+def test_walrus_guard_constant_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendwalrus_const", VENDOR_WALRUS_CONSTANT)
+    universe, refusal = constant_universe_for_callee("vendwalrus_const.f")
+    assert universe is None
+    assert refusal is not None
+    assert "walrus" in refusal.reason
+
+
+def test_pure_guard_constant_still_licenses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendpure_const", VENDOR_PURE_CONSTANT)
+    universe, refusal = constant_universe_for_callee("vendpure_const.f")
+    assert refusal is None
+    assert universe is not None
+    assert universe.value == "v"
+
+
+def test_walrus_guard_guard_family_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        guard_universe_for_callee,
+    )
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path("vendwalrus_guard", VENDOR_WALRUS_PREDICATE)
+    guards, refusal = guard_universe_for_callee("vendwalrus_guard.f")
+    assert guards is None
+    assert refusal is not None
+    assert "walrus" in refusal.reason
+
+
+def test_pure_guard_guard_family_still_licenses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        guard_universe_for_callee,
+    )
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path("vendpure_guard", VENDOR_PURE_PREDICATE)
+    guards, refusal = guard_universe_for_callee("vendpure_guard.f")
+    assert refusal is None
+    assert guards is not None
+    assert len(guards.clauses) == 1
