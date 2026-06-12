@@ -45,8 +45,11 @@ BIN2_RULES = [
     # (.all/.any) now STATE "over an OPAQUE collection" (for_iter_domain) -> runtime
     # data, not constructed from source literals. A "LITERAL" provenance matches NO
     # bin-2 rule -> it falls to bin-1 (drainable), which is correct.
-    (re.compile(r"over an OPAQUE collection"),
-     "loop / iterator quantifier over an opaque collection — runtime data, not source-constructed"),
+    # ...and a literal-domain loop whose BODY asserts over opaque runtime data is
+    # likewise bin-2 (the iterated values are literal, but the asserted values are
+    # runtime), now stated as "over OPAQUE runtime data".
+    (re.compile(r"over an OPAQUE collection|over OPAQUE runtime data"),
+     "loop / iterator quantifier over opaque runtime data — not source-constructed"),
     # Other control-flow contexts (match/if/while/unenumerated) do not yet carry
     # provenance -> still PRESUMED, owing the same check.
     (re.compile(r"under match context|under if context|under while context"
