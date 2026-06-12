@@ -60,8 +60,20 @@ if len(audits) != 1:
     raise SystemExit(f"FAIL: expected one base64_encode universe source audit, got {len(audits)}")
 audit = audits[0]
 totals = audit["totals"]
-if ledger.get("unclassified_source") != 0 or totals.get("unclassified_source") != 0:
-    raise SystemExit(f"FAIL: unclassified source remains: ledger={ledger} totals={totals}")
+if totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: base64 source dig has unclassified source: totals={totals}")
+package_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.package-source"
+    and audit.get("package") == "itsdangerous"
+]
+if len(package_audits) != 1:
+    raise SystemExit(f"FAIL: expected one itsdangerous package accounting audit, got {len(package_audits)}")
+package_totals = package_audits[0]["totals"]
+if package_totals.get("unclassified_source", 0) <= 0:
+    raise SystemExit(f"FAIL: itsdangerous package audit did not expose unclassified source: {package_totals}")
+if ledger.get("unclassified_source") != package_totals.get("unclassified_source"):
+    raise SystemExit(f"FAIL: package unclassified source not reflected in ledger: ledger={ledger} package={package_totals}")
 if audit.get("universe_kind") != "no-suffix-chars":
     raise SystemExit(f"FAIL: expected no-suffix-chars audit, got {audit.get('universe_kind')}")
 if "body_text" in audit["source_memento"] or "ast_template" in audit["source_memento"]:
@@ -83,11 +95,16 @@ if not any(
 ):
     raise SystemExit("FAIL: rstrip AST path was not warranted")
 print(
-    "source audit:",
+    "source audit base64:",
     f"loci={totals['source_loci']}",
     f"warranted={totals['source_warranted']}",
     f"refused={totals['source_refused']}",
     f"unclassified={totals['unclassified_source']}",
+)
+print(
+    "source audit package:",
+    f"loci={package_totals['source_loci']}",
+    f"unclassified={package_totals['unclassified_source']}",
 )
 PY
     rm -f "$report"

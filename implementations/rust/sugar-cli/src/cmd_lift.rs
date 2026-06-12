@@ -475,6 +475,11 @@ fn render_source_report_human(report: &LiftSourceReport) -> String {
                 loci.sort_by_key(|locus| {
                     (
                         locus
+                            .get("file")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        locus
                             .get("line")
                             .and_then(Value::as_i64)
                             .unwrap_or(i64::MAX),
@@ -618,6 +623,16 @@ fn format_source_memento(audit: &Value) -> String {
         .get("universe_kind")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
+    if source.is_none() {
+        if let Some(package) = audit.get("package").and_then(Value::as_str) {
+            let root = audit
+                .get("package_root")
+                .or_else(|| audit.get("packageRoot"))
+                .and_then(Value::as_str)
+                .unwrap_or("<unknown root>");
+            return format!("package {package} at {root} [{role} / {universe}]");
+        }
+    }
     let Some(source) = source else {
         return format!("<missing source memento> [{role} / {universe}]");
     };
@@ -1472,6 +1487,63 @@ mod tests {
         assert!(human.contains("606 warranted Assignment crc32.slicing-by-8 input fold"));
         assert!(human.contains("lifted FOL:"));
         assert!(human.contains("crc32.eq-walked(3808858755"));
+    }
+
+    #[test]
+    fn human_report_shows_package_source_accounting_without_memento() {
+        let response = serde_json::json!({
+            "kind": "ir-document",
+            "ir": [],
+            "sourceLedger": {
+                "source_loci": 1,
+                "source_warranted": 0,
+                "source_refused": 0,
+                "source_inactive": 0,
+                "source_refuted": 0,
+                "source_work": 0,
+                "unclassified_source": 1
+            },
+            "sourceAudits": [
+                {
+                    "kind": "source-audit",
+                    "role": "python.package-source",
+                    "universe_kind": "package-accounting",
+                    "package": "itsdangerous",
+                    "package_root": "/site-packages/itsdangerous",
+                    "contract": {"name": "itsdangerous#source-accounting"},
+                    "totals": {
+                        "source_loci": 1,
+                        "source_warranted": 0,
+                        "source_refused": 0,
+                        "source_inactive": 0,
+                        "source_refuted": 0,
+                        "source_work": 0,
+                        "unclassified_source": 1
+                    },
+                    "loci": [
+                        {
+                            "file": "/site-packages/itsdangerous/serializer.py",
+                            "line": 245,
+                            "status": "unclassified",
+                            "ast_kind": "FunctionDef",
+                            "reason": "not classified by any emitted Python source warrant"
+                        }
+                    ]
+                }
+            ],
+            "sourceMementos": []
+        });
+        let report =
+            source_report_from_lift_response(&response, Some("itsdangerous")).expect("report");
+        let human = render_source_report_human(&report);
+
+        assert!(human.contains(
+            "package itsdangerous at /site-packages/itsdangerous [python.package-source / package-accounting]"
+        ));
+        assert!(!human.contains("<missing source memento>"));
+        assert!(human.contains(
+            "/site-packages/itsdangerous/serializer.py:245 unclassified FunctionDef"
+        ));
     }
 
     #[test]

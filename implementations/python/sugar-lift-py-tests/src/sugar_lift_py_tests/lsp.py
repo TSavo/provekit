@@ -20,7 +20,8 @@ import os
 import sys
 import traceback
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
 
 from .ir import (
     ContractDecl,
@@ -172,6 +173,249 @@ def _merge_source_ledger(dst: Dict[str, int], src: Dict[str, Any]) -> None:
         dst[field] += int(src.get(field, 0))
 
 
+def _source_totals(loci: List[Dict[str, Any]]) -> Dict[str, int]:
+    totals = _empty_source_ledger()
+    totals["source_loci"] = len(loci)
+    for locus in loci:
+        status = locus.get("status")
+        if status == "warranted":
+            totals["source_warranted"] += 1
+        elif status == "refused":
+            totals["source_refused"] += 1
+        elif status == "inactive":
+            totals["source_inactive"] += 1
+        elif status == "refuted":
+            totals["source_refuted"] += 1
+        elif status == "work":
+            totals["source_work"] += 1
+        else:
+            totals["unclassified_source"] += 1
+    return totals
+
+
+def _ast_node_span(node: ast.AST) -> Dict[str, int]:
+    start_line = getattr(node, "lineno", 0)
+    start_col = getattr(node, "col_offset", 0)
+    end_line = getattr(node, "end_lineno", start_line)
+    end_col = getattr(node, "end_col_offset", start_col)
+    return {
+        "start_line": start_line,
+        "start_col": start_col,
+        "end_line": end_line,
+        "end_col": end_col,
+    }
+
+
+def _iter_ast_nodes_with_paths(node: ast.AST, path: str):
+    yield node, path
+    for field_name, value in ast.iter_fields(node):
+        if isinstance(value, ast.AST):
+            yield from _iter_ast_nodes_with_paths(value, f"{path}.{field_name}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                if isinstance(item, ast.AST):
+                    yield from _iter_ast_nodes_with_paths(
+                        item, f"{path}.{field_name}[{index}]"
+                    )
+
+
+def _source_line_locus(
+    file: str,
+    line: int,
+    status: str,
+    role: str,
+    universe_kind: str,
+    *,
+    ast_kind: str = "",
+    ast_path: str = "",
+    span: Optional[Dict[str, int]] = None,
+    reason: str = "",
+) -> Dict[str, Any]:
+    locus_span = span or {
+        "start_line": line,
+        "start_col": 0,
+        "end_line": line,
+        "end_col": 0,
+    }
+    locus: Dict[str, Any] = {
+        "kind": "source-line",
+        "file": file,
+        "line": line,
+        "span": dict(locus_span),
+        "line_range": [locus_span["start_line"], locus_span["end_line"]],
+        "ast_path": ast_path or f"$.line[{line}]",
+        "status": status,
+        "role": role,
+        "universe_kind": universe_kind,
+    }
+    if ast_kind:
+        locus["ast_kind"] = ast_kind
+    if reason:
+        locus["reason"] = reason
+    return locus
+
+
+def _path_for_source_file(value: Any) -> Optional[Path]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path.resolve()
+    except OSError:
+        return None
+
+
+def _python_package_root_for_file(file: Any) -> Optional[Path]:
+    path = _path_for_source_file(file)
+    if path is None or not path.is_file() or path.suffix != ".py":
+        return None
+    root: Optional[Path] = None
+    cursor = path.parent
+    while (cursor / "__init__.py").is_file():
+        root = cursor
+        cursor = cursor.parent
+    return root
+
+
+def _covered_source_lines(source_audits: List[Any]) -> Dict[Path, Set[int]]:
+    covered: Dict[Path, Set[int]] = {}
+    for audit in source_audits:
+        if not isinstance(audit, dict):
+            continue
+        if audit.get("role") == "python.package-source":
+            continue
+        for locus in audit.get("loci") or []:
+            if not isinstance(locus, dict):
+                continue
+            path = _path_for_source_file(locus.get("file"))
+            if path is None:
+                continue
+            line_range = locus.get("line_range")
+            if (
+                isinstance(line_range, list)
+                and len(line_range) == 2
+                and all(isinstance(v, int) for v in line_range)
+            ):
+                start, end = line_range
+            else:
+                line = locus.get("line")
+                if not isinstance(line, int):
+                    continue
+                start = end = line
+            if end < start:
+                end = start
+            covered.setdefault(path, set()).update(range(start, end + 1))
+    return covered
+
+
+def _package_roots_from_source_audits(source_audits: List[Any]) -> Dict[Path, str]:
+    roots: Dict[Path, str] = {}
+    for audit in source_audits:
+        if not isinstance(audit, dict):
+            continue
+        role = str(audit.get("role") or "")
+        if role in {"python.package-source", "python.test-fact"}:
+            continue
+        memento = audit.get("source_memento") or audit.get("sourceMemento")
+        if not isinstance(memento, dict):
+            continue
+        root = _python_package_root_for_file(memento.get("file"))
+        if root is None:
+            continue
+        roots.setdefault(root, root.name)
+    return roots
+
+
+def _package_unclassified_loci(
+    root: Path,
+    covered_lines: Dict[Path, Set[int]],
+) -> List[Dict[str, Any]]:
+    loci: List[Dict[str, Any]] = []
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        file = str(path)
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=file)
+        except (OSError, SyntaxError) as exc:
+            loci.append(
+                _source_line_locus(
+                    file,
+                    0,
+                    "refused",
+                    "python.package-source",
+                    "package-accounting",
+                    reason=f"package source could not be parsed: {exc}",
+                )
+            )
+            continue
+
+        already_classified = covered_lines.get(path.resolve(), set())
+        for node, ast_path in _iter_ast_nodes_with_paths(tree, "$.module"):
+            line = getattr(node, "lineno", None)
+            if not isinstance(line, int) or line in already_classified:
+                continue
+            span = _ast_node_span(node)
+            loci.append(
+                _source_line_locus(
+                    file,
+                    line,
+                    "unclassified",
+                    "python.package-source",
+                    "package-accounting",
+                    ast_kind=type(node).__name__,
+                    ast_path=ast_path,
+                    span=span,
+                    reason="not classified by any emitted Python source warrant",
+                )
+            )
+    return loci
+
+
+def _package_source_audits(source_audits: List[Any]) -> List[Dict[str, Any]]:
+    covered_lines = _covered_source_lines(source_audits)
+    audits: List[Dict[str, Any]] = []
+    for root, package in sorted(
+        _package_roots_from_source_audits(source_audits).items(),
+        key=lambda item: str(item[0]),
+    ):
+        loci = _package_unclassified_loci(root, covered_lines)
+        if not loci:
+            continue
+        audits.append(
+            {
+                "kind": "source-audit",
+                "language": "python",
+                "contract": {"name": f"{package}#source-accounting"},
+                "role": "python.package-source",
+                "universe_kind": "package-accounting",
+                "package": package,
+                "package_root": str(root),
+                "loci": loci,
+                "totals": _source_totals(loci),
+            }
+        )
+    return audits
+
+
+def _with_package_source_accounting(lifted: Dict[str, Any]) -> Dict[str, Any]:
+    source_audits = list(lifted.get("sourceAudits") or [])
+    package_audits = _package_source_audits(source_audits)
+    if not package_audits:
+        return lifted
+    source_ledger = dict(lifted.get("sourceLedger") or _empty_source_ledger())
+    for audit in package_audits:
+        source_audits.append(audit)
+        _merge_source_ledger(source_ledger, audit.get("totals") or {})
+    out = dict(lifted)
+    out["sourceAudits"] = source_audits
+    out["sourceLedger"] = source_ledger
+    return out
+
+
 def _source_mementos_from_decls(decls: List[Any]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     seen = set()
@@ -243,7 +487,7 @@ def _lift_source(path: str, source: str) -> Dict[str, Any]:
         value = declarations_to_value(decls)
         declarations_array = json.loads(encode_jcs(value))
 
-    return {
+    return _with_package_source_accounting({
         "decls": decls,
         "declarations": declarations_array,
         "callEdges": call_edges_array,
@@ -252,7 +496,7 @@ def _lift_source(path: str, source: str) -> Dict[str, Any]:
         "sourceMementos": _source_mementos_from_decls(decls),
         "sourceAudits": list(layer2.source_audits),
         "sourceLedger": dict(layer2.source_ledger),
-    }
+    })
 
 
 def handle_parse(msg_id: Any, params: dict) -> None:
@@ -340,6 +584,7 @@ def handle_lift(msg_id: Any, params: dict) -> None:
         source_mementos: List[Any] = []
         source_audits: List[Any] = []
         source_ledger = _empty_source_ledger()
+        seen_package_audits: Set[str] = set()
         for path in _iter_python_files(workspace_root, source_paths):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -356,8 +601,17 @@ def handle_lift(msg_id: Any, params: dict) -> None:
             warnings.extend(lifted["warnings"])
             implications.extend(lifted["implications"])
             source_mementos.extend(lifted["sourceMementos"])
-            source_audits.extend(lifted["sourceAudits"])
-            _merge_source_ledger(source_ledger, lifted["sourceLedger"])
+            for audit in lifted["sourceAudits"]:
+                if not isinstance(audit, dict):
+                    continue
+                if audit.get("role") == "python.package-source":
+                    key = str(audit.get("package_root") or audit.get("package") or "")
+                    if key and key in seen_package_audits:
+                        continue
+                    if key:
+                        seen_package_audits.add(key)
+                source_audits.append(audit)
+                _merge_source_ledger(source_ledger, audit.get("totals") or {})
 
         ir: List[Any] = []
         if decls:
