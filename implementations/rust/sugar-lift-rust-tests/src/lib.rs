@@ -3054,6 +3054,16 @@ fn translate_bool_assertion(
                 })
             }
         }
+        Expr::Path(_) => {
+            // A bare boolean place `assert!(flag)` asserts the boolean is true:
+            // lift `flag == true`. `assert!` requires a bool operand, so this is
+            // type-safe WITHOUT type info; it is teethed, not vacuous -- a sibling
+            // `assert!(!flag)` over the same place is `flag==true ∧ flag==false`,
+            // UNSAT. (A `Field` place like `assert!(x.flag)` is already handled by
+            // the call/method/field arm below.)
+            let term = translate_term_in_scope(expr, scope)?;
+            Ok(assertion_entry_from_eq(term, bool_const(true), scope))
+        }
         Expr::Call(_) | Expr::MethodCall(_) | Expr::Await(_) | Expr::Field(_) => {
             // `<coll>.all(|x| ..)` / `.any(|x| ..)` is an iterator quantifier
             // (∀ / ∃ over the receiver's elements). We do not yet LIFT it, but we

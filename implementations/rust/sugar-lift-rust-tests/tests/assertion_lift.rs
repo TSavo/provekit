@@ -4877,6 +4877,49 @@ fn iflet() {
     assert!(rhs.contains("Ok"), "rhs must tag Ok: {rhs}");
 }
 
+// --- bare boolean place tranche (assert!(flag)) ---
+
+#[test]
+fn bare_boolean_path_lifts_as_eq_true() {
+    // assert!(has_effect) -> has_effect == true (assert! guarantees bool).
+    let src = r#"
+#[test]
+fn t() {
+    let has_effect = compute();
+    assert!(has_effect);
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let decl = format!("{:?}", out.decls[0]);
+    assert!(decl.contains("has_effect"), "must carry the place: {decl}");
+    assert!(decl.contains("Bool(true)"), "must equate to true: {decl}");
+}
+
+#[test]
+fn bare_boolean_true_and_false_over_same_place_is_contradiction() {
+    // Teeth: assert!(flag) and assert!(!flag) over the same place are
+    // flag==true ∧ flag==false -> UNSAT (distinct RHS over the same LHS).
+    let src = r#"
+#[test]
+fn t() {
+    let flag = compute();
+    assert!(flag);
+    assert!(!flag);
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 2, "warnings: {:?}", out.skip_reasons);
+    let ops = inv_operands(&out.decls[0]);
+    assert_eq!(ops.len(), 2);
+    // Both atoms are over the same `flag` place: one equates it to true, the
+    // negation to false, so the two cannot both hold (flag==true ∧ flag==false).
+    let dump = format!("{:?}", out.decls[0]);
+    assert!(dump.contains("flag"), "{dump}");
+    assert!(dump.contains("Bool(true)"), "assert!(flag) -> flag==true: {dump}");
+    assert!(dump.contains("Bool(false)"), "assert!(!flag) -> flag==false: {dump}");
+}
+
 // --- matches! discriminant tranche (assert!(matches!(x, Type::Variant))) ---
 
 #[test]
