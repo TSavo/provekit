@@ -1477,7 +1477,21 @@ fn collect_assertion_entries(
                     });
                     *macros_lifted += n;
                 } else {
-                    refuse_nested_asserts_in_stmts(&f.body.stmts, "for", skipped);
+                    // Provenance for the bin-1/bin-2 sort: a refused for-loop is
+                    // either over a CONSTRUCTED domain (a literal range/array -- the
+                    // forall lift exists, so the refusal is body-side: bin-1,
+                    // drainable) or over an OPAQUE collection whose elements are
+                    // RUNTIME data not constructed from source literals (bin-2, the
+                    // membrane). State which, so the classification is structural in
+                    // the refusal itself, not presumed downstream.
+                    let domain = for_iter_domain(&f.expr);
+                    let count = count_asserts_in_stmts(&f.body.stmts);
+                    for _ in 0..count {
+                        skipped.push(format!(
+                            "assertion under for context over {domain}; \
+                             not unconditional point-wise; released to layer 0"
+                        ));
+                    }
                 }
             }
             Stmt::Expr(Expr::While(w), _) => {
@@ -1634,6 +1648,31 @@ fn collect_assertion_entries(
             }
         }
         advance_temporal_scope_for_stmt(stmt, &mut temporal_scope);
+    }
+}
+
+/// Classify a refused for-loop's iterator domain for the bin-1 / bin-2 sort.
+/// `try_lift_for_loop_forall` already lifts a closed-range loop as a `forall`, so
+/// a loop that reaches the refusal is one it could NOT lift:
+///   - a literal range `a..b` / `a..=b` or a literal array `[..]`: the domain IS
+///     a finite construction (the forall lift exists) -- the refusal is body-side
+///     (mutation, or a body assert that did not lift). This is **bin-1**, drainable
+///     by teaching the body, NOT by inventing a domain.
+///   - anything else (`for x in coll`, `for x in v.iter()`, a field, a call): the
+///     loop ranges over a collection whose ELEMENTS are runtime data, not
+///     constructed from source literals. No finite construction to walk -> **bin-2**.
+fn for_iter_domain(expr: &Expr) -> &'static str {
+    match expr {
+        Expr::Range(r) if r.start.is_some() && r.end.is_some() => {
+            "a LITERAL range (bin-1: domain constructed, body not yet point-wise liftable)"
+        }
+        Expr::Array(_) | Expr::Repeat(_) => {
+            "a LITERAL array (bin-1: domain constructed, body not yet point-wise liftable)"
+        }
+        Expr::Reference(r) => for_iter_domain(&r.expr),
+        Expr::Paren(p) => for_iter_domain(&p.expr),
+        Expr::Group(g) => for_iter_domain(&g.expr),
+        _ => "an OPAQUE collection (bin-2: runtime data, not constructed from source literals)",
     }
 }
 
