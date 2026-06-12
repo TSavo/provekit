@@ -1173,16 +1173,19 @@ mod tests {
         let (plan, reg) = z3_plan_and_registry();
         let name = "f#euf#callresult_f_a1(i:1)::assertion";
         let callf = json!({"kind":"ctor","name":"call:f","args":[int(1)]});
-        let str_lit =
-            json!({"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"abc"});
+
+        // A GENUINE mixed-sort: a chars-in-set UNIVERSE string-taints call:f to
+        // the String return sort, while a sibling Int equality forces Int. One
+        // declare-fun cannot carry both -> named Undecidable. (Since the
+        // string-contagion fix, a BARE `call:f == "abc"` with no universe is
+        // NOT mixed-sort -- the untainted ctor stays opaque-Int and the
+        // String-vs-Int conflict refutes cleanly as Unsatisfied instead.)
+        let universe = json!({"kind":"atomic","name":"str.chars-in-set","args":[
+            callf.clone(),
+            {"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"abc"}]});
 
         let mut pool = MementoPool::default();
-        insert_contract(
-            &mut pool,
-            "blake3-512:strrow",
-            name,
-            eqf(callf.clone(), str_lit),
-        );
+        insert_contract(&mut pool, "blake3-512:strrow", name, universe);
         insert_contract(&mut pool, "blake3-512:introw", name, eqf(callf, int(7)));
         let res = verify_consistency(&pool, &plan, &reg);
         assert_eq!(

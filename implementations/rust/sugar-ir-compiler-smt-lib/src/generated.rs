@@ -2138,8 +2138,41 @@ pub(crate) fn apply_bv32_contagion(formula: &Formula) -> Formula {
     promote_bv32_siblings_formula(formula, &subjects)
 }
 
+fn collect_string_tainted_subjects(formula: &Formula, out: &mut Vec<Term>) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            if crate::literal_encoding::forces_string_sort(name) {
+                for a in args {
+                    if let Term::Ctor { .. } = a {
+                        if !out.contains(a) {
+                            out.push(a.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Formula::And { operands }
+        | Formula::Or { operands }
+        | Formula::Not { operands }
+        | Formula::Implies { operands } => {
+            for o in operands {
+                collect_string_tainted_subjects(o, out);
+            }
+        }
+        Formula::Forall { body, .. } | Formula::Exists { body, .. } => {
+            collect_string_tainted_subjects(body, out)
+        }
+        _ => {}
+    }
+}
+
 pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     let formula = &apply_bv32_contagion(formula);
+    {
+        let mut tainted = Vec::new();
+        collect_string_tainted_subjects(formula, &mut tainted);
+        crate::literal_encoding::set_string_tainted(tainted);
+    }
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
     collect_free_vars_formula(formula, &mut free_vars, &bound);
@@ -2267,6 +2300,11 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
 
 pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
     let formula = &apply_bv32_contagion(formula);
+    {
+        let mut tainted = Vec::new();
+        collect_string_tainted_subjects(formula, &mut tainted);
+        crate::literal_encoding::set_string_tainted(tainted);
+    }
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
     collect_free_vars_formula(formula, &mut free_vars, &bound);
