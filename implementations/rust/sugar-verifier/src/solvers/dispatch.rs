@@ -77,6 +77,7 @@ const STRING_OPS: &[&str] = &[
     "str.is_ascii_control",
     "str.chars-in-set",
     "str.chars-not-in-set",
+    "str.in-regex",
 ];
 
 const BV_OPS: &[&str] = &[

@@ -497,6 +497,49 @@ fn emit_string_theory_atomic(name: &str, args: &[Term]) -> Option<String> {
         // ("ZmFy") → unsat. The weak str.chars-in-set row cannot refute "ZmFy";
         // only these equations can. That refutation is the entire point.
         "str.eq-bv-blocks" if args.len() == 2 => emit_b64_strong_blocks(&args[0], &args[1]),
+        // ── @Pattern REGEX UNIVERSE (Door 3 — regular-language membership) ─────
+        // str.in-regex: arg[0] = subject (the callresult String term — the value
+        //               the consumer claims is valid), arg[1] = a String const
+        //               carrying the vendor's `@Pattern(regexp="…")` literal,
+        //               walked verbatim from the annotation's AST.
+        //
+        // The regex literal is parsed into a regex AST and lowered to z3's native
+        // RegLan theory: literals → str.to_re, char classes [a-z] → re.range/re.union,
+        // '.' → re.allchar, '*' '+' '?' '{n,m}' → re.* re.+ re.opt re.loop,
+        // alternation '|' → re.union, concatenation → re.++, anchors ^$ → full-match
+        // (z3 str.in_re is already whole-string, anchors are identity). The lowering
+        // authority lives in `crate::regex_regln` — a single place, so the supported
+        // subset and its refusals are decided once.
+        //
+        // REFUSE BY NAME (not a regular language → never approximated): backreferences,
+        // lookahead/behind, possessive/atomic groups. The parser returns Err with the
+        // offending feature named; we return None here (atom dropped — floor stands).
+        // The Java walker performs the SAME non-regular scan at walk time and refuses
+        // to register, so a non-regular pattern never reaches this arm in practice;
+        // this None is the defense-in-depth backstop.
+        //
+        // GOOD: a matching input's validity claim → str.in_re holds → sat → discharged.
+        // BAD: a non-matching input claimed valid → str.in_re false → unsat →
+        //      unsatisfied BY THE WALKED REGEX (membership-driven, not a within-test
+        //      contradiction). The classic spotlight: a `@Pattern` an author believes
+        //      rejects an injection but whose walked language ACCEPTS it.
+        "str.in-regex" if args.len() == 2 => {
+            let regex = match &args[1] {
+                Term::Const {
+                    value: serde_json::Value::String(s),
+                    sort: Sort::Primitive { name },
+                } if name == "String" => s,
+                _ => return None,
+            };
+            // Lower the regex literal to a z3 RegLan term. A non-regular feature
+            // (or a malformed literal) yields Err → None → the atom is dropped.
+            let regln = crate::regex_regln::regex_to_regln(regex).ok()?;
+            Some(format!(
+                "(str.in_re {} {})",
+                emit_string_term(&args[0]),
+                regln
+            ))
+        }
         _ => None,
     }
 }
@@ -782,6 +825,7 @@ fn is_string_theory_atomic_predicate(name: &str) -> bool {
             | "str.chars-in-set"
             | "str.chars-not-in-set"
             | "str.eq-bv-blocks"
+            | "str.in-regex"
     )
 }
 

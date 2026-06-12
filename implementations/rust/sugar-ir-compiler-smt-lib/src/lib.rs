@@ -16,6 +16,7 @@ use sugar_ir_compiler::{
 mod generated;
 mod isinstance_encoding;
 mod literal_encoding;
+pub mod regex_regln;
 pub mod derive_query;
 
 pub const DIALECT: &str = "smt-lib-v2.6";
@@ -996,6 +997,124 @@ mod tests {
             let out = run_z3(&z3, &script);
             assert_eq!(out.trim(), "sat", "lone universe row must be SAT: {out}");
         }
+    }
+
+    // ── Door 3: str.in-regex (@Pattern regular-language membership) ──────────
+    // The Java kit's @Pattern universe pass emits `str.in-regex(subject, regex)`
+    // where `regex` is the verbatim `@Pattern(regexp="…")` literal walked from the
+    // annotation AST. Lowering: (str.in_re subject <regex-as-RegLan>), the regex
+    // parsed + lowered by `crate::regex_regln` — the single lowering authority.
+
+    #[test]
+    fn in_regex_matching_claim_is_sat() {
+        // POSITIVE (GOOD): a validity claim about an input the @Pattern ACCEPTS.
+        // Pattern: ^[a-z]+@example\.com$ ; claim: getEmail("a@example.com") valid.
+        let z3 = which_z3().expect("z3 required for str.in-regex check");
+        let call = callresult("c:callresult_getEmail_a1", "a@example.com");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.in-regex",
+                    vec![call.clone(), string_const("^[a-z]+@example\\.com$")],
+                ),
+                eq(call, string_const("a@example.com")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            script.contains("str.in_re") && script.contains("(str.to_re \"@\")"),
+            "str.in-regex must lower to native z3 str.in_re over a walked RegLan:\n{script}"
+        );
+        assert!(
+            !script.contains("(declare-fun str.in-regex")
+                && !script.contains("(declare-fun |str.in-regex|"),
+            "str.in-regex must be a theory lowering, not an uninterpreted predicate:\n{script}"
+        );
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "matching input's validity claim must be SAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn in_regex_nonmatching_claim_is_unsat() {
+        // DISCRIMINATION (BAD): a NON-matching input claimed valid. The walked
+        // regex refutes it by MEMBERSHIP — z3 string theory returns unsat. Not a
+        // within-test contradiction; the regex alone does the refutation.
+        // Pattern ^[a-z]+@example\.com$ rejects "ADMIN@evil.com".
+        let z3 = which_z3().expect("z3 required for str.in-regex check");
+        let call = callresult("c:callresult_getEmail_a1", "ADMIN@evil.com");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.in-regex",
+                    vec![call.clone(), string_const("^[a-z]+@example\\.com$")],
+                ),
+                eq(call, string_const("ADMIN@evil.com")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "non-matching input claimed valid must be UNSAT, got: {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn in_regex_spotlight_accepts_more_than_intuited() {
+        // THE SPOTLIGHT: the permissive-email dark. An author writes
+        //   ^[\w.+-]+@[\w.-]+\.\w+$
+        // believing it pins a benign address. The walked language ACCEPTS
+        // "a+x@host.computer" (the '+' subaddress and the multi-label host the
+        // author never intended). A claim that this string is valid is SAT —
+        // proving, mechanically, the regex's language is wider than intuition.
+        let z3 = which_z3().expect("z3 required for str.in-regex check");
+        let call = callresult("c:callresult_getEmail_a1", "a+x@host.computer");
+        let inv = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                string_theory_atom(
+                    "str.in-regex",
+                    vec![call.clone(), string_const("^[\\w.+-]+@[\\w.-]+\\.\\w+$")],
+                ),
+                eq(call, string_const("a+x@host.computer")),
+            ]
+        });
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "the permissive pattern ACCEPTS the unintended input (spotlight): {out}\nscript:\n{script}"
+        );
+    }
+
+    #[test]
+    fn in_regex_nonregular_feature_drops_atom() {
+        // REFUSE BY NAME (backstop): a non-regular regex (lookahead) must NOT
+        // render an approximated language. The emitter drops the atom; the row
+        // never becomes an uninterpreted predicate.
+        let inv = string_theory_atom(
+            "str.in-regex",
+            vec![var("r"), string_const("foo(?=bar)")],
+        );
+        let parts = compile_asserted_to_parts(&inv).expect("compile");
+        let script = format!("{}{}", parts.preamble, parts.body);
+        assert!(
+            !script.contains("(declare-fun str.in-regex")
+                && !script.contains("(declare-fun |str.in-regex|")
+                && !script.contains("str.in_re"),
+            "non-regular regex must drop the atom, never approximate or declare it:\n{script}"
+        );
     }
 
     // ── G1b: str.chars-not-in-set (complement universe from a translate table) ──
