@@ -5289,3 +5289,71 @@ fn t() {
         "mutated-accumulator loop must not lift as forall"
     );
 }
+
+#[test]
+fn for_loop_over_literal_array_unrolls() {
+    // `for x in [1, 2, 3] { assert_eq!(g(x), 1) }` is the FINITE conjunction
+    // g(1)==1 ∧ g(2)==1 ∧ g(3)==1 -- a complete unroll over the constructed
+    // element terms, each instance concrete (full point-wise teeth).
+    let src = r#"
+#[test]
+fn t() {
+    for x in [1, 2, 3] {
+        assert_eq!(g(x), 1);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/loop.rs");
+    assert_eq!(
+        out.assertions_lifted, 1,
+        "literal-array loop must lift; warnings: {:?}",
+        out.skip_reasons
+    );
+    let decl = format!("{:?}", out.decls[0]);
+    // All three concrete instances must be present (the unroll substituted x).
+    assert!(decl.contains("Int(1)"), "instance x=1 missing: {decl}");
+    assert!(decl.contains("Int(2)"), "instance x=2 missing: {decl}");
+    assert!(decl.contains("Int(3)"), "instance x=3 missing: {decl}");
+    // It is a finite conjunction, NOT a forall (the domain is enumerated).
+    assert!(
+        !contains_forall(&inv_formula(&out.decls[0])),
+        "literal-array unroll is a conjunction, not a forall: {decl}"
+    );
+}
+
+#[test]
+fn for_loop_over_empty_array_not_lifted() {
+    // An empty array means the loop never runs -> nothing asserted (vacuous);
+    // leave it to the refusal path rather than emit a vacuous `true`.
+    let src = r#"
+#[test]
+fn t() {
+    for x in [] {
+        assert_eq!(g(x), 1);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/loop.rs");
+    assert_eq!(out.assertions_lifted, 0, "empty-array loop must not lift");
+}
+
+#[test]
+fn for_loop_over_opaque_collection_names_bin2_provenance() {
+    // A runtime collection is refused WITH provenance: the refusal names it an
+    // OPAQUE collection (bin-2), so the bin classifier can prove (not presume) it.
+    let src = r#"
+#[test]
+fn t() {
+    for x in items {
+        assert_eq!(g(x), 1);
+    }
+}
+"#;
+    let out = lift_file(&parse(src), "tests/loop.rs");
+    assert_eq!(out.assertions_lifted, 0, "opaque loop must stay refused");
+    assert!(
+        out.skip_reasons.iter().any(|r| r.contains("OPAQUE collection")),
+        "refusal must name the opaque-collection provenance: {:?}",
+        out.skip_reasons
+    );
+}
