@@ -1,0 +1,900 @@
+{
+  "packages": 1000,
+  "files": 128766,
+  "functions": 1519521,
+  "classified": 1520368,
+  "totality_note": "classified counts include per-file 'unparseable-file' rows; functions classified == functions seen",
+  "flags": {
+    "guard-then-raise-prefix": 23082,
+    "table-loop": 17781
+  },
+  "shapes_ranked": [
+    {
+      "shape": "non-return:Expr",
+      "count": 279474,
+      "pct": 18.38,
+      "top_packages": [
+        "django",
+        "sqlalchemy",
+        "pandas",
+        "gevent",
+        "scipy",
+        "numba",
+        "numpy",
+        "idna"
+      ]
+    },
+    {
+      "shape": "non-return:Assert",
+      "count": 179140,
+      "pct": 11.78,
+      "top_packages": [
+        "sympy",
+        "moto",
+        "google-cloud-compute",
+        "pandas",
+        "fastmcp",
+        "openai-agents",
+        "networkx",
+        "python-telegram-bot"
+      ]
+    },
+    {
+      "shape": "return-name",
+      "count": 145950,
+      "pct": 9.6,
+      "top_packages": [
+        "google-cloud-compute",
+        "google-ads",
+        "databricks-sdk",
+        "litellm",
+        "numba",
+        "sympy",
+        "moto",
+        "scipy"
+      ]
+    },
+    {
+      "shape": "return-method-call",
+      "count": 113392,
+      "pct": 7.46,
+      "top_packages": [
+        "kubernetes",
+        "twilio",
+        "sympy",
+        "kubernetes-asyncio",
+        "moto",
+        "google-ads",
+        "numba",
+        "keras"
+      ]
+    },
+    {
+      "shape": "non-return:With",
+      "count": 107063,
+      "pct": 7.04,
+      "top_packages": [
+        "google-cloud-compute",
+        "pandas",
+        "django",
+        "google-cloud-dataplex",
+        "google-cloud-alloydb",
+        "gevent",
+        "google-cloud-bigtable",
+        "google-cloud-dataproc-metastore"
+      ]
+    },
+    {
+      "shape": "non-return:Assign",
+      "count": 93390,
+      "pct": 6.14,
+      "top_packages": [
+        "plotly",
+        "kubernetes",
+        "kubernetes-asyncio",
+        "datadog-api-client",
+        "moto",
+        "selenium",
+        "statsmodels",
+        "google-ads"
+      ]
+    },
+    {
+      "shape": "non-return:If",
+      "count": 75059,
+      "pct": 4.94,
+      "top_packages": [
+        "sympy",
+        "kubernetes",
+        "sqlalchemy",
+        "google-ads",
+        "numba",
+        "moto",
+        "kubernetes-asyncio",
+        "pandas"
+      ]
+    },
+    {
+      "shape": "pure-delegation",
+      "count": 57008,
+      "pct": 3.75,
+      "top_packages": [
+        "selenium",
+        "google-cloud-compute",
+        "stripe",
+        "sympy",
+        "databricks-sdk",
+        "twilio",
+        "pyspark",
+        "numba"
+      ]
+    },
+    {
+      "shape": "return-collection",
+      "count": 54131,
+      "pct": 3.56,
+      "top_packages": [
+        "datadog-api-client",
+        "google-cloud-compute",
+        "jax",
+        "sympy",
+        "scipy",
+        "numpy",
+        "moto",
+        "litellm"
+      ]
+    },
+    {
+      "shape": "return-fn-call",
+      "count": 52948,
+      "pct": 3.48,
+      "top_packages": [
+        "twilio",
+        "moto",
+        "google-ads",
+        "sympy",
+        "jax",
+        "numba",
+        "mlflow-skinny",
+        "mlflow"
+      ]
+    },
+    {
+      "shape": "return-attribute",
+      "count": 50592,
+      "pct": 3.33,
+      "top_packages": [
+        "kubernetes",
+        "google-ads",
+        "kubernetes-asyncio",
+        "pygithub",
+        "twilio",
+        "google-cloud-compute",
+        "sympy",
+        "moto"
+      ]
+    },
+    {
+      "shape": "non-return:For",
+      "count": 40931,
+      "pct": 2.69,
+      "top_packages": [
+        "scipy",
+        "django",
+        "numba",
+        "numpy",
+        "faker",
+        "sqlalchemy",
+        "sympy",
+        "scikit-learn"
+      ]
+    },
+    {
+      "shape": "return-constant",
+      "count": 34869,
+      "pct": 2.29,
+      "top_packages": [
+        "google-ads",
+        "litellm",
+        "twilio",
+        "fastmcp",
+        "plotly",
+        "openai-agents",
+        "sympy",
+        "moto"
+      ]
+    },
+    {
+      "shape": "non-return:Raise",
+      "count": 30405,
+      "pct": 2.0,
+      "top_packages": [
+        "yandexcloud",
+        "google-ads",
+        "google-cloud-compute",
+        "sympy",
+        "ydb",
+        "openai-agents",
+        "sqlalchemy",
+        "mistralai"
+      ]
+    },
+    {
+      "shape": "non-return:Try",
+      "count": 29252,
+      "pct": 1.92,
+      "top_packages": [
+        "litellm",
+        "gevent",
+        "mlflow-skinny",
+        "mlflow",
+        "django",
+        "multiprocess",
+        "ddtrace",
+        "openai-agents"
+      ]
+    },
+    {
+      "shape": "return-predicate",
+      "count": 24178,
+      "pct": 1.59,
+      "top_packages": [
+        "kubernetes",
+        "kubernetes-asyncio",
+        "pyiceberg",
+        "sympy",
+        "numpy",
+        "litellm",
+        "sqlalchemy",
+        "django"
+      ]
+    },
+    {
+      "shape": "return-binop",
+      "count": 17352,
+      "pct": 1.14,
+      "top_packages": [
+        "scipy",
+        "sympy",
+        "numba",
+        "statsmodels",
+        "django",
+        "sqlalchemy",
+        "multiprocess",
+        "fastmcp"
+      ]
+    },
+    {
+      "shape": "non-return:Pass",
+      "count": 16976,
+      "pct": 1.12,
+      "top_packages": [
+        "libcst",
+        "sphinx",
+        "pylint",
+        "ty",
+        "ruff",
+        "snowflake-snowpark-python",
+        "moto",
+        "mypy"
+      ]
+    },
+    {
+      "shape": "return-table-subscript",
+      "count": 15943,
+      "pct": 1.05,
+      "top_packages": [
+        "plotly",
+        "aws-lambda-powertools",
+        "numba",
+        "sympy",
+        "scipy",
+        "numpy",
+        "mlflow-skinny",
+        "mlflow"
+      ]
+    },
+    {
+      "shape": "return-other:Subscript",
+      "count": 12170,
+      "pct": 0.8,
+      "top_packages": [
+        "google-ads",
+        "moto",
+        "sympy",
+        "google-cloud-dataplex",
+        "google-analytics-admin",
+        "google-cloud-dataform",
+        "google-cloud-alloydb",
+        "google-cloud-dataproc-metastore"
+      ]
+    },
+    {
+      "shape": "return-ifexp",
+      "count": 11175,
+      "pct": 0.74,
+      "top_packages": [
+        "google-ads",
+        "google-cloud-compute",
+        "jax",
+        "scipy",
+        "mlflow-skinny",
+        "mlflow",
+        "django",
+        "litellm"
+      ]
+    },
+    {
+      "shape": "return-format",
+      "count": 10072,
+      "pct": 0.66,
+      "top_packages": [
+        "google-ads",
+        "twilio",
+        "google-cloud-compute",
+        "pyiceberg",
+        "sympy",
+        "selenium",
+        "google-analytics-admin",
+        "google-cloud-dataplex"
+      ]
+    },
+    {
+      "shape": "return-other:Await",
+      "count": 9366,
+      "pct": 0.62,
+      "top_packages": [
+        "twilio",
+        "elasticsearch",
+        "opensearch-py",
+        "python-telegram-bot",
+        "temporalio",
+        "slack-sdk",
+        "openai",
+        "openai-agents"
+      ]
+    },
+    {
+      "shape": "return-fstring",
+      "count": 8819,
+      "pct": 0.58,
+      "top_packages": [
+        "fastmcp",
+        "sqlglot",
+        "litellm",
+        "moto",
+        "mlflow-skinny",
+        "mlflow",
+        "openai-agents",
+        "jax"
+      ]
+    },
+    {
+      "shape": "empty",
+      "count": 7071,
+      "pct": 0.47,
+      "top_packages": [
+        "snowflake-snowpark-python",
+        "numba",
+        "polars",
+        "mypy-boto3-s3",
+        "zope-interface",
+        "pylint",
+        "mlflow-skinny",
+        "mlflow"
+      ]
+    },
+    {
+      "shape": "non-return:AsyncWith",
+      "count": 5617,
+      "pct": 0.37,
+      "top_packages": [
+        "textual",
+        "fastmcp",
+        "mcp",
+        "pydocket",
+        "aiohttp",
+        "anyio",
+        "azure-servicebus",
+        "trio"
+      ]
+    },
+    {
+      "shape": "return-other:ListComp",
+      "count": 5398,
+      "pct": 0.36,
+      "top_packages": [
+        "twilio",
+        "langchain-community",
+        "sympy",
+        "selenium",
+        "moto",
+        "mlflow-skinny",
+        "mlflow",
+        "nltk"
+      ]
+    },
+    {
+      "shape": "non-return:AnnAssign",
+      "count": 5183,
+      "pct": 0.34,
+      "top_packages": [
+        "twilio",
+        "moto",
+        "pygithub",
+        "openai-agents",
+        "google-cloud-compute",
+        "mypy",
+        "libcst",
+        "litellm"
+      ]
+    },
+    {
+      "shape": "non-return:While",
+      "count": 5067,
+      "pct": 0.33,
+      "top_packages": [
+        "google-cloud-compute",
+        "databricks-sdk",
+        "multiprocess",
+        "gevent",
+        "pylint",
+        "google-analytics-admin",
+        "sympy",
+        "networkx"
+      ]
+    },
+    {
+      "shape": "return-other:DictComp",
+      "count": 3843,
+      "pct": 0.25,
+      "top_packages": [
+        "google-cloud-compute",
+        "google-analytics-admin",
+        "google-cloud-dataform",
+        "google-cloud-dataplex",
+        "google-cloud-alloydb",
+        "google-cloud-bigtable",
+        "litellm",
+        "google-cloud-dataproc-metastore"
+      ]
+    },
+    {
+      "shape": "return-join",
+      "count": 3711,
+      "pct": 0.24,
+      "top_packages": [
+        "sphinx",
+        "numpy",
+        "sympy",
+        "pipenv",
+        "django",
+        "langchain-community",
+        "fonttools",
+        "pip"
+      ]
+    },
+    {
+      "shape": "return-call-other",
+      "count": 1964,
+      "pct": 0.13,
+      "top_packages": [
+        "snowflake-snowpark-python",
+        "jax",
+        "xarray",
+        "google-cloud-bigquery",
+        "accelerate",
+        "dask",
+        "pandas",
+        "numba"
+      ]
+    },
+    {
+      "shape": "non-return:Return",
+      "count": 1663,
+      "pct": 0.11,
+      "top_packages": [
+        "pyiceberg",
+        "databricks-sql-connector",
+        "pathos",
+        "boltons",
+        "moto",
+        "python-json-logger",
+        "dill",
+        "numba"
+      ]
+    },
+    {
+      "shape": "non-return:AugAssign",
+      "count": 1630,
+      "pct": 0.11,
+      "top_packages": [
+        "sphinx",
+        "openai-agents",
+        "gevent",
+        "langchain-community",
+        "numpy",
+        "numba",
+        "textual",
+        "cython"
+      ]
+    },
+    {
+      "shape": "return-encode-decode",
+      "count": 1184,
+      "pct": 0.08,
+      "top_packages": [
+        "django",
+        "future",
+        "passlib",
+        "langchain-community",
+        "multiprocess",
+        "pycryptodome",
+        "pycryptodomex",
+        "dulwich"
+      ]
+    },
+    {
+      "shape": "return-replace-literals",
+      "count": 1088,
+      "pct": 0.07,
+      "top_packages": [
+        "google-ads",
+        "google-cloud-compute",
+        "setuptools",
+        "django",
+        "pipenv",
+        "litellm",
+        "docutils",
+        "google-cloud-dataplex"
+      ]
+    },
+    {
+      "shape": "non-return:AsyncFor",
+      "count": 1058,
+      "pct": 0.07,
+      "top_packages": [
+        "langchain-community",
+        "google-analytics-admin",
+        "mlflow-skinny",
+        "mlflow",
+        "pydantic-ai-slim",
+        "langchain-core",
+        "google-cloud-dataform",
+        "google-cloud-dataplex"
+      ]
+    },
+    {
+      "shape": "non-return:FunctionDef",
+      "count": 1002,
+      "pct": 0.07,
+      "top_packages": [
+        "graphql-core",
+        "yarl",
+        "multidict",
+        "aiohttp",
+        "ty",
+        "jax",
+        "ruff",
+        "numba"
+      ]
+    },
+    {
+      "shape": "non-return:Delete",
+      "count": 915,
+      "pct": 0.06,
+      "top_packages": [
+        "moto",
+        "gevent",
+        "fonttools",
+        "sqlalchemy",
+        "django",
+        "numba",
+        "datasets",
+        "multiprocess"
+      ]
+    },
+    {
+      "shape": "unparseable-file",
+      "count": 847,
+      "pct": 0.06,
+      "top_packages": [
+        "ty",
+        "ruff",
+        "pylint",
+        "reportlab",
+        "black",
+        "pexpect",
+        "cython",
+        "billiard"
+      ]
+    },
+    {
+      "shape": "return-other:UnaryOp",
+      "count": 528,
+      "pct": 0.03,
+      "top_packages": [
+        "scipy",
+        "statsmodels",
+        "mpmath",
+        "sympy",
+        "numba",
+        "scikit-learn",
+        "gevent",
+        "keras"
+      ]
+    },
+    {
+      "shape": "non-return:ClassDef",
+      "count": 509,
+      "pct": 0.03,
+      "top_packages": [
+        "sqlalchemy",
+        "pydantic",
+        "aenum",
+        "future",
+        "ty",
+        "overrides",
+        "attrs",
+        "beartype"
+      ]
+    },
+    {
+      "shape": "return-other:Lambda",
+      "count": 493,
+      "pct": 0.03,
+      "top_packages": [
+        "numba",
+        "pymongo",
+        "pylint",
+        "pyspark",
+        "scipy",
+        "sqlalchemy",
+        "cattrs",
+        "nltk"
+      ]
+    },
+    {
+      "shape": "return-case-method",
+      "count": 449,
+      "pct": 0.03,
+      "top_packages": [
+        "sqlalchemy",
+        "django",
+        "flask-limiter",
+        "passlib",
+        "aenum",
+        "faker",
+        "numba",
+        "pydantic"
+      ]
+    },
+    {
+      "shape": "non-return:Match",
+      "count": 344,
+      "pct": 0.02,
+      "top_packages": [
+        "jax",
+        "pylint",
+        "cython",
+        "mlflow-skinny",
+        "mlflow",
+        "pycparser",
+        "litellm",
+        "ty"
+      ]
+    },
+    {
+      "shape": "return-other:GeneratorExp",
+      "count": 332,
+      "pct": 0.02,
+      "top_packages": [
+        "networkx",
+        "sympy",
+        "sqlalchemy",
+        "pipenv",
+        "pip",
+        "celery",
+        "pyspark",
+        "black"
+      ]
+    },
+    {
+      "shape": "return-other:SetComp",
+      "count": 263,
+      "pct": 0.02,
+      "top_packages": [
+        "sympy",
+        "sqlalchemy",
+        "networkx",
+        "setuptools",
+        "litellm",
+        "langchain-community",
+        "great-expectations",
+        "mlflow-skinny"
+      ]
+    },
+    {
+      "shape": "return-strip-literal",
+      "count": 182,
+      "pct": 0.01,
+      "top_packages": [
+        "litellm",
+        "fsspec",
+        "pip",
+        "universal-pathlib",
+        "wandb",
+        "pipenv",
+        "fonttools",
+        "streamlit"
+      ]
+    },
+    {
+      "shape": "non-return:ImportFrom",
+      "count": 102,
+      "pct": 0.01,
+      "top_packages": [
+        "langchain-community",
+        "multiprocess",
+        "python-dateutil",
+        "stripe",
+        "pyzmq",
+        "beartype",
+        "pylint",
+        "ipython"
+      ]
+    },
+    {
+      "shape": "non-return:Import",
+      "count": 77,
+      "pct": 0.01,
+      "top_packages": [
+        "pylint",
+        "ruff",
+        "ty",
+        "python-dateutil",
+        "dask",
+        "datasets",
+        "future",
+        "urllib3"
+      ]
+    },
+    {
+      "shape": "non-return:AsyncFunctionDef",
+      "count": 52,
+      "pct": 0.0,
+      "top_packages": [
+        "graphql-core",
+        "mcp",
+        "mlflow-skinny",
+        "mlflow",
+        "huggingface-hub",
+        "browser-use",
+        "executing",
+        "beartype"
+      ]
+    },
+    {
+      "shape": "return-translate",
+      "count": 47,
+      "pct": 0.0,
+      "top_packages": [
+        "kombu",
+        "setuptools",
+        "wcmatch",
+        "pyspark",
+        "pygments",
+        "rich",
+        "pip",
+        "numpy"
+      ]
+    },
+    {
+      "shape": "non-return:Nonlocal",
+      "count": 29,
+      "pct": 0.0,
+      "top_packages": [
+        "pylint",
+        "ruff",
+        "parso",
+        "ty",
+        "beartype",
+        "cython"
+      ]
+    },
+    {
+      "shape": "non-return:Global",
+      "count": 18,
+      "pct": 0.0,
+      "top_packages": [
+        "pylint",
+        "ty",
+        "ruff",
+        "executing",
+        "parso",
+        "cython"
+      ]
+    },
+    {
+      "shape": "return-other:Yield",
+      "count": 14,
+      "pct": 0.0,
+      "top_packages": [
+        "pluggy",
+        "pytest",
+        "black",
+        "anyio",
+        "ruff",
+        "backports-zstd",
+        "trio",
+        "lazy-object-proxy"
+      ]
+    },
+    {
+      "shape": "return-other:NamedExpr",
+      "count": 10,
+      "pct": 0.0,
+      "top_packages": [
+        "cython",
+        "ruff",
+        "ty"
+      ]
+    },
+    {
+      "shape": "return-other:YieldFrom",
+      "count": 9,
+      "pct": 0.0,
+      "top_packages": [
+        "black",
+        "lazy-object-proxy",
+        "wrapt",
+        "ruff",
+        "langgraph",
+        "ijson",
+        "ty"
+      ]
+    },
+    {
+      "shape": "non-return:TryStar",
+      "count": 5,
+      "pct": 0.0,
+      "top_packages": [
+        "pylint",
+        "exceptiongroup"
+      ]
+    },
+    {
+      "shape": "non-return:TypeAlias",
+      "count": 3,
+      "pct": 0.0,
+      "top_packages": [
+        "executing"
+      ]
+    },
+    {
+      "shape": "return-other:Starred",
+      "count": 2,
+      "pct": 0.0,
+      "top_packages": [
+        "ruff",
+        "ty"
+      ]
+    },
+    {
+      "shape": "non-return:Continue",
+      "count": 2,
+      "pct": 0.0,
+      "top_packages": [
+        "pylint"
+      ]
+    },
+    {
+      "shape": "non-return:Break",
+      "count": 2,
+      "pct": 0.0,
+      "top_packages": [
+        "ty"
+      ]
+    }
+  ]
+}
