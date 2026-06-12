@@ -360,7 +360,17 @@ def _constant_return_value(body: list):
         return None
     if returns != 1:
         return None
-    return _literal_value_kind(rest[0].value)
+    vk = _literal_value_kind(rest[0].value)
+    if vk is not None:
+        return vk
+    # collection arm (census return-collection, 54k bodies): a literal
+    # tuple/list/dict/set of literal leaves is one fixed value; its
+    # canonical content string is the same opaque constant the consumer
+    # side builds, so the equality unifies with consumer claims.
+    canonical = collection_literal_canonical(rest[0].value)
+    if canonical is not None:
+        return (canonical, "collection")
+    return None
 
 
 def _literal_value_kind(node):
@@ -640,6 +650,82 @@ class BranchLiteralUniverse:
     lineno: int
     vendor_vectors_checked: int = 0
     vendor_vector_source: Optional[str] = None
+
+
+def _collection_leaf_value(node):
+    """The python value of a literal leaf (int/str/bool/None, unary-neg
+    int), or the _MISSING sentinel. Mirrors layer2's _literal_leaf_value
+    admission EXACTLY — the canonical strings below must byte-match the
+    consumer side or the universe equality never unifies with consumer
+    terms (a vacuous universe)."""
+    if isinstance(node, ast.Constant):
+        v = node.value
+        if isinstance(v, (int, str, bool)) or v is None:
+            return v
+        return _MISSING
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, int)
+        and not isinstance(node.operand.value, bool)
+    ):
+        return -node.operand.value
+    return _MISSING
+
+
+def collection_literal_canonical(node) -> Optional[str]:
+    """THE canonical content string for a collection literal of literal
+    leaves — the single source of truth shared by the consumer-side term
+    translator (layer2) and the vendor-side constant walk; a local mirror
+    on either side is the latent-hole lesson all over again.
+
+    Soundness rule (same as the consumer side has always carried):
+    structurally-different literals MUST produce DISTINCT strings (so a
+    contradiction is UNSAT) and identical literals the SAME string (so a
+    match is SAT). repr-based leaves make 1 and True distinct even though
+    python compares them equal — that mismatch can only FALSE-REFUSE a
+    claim python would call true, never discharge a wrong one.
+
+    None for any content that is not a literal leaf (computed values,
+    unpacking, nesting): content identity cannot be established at lift
+    time."""
+    if isinstance(node, ast.Dict):
+        items = []
+        for k, v in zip(node.keys, node.values):
+            if k is None:  # dict unpacking (**expr)
+                return None
+            k_val = _collection_leaf_value(k)
+            v_val = _collection_leaf_value(v)
+            if k_val is _MISSING or v_val is _MISSING:
+                return None
+            items.append((k_val, v_val))
+        items.sort(key=lambda kv: repr(kv[0]))
+        return "dict:" + repr(dict(items))
+    if isinstance(node, ast.Set):
+        elts = []
+        for el in node.elts:
+            val = _collection_leaf_value(el)
+            if val is _MISSING:
+                return None
+            elts.append(val)
+        # dedupe matching python set semantics, then sort by repr —
+        # repr(set(...)) is hash-randomized in CPython and must never be
+        # used (breaks content-addressing determinism).
+        unique = list({repr(e): e for e in elts}.values())
+        unique.sort(key=repr)
+        return "set:[" + ", ".join(repr(e) for e in unique) + "]"
+    if isinstance(node, (ast.Tuple, ast.List)):
+        elts = []
+        for el in node.elts:
+            val = _collection_leaf_value(el)
+            if val is _MISSING:
+                return None
+            elts.append(val)
+        tag = "tuple" if isinstance(node, ast.Tuple) else "list"
+        # order-preserving: (1, 2) != (2, 1); tuple != list of same elts
+        return f"{tag}:[" + ", ".join(repr(e) for e in elts) + "]"
+    return None
 
 
 def _ifexp_literal_leaves(node):

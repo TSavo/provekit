@@ -104,6 +104,7 @@ from .ir import (
 from .translate_universe import (
     branch_literal_universe_for_callee,
     callee_is_nondeterministic,
+    collection_literal_canonical,
     constant_universe_for_callee,
     delegation_universe_for_callee,
     eval_predicate,
@@ -839,57 +840,33 @@ def _callval_head(method: str, arity: int) -> str:
 
 
 def _translate_dict_set_literal_term(node: ast.expr) -> Term:
-    """Translate a dict or set literal to an opaque ``str_const`` keyed by its
-    canonical content.
+    """Translate a collection literal (dict/set/tuple/list) to an opaque
+    ``str_const`` keyed by its canonical content.
 
     SOUNDNESS RULE: two structurally-different literals MUST produce DISTINCT
     str_const values (different strings → different strlit_<hash> SMT consts →
     z3 can distinguish them → ``x == L1 ∧ x == L2`` with L1≠L2 is UNSAT →
     REFUSED).  Identical literals produce the SAME str_const → SAT → PROVEN.
 
-    Content restriction: every key and value in the literal must itself be a
-    literal leaf (int / str / bool / None).  Non-literal contents (nested
-    calls, computed keys/values) LOUDLY REFUSE via ValueError — we cannot
-    establish content identity without evaluating the expression at lift time.
+    The canonical form lives in ONE place —
+    translate_universe.collection_literal_canonical — shared with the
+    vendor-side constant walk, so the universe equality and the consumer
+    term are byte-identical by construction (a drifted mirror would make
+    every collection universe vacuously disjoint).
 
-    Canonical form:
-      - dict: sorted by key repr, ``{repr(k): repr(v), ...}``
-      - set:  sorted element reprs, ``{repr(e), ...}``
-    Both are then serialized as a deterministic string used as the str_const
-    payload.
+    Content restriction (unchanged): every key/value/element must itself be
+    a literal leaf (int / str / bool / None / unary-neg int).  Computed
+    contents, unpacking, and nesting LOUDLY REFUSE via ValueError — content
+    identity cannot be established without evaluating at lift time.
     """
-    if isinstance(node, ast.Dict):
-        items: list = []
-        for k, v in zip(node.keys, node.values):
-            if k is None:
-                # dict unpacking (**other) inside dict literal — not liftable
-                raise ValueError(
-                    "dict literal with unpacking (**expr) is not liftable "
-                    "(cannot establish content identity at lift time)"
-                )
-            k_val = _literal_leaf_value(k)
-            v_val = _literal_leaf_value(v)
-            items.append((k_val, v_val))
-        # Sort by key repr for deterministic canonical form.
-        items.sort(key=lambda kv: repr(kv[0]))
-        canonical = "dict:" + repr(dict(items))
-        return str_const(canonical)
-
-    if isinstance(node, ast.Set):
-        elts_raw = []
-        for el in node.elts:
-            elts_raw.append(_literal_leaf_value(el))
-        # Sort elements by repr for deterministic canonical form (set is unordered).
-        # CRITICAL: repr(set(...)) is hash-randomized for strings in CPython, so we
-        # MUST NOT use repr(set(elts)) here — it produces a different string each
-        # process invocation, breaking content-addressing and Δ=0 determinism.
-        # Instead: deduplicate (matching Python set semantics), then sort by repr.
-        unique_elts = list({repr(e): e for e in elts_raw}.values())
-        unique_elts.sort(key=repr)
-        canonical = "set:[" + ", ".join(repr(e) for e in unique_elts) + "]"
-        return str_const(canonical)
-
-    raise ValueError("node is not a dict or set literal")
+    canonical = collection_literal_canonical(node)
+    if canonical is None:
+        raise ValueError(
+            "collection literal contents must be literal leaves (int / str "
+            "/ bool / None); computed values, unpacking, and nesting are "
+            "not liftable — cannot establish content identity at lift time"
+        )
+    return str_const(canonical)
 
 
 def _literal_leaf_value(node: ast.expr):
@@ -964,7 +941,7 @@ def _translate_term(node: ast.expr) -> Term:
         if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int) and not isinstance(node.operand.value, bool):
             return num(-node.operand.value)
         raise ValueError("unary-neg only liftable on integer literals")
-    if isinstance(node, (ast.Dict, ast.Set)):
+    if isinstance(node, (ast.Dict, ast.Set, ast.Tuple, ast.List)):
         # Dict/set literal: opaque str_const keyed by canonical content.
         # Non-literal contents → ValueError (LOUD REFUSE at call site).
         return _translate_dict_set_literal_term(node)
@@ -3392,6 +3369,11 @@ def _universe_conjuncts(
                 lit = ctor("None", [])
             elif k == "bytes":
                 lit = ctor("python:bytes", [str_const(v.decode("ascii"))])
+            elif k == "collection":
+                # v IS the canonical content string (one source of truth:
+                # collection_literal_canonical), identical to the term the
+                # consumer side builds for the same literal.
+                lit = str_const(v)
             else:
                 lit = None
             if lit is not None:
@@ -4130,7 +4112,7 @@ def _translate_term_scoped(
         return _translate_term(node)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return _translate_term(node)
-    if isinstance(node, (ast.Dict, ast.Set)):
+    if isinstance(node, (ast.Dict, ast.Set, ast.Tuple, ast.List)):
         # Dict/set literal in value-scope: delegate to the content-hashed
         # opaque-constant translator.  SSA scope does not affect the literal
         # itself (its content is fully determined at lift time).

@@ -250,8 +250,12 @@ def test_real_census_report_joins_clean():
     assert doc["classified"] == report["classified"] == 1520368
     assert sum(doc["totals"].values()) == doc["classified"]
     assert doc["ledger_cid"].startswith("blake3-512:")
-    # the scoreboard is honest: debt dominates today and is SAID
-    assert doc["totals"][DEBT] > doc["totals"][LIFTED]
+    # the scoreboard is honest in both directions: every status total is
+    # present and non-negative (the original "debt dominates" assertion
+    # was a snapshot, not an invariant — the campaign exists to falsify
+    # it, and did, at 50.02% lifted on 2026-06-12)
+    assert all(v >= 0 for v in doc["totals"].values())
+    assert doc["totals"][MEMBRANE] > 0  # named residue never vanishes
     assert doc["debt_ranked"][0]["count"] >= doc["debt_ranked"][-1]["count"]
     # every membrane row carries its reason into the joined doc
     assert all(r["reason"] for r in doc["membrane"])
