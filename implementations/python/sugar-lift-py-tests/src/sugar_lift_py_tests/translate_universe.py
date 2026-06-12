@@ -218,6 +218,147 @@ def guard_universe_for_callee(
     )
 
 
+@dataclass(frozen=True)
+class ConstantUniverse:
+    """A function that unconditionally returns one literal: the strongest
+    universal there is -- not membership, EQUALITY. The output IS the
+    literal for every input that returns at all (a guard-then-raise prefix
+    only affects whether it returns, never WHAT). value_kind is 'str' /
+    'int' / 'bool' / 'none' / 'bytes' so the emitter builds the right term;
+    value is the python literal."""
+
+    value: object
+    value_kind: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    vendor_vectors_checked: int = 0
+    vendor_vector_source: Optional[str] = None
+
+
+def _constant_return_value(body: list):
+    """If the body (sans docstring, sans any leading guard-then-raise
+    prefix) is a SINGLE `return <literal>` with NO other return/yield
+    anywhere, the function unconditionally returns that literal. Returns
+    (value, kind) or None. Guards before the return only gate whether it
+    returns; they never change the value, so the equality still holds for
+    every input that returns."""
+    # strip a leading guard-then-raise prefix (if X: raise ...)
+    rest = []
+    seen_nonguard = False
+    for stmt in body:
+        is_guard = (
+            isinstance(stmt, ast.If)
+            and len(stmt.body) == 1
+            and isinstance(stmt.body[0], ast.Raise)
+            and not stmt.orelse
+        )
+        if is_guard and not seen_nonguard:
+            continue
+        seen_nonguard = True
+        rest.append(stmt)
+    if len(rest) != 1 or not isinstance(rest[0], ast.Return):
+        return None
+    # no OTHER return/yield in the whole body would let a different value
+    # escape; a single return of a literal is the whole story.
+    returns = sum(
+        1
+        for stmt in body
+        for n in ast.walk(stmt)
+        if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+    )
+    if returns != 1:
+        return None
+    return _literal_value_kind(rest[0].value)
+
+
+def _literal_value_kind(node):
+    if isinstance(node, ast.Constant):
+        v = node.value
+        if isinstance(v, bool):
+            return (v, "bool")
+        if isinstance(v, int):
+            return (v, "int")
+        if isinstance(v, str):
+            return (v, "str")
+        if v is None:
+            return (None, "none")
+        if isinstance(v, bytes):
+            try:
+                v.decode("ascii")
+            except UnicodeDecodeError:
+                return None
+            return (v, "bytes")
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and type(node.operand.value) is int
+    ):
+        return (-node.operand.value, "int")
+    return None
+
+
+@functools.lru_cache(maxsize=None)
+def constant_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ConstantUniverse], Optional[TranslateWalkRefusal]]:
+    """Census family return-constant (34k bodies, the largest backlog item).
+    A body that unconditionally returns one literal swears the EQUALITY
+    universal: callee(<anything>) == that literal. A consumer asserting any
+    other value for any input refutes against it."""
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+
+    def refuse(reason):
+        return None, TranslateWalkRefusal(callee=callee, reason=reason)
+
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    vk = _constant_return_value(body)
+    if vk is None:
+        return None, None
+    value, kind = vk
+
+    # ∀⊨sample: every vendor vector (expected return) must EQUAL the literal
+    # -- it must, since the body always returns it; a mismatch means we
+    # misread the body (e.g. a return we missed) -> refuse, never guess.
+    vectors, vector_source = _vendor_vectors(module_name, fn_name)
+    for vector in vectors:
+        if kind in ("str", "bytes") and isinstance(vector, str):
+            want = value.decode("ascii") if kind == "bytes" else value
+            if vector != want:
+                return refuse(
+                    f"sample-gate: vendor vector {vector!r} from "
+                    f"{vector_source} != the constant {value!r}; the walk "
+                    "misread the body or the vendor contradicts their source"
+                )
+
+    return (
+        ConstantUniverse(
+            value=value,
+            value_kind=kind,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            vendor_vectors_checked=len(vectors),
+            vendor_vector_source=vector_source,
+        ),
+        None,
+    )
+
+
 def _guard_clause(test: ast.expr, params: list) -> Optional[GuardClause]:
     if not (
         isinstance(test, ast.Compare)

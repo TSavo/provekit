@@ -103,6 +103,7 @@ from .ir import (
 )
 from .translate_universe import (
     callee_is_nondeterministic,
+    constant_universe_for_callee,
     guard_universe_for_callee,
     translate_universe_for_callee,
 )
@@ -3318,6 +3319,37 @@ def _universe_conjuncts(
                     else str_const(clause.literal)
                 )
                 conjuncts.append(not_(cmp_ctor[clause.op](arg_term, lit_term)))
+
+        # RETURN-CONSTANT (census family, 34k bodies): the body
+        # unconditionally returns one literal, so the output EQUALS it for
+        # every input -- the strongest universal (equality, not membership).
+        # Emit subject == <literal>; any consumer asserting another value
+        # for any input refutes against it.
+        const_u, const_refusal = constant_universe_for_callee(callee)
+        if const_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::constant-universe",
+                    reason=f"{const_refusal.callee}: {const_refusal.reason}",
+                )
+            )
+        elif const_u is not None:
+            k, v = const_u.value_kind, const_u.value
+            if k == "int":
+                lit = num(v)
+            elif k == "bool":
+                lit = bool_const(v)
+            elif k == "str":
+                lit = str_const(v)
+            elif k == "none":
+                lit = ctor("None", [])
+            elif k == "bytes":
+                lit = ctor("python:bytes", [str_const(v.decode("ascii"))])
+            else:
+                lit = None
+            if lit is not None:
+                conjuncts.append(eq(subject_term, lit))
     return conjuncts
 
 
