@@ -4317,6 +4317,47 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
         Expr::Tuple(tuple) => {
             literal_aggregate_term_in_scope("Tuple", tuple.elems.iter(), expr, scope)
         }
+        Expr::Struct(s) => {
+            // A struct / enum-struct literal `Path { f: v, ... }` is a constructor.
+            // Lift it to a Ctor keyed by the path, with one `field:<name>` sub-ctor
+            // per field. Fields are SORTED BY NAME so the term is canonical (source
+            // field order is irrelevant: `V { a, b }` and `V { b, a }` are the same
+            // value -> the same term) while field names stay significant
+            // (`V { a: x }` != `V { b: x }`). Two distinct literals are distinct
+            // Ctors -> asserting equality with the wrong one is UNSAT (the teeth).
+            //
+            // A functional-update `..rest` means the value is NOT fully pinned from
+            // the literal, so it is refused by name (not silently approximated).
+            // A field value that does not translate propagates its own named Err.
+            if s.rest.is_some() {
+                return Err(format!(
+                    "struct literal with `..rest` is not fully pinned from the literal: `{}`",
+                    token_key(expr)
+                ));
+            }
+            let mut fields: Vec<(String, Rc<Term>)> = Vec::new();
+            for fv in &s.fields {
+                let fname = match &fv.member {
+                    syn::Member::Named(id) => id.to_string(),
+                    syn::Member::Unnamed(idx) => idx.index.to_string(),
+                };
+                fields.push((fname, translate_term_in_scope(&fv.expr, scope)?));
+            }
+            fields.sort_by(|a, b| a.0.cmp(&b.0));
+            let args = fields
+                .into_iter()
+                .map(|(fname, term)| {
+                    Rc::new(Term::Ctor {
+                        name: format!("field:{fname}"),
+                        args: vec![term],
+                    })
+                })
+                .collect();
+            Ok(Rc::new(Term::Ctor {
+                name: format!("struct:{}", path_to_variant_string(&s.path)),
+                args,
+            }))
+        }
         Expr::MethodCall(call) => {
             if call.method == "len" && call.args.is_empty() {
                 if let Some(receiver) = string_or_char_literal_term(&call.receiver) {

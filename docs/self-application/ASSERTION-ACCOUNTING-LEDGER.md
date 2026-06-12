@@ -98,3 +98,13 @@ Each slice updates this table with the new number and a one-line why, exactly as
   `matches! with a guard is not a pure discriminant` (13). **silent = 0** held.
   Negation (`!matches!`) fixed too: it previously fell to an opaque `macro:…`
   Var (a vacuous lift, no teeth); now lifts the negated discriminant.
+
+- **struct-literal equality** (slice 2, base main `978c4996c`): give
+  `translate_term_in_scope` an `Expr::Struct` arm so `assert_eq!(x, Type { f: v })`
+  lifts the RHS as a Ctor `struct:<Path>` with one `field:<name>` sub-ctor per
+  field, **sorted by name** (source field order irrelevant → canonical term) and
+  field names significant. Distinct literals are distinct Ctors ⇒ asserting the
+  wrong one is UNSAT (teeth). `..rest` is **refused by name** (value not fully
+  pinned from the literal); an untranslatable field propagates its own named Err.
+  Result over the 5 crates: lift **87.2% → 87.8%** (+16 lifted, −16 refused);
+  `assert_eq!: unsupported term` **42 → 29**. **silent = 0** held.
