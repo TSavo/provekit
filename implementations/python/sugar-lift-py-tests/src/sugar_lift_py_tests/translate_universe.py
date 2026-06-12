@@ -917,6 +917,66 @@ class DelegationUniverse:
     vendor_vector_source: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class RaiseLocusUniverse:
+    """Census family non-return:Raise (30k bodies): a body with ZERO
+    Return/Yield nodes whose tail is terminal (with zero returns, every
+    terminal leaf IS a Raise) never produces a value — every path
+    raises. A sworn equality about callee(args) therefore carries the
+    canonical contradiction: you swore a return value from a call the
+    vendor's own source says always raises. The guard family's
+    complement, total instead of clause-wise.
+
+    No binding hazards apply: no value depends on the body's bindings
+    because there is no value. Prefix effects and even non-termination
+    only strengthen the claim (still no value). Context managers that
+    could SUPPRESS the raise force the tail through a With/Try last
+    statement, which the terminality check excludes."""
+
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+
+
+@functools.lru_cache(maxsize=None)
+def raise_locus_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[RaiseLocusUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    if not body:
+        return None, None
+    if any(
+        isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+        for stmt in body
+        for n in ast.walk(stmt)
+    ):
+        return None, None  # a value (or a generator) can exist
+    if not _is_terminal_block(body):
+        return None, None  # a fall-off path returns None
+    return (
+        RaiseLocusUniverse(
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+        ),
+        None,
+    )
+
+
 def _resolve_spec(node, params, env):
     """A forwarding spec for ``node``: chain names first (shadowing),
     then params, then ascii literals. None for anything computed."""

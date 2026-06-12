@@ -105,6 +105,7 @@ from .translate_universe import (
     branch_literal_universe_for_callee,
     callee_is_nondeterministic,
     collection_literal_canonical,
+    raise_locus_universe_for_callee,
     constant_universe_for_callee,
     delegation_universe_for_callee,
     eval_predicate,
@@ -3315,6 +3316,17 @@ def _universe_conjuncts(
         conjuncts.append(
             or_([eq(subject_term, mk(v)) for v in branch_u.values])
         )
+
+    # RAISE LOCUS (census non-return:Raise, 30k bodies): every path
+    # through the body raises — no value exists, so ANY sworn equality
+    # about this call carries the canonical contradiction 0 = 1: you
+    # swore a return value from a call the vendor's own source says
+    # always raises. (A consumer's pytest.raises expectation lifts
+    # through the raises machinery, never through a value equality, so
+    # it makes no contact with this conjunct.)
+    raise_u, _raise_refusal = raise_locus_universe_for_callee(callee)
+    if raise_u is not None:
+        conjuncts.append(eq(num(0), num(1)))
     if isinstance(subject_term, _Ctor):
         guards, guard_refusal = guard_universe_for_callee(callee)
         if guard_refusal is not None:

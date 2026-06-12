@@ -253,10 +253,14 @@ _NON_RETURN: dict = {
         "panic-locus twin exists rust-side)"
     ),
     "TryStar": _debt("exception-flow tail (see Try)"),
-    "Raise": _debt(
-        "always-raises tail: deterministic raise-locus universe — the "
-        "guard family's complement (callee(args) raises E when the guard "
-        "fires)"
+    "Raise": _lifted(
+        "raise_locus_universe_for_callee",
+        "raise locus: zero Return/Yield + terminal tail means every path "
+        "raises — any sworn value equality carries the canonical "
+        "contradiction (the guard family's complement, total)",
+        residual="raise-tails behind non-terminal control (Try/With last "
+        "statements, fall-off paths) stay non-candidates; the exception "
+        "TYPE is not yet sworn (pytest.raises cross-check owed)",
     ),
     "Pass": _lifted(
         "constant_universe_for_callee",
