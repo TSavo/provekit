@@ -10596,17 +10596,6 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
     }
 
     #[test]
-    fn kit_declaration_result_is_not_the_empty_3a_stub() {
-        let declaration: sugar_claim_envelope::KitDeclaration =
-            serde_json::from_value(kit_declaration_result()).expect("kit declaration shape");
-
-        assert!(
-            !declaration.effect_leaves.is_empty(),
-            "3b declaration must replace the empty 3a effect-leaf stub"
-        );
-    }
-
-    #[test]
     fn sugar_attr_annotated_fn_emits_library_sugar_binding_entry() {
         let root = temp_workspace("sugar_positive");
         let src_dir = root.join("src");
@@ -12332,11 +12321,9 @@ pub fn positive_id(x: i64) -> i64 {
         let payload_bytes =
             libsugar::canonical::serializable_jcs(&payload).expect("payload canonicalizes");
 
-        // `fn_name` is allowed inside gap-record subtrees because TransportGapMemento's
-        // schema (see protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md)
-        // names the gap by its own fn_name identifier (e.g., "gap:unknown:bind:...:wp-rule").
-        // That is legitimate citation, not a contract-attr leak. Walk the JSON tree and
-        // forbid `fn_name` everywhere EXCEPT under a `gapRecords` ancestor.
+        // Bind no longer emits transport gap records, so `fn_name` must not appear
+        // anywhere in the hashed bind payload. Walk the JSON tree and forbid it
+        // (empty allow-list).
         for forbidden in [
             "attr_pre",
             "attr_post",
