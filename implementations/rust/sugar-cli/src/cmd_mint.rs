@@ -2603,7 +2603,7 @@ fn mint_witness_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
 fn mint_refusal_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     let target_language = required_str(decl, "target_language", "refusal-memento")?;
     let surface = required_str(decl, "surface", "refusal-memento")?;
-    let concept = required_str(decl, "concept", "refusal-memento")?;
+    let op = required_str(decl, "op", "refusal-memento")?;
     let reason = required_str(decl, "reason", "refusal-memento")?;
     let would_close_with_cluster =
         required_str(decl, "would_close_with_cluster", "refusal-memento")?;
@@ -2618,7 +2618,7 @@ fn mint_refusal_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     let envelope = json!({
         "body": decl,
         "header": {
-            "concept": concept,
+            "op": op,
             "kind": "refusal-memento",
             "surface": surface,
             "targetLanguage": target_language,

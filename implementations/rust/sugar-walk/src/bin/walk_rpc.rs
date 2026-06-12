@@ -6235,7 +6235,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
 
         for sugar_target in collect_sugar_targets(&file, &src) {
             let SugarTarget {
-                concept,
+                op,
                 library,
                 version,
                 family,
@@ -6244,8 +6244,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 item_fn,
                 totality_result_ok,
             } = sugar_target;
-            let op_cid = canonical_local_op_cid(&concept)
-                .map_err(|e| format!("derive op cid for sugar binding `{concept}`: {e}"))?;
+            let op_cid = canonical_local_op_cid(&op)
+                .map_err(|e| format!("derive op cid for sugar binding `{op}`: {e}"))?;
             let param_names = fn_param_names(&item_fn);
             let param_types = sugar_param_types(&item_fn);
             let original_param_types = sugar_original_param_types(&item_fn);
@@ -6539,7 +6539,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         for refuse_target in collect_refuse_targets(&file) {
             let RefuseTarget {
                 surface,
-                concept,
+                op,
                 reason,
                 would_close_with_cluster,
             } = refuse_target;
@@ -6547,7 +6547,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "kind": "refusal-memento",
                 "target_language": "rust",
                 "surface": surface,
-                "concept": concept,
+                "op": op,
                 "reason": reason,
                 "would_close_with_cluster": would_close_with_cluster,
             }));
@@ -6562,7 +6562,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         // library at each boundary callsite.
         for boundary_target in collect_boundary_targets(&file) {
             let BoundaryTarget {
-                concept,
+                op,
                 library,
                 version,
                 family,
@@ -6572,8 +6572,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 loss,
                 source_function_name,
             } = boundary_target;
-            let op_cid = canonical_local_op_cid(&concept)
-                .map_err(|e| format!("derive op cid for boundary `{concept}`: {e}"))?;
+            let op_cid = canonical_local_op_cid(&op)
+                .map_err(|e| format!("derive op cid for boundary `{op}`: {e}"))?;
             let mut entry = json!({
                 "kind": "realization-memento",
                 "realization_kind": "boundary",
@@ -7217,7 +7217,7 @@ struct FunctionContractLiftTarget {
 
 #[derive(Debug, Clone)]
 struct SugarTarget {
-    concept: String,
+    op: String,
     library: String,
     /// #1357: per-#1355, the @sugar annotation may carry a `version`
     /// pin (e.g. "0.39.0") and a `family` pin (e.g.
@@ -7237,7 +7237,7 @@ struct SugarTarget {
 #[derive(Debug, Clone)]
 struct RefuseTarget {
     surface: String,
-    concept: String,
+    op: String,
     reason: String,
     would_close_with_cluster: String,
 }
@@ -7434,7 +7434,7 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
                     let totality_result_ok = parsed.totality.as_deref() == Some("result_ok")
                         && is_result_type_fn(item_fn);
                     targets.push(SugarTarget {
-                        concept: parsed.concept,
+                        op: parsed.op,
                         library: parsed.library,
                         version: parsed.version,
                         family: parsed.family,
@@ -7476,7 +7476,7 @@ fn collect_refuse_targets_in_items(items: &[syn::Item], targets: &mut Vec<Refuse
 
 #[derive(Debug, Clone, Default)]
 struct SugarAttrParsed {
-    concept: String,
+    op: String,
     library: String,
     /// #1357: optional `version` named arg (e.g. "0.39.0"). Absent ↔ floating.
     version: Option<String>,
@@ -7539,11 +7539,11 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
         if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "sugar" {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
-                let concept = args.string("concept").unwrap_or_default();
+                let op = args.string("op").unwrap_or_default();
                 let library = args.string("library").unwrap_or_default();
-                if !concept.is_empty() && !library.is_empty() {
+                if !op.is_empty() && !library.is_empty() {
                     return Some(SugarAttrParsed {
-                        concept,
+                        op,
                         library,
                         version: args.string("version"),
                         family: args.string("family"),
@@ -7566,7 +7566,7 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
 /// substituting the per-target sister library at that callsite.
 #[derive(Debug, Clone, Default)]
 struct BoundaryTarget {
-    concept: String,
+    op: String,
     library: String,
     /// #1357: optional version and family pins, parallel to SugarTarget.
     version: Option<String>,
@@ -7615,11 +7615,11 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
         if segments.len() == 2 && segments[0].ident == "sugar" && segments[1].ident == "boundary" {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
-                let concept = args.string("concept").unwrap_or_default();
+                let op = args.string("op").unwrap_or_default();
                 let library = args.string("library").unwrap_or_default();
-                if !concept.is_empty() && !library.is_empty() {
+                if !op.is_empty() && !library.is_empty() {
                     return Some(BoundaryTarget {
-                        concept,
+                        op,
                         library,
                         version: args.string("version"),
                         family: args.string("family"),
@@ -7644,18 +7644,18 @@ fn extract_refuse_attr(item_mod: &syn::ItemMod) -> Option<RefuseTarget> {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
                 let surface = args.string("surface").unwrap_or_default();
-                let concept = args.string("concept").unwrap_or_default();
+                let op = args.string("op").unwrap_or_default();
                 let reason = args.string("reason").unwrap_or_default();
                 let would_close_with_cluster =
                     args.string("would_close_with_cluster").unwrap_or_default();
                 if !surface.is_empty()
-                    && !concept.is_empty()
+                    && !op.is_empty()
                     && !reason.is_empty()
                     && !would_close_with_cluster.is_empty()
                 {
                     return Some(RefuseTarget {
                         surface,
-                        concept,
+                        op,
                         reason,
                         would_close_with_cluster,
                     });
@@ -10181,7 +10181,7 @@ mod tests {
     #[test]
     fn source_oracle_resolves_matching_source_to_body() {
         let dir = unique_tmp("match");
-        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(op = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
         // Clean disk == the pin: the oracle returns the body.
         let resolved = resolve_source_memento(&dir, &memento).expect("clean resolve");
@@ -10194,10 +10194,10 @@ mod tests {
     #[test]
     fn source_oracle_refuses_on_body_drift() {
         let dir = unique_tmp("drift");
-        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(op = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
         // Tamper the body AFTER minting the pin: same behavior, different bytes.
-        let tampered = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    let v: Vec<char> = s.chars().rev().collect();\n    v.into_iter().collect()\n}\n";
+        let tampered = "#[sugar::sugar(op = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    let v: Vec<char> = s.chars().rev().collect();\n    v.into_iter().collect()\n}\n";
         fs::write(dir.join("src/lib.rs"), tampered).unwrap();
         let err = resolve_source_memento(&dir, &memento).expect_err("drift must refuse");
         assert!(
@@ -10217,11 +10217,11 @@ mod tests {
         // on the source_cid axis, demonstrating the producer's canonicalization
         // is exactly what the oracle recomputes.
         let dir = unique_tmp("rename");
-        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(op = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
 
         // Re-mint a memento from the param-renamed body to read its pins.
-        let renamed = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(input: &str) -> String {\n    input.chars().rev().collect()\n}\n";
+        let renamed = "#[sugar::sugar(op = \"c\", library = \"l\")]\npub fn rev(input: &str) -> String {\n    input.chars().rev().collect()\n}\n";
         let dir2 = unique_tmp("rename2");
         let renamed_memento = mint_memento_for(&dir2, "rev", renamed);
         // template_cid is STABLE across the param rename (alpha-equivalence).
@@ -10250,7 +10250,7 @@ mod tests {
     #[test]
     fn source_oracle_refuses_when_function_absent() {
         let dir = unique_tmp("absent");
-        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(op = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let memento = mint_memento_for(&dir, "rev", src);
         // Replace with a file that has no `rev`.
         fs::write(dir.join("src/lib.rs"), "pub fn other() -> u32 { 0 }\n").unwrap();
@@ -10261,7 +10261,7 @@ mod tests {
 
     #[test]
     fn sugar_body_source_is_one_shape_without_inline_body_or_template() {
-        let src = "#[sugar::sugar(concept = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
+        let src = "#[sugar::sugar(op = \"c\", library = \"l\")]\npub fn rev(s: &str) -> String {\n    s.chars().rev().collect()\n}\n";
         let parsed = syn::parse_file(src).unwrap();
         let item_fn = parsed
             .items
@@ -10298,7 +10298,7 @@ mod tests {
 
     #[test]
     fn boundary_body_edit_reindents_to_stub_level() {
-        let src = "mod m {\n    #[sugar::boundary(concept=\"c\", library=\"l\", call=\"f\")]\n    pub fn rev(s: &str) -> String {\n        unimplemented!()\n    }\n}\n";
+        let src = "mod m {\n    #[sugar::boundary(op=\"c\", library=\"l\", call=\"f\")]\n    pub fn rev(s: &str) -> String {\n        unimplemented!()\n    }\n}\n";
         let parsed = syn::parse_file(src).unwrap();
         let mut stubs: Vec<(&syn::ItemFn, String, String)> = Vec::new();
         collect_boundary_stubs(&parsed.items, &mut stubs);
@@ -10612,7 +10612,7 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
 async fn fetch_status(url: String) -> i64 {
     0
 }
@@ -10769,7 +10769,7 @@ async fn fetch_status(url: String) -> i64 {
     #[test]
     fn sugar_body_source_uses_rust_block_span_for_source_cid_without_storing_body() {
         let src = r####"
-#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
 async fn render(url: String) -> String {
     let normal = "}";
     let raw = r###"raw } braces { stay"###;
@@ -10811,7 +10811,7 @@ async fn render(url: String) -> String {
     #[test]
     fn sugar_body_source_uses_byte_offsets_for_unicode_source_cid_without_storing_body() {
         let src = r#"
-#[sugar::sugar(concept = "concept:unicode", library = "unicode-lib")]
+#[sugar::sugar(op = "concept:unicode", library = "unicode-lib")]
 pub fn snowman() -> &'static str { "☃ } still body" }
 "#;
         let entry = single_sugar_entry_for_source("sugar_body_unicode_byte_offsets", src);
@@ -10827,7 +10827,7 @@ pub fn snowman() -> &'static str { "☃ } still body" }
     #[test]
     fn sugar_body_source_canonicalizes_trimmed_body_for_source_cid_without_storing_body() {
         let src_a = r#"
-#[sugar::sugar(concept = "concept:canonical-body", library = "test-lib")]
+#[sugar::sugar(op = "concept:canonical-body", library = "test-lib")]
 pub fn canonical_body() -> i64 {
 
     41 + 1
@@ -10835,7 +10835,7 @@ pub fn canonical_body() -> i64 {
 }
 "#;
         let src_b = r#"
-#[sugar::sugar(concept = "concept:canonical-body", library = "test-lib")]
+#[sugar::sugar(op = "concept:canonical-body", library = "test-lib")]
 pub fn canonical_body() -> i64 {    41 + 1    }
 "#;
 
@@ -10863,7 +10863,7 @@ pub fn canonical_body() -> i64 {    41 + 1    }
     #[test]
     fn sugar_body_source_emits_template_cid_without_storing_template() {
         let src = r##"
-#[sugar::sugar(concept = "concept:json-parse", library = "serde_json")]
+#[sugar::sugar(op = "concept:json-parse", library = "serde_json")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -10904,7 +10904,7 @@ pub fn json_parse(s: &str) -> i64 {
     #[test]
     fn sugar_body_template_canonicalizes_multiple_params_positionally() {
         let src = r##"
-#[sugar::sugar(concept = "concept:sql-execute", library = "rusqlite")]
+#[sugar::sugar(op = "concept:sql-execute", library = "rusqlite")]
 pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
     conn.execute(sql, args)
 }
@@ -10947,13 +10947,13 @@ pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
         // Canonical templates with $1/$2 must be byte-identical for two
         // sugar functions that differ only in their parameter names.
         let src_a = r##"
-#[sugar::sugar(concept = "concept:noop", library = "ka")]
+#[sugar::sugar(op = "concept:noop", library = "ka")]
 pub fn op(x: &i64, y: &i64) -> i64 {
     x.add(y)
 }
 "##;
         let src_b = r##"
-#[sugar::sugar(concept = "concept:noop", library = "kb")]
+#[sugar::sugar(op = "concept:noop", library = "kb")]
 pub fn op(alpha: &i64, beta: &i64) -> i64 {
     alpha.add(beta)
 }
@@ -10985,7 +10985,7 @@ pub fn op(alpha: &i64, beta: &i64) -> i64 {
     fn recognize_emits_exact_tag_for_alpha_equivalent_user_function() {
         // The shim's sugar (what would land in the .proof envelope):
         let sugar_src = r##"
-#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11041,7 +11041,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_loads_binding_templates_from_imported_proofs() {
         let sugar_src = r##"
-#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11094,7 +11094,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_matches_template_cid_only_imported_proof() {
         let sugar_src = r##"
-#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11154,7 +11154,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_loads_binding_templates_from_cargo_dependency_proofs() {
         let sugar_src = r##"
-#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11232,7 +11232,7 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
     #[test]
     fn recognize_returns_empty_tags_for_non_matching_source() {
         let sugar_src = r##"
-#[sugar::sugar(concept = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
+#[sugar::sugar(op = "concept:json-parse", library = "sugar-shim-serde-json-rust")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
@@ -11278,13 +11278,13 @@ pub fn json_parse(s: &str) -> i64 {
         // Two binding templates (json + sql shapes). User source contains
         // one match for each. Recognize emits two tags.
         let json_sugar = r##"
-#[sugar::sugar(concept = "concept:json-parse", library = "json-lib")]
+#[sugar::sugar(op = "concept:json-parse", library = "json-lib")]
 pub fn json_parse(s: &str) -> i64 {
     serde_json::from_str(s)
 }
 "##;
         let sql_sugar = r##"
-#[sugar::sugar(concept = "concept:sql-execute", library = "sql-lib")]
+#[sugar::sugar(op = "concept:sql-execute", library = "sql-lib")]
 pub fn sql_execute(conn: &i64, sql: &str, args: &i64) -> i64 {
     conn.execute(sql, args)
 }
@@ -11343,7 +11343,7 @@ pub fn sql_execute(c: &i64, q: &str, p: &i64) -> i64 {
         // template's $N markers back to the user's actual variables at
         // tag emission time. The lifter exposes them as a separate field.
         let src = r##"
-#[sugar::sugar(concept = "concept:sql-query-row", library = "rusqlite")]
+#[sugar::sugar(op = "concept:sql-query-row", library = "rusqlite")]
 pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
     conn.query_row(sql, params, mapper)
 }
@@ -11370,7 +11370,7 @@ pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::sugar(
-    concept = "concept:sql-query",
+    op = "concept:sql-query",
     library = "rusqlite",
     version = "0.39.0",
     family = "concept:family:sql",
@@ -11410,7 +11410,7 @@ pub fn query(conn: &i64, sql: &str) -> i64 {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
 async fn fetch_status(url: String) -> i64 {
     0
 }
@@ -11444,7 +11444,7 @@ async fn fetch_status(url: String) -> i64 {
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::boundary(
-    concept = "concept:sql-query",
+    op = "concept:sql-query",
     library = "rusqlite",
     version = "0.39.0",
     family = "concept:family:sql",
@@ -11520,12 +11520,12 @@ fn plain_fn(x: i64) -> i64 {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(concept = "concept:http-request", library = "reqwest")]
+#[sugar::sugar(op = "concept:http-request", library = "reqwest")]
 fn fetch_one(url: String) -> i64 {
     0
 }
 
-#[sugar::sugar(concept = "concept:sql-query", library = "rusqlite")]
+#[sugar::sugar(op = "concept:sql-query", library = "rusqlite")]
 fn query_db(sql: String) -> String {
     String::new()
 }
@@ -11568,7 +11568,7 @@ fn query_db(sql: String) -> String {
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src_missing_lib = r#"
-#[sugar::sugar(concept = "concept:http-request")]
+#[sugar::sugar(op = "concept:http-request")]
 fn missing_lib(url: String) -> i64 { 0 }
 "#;
         fs::write(src_dir.join("lib.rs"), src_missing_lib).expect("write source");
@@ -12791,7 +12791,7 @@ reason = "scope discipline probe"
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::sugar(
-    concept = "concept:sql-query",
+    op = "concept:sql-query",
     library = "rusqlite",
     loss = ["sync-vs-async", "row-cardinality"],
 )]
@@ -12823,7 +12823,7 @@ fn query(conn: String, sql: String) -> i64 { 0 }
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(concept = "concept:sql-query", library = "rusqlite")]
+#[sugar::sugar(op = "concept:sql-query", library = "rusqlite")]
 fn query(conn: String, sql: String) -> i64 { 0 }
 "#;
         fs::write(src_dir.join("lib.rs"), src).expect("write source");
@@ -12853,7 +12853,7 @@ fn query(conn: String, sql: String) -> i64 { 0 }
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
 #[sugar::sugar(
-    concept = "concept:contract-observation",
+    op = "concept:contract-observation",
     library = "rusqlite",
     observed_dimension = "autocommit-mode",
 )]
@@ -12884,7 +12884,7 @@ fn is_autocommit(conn: String) -> bool { false }
         let src = r#"
 #[sugar::refuse(
     surface = "rusqlite::Connection::backup",
-    concept = "concept:sql-physical-backup",
+    op = "concept:sql-physical-backup",
     reason = "SQLite-binary-specific physical backup; N=1 cluster.",
     would_close_with_cluster = "Connection-level physical-backup method on >=2 SQL drivers",
 )]
@@ -12904,7 +12904,7 @@ pub mod refused_backup {}
         assert_eq!(refusals.len(), 1, "expected one refusal-memento entry");
         let r = &refusals[0];
         assert_eq!(r["surface"], "rusqlite::Connection::backup");
-        assert_eq!(r["concept"], "concept:sql-physical-backup");
+        assert_eq!(r["op"], "concept:sql-physical-backup");
         assert_eq!(
             r["reason"],
             "SQLite-binary-specific physical backup; N=1 cluster."
@@ -12926,7 +12926,7 @@ pub mod refused_backup {}
         let src_missing_reason = r#"
 #[sugar::refuse(
     surface = "rusqlite::Connection::backup",
-    concept = "concept:sql-physical-backup",
+    op = "concept:sql-physical-backup",
     would_close_with_cluster = "Cross-driver analog",
 )]
 pub mod refused_backup {}
@@ -12985,11 +12985,11 @@ pub mod plain_module {}
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         let src = r#"
-#[sugar::sugar(concept = "concept:sql-execute", library = "rusqlite", loss = [])]
+#[sugar::sugar(op = "concept:sql-execute", library = "rusqlite", loss = [])]
 fn execute(conn: String, sql: String) -> i64 { 0 }
 
 #[sugar::sugar(
-    concept = "concept:sql-query",
+    op = "concept:sql-query",
     library = "rusqlite",
     loss = ["sync-vs-async", "row-cardinality"],
 )]
@@ -12997,7 +12997,7 @@ fn query_row(conn: String, sql: String) -> String { String::new() }
 
 #[sugar::refuse(
     surface = "rusqlite::Connection::backup",
-    concept = "concept:sql-physical-backup",
+    op = "concept:sql-physical-backup",
     reason = "SQLite-specific; cluster N=1.",
     would_close_with_cluster = "Cross-driver backup method on >=2 SQL drivers",
 )]

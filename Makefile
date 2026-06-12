@@ -294,7 +294,6 @@ SHOWCASE_RUNS = \
 	examples/serde-json-showcase/run.sh \
 	examples/regex-showcase/run.sh \
 	examples/build-witness-showcase/run.sh \
-	examples/rust-boundary-showcase/run.sh \
 	examples/rust-witness-showcase/run.sh \
 	examples/rust-test-assertion-consistency/run.sh \
 	examples/std-core-showcase/run.sh \
