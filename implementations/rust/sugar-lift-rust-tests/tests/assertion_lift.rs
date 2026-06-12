@@ -4877,6 +4877,27 @@ fn iflet() {
     assert!(rhs.contains("Ok"), "rhs must tag Ok: {rhs}");
 }
 
+// --- string predicate over opaque receiver tranche ---
+
+#[test]
+fn starts_with_over_opaque_receiver_lifts() {
+    // `cid.starts_with("blake3-512:")` where cid is a computed value (not a
+    // literal) lifts as prefix-of("blake3-512:", cid) -- the receiver is
+    // type-guaranteed a string, so no type info is needed.
+    let src = r#"
+#[test]
+fn t() {
+    let cid = compute();
+    assert!(cid.starts_with("blake3-512:"));
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 1, "warnings: {:?}", out.skip_reasons);
+    let decl = format!("{:?}", out.decls[0]);
+    assert!(decl.contains("prefix-of") || decl.contains("prefix"), "must be prefix-of: {decl}");
+    assert!(decl.contains("blake3-512:"), "must carry the literal prefix: {decl}");
+}
+
 // --- bare boolean place tranche (assert!(flag)) ---
 
 #[test]
