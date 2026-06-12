@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Canonical sugar-cli self-application runner.
 #
-# Mints the dependency proofs (libsugar + rust-std shim), places them in the
-# cli's verify pool, mints sugar-cli (all four surfaces) with the Tier 2b
-# rust-analyzer oracle and the loud pipeline logging, then proves it. Prints the
-# three gates and the discharge scoreboard. Read docs/self-application/
-# KIT-SETUP-AND-SELF-APPLICATION.md for the why.
+# Mints libsugar's dependency proof, places it in the cli's verify pool, mints
+# sugar-cli (all four surfaces) with the Tier 2b rust-analyzer oracle and the
+# loud pipeline logging, then proves it. Prints the three gates and the discharge
+# scoreboard. Read docs/self-application/KIT-SETUP-AND-SELF-APPLICATION.md.
+#
+# NOTE: the rust-std shim is DEAD (removed in #1935 -- "shims die": a hand-built
+# synthesized std layer is a vendor you must trust, the exact thing the no-vendor
+# axiom kills; std panic-freedom is re-derived via the rust-analyzer oracle, not
+# resurrected). The real maintained entry point is `sugar self-check [--oracle]`,
+# which stages deps internally and is shim-free; this script is the verbose,
+# gate-by-gate variant of the same run.
 #
 # Usage:  scripts/self-apply.sh [--no-oracle]
 #   --no-oracle  skip the ~minutes rust-analyzer cold index (method-call
@@ -24,7 +30,18 @@ LOG="$SCRATCH/run.log"
 ORACLE_ENV=()
 [ "${1:-}" != "--no-oracle" ] && ORACLE_ENV=(SUGAR_RESOLVE_ORACLE=rust-analyzer)
 
-[ -x "$BIN" ] || { echo "build first: (cd implementations/rust && cargo build -p sugar-cli -p sugar-walk)"; exit 1; }
+# The lifter RPC binaries must exist or mint silently writes an EMPTY-SET
+# attestation ("lifter binary not found: producing empty-set attestation") and no
+# .proof -- a hollow green. Check loudly. `-p sugar-walk` alone does NOT build the
+# rpc bin; need `--bins`. sugar-lift is its own crate.
+BUILD_HINT="(cd implementations/rust && cargo build -p sugar-cli --bin sugar && cargo build -p sugar-walk --bins && cargo build -p sugar-lift)"
+[ -x "$BIN" ] || { echo "build first: $BUILD_HINT"; exit 1; }
+for lifter in sugar-walk-rpc sugar-lift; do
+  [ -x "implementations/rust/target/debug/$lifter" ] || {
+    echo "missing lifter binary '$lifter' -- mint would write a hollow empty-set attestation."
+    echo "build first: $BUILD_HINT"; exit 1
+  }
+done
 rm -rf "$SCRATCH"; mkdir -p "$SCRATCH" "$IMPORTS"; rm -f "$IMPORTS"/*.proof; : > "$LOG"
 
 mint_dep () {  # <project-dir> <short-name>
@@ -39,7 +56,8 @@ mint_dep () {  # <project-dir> <short-name>
 }
 
 mint_dep implementations/rust/libsugar          libsugar
-mint_dep examples/sugar-shim-rust-std           shim-std
+# (rust-std shim removed in #1935 -- shims die; std panic-freedom comes from the
+#  rust-analyzer oracle now, not a hand-built catalog.)
 
 echo "==== mint sugar-cli (oracle: ${ORACLE_ENV:+on}${ORACLE_ENV:-off}) ====" | tee -a "$LOG"
 env "${ORACLE_ENV[@]}" RUST_LOG=info,sugar_walk_rpc=info \
