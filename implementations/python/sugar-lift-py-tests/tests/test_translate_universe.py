@@ -1757,3 +1757,235 @@ def test_decorated_delegate_refuses(vendor_path):
     )
     u, r = delegation_universe_for_callee("venddeco_deleg.f")
     assert u is None and r is not None and "decorated" in r.reason
+
+
+# ---------------------------------------------------------------------------
+# assert-as-guard + the None arm (census: non-return:Assert 179k, Pass 17k,
+# empty 7k, bare-return 1.7k). An `assert P` is a guard with polarity
+# flipped — it raises exactly when P is false — so it contributes P itself
+# as the clause (the negated comparison of NOT P). A body that is, after
+# the guard prefix, empty / pass / bare return falls off the end, and
+# CPython defines falling off the end as None, unconditionally. Effect
+# tails stay non-candidates: their contract is the effect, not a vacuous
+# value claim.
+# ---------------------------------------------------------------------------
+
+
+def test_assert_prefix_contributes_guard_clause(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        guard_universe_for_callee,
+    )
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendassert_guard",
+        "def f(x):\n    assert x > 0\n    return x\n",
+    )
+    guards, refusal = guard_universe_for_callee("vendassert_guard.f")
+    assert refusal is None and guards is not None
+    (clause,) = guards.clauses
+    # assert x > 0 raises when x <= 0: the clause is the negation
+    assert (clause.param_name, clause.op, clause.literal) == ("x", "≤", 0)
+
+
+def test_assert_and_if_raise_clauses_compose(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        guard_universe_for_callee,
+    )
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendassert_both",
+        "def f(x, y):\n"
+        "    assert x > 0\n"
+        "    if y < 2:\n"
+        "        raise ValueError(y)\n"
+        "    return x\n",
+    )
+    guards, refusal = guard_universe_for_callee("vendassert_both.f")
+    assert refusal is None and guards is not None
+    ops = [(c.param_name, c.op, c.literal) for c in guards.clauses]
+    assert ops == [("x", "≤", 0), ("y", "<", 2)]
+
+
+def test_assert_vendor_vector_firing_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        guard_universe_for_callee,
+    )
+
+    guard_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendassert_fire",
+        "def f(x):\n    assert x > 0\n    return x\n",
+    )
+    vendor_path(
+        "test_vendassert_fire",
+        "import vendassert_fire\n\n"
+        "def test_bad():\n    assert vendassert_fire.f(-3) == -3\n",
+    )
+    guards, refusal = guard_universe_for_callee("vendassert_fire.f")
+    assert guards is None and refusal is not None
+    assert "sample-gate" in refusal.reason
+
+
+def test_assert_only_body_swears_none(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendnone_assert", "def check(x):\n    assert x > 0\n"
+    )
+    u, r = constant_universe_for_callee("vendnone_assert.check")
+    assert r is None and u is not None
+    assert (u.value, u.value_kind) == (None, "none")
+
+
+def test_pass_body_swears_none(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendnone_pass", "def noop(x):\n    pass\n")
+    u, r = constant_universe_for_callee("vendnone_pass.noop")
+    assert r is None and (u.value, u.value_kind) == (None, "none")
+
+
+def test_docstring_only_body_swears_none(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendnone_doc", 'def noop(x):\n    """does nothing"""\n'
+    )
+    u, r = constant_universe_for_callee("vendnone_doc.noop")
+    assert r is None and (u.value, u.value_kind) == (None, "none")
+
+
+def test_bare_return_swears_none(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendnone_ret",
+        "def stop(x):\n    if x < 0:\n        raise ValueError(x)\n    return\n",
+    )
+    u, r = constant_universe_for_callee("vendnone_ret.stop")
+    assert r is None and (u.value, u.value_kind) == (None, "none")
+
+
+def test_effect_tail_is_not_a_none_candidate(vendor_path):
+    # `x.fire()` returns None too — but its contract is the EFFECT; a
+    # vacuous value claim would dress a side effect as a proven function.
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendnone_effect", "def f(x):\n    x.fire()\n")
+    u, r = constant_universe_for_callee("vendnone_effect.f")
+    assert u is None and r is None
+
+
+def test_generator_is_not_a_none_candidate(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    vendor_path("vendnone_gen", "def f(x):\n    yield x\n")
+    u, r = constant_universe_for_callee("vendnone_gen.f")
+    assert u is None and r is None
+
+
+def test_walrus_assert_refuses_everywhere(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+        guard_universe_for_callee,
+    )
+
+    vendor_path(
+        "vendassert_walrus",
+        "def f(x):\n    assert (x := x + 1) > 0\n    return x\n",
+    )
+    guard_universe_for_callee.cache_clear()
+    g, gr = guard_universe_for_callee("vendassert_walrus.f")
+    assert g is None and gr is not None and "walrus" in gr.reason
+    delegation_universe_for_callee.cache_clear()
+    d, dr = delegation_universe_for_callee("vendassert_walrus.f")
+    assert d is None and dr is not None and "walrus" in dr.reason
+    constant_universe_for_callee.cache_clear()
+    c, cr = constant_universe_for_callee("vendassert_walrus.f")
+    # the tainted strip refuses BEFORE the shape is even considered: a
+    # rebound environment poisons every downstream read uniformly
+    assert c is None and cr is not None and "walrus" in cr.reason
+
+
+def test_assert_prefix_identity_composes(vendor_path):
+    # assert strips for the delegation family too: the identity universe
+    # and the assert clause ride the same body.
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendassert_ident",
+        "def f(x):\n    assert x > 0\n    return x\n",
+    )
+    u, r = delegation_universe_for_callee("vendassert_ident.f")
+    assert r is None and u is not None and u.kind == "identity"
+
+
+def test_assert_guard_and_none_emit_together(vendor_path):
+    # e2e through layer2: the consumer swears check(-5) == 3. The body
+    # swears TWO universes that each refute it — the None equality (the
+    # body falls off the end: the value is None, not 3) and the assert
+    # clause instantiated at -5 (not(-5 <= 0) is false: you swore a
+    # return from a call the vendor's own source says raises). Both
+    # conjuncts must land in the same inv as the claim. (A consumer
+    # writing `== None` takes the dedicated None-check encoding, which
+    # carries no extractable call subject — universes inject on the
+    # standard equality path.)
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        guard_universe_for_callee,
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    constant_universe_for_callee.cache_clear()
+    guard_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendassert_l2", "def check(x):\n    assert x > 0\n"
+    )
+    out = _lift(
+        """
+        import vendassert_l2
+
+        def test_neg():
+            assert vendassert_l2.check(-5) == 3
+        """
+    )
+    none_eqs, guard_negs = [], []
+    for d in out.decls:
+        if d.inv is None:
+            continue
+        # raw operand walk: _iter_conjuncts yields only ATOMIC leaves, so
+        # the guard's not(...) conjunct is invisible to it by design
+        for a in getattr(d.inv, "operands", (d.inv,)):
+            if getattr(a, "name", None) == "=" and any(
+                getattr(s, "name", None) == "None"
+                for s in getattr(a, "args", ())
+            ):
+                none_eqs.append(a)
+            if getattr(a, "kind", None) == "not":
+                guard_negs.append(a)
+    assert none_eqs, [d.name for d in out.decls]
+    assert guard_negs, [d.name for d in out.decls]

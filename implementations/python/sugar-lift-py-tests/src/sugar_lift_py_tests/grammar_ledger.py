@@ -69,9 +69,10 @@ def _membrane(reason: str) -> dict:
 # ---------------------------------------------------------------------------
 
 _NAMED: dict = {
-    "empty": _debt(
-        "implicit-None constant universe: a docstring-only body returns "
-        "None unconditionally — the constant family's missing arm"
+    "empty": _lifted(
+        "constant_universe_for_callee",
+        "implicit-None equality: falling off the end is None, "
+        "unconditionally",
     ),
     "unparseable-file": _membrane(
         "not parseable as the pinned Python grammar; the file never enters "
@@ -194,10 +195,15 @@ _NON_RETURN: dict = {
         "per-body IO markers route to membrane via "
         "callee_is_nondeterministic"
     ),
-    "Assert": _debt(
-        "in-body assertion lift: the vendor swears FOL inside the body; "
-        "lift the assert predicate as the function's contract (179k tails "
-        "— the cheapest honest rows in the corpus)"
+    "Assert": _lifted(
+        "guard_universe_for_callee",
+        "assert clauses — the vendor's in-body FOL as negated guard "
+        "comparisons — plus the implicit-None equality for assert-only "
+        "bodies",
+        residual="bodies with non-guard statements before the asserts "
+        "refuse as non-candidates; non-comparison assert tests skip "
+        "clause-wise (pure tests); asserts assumed enabled (-O can only "
+        "false-refuse)",
     ),
     "Assign": _debt(
         "binding tail: returns None; preceding bindings feed SSA for the "
@@ -226,10 +232,17 @@ _NON_RETURN: dict = {
         "guard family's complement (callee(args) raises E when the guard "
         "fires)"
     ),
-    "Pass": _debt("implicit-None constant universe (same as empty)"),
-    "Return": _debt(
-        "bare `return` is implicit None: the constant family's missing "
-        "None arm (same as empty)"
+    "Pass": _lifted(
+        "constant_universe_for_callee",
+        "implicit-None equality (a bare pass falls off the end)",
+        residual="bodies with effect statements before the tail refuse "
+        "as non-candidates",
+    ),
+    "Return": _lifted(
+        "constant_universe_for_callee",
+        "explicit-None equality (a bare return is None)",
+        residual="bodies with effect statements before the tail refuse "
+        "as non-candidates",
     ),
     "Match": _debt(
         "structural-match tail: variant_of/tag vocabulary exists "
