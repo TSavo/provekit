@@ -1534,7 +1534,7 @@ pub(crate) fn stamp_platform_profile(
 ) {
     for entry in entries.iter_mut() {
         let kind = entry.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-        if kind != "library-sugar-binding-entry" && kind != "realization-memento" {
+        if kind != "library-sugar-binding-entry" {
             continue;
         }
         let Some(obj) = entry.as_object_mut() else {
@@ -2270,10 +2270,6 @@ fn mint_ir_document(
                     let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
                     members.entry(cid).or_insert(bytes);
                 }
-                Some("realization-memento") => {
-                    let (cid, bytes) = mint_realization_memento(decl)?;
-                    members.entry(cid).or_insert(bytes);
-                }
                 Some("witness-memento") => {
                     let (cid, bytes) = mint_witness_memento(decl)?;
                     members.entry(cid).or_insert(bytes);
@@ -2291,10 +2287,6 @@ fn mint_ir_document(
             match decl.get("kind").and_then(|v| v.as_str()) {
                 Some("library-sugar-binding-entry") => {
                     let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
-                    members.entry(cid).or_insert(bytes);
-                }
-                Some("realization-memento") => {
-                    let (cid, bytes) = mint_realization_memento(decl)?;
                     members.entry(cid).or_insert(bytes);
                 }
                 Some("witness-memento") => {
@@ -2593,43 +2585,6 @@ fn mint_witness_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
 }
 
 
-/// Mint a `realization-memento` (Boundary variant) into the envelope.
-/// Emitted by `walk_rpc` for each `#[sugar::boundary]` annotation
-/// it finds: a function tagged as the EDGE where a concept binds to
-/// a per-language library. The materializer (downstream) reads these
-/// when retargeting consumers to other languages and substitutes the
-/// per-target sister library at each boundary callsite. The data type
-/// already exists as `RealizationMemento::Boundary` in
-/// `sugar-ir-types`; here we just envelope-mint it for the .proof.
-fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
-    let realization_kind = required_str(decl, "realization_kind", "realization-memento")?;
-    if realization_kind != "boundary" {
-        return Err(format!(
-            "realization-memento: only `realization_kind = \"boundary\"` is currently \
-             minted; got `{realization_kind}`"
-        ));
-    }
-    let target_language = required_str(decl, "target_language", "realization-memento")?;
-    let op_cid = required_str(decl, "op_cid", "realization-memento")?;
-    let library = required_str(decl, "library", "realization-memento")?;
-    let source_function_name = required_str(decl, "source_function_name", "realization-memento")?;
-
-    let envelope = json!({
-        "body": decl,
-        "header": {
-            "kind": "realization-memento",
-            "realizationKind": "boundary",
-            "library": library,
-            "opCid": op_cid,
-            "sourceFunctionName": source_function_name,
-            "targetLanguage": target_language,
-        },
-        "schemaVersion": "1",
-    });
-    let canonical = encode_jcs(&json_to_cvalue(&envelope));
-    let cid = blake3_512_of(canonical.as_bytes());
-    Ok((cid, canonical.into_bytes()))
-}
 
 /// Reduce a function-contract `fnName` to the bare symbol a harvested call
 /// ctor uses. Rust walk emits the bare ident already (`double`), so this is
@@ -3034,19 +2989,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn stamp_applies_to_realization_memento_too() {
-        let mut entries = vec![json!({
-            "kind": "realization-memento",
-            "realization_kind": "boundary",
-            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "library": "rusqlite",
-        })];
-        stamp_platform_profile(&mut entries, &sql_profile());
-        let e = &entries[0];
-        assert_eq!(e["family"], "family:sql");
-        assert_eq!(e["library_version"], "0.39.0");
-    }
 
     #[test]
     fn stamp_with_partial_profile_only_fills_pinned_axes() {
@@ -3111,28 +3053,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn mint_realization_memento_preserves_op_cid_when_present() {
-        let (_cid, bytes) = mint_realization_memento(&json!({
-            "kind": "realization-memento",
-            "realization_kind": "boundary",
-            "target_language": "python",
-            "op_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "library": "numpy",
-            "source_function_name": "add"
-        }))
-        .expect("mint realization memento");
-        let envelope: Value = serde_json::from_slice(&bytes).expect("canonical JSON envelope");
-
-        assert_eq!(
-            envelope["header"]["opCid"],
-            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        );
-        assert_eq!(
-            envelope["body"]["op_cid"],
-            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        );
-    }
 
     #[test]
     fn resolve_kit_reads_project_config_aliases() {
