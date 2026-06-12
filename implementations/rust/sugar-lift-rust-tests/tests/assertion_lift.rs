@@ -5006,6 +5006,66 @@ fn t() {
     );
 }
 
+// --- array-repeat literal tranche (assert_eq!(x, [elem; N])) ---
+
+#[test]
+fn array_repeat_literal_is_congruent_to_explicit_array() {
+    // `[0xab; 3]` is the same value as `[0xab, 0xab, 0xab]` -> the SAME term.
+    let repeat = r#"
+#[test]
+fn t() { let x = mk(); assert_eq!(x, [0xabu8; 3]); }
+"#;
+    let explicit = r#"
+#[test]
+fn t() { let x = mk(); assert_eq!(x, [0xabu8, 0xabu8, 0xabu8]); }
+"#;
+    let dr = format!("{:?}", lift_file(&parse(repeat), "src/x.rs").decls[0]);
+    let de = format!("{:?}", lift_file(&parse(explicit), "src/x.rs").decls[0]);
+    assert_eq!(dr, de, "[e; N] must lift congruently to the N-fold explicit array");
+}
+
+#[test]
+fn array_repeat_distinct_elems_are_contradiction() {
+    // Teeth: the same subject equated to two distinct repeats yields distinct
+    // RHS terms over the same LHS (UNSAT).
+    let src = r#"
+#[test]
+fn t() {
+    let x = mk();
+    assert_eq!(x, [0xabu8; 4]);
+    assert_eq!(x, [0xcdu8; 4]);
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 2, "warnings: {:?}", out.skip_reasons);
+    let ops = inv_operands(&out.decls[0]);
+    let rhs = |f: &Formula| match f {
+        Formula::Atomic { args, .. } => format!("{:?}", args[1]),
+        other => panic!("{other:?}"),
+    };
+    assert_ne!(rhs(&ops[0]), rhs(&ops[1]), "0xab vs 0xcd repeats must differ (teeth)");
+}
+
+#[test]
+fn array_repeat_nonliteral_length_refused_by_name() {
+    // Discrimination: a const/path length is not a finite construction -> refused.
+    let src = r#"
+#[test]
+fn t() {
+    const LEN: usize = 32;
+    let x = mk();
+    assert_eq!(x, [0u8; LEN]);
+}
+"#;
+    let out = lift_file(&parse(src), "src/x.rs");
+    assert_eq!(out.assertions_lifted, 0, "non-literal-length repeat must not lift");
+    assert!(
+        out.skip_reasons.iter().any(|r| r.contains("non-literal length")),
+        "refusal must name the non-literal length: {:?}",
+        out.skip_reasons
+    );
+}
+
 // --- struct-literal equality tranche (assert_eq!(x, Type { f: v })) ---
 
 #[test]

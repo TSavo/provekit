@@ -4317,6 +4317,34 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
         Expr::Tuple(tuple) => {
             literal_aggregate_term_in_scope("Tuple", tuple.elems.iter(), expr, scope)
         }
+        Expr::Repeat(repeat) => {
+            // `[elem; N]` is an N-element array constructor. With a LITERAL count it
+            // is EXACTLY the N-fold explicit array `[elem, elem, ...]`, the same value
+            // and (by construction) the same aggregate term -- so `[0xab; 3]` and
+            // `[0xab, 0xab, 0xab]` are congruent, and two different repeats are
+            // distinct terms (the teeth). A non-literal count is not a finite
+            // construction from the written literal, so it is REFUSED BY NAME; an
+            // element that does not translate propagates its own named Err.
+            let Some(count) = repeat_count_literal(&repeat.len) else {
+                return Err(format!(
+                    "array-repeat `[_; N]` has a non-literal length -- not a finite \
+                     construction from the literal; refused by name: `{}`",
+                    token_key(expr)
+                ));
+            };
+            // Bound the expansion so a pathological literal length cannot blow up the
+            // term; an over-bound repeat is named, not silently truncated.
+            const MAX_REPEAT: usize = 4096;
+            if count > MAX_REPEAT {
+                return Err(format!(
+                    "array-repeat length {count} exceeds the {MAX_REPEAT}-element \
+                     expansion bound; refused by name: `{}`",
+                    token_key(expr)
+                ));
+            }
+            let elem_refs = std::iter::repeat(&*repeat.expr).take(count);
+            literal_aggregate_term_in_scope("Array", elem_refs, expr, scope)
+        }
         Expr::Struct(s) => {
             // A struct / enum-struct literal `Path { f: v, ... }` is a constructor.
             // Lift it to a Ctor keyed by the path, with one `field:<name>` sub-ctor
@@ -4604,6 +4632,18 @@ fn find_const_expr(expr: &Expr) -> Option<&Expr> {
         }
         Expr::Paren(paren) => find_const_expr(&paren.expr),
         Expr::Group(group) => find_const_expr(&group.expr),
+        _ => None,
+    }
+}
+
+/// The length of an array-repeat `[elem; N]` as a `usize`, iff `N` is a plain
+/// integer literal (the only finitely-constructible case). A `const`/path length
+/// (`[0; LEN]`) returns None and is refused by name upstream.
+fn repeat_count_literal(len: &Expr) -> Option<usize> {
+    match len {
+        Expr::Lit(ExprLit { lit: Lit::Int(i), .. }) => i.base10_parse::<usize>().ok(),
+        Expr::Paren(p) => repeat_count_literal(&p.expr),
+        Expr::Group(g) => repeat_count_literal(&g.expr),
         _ => None,
     }
 }
