@@ -3368,7 +3368,15 @@ def _universe_conjuncts(
         # the consumer's input, recompute not solver-invention -- so the
         # output EQUALS that bool. Emit subject == bool; a consumer asserting
         # the opposite truth value refutes.
-        pred_u, _pred_refusal = predicate_universe_for_callee(callee)
+        pred_u, pred_refusal = predicate_universe_for_callee(callee)
+        if pred_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::predicate-universe",
+                    reason=f"{pred_refusal.callee}: {pred_refusal.reason}",
+                )
+            )
         if pred_u is not None:
             call_args = (
                 subject_term.args[1:]

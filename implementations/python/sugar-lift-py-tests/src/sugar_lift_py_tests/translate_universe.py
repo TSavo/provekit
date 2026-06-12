@@ -173,6 +173,17 @@ def guard_universe_for_callee(
             and not stmt.orelse
         ):
             break
+        if any(isinstance(n, ast.NamedExpr) for n in ast.walk(stmt.test)):
+            # A walrus guard is NOT a pure test: it rebinds a name, so
+            # every clause read after it compares the callsite's argument
+            # against a comparison the runtime makes with the REBOUND
+            # value (false-refusal direction). The independence argument
+            # below holds only for pure tests; refuse the whole walk.
+            return refuse(
+                "guard-strip: a guard test rebinds via walrus "
+                "(NamedExpr); sibling guard claims are no longer "
+                "independent of it"
+            )
         clause = _guard_clause(stmt.test, params)
         if clause is None:
             # Guards are pure tests: the per-guard claim "a value implies
@@ -237,16 +248,23 @@ class ConstantUniverse:
     vendor_vector_source: Optional[str] = None
 
 
-def _constant_return_value(body: list):
-    """If the body (sans docstring, sans any leading guard-then-raise
-    prefix) is a SINGLE `return <literal>` with NO other return/yield
-    anywhere, the function unconditionally returns that literal. Returns
-    (value, kind) or None. Guards before the return only gate whether it
-    returns; they never change the value, so the equality still holds for
-    every input that returns."""
-    # strip a leading guard-then-raise prefix (if X: raise ...)
+_GUARD_TAINTED = object()
+
+
+def _strip_guard_prefix(body: list):
+    """Split a leading `if X: raise` prefix off the body. Returns
+    (rest, tainted): tainted=True means a stripped guard's TEST contains
+    a NamedExpr. A walrus in a guard REBINDS a name before the remaining
+    body runs, so any param read downstream is no longer the callsite's
+    argument — stripping such a guard is a live falsePass (caught
+    2026-06-12: `if (x := x + 10) > 100: raise` then `return x > 5`
+    emitted f(1)==False while the runtime returns True). Every caller
+    must refuse the walk when tainted; the invariant this preserves is
+    that guard-stripping never changes the binding environment of the
+    remaining body."""
     rest = []
     seen_nonguard = False
+    tainted = False
     for stmt in body:
         is_guard = (
             isinstance(stmt, ast.If)
@@ -255,9 +273,30 @@ def _constant_return_value(body: list):
             and not stmt.orelse
         )
         if is_guard and not seen_nonguard:
+            if any(
+                isinstance(n, ast.NamedExpr) for n in ast.walk(stmt.test)
+            ):
+                tainted = True
             continue
         seen_nonguard = True
         rest.append(stmt)
+    return rest, tainted
+
+
+def _constant_return_value(body: list):
+    """If the body (sans docstring, sans any leading guard-then-raise
+    prefix) is a SINGLE `return <literal>` with NO other return/yield
+    anywhere, the function unconditionally returns that literal. Returns
+    (value, kind), None for non-candidates, or _GUARD_TAINTED when a
+    stripped guard rebinds via walrus (a literal return value cannot be
+    rebound, but the uniform invariant — guard-stripping never changes
+    the binding environment — is enforced at every strip site rather
+    than argued away per family). Guards before the return only gate
+    whether it returns; they never change the value, so the equality
+    still holds for every input that returns."""
+    rest, tainted = _strip_guard_prefix(body)
+    if tainted:
+        return _GUARD_TAINTED
     if len(rest) != 1 or not isinstance(rest[0], ast.Return):
         return None
     # no OTHER return/yield in the whole body would let a different value
@@ -414,19 +453,20 @@ def predicate_universe_for_callee(
             and isinstance(stmt.value.value, str)
         )
     ]
-    rest = []
-    seen = False
-    for stmt in body:
-        if (
-            not seen
-            and isinstance(stmt, ast.If)
-            and len(stmt.body) == 1
-            and isinstance(stmt.body[0], ast.Raise)
-            and not stmt.orelse
-        ):
-            continue
-        seen = True
-        rest.append(stmt)
+    rest, tainted = _strip_guard_prefix(body)
+    if tainted:
+        # The falsePass this refusal closes: a walrus in a stripped guard
+        # rebinds a param, so ground-evaluating the return expression at
+        # the CALLSITE's argument computes the wrong bool and the emitted
+        # equality discharges a wrong claim. Refuse loudly.
+        return None, TranslateWalkRefusal(
+            callee=callee,
+            reason=(
+                "guard-strip: a stripped guard test rebinds via walrus "
+                "(NamedExpr); the remaining body no longer sees the "
+                "callsite's arguments"
+            ),
+        )
     if (
         len(rest) != 1
         or not isinstance(rest[0], ast.Return)
@@ -483,6 +523,12 @@ def constant_universe_for_callee(
         )
     ]
     vk = _constant_return_value(body)
+    if vk is _GUARD_TAINTED:
+        return refuse(
+            "guard-strip: a stripped guard test rebinds via walrus "
+            "(NamedExpr); the remaining body no longer sees the "
+            "callsite's arguments"
+        )
     if vk is None:
         return None, None
     value, kind = vk
