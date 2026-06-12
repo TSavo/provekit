@@ -134,6 +134,9 @@ _CMP_EVAL = {
     "≠": lambda a, b: a != b,
 }
 
+# `assert P` raises when NOT P: its guard clause is P's negation.
+_NEG_OP = {"<": "≥", "≤": ">", ">": "≤", "≥": "<", "=": "≠", "≠": "="}
+
 
 @functools.lru_cache(maxsize=None)
 def guard_universe_for_callee(
@@ -166,14 +169,25 @@ def guard_universe_for_callee(
     ]
     clauses = []
     for stmt in body:
-        if not (
+        # An `assert P` is a guard with the polarity flipped: it RAISES
+        # exactly when P is false, where `if T: raise` raises when T is
+        # true. Both swear "a return value implies this guard did not
+        # fire"; the assert's clause is the NEGATED comparison. (Asserts
+        # are assumed enabled — pytest forces them, so the vendor corpus
+        # the gate reads runs with them on; under -O the clause can only
+        # false-refuse, never falsePass.)
+        if isinstance(stmt, ast.Assert):
+            guard_test, negate = stmt.test, True
+        elif (
             isinstance(stmt, ast.If)
             and len(stmt.body) == 1
             and isinstance(stmt.body[0], ast.Raise)
             and not stmt.orelse
         ):
+            guard_test, negate = stmt.test, False
+        else:
             break
-        if any(isinstance(n, ast.NamedExpr) for n in ast.walk(stmt.test)):
+        if any(isinstance(n, ast.NamedExpr) for n in ast.walk(guard_test)):
             # A walrus guard is NOT a pure test: it rebinds a name, so
             # every clause read after it compares the callsite's argument
             # against a comparison the runtime makes with the REBOUND
@@ -184,13 +198,20 @@ def guard_universe_for_callee(
                 "(NamedExpr); sibling guard claims are no longer "
                 "independent of it"
             )
-        clause = _guard_clause(stmt.test, params)
+        clause = _guard_clause(guard_test, params)
         if clause is None:
             # Guards are pure tests: the per-guard claim "a value implies
             # this guard did not fire" holds independently of siblings, so
             # an unreadable guard is skipped (its claim is simply not made)
             # rather than poisoning the readable ones.
             continue
+        if negate:
+            clause = GuardClause(
+                param_index=clause.param_index,
+                param_name=clause.param_name,
+                op=_NEG_OP[clause.op],
+                literal=clause.literal,
+            )
         clauses.append(clause)
     if not clauses:
         return None, None
@@ -252,29 +273,42 @@ _GUARD_TAINTED = object()
 
 
 def _strip_guard_prefix(body: list):
-    """Split a leading `if X: raise` prefix off the body. Returns
-    (rest, tainted): tainted=True means a stripped guard's TEST contains
-    a NamedExpr. A walrus in a guard REBINDS a name before the remaining
-    body runs, so any param read downstream is no longer the callsite's
-    argument — stripping such a guard is a live falsePass (caught
-    2026-06-12: `if (x := x + 10) > 100: raise` then `return x > 5`
-    emitted f(1)==False while the runtime returns True). Every caller
-    must refuse the walk when tainted; the invariant this preserves is
-    that guard-stripping never changes the binding environment of the
-    remaining body."""
+    """Split a leading guard prefix off the body: `if X: raise` clauses
+    and bare `assert X` statements (an assert IS a guard — it raises
+    AssertionError exactly when its test is false, so it only gates
+    whether the remaining body runs, never what it computes; the
+    vendor's own test corpus runs with asserts enabled, as pytest
+    forces, so the gating is real where the evidence comes from).
+
+    Returns (rest, tainted): tainted=True means a stripped guard's TEST
+    contains a NamedExpr. A walrus in a guard REBINDS a name before the
+    remaining body runs, so any param read downstream is no longer the
+    callsite's argument — stripping such a guard is a live falsePass
+    (caught 2026-06-12: `if (x := x + 10) > 100: raise` then
+    `return x > 5` emitted f(1)==False while the runtime returns True).
+    Every caller must refuse the walk when tainted; the invariant this
+    preserves is that guard-stripping never changes the binding
+    environment of the remaining body. (An assert's failure message
+    evaluates only on the raising path, like a raise's arguments, so
+    only the test is checked.)"""
     rest = []
     seen_nonguard = False
     tainted = False
     for stmt in body:
-        is_guard = (
+        if isinstance(stmt, ast.Assert):
+            guard_test = stmt.test
+        elif (
             isinstance(stmt, ast.If)
             and len(stmt.body) == 1
             and isinstance(stmt.body[0], ast.Raise)
             and not stmt.orelse
-        )
-        if is_guard and not seen_nonguard:
+        ):
+            guard_test = stmt.test
+        else:
+            guard_test = None
+        if guard_test is not None and not seen_nonguard:
             if any(
-                isinstance(n, ast.NamedExpr) for n in ast.walk(stmt.test)
+                isinstance(n, ast.NamedExpr) for n in ast.walk(guard_test)
             ):
                 tainted = True
             continue
@@ -297,8 +331,6 @@ def _constant_return_value(body: list):
     rest, tainted = _strip_guard_prefix(body)
     if tainted:
         return _GUARD_TAINTED
-    if len(rest) != 1 or not isinstance(rest[0], ast.Return):
-        return None
     # no OTHER return/yield in the whole body would let a different value
     # escape; a single return of a literal is the whole story.
     returns = sum(
@@ -307,6 +339,25 @@ def _constant_return_value(body: list):
         for n in ast.walk(stmt)
         if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
     )
+    # THE NONE ARM (census: empty 7k, non-return:Pass 17k, bare-return
+    # 1.7k, and assert-only bodies from non-return:Assert's 179k): a body
+    # that is — after the guard prefix — empty, a bare `pass`, or a bare
+    # `return` falls off the end, and CPython defines falling off the end
+    # as None, unconditionally. Effect-bearing tails (a call, an
+    # assignment) also return None but their CONTRACT is the effect; they
+    # stay non-candidates here rather than wearing a vacuous value claim.
+    if not rest or (
+        len(rest) == 1
+        and (
+            isinstance(rest[0], ast.Pass)
+            or (isinstance(rest[0], ast.Return) and rest[0].value is None)
+        )
+    ):
+        if returns <= 1:  # zero, or the single bare return itself
+            return (None, "none")
+        return None
+    if len(rest) != 1 or not isinstance(rest[0], ast.Return):
+        return None
     if returns != 1:
         return None
     return _literal_value_kind(rest[0].value)
