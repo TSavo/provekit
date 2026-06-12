@@ -1084,3 +1084,62 @@ def test_predicate_impure_not_candidate(vendor_path):
     )
     u, r = predicate_universe_for_callee("vendpred_impure.f")
     assert u is None and r is None  # call in predicate -> not purely evaluable
+
+
+# --- return-replace-literals family (single-char replace complement) ---
+
+VENDOR_REPLACE = '''
+def slugify(s):
+    return s.replace(" ", "-")
+'''
+
+
+def test_replace_family_walks(vendor_path):
+    vendor_path("vendrepl_ok", VENDOR_REPLACE)
+    u, r = translate_universe_for_callee("vendrepl_ok.slugify")
+    assert r is None and u is not None
+    assert u.kind == "chars-not-in-set" and u.forbidden == " "
+
+
+def test_replace_noop_refuses(vendor_path):
+    vendor_path("vendrepl_noop", 'def f(s):\n    return s.replace("x", "x")\n')
+    u, r = translate_universe_for_callee("vendrepl_noop.f")
+    assert u is None and r is not None and "no-op" in r.reason
+
+
+def test_replace_multichar_not_candidate(vendor_path):
+    vendor_path("vendrepl_multi", 'def f(s):\n    return s.replace("ab", "cd")\n')
+    u, r = translate_universe_for_callee("vendrepl_multi.f")
+    assert u is None and r is None  # multi-char: no clean char guarantee
+
+
+def test_replace_emits_complement(vendor_path):
+    vendor_path("vendrepl_l2", VENDOR_REPLACE)
+    out = _lift(
+        """
+        import vendrepl_l2
+
+        def test_slug():
+            assert vendrepl_l2.slugify("a b") == "a-b"
+        """
+    )
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    atoms = [
+        a
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for a in _iter_conjuncts(d.inv)
+        if a.name == "str.chars-not-in-set"
+    ]
+    assert atoms and atoms[0].args[1].value == " "
+
+
+def test_replace_vendor_vector_with_char_refuses(vendor_path):
+    vendor_path("vendrepl_gate", VENDOR_REPLACE)
+    vendor_path(
+        "test_vendrepl_gate",
+        'import vendrepl_gate\n\ndef test_s():\n    assert vendrepl_gate.slugify("x") == "a b"\n',
+    )
+    u, r = translate_universe_for_callee("vendrepl_gate.slugify")
+    assert u is None and r is not None and "sample-gate" in r.reason
