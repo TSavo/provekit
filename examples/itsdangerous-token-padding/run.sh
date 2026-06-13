@@ -614,6 +614,20 @@ if not any(
     for locus in timed_loads_unsafe_audit["loci"]
 ):
     raise SystemExit("FAIL: TimedSerializer.loads_unsafe delegate call was not queued as support")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "keyword"
+    and locus.get("line") == 228
+    for locus in timed_loads_unsafe_audit["loci"]
+):
+    raise SystemExit("FAIL: TimedSerializer.loads_unsafe load_kwargs keyword was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Dict"
+    and locus.get("line") == 228
+    for locus in timed_loads_unsafe_audit["loci"]
+):
+    raise SystemExit("FAIL: TimedSerializer.loads_unsafe load_kwargs dict was not warranted")
 validate_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.exception-bool-return-universe"
