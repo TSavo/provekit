@@ -3221,6 +3221,238 @@ class Signer:
     ), audit
 
 
+def test_branch_selected_self_field_return_maps_method_result(vendor_path):
+    vendor_path(
+        "vendbranch_self_field",
+        '''
+class Signer:
+    def __init__(self, key_derivation):
+        self.key_derivation = key_derivation
+
+    def derive_key(self, secret_key):
+        if self.key_derivation == "none":
+            return secret_key
+
+        raise TypeError("unknown key derivation")
+''',
+    )
+    out = _lift(
+        """
+        import vendbranch_self_field
+
+        def test_none_key_derivation():
+            signer = vendbranch_self_field.Signer("none")
+            assert signer.derive_key("raaaa") == "raaaa"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbranch_self_field.Signer.derive_key" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import str_const
+
+    def walk(formula):
+        yield formula
+        for child in getattr(formula, "operands", ()):
+            yield from walk(child)
+
+    implications = [
+        formula
+        for formula in walk(assertion.inv)
+        if getattr(formula, "kind", None) == "implies"
+    ]
+    assert any(
+        getattr(imp.operands[1], "name", None) == "="
+        and str_const("raaaa") in getattr(imp.operands[1], "args", ())
+        and any(
+            getattr(side, "name", "") == "callval_derive_key_a2"
+            for side in getattr(imp.operands[1], "args", ())
+        )
+        for imp in implications
+    ), assertion.inv
+
+    assert any(
+        warrant.get("role") == "python.branch-selected-universe"
+        and warrant.get("source_function_name") == "Signer.derive_key"
+        and warrant.get("branch_field_name") == "key_derivation"
+        and warrant.get("branch_field_value") == "none"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.branch-selected-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "Signer.derive_key"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "inactive"
+        and locus.get("ast_kind") == "Raise"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_branch_selected_self_field_return_maps_normalized_method_arg(vendor_path):
+    vendor_path(
+        "vendbranch_normalized_arg",
+        '''
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+class Signer:
+    def __init__(self, key_derivation):
+        self.key_derivation = key_derivation
+
+    def derive_key(self, secret_key=None):
+        if secret_key is None:
+            secret_key = self.secret_keys[-1]
+        else:
+            secret_key = want_bytes(secret_key)
+
+        if self.key_derivation == "none":
+            return secret_key
+
+        raise TypeError("unknown key derivation")
+''',
+    )
+    out = _lift(
+        """
+        import vendbranch_normalized_arg
+
+        def test_none_key_derivation_normalizes_key():
+            signer = vendbranch_normalized_arg.Signer("none")
+            assert signer.derive_key(b"raaaa") == b"raaaa"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbranch_normalized_arg.Signer.derive_key" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+
+    def walk(formula):
+        yield formula
+        for child in getattr(formula, "operands", ()):
+            yield from walk(child)
+
+    adapter_term = ctor(
+        "callresult_vendbranch_normalized_arg_want_bytes_a1",
+        [ctor("python:bytes", [str_const("raaaa")])],
+    )
+    implications = [
+        formula
+        for formula in walk(assertion.inv)
+        if getattr(formula, "kind", None) == "implies"
+    ]
+    assert any(
+        getattr(imp.operands[1], "name", None) == "="
+        and adapter_term in getattr(imp.operands[1], "args", ())
+        and any(
+            getattr(side, "name", "") == "callval_derive_key_a2"
+            for side in getattr(imp.operands[1], "args", ())
+        )
+        for imp in implications
+    ), assertion.inv
+
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {
+        "python.branch-selected-universe",
+        "python.bytes-identity-universe",
+    } <= roles
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"]
+        in {"python.branch-selected-universe", "python.bytes-identity-universe"}
+        and "vendbranch_normalized_arg" in audit["contract"]["name"]
+    }
+    assert audits["python.branch-selected-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
+
+
+def test_branch_selected_universe_contacts_not_equal_claim(vendor_path):
+    vendor_path(
+        "vendbranch_not_equal",
+        '''
+class Signer:
+    def __init__(self, key_derivation):
+        self.key_derivation = key_derivation
+
+    def derive_key(self, secret_key):
+        if self.key_derivation == "none":
+            return secret_key
+
+        raise TypeError("unknown key derivation")
+''',
+    )
+    out = _lift(
+        """
+        import vendbranch_not_equal
+
+        def test_none_key_derivation_not_equal():
+            signer = vendbranch_not_equal.Signer("none")
+            assert signer.derive_key("raaaa") != "raaaa"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbranch_not_equal.Signer.derive_key" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.branch-selected-universe"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    def walk(formula):
+        yield formula
+        for child in getattr(formula, "operands", ()):
+            yield from walk(child)
+
+    assert any(
+        getattr(formula, "kind", None) == "implies"
+        for formula in walk(assertion.inv)
+    ), assertion.inv
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 

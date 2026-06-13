@@ -171,6 +171,8 @@ signer_key_audits = [
     in audit.get("contract", {}).get("name", "")
     and audit.get("source_memento", {}).get("constructor_default_attr_name")
     == "default_key_derivation"
+    and audit.get("source_memento", {}).get("constructor_default_param_names")
+    == ["key_derivation"]
 ]
 if len(signer_key_audits) != 1:
     raise SystemExit(
@@ -214,6 +216,69 @@ if not any(
     for locus in signer_key_audit["loci"]
 ):
     raise SystemExit("FAIL: Signer separator validation guard was not accounted as support")
+signer_derive_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.branch-selected-universe"
+    and "itsdangerous.signer.Signer.derive_key"
+    in audit.get("contract", {}).get("name", "")
+]
+if len(signer_derive_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one Signer.derive_key branch-selected audit, "
+        f"got {len(signer_derive_audits)}"
+    )
+signer_derive_audit = signer_derive_audits[0]
+signer_derive_totals = signer_derive_audit["totals"]
+signer_derive_memento = signer_derive_audit["source_memento"]
+if signer_derive_memento.get("source_function_name") != "Signer.derive_key":
+    raise SystemExit(
+        "FAIL: Signer.derive_key source oracle should point at method body: "
+        f"{signer_derive_memento!r}"
+    )
+if signer_derive_memento.get("branch_field_name") != "key_derivation":
+    raise SystemExit(
+        "FAIL: Signer.derive_key branch memento did not record the field: "
+        f"{signer_derive_memento!r}"
+    )
+if signer_derive_memento.get("branch_field_value") != "none":
+    raise SystemExit(
+        "FAIL: Signer.derive_key branch memento did not record the selected value: "
+        f"{signer_derive_memento!r}"
+    )
+if (
+    signer_derive_memento.get("branch_return_adapter_callee")
+    != "itsdangerous.encoding.want_bytes"
+):
+    raise SystemExit(
+        "FAIL: Signer.derive_key branch memento did not record the adapter: "
+        f"{signer_derive_memento!r}"
+    )
+if signer_derive_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: Signer.derive_key source dig has unclassified source: "
+        f"totals={signer_derive_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Assign"
+    and locus.get("line") == 198
+    for locus in signer_derive_audit["loci"]
+):
+    raise SystemExit("FAIL: Signer.derive_key want_bytes normalization was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "If"
+    and locus.get("line") == 210
+    for locus in signer_derive_audit["loci"]
+):
+    raise SystemExit("FAIL: Signer.derive_key none branch was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Return"
+    and locus.get("line") == 211
+    for locus in signer_derive_audit["loci"]
+):
+    raise SystemExit("FAIL: Signer.derive_key none return was not warranted")
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -554,6 +619,15 @@ print(
     f"unclassified={signer_key_totals['unclassified_source']}",
 )
 print(
+    "source audit Signer.derive_key:",
+    f"loci={signer_derive_totals['source_loci']}",
+    f"warranted={signer_derive_totals['source_warranted']}",
+    f"inactive={signer_derive_totals['source_inactive']}",
+    f"support={signer_derive_totals.get('source_support', 0)}",
+    f"refused={signer_derive_totals['source_refused']}",
+    f"unclassified={signer_derive_totals['unclassified_source']}",
+)
+print(
     "source audit SigningAlgorithm.get_signature:",
     f"loci={abstract_signature_totals['source_loci']}",
     f"warranted={abstract_signature_totals['source_warranted']}",
@@ -687,6 +761,27 @@ else:
     verdict_ok = bool(statuses & bad_words)
 if not verdict_ok:
     print(f"FAIL({twin}): expected {expect}, statuses={sorted(statuses)}"); sys.exit(1)
+derive = [
+    (r.get("property", ""), r.get("status", ""))
+    for r in doc.get("rows", [])
+    if "Signer.derive_key" in str(r.get("property", ""))
+]
+if not derive:
+    print(f"FAIL({twin}): no Signer.derive_key property rows in receipt"); sys.exit(1)
+derive_statuses = {s for _, s in derive}
+print(f"derive_key rows({twin}):")
+for n, s in derive:
+    print(f"  {s:14s} {n[:110]}")
+if expect == "discharged":
+    derive_ok = derive_statuses & ok_words and not (derive_statuses & bad_words)
+else:
+    derive_ok = bool(derive_statuses & bad_words)
+if not derive_ok:
+    print(
+        f"FAIL({twin}): expected derive_key {expect}, "
+        f"statuses={sorted(derive_statuses)}"
+    )
+    sys.exit(1)
 print(f"OK({twin}): {expect}")
 PY
 }

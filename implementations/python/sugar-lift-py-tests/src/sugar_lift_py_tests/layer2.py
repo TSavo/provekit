@@ -104,6 +104,7 @@ from .ir import (
 )
 from .translate_universe import (
     ISINSTANCE_CONCRETE_BUILTINS,
+    branch_selected_return_universe_for_callee,
     branch_literal_universe_for_callee,
     bytes_identity_universe_for_callee,
     callee_is_nondeterministic,
@@ -319,12 +320,12 @@ def _iter_conjuncts(formula: Formula):
 
 
 def _assertion_call_subject(assertion: Formula) -> Optional[Term]:
-    """The call-shaped side of the assertion's equality atom: the term the
+    """The call-shaped side of the assertion's value-relation atom: the term the
     assertion ACTUALLY swears about, and therefore the only sound subject
-    for a sibling universe row. Returns None when no equality conjunct has
-    a call-shaped (callval_*/callresult_*) ctor side."""
+    for a sibling universe row. Returns None when no equality/inequality
+    conjunct has a call-shaped (callval_*/callresult_*) ctor side."""
     for atom in _iter_conjuncts(assertion):
-        if atom.name != "=" or len(atom.args) != 2:
+        if atom.name not in {"=", "≠"} or len(atom.args) != 2:
             continue
         for side in atom.args:
             if isinstance(side, _Ctor) and (
@@ -585,6 +586,11 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "adapter_callee",
         "helper_callee",
         "list_adapter_branch",
+        "branch_field_name",
+        "branch_field_value",
+        "branch_field_value_kind",
+        "branch_return_param_name",
+        "branch_return_adapter_callee",
     ):
         if field_name not in warrant:
             continue
@@ -649,6 +655,7 @@ def _source_loci_for_memento(
         "python.list-adapter-universe",
         "python.constant-universe",
         "python.delegation-universe",
+        "python.branch-selected-universe",
         "python.instance-field-universe",
         "python.raise-locus-universe",
         "python.return-isinstance-universe",
@@ -875,6 +882,8 @@ def _classify_universe_source_node(
         if universe_kind == "delegation-stdlib":
             return "warranted", "emitted into python.delegation-universe"
         return "support", "queued delegate dig for recursive universe walk"
+    if role == "python.branch-selected-universe":
+        return _classify_branch_selected_source_node(stmt, node, source_memento)
     if (
         role == "python.return-isinstance-universe"
         and isinstance(stmt, ast.Return)
@@ -932,6 +941,8 @@ def _classify_universe_source_statement(
         if isinstance(stmt, (ast.If, ast.Assert)):
             return "support", "guard support for delegation universe"
         return "support", "non-constraint source support for delegation-universe accounting"
+    if role == "python.branch-selected-universe":
+        return _classify_branch_selected_source_node(stmt, stmt, source_memento)
     if role == "python.instance-field-universe":
         if _is_docstring_stmt(stmt):
             return "support", "docstring metadata supports source accounting only"
@@ -979,6 +990,119 @@ def _classify_universe_source_statement(
             return "warranted", "emitted into python.return-isinstance-universe"
         return "unclassified", "return-isinstance source not emitted"
     return "unclassified", "source warrant role has no source-audit classifier"
+
+
+def _classify_branch_selected_source_node(
+    stmt: ast.stmt,
+    node: ast.AST,
+    source_memento: dict[str, Any],
+) -> Tuple[str, str]:
+    if _is_docstring_stmt(stmt):
+        return "support", "docstring metadata supports source accounting only"
+    if isinstance(node, ast.If):
+        field_name = _string_field(source_memento, "branch_field_name")
+        field_value = source_memento.get("branch_field_value")
+        if _branch_selected_if_matches(node, field_name, field_value):
+            return "warranted", "emitted into python.branch-selected-universe"
+        if _branch_adapter_prelude_if_matches(node, source_memento):
+            return "warranted", "argument normalization emitted into python.branch-selected-universe"
+        return "inactive", "non-selected branch inactive for this callsite relation"
+    if isinstance(node, ast.Assign):
+        if _branch_adapter_assign_matches(node, source_memento):
+            return "warranted", "argument normalization emitted into python.branch-selected-universe"
+        return "inactive", "default argument branch inactive for this callsite relation"
+    if isinstance(node, ast.Return):
+        return_param = _string_field(source_memento, "branch_return_param_name")
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == return_param
+        ):
+            return "warranted", "emitted into python.branch-selected-universe"
+        return "inactive", "non-selected return inactive for this callsite relation"
+    if isinstance(node, ast.Raise):
+        return "inactive", "raise path inactive for selected branch relation"
+    if isinstance(stmt, ast.If):
+        return "support", "branch condition/source support for selected relation"
+    if isinstance(stmt, ast.Raise):
+        return "inactive", "raise path inactive for selected branch relation"
+    return "support", "non-constraint source support for branch-selected accounting"
+
+
+def _branch_adapter_prelude_if_matches(
+    node: ast.If,
+    source_memento: dict[str, Any],
+) -> bool:
+    return_param = _string_field(source_memento, "branch_return_param_name")
+    if not return_param:
+        return False
+    if _param_none_check(node.test) != return_param and _param_not_none_check(node.test) != return_param:
+        return False
+    return any(
+        isinstance(stmt, ast.Assign)
+        and _branch_adapter_assign_matches(stmt, source_memento)
+        for stmt in [*node.body, *node.orelse]
+    )
+
+
+def _branch_adapter_assign_matches(
+    node: ast.Assign,
+    source_memento: dict[str, Any],
+) -> bool:
+    return_param = _string_field(source_memento, "branch_return_param_name")
+    adapter_callee = _string_field(source_memento, "branch_return_adapter_callee")
+    if not return_param or not adapter_callee:
+        return False
+    adapter_name = adapter_callee.rsplit(".", 1)[-1]
+    return (
+        len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == return_param
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == adapter_name
+        and not node.value.keywords
+        and len(node.value.args) == 1
+        and isinstance(node.value.args[0], ast.Name)
+        and node.value.args[0].id == return_param
+    )
+
+
+def _branch_selected_if_matches(
+    node: ast.If,
+    field_name: str,
+    field_value: Any,
+) -> bool:
+    test = node.test
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.Eq)
+        or len(test.comparators) != 1
+    ):
+        return False
+    left = _self_field_name_for_accounting(test.left)
+    right = _literal_for_accounting(test.comparators[0])
+    if left == field_name and right == field_value:
+        return True
+    right_field = _self_field_name_for_accounting(test.comparators[0])
+    left_lit = _literal_for_accounting(test.left)
+    return right_field == field_name and left_lit == field_value
+
+
+def _self_field_name_for_accounting(node: ast.AST) -> Optional[str]:
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id in {"self", "cls"}
+    ):
+        return node.attr
+    return None
+
+
+def _literal_for_accounting(node: ast.AST) -> Any:
+    if isinstance(node, ast.Constant):
+        return node.value
+    return None
 
 
 def _constructor_default_param_names(source_memento: dict[str, Any]) -> Set[str]:
@@ -4950,6 +5074,120 @@ def _universe_conjuncts(
                             )
                         )
 
+        # BRANCH-SELECTED RETURN OVER SELF FIELD: a constructor-backed receiver
+        # field selects a method branch that returns one call argument. Emit the
+        # existing implication/equality ProofIR shape:
+        #   (self.field == "none") => (callval_derive_key(recv, x) == x)
+        # The self.field term comes from the constructor-field universe for the
+        # actual receiver constructor at this callsite.
+        branch_ret_u, branch_ret_refusal = branch_selected_return_universe_for_callee(
+            callee
+        )
+        if branch_ret_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::branch-selected-universe",
+                    reason=f"{branch_ret_refusal.callee}: {branch_ret_refusal.reason}",
+                )
+            )
+        elif (
+            branch_ret_u is not None
+            and origin is not None
+            and origin.receiver_constructor is not None
+            and origin.constructor_args is not None
+        ):
+            field_u, field_refusal = constructor_field_universe_for_callee(
+                origin.receiver_constructor,
+                branch_ret_u.field_name,
+            )
+            if field_refusal is not None:
+                out.warnings.append(
+                    LiftWarning(
+                        source_path=source_path,
+                        item_name=f"{test_name}::branch-selected-universe",
+                        reason=f"{field_refusal.callee}: {field_refusal.reason}",
+                    )
+                )
+            elif (
+                field_u is not None
+                and field_u.constructor_param_index < len(origin.constructor_args)
+            ):
+                call_args = _universe_call_args(subject_term, origin)
+                selected_value = _universe_literal_term(
+                    branch_ret_u.field_value_kind,
+                    branch_ret_u.field_value,
+                )
+                if (
+                    selected_value is not None
+                    and branch_ret_u.return_param_index < len(call_args)
+                ):
+                    return_term = call_args[branch_ret_u.return_param_index]
+                    return_adapter_callee = getattr(
+                        branch_ret_u,
+                        "return_adapter_callee",
+                        None,
+                    )
+                    if return_adapter_callee:
+                        if _is_none_term(return_term):
+                            return_term = None
+                        else:
+                            return_term = ctor(
+                                _call_result_head(return_adapter_callee, 1),
+                                [return_term],
+                            )
+                    if return_term is not None:
+                        field_term = _constructor_field_universe_value_term(
+                            subject_term,
+                            branch_ret_u.field_name,
+                            field_u,
+                            origin,
+                        )
+                        if source_warrants is not None:
+                            _append_unique_source_warrant(
+                                source_warrants,
+                                _source_warrant_for_branch_selected_universe(
+                                    branch_ret_u
+                                ),
+                            )
+                            _append_unique_source_warrant(
+                                source_warrants,
+                                _source_warrant_for_instance_field_universe(
+                                    field_u,
+                                    source_memento=field_u.constructor_source_memento,
+                                    source_function_name=_local_qualname(
+                                        field_u.module,
+                                        field_u.constructor_qualname,
+                                    ),
+                                    constructor_default_params=tuple(
+                                        param
+                                        for param in origin.constructor_default_params
+                                        if param == field_u.constructor_param_name
+                                    ),
+                                ),
+                            )
+                        conjuncts.append(
+                            implies(
+                                eq(field_term, selected_value),
+                                eq(
+                                    subject_term,
+                                    return_term,
+                                ),
+                            )
+                        )
+                        if return_adapter_callee and isinstance(return_term, _Ctor):
+                            conjuncts.extend(
+                                _universe_conjuncts(
+                                    return_adapter_callee,
+                                    return_term,
+                                    out,
+                                    source_path,
+                                    test_name,
+                                    source_warrants=source_warrants,
+                                    _seen=seen,
+                                )
+                            )
+
         # PURE-DELEGATION + IDENTITY (census families, 57k + the param arm
         # of return-name's 146k): the body forwards verbatim, so the
         # output EQUALS the forwarded term — eq between call terms in EUF,
@@ -5293,6 +5531,23 @@ def _universe_call_args(
     return ()
 
 
+def _universe_literal_term(value_kind: str, value: Any) -> Optional[Term]:
+    if value_kind == "int":
+        return num(value)
+    if value_kind == "bool":
+        return bool_const(value)
+    if value_kind == "str":
+        return str_const(value)
+    if value_kind == "none":
+        return ctor("None", [])
+    if value_kind == "bytes":
+        try:
+            return ctor("python:bytes", [str_const(value.decode("ascii"))])
+        except UnicodeDecodeError:
+            return None
+    return None
+
+
 def _delegation_universe_call_args(
     universe,
     subject_term: Term,
@@ -5421,6 +5676,34 @@ def _source_warrant_for_universe(
     warrant["source_function_name"] = _universe_source_function_name(universe)
     warrant["universe_kind"] = universe_kind
     return warrant
+
+
+def _source_warrant_for_branch_selected_universe(universe) -> dict:
+    warrant = _source_warrant_for_universe(
+        universe,
+        role="python.branch-selected-universe",
+        universe_kind="branch-selected-return",
+    )
+    warrant["branch_field_name"] = universe.field_name
+    warrant["branch_field_value"] = _json_safe_literal_value(
+        universe.field_value,
+        universe.field_value_kind,
+    )
+    warrant["branch_field_value_kind"] = universe.field_value_kind
+    warrant["branch_return_param_name"] = universe.return_param_name
+    adapter_callee = getattr(universe, "return_adapter_callee", None)
+    if adapter_callee:
+        warrant["branch_return_adapter_callee"] = adapter_callee
+    return warrant
+
+
+def _json_safe_literal_value(value: Any, value_kind: str) -> Any:
+    if value_kind == "bytes":
+        try:
+            return value.decode("ascii")
+        except UnicodeDecodeError:
+            return repr(value)
+    return value
 
 
 def _source_warrant_for_instance_field_universe(

@@ -1812,6 +1812,38 @@ class DelegationUniverse:
 
 
 @dataclass(frozen=True)
+class BranchSelectedReturnUniverse:
+    """A receiver field selects a return-param branch.
+
+    Shape:
+      class C:
+          def __init__(self, mode):
+              self.mode = mode
+
+          def f(self, value):
+              if self.mode == "none":
+                  return value
+              raise TypeError(...)
+
+    The method result equals the returned call argument when the constructor
+    field has the selected literal value. The emitter composes this with the
+    constructor-field universe for the receiver at the concrete callsite.
+    """
+
+    field_name: str
+    field_value: object
+    field_value_kind: str
+    return_param_index: int
+    return_param_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+    return_adapter_callee: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class _ReceiverMethodDelegate:
     delegate: str
     args: tuple
@@ -2175,6 +2207,229 @@ def _resolve_expr_spec(node, params, env):
             )
         return ("binop", op, left, right)
     return _resolve_spec(node, params, env)
+
+
+@functools.lru_cache(maxsize=None)
+def branch_selected_return_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[BranchSelectedReturnUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    if len(params) < 2 or params[0] not in {"self", "cls"}:
+        return None, None
+    body = _body_without_docstring(fn.body)
+    if not body:
+        return None, None
+    call_aliases = _module_call_aliases(_tree, module_name)
+    env: dict[str, tuple] = {}
+    branch: Optional[Tuple[str, object, str, int, Optional[str]]] = None
+    for index, stmt in enumerate(body):
+        if isinstance(stmt, ast.Raise):
+            continue
+        if not isinstance(stmt, ast.If):
+            return None, None
+        branch = _branch_selected_return_from_if_chain(
+            stmt,
+            receiver_name=params[0],
+            params=params,
+            env=env,
+        )
+        if branch is not None:
+            if any(not isinstance(tail, ast.Raise) for tail in body[index + 1 :]):
+                return None, None
+            break
+        prelude = _non_none_adapter_prelude(stmt, params, call_aliases)
+        if prelude is None:
+            return None, None
+        param_name, adapter_callee = prelude
+        env[param_name] = ("adapter", adapter_callee)
+    if branch is None:
+        return None, None
+    (
+        field_name,
+        field_value,
+        field_value_kind,
+        return_param_index,
+        return_adapter_callee,
+    ) = branch
+    return (
+        BranchSelectedReturnUniverse(
+            field_name=field_name,
+            field_value=field_value,
+            field_value_kind=field_value_kind,
+            return_param_index=return_param_index - 1,
+            return_param_name=params[return_param_index],
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+            return_adapter_callee=return_adapter_callee,
+        ),
+        None,
+    )
+
+
+def _branch_selected_return_from_if_chain(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+    env: dict[str, tuple],
+) -> Optional[Tuple[str, object, str, int, Optional[str]]]:
+    current: ast.If = stmt
+    while True:
+        selected = _branch_selected_return_from_if(
+            current,
+            receiver_name=receiver_name,
+            params=params,
+            env=env,
+        )
+        if selected is not None:
+            return selected
+        if len(current.orelse) == 1 and isinstance(current.orelse[0], ast.If):
+            current = current.orelse[0]
+            continue
+        return None
+
+
+def _branch_selected_return_from_if(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+    env: dict[str, tuple],
+) -> Optional[Tuple[str, object, str, int, Optional[str]]]:
+    field = _self_field_literal_eq(stmt.test, receiver_name)
+    if field is None:
+        return None
+    if len(stmt.body) != 1 or not isinstance(stmt.body[0], ast.Return):
+        return None
+    value = stmt.body[0].value
+    if not isinstance(value, ast.Name):
+        return None
+    if value.id not in params or value.id == receiver_name:
+        return None
+    return_param_index = params.index(value.id)
+    field_name, field_value, field_value_kind = field
+    adapter_callee = None
+    spec = env.get(value.id)
+    if spec is not None:
+        if spec[0] != "adapter":
+            return None
+        adapter_callee = spec[1]
+    return field_name, field_value, field_value_kind, return_param_index, adapter_callee
+
+
+def _non_none_adapter_prelude(
+    stmt: ast.If,
+    params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[Tuple[str, str]]:
+    param_name = _param_none_check_for_branch_prelude(stmt.test)
+    adapter_stmt: Optional[ast.stmt] = None
+    if param_name is not None:
+        if len(stmt.orelse) != 1:
+            return None
+        adapter_stmt = stmt.orelse[0]
+    else:
+        param_name = _param_not_none_check_for_branch_prelude(stmt.test)
+        if param_name is None or len(stmt.body) != 1:
+            return None
+        adapter_stmt = stmt.body[0]
+    if param_name not in params[1:]:
+        return None
+    if not (
+        isinstance(adapter_stmt, ast.Assign)
+        and len(adapter_stmt.targets) == 1
+        and isinstance(adapter_stmt.targets[0], ast.Name)
+        and adapter_stmt.targets[0].id == param_name
+    ):
+        return None
+    adapter = _adapter_call_over_name(
+        adapter_stmt.value,
+        param_name,
+        call_aliases,
+    )
+    if adapter is None:
+        return None
+    return param_name, adapter
+
+
+def _param_none_check_for_branch_prelude(node: ast.AST) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Is)
+        or len(node.comparators) != 1
+    ):
+        return None
+    return _none_compare_name(node.left, node.comparators[0])
+
+
+def _param_not_none_check_for_branch_prelude(node: ast.AST) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.IsNot)
+        or len(node.comparators) != 1
+    ):
+        return None
+    return _none_compare_name(node.left, node.comparators[0])
+
+
+def _none_compare_name(left: ast.AST, right: ast.AST) -> Optional[str]:
+    if (
+        isinstance(left, ast.Name)
+        and isinstance(right, ast.Constant)
+        and right.value is None
+    ):
+        return left.id
+    if (
+        isinstance(right, ast.Name)
+        and isinstance(left, ast.Constant)
+        and left.value is None
+    ):
+        return right.id
+    return None
+
+
+def _self_field_literal_eq(
+    node: ast.AST,
+    receiver_name: str,
+) -> Optional[Tuple[str, object, str]]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Eq)
+        or len(node.comparators) != 1
+    ):
+        return None
+    left = _self_field_name(node.left, receiver_name)
+    right_lit = _literal_value_kind(node.comparators[0])
+    if left is not None and right_lit is not None:
+        value, value_kind = right_lit
+        return left, value, value_kind
+    right = _self_field_name(node.comparators[0], receiver_name)
+    left_lit = _literal_value_kind(node.left)
+    if right is not None and left_lit is not None:
+        value, value_kind = left_lit
+        return right, value, value_kind
+    return None
+
+
+def _self_field_name(node: ast.AST, receiver_name: str) -> Optional[str]:
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == receiver_name
+    ):
+        return node.attr
+    return None
 
 
 @functools.lru_cache(maxsize=None)
