@@ -315,23 +315,46 @@ fn block_reduces_to_pure_formula(block: &syn::Block) -> bool {
     expr_is_pure_formula(tail) && prefix.iter().all(is_immutable_pure_let)
 }
 
-/// `let <immutable ident> = <pure formula>;` with no `else` arm.
+/// `let <immutable binding> = <pure formula>;` with no `else` arm. The binding
+/// may destructure (tuple / struct / tuple-struct / slice) -- a plain `let` that
+/// compiles is irrefutable, so destructuring just binds names to pure sub-values
+/// and the block stays a pure formula. A let-else (`init.diverge`) is excluded
+/// (divergence is not modeled yet).
 fn is_immutable_pure_let(stmt: &syn::Stmt) -> bool {
     let syn::Stmt::Local(local) = stmt else {
         return false;
     };
-    let ident_immutable = match &local.pat {
-        syn::Pat::Ident(p) => p.mutability.is_none() && p.subpat.is_none(),
-        syn::Pat::Type(pt) => {
-            matches!(&*pt.pat, syn::Pat::Ident(p) if p.mutability.is_none() && p.subpat.is_none())
-        }
-        _ => false,
-    };
+    let pat_ok = pat_is_immutable_binding(&local.pat);
     let init_pure = local
         .init
         .as_ref()
         .is_some_and(|init| init.diverge.is_none() && expr_is_pure_formula(&init.expr));
-    ident_immutable && init_pure
+    pat_ok && init_pure
+}
+
+/// True iff a `let` pattern binds only immutable, by-value names in a shape we
+/// treat as irrefutable destructuring. Any `mut`, `ref`, or refutable/opaque
+/// shape (literal / range / or-pattern) is rejected -- conservative is sound.
+fn pat_is_immutable_binding(pat: &syn::Pat) -> bool {
+    use syn::Pat;
+    match pat {
+        Pat::Ident(p) => {
+            p.by_ref.is_none()
+                && p.mutability.is_none()
+                && p.subpat
+                    .as_ref()
+                    .is_none_or(|(_, sp)| pat_is_immutable_binding(sp))
+        }
+        Pat::Wild(_) | Pat::Rest(_) => true,
+        Pat::Paren(p) => pat_is_immutable_binding(&p.pat),
+        Pat::Reference(r) => r.mutability.is_none() && pat_is_immutable_binding(&r.pat),
+        Pat::Type(t) => pat_is_immutable_binding(&t.pat),
+        Pat::Tuple(t) => t.elems.iter().all(pat_is_immutable_binding),
+        Pat::TupleStruct(t) => t.elems.iter().all(pat_is_immutable_binding),
+        Pat::Struct(s) => s.fields.iter().all(|f| pat_is_immutable_binding(&f.pat)),
+        Pat::Slice(s) => s.elems.iter().all(pat_is_immutable_binding),
+        _ => false,
+    }
 }
 
 /// A pure formula over params and literals: literals, paths, arithmetic/bit ops,
@@ -380,6 +403,9 @@ fn expr_is_pure_formula(expr: &syn::Expr) -> bool {
                     .all(|a| a.guard.is_none() && expr_is_pure_formula(&a.body))
         }
         Expr::Block(b) => block_reduces_to_pure_formula(&b.block),
+        // `unsafe { <pure> }` has the VALUE of its inner expression: `unsafe` is a
+        // compile-time obligation, not a value transform -> still a pure formula.
+        Expr::Unsafe(u) => block_reduces_to_pure_formula(&u.block),
         // `matches!(<pure>, <pat> [if <pure>])` is a pure boolean formula.
         Expr::Macro(m) => macro_is_pure_formula(&m.mac),
         _ => false,
@@ -812,6 +838,42 @@ mod tests {
             assert!(
                 !is_generalizable_value_fn(&block_of(src)),
                 "matches! must not launder an opaque/effectful scrutinee or guard: {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn generalizable_warrants_destructuring_lets_and_unsafe_value_blocks() {
+        // An irrefutable destructuring `let` binds names to pure sub-values, and
+        // an `unsafe { <pure> }` block has the value of its inner expression --
+        // both keep the body a pure formula (core's Layout::for_value shape).
+        for src in [
+            "fn f(p: (i32, i32)) -> i32 { let (a, b) = p; a + b }",
+            "fn f(p: Point) -> i32 { let Point { x, y } = p; x + y }",
+            "fn f(p: (i32, (i32, i32))) -> i32 { let (a, (b, _)) = p; a + b }",
+            "fn f(x: usize) -> usize { unsafe { id(x) } }",
+            "fn f(t: usize) -> usize { let (s, a) = (sz(t), al(t)); unsafe { mk(s, a) } }",
+        ] {
+            assert!(
+                is_generalizable_value_fn(&block_of(src)),
+                "irrefutable destructuring + unsafe-value block stay pure formulas: {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn generalizable_refuses_mut_ref_destructuring_and_effectful_unsafe() {
+        // A `mut`/`ref` binding is a mutation/alias surface, and an `unsafe` block
+        // whose value is a method call has an opaque receiver -- both stay refused
+        // (never laundered into a false warrant).
+        for src in [
+            "fn f(p: (i32, i32)) -> i32 { let (mut a, b) = p; a + b }",
+            "fn f(p: (i32, i32)) -> i32 { let (ref a, b) = p; b }",
+            "fn f(p: *const i32) -> i32 { unsafe { p.read() } }",
+        ] {
+            assert!(
+                !is_generalizable_value_fn(&block_of(src)),
+                "mut/ref destructuring or effectful unsafe must stay refused: {src}"
             );
         }
     }
