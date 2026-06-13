@@ -213,12 +213,19 @@ fn lift(params: &Value) -> Value {
                 // a non-test fn the reducer inlined to discharge a test: it backs
                 // a warrant, so it is `support`.
                 ("support", None)
+            } else if let Some(effect) = effect_refusal(fr.block) {
+                // PROVABLY effectful (IO / mutation / panic-divergence / `?`) and no
+                // constraint was liftable -> REFUSED by name. This is the EASY,
+                // EXPECTED half of refused: the body is out of the consistency
+                // domain. (refused = effects [this] UNION unsat-vs-vendor [the
+                // analysis, wired separately]. Run AFTER try-warrant, never as a
+                // pre-gate: a volatile body that still lifts a constraint is
+                // warranted and judged by the vendor, not pre-refused here.)
+                ("refused", Some(effect))
             } else if returns_unit(fr.sig) {
-                // NEW DOCTRINE: no output to constrain (unit return) and no vendor
-                // pin -> SILENT by design. Nothing to lift, nothing to check; not a
-                // floor and NOT a refusal. We do NOT sniff the interior for effects
-                // -- `refused` is reserved for an UNSAT certificate against a
-                // vendor's sworn output, never an effect-detector verdict.
+                // No output to constrain (unit return), no liftable constraint, and
+                // no detected effect -> SILENT by design: a pure no-op makes no
+                // claim. Not a floor, not a refusal.
                 (
                     "silent",
                     Some("no output constraint to check (unit return); no vendor pin".to_string()),
@@ -496,11 +503,39 @@ impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
     }
 }
 
-/// NEW DOCTRINE: a unit-returning fn has NO output to constrain, so there is
-/// nothing to warrant and nothing for a vendor to pin -> SILENT, not a floor and
-/// not an effect-sniffer refusal. (The old `effect_refusal` gate -- IO / mutation
-/// / panic / `?` detection -- was ripped out: we no longer pre-judge the interior;
-/// `refused` is now only an UNSAT certificate against a vendor's sworn output.)
+/// The EASY half of refused: a body with NO liftable constraint that is provably
+/// effectful (IO membrane / mutation via `&mut`/assignment / panic-divergence /
+/// `?` short-circuit) is out of the consistency domain -> refused BY NAME. This
+/// runs AFTER try-warrant (emit_value_contract), never as a pre-gate: a volatile
+/// body that still lifts a constraint is warranted and judged by the vendor, not
+/// pre-refused. An undetermined body (opaque call / macro / multi-statement)
+/// returns None -> it stays unclassified or silent (we have not PROVEN an effect).
+/// The HARD half of refused -- a lifted constraint that goes UNSAT against a
+/// vendor pin -- is minted separately (where the analysis lives).
+fn effect_refusal(block: &syn::Block) -> Option<String> {
+    let mut s = BlockerScan::default();
+    syn::visit::Visit::visit_block(&mut s, block);
+    if let Some(io) = s.io {
+        return Some(format!("IO membrane (effect): {io}"));
+    }
+    if s.has_assign || s.has_compound_assign || s.has_mut_borrow {
+        return Some("mutation (effect): assignment / `&mut` borrow".to_string());
+    }
+    if let Some(m) = s.panic_macro {
+        return Some(format!("panic/divergence (effect): `{m}!`"));
+    }
+    if let Some(m) = s.panic_method {
+        return Some(format!("panic/divergence (effect): `.{m}()`"));
+    }
+    if s.has_try {
+        return Some("panic/divergence (effect): `?` short-circuit".to_string());
+    }
+    None
+}
+
+/// A unit-returning fn has NO output to constrain. With no liftable constraint
+/// and no detected effect it is SILENT (a pure no-op makes no claim) -- not a
+/// floor, not a refusal.
 fn returns_unit(sig: &syn::Signature) -> bool {
     match &sig.output {
         syn::ReturnType::Default => true,
@@ -911,6 +946,26 @@ facts = [
         .expect("config parses");
 
         assert!(cfg.is_some());
+    }
+
+    #[test]
+    fn effect_refusal_is_the_easy_half_of_refused() {
+        // The EASY half of refused: provably effectful bodies, refused by name.
+        // (Runs AFTER try-warrant in the classifier -- a body that lifts a
+        // constraint is warranted regardless; this only catches no-constraint
+        // effectful bodies.) The HARD half (UNSAT vs a vendor pin) is minted
+        // elsewhere -- where the analysis lives.
+        assert!(effect_refusal(&block_of("fn f() { println!(\"x\"); }"))
+            .is_some_and(|r| r.contains("IO membrane")));
+        assert!(effect_refusal(&block_of("fn f(x: &mut i32) { *x = 1; }"))
+            .is_some_and(|r| r.contains("mutation")));
+        assert!(effect_refusal(&block_of("fn f() -> i32 { panic!(\"no\") }"))
+            .is_some_and(|r| r.contains("panic/divergence")));
+        assert!(effect_refusal(&block_of("fn f(r: Result<i32, ()>) -> i32 { r? }"))
+            .is_some_and(|r| r.contains("divergence") && r.contains('?')));
+        // Undetermined (no proven effect) -> None: stays unclassified/silent,
+        // never refused on a guess. The EUF warrant handles a bare call upstream.
+        assert!(effect_refusal(&block_of("fn f(v: Vec<u8>) -> usize { v.len() }")).is_none());
     }
 
     #[test]
