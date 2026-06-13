@@ -205,10 +205,15 @@ fn lift(params: &Value) -> Value {
                 // a non-test fn the reducer inlined to discharge a test: it backs
                 // a warrant, so it is `support`.
                 ("support", None)
+            } else if let Some(effect) = effect_refusal(fr.block) {
+                // PROVABLY effectful (IO / mutation / panic-divergence) -> a
+                // considered REFUSAL with teeth: it is out of the consistency
+                // domain (warranting an effect as a pure relation is a false-pass).
+                ("refused", Some(effect))
             } else {
-                // the kit does not classify this body YET -> UNCLASSIFIED, the
-                // honest residual. The note records WHICH construct the walker
-                // doesn't speak yet (the next slice to drain) -- never a verdict.
+                // not emittable AND not provably effectful -> UNCLASSIFIED, the
+                // honest residual. The note records the undetermined construct
+                // (opaque call / `?` / macro / multi-statement) -- never a verdict.
                 ("unclassified", Some(unclassified_reason(fr.block)))
             };
             let mut locus = json!({
@@ -338,6 +343,9 @@ struct BlockerScan {
     has_method: bool,
     macro_name: Option<String>,
     has_assign: bool,
+    has_mut_borrow: bool,
+    has_compound_assign: bool,
+    panic_macro: Option<String>,
 }
 
 impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
@@ -360,6 +368,31 @@ impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
     fn visit_expr_assign(&mut self, n: &'ast syn::ExprAssign) {
         self.has_assign = true;
         syn::visit::visit_expr_assign(self, n);
+    }
+    fn visit_expr_reference(&mut self, n: &'ast syn::ExprReference) {
+        if n.mutability.is_some() {
+            self.has_mut_borrow = true;
+        }
+        syn::visit::visit_expr_reference(self, n);
+    }
+    fn visit_expr_binary(&mut self, n: &'ast syn::ExprBinary) {
+        use syn::BinOp::*;
+        if matches!(
+            n.op,
+            AddAssign(_)
+                | SubAssign(_)
+                | MulAssign(_)
+                | DivAssign(_)
+                | RemAssign(_)
+                | BitXorAssign(_)
+                | BitAndAssign(_)
+                | BitOrAssign(_)
+                | ShlAssign(_)
+                | ShrAssign(_)
+        ) {
+            self.has_compound_assign = true;
+        }
+        syn::visit::visit_expr_binary(self, n);
     }
     fn visit_expr_method_call(&mut self, n: &'ast syn::ExprMethodCall) {
         self.has_method = true;
@@ -397,11 +430,52 @@ impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
         {
             self.io = Some(format!("macro `{name}!`"));
         }
+        if self.panic_macro.is_none()
+            && matches!(
+                name.as_str(),
+                "panic"
+                    | "unreachable"
+                    | "unimplemented"
+                    | "todo"
+                    | "assert"
+                    | "assert_eq"
+                    | "assert_ne"
+                    | "debug_assert"
+                    | "debug_assert_eq"
+                    | "debug_assert_ne"
+                    | "const_panic"
+                    | "const_assert"
+                    | "assert_unsafe_precondition"
+            )
+        {
+            self.panic_macro = Some(name.clone());
+        }
         if self.macro_name.is_none() {
             self.macro_name = Some(name);
         }
         syn::visit::visit_macro(self, m);
     }
+}
+
+/// A PROVABLE side effect makes a non-emittable body `refused` BY NAME (a
+/// considered no with teeth), not unclassified. Mirrors the four refuse
+/// categories: IO membrane, mutation (`&mut` / assignment / compound-assign),
+/// and panic/divergence (a panic-family macro). An undetermined body (opaque
+/// call, `?`, opaque macro, multi-statement) returns None -> it stays
+/// UNCLASSIFIED (we have not PROVEN it effectful). Refuse only what we can prove.
+fn effect_refusal(block: &syn::Block) -> Option<String> {
+    let mut s = BlockerScan::default();
+    syn::visit::Visit::visit_block(&mut s, block);
+    if let Some(io) = s.io {
+        return Some(format!("IO membrane (effect): {io}"));
+    }
+    if s.has_assign || s.has_compound_assign || s.has_mut_borrow {
+        return Some("mutation (effect): assignment / `&mut` borrow".to_string());
+    }
+    if let Some(m) = s.panic_macro {
+        return Some(format!("panic/divergence (effect): `{m}!`"));
+    }
+    None
 }
 
 fn is_io_path(path: &str) -> bool {
@@ -717,5 +791,25 @@ facts = [
         .expect("config parses");
 
         assert!(cfg.is_some());
+    }
+
+    #[test]
+    fn effect_refusal_refuses_provable_effects_only() {
+        // PROVABLE effects -> refused by name (the four categories).
+        assert!(effect_refusal(&block_of("fn f() { println!(\"x\"); }"))
+            .is_some_and(|r| r.contains("IO membrane")));
+        assert!(effect_refusal(&block_of("fn f(x: &mut i32) { *x = 1; }"))
+            .is_some_and(|r| r.contains("mutation")));
+        assert!(effect_refusal(&block_of(
+            "fn f(x: i32) -> i32 { let mut a = x; a += 1; a }"
+        ))
+        .is_some_and(|r| r.contains("mutation")));
+        assert!(
+            effect_refusal(&block_of("fn f() -> i32 { panic!(\"no\") }"))
+                .is_some_and(|r| r.contains("panic/divergence"))
+        );
+        // UNDETERMINED -> None: stays unclassified, never refused (not proven effectful).
+        assert!(effect_refusal(&block_of("fn f(v: Vec<u8>) -> usize { v.len() }")).is_none());
+        assert!(effect_refusal(&block_of("fn f(r: Result<i32, ()>) -> i32 { r? }")).is_none());
     }
 }
