@@ -905,11 +905,11 @@ def test_lift_source_refuses_receiver_iteration_header_package_accounting(
             return s.rstrip(b"=")
 
         class Loader:
-            def iter_items(self, salt):
-                return ()
+            def __init__(self, items):
+                self.items = items
 
-            def loads(self, salt):
-                for signer in self.iter_items(salt):
+            def loads(self):
+                for signer in reversed(self.items):
                     return signer
 
                 return None
@@ -918,12 +918,17 @@ def test_lift_source_refuses_receiver_iteration_header_package_accounting(
     for_line = next(
         line_no
         for line_no, line in enumerate(source.splitlines(), start=1)
-        if "for signer in self.iter_items" in line
+        if "for signer in reversed" in line
     )
     return_line = next(
         line_no
         for line_no, line in enumerate(source.splitlines(), start=1)
         if "return signer" in line
+    )
+    tail_return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return None" in line
     )
     (pkg / "encoding.py").write_text(source, encoding="utf-8")
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -965,6 +970,19 @@ def test_lift_source_refuses_receiver_iteration_header_package_accounting(
     ]
     assert body_loci
     assert not [locus for locus in body_loci if locus["status"] == "refused"]
+    tail_return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_iteration_refused/encoding.py")
+        and locus.get("line") == tail_return_line
+        and locus.get("ast_kind") in {"Return", "Constant"}
+    ]
+    assert tail_return_loci
+    assert {locus["status"] for locus in tail_return_loci} == {"refused"}
+    assert all(
+        "runtime receiver iteration" in locus.get("reason", "")
+        for locus in tail_return_loci
+    )
 
 
 def test_lift_source_refuses_generator_flow_package_accounting(

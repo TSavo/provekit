@@ -1203,12 +1203,11 @@ def _receiver_iteration_refusal_status(
 ) -> Optional[tuple[str, str]]:
     for_stmt = _receiver_iteration_header_for_locus(node, ancestors)
     if for_stmt is None:
-        return None
-    iter_call = for_stmt.iter
-    if not isinstance(iter_call, ast.Call):
-        return None
-    path = _call_func_attribute_path(iter_call.func)
-    if len(path) < 2 or path[0] not in {"self", "cls"}:
+        for_stmt = _receiver_iteration_predecessor_for_locus(node, ancestors)
+        if for_stmt is None:
+            return None
+    path = _receiver_iteration_path(for_stmt)
+    if path is None:
         return None
     return (
         "refused",
@@ -1236,6 +1235,58 @@ def _receiver_iteration_header_for_locus(
             return item
         return None
     return None
+
+
+def _receiver_iteration_predecessor_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[ast.For]:
+    chain = ancestors + (node,)
+    stmt = _nearest_statement(chain)
+    if stmt is None or not isinstance(stmt, ast.Return):
+        return None
+    if not any(descendant is node for descendant in ast.walk(stmt)):
+        return None
+    owner = _nearest_enclosing_function(chain)
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    try:
+        index = next(i for i, candidate in enumerate(owner.body) if candidate is stmt)
+    except StopIteration:
+        return None
+    for previous in reversed(owner.body[:index]):
+        if (
+            isinstance(previous, ast.For)
+            and _receiver_iteration_path(previous) is not None
+        ):
+            return previous
+        if not isinstance(previous, (ast.Assign, ast.AnnAssign, ast.Expr, ast.Pass)):
+            return None
+    return None
+
+
+def _receiver_iteration_path(for_stmt: ast.For) -> Optional[tuple[str, ...]]:
+    return _receiver_iteration_expr_path(for_stmt.iter)
+
+
+def _receiver_iteration_expr_path(node: ast.AST) -> Optional[tuple[str, ...]]:
+    if isinstance(node, ast.Attribute):
+        path = _call_func_attribute_path(node)
+        if len(path) >= 2 and path[0] in {"self", "cls"}:
+            return path
+        return None
+    if not isinstance(node, ast.Call):
+        return None
+    path = _call_func_attribute_path(node.func)
+    if len(path) < 2 or path[0] not in {"self", "cls"}:
+        if (
+            _static_call_name(node.func) in {"iter", "reversed"}
+            and len(node.args) == 1
+            and not node.keywords
+        ):
+            return _receiver_iteration_expr_path(node.args[0])
+        return None
+    return path
 
 
 def _class_receiver_field_names(cls: ast.ClassDef) -> set[str]:
