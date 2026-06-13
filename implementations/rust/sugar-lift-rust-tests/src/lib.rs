@@ -4228,6 +4228,178 @@ fn byte_range(byte: Rc<Term>, low: u8, high: u8) -> Rc<Formula> {
     ])
 }
 
+// ── Source-audit value-contract emission ────────────────────────────────────
+// A source warrant is REAL only if the kit EMITS the ProofIR contract for the
+// body -- a syntactic "looks generalizable" flag with no emitted relation is a
+// hollow warrant. `emit_value_contract` walks a value-function body into a
+// closed consistency `ContractDecl`, mirroring the Python source kit's
+// `_lift_function` (walk body -> term/formula, wrap as `return_value = body`) in
+// the rust kit's inv-only form (`out` is the return value). It reuses the SAME
+// term/formula atoms the test-assertion path already compiles to Z3 -- no new
+// semantic path. Returns None when the body is not (yet) emittable; the caller
+// then leaves the function UNCLASSIFIED (the honest dark), never warranted.
+//
+// Slice 1 -- the character-classification predicate shape (`is_ascii_*` family):
+// a bool-returning body that reduces to `matches!(<scalar>, <pattern>)` (and
+// `&&`/`||`/`!` trees thereof). The pattern is walked -- not the function name
+// (names are sugar) -- into a range/equality membership formula, the same shape
+// `ascii_byte_class_atom` proves. The contract is the biconditional
+// `out <-> membership` (encoded with `implies`/`and`, since the compiler has no
+// `iff`).
+pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDecl> {
+    // Strict start: the body is a single tail expression (no prefix statements);
+    // wider block shapes are later slices.
+    let tail = match block.stmts.as_slice() {
+        [Stmt::Expr(expr, None)] => expr,
+        _ => return None,
+    };
+    let membership = emit_bool_membership_formula(tail)?;
+    // out: Bool <-> membership, as (out=true => m) ∧ (m => out=true).
+    let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
+    let inv = and_(vec![
+        implies(out_true.clone(), membership.clone()),
+        implies(membership, out_true),
+    ]);
+    Some(ContractDecl {
+        name: format!("rust-source::{name}"),
+        pre: None,
+        post: None,
+        inv: Some(inv),
+        out_binding: "out".to_string(),
+        evidence: None,
+        panic_loci: Vec::new(),
+        concept_hint: None,
+    })
+}
+
+/// A boolean body as a membership formula: `matches!` predicates joined by
+/// `&&`/`||`/`!`. Any other shape is not emittable here (-> None).
+fn emit_bool_membership_formula(expr: &Expr) -> Option<Rc<Formula>> {
+    match expr {
+        Expr::Paren(p) => emit_bool_membership_formula(&p.expr),
+        Expr::Group(g) => emit_bool_membership_formula(&g.expr),
+        Expr::Unary(u) if matches!(u.op, UnOp::Not(_)) => {
+            Some(not_(emit_bool_membership_formula(&u.expr)?))
+        }
+        Expr::Binary(b) => match b.op {
+            BinOp::Or(_) | BinOp::BitOr(_) => Some(or_(vec![
+                emit_bool_membership_formula(&b.left)?,
+                emit_bool_membership_formula(&b.right)?,
+            ])),
+            BinOp::And(_) | BinOp::BitAnd(_) => Some(and_(vec![
+                emit_bool_membership_formula(&b.left)?,
+                emit_bool_membership_formula(&b.right)?,
+            ])),
+            _ => None,
+        },
+        Expr::Macro(m) => matches_membership_formula(&m.mac),
+        _ => None,
+    }
+}
+
+/// `matches!(<scalar scrutinee>, <pattern>)` -> the membership formula over the
+/// scrutinee's code point. A guard (`if ...`) is not modeled here (-> None).
+fn matches_membership_formula(mac: &syn::Macro) -> Option<Rc<Formula>> {
+    if !mac
+        .path
+        .segments
+        .last()
+        .is_some_and(|s| s.ident == "matches")
+    {
+        return None;
+    }
+    let (scrutinee, pat, guard) = mac
+        .parse_body_with(|input: ParseStream| {
+            let scrutinee: Expr = input.parse()?;
+            input.parse::<Token![,]>()?;
+            let pat = Pat::parse_multi_with_leading_vert(input)?;
+            let guard = if input.peek(Token![if]) {
+                input.parse::<Token![if]>()?;
+                Some(input.parse::<Expr>()?)
+            } else {
+                None
+            };
+            Ok::<_, syn::Error>((scrutinee, pat, guard))
+        })
+        .ok()?;
+    if guard.is_some() {
+        return None;
+    }
+    let scrutinee_term = scrutinee_scalar_var(&scrutinee)?;
+    pattern_membership_formula(&scrutinee_term, &pat)
+}
+
+/// The scrutinee of a char/byte `matches!` reduces to a single bound name (its
+/// code point): `*self` / `self` / a one-segment path, through deref/ref/paren.
+fn scrutinee_scalar_var(expr: &Expr) -> Option<Rc<Term>> {
+    match expr {
+        Expr::Paren(p) => scrutinee_scalar_var(&p.expr),
+        Expr::Group(g) => scrutinee_scalar_var(&g.expr),
+        Expr::Unary(u) if matches!(u.op, UnOp::Deref(_)) => scrutinee_scalar_var(&u.expr),
+        Expr::Reference(r) => scrutinee_scalar_var(&r.expr),
+        Expr::Path(p) if p.path.segments.len() == 1 => {
+            Some(make_var(p.path.segments[0].ident.to_string()))
+        }
+        _ => None,
+    }
+}
+
+/// A char/byte/int pattern as a membership formula over `scrutinee` (its code
+/// point): literal -> `=`, inclusive/half-open range -> bounded `and`, or-pattern
+/// -> `or`, wildcard -> `true`. Bindings/structs/etc. are not emittable (-> None).
+fn pattern_membership_formula(scrutinee: &Rc<Term>, pat: &Pat) -> Option<Rc<Formula>> {
+    match pat {
+        Pat::Paren(p) => pattern_membership_formula(scrutinee, &p.pat),
+        Pat::Wild(_) => Some(atomic_("true", vec![])),
+        Pat::Or(o) => {
+            let mut cases = Vec::with_capacity(o.cases.len());
+            for c in &o.cases {
+                cases.push(pattern_membership_formula(scrutinee, c)?);
+            }
+            Some(or_(cases))
+        }
+        Pat::Lit(p) => Some(eq(scrutinee.clone(), num(lit_codepoint(&p.lit)?))),
+        Pat::Range(r) => {
+            let inclusive = matches!(r.limits, syn::RangeLimits::Closed(_));
+            let mut conj = Vec::new();
+            if let Some(lo) = r.start.as_deref().and_then(expr_codepoint) {
+                conj.push(gte(scrutinee.clone(), num(lo)));
+            }
+            if let Some(hi) = r.end.as_deref().and_then(expr_codepoint) {
+                conj.push(if inclusive {
+                    lte(scrutinee.clone(), num(hi))
+                } else {
+                    lt(scrutinee.clone(), num(hi))
+                });
+            }
+            if conj.is_empty() {
+                return None;
+            }
+            Some(and_(conj))
+        }
+        _ => None,
+    }
+}
+
+/// The integer code point of a char / byte / integer literal pattern bound.
+fn lit_codepoint(lit: &Lit) -> Option<i64> {
+    match lit {
+        Lit::Char(c) => Some(i64::from(u32::from(c.value()))),
+        Lit::Byte(b) => Some(i64::from(b.value())),
+        Lit::Int(i) => i.base10_parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+fn expr_codepoint(expr: &Expr) -> Option<i64> {
+    match expr {
+        Expr::Lit(ExprLit { lit, .. }) => lit_codepoint(lit),
+        Expr::Paren(p) => expr_codepoint(&p.expr),
+        Expr::Group(g) => expr_codepoint(&g.expr),
+        _ => None,
+    }
+}
+
 fn literal_iterator_elements(expr: &Expr) -> Result<Option<(IteratorKind, Vec<Rc<Term>>)>, String> {
     match expr {
         Expr::MethodCall(call) if call.args.is_empty() && call.method == "chars" => {

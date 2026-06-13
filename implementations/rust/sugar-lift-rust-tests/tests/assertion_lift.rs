@@ -5542,3 +5542,55 @@ fn t() {
         out.skip_reasons
     );
 }
+
+// ── Source-audit value-contract emission (emit_value_contract) ──────────────
+// A warrant is real only if the kit EMITS the ProofIR. These pin the slice-1
+// char-class predicate emitter: matches! body -> `out <-> membership` contract.
+
+#[test]
+fn emit_value_contract_emits_char_class_predicate() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn =
+        syn::parse_str("fn is_up(c: char) -> bool { matches!(c, 'A'..='Z') }").unwrap();
+    let decl = emit_value_contract("is_up", &f.block).expect("char-class body emits a contract");
+    assert_eq!(decl.out_binding, "out");
+    let inv = format!("{:?}", decl.inv.expect("inv present"));
+    // bounds are the code points of 'A' (65) and 'Z' (90), and `out` is related.
+    assert!(inv.contains("65"), "lower bound 'A'=65 present: {inv}");
+    assert!(inv.contains("90"), "upper bound 'Z'=90 present: {inv}");
+    assert!(inv.contains("out"), "return value `out` is related: {inv}");
+    assert!(inv.contains("implies"), "biconditional via implies: {inv}");
+}
+
+#[test]
+fn emit_value_contract_handles_or_of_matches() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // core's is_ascii_alphanumeric shape: OR of three matches! predicates.
+    let f: syn::ItemFn = syn::parse_str(
+        "fn alnum(c: char) -> bool { matches!(c, '0'..='9') | matches!(c, 'A'..='Z') | matches!(c, 'a'..='z') }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("alnum", &f.block).expect("OR-of-matches emits");
+    let inv = format!("{:?}", decl.inv.expect("inv present"));
+    for cp in ["48", "57", "65", "90", "97", "122"] {
+        assert!(inv.contains(cp), "alnum bound {cp} present: {inv}");
+    }
+}
+
+#[test]
+fn emit_value_contract_refuses_unemittable_bodies() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // method call (opaque receiver), guard, and multi-statement are NOT emittable
+    // yet -> None, so the caller leaves them UNCLASSIFIED (never a hollow warrant).
+    for src in [
+        "fn f(v: Vec<u8>) -> usize { v.len() }",
+        "fn f(c: char) -> bool { matches!(c, x if x == 'q') }",
+        "fn f(c: char) -> bool { let _y = 1; matches!(c, 'A'..='Z') }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        assert!(
+            emit_value_contract("f", &f.block).is_none(),
+            "must not emit a contract for: {src}"
+        );
+    }
+}
