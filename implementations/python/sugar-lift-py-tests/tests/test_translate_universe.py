@@ -462,6 +462,657 @@ def test_lift_source_classifies_imports_as_package_support(tmp_path, monkeypatch
     assert lifted["sourceLedger"]["source_support"] >= len(import_loci)
 
 
+def test_lift_source_warrants_constructor_field_assignments_in_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_constructor_accounting"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    (pkg / "exc.py").write_text(
+        textwrap.dedent(
+            """
+            class BadTimeSignature(Exception):
+                def __init__(self, message, payload=None, date_signed=None):
+                    super().__init__(message, payload)
+                    self.date_signed = date_signed
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_constructor_accounting.encoding as enc
+
+        def test_token():
+            assert enc.b64e("abc") == "abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    constructor_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_constructor_accounting/exc.py")
+        and locus.get("line") == 5
+        and locus.get("ast_kind") in {"Assign", "Attribute", "Name"}
+    ]
+    assert constructor_loci
+    assert {locus["status"] for locus in constructor_loci} == {"warranted"}
+    assert all(
+        "constructor field assignment" in locus.get("reason", "")
+        for locus in constructor_loci
+    )
+
+
+def test_lift_source_refuses_dynamic_receiver_io_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_dynamic_receiver_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            def load(fp):
+                return fp.read()
+
+            def dump(fp, value):
+                fp.write(value)
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_dynamic_receiver_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    dynamic_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_dynamic_receiver_refused/encoding.py")
+        and locus.get("line") in {6, 9}
+    ]
+    assert dynamic_loci
+    assert not [
+        locus for locus in dynamic_loci if locus["status"] == "unclassified"
+    ], dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Return"
+        and "dynamic receiver" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Expr"
+        and "dynamic receiver" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+
+
+def test_lift_source_warrants_function_default_literals_as_compiler_facts(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_default_literals"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            def skipped(value=None, flag=False, *, mode="strict"):
+                return value
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_default_literals.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    default_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_default_literals/encoding.py")
+        and locus.get("line") == 5
+        and (
+            ".args.defaults[" in locus.get("ast_path", "")
+            or ".args.kw_defaults[" in locus.get("ast_path", "")
+        )
+    ]
+    assert default_loci
+    assert not [
+        locus for locus in default_loci if locus["status"] == "unclassified"
+    ], default_loci
+    assert {locus["status"] for locus in default_loci} == {"warranted"}
+    assert all("default literal" in locus.get("reason", "") for locus in default_loci)
+
+
+def test_lift_source_refuses_nondeterministic_time_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_nondet_time_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import time
+
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            class Clock:
+                def get_timestamp(self):
+                    return int(time.time())
+
+                def sign(self, value):
+                    ts = self.get_timestamp()
+                    return value
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_nondet_time_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    nondet_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_nondet_time_refused/encoding.py")
+        and locus.get("line") in {9, 12}
+    ]
+    assert nondet_loci
+    assert not [
+        locus for locus in nondet_loci if locus["status"] == "unclassified"
+    ], nondet_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 9
+        and locus.get("ast_kind") == "Return"
+        and "nondeterminism" in locus.get("reason", "")
+        for locus in nondet_loci
+    ), nondet_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 12
+        and locus.get("ast_kind") == "Assign"
+        and "nondeterminism" in locus.get("reason", "")
+        for locus in nondet_loci
+    ), nondet_loci
+
+
+def test_lift_source_refuses_self_field_runtime_dispatch_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_self_field_dispatch_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            class Base:
+                def inherited(self, value):
+                    return value
+
+            class C(Base):
+                def __init__(self, signer, plugin):
+                    self.signer = signer
+                    self.plugin = plugin
+
+                def helper(self, value):
+                    return value
+
+                def inherited_call(self, value):
+                    return self.inherited(value)
+
+                def same_class(self, value):
+                    return self.helper(value)
+
+                def dynamic_method(self, value):
+                    return self.plugin.run(value)
+
+                def dynamic_callable(self, value):
+                    return self.signer(value)
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_self_field_dispatch_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    dynamic_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_self_field_dispatch_refused/encoding.py")
+        and locus.get("line") in {24, 27}
+    ]
+    assert dynamic_loci
+    assert not [
+        locus for locus in dynamic_loci if locus["status"] == "unclassified"
+    ], dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 24
+        and locus.get("ast_kind") == "Return"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 27
+        and locus.get("ast_kind") == "Return"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+    assert not [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_self_field_dispatch_refused/encoding.py")
+        and locus.get("line") in {18, 21}
+        and locus.get("status") == "refused"
+    ], audit["loci"]
+
+
+def test_lift_source_refuses_runtime_dispatch_guarded_return_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_runtime_dispatch_guarded_return"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        class Verifier:
+            def __init__(self, algorithm):
+                self.algorithm = algorithm
+
+            def derive_key(self, value):
+                return value
+
+            def verify(self, key, value, sig):
+                for secret in [key]:
+                    derived = self.derive_key(secret)
+                    if self.algorithm.verify_signature(derived, value, sig):
+                        return True
+
+                return False
+        """
+    )
+    derived_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "derived = self.derive_key" in line
+    )
+    return_true_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return True" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_runtime_dispatch_guarded_return.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    guarded_return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_guarded_return/encoding.py"
+        )
+        and locus.get("line") == return_true_line
+        and locus.get("ast_kind") in {"Return", "Constant"}
+    ]
+    derived_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_guarded_return/encoding.py"
+        )
+        and locus.get("line") == derived_line
+    ]
+    assert derived_loci
+    assert not [
+        locus for locus in derived_loci if locus["status"] == "refused"
+    ], derived_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        for locus in derived_loci
+    ), derived_loci
+    assert guarded_return_loci
+    assert {locus["status"] for locus in guarded_return_loci} == {"refused"}
+    assert all(
+        "runtime field dispatch" in locus.get("reason", "")
+        for locus in guarded_return_loci
+    )
+
+
+def test_lift_source_refuses_receiver_iteration_header_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_receiver_iteration_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        class Loader:
+            def __init__(self, items):
+                self.items = items
+
+            def loads(self):
+                for signer in reversed(self.items):
+                    return signer
+
+                return None
+        """
+    )
+    for_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "for signer in reversed" in line
+    )
+    return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return signer" in line
+    )
+    tail_return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return None" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_receiver_iteration_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    loop_header_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_iteration_refused/encoding.py")
+        and locus.get("line") == for_line
+    ]
+    assert loop_header_loci
+    assert {locus["status"] for locus in loop_header_loci} == {"refused"}
+    assert all(
+        "runtime receiver iteration" in locus.get("reason", "")
+        for locus in loop_header_loci
+    )
+    body_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_iteration_refused/encoding.py")
+        and locus.get("line") == return_line
+    ]
+    assert body_loci
+    assert not [locus for locus in body_loci if locus["status"] == "refused"]
+    tail_return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_iteration_refused/encoding.py")
+        and locus.get("line") == tail_return_line
+        and locus.get("ast_kind") in {"Return", "Constant"}
+    ]
+    assert tail_return_loci
+    assert {locus["status"] for locus in tail_return_loci} == {"refused"}
+    assert all(
+        "runtime receiver iteration" in locus.get("reason", "")
+        for locus in tail_return_loci
+    )
+
+
+def test_lift_source_refuses_generator_flow_package_accounting(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_generator_flow_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def iter_values(items, fallback):
+                yield fallback(items)
+
+                for item in items:
+                    if isinstance(item, dict):
+                        kwargs = item
+                    else:
+                        kwargs = {}
+
+                    yield fallback(item, **kwargs)
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_generator_flow_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    generator_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_generator_flow_refused/encoding.py")
+        and locus.get("ast_path", "").startswith("$.module.body[0].body")
+    ]
+    assert generator_loci
+    assert not [
+        locus for locus in generator_loci if locus["status"] == "unclassified"
+    ], generator_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Yield"
+        and "generator/yield flow" in locus.get("reason", "")
+        for locus in generator_loci
+    ), generator_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "For"
+        and "generator/yield flow" in locus.get("reason", "")
+        for locus in generator_loci
+    ), generator_loci
+
+
+def test_lift_source_accounts_stdlib_delegation_static_attribute_keyword(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_stdlib_attr_kw"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            from datetime import datetime
+            from datetime import timezone
+
+            def to_datetime(ts):
+                return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_stdlib_attr_kw.encoding as enc
+
+        def test_token():
+            assert enc.to_datetime(1) == enc.to_datetime(1)
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.delegation-universe"
+        and audit.get("universe_kind") == "delegation-stdlib"
+        and audit["source_memento"]["file"].endswith(
+            "vendpkg_stdlib_attr_kw/encoding.py"
+        )
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "delegation" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
     tmp_path, monkeypatch
 ):
@@ -473,6 +1124,10 @@ def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
             '''
             class Helper:
                 """Declaration metadata, not a value constraint."""
+
+                @staticmethod
+                def identity(value: str) -> str:
+                    return value
 
             def b64e(s: str | bytes = b"abc") -> bytes:
                 """Docstring metadata, not a value constraint."""
@@ -530,6 +1185,13 @@ def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
             ".annotation" in locus.get("ast_path", "")
             or ".returns" in locus.get("ast_path", "")
         )
+        and locus["status"] == "unclassified"
+    ]
+    assert not [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_decl_support/encoding.py")
+        and ".decorator_list" in locus.get("ast_path", "")
         and locus["status"] == "unclassified"
     ]
 
@@ -945,6 +1607,375 @@ def test_lift_source_classifies_delegation_body_as_package_warranted(
     ), helper_loci
 
 
+def test_lift_source_classifies_receiver_method_delegation_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_receiver_delegation_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            class Base:
+                def inherited(self, value):
+                    return value
+
+            class C(Base):
+                def helper(self, value):
+                    return value
+
+                def inherited_call(self, value):
+                    return self.inherited(value)
+
+                def same_class_call(self, value):
+                    return self.helper(value)
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_receiver_delegation_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    receiver_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_delegation_body/encoding.py")
+        and locus.get("line") in {11, 14}
+    ]
+    assert receiver_loci
+    assert not [
+        locus for locus in receiver_loci if locus["status"] == "unclassified"
+    ], receiver_loci
+    assert all(
+        locus["status"] == "warranted"
+        and "delegation" in locus.get("reason", "")
+        for locus in receiver_loci
+        if locus.get("ast_kind") == "Return"
+    ), receiver_loci
+
+
+def test_lift_source_accounts_stdlib_delegation_nested_receiver_arg(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_stdlib_receiver_arg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import hmac
+
+            class Algo:
+                def get_signature(self, key, value):
+                    return value
+
+                def verify_signature(self, key, value, sig):
+                    return hmac.compare_digest(
+                        sig,
+                        self.get_signature(key, value),
+                    )
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_stdlib_receiver_arg.encoding as enc
+
+        def test_token():
+            alg = enc.Algo()
+            assert alg.verify_signature(b"k", b"v", b"v") == True
+        """,
+    )
+
+    audits = {
+        audit["source_memento"]["source_function_name"]: audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.delegation-universe"
+        and audit["source_memento"]["file"].endswith(
+            "vendpkg_stdlib_receiver_arg/encoding.py"
+        )
+    }
+    assert {"Algo.verify_signature", "Algo.get_signature"} <= set(audits), audits
+    verify_audit = audits["Algo.verify_signature"]
+    assert verify_audit["universe_kind"] == "delegation-stdlib"
+    assert verify_audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "delegation" in locus.get("reason", "")
+        for locus in verify_audit["loci"]
+    ), verify_audit
+    helper_audit = audits["Algo.get_signature"]
+    assert helper_audit["universe_kind"] == "identity"
+    assert helper_audit["totals"]["unclassified_source"] == 0
+
+
+def test_lift_source_classifies_exception_handler_raise_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_handler_raise_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_exception_handler_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            class BadPayload(Exception):
+                pass
+
+            class Serializer:
+                def load_payload(self, payload):
+                    try:
+                        return self.serializer.loads(payload)
+                    except Exception as e:
+                        raise BadPayload("bad", original_error=e) from e
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    exception_handler_raise_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_exception_handler_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    handler_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_exception_handler_body/encoding.py")
+        and locus.get("line") in {7, 8, 9, 10}
+    ]
+    assert handler_loci
+    assert not [
+        locus for locus in handler_loci if locus["status"] == "unclassified"
+    ], handler_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Try"
+        and "exception-handler-raise" in locus.get("reason", "")
+        for locus in handler_loci
+    ), handler_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Raise"
+        and "exception-handler-raise" in locus.get("reason", "")
+        for locus in handler_loci
+    ), handler_loci
+
+
+def test_lift_source_refuses_unhandled_try_flow_package_accounting(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_unhandled_try_flow"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def maybe(value):
+                try:
+                    return value + 1
+                except Exception:
+                    return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_unhandled_try_flow.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    try_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_try_flow/encoding.py")
+        and locus.get("line") in {3, 4, 5, 6}
+    ]
+    assert try_loci
+    assert not [
+        locus for locus in try_loci if locus["status"] == "unclassified"
+    ], try_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Try"
+        and "path-sensitive try/except" in locus.get("reason", "")
+        for locus in try_loci
+    ), try_loci
+
+
+def test_lift_source_refuses_unhandled_raise_path_package_accounting(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_unhandled_raise_path"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def maybe(value):
+            if value:
+                if value == 2:
+                    pass
+                raise ValueError(value)
+            if value == 0:
+                return 1
+            return value + 1
+
+        def b64e(s):
+            return s.rstrip(b"=")
+        """
+    )
+    outer_guard_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "if value:" in line
+    )
+    nested_guard_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "if value == 2" in line
+    )
+    raise_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "raise ValueError" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_unhandled_raise_path.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    raise_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
+        and locus.get("line") == raise_line
+    ]
+    assert raise_loci
+    assert not [
+        locus for locus in raise_loci if locus["status"] == "unclassified"
+    ], raise_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Raise"
+        and "raise path" in locus.get("reason", "")
+        for locus in raise_loci
+    ), raise_loci
+    guard_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
+        and locus.get("line") == outer_guard_line
+        and locus.get("ast_kind") in {"If", "Name"}
+    ]
+    assert guard_loci
+    assert {locus["status"] for locus in guard_loci} == {"refused"}
+    assert all("raise path" in locus.get("reason", "") for locus in guard_loci)
+    nested_guard_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
+        and locus.get("line") == nested_guard_line
+        and locus.get("ast_kind") in {"If", "Compare", "Name", "Constant"}
+    ]
+    assert nested_guard_loci
+    assert {locus["status"] for locus in nested_guard_loci} == {"refused"}
+    assert all(
+        "raise path" in locus.get("reason", "") for locus in nested_guard_loci
+    )
+
+
 def test_lift_source_classifies_typing_cast_wrapper_as_package_warranted(
     tmp_path,
     monkeypatch,
@@ -1265,7 +2296,8 @@ def test_lift_source_classifies_overload_declarations_as_type_metadata(
     assert any(
         locus["file"].endswith("vendpkg_overload_metadata/encoding.py")
         and locus.get("ast_path") == "$.module.body[1].body[2].body[0]"
-        and locus["status"] == "unclassified"
+        and locus["status"] == "warranted"
+        and "delegation" in locus.get("reason", "")
         for locus in audit["loci"]
     ), audit
 
@@ -2973,6 +4005,577 @@ class Signer:
     ), list_audit
 
 
+def test_instance_field_universe_walks_last_item_property_getter(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        instance_field_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    instance_field_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_property_last",
+        '''
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+
+    @property
+    def secret_key(self):
+        return self.secret_keys[-1]
+''',
+    )
+
+    universe, refusal = instance_field_universe_for_callee(
+        "vendinst_property_last.Signer.secret_key"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.field_name == "secret_keys"
+    assert universe.field_projection == ("index", -1)
+    assert universe.helper_callee == "vendinst_property_last._make_keys_list"
+
+
+def test_instance_field_universe_skips_overload_init_stubs(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        instance_field_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    instance_field_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_property_overloaded_init",
+        '''
+import typing as t
+
+
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    @t.overload
+    def __init__(self, secret_key): ...
+
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+
+    @property
+    def secret_key(self):
+        return self.secret_keys[-1]
+''',
+    )
+
+    universe, refusal = instance_field_universe_for_callee(
+        "vendinst_property_overloaded_init.Signer.secret_key"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.field_name == "secret_keys"
+    assert universe.field_projection == ("index", -1)
+    assert universe.helper_callee == "vendinst_property_overloaded_init._make_keys_list"
+
+
+def test_instance_field_last_item_property_composes_helper_list_adapter(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        instance_field_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    instance_field_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_property_compose",
+        '''
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+
+    @property
+    def secret_key(self):
+        return self.secret_keys[-1]
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_property_compose
+
+        def test_secret_key_property():
+            signer = vendinst_property_compose.Signer(b"k")
+            assert signer.secret_key == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_property_compose.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    secret = ctor("python:bytes", [str_const("k")])
+    adapter = ctor(
+        "callresult_vendinst_property_compose_want_bytes_a1",
+        [secret],
+    )
+    property_eqs = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        if adapter in args and any(
+            getattr(side, "name", "") == "signer$0.secret_key"
+            for side in args
+        ):
+            property_eqs.append(atom)
+        if adapter in args and secret in args:
+            identity_eqs.append(atom)
+
+    assert property_eqs
+    assert identity_eqs
+    assert {
+        "python.instance-field-universe",
+        "python.list-adapter-universe",
+        "python.bytes-identity-universe",
+    } <= {warrant.get("role") for warrant in assertion.source_warrants}
+
+
+def test_package_accounting_classifies_last_item_property_getter(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_property_last"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "signer.py").write_text(
+        textwrap.dedent(
+            '''
+            def want_bytes(s):
+                if isinstance(s, str):
+                    s = s.encode()
+
+                return s
+
+
+            def _make_keys_list(secret_key):
+                if isinstance(secret_key, (str, bytes)):
+                    return [want_bytes(secret_key)]
+
+                return [want_bytes(s) for s in secret_key]
+
+
+            class Signer:
+                def __init__(self, secret_key):
+                    self.secret_keys = _make_keys_list(secret_key)
+
+                @property
+                def secret_key(self):
+                    return self.secret_keys[-1]
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        from vendpkg_property_last.signer import Signer
+
+        def test_secret_key_property():
+            signer = Signer(b"k")
+            assert signer.secret_key == b"wrong"
+        """,
+    )
+
+    property_audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.instance-field-universe"
+        and audit.get("source_memento", {}).get("source_function_name")
+        == "Signer.secret_key"
+    )
+    assert property_audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        for locus in property_audit["loci"]
+    ), property_audit
+
+    for audit in lifted["sourceAudits"]:
+        if audit.get("role") != "python.package-source":
+            continue
+        property_loci = [
+            locus
+            for locus in audit["loci"]
+            if locus["file"].endswith("vendpkg_property_last/signer.py")
+            and "self.secret_keys[-1]" in Path(locus["file"]).read_text()
+            and locus.get("ast_kind") in {"Return", "Subscript"}
+        ]
+        assert not [
+            locus for locus in property_loci if locus["status"] == "unclassified"
+        ], property_loci
+
+
+def test_package_accounting_discovers_untriggered_instance_field_getter(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_property_last_untriggered"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "signer.py").write_text(
+        textwrap.dedent(
+            '''
+            def want_bytes(s):
+                if isinstance(s, str):
+                    s = s.encode()
+
+                return s
+
+
+            def _make_keys_list(secret_key):
+                if isinstance(secret_key, (str, bytes)):
+                    return [want_bytes(secret_key)]
+
+                return [want_bytes(s) for s in secret_key]
+
+
+            class Signer:
+                def __init__(self, secret_key):
+                    self.secret_keys = _make_keys_list(secret_key)
+
+                @property
+                def secret_key(self):
+                    return self.secret_keys[-1]
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_property_last_untriggered.signer as signer
+
+        def test_token():
+            assert signer.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    property_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_property_last_untriggered/signer.py")
+        and locus.get("ast_path", "").startswith("$.module.body[2].body[1].body")
+    ]
+    assert property_loci
+    assert not [
+        locus for locus in property_loci if locus["status"] == "unclassified"
+    ], property_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") in {"Return", "Subscript"}
+        and "instance-field" in locus.get("reason", "")
+        for locus in property_loci
+    ), property_loci
+
+
+def test_package_accounting_warrants_local_call_term_assignment(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_local_call_binding"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "signer.py").write_text(
+        textwrap.dedent(
+            '''
+            class Signer:
+                def derive_key(self):
+                    return b"k"
+
+                def verify_signature(self, secret_keys):
+                    for secret_key in secret_keys:
+                        key = self.derive_key(secret_key)
+                        if key:
+                            return True
+                    return False
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_local_call_binding.signer as signer
+
+        def test_token():
+            assert signer.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    assignment_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_local_call_binding/signer.py")
+        and locus["line"] == 8
+    ]
+    assert assignment_loci
+    assert not [
+        locus for locus in assignment_loci if locus["status"] == "unclassified"
+    ], assignment_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "call-term SSA" in locus.get("reason", "")
+        for locus in assignment_loci
+    ), assignment_loci
+
+
+def test_package_accounting_warrants_tuple_unpack_call_projection(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_tuple_unpack_call"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "timed.py").write_text(
+        textwrap.dedent(
+            '''
+            def unsign(result, sep):
+                value, ts_bytes = result.rsplit(sep, 1)
+                return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_tuple_unpack_call.timed as timed
+
+        def test_token():
+            assert timed.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    unpack_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_tuple_unpack_call/timed.py")
+        and locus["line"] == 3
+    ]
+    assert unpack_loci
+    assert not [
+        locus for locus in unpack_loci if locus["status"] == "unclassified"
+    ], unpack_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Tuple"
+        and "tuple-unpack" in locus.get("reason", "")
+        for locus in unpack_loci
+    ), unpack_loci
+
+
+def test_package_accounting_warrants_computed_receiver_call_binding(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_computed_receiver_call"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "serializer.py").write_text(
+        textwrap.dedent(
+            '''
+            class Signer:
+                def sign(self, payload):
+                    return payload
+
+            class Serializer:
+                def make_signer(self, salt):
+                    return Signer()
+
+                def dumps(self, payload, salt):
+                    rv = self.make_signer(salt).sign(payload)
+                    return rv
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_computed_receiver_call.serializer as serializer
+
+        def test_token():
+            assert serializer.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    binding_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_computed_receiver_call/serializer.py")
+        and locus["line"] == 11
+    ]
+    assert binding_loci
+    assert not [
+        locus for locus in binding_loci if locus["status"] == "unclassified"
+    ], binding_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "call-term SSA" in locus.get("reason", "")
+        for locus in binding_loci
+    ), binding_loci
+
+
+def test_package_accounting_warrants_super_receiver_call_binding(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_super_receiver_call"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "serializer.py").write_text(
+        textwrap.dedent(
+            '''
+            class Base:
+                def dump_payload(self, obj):
+                    return obj
+
+            class Child(Base):
+                def dump_payload(self, obj):
+                    payload = super().dump_payload(obj)
+                    return payload
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_super_receiver_call.serializer as serializer
+
+        def test_token():
+            assert serializer.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    binding_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_super_receiver_call/serializer.py")
+        and locus["line"] == 8
+    ]
+    assert binding_loci
+    assert not [
+        locus for locus in binding_loci if locus["status"] == "unclassified"
+    ], binding_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "call-term SSA" in locus.get("reason", "")
+        for locus in binding_loci
+    ), binding_loci
+
+
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):
     vendor_path(
         "vendinst_default_attr",
@@ -3639,6 +5242,95 @@ class Signer:
     ), assertion.inv
 
 
+def test_branch_selected_raise_universe_walks_param_guard(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        branch_selected_raise_universe_for_callee,
+    )
+
+    branch_selected_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbranch_raise_source",
+        """
+        def __getattr__(name):
+            if name == "__version__":
+                return "2.2.0"
+
+            raise AttributeError(name)
+        """,
+    )
+    u, r = branch_selected_raise_universe_for_callee(
+        "vendbranch_raise_source.__getattr__"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "AttributeError"
+    assert u.param_name == "name"
+    assert u.param_index == 0
+    assert u.excluded_value == "__version__"
+    assert u.excluded_value_kind == "str"
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "__getattr__"
+    assert u.source_memento["branch_raise_exception_type"] == "AttributeError"
+
+
+def test_pytest_raises_conjoins_branch_selected_raise_universe(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        branch_selected_raise_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _ConstStr, _Ctor
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    branch_selected_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbranch_raise_l2",
+        """
+        def __getattr__(name):
+            if name == "__version__":
+                return "2.2.0"
+
+            raise AttributeError(name)
+        """,
+    )
+    out = _lift(
+        """
+        import pytest
+        import vendbranch_raise_l2
+
+        def test_missing_attr():
+            with pytest.raises(ValueError):
+                vendbranch_raise_l2.__getattr__("missing")
+        """
+    )
+    decl = next(d for d in out.decls if d.name == "test_missing_attr")
+    raised = []
+    for atom in _iter_conjuncts(decl.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        lhs, rhs = getattr(atom, "args", ())
+        if isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1":
+            raised.append((lhs, rhs))
+    assert [rhs.value for _, rhs in raised if isinstance(rhs, _ConstStr)] == [
+        "ValueError",
+        "AttributeError",
+    ]
+    assert raised[0][0] == raised[1][0]
+    assert any(
+        warrant.get("role") == "python.branch-selected-raise-universe"
+        and warrant.get("source_function_name") == "__getattr__"
+        and warrant.get("branch_raise_exception_type") == "AttributeError"
+        for warrant in decl.source_warrants
+    ), decl.source_warrants
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.branch-selected-raise-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 
@@ -4207,13 +5899,172 @@ def test_pure_guard_identity_still_licenses(vendor_path):
     assert r is None and u is not None and u.kind == "identity"
 
 
-def test_keyword_forwarding_refuses(vendor_path):
+def test_keyword_forwarding_walks(vendor_path):
     vendor_path(
         "venddeleg_kw",
         "def g(a, b):\n    return a\n\ndef f(a, b):\n    return g(a, b=b)\n",
     )
     u, r = _deleg("venddeleg_kw.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation"
+    assert u.delegate == "venddeleg_kw.g"
+    assert u.args == (("param", 0), ("param", 1))
+
+
+def test_keyword_forwarding_composes(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_kw_l2",
+        """
+        def g(a, b):
+            return "fixed"
+
+        def f(a, b):
+            return g(b=b, a=a)
+        """,
+    )
+
+    out = _lift(
+        """
+        import venddeleg_kw_l2
+
+        def test_route():
+            assert venddeleg_kw_l2.f("raaaa", 5) == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callresult_venddeleg_kw_l2_g_a2")
+    assert f_to_g_atoms
+    assert any(
+        any("callval_f_a3" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callresult_venddeleg_kw_l2_g_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+
+def test_keyword_forwarding_unknown_name_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_kw_unknown",
+        "def g(a, b):\n    return a\n\ndef f(a, b):\n    return g(a, c=b)\n",
+    )
+    u, r = _deleg("venddeleg_kw_unknown.f")
     assert u is None and r is not None and "keyword" in r.reason
+
+
+def test_imported_stdlib_delegation_walks_literal_keyword(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_kw",
+        """
+        import json
+
+        def f(obj):
+            return json.dumps(obj, separators=(",", ":"))
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_kw.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "json.dumps"
+    assert u.args == (
+        ("param", 0),
+        (
+            "kw",
+            "separators",
+            ("lit", "tuple:[',', ':']", "collection"),
+        ),
+    )
+
+
+def test_imported_stdlib_delegation_walks_kwargs_setdefault(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_kwargs_default",
+        """
+        import json
+
+        def f(obj, **kwargs):
+            kwargs.setdefault("ensure_ascii", False)
+            kwargs.setdefault("separators", (",", ":"))
+            return json.dumps(obj, **kwargs)
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_kwargs_default.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "json.dumps"
+    assert u.args == (
+        ("param", 0),
+        ("kw", "ensure_ascii", ("lit", False, "bool")),
+        ("kw", "separators", ("lit", "tuple:[',', ':']", "collection")),
+    )
+
+
+def test_imported_stdlib_delegation_walks_static_attribute_keyword(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_attr_kw",
+        """
+        from datetime import datetime
+        from datetime import timezone
+
+        def f(ts):
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_attr_kw.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "datetime.datetime.fromtimestamp"
+    assert u.args == (
+        ("param", 0),
+        ("kw", "tz", ("lit", "attr:datetime.timezone.utc", "collection")),
+    )
+
+
+def test_imported_stdlib_delegation_walks_nested_receiver_call(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_receiver_arg",
+        """
+        import hmac
+
+        class Algo:
+            def get_signature(self, key, value):
+                return value
+
+            def verify_signature(self, key, value, sig):
+                return hmac.compare_digest(sig, self.get_signature(key, value))
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_receiver_arg.Algo.verify_signature")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "hmac.compare_digest"
+    assert u.args == (
+        ("param", 3),
+        (
+            "receiver-method-call",
+            "venddeleg_stdlib_receiver_arg.Algo.get_signature",
+            (("param", 0), ("param", 1)),
+        ),
+    )
 
 
 def test_computed_arg_refuses(vendor_path):
@@ -4223,7 +6074,7 @@ def test_computed_arg_refuses(vendor_path):
     )
     u, r = _deleg("venddeleg_computed.f")
     assert u is None and r is not None
-    assert "neither a parameter nor an ascii literal" in r.reason
+    assert "neither a parameter, literal, collection literal, nor chain name" in r.reason
 
 
 def test_imported_delegate_refuses(vendor_path):
@@ -4515,6 +6366,55 @@ def test_receiver_method_delegation_composes_with_receiver_context(vendor_path):
     assert audits["python.constant-universe"]["totals"]["unclassified_source"] == 0
 
 
+def test_super_receiver_method_delegation_walks_casted_return(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_super_receiver",
+        """
+        import typing as t
+
+        class Base:
+            def iter_items(self, salt):
+                return salt
+
+        class Child(Base):
+            def iter_items(self, salt):
+                return t.cast("object", super().iter_items(salt))
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_super_receiver.Child.iter_items"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_super_receiver.Base.iter_items"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_super_receiver
+
+        def test_route():
+            child = venddeleg_super_receiver.Child()
+            assert child.iter_items("raaaa") == "raaaa"
+        """
+    )
+    audits = [
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and "venddeleg_super_receiver.Child.iter_items" in audit["contract"]["name"]
+    ]
+    assert audits
+    assert audits[0]["totals"]["unclassified_source"] == 0
+
+
 def test_receiver_method_delegation_composes_through_local_alias(vendor_path):
     from sugar_lift_py_tests.ir import str_const
     from sugar_lift_py_tests.translate_universe import (
@@ -4706,6 +6606,183 @@ def test_receiver_method_delegation_recurses_nested_receiver_call(vendor_path):
         audit["totals"]["unclassified_source"] == 0
         for audit in audits.values()
     ), audits
+
+
+def test_receiver_method_delegation_walks_keyword_dict_forwarding(vendor_path):
+    from sugar_lift_py_tests.translate_universe import delegation_universe_for_callee
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_kwargs",
+        """
+        class Router:
+            def g(self, seed, load_kwargs=None):
+                return "fixed"
+
+            def f(self, seed, max_age=None):
+                return self.g(seed, load_kwargs={"max_age": max_age})
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_kwargs.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_kwargs.Router.g"
+    assert universe.args == (
+        ("param", 0),
+        ("kw", "load_kwargs", ("dict", (("max_age", ("param", 1)),))),
+    )
+
+
+def test_receiver_method_delegation_composes_keyword_dict_forwarding(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_kwargs_l2",
+        """
+        class Router:
+            def g(self, seed, load_kwargs=None):
+                return "fixed"
+
+            def f(self, seed, max_age=None):
+                return self.g(seed, load_kwargs={"max_age": max_age})
+        """,
+    )
+
+    out = _lift(
+        """
+        import venddeleg_receiver_kwargs_l2
+
+        def test_route():
+            router = venddeleg_receiver_kwargs_l2.Router()
+            assert router.f("raaaa", 5) == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callval_g_a3")
+    assert any(
+        any("callval_f_a3" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a3" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_receiver_kwargs_l2.Router.f" in d.name
+    )
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {"python.delegation-universe", "python.constant-universe"} <= roles
+    audits = {
+        (audit["role"], audit["source_memento"]["source_function_name"]): audit
+        for audit in out.source_audits
+        if "venddeleg_receiver_kwargs_l2.Router" in audit["contract"]["name"]
+        and audit["role"] in {"python.delegation-universe", "python.constant-universe"}
+    }
+    assert ("python.delegation-universe", "Router.f") in audits
+    assert ("python.constant-universe", "Router.g") in audits
+    assert all(
+        audit["totals"]["unclassified_source"] == 0
+        for audit in audits.values()
+    ), audits
+
+
+def test_receiver_method_delegation_walks_imported_base_keyword_dict(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_base",
+        """
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Base(Generic[T]):
+            def g(self, seed, load_kwargs=None):
+                return "fixed"
+        """,
+    )
+    vendor_path(
+        "venddeleg_receiver_child",
+        """
+        from venddeleg_receiver_base import Base
+
+        class Child(Base[str]):
+            def f(self, seed, max_age=None):
+                return self.g(seed, load_kwargs={"max_age": max_age})
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_child.Child.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_base.Base.g"
+    assert universe.args == (
+        ("param", 0),
+        ("kw", "load_kwargs", ("dict", (("max_age", ("param", 1)),))),
+    )
+
+    out = _lift(
+        """
+        import venddeleg_receiver_child
+
+        def test_route():
+            child = venddeleg_receiver_child.Child()
+            assert child.f("raaaa", 5) == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callval_g_a3")
+    assert any(
+        any("callval_f_a3" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a3" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
 
 
 def test_receiver_runtime_dispatch_refuses(vendor_path):
@@ -6180,6 +8257,457 @@ def test_pytest_raises_carries_raise_locus_source_warrant(vendor_path):
         and locus.get("ast_kind") == "Raise"
         for locus in audit["loci"]
     ), audit
+
+
+def test_exception_handler_raise_universe_walks_try_return_except_raise(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_handler_raise_universe_for_callee,
+    )
+
+    exception_handler_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_raise_source",
+        """
+        class BadPayload(Exception):
+            pass
+
+        class Serializer:
+            def load_payload(self, payload):
+                try:
+                    return payload.decode("utf-8")
+                except Exception as e:
+                    raise BadPayload("bad", original_error=e) from e
+        """,
+    )
+    u, r = exception_handler_raise_universe_for_callee(
+        "vendtry_raise_source.Serializer.load_payload"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "BadPayload"
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "Serializer.load_payload"
+    assert u.source_memento["exception_handler_raise_type"] == "BadPayload"
+
+
+def test_pytest_raises_conjoins_exception_handler_raise_universe(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_handler_raise_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _ConstStr, _Ctor
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    exception_handler_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_raise_l2",
+        """
+        class BadPayload(Exception):
+            pass
+
+        class Serializer:
+            def load_payload(self, payload):
+                try:
+                    return payload.decode("utf-8")
+                except Exception as e:
+                    raise BadPayload("bad", original_error=e) from e
+        """,
+    )
+    out = _lift(
+        """
+        import pytest
+        import vendtry_raise_l2
+
+        def test_bad_payload():
+            with pytest.raises(ValueError):
+                vendtry_raise_l2.Serializer.load_payload(None, b"bad")
+        """
+    )
+    decl = next(d for d in out.decls if d.name == "test_bad_payload")
+    raised = []
+    for atom in _iter_conjuncts(decl.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        lhs, rhs = getattr(atom, "args", ())
+        if isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1":
+            raised.append((lhs, rhs))
+    assert [rhs.value for _, rhs in raised if isinstance(rhs, _ConstStr)] == [
+        "ValueError",
+        "BadPayload",
+    ]
+    assert raised[0][0] == raised[1][0]
+    assert any(
+        warrant.get("role") == "python.exception-handler-raise-universe"
+        and warrant.get("source_function_name") == "Serializer.load_payload"
+        and warrant.get("exception_handler_raise_type") == "BadPayload"
+        for warrant in decl.source_warrants
+    ), decl.source_warrants
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.exception-handler-raise-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Try"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Raise"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_exception_bool_return_universe_walks_validate_wrapper(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+    )
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_bool_source",
+        """
+        class BadSignature(Exception):
+            pass
+
+        class Signer:
+            def unsign(self, value):
+                raise BadSignature("bad")
+
+            def validate(self, value):
+                try:
+                    self.unsign(value)
+                    return True
+                except BadSignature:
+                    return False
+        """,
+    )
+    u, r = exception_bool_return_universe_for_callee(
+        "vendtry_bool_source.Signer.validate"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "BadSignature"
+    assert u.success_value is True
+    assert u.exception_value is False
+    assert u.delegate == "vendtry_bool_source.Signer.unsign"
+    assert u.args == (("param", 1),)
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "Signer.validate"
+    assert u.source_memento["exception_bool_return_exception_type"] == "BadSignature"
+
+
+def test_exception_bool_return_conjoins_raised_exception_relation(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _Atomic, _Connective, _ConstBool, _ConstStr, _Ctor
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_bool_l2",
+        """
+        class BadSignature(Exception):
+            pass
+
+        class Signer:
+            def unsign(self, value):
+                raise BadSignature("bad")
+
+            def validate(self, value):
+                try:
+                    self.unsign(value)
+                    return True
+                except BadSignature:
+                    return False
+        """,
+    )
+    out = _lift(
+        """
+        import vendtry_bool_l2
+
+        def test_validate():
+            signer = vendtry_bool_l2.Signer()
+            assert signer.validate(b"bad") == False
+        """
+    )
+    decl = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "vendtry_bool_l2.Signer.validate" in d.name
+    )
+    false_links = []
+    raised_terms = []
+    atoms = []
+
+    def walk_formula(formula):
+        if isinstance(formula, _Atomic):
+            atoms.append(formula)
+            return
+        if isinstance(formula, _Connective):
+            for operand in formula.operands:
+                walk_formula(operand)
+
+    walk_formula(decl.inv)
+    for atom in atoms:
+        if getattr(atom, "name", None) != "=":
+            continue
+        lhs, rhs = getattr(atom, "args", ())
+        if isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1":
+            raised_terms.append((lhs, rhs))
+        if isinstance(rhs, _ConstBool) and rhs.value is False:
+            false_links.append(atom)
+
+    assert any(
+        isinstance(rhs, _ConstStr) and rhs.value == "BadSignature"
+        for _, rhs in raised_terms
+    )
+    assert false_links
+    assert any(
+        warrant.get("role") == "python.exception-bool-return-universe"
+        and warrant.get("source_function_name") == "Signer.validate"
+        and warrant.get("exception_bool_return_exception_type") == "BadSignature"
+        for warrant in decl.source_warrants
+    ), decl.source_warrants
+
+
+def test_exception_bool_return_source_accounting(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+        raise_locus_universe_for_callee,
+    )
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    raise_locus_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_bool_audit",
+        """
+        class BadSignature(Exception):
+            pass
+
+        class Signer:
+            def unsign(self, value):
+                raise BadSignature("bad")
+
+            def validate(self, value):
+                try:
+                    self.unsign(value)
+                    return True
+                except BadSignature:
+                    return False
+        """,
+    )
+    out = _lift(
+        """
+        import vendtry_bool_audit
+
+        def test_validate():
+            signer = vendtry_bool_audit.Signer()
+            assert signer.validate(b"bad") == False
+        """
+    )
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.exception-bool-return-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    warranted_lines = {
+        locus["line"]
+        for locus in audit["loci"]
+        if locus["status"] == "warranted"
+    }
+    assert warranted_lines == set(range(9, 15)), audit
+
+
+def test_separator_guard_raise_universe_walks_membership_guard(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        separator_guard_raise_universe_for_callee,
+    )
+
+    separator_guard_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendsep_guard_source",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class BadSignature(Exception):
+    pass
+
+
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep: bytes = want_bytes(sep)
+
+    def unsign(self, signed_value):
+        signed_value = want_bytes(signed_value)
+        if self.sep not in signed_value:
+            raise BadSignature("No sep found")
+        return signed_value
+''',
+    )
+    u, r = separator_guard_raise_universe_for_callee(
+        "vendsep_guard_source.Signer.unsign"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "BadSignature"
+    assert u.field_name == "sep"
+    assert u.param_name == "signed_value"
+    assert u.param_index == 1
+    assert u.adapter_callee == "vendsep_guard_source.want_bytes"
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "Signer.unsign"
+    assert u.source_memento["separator_guard_exception_type"] == "BadSignature"
+    assert u.source_memento["separator_guard_field_name"] == "sep"
+    assert u.source_memento["separator_guard_param_name"] == "signed_value"
+
+
+def test_separator_guard_raise_conjoins_validate_inner_unsign(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+        separator_guard_raise_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _Atomic, _Connective, _ConstStr, _Ctor
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    separator_guard_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendsep_guard_l2",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class BadSignature(Exception):
+    pass
+
+
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep: bytes = want_bytes(sep)
+
+    def unsign(self, signed_value):
+        signed_value = want_bytes(signed_value)
+        if self.sep not in signed_value:
+            raise BadSignature("No sep found")
+        return signed_value
+
+    def validate(self, value):
+        try:
+            self.unsign(value)
+            return True
+        except BadSignature:
+            return False
+''',
+    )
+    out = _lift(
+        """
+        import vendsep_guard_l2
+
+        def test_validate():
+            signer = vendsep_guard_l2.Signer(sep=b".")
+            assert signer.validate(b"bad") == True
+        """
+    )
+    decl = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "vendsep_guard_l2.Signer.validate" in d.name
+    )
+    atoms = []
+
+    def walk_formula(formula):
+        if isinstance(formula, _Atomic):
+            atoms.append(formula)
+            return
+        if isinstance(formula, _Connective):
+            for operand in formula.operands:
+                walk_formula(operand)
+
+    walk_formula(decl.inv)
+    assert any(
+        atom.name == "contains"
+        and any(
+            isinstance(arg, _Ctor)
+            and "callresult_vendsep_guard_l2_want_bytes_a1" in arg.name
+            for arg in atom.args
+        )
+        and any(
+            isinstance(arg, _Ctor)
+            and "callresult_vendsep_guard_l2_want_bytes_a1" in arg.name
+            and arg.args
+            and isinstance(arg.args[0], _Ctor)
+            and arg.args[0].name == "python:bytes"
+            and arg.args[0].args
+            and isinstance(arg.args[0].args[0], _ConstStr)
+            and arg.args[0].args[0].value == "."
+            for arg in atom.args
+        )
+        for atom in atoms
+    )
+    assert any(
+        atom.name == "="
+        and any(
+            isinstance(arg, _Ctor)
+            and "callresult_vendsep_guard_l2_want_bytes_a1" in arg.name
+            and arg.args
+            and isinstance(arg.args[0], _Ctor)
+            and arg.args[0].name == "python:bytes"
+            and arg.args[0].args
+            and isinstance(arg.args[0].args[0], _ConstStr)
+            and arg.args[0].args[0].value == "."
+            for arg in atom.args
+        )
+        and any(
+            isinstance(arg, _Ctor)
+            and arg.name == "python:bytes"
+            and arg.args
+            and isinstance(arg.args[0], _ConstStr)
+            and arg.args[0].value == "."
+            for arg in atom.args
+        )
+        for atom in atoms
+    )
+    assert any(
+        atom.name == "="
+        and any(
+            isinstance(arg, _Ctor)
+            and arg.name == "raised_exc_a1"
+            and arg.args
+            and isinstance(arg.args[0], _Ctor)
+            and arg.args[0].name.startswith("callval_unsign")
+            for arg in atom.args
+        )
+        and any(
+            isinstance(arg, _ConstStr) and arg.value == "BadSignature"
+            for arg in atom.args
+        )
+        for atom in atoms
+    )
+    roles = {warrant.get("role") for warrant in decl.source_warrants}
+    assert "python.separator-guard-raise-universe" in roles
+    assert "python.bytes-identity-universe" in roles
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.separator-guard-raise-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    warranted_lines = {
+        locus["line"]
+        for locus in audit["loci"]
+        if locus["status"] == "warranted"
+    }
+    assert {19, 20}.issubset(warranted_lines), audit
 
 
 # ---------------------------------------------------------------------------
