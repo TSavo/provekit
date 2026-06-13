@@ -4788,6 +4788,24 @@ def _universe_conjuncts(
                         ),
                     ),
                 )
+                forwarder_memento = getattr(field_u, "forwarder_source_memento", None)
+                forwarder_qualname = getattr(
+                    field_u,
+                    "forwarder_constructor_qualname",
+                    None,
+                )
+                if forwarder_memento is not None and forwarder_qualname is not None:
+                    _append_unique_source_warrant(
+                        source_warrants,
+                        _source_warrant_for_instance_field_universe(
+                            field_u,
+                            source_memento=forwarder_memento,
+                            source_function_name=_local_qualname(
+                                field_u.module,
+                                forwarder_qualname,
+                            ),
+                        ),
+                    )
             conjuncts.append(eq(subject_term, value_term))
     return conjuncts
 

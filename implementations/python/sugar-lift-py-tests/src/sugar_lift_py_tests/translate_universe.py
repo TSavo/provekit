@@ -345,6 +345,8 @@ class ConstructorFieldUniverse:
     lineno: int
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
+    forwarder_constructor_qualname: Optional[str] = None
+    forwarder_source_memento: Optional[dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -918,7 +920,7 @@ def constructor_field_universe_for_callee(
     resolved = _resolve_vendor_function(f"{callee}.__init__", allow_methods=True)
     if resolved is None:
         return None, None
-    _tree, init_fn, spec_origin, module_name, fn_name = resolved
+    tree, init_fn, spec_origin, module_name, fn_name = resolved
     if not fn_name.endswith(".__init__"):
         return None, None
     init_params = _positional_param_names(init_fn)
@@ -926,6 +928,17 @@ def constructor_field_universe_for_callee(
         return None, None
     field = _constructor_field_assignment(init_fn, field_name, init_params)
     if field is None:
+        inherited = _constructor_field_from_super_init(
+            tree,
+            init_fn,
+            spec_origin,
+            module_name,
+            fn_name,
+            field_name,
+            init_params,
+        )
+        if inherited is not None:
+            return inherited, None
         return None, None
     assign = field.assign
     param_name = field.param_name
@@ -950,6 +963,103 @@ def constructor_field_universe_for_callee(
         ),
         None,
     )
+
+
+def _constructor_field_from_super_init(
+    tree: ast.Module,
+    init_fn: ast.FunctionDef,
+    spec_origin: str,
+    module_name: str,
+    fn_name: str,
+    field_name: str,
+    init_params: list[str],
+) -> Optional[ConstructorFieldUniverse]:
+    if "." not in fn_name:
+        return None
+    class_qualname, _init_name = fn_name.rsplit(".", 1)
+    cls = _find_class_path(tree.body, class_qualname.split("."))
+    if cls is None:
+        return None
+    super_stmt = _single_constructor_super_init(init_fn, init_params)
+    if super_stmt is None:
+        return None
+    base_callee = _same_module_base_constructor_callee(tree, cls, module_name)
+    if base_callee is None:
+        return None
+    base_universe, _base_refusal = constructor_field_universe_for_callee(
+        base_callee,
+        field_name,
+    )
+    if base_universe is None:
+        return None
+    call = super_stmt.value
+    if not isinstance(call, ast.Call):
+        return None
+    base_param_index = base_universe.constructor_param_index
+    if base_param_index >= len(call.args):
+        return None
+    forwarded_arg = call.args[base_param_index]
+    if (
+        not isinstance(forwarded_arg, ast.Name)
+        or forwarded_arg.id not in init_params[1:]
+    ):
+        return None
+    forwarded_param = forwarded_arg.id
+    forwarded_index = init_params[1:].index(forwarded_param)
+    forwarder_source_memento = _source_memento_for_resolved_function(
+        init_fn,
+        spec_origin,
+    )
+    if forwarder_source_memento is None:
+        return None
+    return ConstructorFieldUniverse(
+        field_name=field_name,
+        constructor_param_index=forwarded_index,
+        constructor_param_name=forwarded_param,
+        module=module_name,
+        constructor_qualname=base_universe.constructor_qualname,
+        source_path=base_universe.source_path,
+        lineno=base_universe.lineno,
+        constructor_source_memento=base_universe.constructor_source_memento,
+        constructor_default_attr_name=base_universe.constructor_default_attr_name,
+        forwarder_constructor_qualname=f"{module_name}.{fn_name}",
+        forwarder_source_memento=forwarder_source_memento,
+    )
+
+
+def _single_constructor_super_init(
+    init_fn: ast.FunctionDef,
+    init_params: list[str],
+) -> Optional[ast.Expr]:
+    super_stmt: Optional[ast.Expr] = None
+    for stmt in _body_without_docstring(init_fn.body):
+        if _is_super_init_expr(stmt):
+            if super_stmt is not None:
+                return None
+            super_stmt = stmt
+            continue
+        if _constructor_default_attr_stmt(stmt, init_params) is not None:
+            continue
+        if _constructor_field_assignment_stmt(stmt, init_params) is not None:
+            continue
+        return None
+    return super_stmt
+
+
+def _same_module_base_constructor_callee(
+    tree: ast.Module,
+    cls: ast.ClassDef,
+    module_name: str,
+) -> Optional[str]:
+    if not cls.bases:
+        return None
+    base = cls.bases[0]
+    if not isinstance(base, ast.Name):
+        return None
+    base_cls = _find_class_path(tree.body, [base.id])
+    if base_cls is None:
+        return None
+    return f"{module_name}.{base.id}"
 
 
 def _constructor_field_assignment(

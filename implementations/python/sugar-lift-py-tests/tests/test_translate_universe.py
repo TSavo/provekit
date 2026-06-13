@@ -707,6 +707,79 @@ def test_lift_source_warrants_local_name_assignment_accounting(
     ), local_loci
 
 
+def test_lift_source_warrants_local_adapter_assignment_accounting(
+    tmp_path, monkeypatch
+):
+    from sugar_lift_py_tests.translate_universe import bytes_identity_universe_for_callee
+
+    pkg = tmp_path / "vendpkg_adapter_assignment_warranted"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            def want_bytes(s, encoding="utf-8", errors="strict"):
+                if isinstance(s, str):
+                    s = s.encode(encoding, errors)
+
+                return s
+
+            def skipped(value):
+                value = want_bytes(value)
+                nested = want_bytes(helper(value))
+                return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    bytes_identity_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_adapter_assignment_warranted.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_adapter_assignment_warranted/encoding.py")
+    ]
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] == 9 and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 9
+        and locus.get("ast_kind") == "Call"
+        and "adapter assignment" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus["line"] == 10
+        and locus.get("ast_kind") == "Call"
+        for locus in local_loci
+    ), local_loci
+
+
 def test_lift_source_warrants_guarded_default_value_flow(tmp_path, monkeypatch):
     pkg = tmp_path / "vendpkg_guarded_default_warranted"
     pkg.mkdir()
@@ -773,6 +846,65 @@ def test_lift_source_warrants_guarded_default_value_flow(tmp_path, monkeypatch):
         and locus.get("ast_kind") == "Call"
         for locus in local_loci
     ), local_loci
+
+
+def test_lift_source_classifies_super_init_as_package_support(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_super_init_support"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            class PayloadError(Exception):
+                def __init__(self, message, payload=None):
+                    super().__init__(message, payload)
+                    self.payload = payload
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_super_init_support.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    super_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_super_init_support/encoding.py")
+        and locus["line"] == 4
+    ]
+    assert super_loci
+    assert not [
+        locus
+        for locus in super_loci
+        if locus["status"] == "unclassified"
+    ], super_loci
+    assert {locus["status"] for locus in super_loci} == {"support"}
+    assert {"Expr", "Call", "Attribute", "Name"} <= {
+        locus.get("ast_kind") for locus in super_loci
+    }
+    assert all(
+        "base constructor call" in locus.get("reason", "")
+        for locus in super_loci
+    )
 
 
 def test_lift_source_classifies_type_checking_blocks_as_support_or_inactive(
@@ -2191,6 +2323,87 @@ class HeaderError(Exception):
         and locus.get("line") == 6
         for locus in audit["loci"]
     ), audit
+
+
+def test_constructor_field_universe_reads_base_constructor_via_super(vendor_path):
+    vendor_path(
+        "vendinst_super_field",
+        '''
+class BaseError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+
+class PayloadError(BaseError):
+    def __init__(self, message, payload=None):
+        super().__init__(message)
+        self.payload = payload
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_super_field
+
+        def test_message():
+            err = vendinst_super_field.PayloadError("raaaa", payload=b"payload")
+            assert err.message == "wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_super_field.PayloadError" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("raaaa") in getattr(atom, "args", ())
+        and any(
+            getattr(side, "name", "") == "err$0.message"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert field_eqs
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert {
+        warrant.get("source_function_name") for warrant in field_warrants
+    } == {"BaseError.__init__", "PayloadError.__init__"}
+
+    audits = {
+        audit["source_memento"].get("source_function_name"): audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and "vendinst_super_field.PayloadError" in audit["contract"]["name"]
+    }
+    assert set(audits) == {"BaseError.__init__", "PayloadError.__init__"}
+    for audit in audits.values():
+        assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        for locus in audits["BaseError.__init__"]["loci"]
+    ), audits["BaseError.__init__"]
+    assert any(
+        locus["status"] == "support"
+        and locus.get("ast_kind") == "Expr"
+        for locus in audits["PayloadError.__init__"]["loci"]
+    ), audits["PayloadError.__init__"]
 
 
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):

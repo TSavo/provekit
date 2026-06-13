@@ -42,6 +42,7 @@ from .walk import lift_production_walk
 from .decorators import collect_module
 from .lift.pydantic import lift_pydantic_model
 from .cpython_ctypes_resolver import resolve_ctypes_calls
+from .translate_universe import bytes_identity_universe_for_callee
 
 
 # ---------------------------------------------------------------------------
@@ -363,13 +364,20 @@ def _package_unclassified_loci(
             )
             continue
 
+        module_name = _package_module_name(root, path)
+        call_aliases = _package_call_aliases(tree, module_name)
         already_classified = covered_lines.get(path.resolve(), set())
         for node, ast_path, ancestors in _iter_ast_nodes_with_paths(tree, "$.module"):
             line = getattr(node, "lineno", None)
             if not isinstance(line, int) or line in already_classified:
                 continue
             span = _ast_node_span(node)
-            status, reason = _package_locus_classification(node, ast_path, ancestors)
+            status, reason = _package_locus_classification(
+                node,
+                ast_path,
+                ancestors,
+                call_aliases,
+            )
             loci.append(
                 _source_line_locus(
                     file,
@@ -390,6 +398,7 @@ def _package_locus_classification(
     node: ast.AST,
     ast_path: str,
     ancestors: tuple[ast.AST, ...],
+    call_aliases: Dict[str, str],
 ) -> tuple[str, str]:
     overload_status = _overload_declaration_status(node, ancestors)
     if overload_status is not None:
@@ -413,6 +422,16 @@ def _package_locus_classification(
     guarded_default_status = _guarded_default_value_flow_status(node, ancestors)
     if guarded_default_status is not None:
         return guarded_default_status
+    super_init_status = _super_init_support_status(node, ancestors)
+    if super_init_status is not None:
+        return super_init_status
+    adapter_assignment_status = _local_adapter_assignment_status(
+        node,
+        ancestors,
+        call_aliases,
+    )
+    if adapter_assignment_status is not None:
+        return adapter_assignment_status
     local_binding_status = _local_name_binding_status(node, ancestors)
     if local_binding_status is not None:
         return local_binding_status
@@ -423,6 +442,51 @@ def _package_locus_classification(
     if decl is not None and isinstance(line, int) and line == decl.lineno:
         return "support", "declaration metadata supports callsite arity/name resolution"
     return "unclassified", "not classified by any emitted Python source warrant"
+
+
+def _package_module_name(root: Path, path: Path) -> str:
+    try:
+        rel = path.relative_to(root).with_suffix("")
+    except ValueError:
+        rel = path.with_suffix("").name
+        return str(rel).replace(os.sep, ".")
+    parts = [root.name, *rel.parts]
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(part for part in parts if part)
+
+
+def _package_call_aliases(tree: ast.Module, module_name: str) -> Dict[str, str]:
+    aliases: Dict[str, str] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            aliases[stmt.name] = f"{module_name}.{stmt.name}"
+        elif isinstance(stmt, ast.ImportFrom):
+            imported_module = _resolved_import_from_module(module_name, stmt)
+            if imported_module is None:
+                continue
+            for alias in stmt.names:
+                if alias.name == "*":
+                    continue
+                aliases[alias.asname or alias.name] = (
+                    f"{imported_module}.{alias.name}"
+                )
+    return aliases
+
+
+def _resolved_import_from_module(
+    module_name: str,
+    stmt: ast.ImportFrom,
+) -> Optional[str]:
+    if stmt.level == 0:
+        return stmt.module
+    parts = module_name.split(".")
+    base = parts[:-stmt.level]
+    if not base and parts:
+        base = parts[:1]
+    if stmt.module:
+        base = [*base, *stmt.module.split(".")]
+    return ".".join(part for part in base if part)
 
 
 def _overload_declaration_status(
@@ -686,6 +750,101 @@ def _guarded_default_attribute_root(node: ast.Attribute) -> str:
     while isinstance(cur, ast.Attribute):
         cur = cur.value
     return cur.id if isinstance(cur, ast.Name) else ""
+
+
+def _super_init_support_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    stmt = _super_init_statement_for_locus(node, ancestors)
+    if stmt is None:
+        return None
+    return "support", "base constructor call supports construction accounting"
+
+
+def _super_init_statement_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[ast.Expr]:
+    chain = ancestors + (node,)
+    for item in reversed(chain):
+        if isinstance(item, ast.stmt):
+            return item if _is_super_init_expr(item) else None
+    return None
+
+
+def _is_super_init_expr(stmt: ast.AST) -> bool:
+    if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+        return False
+    call = stmt.value
+    if call.keywords:
+        return False
+    if not all(_is_super_init_support_arg(arg) for arg in call.args):
+        return False
+    func = call.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "__init__"
+        and isinstance(func.value, ast.Call)
+        and isinstance(func.value.func, ast.Name)
+        and func.value.func.id == "super"
+        and not func.value.args
+        and not func.value.keywords
+    )
+
+
+def _is_super_init_support_arg(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.Attribute):
+        return _is_super_init_support_arg(node.value)
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return all(_is_super_init_support_arg(value) for value in node.elts)
+    return False
+
+
+def _local_adapter_assignment_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    call_aliases: Dict[str, str],
+) -> Optional[tuple[str, str]]:
+    stmt = _local_name_binding_statement_for_locus(node, ancestors)
+    if stmt is None:
+        return None
+    assign_stmt, _target, value = stmt
+    if not isinstance(value, ast.Call):
+        return None
+    if not any(descendant is node for descendant in ast.walk(assign_stmt)):
+        return None
+    if (
+        not isinstance(value.func, ast.Name)
+        or value.keywords
+        or any(isinstance(arg, ast.Starred) for arg in value.args)
+        or not all(_is_adapter_assignment_arg(arg) for arg in value.args)
+    ):
+        return None
+    callee = call_aliases.get(value.func.id)
+    if callee is None:
+        return None
+    universe, refusal = bytes_identity_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return (
+        "warranted",
+        "source-backed adapter assignment emitted as recursive universe dig",
+    )
+
+
+def _is_adapter_assignment_arg(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.Attribute):
+        return _is_adapter_assignment_arg(node.value)
+    return False
 
 
 def _local_name_binding_status(
