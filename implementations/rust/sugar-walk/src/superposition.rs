@@ -1,0 +1,396 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Slice 1 of the superposition report (goal: the content-addressed universe
+// DAG). A `Universe` is NOT a cloned world. It is a chain of `(fact,
+// [mFact1, mFact2, ...])` links: a spine of DETERMINED facts (holding in every
+// world, stored once, referenced by CID) interleaved with FORK groups
+// (mutually-exclusive alternatives, exactly one per world).
+//
+// The whole world-space — 2^M for M binary forks — lives as a chain whose
+// on-disk size is LINEAR in `N + Sigma(fork sizes)`, never the 2^M product.
+//
+//   getFixedpoint()  =  the chain of asserted (consistent) facts so far.
+//   .fork(alts)      =  append a fork link, SHARING the entire prefix by Arc.
+//                       No copy: `Arc::clone(self)` only bumps a refcount.
+//
+// Every `fact` / fork member is a CID — in practice the `contract_cid` of a
+// `ContractDecl` already living in the proof envelope's members map, so forks
+// share the base for free. This module is the data model + the two-level CID
+// (per-world walkable proof / per-superposition order-invariant handle) + the
+// factored world reconstruction. The consistency CHECK that decides
+// assert-vs-fork (z3) is a later slice; here `assert`/`fork` are pure builders.
+
+use std::sync::Arc;
+
+use sugar_canonicalizer::{encode_jcs, Value};
+
+use crate::canonical::cid_of_value;
+
+/// One link of the chain: either a determined fact (the spine, every world) or
+/// a fork group (mutually-exclusive members, exactly one per world).
+///
+/// The user's `(fact, [mFact1, mFact2, ...])` shorthand is recovered by pairing
+/// each `Fork` with the `Determined` link(s) preceding it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Statement {
+    /// A warranted fact that holds in EVERY world. Carries its CID.
+    Determined(String),
+    /// A mutual-exclusion group: exactly one member holds per world.
+    /// `len == 0` => the output survives in NO world (a contradiction with no
+    /// restoration) => the superposition is Undecidable.
+    /// `len == 1` => a collapsed fork (effectively determined).
+    /// `len >= 2` => a genuine fork.
+    Fork(Vec<String>),
+}
+
+/// An immutable, structurally-shared chain. `.fork()`/`.assert()` return a new
+/// head linking onto `self` by Arc — the prefix is never copied.
+#[derive(Debug, Clone)]
+pub enum Universe {
+    Empty,
+    Link {
+        stmt: Statement,
+        prev: Arc<Universe>,
+    },
+}
+
+/// Strength = the live universe-count of the output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Strength {
+    /// Exactly one world: the output is pinned. (count == 1)
+    Strong,
+    /// More than one world: the output forks. (count > 1)
+    Weak,
+    /// No world: every candidate contradicts. (count == 0)
+    Undecidable,
+}
+
+impl Universe {
+    /// The empty consistent closure — the fixedpoint before any fact.
+    pub fn empty() -> Arc<Universe> {
+        Arc::new(Universe::Empty)
+    }
+
+    /// Extend the fixedpoint with a determined fact (holds in every world).
+    /// Shares the entire prior chain by Arc; no copy.
+    pub fn assert(self: &Arc<Self>, fact: impl Into<String>) -> Arc<Universe> {
+        Arc::new(Universe::Link {
+            stmt: Statement::Determined(fact.into()),
+            prev: Arc::clone(self),
+        })
+    }
+
+    /// Append a fork: a mutual-exclusion group of alternatives (CIDs), exactly
+    /// one per world. Shares the entire prior chain by Arc; no copy.
+    pub fn fork(self: &Arc<Self>, alternatives: Vec<String>) -> Arc<Universe> {
+        Arc::new(Universe::Link {
+            stmt: Statement::Fork(alternatives),
+            prev: Arc::clone(self),
+        })
+    }
+
+    /// Statements in forward (oldest-first) order. Borrows tied to `self`.
+    pub fn forward_statements(&self) -> Vec<&Statement> {
+        let mut out = Vec::new();
+        let mut cur = self;
+        loop {
+            match cur {
+                Universe::Empty => break,
+                Universe::Link { stmt, prev } => {
+                    out.push(stmt);
+                    cur = prev;
+                }
+            }
+        }
+        out.reverse();
+        out
+    }
+
+    /// The N determined facts — the warranted core, true in every world.
+    pub fn determined_facts(&self) -> Vec<&str> {
+        self.forward_statements()
+            .into_iter()
+            .filter_map(|s| match s {
+                Statement::Determined(c) => Some(c.as_str()),
+                Statement::Fork(_) => None,
+            })
+            .collect()
+    }
+
+    /// The M fork groups — the mutual-exclusion groups (the Dr-Who loops).
+    pub fn fork_groups(&self) -> Vec<&[String]> {
+        self.forward_statements()
+            .into_iter()
+            .filter_map(|s| match s {
+                Statement::Fork(alts) => Some(alts.as_slice()),
+                Statement::Determined(_) => None,
+            })
+            .collect()
+    }
+
+    /// Number of distinct worlds = product of fork-group sizes. FACTORED: read
+    /// off the chain in linear time, never by enumerating the product.
+    /// Saturates at u128::MAX (the count is a strength signal, not an index).
+    pub fn world_count(&self) -> u128 {
+        let mut acc: u128 = 1;
+        for s in self.forward_statements() {
+            if let Statement::Fork(alts) = s {
+                acc = acc.saturating_mul(alts.len() as u128);
+            }
+        }
+        acc
+    }
+
+    /// Strength grade from the live universe-count.
+    pub fn strength(&self) -> Strength {
+        match self.world_count() {
+            0 => Strength::Undecidable,
+            1 => Strength::Strong,
+            _ => Strength::Weak,
+        }
+    }
+
+    pub fn is_collapsed(&self) -> bool {
+        self.world_count() == 1
+    }
+
+    /// The per-world CID: walk the chain picking one alternative per fork to get
+    /// a linear list of fact CIDs (a "walkable proof"), then CID that list.
+    /// `index` in `0..world_count`; returns None if out of range (incl. count 0).
+    /// O(chain length) — reconstructs world `index` WITHOUT materializing any
+    /// other world.
+    pub fn world_cid(&self, index: u128) -> Option<String> {
+        let total = self.world_count();
+        if total == 0 || index >= total {
+            return None;
+        }
+        let stmts = self.forward_statements();
+        // Mixed-radix decode of `index` across the fork groups (forward order,
+        // first fork = least significant). Bijective over 0..total.
+        let fork_radices: Vec<u128> = stmts
+            .iter()
+            .filter_map(|s| match s {
+                Statement::Fork(alts) => Some(alts.len() as u128),
+                Statement::Determined(_) => None,
+            })
+            .collect();
+        let mut digits: Vec<usize> = Vec::with_capacity(fork_radices.len());
+        let mut rem = index;
+        for r in &fork_radices {
+            digits.push((rem % r) as usize);
+            rem /= r;
+        }
+        // Walk forward, emitting the determined facts and the chosen alternatives.
+        let mut chosen: Vec<Arc<Value>> = Vec::new();
+        let mut fi = 0usize;
+        for s in &stmts {
+            match s {
+                Statement::Determined(c) => chosen.push(Value::string(c.clone())),
+                Statement::Fork(alts) => {
+                    chosen.push(Value::string(alts[digits[fi]].clone()));
+                    fi += 1;
+                }
+            }
+        }
+        let node = Value::object(vec![
+            ("facts".to_string(), Value::array(chosen)),
+            ("kind".to_string(), Value::string("world")),
+        ]);
+        Some(cid_of_value(&node))
+    }
+
+    /// The order-invariant federation handle. Identity is the multiset of
+    /// determined facts + the set of fork groups (each a sorted member set) —
+    /// order is out of the membrane, so the chain is canonicalized by sorting.
+    pub fn canonical_value(&self) -> Arc<Value> {
+        let stmts = self.forward_statements();
+        let mut determined: Vec<String> = stmts
+            .iter()
+            .filter_map(|s| match s {
+                Statement::Determined(c) => Some(c.clone()),
+                Statement::Fork(_) => None,
+            })
+            .collect();
+        determined.sort();
+        let mut forks: Vec<Arc<Value>> = stmts
+            .iter()
+            .filter_map(|s| match s {
+                Statement::Fork(alts) => {
+                    let mut members = alts.clone();
+                    members.sort();
+                    Some(Value::array(
+                        members.into_iter().map(Value::string).collect(),
+                    ))
+                }
+                Statement::Determined(_) => None,
+            })
+            .collect();
+        forks.sort_by(|a, b| encode_jcs(a).cmp(&encode_jcs(b)));
+        Value::object(vec![
+            (
+                "determined".to_string(),
+                Value::array(determined.into_iter().map(Value::string).collect()),
+            ),
+            ("forks".to_string(), Value::array(forks)),
+            ("kind".to_string(), Value::string("superposition")),
+        ])
+    }
+
+    /// CID of the whole superposition (order-invariant handle).
+    pub fn superposition_cid(&self) -> String {
+        cid_of_value(&self.canonical_value())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cid(tag: &str) -> String {
+        // A stand-in fact CID. Real facts are contract_cids; slice 1 only needs
+        // distinct opaque strings.
+        format!("blake3-512:{tag}")
+    }
+
+    #[test]
+    fn determined_only_is_strong_single_world() {
+        let u = Universe::empty()
+            .assert(cid("a"))
+            .assert(cid("b"))
+            .assert(cid("c"));
+        assert_eq!(u.world_count(), 1);
+        assert_eq!(u.strength(), Strength::Strong);
+        assert!(u.is_collapsed());
+        assert_eq!(u.determined_facts(), vec!["blake3-512:a", "blake3-512:b", "blake3-512:c"]);
+        assert!(u.fork_groups().is_empty());
+        // The single world has a CID; index 1 is out of range.
+        assert!(u.world_cid(0).is_some());
+        assert!(u.world_cid(1).is_none());
+    }
+
+    #[test]
+    fn one_binary_fork_two_worlds() {
+        let u = Universe::empty()
+            .assert(cid("a"))
+            .fork(vec![cid("x"), cid("y")]);
+        assert_eq!(u.world_count(), 2);
+        assert_eq!(u.strength(), Strength::Weak);
+        let w0 = u.world_cid(0).unwrap();
+        let w1 = u.world_cid(1).unwrap();
+        assert_ne!(w0, w1, "the two worlds must have distinct CIDs");
+        assert!(u.world_cid(2).is_none());
+        assert_eq!(u.fork_groups().len(), 1);
+        assert_eq!(u.fork_groups()[0].len(), 2);
+    }
+
+    #[test]
+    fn empty_fork_is_undecidable() {
+        let u = Universe::empty().assert(cid("a")).fork(vec![]);
+        assert_eq!(u.world_count(), 0);
+        assert_eq!(u.strength(), Strength::Undecidable);
+        assert!(u.world_cid(0).is_none());
+    }
+
+    #[test]
+    fn superposition_cid_is_order_invariant() {
+        // Same facts + same forks, asserted in different link orders, must yield
+        // the same superposition CID (order is out of the membrane). Per-world
+        // CIDs may differ; the federation handle must not.
+        let a = Universe::empty()
+            .assert(cid("a"))
+            .assert(cid("b"))
+            .fork(vec![cid("x"), cid("y")]);
+        let b = Universe::empty()
+            .fork(vec![cid("y"), cid("x")]) // members reversed
+            .assert(cid("b"))
+            .assert(cid("a")); // facts reordered
+        assert_eq!(
+            a.superposition_cid(),
+            b.superposition_cid(),
+            "superposition CID must be order-invariant"
+        );
+    }
+
+    #[test]
+    fn distinct_forks_distinct_superposition_cid() {
+        let a = Universe::empty().assert(cid("a")).fork(vec![cid("x"), cid("y")]);
+        let b = Universe::empty().assert(cid("a")).fork(vec![cid("x"), cid("z")]);
+        assert_ne!(a.superposition_cid(), b.superposition_cid());
+    }
+
+    #[test]
+    fn fork_shares_base_no_clone() {
+        // .fork() must share the entire prefix by Arc, not copy it.
+        let base = Universe::empty().assert(cid("a")).assert(cid("b"));
+        let w1 = base.fork(vec![cid("x"), cid("y")]);
+        let w2 = base.fork(vec![cid("p"), cid("q")]);
+        // Both forks' `prev` must be the SAME allocation as `base`.
+        let prev1 = match &*w1 {
+            Universe::Link { prev, .. } => Arc::as_ptr(prev),
+            _ => panic!(),
+        };
+        let prev2 = match &*w2 {
+            Universe::Link { prev, .. } => Arc::as_ptr(prev),
+            _ => panic!(),
+        };
+        assert_eq!(prev1, Arc::as_ptr(&base), "fork must share the base by Arc");
+        assert_eq!(prev2, Arc::as_ptr(&base), "fork must share the base by Arc");
+        assert_eq!(prev1, prev2, "both forks share one base allocation");
+    }
+
+    #[test]
+    fn factored_not_enumerated() {
+        // 30 binary forks => 2^30 worlds, but the chain stays LINEAR on disk and
+        // any single world reconstructs in O(chain length) — no 2^30 blowup.
+        let mut u = Universe::empty().assert(cid("root"));
+        for i in 0..30 {
+            u = u.fork(vec![cid(&format!("l{i}")), cid(&format!("r{i}"))]);
+        }
+        assert_eq!(u.world_count(), 1u128 << 30);
+        assert_eq!(u.strength(), Strength::Weak);
+
+        // On-disk (canonical) size is linear, not exponential: 30 forks * 2
+        // members + 1 determined fact. Bytes stay tiny.
+        let bytes = encode_jcs(&u.canonical_value());
+        assert!(
+            bytes.len() < 4096,
+            "factored form must be linear-sized, got {} bytes",
+            bytes.len()
+        );
+
+        // Reconstruct a deep world by index without materializing the rest.
+        let w = u.world_cid(123_456_789).unwrap();
+        let w2 = u.world_cid(123_456_790).unwrap();
+        assert_ne!(w, w2);
+        // Top of range valid, one past is not.
+        assert!(u.world_cid((1u128 << 30) - 1).is_some());
+        assert!(u.world_cid(1u128 << 30).is_none());
+    }
+
+    #[test]
+    fn mixed_radix_world_selection_is_hand_checkable() {
+        // Two forks: [x,y] (radix 2) then [p,q,r] (radix 3) => 6 worlds.
+        // index = first_digit + 2 * second_digit  (first fork least significant).
+        let u = Universe::empty()
+            .fork(vec![cid("x"), cid("y")])
+            .fork(vec![cid("p"), cid("q"), cid("r")]);
+        assert_eq!(u.world_count(), 6);
+        // World 0 = (x, p); World 1 = (y, p); World 2 = (x, q); World 3 = (y, q).
+        // Verify by reconstructing the expected linear list directly.
+        let expect = |members: &[&str]| {
+            let node = Value::object(vec![
+                (
+                    "facts".to_string(),
+                    Value::array(members.iter().map(|m| Value::string(m.to_string())).collect()),
+                ),
+                ("kind".to_string(), Value::string("world")),
+            ]);
+            cid_of_value(&node)
+        };
+        assert_eq!(u.world_cid(0).unwrap(), expect(&["blake3-512:x", "blake3-512:p"]));
+        assert_eq!(u.world_cid(1).unwrap(), expect(&["blake3-512:y", "blake3-512:p"]));
+        assert_eq!(u.world_cid(2).unwrap(), expect(&["blake3-512:x", "blake3-512:q"]));
+        assert_eq!(u.world_cid(3).unwrap(), expect(&["blake3-512:y", "blake3-512:q"]));
+        assert_eq!(u.world_cid(5).unwrap(), expect(&["blake3-512:y", "blake3-512:r"]));
+    }
+}
