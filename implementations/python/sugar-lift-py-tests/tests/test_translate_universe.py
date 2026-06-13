@@ -6068,6 +6068,90 @@ def test_imported_stdlib_delegation_walks_nested_receiver_call(vendor_path):
     )
 
 
+def test_chain_assignment_stdlib_bridge_method_return(vendor_path):
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constructor_field_universe_for_callee,
+    )
+
+    constructor_field_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_stdlib_chain_method",
+        """
+        import hmac
+
+        class Algo:
+            def __init__(self, digest_method):
+                self.digest_method = digest_method
+
+            def get_signature(self, key, value):
+                mac = hmac.new(key, msg=value, digestmod=self.digest_method)
+                return mac.digest()
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_chain_method.Algo.get_signature")
+    assert r is None and u is not None
+    assert u.kind == "chain-expr"
+    assert u.expr_spec[0] == "method-call"
+    assert u.expr_spec[1] == "digest"
+    assert u.expr_spec[2][0][0] == "function-call"
+    assert u.expr_spec[2][0][1] == "hmac.new"
+
+    out = _lift(
+        """
+        import venddeleg_stdlib_chain_method
+
+        def test_sig():
+            alg = venddeleg_stdlib_chain_method.Algo("sha1")
+            assert alg.get_signature(b"k", b"v") == b"sig"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "venddeleg_stdlib_chain_method.Algo.get_signature" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    expr_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+    ]
+    assert any(
+        contains_ctor(side, "callval_digest_a1")
+        for atom in expr_eqs
+        for side in getattr(atom, "args", ())
+    )
+    assert any(
+        contains_ctor(side, "callresult_hmac_new_a3")
+        for atom in expr_eqs
+        for side in getattr(atom, "args", ())
+    )
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert (
+        "python.delegation-universe",
+        "Algo.get_signature",
+    ) in warranted
+    assert (
+        "python.instance-field-universe",
+        "Algo.__init__",
+    ) in warranted
+
+
 def test_computed_arg_refuses(vendor_path):
     vendor_path(
         "venddeleg_computed",

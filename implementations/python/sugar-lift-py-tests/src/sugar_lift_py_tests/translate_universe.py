@@ -4331,6 +4331,19 @@ def delegation_universe_for_callee(
             if call_spec is not None:
                 spec = call_spec
         if spec is None and isinstance(stmt.value, ast.Call):
+            stdlib_spec, stdlib_refusal = _stdlib_call_value_spec(
+                stmt.value,
+                params=params,
+                env=env,
+                tree=tree,
+                module_name=module_name,
+                fn_name=fn_name,
+            )
+            if stdlib_refusal is not None:
+                return refuse(stdlib_refusal)
+            if stdlib_spec is not None:
+                spec = stdlib_spec
+        if spec is None and isinstance(stmt.value, ast.Call):
             dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(
                 stmt.value,
                 params,
@@ -4403,6 +4416,39 @@ def delegation_universe_for_callee(
                 "name; the computed value is not the callsite's"
             )
         return universe(kind="chain-expr", expr_spec=expr_spec)
+
+    if isinstance(value, ast.Call):
+        expr_spec = _resolve_expr_spec(
+            value,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if expr_spec == "REFUSE-OP":
+            return refuse(
+                "call return expression uses an unsupported operator; the "
+                "consumer side cannot build the term either"
+            )
+        receiver_spec = None
+        if expr_spec is not None and expr_spec[0] == "method-call":
+            method_args = expr_spec[2]
+            if method_args:
+                receiver_spec = method_args[0]
+        if (
+            isinstance(receiver_spec, tuple)
+            and receiver_spec
+            and receiver_spec[0]
+            in {
+                "function-call",
+                "method-call",
+                "receiver-method-call",
+                "subscript",
+                "binop",
+            }
+        ):
+            return universe(kind="chain-expr", expr_spec=expr_spec)
 
     # identity: return <param>, possibly through the chain; a name that
     # chains to a LITERAL is a constant in forwarding clothes
