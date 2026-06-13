@@ -4280,6 +4280,24 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
         if let Some(inv) = emit_if_value(tail, &scope) {
             return Some(source_value_contract(name, inv));
         }
+        // (f) Slice 9 -- bool-predicate body: any bool expression the assertion
+        //     lifter understands (comparisons `a <= b`, `&&`/`||`/`!`, matches!,
+        //     string predicates) -> the biconditional out <-> F, reusing
+        //     translate_bool_assertion (the proven bool->Formula path). Runs after
+        //     the EUF value path, so value terms are unaffected; it catches the
+        //     comparison/predicate bodies translate_term_in_scope rejects. GATED to
+        //     syntactically bool-shaped exprs so it can't mis-accept a non-bool
+        //     call (e.g. `r.unwrap()` -> i32) as a bool predicate.
+        if is_bool_shaped_expr(tail) {
+            if let Ok(entry) = translate_bool_assertion(tail, &scope, &FloatWidthScope::new()) {
+                let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
+                let inv = and_(vec![
+                    implies(out_true.clone(), entry.atom.clone()),
+                    implies(entry.atom, out_true),
+                ]);
+                return Some(source_value_contract(name, inv));
+            }
+        }
         return None;
     }
     // (d) Slice 6 -- leading immutable-let prefix + EUF tail: `(let x = euf;)* euf`,
@@ -4334,6 +4352,31 @@ fn let_prefix_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<T
         tail = subst_var_in_term(&tail, n, t);
     }
     term_is_euf_value(&tail).then_some(tail)
+}
+
+/// True iff an expression is syntactically a boolean predicate the assertion
+/// lifter can handle as `out <-> F`: a comparison / logical-op binary, a `!`, or
+/// those through paren/group. Deliberately EXCLUDES bare calls and `matches!`
+/// (matches! is handled by emit_bool_membership_formula; a bare call's bool-ness
+/// is unknown and must not be mis-warranted as a predicate).
+fn is_bool_shaped_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Binary(b) => matches!(
+            b.op,
+            BinOp::Eq(_)
+                | BinOp::Ne(_)
+                | BinOp::Lt(_)
+                | BinOp::Le(_)
+                | BinOp::Gt(_)
+                | BinOp::Ge(_)
+                | BinOp::And(_)
+                | BinOp::Or(_)
+        ),
+        Expr::Unary(u) => matches!(u.op, UnOp::Not(_)),
+        Expr::Paren(p) => is_bool_shaped_expr(&p.expr),
+        Expr::Group(g) => is_bool_shaped_expr(&g.expr),
+        _ => false,
+    }
 }
 
 /// A block's value as an EUF term: a single EUF tail expression, or a leading

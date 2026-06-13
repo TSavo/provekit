@@ -5954,3 +5954,38 @@ fn emit_value_contract_if_refuses_non_total_and_if_let() {
         );
     }
 }
+
+// ── Slice 9: bool-predicate body (comparison / && / || / predicate) -> out <-> F ──
+
+#[test]
+fn emit_value_contract_bool_predicate_body_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        "fn f(a: usize, b: usize) -> bool { a <= b }",
+        "fn f(x: i32) -> bool { x == 0 }",
+        "fn f(a: i32, b: i32) -> bool { a < b && b < 100 }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("bool predicate body must warrant: {src}"));
+        let inv = format!("{:?}", decl.inv.clone().expect("inv"));
+        assert!(inv.contains("out"), "out related: {src}");
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&parsed[0]["inv"])
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_boolpred.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
+    }
+}
