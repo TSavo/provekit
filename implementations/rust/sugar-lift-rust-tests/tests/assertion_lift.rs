@@ -5977,6 +5977,72 @@ fn emit_value_contract_guard_return_non_value_tail_refused() {
     );
 }
 
+// Slice 22: array/slice-pattern `matches!` (matches!(scrut, [169, 254, ..])).
+// core::net is full of these -- is_documentation { matches!(self.octets(),
+// [192, 0, 2, _]) }, is_link_local { matches!(self.octets(), [169, 254, ..]) }.
+// Pure: an array pattern test over a (method-call) scrutinee. Warrants as the
+// conjunction of fixed-front positions: index(scrut, i) == lit, over the
+// existing `index` accessor. Trailing `..` leaves the rest unconstrained.
+#[test]
+fn emit_value_contract_slice_pattern_matches_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str(
+        "fn is_doc(o: [u8; 4]) -> bool { matches!(o, [192, 0, 2, _]) }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("is_doc", &f.block).expect("slice-pattern matches! warrants");
+    let inv_dbg = format!("{:?}", decl.inv.clone().expect("inv present"));
+    assert!(inv_dbg.contains("index"), "index accessor present: {inv_dbg}");
+    for lit in ["192", "2"] {
+        assert!(inv_dbg.contains(lit), "fixed byte {lit} present: {inv_dbg}");
+    }
+
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("slice-pattern inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_slice_pattern_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "slice-pattern relation must be well-sorted for z3:\n{stdout}\n--- {script}"
+        );
+        assert!(stdout.contains("sat"), "slice-pattern relation must be satisfiable:\n{stdout}");
+    }
+}
+
+// Discrimination: a trailing `..` is fine (front-indexed), but a NON-trailing
+// rest (`[.., 1]`, back-indexing) and an all-wildcard pattern (no teeth) stay
+// None.
+#[test]
+fn emit_value_contract_slice_pattern_discrimination() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let trailing: syn::ItemFn =
+        syn::parse_str("fn f(o: [u8; 4]) -> bool { matches!(o, [169, 254, ..]) }").unwrap();
+    assert!(
+        emit_value_contract("f", &trailing.block).is_some(),
+        "trailing-rest slice pattern warrants"
+    );
+    let leading: syn::ItemFn =
+        syn::parse_str("fn f(o: [u8; 4]) -> bool { matches!(o, [.., 1]) }").unwrap();
+    assert!(
+        emit_value_contract("f", &leading.block).is_none(),
+        "a non-trailing rest (back-indexing) must not warrant"
+    );
+    let allwild: syn::ItemFn =
+        syn::parse_str("fn f(o: [u8; 4]) -> bool { matches!(o, [_, _, ..]) }").unwrap();
+    assert!(
+        emit_value_contract("f", &allwild.block).is_none(),
+        "an all-wildcard slice pattern has no teeth -> not warranted"
+    );
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

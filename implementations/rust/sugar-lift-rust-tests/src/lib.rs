@@ -4968,20 +4968,22 @@ fn matches_membership_formula(mac: &syn::Macro, scope: &TemporalScope) -> Option
         })
         .ok()?;
     let Some(guard) = guard else {
-        // Unguarded. First the scalar/string code-point membership (fast path).
-        let scrutinee_term = scrutinee_scalar_var(&scrutinee)?;
-        if let Some(f) = pattern_membership_formula(&scrutinee_term, &pat) {
-            return Some(f);
+        // Unguarded. A simple-name scrutinee: scalar/string code-point membership,
+        // then enum-variant discrimination (`is_ipv4`/`is_some`: `variant_of(x) ==
+        // "variant::V"` via match_arm_discriminant; a bare binding/wildcard has no
+        // discriminant -> vacuous -> None, never a teethless `out <-> true`).
+        if let Some(scrutinee_term) = scrutinee_scalar_var(&scrutinee) {
+            if let Some(f) = pattern_membership_formula(&scrutinee_term, &pat) {
+                return Some(f);
+            }
+            if let Some((Some(disc), _bindings)) = match_arm_discriminant(&scrutinee_term, &pat) {
+                return Some(disc);
+            }
         }
-        // Then enum-variant discrimination: `matches!(x, Enum::Variant(..))` (the
-        // ubiquitous `is_ipv4`/`is_some`/`is_*` predicate) warrants `out <->
-        // variant_of(x) == "variant::Variant"` via match_arm_discriminant -- the
-        // SAME discriminant a value-match emits. Bindings are irrelevant with no
-        // guard. A bare binding/wildcard pattern has no discriminant (disc=None)
-        // -> vacuous (always matches), so we return None and it stays unclassified
-        // rather than emit a teethless `out <-> true`.
-        let (disc, _bindings) = match_arm_discriminant(&scrutinee_term, &pat)?;
-        return disc;
+        // Slice pattern over a general (possibly method-call) scrutinee:
+        // `matches!(self.octets(), [169, 254, ..])` (the net is_documentation /
+        // is_link_local family).
+        return emit_slice_pattern_membership(&scrutinee, &pat, scope);
     };
     // Guarded: discriminant /\ guard[pattern bindings := payload accessors].
     let scrutinee_term = scrutinee_scalar_var(&scrutinee)?;
@@ -4995,6 +4997,55 @@ fn matches_membership_formula(mac: &syn::Macro, scope: &TemporalScope) -> Option
         Some(d) => and_(vec![d, guard_f]),
         None => guard_f,
     })
+}
+
+/// A slice-pattern `matches!(scrut, [lit, _, .., lit])` as a membership formula:
+/// each fixed FRONT position `i` (before an optional TRAILING `..`) becomes
+/// `index(scrut, i) == lit` over the existing `index` accessor, conjoined.
+/// Wildcards skip a position; a trailing `..` leaves the rest unconstrained. The
+/// scrutinee is any EUF term (`self.octets()` -> `method:octets(self)`). A
+/// non-trailing `..` (back-indexing), a binding/nested element, or an all-wild
+/// pattern (no teeth) -> None.
+fn emit_slice_pattern_membership(
+    scrutinee: &Expr,
+    pat: &Pat,
+    scope: &TemporalScope,
+) -> Option<Rc<Formula>> {
+    let Pat::Slice(slice) = pat else {
+        return None;
+    };
+    let scrut = translate_term_in_scope(scrutinee, scope).ok()?;
+    if !term_is_euf_value(&scrut) {
+        return None;
+    }
+    let last = slice.elems.len().saturating_sub(1);
+    let mut conj: Vec<Rc<Formula>> = Vec::new();
+    for (i, elem) in slice.elems.iter().enumerate() {
+        match elem {
+            // A `..` rest is only sound at the end: a mid-pattern rest shifts the
+            // following elements to back-indexing, which `index(scrut, i)` (front)
+            // does not model.
+            Pat::Rest(_) => {
+                if i != last {
+                    return None;
+                }
+                break;
+            }
+            Pat::Wild(_) => {}
+            Pat::Lit(p) => {
+                let elem_term = Rc::new(Term::Ctor {
+                    name: "index".to_string(),
+                    args: vec![scrut.clone(), num(i as i64)],
+                });
+                conj.push(eq(elem_term, lit_membership_term(&p.lit)?));
+            }
+            _ => return None,
+        }
+    }
+    if conj.is_empty() {
+        return None; // all wild / bare rest -> vacuous, no teeth
+    }
+    Some(and_(conj))
 }
 
 /// The scrutinee of a char/byte `matches!` reduces to a single bound name (its
