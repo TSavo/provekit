@@ -70,6 +70,13 @@ use crate::types::{memento_body, memento_kind, MementoPool, ObligationVerdict};
 use sugar_canonicalizer::blake3_512_of;
 use sugar_ir_compiler_smt_lib::emit_asserted;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Running count of consistency obligations solved this process — drives the
+/// per-obligation progress log so a `verify` run is never silent about what it
+/// is doing or where it is slow.
+static OBLIGATIONS_CHECKED: AtomicUsize = AtomicUsize::new(0);
+
 /// Outcome of a single contract's consistency check.
 #[derive(Debug, Clone)]
 pub struct ConsistencyResult {
@@ -616,7 +623,20 @@ fn check_inv_consistency(
             };
         }
     };
+    let solve_started = std::time::Instant::now();
     let (raw, raw_reason, _invs) = run_plan(plan, registry, &smt, Some(&inv));
+    let ms = solve_started.elapsed().as_millis();
+    // Per-obligation progress on stderr. A PINNED obligation is a closed ground
+    // check (microseconds); >=250ms is the signal of an unpinned/open lowering —
+    // always surfaced. Set SUGAR_VERIFY_PROGRESS=1 to log every obligation.
+    let n = OBLIGATIONS_CHECKED.fetch_add(1, Ordering::Relaxed) + 1;
+    if ms >= 250 {
+        eprintln!("[verify #{n}] SLOW {ms}ms  {property_name}  (unpinned/open?)");
+    } else if std::env::var_os("SUGAR_VERIFY_PROGRESS").is_some() {
+        eprintln!("[verify #{n}] {ms}ms  {property_name}");
+    } else if n % 200 == 0 {
+        eprintln!("[verify] {n} obligations checked…");
+    }
     let (verdict, label) = consistency_verdict(raw);
     let reason = format!("{label} `{property_name}` [{raw_reason}]");
     if verdict == ObligationVerdict::Undecidable {
@@ -725,19 +745,214 @@ fn formula_is_closed(node: &Json, bound: &mut Vec<String>) -> bool {
 /// Conjoin the ambient universal invariants into an obligation's inv so the
 /// solver can instantiate them against this obligation's point-claims. Empty
 /// ambient set leaves the inv untouched.
+/// Collect the uninterpreted-function (`ctor`) symbols a formula references —
+/// its solver vocabulary. Two formulas are independent (disjoint-signature, so
+/// sound to separate) iff they share no such symbol.
+fn collect_ctor_symbols(j: &Json, out: &mut std::collections::BTreeSet<String>) {
+    match j {
+        Json::Object(m) => {
+            if m.get("kind").and_then(|k| k.as_str()) == Some("ctor") {
+                if let Some(n) = m.get("name").and_then(|n| n.as_str()) {
+                    out.insert(n.to_string());
+                }
+            }
+            for v in m.values() {
+                collect_ctor_symbols(v, out);
+            }
+        }
+        Json::Array(a) => {
+            for v in a {
+                collect_ctor_symbols(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Conjoin ONLY the ambient universals RELEVANT to this obligation. An ambient
+/// `forall` is conjoined iff its vocabulary intersects the obligation's (or that
+/// of an already-included forall — relevance closure, so transitively-linked
+/// universals are kept). A universal over disjoint vocabulary is a conservative
+/// extension: it cannot change this obligation's SAT/UNSAT, so dropping it is
+/// sound — and it removes the quantifier-instantiation cost that turned a
+/// microsecond EUF check (e.g. `cmp::max_by`) into a >250ms `unknown` by dragging
+/// 7 unrelated lifted-loop universals (bignum/ascii/case-folding) into it.
 fn with_ambient_foralls(inv: Json, property_name: &str, ambient: &[Json]) -> Json {
     if ambient.is_empty() {
         return inv;
     }
+    let mut relevant: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    collect_ctor_symbols(&inv, &mut relevant);
+    let forall_syms: Vec<std::collections::BTreeSet<String>> = ambient
+        .iter()
+        .map(|f| {
+            let mut s = std::collections::BTreeSet::new();
+            collect_ctor_symbols(f, &mut s);
+            s
+        })
+        .collect();
+    let mut included = vec![false; ambient.len()];
+    loop {
+        let mut changed = false;
+        for i in 0..ambient.len() {
+            if included[i] {
+                continue;
+            }
+            if forall_syms[i].iter().any(|s| relevant.contains(s)) {
+                included[i] = true;
+                relevant.extend(forall_syms[i].iter().cloned());
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let chosen: Vec<Json> = ambient
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| included[*i])
+        .map(|(_, f)| f.clone())
+        .collect();
+    if chosen.is_empty() {
+        return inv;
+    }
     debug!(
         property = property_name,
-        ambient = ambient.len(),
-        "verifier/ambient: conjoining universals into obligation"
+        ambient_relevant = chosen.len(),
+        ambient_total = ambient.len(),
+        "verifier/ambient: conjoining RELEVANT universals (disjoint-vocabulary ones dropped, sound)"
     );
-    let mut operands = Vec::with_capacity(ambient.len() + 1);
+    let mut operands = Vec::with_capacity(chosen.len() + 1);
     operands.push(inv);
-    operands.extend(ambient.iter().cloned());
+    operands.extend(chosen);
     serde_json::json!({ "kind": "and", "operands": operands })
+}
+
+/// A consistency obligation to solve: the contract CID, the callsite-keyed
+/// property name, and the (ambient-conjoined) invariant.
+struct Obligation {
+    cid: String,
+    property_name: String,
+    inv: Json,
+}
+
+/// Batch the z3 solve unless the plan is non-z3 or it is explicitly disabled.
+/// Only the plain `z3` single-solver plan (the common consistency case) is
+/// batched; coq/maude/portfolio plans keep the per-obligation `run_plan` path.
+fn should_batch(plan: &SolverPlan) -> bool {
+    if std::env::var("SUGAR_VERIFY_BATCH").as_deref() == Ok("0") {
+        return false;
+    }
+    matches!(plan, SolverPlan::Single(n) if n == "z3")
+}
+
+/// Per-query solver timeout in ms (SUGAR_SOLVER_TIMEOUT_MS, then _SECS, else
+/// 250ms — a pinned check is microseconds, so 250ms is generous headroom).
+fn solver_timeout_ms() -> u64 {
+    if let Ok(v) = std::env::var("SUGAR_SOLVER_TIMEOUT_MS") {
+        if let Ok(n) = v.trim().parse::<u64>() {
+            return n;
+        }
+    }
+    if let Ok(v) = std::env::var("SUGAR_SOLVER_TIMEOUT_SECS") {
+        if let Ok(n) = v.trim().parse::<u64>() {
+            return n.saturating_mul(1000);
+        }
+    }
+    250
+}
+
+fn unknown_symbol_frag(fragment: &str) -> Option<String> {
+    const MARK: &str = "unknown constant ";
+    let start = fragment.find(MARK)? + MARK.len();
+    let sym: String = fragment[start..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != '(' && *c != ')')
+        .collect();
+    (!sym.is_empty()).then_some(sym)
+}
+
+/// Solve all obligations by batching them through few z3 processes (PHASE 2 for
+/// the z3 plan). emit_asserted each; compilation failures are Undecidable
+/// (encoding STOP) and excluded from the batch. Verdicts map exactly as the
+/// per-spawn path: raw `sat`->consistent, raw `unsat`->contradictory, unknown
+/// constant->Refused (no discharger), timeout/unknown->Undecidable.
+fn solve_obligations_batched(obligations: &[Obligation]) -> Vec<ConsistencyResult> {
+    let mut results: Vec<Option<ConsistencyResult>> = (0..obligations.len()).map(|_| None).collect();
+    let mut scripts: Vec<String> = Vec::new();
+    let mut script_idx: Vec<usize> = Vec::new();
+    let dump_needle = std::env::var("SUGAR_DUMP_SMT").ok();
+    for (i, o) in obligations.iter().enumerate() {
+        match emit_asserted(&o.inv) {
+            Ok(s) => {
+                if let Some(needle) = &dump_needle {
+                    if o.property_name.contains(needle.as_str()) {
+                        let path = format!("/tmp/sugar_smt_dump_{i}.smt2");
+                        let _ = std::fs::write(&path, &s);
+                        eprintln!(
+                            "[verify] dumped SMT for {} -> {} ({} bytes, {} forall)",
+                            o.property_name,
+                            path,
+                            s.len(),
+                            s.matches("forall").count()
+                        );
+                    }
+                }
+                scripts.push(s);
+                script_idx.push(i);
+            }
+            Err(e) => {
+                results[i] = Some(ConsistencyResult {
+                    contract_cid: o.cid.clone(),
+                    property_name: o.property_name.clone(),
+                    verdict: ObligationVerdict::Undecidable,
+                    reason: format!("consistency smt-emit (encoding STOP): {e}"),
+                    witnessed: false,
+                });
+            }
+        }
+    }
+    let timeout_ms = solver_timeout_ms();
+    eprintln!(
+        "[verify] batched z3: {} obligation(s), {}ms/query cap (pinned=µs; cap bounds the unpinned)",
+        scripts.len(),
+        timeout_ms
+    );
+    let outcomes = crate::solvers::batch::batch_solve(&scripts, "z3", timeout_ms, 100);
+    let mut undecidable = 0usize;
+    for (k, &i) in script_idx.iter().enumerate() {
+        let o = &obligations[i];
+        let outcome = &outcomes[k];
+        let (verdict, reason) = if outcome.raw == ObligationVerdict::Refused {
+            let sym = unknown_symbol_frag(&outcome.fragment).unwrap_or_default();
+            (
+                ObligationVerdict::Refused,
+                format!(
+                    "no discharger for `{sym}`: solver cannot interpret (unknown constant); \
+                     refused, not guessed"
+                ),
+            )
+        } else {
+            let (v, label) = consistency_verdict(outcome.raw);
+            (v, format!("{label} `{}` [batched z3]", o.property_name))
+        };
+        if verdict == ObligationVerdict::Undecidable {
+            undecidable += 1;
+        }
+        results[i] = Some(ConsistencyResult {
+            contract_cid: o.cid.clone(),
+            property_name: o.property_name.clone(),
+            verdict,
+            reason,
+            witnessed: false,
+        });
+    }
+    eprintln!(
+        "[verify] batched z3: done; {} undecidable (unpinned/open -> the worklist)",
+        undecidable
+    );
+    results.into_iter().map(|r| r.expect("every obligation assigned a result")).collect()
 }
 
 pub fn verify_consistency(
@@ -745,6 +960,7 @@ pub fn verify_consistency(
     plan: &SolverPlan,
     registry: &HashMap<String, SolverHandle>,
 ) -> Vec<ConsistencyResult> {
+    OBLIGATIONS_CHECKED.store(0, Ordering::Relaxed);
     let candidates: Vec<(&String, &Json)> = pool
         .mementos
         .iter()
@@ -752,6 +968,10 @@ pub fn verify_consistency(
         .filter_map(|(cid, env)| memento_body(env).map(|b| (cid, b)))
         .filter(|(_, body)| is_consistency_candidate(body))
         .collect();
+    eprintln!(
+        "[verify] consistency: {} candidate obligation(s); solver timeout caps unpinned queries",
+        candidates.len()
+    );
 
     // AMBIENT UNIVERSALS: a forall invariant (a lifted bounded loop, memento
     // `<test>::loop::<var>`, from any language's lifter) constrains every claim
@@ -795,6 +1015,10 @@ pub fn verify_consistency(
         ambient_foralls = ambient_foralls.len(),
         "verifier/ambient: universals will be conjoined into every obligation"
     );
+    eprintln!(
+        "[verify] ambient foralls conjoined into EVERY obligation: {} (quantifiers = z3 instantiation, not µs eval)",
+        ambient_foralls.len()
+    );
 
     // CROSS-PROOF CONJOIN: group same-named contracts and conjoin their `inv`s
     // before the SAT check -- the cross-proof twin of mint's same-name coalesce
@@ -818,15 +1042,15 @@ pub fn verify_consistency(
     }
     let groups: Vec<(String, Vec<(&String, &Json)>)> = by_name.into_iter().collect();
 
-    let results: Vec<ConsistencyResult> = groups
+    // PHASE 1 (parallel, cheap, NO solving): settle witnesses and BUILD the
+    // solver obligations. Collecting them all first lets PHASE 2 batch them into
+    // a few z3 processes — a fresh z3 per obligation costs ~50ms alone and
+    // ~270ms under contention, dwarfing the microsecond solve of a pinned check.
+    let built: Vec<(Vec<ConsistencyResult>, Vec<Obligation>)> = groups
         .par_iter()
-        .flat_map(|(property_name, members)| {
-            let mut out: Vec<ConsistencyResult> = Vec::new();
-
-            // WITNESS members are settled from the rust-recomputed package body,
-            // PER MEMBER. They are NEVER folded into the symbolic conjunction
-            // AND never short-circuit the group: a witness member must not mask
-            // a contradictory inv group.
+        .map(|(property_name, members)| {
+            let mut wits: Vec<ConsistencyResult> = Vec::new();
+            let mut obls: Vec<Obligation> = Vec::new();
             let mut inv_cids: Vec<&String> = Vec::new();
             let mut inv_bodies: Vec<&Json> = Vec::new();
             for (m_cid, body) in members {
@@ -834,7 +1058,7 @@ pub fn verify_consistency(
                     if let Some(res) =
                         try_witness_discharge(body, (*m_cid).clone(), property_name.clone())
                     {
-                        out.push(res);
+                        wits.push(res);
                         continue;
                     }
                 }
@@ -842,15 +1066,9 @@ pub fn verify_consistency(
                 inv_cids.push(m_cid);
             }
             if inv_bodies.is_empty() {
-                return out;
+                return (wits, obls);
             }
-
-            // CROSS-PROOF CONJOIN only for CALLSITE-KEYED names (`#euf#`). That key
-            // is `(callee, args)`, so same name == same call == sound to conjoin a
-            // consumer's assertion with an imported vendor contract -> `and(==5,==6)`
-            // -> unsat -> refused. A bare test/location name does NOT guarantee the
-            // same subject, so those stay PER-CONTRACT (conjoining them could falsely
-            // refuse two unrelated tests that happen to share a function name).
+            // CROSS-PROOF CONJOIN only for CALLSITE-KEYED names (`#euf#`), as before.
             let callsite_keyed = property_name.contains("#euf#");
             if callsite_keyed && inv_bodies.len() > 1 {
                 let invs: Vec<Json> = inv_bodies
@@ -858,28 +1076,43 @@ pub fn verify_consistency(
                     .map(|b| b.get("inv").cloned().unwrap_or(Json::Null))
                     .collect();
                 let inv = serde_json::json!({ "kind": "and", "operands": invs });
-                out.push(check_inv_consistency(
-                    inv_cids[0].clone(),
-                    property_name,
-                    with_ambient_foralls(inv, property_name, &ambient_foralls),
-                    plan,
-                    registry,
-                ));
+                obls.push(Obligation {
+                    cid: inv_cids[0].clone(),
+                    property_name: property_name.clone(),
+                    inv: with_ambient_foralls(inv, property_name, &ambient_foralls),
+                });
             } else {
                 for (cid, body) in inv_cids.iter().zip(inv_bodies.iter()) {
                     let inv = body.get("inv").cloned().unwrap_or(Json::Null);
-                    out.push(check_inv_consistency(
-                        (*cid).clone(),
-                        property_name,
-                        with_ambient_foralls(inv, property_name, &ambient_foralls),
-                        plan,
-                        registry,
-                    ));
+                    obls.push(Obligation {
+                        cid: (*cid).clone(),
+                        property_name: property_name.clone(),
+                        inv: with_ambient_foralls(inv, property_name, &ambient_foralls),
+                    });
                 }
             }
-            out
+            (wits, obls)
         })
         .collect();
+
+    let mut results: Vec<ConsistencyResult> = Vec::new();
+    let mut obligations: Vec<Obligation> = Vec::new();
+    for (wits, obls) in built {
+        results.extend(wits);
+        obligations.extend(obls);
+    }
+
+    // PHASE 2: solve. Batch through few z3 processes when the plan is plain z3
+    // (the common case); otherwise the general per-obligation plan path.
+    if should_batch(plan) {
+        results.extend(solve_obligations_batched(&obligations));
+    } else {
+        let solved: Vec<ConsistencyResult> = obligations
+            .par_iter()
+            .map(|o| check_inv_consistency(o.cid.clone(), &o.property_name, o.inv.clone(), plan, registry))
+            .collect();
+        results.extend(solved);
+    }
 
     info!(
         candidates = candidates.len(),

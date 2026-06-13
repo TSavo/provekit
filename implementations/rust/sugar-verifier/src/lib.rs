@@ -51,6 +51,7 @@ pub mod runner;
 pub mod smt_emitter;
 pub mod solve_obligation;
 pub mod solvers;
+pub mod superposition;
 pub mod types;
 
 pub use domain_claim_verifier::{
