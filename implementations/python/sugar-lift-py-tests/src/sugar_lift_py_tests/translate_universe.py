@@ -320,6 +320,7 @@ class InstanceFieldUniverse:
     lineno: int
     source_memento: Optional[dict[str, Any]] = None
     constructor_source_memento: Optional[dict[str, Any]] = None
+    constructor_default_attr_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -343,6 +344,14 @@ class ConstructorFieldUniverse:
     source_path: str
     lineno: int
     constructor_source_memento: Optional[dict[str, Any]] = None
+    constructor_default_attr_name: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class _ConstructorFieldAssignment:
+    assign: ast.Assign | ast.AnnAssign
+    param_name: str
+    default_attr_name: Optional[str] = None
 
 
 _GUARD_TAINTED = object()
@@ -756,7 +765,7 @@ def instance_field_universe_for_callee(
     field = _constructor_field_assignment(init_fn, returned_field, init_params)
     if field is None:
         return None, None
-    _assign, param_name = field
+    param_name = field.param_name
 
     param_index = init_params[1:].index(param_name)
     source_memento = _source_memento_for_resolved_function(fn, spec_origin)
@@ -778,6 +787,7 @@ def instance_field_universe_for_callee(
             lineno=fn.lineno,
             source_memento=source_memento,
             constructor_source_memento=constructor_source_memento,
+            constructor_default_attr_name=field.default_attr_name,
         ),
         None,
     )
@@ -800,7 +810,8 @@ def constructor_field_universe_for_callee(
     field = _constructor_field_assignment(init_fn, field_name, init_params)
     if field is None:
         return None, None
-    assign, param_name = field
+    assign = field.assign
+    param_name = field.param_name
     param_index = init_params[1:].index(param_name)
     constructor_source_memento = _source_memento_for_resolved_function(
         init_fn,
@@ -818,6 +829,7 @@ def constructor_field_universe_for_callee(
             source_path=spec_origin,
             lineno=assign.lineno,
             constructor_source_memento=constructor_source_memento,
+            constructor_default_attr_name=field.default_attr_name,
         ),
         None,
     )
@@ -827,14 +839,20 @@ def _constructor_field_assignment(
     init_fn: ast.FunctionDef,
     field_name: str,
     init_params: list[str],
-) -> Optional[tuple[ast.Assign | ast.AnnAssign, str]]:
+) -> Optional[_ConstructorFieldAssignment]:
     if init_fn.decorator_list:
         return None
     init_body = _body_without_docstring(init_fn.body)
-    matched: Optional[tuple[ast.Assign | ast.AnnAssign, str]] = None
+    matched: Optional[_ConstructorFieldAssignment] = None
+    default_attrs: dict[str, str] = {}
     seen_field_assign = False
     for stmt in init_body:
         if _is_super_init_expr(stmt) and not seen_field_assign:
+            continue
+        default_attr = _constructor_default_attr_stmt(stmt, init_params)
+        if default_attr is not None and not seen_field_assign:
+            param_name, attr_name = default_attr
+            default_attrs[param_name] = attr_name
             continue
         field = _constructor_field_assignment_stmt(stmt, init_params)
         if field is None:
@@ -842,7 +860,11 @@ def _constructor_field_assignment(
         seen_field_assign = True
         assign, assigned_field, param_name = field
         if assigned_field == field_name:
-            matched = (assign, param_name)
+            matched = _ConstructorFieldAssignment(
+                assign=assign,
+                param_name=param_name,
+                default_attr_name=default_attrs.get(param_name),
+            )
     return matched
 
 
@@ -866,6 +888,55 @@ def _constructor_field_assignment_stmt(
     if assigned_field is None:
         return None
     return stmt, assigned_field, value.id
+
+
+def _constructor_default_attr_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+) -> Optional[tuple[str, str]]:
+    if not isinstance(stmt, ast.If) or stmt.orelse:
+        return None
+    param_name = _none_guarded_param_name(stmt.test, init_params)
+    if param_name is None or len(stmt.body) != 1:
+        return None
+    body_stmt = stmt.body[0]
+    if not isinstance(body_stmt, ast.Assign) or len(body_stmt.targets) != 1:
+        return None
+    target = body_stmt.targets[0]
+    if not isinstance(target, ast.Name) or target.id != param_name:
+        return None
+    attr_name = _self_attribute_name(body_stmt.value, init_params[0])
+    if attr_name is None:
+        return None
+    return param_name, attr_name
+
+
+def _none_guarded_param_name(
+    test: ast.expr,
+    init_params: list[str],
+) -> Optional[str]:
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.Is)
+        or len(test.comparators) != 1
+    ):
+        return None
+    left = test.left
+    right = test.comparators[0]
+    if isinstance(left, ast.Name) and _is_none_literal(right):
+        param_name = left.id
+    elif isinstance(right, ast.Name) and _is_none_literal(left):
+        param_name = right.id
+    else:
+        return None
+    if param_name not in init_params[1:]:
+        return None
+    return param_name
+
+
+def _is_none_literal(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 @functools.lru_cache(maxsize=None)

@@ -571,6 +571,7 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "template_cid",
         "param_names",
         "constructor_default_param_names",
+        "constructor_default_attr_name",
     ):
         if field_name not in warrant:
             continue
@@ -892,6 +893,8 @@ def _classify_universe_source_statement(
             return "support", "docstring metadata supports source accounting only"
         if _is_super_init_expr(stmt):
             return "support", "base constructor call supports construction accounting"
+        if _is_instance_field_default_if(stmt):
+            return "warranted", "emitted into python.instance-field-universe"
         if _is_instance_field_assign(stmt):
             return "warranted", "emitted into python.instance-field-universe"
         if _is_instance_field_return(stmt):
@@ -989,6 +992,45 @@ def _is_instance_field_assign(stmt: ast.stmt) -> bool:
         and isinstance(target.value, ast.Name)
         and target.value.id == "self"
         and isinstance(value, ast.Name)
+    )
+
+
+def _is_instance_field_default_if(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.If) or stmt.orelse or len(stmt.body) != 1:
+        return False
+    if not _is_param_none_check(stmt.test):
+        return False
+    body_stmt = stmt.body[0]
+    if not isinstance(body_stmt, ast.Assign) or len(body_stmt.targets) != 1:
+        return False
+    target = body_stmt.targets[0]
+    value = body_stmt.value
+    return (
+        isinstance(target, ast.Name)
+        and isinstance(value, ast.Attribute)
+        and isinstance(value.value, ast.Name)
+        and value.value.id == "self"
+    )
+
+
+def _is_param_none_check(node: ast.expr) -> bool:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Is)
+        or len(node.comparators) != 1
+    ):
+        return False
+    left = node.left
+    right = node.comparators[0]
+    return (
+        isinstance(left, ast.Name)
+        and isinstance(right, ast.Constant)
+        and right.value is None
+    ) or (
+        isinstance(right, ast.Name)
+        and isinstance(left, ast.Constant)
+        and left.value is None
     )
 
 
@@ -4595,6 +4637,12 @@ def _universe_conjuncts(
                 origin.receiver_constructor == constructor_callee
                 and inst_u.constructor_param_index < len(origin.constructor_args)
             ):
+                value_term = _constructor_field_universe_value_term(
+                    subject_term,
+                    inst_u.field_name,
+                    inst_u,
+                    origin,
+                )
                 if source_warrants is not None:
                     _append_unique_source_warrant(
                         source_warrants,
@@ -4623,12 +4671,7 @@ def _universe_conjuncts(
                             ),
                         ),
                     )
-                conjuncts.append(
-                    eq(
-                        subject_term,
-                        origin.constructor_args[inst_u.constructor_param_index],
-                    )
-                )
+                conjuncts.append(eq(subject_term, value_term))
     if (
         subject_field_name is not None
         and origin is not None
@@ -4650,6 +4693,12 @@ def _universe_conjuncts(
             field_u is not None
             and field_u.constructor_param_index < len(origin.constructor_args)
         ):
+            value_term = _constructor_field_universe_value_term(
+                subject_term,
+                field_u.field_name,
+                field_u,
+                origin,
+            )
             if source_warrants is not None:
                 _append_unique_source_warrant(
                     source_warrants,
@@ -4667,13 +4716,51 @@ def _universe_conjuncts(
                         ),
                     ),
                 )
-            conjuncts.append(
-                eq(
-                    subject_term,
-                    origin.constructor_args[field_u.constructor_param_index],
-                )
-            )
+            conjuncts.append(eq(subject_term, value_term))
     return conjuncts
+
+
+def _constructor_field_universe_value_term(
+    subject_term: Term,
+    field_name: str,
+    universe,
+    origin: _CallOrigin,
+) -> Term:
+    arg_term = origin.constructor_args[universe.constructor_param_index]
+    default_attr_name = getattr(universe, "constructor_default_attr_name", None)
+    if not default_attr_name:
+        return arg_term
+    if (
+        universe.constructor_param_name not in origin.constructor_default_params
+        and not _is_none_term(arg_term)
+    ):
+        return arg_term
+    receiver_name = _receiver_name_for_constructor_field_subject(
+        subject_term,
+        field_name,
+    )
+    if receiver_name is None:
+        return arg_term
+    return make_var(f"{receiver_name}.{default_attr_name}")
+
+
+def _receiver_name_for_constructor_field_subject(
+    subject_term: Term,
+    field_name: str,
+) -> Optional[str]:
+    name = getattr(subject_term, "name", "")
+    if not isinstance(subject_term, _Ctor) and isinstance(name, str):
+        suffix = f".{field_name}"
+        if name.endswith(suffix) and len(name) > len(suffix):
+            return name[: -len(suffix)]
+    if isinstance(subject_term, _Ctor) and subject_term.name.startswith("callval_"):
+        if not subject_term.args:
+            return None
+        receiver = subject_term.args[0]
+        receiver_name = getattr(receiver, "name", "")
+        if not isinstance(receiver, _Ctor) and isinstance(receiver_name, str):
+            return receiver_name
+    return None
 
 
 def _source_warrant_for_translate_universe(universe) -> dict:
@@ -4714,6 +4801,9 @@ def _source_warrant_for_instance_field_universe(
     warrant["universe_kind"] = "constructor-field-getter"
     warrant["field_name"] = universe.field_name
     warrant["constructor_param_name"] = universe.constructor_param_name
+    default_attr_name = getattr(universe, "constructor_default_attr_name", None)
+    if default_attr_name:
+        warrant["constructor_default_attr_name"] = default_attr_name
     if constructor_default_params:
         warrant["constructor_default_param_names"] = list(constructor_default_params)
     return warrant

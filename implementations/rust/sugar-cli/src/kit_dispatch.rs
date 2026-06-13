@@ -512,6 +512,7 @@ fn resolved_command_from_manifest(
     workspace_root: &Path,
     parsed: &ParsedManifest,
 ) -> ResolvedCommand {
+    let workspace_root = absolute_workspace_root(workspace_root);
     let mut argv = parsed.command.clone();
     if let Some(program) = argv.first_mut() {
         let path = Path::new(program);
@@ -529,8 +530,17 @@ fn resolved_command_from_manifest(
                 workspace_root.join(wd)
             }
         })
-        .or_else(|| Some(workspace_root.to_path_buf()));
+        .or_else(|| Some(workspace_root));
     ResolvedCommand { argv, working_dir }
+}
+
+fn absolute_workspace_root(workspace_root: &Path) -> PathBuf {
+    if workspace_root.is_absolute() {
+        return workspace_root.to_path_buf();
+    }
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(workspace_root)
 }
 
 fn record_fallback_diagnostic(kind: &str, surface: &str) {
@@ -1297,6 +1307,30 @@ mod tests {
             &json!({"code": -32602, "message": "invalid params"}),
             "sugar.plugin.resolve_dependency_proofs"
         ));
+    }
+
+    #[test]
+    fn resolved_manifest_command_paths_are_project_root_anchored() {
+        let project_root = PathBuf::from("relative-project-root");
+        let parsed = ParsedManifest {
+            name: "python-tests".to_string(),
+            command: vec!["./lift-shim.sh".to_string()],
+            working_dir: Some(PathBuf::from(".")),
+            library_tag: None,
+            protocol_versions: Vec::new(),
+            capability_kind: None,
+        };
+
+        let resolved = resolved_command_from_manifest(&project_root, &parsed);
+        assert!(Path::new(&resolved.argv[0]).is_absolute());
+        assert_eq!(
+            PathBuf::from(&resolved.argv[0]),
+            std::env::current_dir()
+                .expect("cwd")
+                .join(&project_root)
+                .join("./lift-shim.sh")
+        );
+        assert!(resolved.working_dir.as_ref().expect("working dir").is_absolute());
     }
 
     #[test]

@@ -97,6 +97,73 @@ if not any(
     for m in result.get("sourceMementos") or []
 ):
     raise SystemExit("FAIL: lift report missing class-method constant source memento")
+hmac_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "HMACAlgorithm" in audit.get("contract", {}).get("name", "")
+]
+if len(hmac_audits) != 1:
+    raise SystemExit(
+        f"FAIL: expected one HMACAlgorithm digest_method audit, got {len(hmac_audits)}"
+    )
+hmac_audit = hmac_audits[0]
+hmac_totals = hmac_audit["totals"]
+if hmac_audit.get("universe_kind") != "constructor-field-getter":
+    raise SystemExit(
+        f"FAIL: expected constructor-field-getter audit, got {hmac_audit.get('universe_kind')}"
+    )
+hmac_memento = hmac_audit["source_memento"]
+if hmac_memento.get("source_function_name") != "HMACAlgorithm.__init__":
+    raise SystemExit(
+        "FAIL: HMACAlgorithm source oracle should point at constructor: "
+        f"{hmac_memento!r}"
+    )
+if hmac_memento.get("constructor_default_param_names") != ["digest_method"]:
+    raise SystemExit(
+        "FAIL: HMACAlgorithm source memento did not record the defaulted param: "
+        f"{hmac_memento!r}"
+    )
+if hmac_memento.get("constructor_default_attr_name") != "default_digest_method":
+    raise SystemExit(
+        "FAIL: HMACAlgorithm source memento did not record the default attr: "
+        f"{hmac_memento!r}"
+    )
+if "body_text" in hmac_memento or "ast_template" in hmac_memento:
+    raise SystemExit("FAIL: HMACAlgorithm source memento embeds source/template body")
+if hmac_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: HMACAlgorithm.digest_method source dig has unclassified source: "
+        f"totals={hmac_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "If"
+    and locus.get("ast_path") == "$.body[0]"
+    for locus in hmac_audit["loci"]
+):
+    raise SystemExit("FAIL: HMACAlgorithm digest-method default branch was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Assign"
+    and locus.get("ast_path") == "$.body[0].body[0]"
+    for locus in hmac_audit["loci"]
+):
+    raise SystemExit("FAIL: HMACAlgorithm digest-method default assignment was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "AnnAssign"
+    and locus.get("ast_path") == "$.body[1]"
+    for locus in hmac_audit["loci"]
+):
+    raise SystemExit("FAIL: HMACAlgorithm digest-method field assignment was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Constant"
+    and locus.get("ast_path") == "$.args.defaults[0]"
+    and "default constructor argument emitted" in locus.get("reason", "")
+    for locus in hmac_audit["loci"]
+):
+    raise SystemExit("FAIL: HMACAlgorithm digest-method default argument was not warranted")
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -372,6 +439,15 @@ print(
     f"support={signature_totals.get('source_support', 0)}",
     f"refused={signature_totals['source_refused']}",
     f"unclassified={signature_totals['unclassified_source']}",
+)
+print(
+    "source audit HMACAlgorithm.digest_method:",
+    f"loci={hmac_totals['source_loci']}",
+    f"warranted={hmac_totals['source_warranted']}",
+    f"inactive={hmac_totals['source_inactive']}",
+    f"support={hmac_totals.get('source_support', 0)}",
+    f"refused={hmac_totals['source_refused']}",
+    f"unclassified={hmac_totals['unclassified_source']}",
 )
 print(
     "source audit SigningAlgorithm.get_signature:",

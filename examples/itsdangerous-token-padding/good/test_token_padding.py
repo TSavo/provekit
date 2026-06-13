@@ -21,6 +21,11 @@ def test_none_algorithm_signature():
     assert alg.get_signature(b"k", b"v") == b""
 
 
+def test_hmac_algorithm_default_digest_method():
+    alg = signer.HMACAlgorithm()
+    assert alg.digest_method == alg.default_digest_method
+
+
 def test_signing_algorithm_get_signature_is_abstract():
     with pytest.raises(NotImplementedError):
         signer.SigningAlgorithm.get_signature(None, b"k", b"v")

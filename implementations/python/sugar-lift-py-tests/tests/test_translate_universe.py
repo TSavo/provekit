@@ -2099,6 +2099,83 @@ class HeaderError(Exception):
     ), audit
 
 
+def test_instance_field_universe_maps_conditional_default_constructor_field(vendor_path):
+    vendor_path(
+        "vendinst_conditional_default_attr",
+        '''
+class HMACAlgorithm:
+    default_digest_method = object()
+
+    def __init__(self, digest_method=None):
+        if digest_method is None:
+            digest_method = self.default_digest_method
+        self.digest_method = digest_method
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_conditional_default_attr
+
+        def test_default_digest_method():
+            alg = vendinst_conditional_default_attr.HMACAlgorithm()
+            assert alg.digest_method == alg.default_digest_method
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_conditional_default_attr.HMACAlgorithm" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "HMACAlgorithm.__init__"
+    assert field_warrants[0].get("constructor_default_param_names") == [
+        "digest_method"
+    ]
+    assert (
+        field_warrants[0].get("constructor_default_attr_name")
+        == "default_digest_method"
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "HMACAlgorithm.__init__"
+    )
+    assert audit["source_memento"].get("constructor_default_attr_name") == (
+        "default_digest_method"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Constant"
+        and locus.get("ast_path") == "$.args.defaults[0]"
+        and "default constructor argument emitted" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Assign"
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 
