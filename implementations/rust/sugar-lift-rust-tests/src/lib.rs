@@ -4355,10 +4355,6 @@ fn collect_let_subst(prefix: &[Stmt], scope: &TemporalScope) -> Option<Vec<(Stri
         let Stmt::Local(local) = stmt else {
             return None;
         };
-        let name = immutable_let_ident(&local.pat)?;
-        if subst.iter().any(|(n, _)| n == &name) {
-            return None;
-        }
         let init = local.init.as_ref()?;
         if init.diverge.is_some() {
             return None;
@@ -4370,9 +4366,53 @@ fn collect_let_subst(prefix: &[Stmt], scope: &TemporalScope) -> Option<Vec<(Stri
         if !term_is_euf_value(&rhs) {
             return None;
         }
-        subst.push((name, rhs));
+        for (name, term) in let_bindings(&local.pat, &rhs)? {
+            if subst.iter().any(|(n, _)| n == &name) {
+                return None; // shadowing breaks sequential substitution
+            }
+            subst.push((name, term));
+        }
     }
     Some(subst)
+}
+
+/// The (name -> term) bindings a `let <pat> = <rhs>` introduces. A simple ident
+/// binds the whole rhs; a tuple destructuring `let (a, _, c) = rhs` binds each
+/// position i to the uninterpreted projection `field:i(rhs)` (the same accessor
+/// the kit's `Expr::Field` translation uses, so `let (a,_) = t; a` is congruent
+/// with `t.0`). `mut` / `ref` / nested sub-patterns are refused (None).
+fn let_bindings(pat: &Pat, rhs: &Rc<Term>) -> Option<Vec<(String, Rc<Term>)>> {
+    match pat {
+        Pat::Ident(id) if id.subpat.is_none() && id.mutability.is_none() && id.by_ref.is_none() => {
+            Some(vec![(id.ident.to_string(), rhs.clone())])
+        }
+        Pat::Type(t) => let_bindings(&t.pat, rhs),
+        Pat::Paren(p) => let_bindings(&p.pat, rhs),
+        Pat::Tuple(t) => {
+            let mut out = Vec::new();
+            for (i, elem) in t.elems.iter().enumerate() {
+                match elem {
+                    Pat::Wild(_) => {}
+                    Pat::Ident(id)
+                        if id.subpat.is_none()
+                            && id.mutability.is_none()
+                            && id.by_ref.is_none() =>
+                    {
+                        out.push((
+                            id.ident.to_string(),
+                            Rc::new(Term::Ctor {
+                                name: format!("field:{i}"),
+                                args: vec![rhs.clone()],
+                            }),
+                        ));
+                    }
+                    _ => return None,
+                }
+            }
+            Some(out)
+        }
+        _ => None,
+    }
 }
 
 /// A leading immutable-`let` prefix reduced to a single EUF TERM tail (for an
@@ -4695,18 +4735,6 @@ fn collect_if_clauses(
             out_clauses.push((guard, else_term));
             Some(())
         }
-        _ => None,
-    }
-}
-
-/// The bound name of an immutable simple `let` pattern (`let x` / `let x: T`),
-/// or None for `mut`/`ref`/destructuring/subpattern bindings.
-fn immutable_let_ident(pat: &Pat) -> Option<String> {
-    match pat {
-        Pat::Ident(p) if p.by_ref.is_none() && p.mutability.is_none() && p.subpat.is_none() => {
-            Some(p.ident.to_string())
-        }
-        Pat::Type(pt) => immutable_let_ident(&pt.pat),
         _ => None,
     }
 }

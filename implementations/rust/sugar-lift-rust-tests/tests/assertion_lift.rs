@@ -6175,3 +6175,29 @@ fn emit_value_contract_unsafe_and_block_are_value_transparent() {
         }
     }
 }
+
+// ── Slice 15: tuple-destructuring let prefix ──
+
+#[test]
+fn emit_value_contract_tuple_destructuring_let() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        "fn f(p: (i32, i32)) -> i32 { let (a, b) = p; a + b }",
+        "fn f(t: usize) -> usize { let (s, a) = (sz(t), al(t)); unsafe { mk(s, a) } }",
+        "fn f(p: (i32, i32, i32)) -> i32 { let (a, _, c) = p; a + c }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("tuple-destructuring let must warrant: {src}"));
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&parsed[0]["inv"])
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        let _ = z3;
+    }
+    // a `let mut` tuple still refuses (mutation).
+    let f: syn::ItemFn =
+        syn::parse_str("fn f(p: (i32, i32)) -> i32 { let (mut a, b) = p; a += b; a }").unwrap();
+    assert!(emit_value_contract("f", &f.block).is_none());
+}
