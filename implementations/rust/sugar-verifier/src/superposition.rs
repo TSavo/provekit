@@ -171,13 +171,31 @@ pub fn reports_from_report(report: &Report) -> Vec<SuperpositionReport> {
     let items: Vec<(String, String, String)> = report
         .rows
         .iter()
-        .map(|r| {
-            let symbol = r.callsite.bridge_ir_name.clone();
-            let pin = pin_id(r);
-            (symbol, r.status.clone(), pin)
-        })
+        .map(|r| (symbol_of_row(r), r.status.clone(), pin_id(r)))
         .collect();
     fold_verdicts(&items)
+}
+
+/// The callee symbol under test for a row. Bridge-callsite rows carry it in
+/// `bridge_ir_name`; consistency rows carry it in the property name:
+///   `consistency:SYMBOL#euf#callresult_...`  (per-callsite, args after #euf#)
+///   `consistency:tests/file.rs::testfn`       (per-test-fn)
+/// Stripping `consistency:` and the `#euf#...` arg tail groups the per-argument
+/// universes of one callsite under that callsite's symbol.
+fn symbol_of_row(row: &crate::types::ReportRow) -> String {
+    let bridge = &row.callsite.bridge_ir_name;
+    if !bridge.is_empty() {
+        return bridge.clone();
+    }
+    let prop = &row.callsite.property_name;
+    if let Some(rest) = prop.strip_prefix("consistency:") {
+        let sym = rest.split("#euf#").next().unwrap_or(rest);
+        return sym.strip_suffix("::assertion").unwrap_or(sym).to_string();
+    }
+    if !prop.is_empty() {
+        return prop.clone();
+    }
+    "<unkeyed>".to_string()
 }
 
 /// A stable id for the pin (the asserted reading): the property CID if present,
