@@ -2570,6 +2570,10 @@ def _resolve_delegate_value_or_receiver_call_spec(
     spec = _resolve_delegate_value_spec(node, params, env)
     if spec is not None:
         return spec, None
+    if tree is not None:
+        static_attr_spec = _resolve_static_attribute_value_spec(node, tree)
+        if static_attr_spec is not None:
+            return static_attr_spec, None
     if tree is None or not isinstance(node, ast.Call):
         return None, None
     dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(node, params)
@@ -2595,6 +2599,17 @@ def _resolve_delegate_value_or_receiver_call_spec(
         ),
         None,
     )
+
+
+def _resolve_static_attribute_value_spec(node: ast.AST, tree: ast.Module):
+    path = _attribute_path(node)
+    if path is None or len(path) < 2:
+        return None
+    root, *attrs = path
+    module = _stdlib_module_aliases(tree).get(root)
+    if module is None:
+        return None
+    return ("lit", f"attr:{'.'.join([module, *attrs])}", "collection")
 
 
 def _receiver_context_spec(spec):

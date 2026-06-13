@@ -812,6 +812,64 @@ def test_lift_source_refuses_generator_flow_package_accounting(
     ), generator_loci
 
 
+def test_lift_source_accounts_stdlib_delegation_static_attribute_keyword(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_stdlib_attr_kw"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            from datetime import datetime
+            from datetime import timezone
+
+            def to_datetime(ts):
+                return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_stdlib_attr_kw.encoding as enc
+
+        def test_token():
+            assert enc.to_datetime(1) == enc.to_datetime(1)
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.delegation-universe"
+        and audit.get("universe_kind") == "delegation-stdlib"
+        and audit["source_memento"]["file"].endswith(
+            "vendpkg_stdlib_attr_kw/encoding.py"
+        )
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "delegation" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
     tmp_path, monkeypatch
 ):
@@ -5313,6 +5371,27 @@ def test_imported_stdlib_delegation_walks_kwargs_setdefault(vendor_path):
         ("param", 0),
         ("kw", "ensure_ascii", ("lit", False, "bool")),
         ("kw", "separators", ("lit", "tuple:[',', ':']", "collection")),
+    )
+
+
+def test_imported_stdlib_delegation_walks_static_attribute_keyword(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_attr_kw",
+        """
+        from datetime import datetime
+        from datetime import timezone
+
+        def f(ts):
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_attr_kw.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "datetime.datetime.fromtimestamp"
+    assert u.args == (
+        ("param", 0),
+        ("kw", "tz", ("lit", "attr:datetime.timezone.utc", "collection")),
     )
 
 
