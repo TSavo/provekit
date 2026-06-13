@@ -54,15 +54,38 @@ pub enum Universe {
     },
 }
 
-/// Strength = the live universe-count of the output.
+/// Strength = the count of worlds that survive walking against ALL known vendor
+/// assertions. Check, not model: each world is kept iff it is SAT against the
+/// vendor's own pins; the survivor count is the grade.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Strength {
-    /// Exactly one world: the output is pinned. (count == 1)
+    /// Exactly one surviving reading: the output is pinned. (count == 1)
     Strong,
-    /// More than one world: the output forks. (count > 1)
+    /// More than one consistent-yet-mutually-exclusive reading. (count > 1)
+    /// The LOGIC is sound — every survivor is internally consistent against the
+    /// vendor; what is unpinned is WHICH. Bugs here live in ordering, not logic.
     Weak,
-    /// No world: every candidate contradicts. (count == 0)
+    /// No surviving reading: the code contradicts its own sworn assertions.
+    /// (count == 0)
     Undecidable,
+}
+
+impl Strength {
+    /// The report's verdict line for this grade — what the vendor reads.
+    pub fn verdict(&self) -> &'static str {
+        match self {
+            Strength::Strong => "Only one reading made sense.",
+            Strength::Weak => {
+                "Multiple consistent but mutually-exclusive readings — \
+                 bugs live in ordering, not logic. Collapse it: pin it, or get \
+                 the side effect off the critical path."
+            }
+            Strength::Undecidable => {
+                "No consistent world — the code contradicts its own assertions. \
+                 Get your act together."
+            }
+        }
+    }
 }
 
 impl Universe {
@@ -368,6 +391,13 @@ mod tests {
         assert!(u.world_cid(2).is_none());
         assert_eq!(u.fork_groups().len(), 1);
         assert_eq!(u.fork_groups()[0].len(), 2);
+    }
+
+    #[test]
+    fn strength_verdicts_match_the_three_readings() {
+        assert!(Strength::Strong.verdict().contains("one reading"));
+        assert!(Strength::Weak.verdict().contains("ordering, not logic"));
+        assert!(Strength::Undecidable.verdict().contains("contradicts its own"));
     }
 
     #[test]
