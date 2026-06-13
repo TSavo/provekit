@@ -796,6 +796,80 @@ def test_lift_source_warrants_local_adapter_assignment_accounting(
     ), local_loci
 
 
+def test_lift_source_classifies_list_adapter_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_list_adapter_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def want_bytes(s, encoding="utf-8", errors="strict"):
+                if isinstance(s, str):
+                    s = s.encode(encoding, errors)
+
+                return s
+
+
+            def _make_keys_list(secret_key):
+                if isinstance(secret_key, (str, bytes)):
+                    return [want_bytes(secret_key)]
+
+                return [want_bytes(s) for s in secret_key]
+
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    bytes_identity_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_list_adapter_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    helper_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_list_adapter_body/encoding.py")
+        and locus.get("ast_path", "").startswith("$.module.body[1]")
+    ]
+    assert helper_loci
+    assert not [
+        locus for locus in helper_loci if locus["status"] == "unclassified"
+    ], helper_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "ListComp"
+        and "list-adapter" in locus.get("reason", "")
+        for locus in helper_loci
+    ), helper_loci
+
+
 def test_lift_source_warrants_guarded_default_value_flow(tmp_path, monkeypatch):
     pkg = tmp_path / "vendpkg_guarded_default_warranted"
     pkg.mkdir()
@@ -2512,9 +2586,13 @@ class Signer:
 
 
 def test_constructor_field_universe_maps_helper_list_adapter(vendor_path):
-    from sugar_lift_py_tests.translate_universe import bytes_identity_universe_for_callee
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
 
     bytes_identity_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
     vendor_path(
         "vendinst_helper_list",
         '''
@@ -2626,6 +2704,137 @@ class Signer:
     assert audits["python.instance-field-universe"]["totals"]["unclassified_source"] == 0
     assert audits["python.list-adapter-universe"]["totals"]["unclassified_source"] == 0
     assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
+
+
+def test_constructor_field_universe_maps_helper_list_adapter_iterable_branch(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_helper_listcomp",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_helper_listcomp
+
+        def test_secret_keys_iterable():
+            signer = vendinst_helper_listcomp.Signer([b"k"])
+            assert signer.secret_keys == signer.secret_keys
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_helper_listcomp.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    secret = ctor("python:bytes", [str_const("k")])
+    iterable_arg = ctor("python:list", [secret])
+    helper_eqs = []
+    output_list_eqs = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        helper_side = next(
+            (
+                side
+                for side in args
+                if "callresult_vendinst_helper_listcomp__make_keys_list_a1"
+                in getattr(side, "name", "")
+            ),
+            None,
+        )
+        list_side = next(
+            (
+                side
+                for side in args
+                if getattr(side, "name", "") == "python:list"
+            ),
+            None,
+        )
+        if (
+            helper_side is not None
+            and getattr(helper_side, "args", ()) == (iterable_arg,)
+        ):
+            helper_eqs.append(atom)
+        if list_side is not None and any(
+            "callresult_vendinst_helper_listcomp_want_bytes_a1"
+            in getattr(element, "name", "")
+            and getattr(element, "args", ()) == (secret,)
+            for element in getattr(list_side, "args", ())
+        ):
+            output_list_eqs.append(atom)
+        if any(
+            "callresult_vendinst_helper_listcomp_want_bytes_a1"
+            in getattr(side, "name", "")
+            and getattr(side, "args", ()) == (secret,)
+            for side in args
+        ) and secret in args:
+            identity_eqs.append(atom)
+
+    assert helper_eqs
+    assert output_list_eqs
+    assert identity_eqs
+
+    assert any(
+        warrant.get("role") == "python.list-adapter-universe"
+        and warrant.get("list_adapter_branch") == "iterable"
+        for warrant in assertion.source_warrants
+    )
+
+    list_audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.list-adapter-universe"
+        and "vendinst_helper_listcomp" in audit["contract"]["name"]
+    )
+    assert list_audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") in {"Return", "ListComp"}
+        and "iterable branch emitted" in locus.get("reason", "")
+        for locus in list_audit["loci"]
+    ), list_audit
+    assert any(
+        locus["status"] == "inactive"
+        and locus.get("ast_kind") == "If"
+        and "scalar branch inactive" in locus.get("reason", "")
+        for locus in list_audit["loci"]
+    ), list_audit
 
 
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):

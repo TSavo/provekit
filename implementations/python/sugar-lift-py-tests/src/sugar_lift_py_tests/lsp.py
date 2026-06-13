@@ -380,6 +380,7 @@ def _package_unclassified_loci(
                 ast_path,
                 ancestors,
                 call_aliases,
+                module_name,
             )
             loci.append(
                 _source_line_locus(
@@ -402,6 +403,7 @@ def _package_locus_classification(
     ast_path: str,
     ancestors: tuple[ast.AST, ...],
     call_aliases: Dict[str, str],
+    module_name: str,
 ) -> tuple[str, str]:
     overload_status = _overload_declaration_status(node, ancestors)
     if overload_status is not None:
@@ -435,6 +437,13 @@ def _package_locus_classification(
     )
     if adapter_assignment_status is not None:
         return adapter_assignment_status
+    list_adapter_body_status = _list_adapter_body_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if list_adapter_body_status is not None:
+        return list_adapter_body_status
     local_binding_status = _local_name_binding_status(node, ancestors)
     if local_binding_status is not None:
         return local_binding_status
@@ -845,6 +854,27 @@ def _local_adapter_assignment_status(
     return (
         "warranted",
         "source-backed helper assignment emitted as recursive universe dig",
+    )
+
+
+def _list_adapter_body_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if _is_docstring_expr_node(node, ancestors):
+        return "support", "docstring metadata supports source accounting only"
+    if not _node_is_in_function_body(node, owner):
+        return None
+    universe, refusal = list_adapter_universe_for_callee(f"{module_name}.{owner.name}")
+    if refusal is not None or universe is None:
+        return None
+    return (
+        "warranted",
+        "list-adapter source family emitted into python.list-adapter-universe",
     )
 
 

@@ -584,6 +584,7 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "constructor_default_attr_name",
         "adapter_callee",
         "helper_callee",
+        "list_adapter_branch",
     ):
         if field_name not in warrant:
             continue
@@ -906,9 +907,14 @@ def _classify_universe_source_statement(
     if role == "python.list-adapter-universe":
         if _is_docstring_stmt(stmt):
             return "support", "docstring metadata supports source accounting only"
+        branch = _string_field(source_memento, "list_adapter_branch")
         if _is_list_adapter_active_if(stmt):
+            if branch == "iterable":
+                return "inactive", "scalar branch inactive for concrete iterable callsite"
             return "warranted", "emitted into python.list-adapter-universe"
         if _is_list_adapter_iterable_return(stmt):
+            if branch == "iterable":
+                return "warranted", "iterable branch emitted into python.list-adapter-universe"
             return "inactive", "iterable branch inactive for concrete str/bytes callsite"
         return "unclassified", "list-adapter source not emitted"
     if role == "python.delegation-universe":
@@ -1773,6 +1779,21 @@ def _translate_dict_set_literal_term(node: ast.expr) -> Term:
     return str_const(canonical)
 
 
+def _translate_str_bytes_sequence_literal_term(node: ast.expr, translate_element) -> Optional[Term]:
+    if not isinstance(node, (ast.List, ast.Tuple)) or not node.elts:
+        return None
+    elements: List[Term] = []
+    for element_node in node.elts:
+        if isinstance(element_node, ast.Starred):
+            return None
+        element = translate_element(element_node)
+        if not _is_str_or_bytes_literal_term(element):
+            return None
+        elements.append(element)
+    head = "python:list" if isinstance(node, ast.List) else "python:tuple"
+    return ctor(head, elements)
+
+
 def _literal_leaf_value(node: ast.expr):
     """Extract the Python value from a literal leaf node (int/str/bool/None).
 
@@ -1846,6 +1867,9 @@ def _translate_term(node: ast.expr) -> Term:
             return num(-node.operand.value)
         raise ValueError("unary-neg only liftable on integer literals")
     if isinstance(node, (ast.Dict, ast.Set, ast.Tuple, ast.List)):
+        structured = _translate_str_bytes_sequence_literal_term(node, _translate_term)
+        if structured is not None:
+            return structured
         # Dict/set literal: opaque str_const keyed by canonical content.
         # Non-literal contents → ValueError (LOUD REFUSE at call site).
         return _translate_dict_set_literal_term(node)
@@ -2003,6 +2027,18 @@ def _is_str_or_bytes_literal_term(term: Term) -> bool:
     from .ir import _ConstStr
 
     return isinstance(term, _ConstStr) or _is_bytes_literal_term(term)
+
+
+def _str_bytes_sequence_literal_elements(term: Term) -> Optional[Tuple[Term, ...]]:
+    if not (
+        isinstance(term, _Ctor)
+        and term.name in {"python:list", "python:tuple"}
+        and term.args
+    ):
+        return None
+    if not all(_is_str_or_bytes_literal_term(element) for element in term.args):
+        return None
+    return tuple(term.args)
 
 
 def _comparison_from_symbol(sym: str, left: Term, right: Term) -> Formula:
@@ -4680,10 +4716,11 @@ def _universe_conjuncts(
                         )
                     conjuncts.append(eq(subject_term, arg))
 
-        # LIST ADAPTER: for `_make_keys_list`-style helpers, a concrete
-        # str/bytes argument takes the active branch that returns a one-item
-        # list over the element adapter call. The adapter's own universe is
-        # queued recursively so concrete bytes collapse to the original bytes.
+        # LIST ADAPTER: for `_make_keys_list`-style helpers, concrete
+        # str/bytes arguments take the scalar branch, while concrete
+        # str/bytes sequence literals take the iterable list-comprehension
+        # branch. In both cases the adapter's own universe is queued
+        # recursively so concrete bytes collapse to the original bytes.
         list_u, list_refusal = list_adapter_universe_for_callee(callee)
         if list_refusal is not None:
             out.warnings.append(
@@ -4701,36 +4738,52 @@ def _universe_conjuncts(
             )
             if list_u.param_index < len(call_args):
                 arg = call_args[list_u.param_index]
+                adapter_args: Tuple[Term, ...] = ()
+                branch = ""
                 if _is_str_or_bytes_literal_term(arg):
+                    adapter_args = (arg,)
+                    branch = "scalar"
+                else:
+                    sequence_elements = _str_bytes_sequence_literal_elements(arg)
+                    if sequence_elements is not None:
+                        adapter_args = sequence_elements
+                        branch = "iterable"
+                if adapter_args:
                     if (
                         source_warrants is not None
                         and list_u.source_memento is not None
                     ):
+                        warrant = _source_warrant_for_universe(
+                            list_u,
+                            role="python.list-adapter-universe",
+                            universe_kind="list-adapter",
+                        )
+                        warrant["list_adapter_branch"] = branch
                         _append_unique_source_warrant(
                             source_warrants,
-                            _source_warrant_for_universe(
-                                list_u,
-                                role="python.list-adapter-universe",
-                                universe_kind="list-adapter",
-                            ),
+                            warrant,
                         )
-                    adapter_term = ctor(
-                        _call_result_head(list_u.adapter_callee, 1),
-                        [arg],
-                    )
-                    list_term = ctor("python:list", [adapter_term])
+                    adapter_terms = [
+                        ctor(
+                            _call_result_head(list_u.adapter_callee, 1),
+                            [adapter_arg],
+                        )
+                        for adapter_arg in adapter_args
+                    ]
+                    list_term = ctor("python:list", adapter_terms)
                     conjuncts.append(eq(subject_term, list_term))
-                    conjuncts.extend(
-                        _universe_conjuncts(
-                            list_u.adapter_callee,
-                            adapter_term,
-                            out,
-                            source_path,
-                            test_name,
-                            source_warrants=source_warrants,
-                            _seen=seen,
+                    for adapter_term in adapter_terms:
+                        conjuncts.extend(
+                            _universe_conjuncts(
+                                list_u.adapter_callee,
+                                adapter_term,
+                                out,
+                                source_path,
+                                test_name,
+                                source_warrants=source_warrants,
+                                _seen=seen,
+                            )
                         )
-                    )
 
         # PURE-DELEGATION + IDENTITY (census families, 57k + the param arm
         # of return-name's 146k): the body forwards verbatim, so the
@@ -5929,6 +5982,12 @@ def _translate_term_scoped(
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return _translate_term(node)
     if isinstance(node, (ast.Dict, ast.Set, ast.Tuple, ast.List)):
+        structured = _translate_str_bytes_sequence_literal_term(
+            node,
+            lambda element: _translate_term_scoped(element, scope, call_vars),
+        )
+        if structured is not None:
+            return structured
         # Dict/set literal in value-scope: delegate to the content-hashed
         # opaque-constant translator.  SSA scope does not affect the literal
         # itself (its content is fully determined at lift time).
