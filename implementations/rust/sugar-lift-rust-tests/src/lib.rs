@@ -4263,28 +4263,28 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
         ]);
         return Some(source_value_contract(name, inv));
     }
-    // (b) Slice 2 -- value-term shape: out = <side-effect-free term>. Mirrors the
-    //     Python source kit's `return_value = body`, reusing the kit's existing
-    //     expr->Term translation (`translate_term_in_scope`, the same atoms the
-    //     test-assertion path compiles to Z3 -- no new semantic path). A term that
-    //     contains an OPAQUE call (`call:`/`method:`/`await`) or a macro is NOT
-    //     provably side-effect-free, so it is left UNCLASSIFIED, never warranted
-    //     as pure (mirrors Python: value-position reads/operators/constructors are
-    //     pure; the effects it NAMES are loops/raises/mutation, handled elsewhere).
     let plan = temporal_plan_for_stmts(&block.stmts);
     let scope = TemporalScope::new("rust-source", plan);
+    // (b) Slice 4 -- bounded-output UNIVERSE: a known TOTAL rust primitive whose
+    //     source guarantees a BOUND on the output for EVERY input (the rust analog
+    //     of Python's no-suffix universe -- different sugar, same thinking). It
+    //     does not pin `out`; it bounds it, which is the teeth that refute an
+    //     out-of-bound bad twin. `x.clamp(lo, hi)` => lo <= out <= hi. Run BEFORE
+    //     the generic EUF path: the bound is STRONGER than an opaque
+    //     `out = clamp(..)`, so a recognized primitive must not be shadowed by it.
+    if let Some(universe) = bounded_output_universe(tail, &scope) {
+        return Some(source_value_contract(name, universe));
+    }
+    // (c) Slice 2/5 -- value-term + method-call-as-EUF: out = <euf term>. Mirrors
+    //     the Python source kit's `return_value = body`, reusing the kit's
+    //     expr->Term translation (same atoms the test path compiles to Z3 -- no new
+    //     semantic path). Value-position calls (method:/call:) are uninterpreted
+    //     deterministic functions (EUF); a known PANIC method, `await`, or a macro
+    //     is excluded -> the body falls to effect_refusal/unclassified.
     if let Ok(term) = translate_term_in_scope(tail, &scope) {
         if term_is_euf_value(&term) {
             return Some(source_value_contract(name, eq(make_var("out"), term)));
         }
-    }
-    // (c) Slice 4 -- bounded-output UNIVERSE: a known TOTAL rust primitive whose
-    //     source guarantees a BOUND on the output for EVERY input (the rust analog
-    //     of Python's no-suffix universe -- different sugar, same thinking). It
-    //     does not pin `out`; it bounds it, which is exactly the teeth that refute
-    //     an out-of-bound bad twin. `x.clamp(lo, hi)` => lo <= out <= hi.
-    if let Some(universe) = bounded_output_universe(tail, &scope) {
-        return Some(source_value_contract(name, universe));
     }
     None
 }
