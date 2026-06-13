@@ -2,7 +2,62 @@
 # (return urlsafe_b64encode(s).rstrip(b"=")). The unpadded value is the
 # vendor's sworn behavior; the walked no-suffix universe agrees.
 import itsdangerous.encoding as enc
+import itsdangerous.exc as exc
+import itsdangerous._json as compact_json
+import itsdangerous.serializer as serializer_mod
+import itsdangerous.signer as signer
+import pytest
 
 
 def test_token_padding():
     assert enc.base64_encode(b"provekit") == b"cHJvdmVraXQ"
+
+
+def test_int_to_bytes_canonical_form():
+    assert enc.int_to_bytes(1) == b"\x01"
+
+
+def test_none_algorithm_signature():
+    alg = signer.NoneAlgorithm()
+    assert alg.get_signature(b"k", b"v") == b""
+
+
+def test_hmac_algorithm_default_digest_method():
+    alg = signer.HMACAlgorithm()
+    assert alg.digest_method == alg.default_digest_method
+
+
+def test_signing_algorithm_get_signature_is_abstract():
+    with pytest.raises(NotImplementedError):
+        signer.SigningAlgorithm.get_signature(None, b"k", b"v")
+
+
+def test_bad_data_message():
+    err = exc.BadData("raaaa")
+    assert err.__str__() == "raaaa"
+
+
+def test_bad_signature_payload():
+    err = exc.BadSignature("bad", payload=b"payload")
+    assert err.payload == b"payload"
+
+
+def test_bad_header_header():
+    err = exc.BadHeader("bad", payload=b"payload", header={"kid": "k"})
+    assert err.header == {"kid": "k"}
+
+
+def test_bad_payload_default_original_error():
+    err = exc.BadPayload("bad")
+    assert err.original_error == None
+
+
+def test_compact_json_loads():
+    assert compact_json._CompactJSON.loads('{"ok": true}') == {"ok": True}
+
+
+def test_default_serializer_is_text():
+    assert (
+        serializer_mod.is_text_serializer(serializer_mod.Serializer.default_serializer)
+        == True
+    )

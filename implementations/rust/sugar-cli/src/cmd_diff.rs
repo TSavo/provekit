@@ -149,10 +149,10 @@ pub struct Residual {
     pub unaccounted: i64,
     pub source_loci: Option<i64>,
     pub source_warranted: Option<i64>,
+    pub source_support: Option<i64>,
     pub source_refused: Option<i64>,
     pub source_inactive: Option<i64>,
     pub source_refuted: Option<i64>,
-    pub source_work: Option<i64>,
     pub unclassified_source: Option<i64>,
     pub assertion_multiset_cid: Option<String>,
 }
@@ -167,17 +167,25 @@ impl Residual {
         let optional_field = |name: &str| -> Option<i64> { v.get(name).and_then(|n| n.as_i64()) };
         let source_loci = optional_field("source_loci");
         let source_warranted = optional_field("source_warranted");
+        let source_support = optional_field("source_support");
         let source_refused = optional_field("source_refused");
         let source_inactive = optional_field("source_inactive");
         let source_refuted = optional_field("source_refuted");
-        let source_work = optional_field("source_work");
-        let unclassified_source = optional_field("unclassified_source");
+        let obsolete_source_work = optional_field("source_work");
+        let unclassified_source =
+            match (optional_field("unclassified_source"), obsolete_source_work) {
+                (Some(unclassified), Some(backlog)) => Some(unclassified + backlog),
+                (Some(unclassified), None) => Some(unclassified),
+                (None, Some(backlog)) => Some(backlog),
+                (None, None) => None,
+            };
         let has_source_axis = source_loci.is_some()
             || source_warranted.is_some()
+            || source_support.is_some()
             || source_refused.is_some()
             || source_inactive.is_some()
             || source_refuted.is_some()
-            || source_work.is_some()
+            || obsolete_source_work.is_some()
             || unclassified_source.is_some();
         let assertion_field = |name: &str| -> Result<i64, String> {
             match optional_field(name) {
@@ -193,10 +201,10 @@ impl Residual {
             unaccounted: assertion_field("unaccounted")?,
             source_loci,
             source_warranted,
+            source_support,
             source_refused,
             source_inactive,
             source_refuted,
-            source_work,
             // Optional: absent on assertion-only ledgers. Once present, diff
             // treats it as a totality axis and fails if AFTER drops it.
             unclassified_source,
@@ -222,10 +230,10 @@ impl Residual {
     pub fn source_axis_present(&self) -> bool {
         self.source_loci.is_some()
             || self.source_warranted.is_some()
+            || self.source_support.is_some()
             || self.source_refused.is_some()
             || self.source_inactive.is_some()
             || self.source_refuted.is_some()
-            || self.source_work.is_some()
             || self.unclassified_source.is_some()
     }
 }
@@ -419,6 +427,12 @@ fn source_axis_summary(before: &Residual, after: &Residual) -> String {
     );
     push_source_axis_part(
         &mut parts,
+        "support",
+        before.source_support,
+        after.source_support,
+    );
+    push_source_axis_part(
+        &mut parts,
         "refused",
         before.source_refused,
         after.source_refused,
@@ -435,7 +449,6 @@ fn source_axis_summary(before: &Residual, after: &Residual) -> String {
         before.source_refuted,
         after.source_refuted,
     );
-    push_source_axis_part(&mut parts, "work", before.source_work, after.source_work);
     push_source_axis_part(
         &mut parts,
         "unclassified",
@@ -783,7 +796,6 @@ mod tests {
             "source_refused": 21,
             "source_inactive": 19,
             "source_refuted": 0,
-            "source_work": 0,
             "unclassified_source": 2
         }))
         .unwrap();
@@ -795,7 +807,6 @@ mod tests {
             "source_refused": 22,
             "source_inactive": 16,
             "source_refuted": 0,
-            "source_work": 0,
             "unclassified_source": 0
         }))
         .unwrap();
@@ -983,10 +994,10 @@ mod tests {
             unaccounted,
             source_loci: None,
             source_warranted: None,
+            source_support: None,
             source_refused: None,
             source_inactive: None,
             source_refuted: None,
-            source_work: None,
             unclassified_source: None,
             assertion_multiset_cid: None,
         }
@@ -1021,10 +1032,10 @@ mod tests {
         let ledger = serde_json::json!({
             "source_loci": 48,
             "source_warranted": 10,
+            "source_support": 3,
             "source_refused": 22,
             "source_inactive": 16,
             "source_refuted": 0,
-            "source_work": 0,
             "unclassified_source": 0
         });
         let r = Residual::from_ledger(&ledger).expect("source-only kit ledger parses");
@@ -1034,9 +1045,38 @@ mod tests {
         assert_eq!(r.unaccounted, 0);
         assert_eq!(r.source_loci, Some(48));
         assert_eq!(r.source_warranted, Some(10));
+        assert_eq!(r.source_support, Some(3));
         assert_eq!(r.source_refused, Some(22));
         assert_eq!(r.source_inactive, Some(16));
         assert_eq!(r.unclassified_source, Some(0));
+    }
+
+    #[test]
+    fn source_axis_summary_includes_support() {
+        let before = Residual::from_ledger(&serde_json::json!({
+            "source_loci": 4,
+            "source_warranted": 1,
+            "source_support": 0,
+            "source_refused": 0,
+            "source_inactive": 0,
+            "source_refuted": 0,
+            "unclassified_source": 3
+        }))
+        .expect("before parses");
+        let after = Residual::from_ledger(&serde_json::json!({
+            "source_loci": 4,
+            "source_warranted": 1,
+            "source_support": 2,
+            "source_refused": 0,
+            "source_inactive": 0,
+            "source_refuted": 0,
+            "unclassified_source": 1
+        }))
+        .expect("after parses");
+
+        let summary = source_axis_summary(&before, &after);
+        assert!(summary.contains("support 0 → 2"), "{summary}");
+        assert!(summary.contains("unclassified 3 → 1"), "{summary}");
     }
 
     #[test]
@@ -1149,10 +1189,10 @@ mod tests {
             unaccounted: u,
             source_loci: None,
             source_warranted: None,
+            source_support: None,
             source_refused: None,
             source_inactive: None,
             source_refuted: None,
-            source_work: None,
             unclassified_source: None,
             assertion_multiset_cid: Some(cid.to_string()),
         }

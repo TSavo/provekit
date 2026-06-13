@@ -84,9 +84,9 @@ _NAMED: dict = {
         residual="dict-form str.maketrans bindings refuse by name",
     ),
     "return-strip-literal": _lifted(
-        "_rstrip_return_shape",
-        "no-suffix-chars universe (rstrip totality)",
-        residual="lstrip/strip arms owed (prefix-side and both-sides twins)",
+        "_rstrip_return_shape/_lstrip_return_shape",
+        "no-suffix/no-prefix universe (rstrip/lstrip totality)",
+        residual="strip arms owed (both-sides twin)",
     ),
     "return-replace-literals": _lifted(
         "_replace_return_shape",

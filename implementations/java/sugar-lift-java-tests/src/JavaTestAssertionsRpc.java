@@ -5266,10 +5266,10 @@ public final class JavaTestAssertionsRpc {
         String ledgerJson() {
             return "{\"source_loci\":" + sourceLoci
                     + ",\"source_warranted\":" + sourceWarranted
+                    + ",\"source_support\":0"
                     + ",\"source_refused\":" + sourceRefused
                     + ",\"source_inactive\":" + sourceInactive
                     + ",\"source_refuted\":0"
-                    + ",\"source_work\":0"
                     + ",\"unclassified_source\":" + unclassifiedSource + "}";
         }
 
@@ -5331,12 +5331,16 @@ public final class JavaTestAssertionsRpc {
                 }
             } catch (JavaSourceOracle.SourceOracleRefusal exc) {
                 diagnostics.add(diagnostic("<source-audit>", contractName, role,
-                        "source audit refused SourceMemento: " + exc.getMessage()));
+                        "source audit failed to resolve SourceMemento: " + exc.getMessage()));
                 appendSourceLineLocus(loci, memento.file(),
                         memento.span() == null ? 0 : memento.span().startLine(),
-                        "refused", role, universeKind);
+                        "unclassified", role, universeKind,
+                        "source-oracle resolution failed");
                 sourceLoci = 1;
-                sourceRefused = 1;
+                return new AuditBuild(auditJson(
+                        contractName, role, universeKind, tableName, memento, loci,
+                        sourceLoci, sourceWarranted, sourceRefused, sourceInactive, 1),
+                        sourceLoci, sourceWarranted, sourceRefused, sourceInactive, 1);
             }
 
             StringBuilder out = new StringBuilder();
@@ -5355,10 +5359,10 @@ public final class JavaTestAssertionsRpc {
             out.append(",\"totals\":")
                     .append("{\"source_loci\":").append(sourceLoci)
                     .append(",\"source_warranted\":").append(sourceWarranted)
+                    .append(",\"source_support\":0")
                     .append(",\"source_refused\":").append(sourceRefused)
                     .append(",\"source_inactive\":").append(sourceInactive)
                     .append(",\"source_refuted\":0")
-                    .append(",\"source_work\":0")
                     .append(",\"unclassified_source\":0}");
             out.append("}");
             return new AuditBuild(
@@ -6224,10 +6228,10 @@ public final class JavaTestAssertionsRpc {
             out.append(",\"totals\":")
                     .append("{\"source_loci\":").append(sourceLoci)
                     .append(",\"source_warranted\":").append(sourceWarranted)
+                    .append(",\"source_support\":0")
                     .append(",\"source_refused\":").append(sourceRefused)
                     .append(",\"source_inactive\":").append(sourceInactive)
                     .append(",\"source_refuted\":0")
-                    .append(",\"source_work\":0")
                     .append(",\"unclassified_source\":").append(unclassifiedSource)
                     .append("}");
             out.append("}");

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -144,7 +145,18 @@ def urlsafe(s):
 
 
 def _lift(source: str):
-    return lift_file_layer2(textwrap.dedent(source), "test_mod.py")
+    source = textwrap.dedent(source)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "test_mod.py"
+        path.write_text(source, encoding="utf-8")
+        return lift_file_layer2(source, str(path))
+
+
+def _lift_source_from_disk(tmp_path: Path, name: str, source: str):
+    source = textwrap.dedent(source)
+    path = tmp_path / name
+    path.write_text(source, encoding="utf-8")
+    return _lift_source(str(path), source)
 
 
 def _universe_atoms(out):
@@ -225,7 +237,7 @@ def test_universe_assertion_carries_source_warrant(vendor_path):
     assert out.source_ledger["source_refused"] >= 0
     assert out.source_ledger["source_inactive"] == 0
     assert out.source_ledger["source_refuted"] == 0
-    assert out.source_ledger["source_work"] == 0
+    assert "source_work" not in out.source_ledger
     assert out.source_ledger["unclassified_source"] == 0
     assert out.source_audits
     audit = next(
@@ -242,7 +254,7 @@ def test_universe_assertion_carries_source_warrant(vendor_path):
     assert audit["totals"]["source_loci"] == len(audit["loci"])
     assert audit["totals"]["source_inactive"] == 0
     assert audit["totals"]["unclassified_source"] == 0
-    assert {locus["status"] for locus in audit["loci"]} <= {"warranted", "refused"}
+    assert {locus["status"] for locus in audit["loci"]} <= {"warranted", "support"}
     for locus in audit["loci"]:
         assert locus.get("ast_path", "").startswith("$.body"), locus
         assert locus.get("span", {}).get("start_line", 0) > 0, locus
@@ -261,29 +273,29 @@ def test_universe_assertion_carries_source_warrant(vendor_path):
         for locus in audit["loci"]
     ), audit
     assert any(
-        locus["status"] == "refused" and locus.get("ast_kind") == "Expr"
+        locus["status"] == "support" and locus.get("ast_kind") == "Expr"
         for locus in audit["loci"]
     ), audit
 
 
-def test_lift_source_exposes_source_audit_countdown(vendor_path):
+def test_lift_source_exposes_source_audit_countdown(vendor_path, tmp_path):
     vendor_path("venduniv_wire", VENDOR_TRANSLATE)
-    lifted = _lift_source(
+    lifted = _lift_source_from_disk(
+        tmp_path,
         "test_mod.py",
-        textwrap.dedent(
-            """
-            import venduniv_wire
+        """
+        import venduniv_wire
 
-            def test_urlsafe():
-                assert venduniv_wire.urlsafe("abc") == "abc"
-            """
-        ),
+        def test_urlsafe():
+            assert venduniv_wire.urlsafe("abc") == "abc"
+        """,
     )
 
     source_ledger = lifted["sourceLedger"]
     assert source_ledger["source_loci"] > 0
     assert source_ledger["source_warranted"] > 0
-    assert source_ledger["source_refused"] > 0
+    assert source_ledger["source_support"] > 0
+    assert source_ledger["source_refused"] == 0
     assert source_ledger["source_inactive"] == 0
     assert source_ledger["unclassified_source"] == 0
     assert lifted["sourceMementos"]
@@ -345,7 +357,7 @@ def test_lift_source_emits_package_unclassified_accounting(tmp_path, monkeypatch
         textwrap.dedent(
             """
             def skipped(value):
-                return value + "!"
+                return value + noisy(value)
             """
         ),
         encoding="utf-8",
@@ -353,16 +365,15 @@ def test_lift_source_emits_package_unclassified_accounting(tmp_path, monkeypatch
     monkeypatch.syspath_prepend(str(tmp_path))
     translate_universe_for_callee.cache_clear()
 
-    lifted = _lift_source(
+    lifted = _lift_source_from_disk(
+        tmp_path,
         "test_mod.py",
-        textwrap.dedent(
-            """
-            import vendpkg_accounting.encoding as enc
+        """
+        import vendpkg_accounting.encoding as enc
 
-            def test_token():
-                assert enc.b64e("abc") == "abc"
-            """
-        ),
+        def test_token():
+            assert enc.b64e("abc") == "abc"
+        """,
     )
 
     package_audits = [
@@ -374,15 +385,887 @@ def test_lift_source_emits_package_unclassified_accounting(tmp_path, monkeypatch
     audit = package_audits[0]
     assert audit["package"] == "vendpkg_accounting"
     assert audit["totals"]["source_loci"] == len(audit["loci"])
-    assert audit["totals"]["source_warranted"] == 0
+    assert audit["totals"]["source_warranted"] > 0
+    assert audit["totals"]["source_support"] > 0
     assert audit["totals"]["source_refused"] == 0
-    assert audit["totals"]["unclassified_source"] == len(audit["loci"])
     assert audit["totals"]["unclassified_source"] > 0
+    assert audit["totals"]["unclassified_source"] < len(audit["loci"])
     assert lifted["sourceLedger"]["unclassified_source"] >= audit["totals"]["unclassified_source"]
+    assert any(
+        locus["status"] == "warranted"
+        and locus["file"].endswith("vendpkg_accounting/encoding.py")
+        and locus.get("ast_kind") == "Return"
+        and "delegation" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
     assert any(
         locus["status"] == "unclassified"
         and locus["file"].endswith("vendpkg_accounting/extra.py")
-        and locus.get("ast_kind") == "FunctionDef"
+        and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_lift_source_classifies_imports_as_package_support(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_import_support"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    (pkg / "extra.py").write_text(
+        textwrap.dedent(
+            """
+            import json
+            from .encoding import b64e as imported_b64e
+
+            def skipped(value):
+                return imported_b64e(json.dumps(value))
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_import_support.encoding as enc
+
+        def test_token():
+            assert enc.b64e("abc") == "abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    import_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_import_support/extra.py")
+        and locus.get("ast_kind") in {"Import", "ImportFrom", "alias"}
+    ]
+    assert import_loci
+    assert {locus["status"] for locus in import_loci} == {"support"}
+    assert audit["totals"]["source_support"] >= len(import_loci)
+    assert lifted["sourceLedger"]["source_support"] >= len(import_loci)
+
+
+def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_decl_support"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            class Helper:
+                """Declaration metadata, not a value constraint."""
+
+            def b64e(s: str | bytes = b"abc") -> bytes:
+                """Docstring metadata, not a value constraint."""
+                return s.rstrip(b"=")
+
+            def skipped(value: str) -> str:
+                return value + "!"
+
+            def typed_only(
+                value: str | bytes,
+            ) -> bytes:
+                return value
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_decl_support.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    support_kinds = {
+        locus.get("ast_kind")
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_decl_support/encoding.py")
+        and locus["status"] == "support"
+    }
+    assert {"ClassDef", "FunctionDef", "arg", "Expr", "Constant"} <= support_kinds
+    assert not [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_decl_support/encoding.py")
+        and locus.get("ast_kind") in {"ClassDef", "FunctionDef", "arg"}
+        and locus["status"] == "unclassified"
+    ]
+    assert not [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_decl_support/encoding.py")
+        and (
+            ".annotation" in locus.get("ast_path", "")
+            or ".returns" in locus.get("ast_path", "")
+        )
+        and locus["status"] == "unclassified"
+    ]
+
+
+def test_lift_source_classifies_static_assignments_as_warranted_compiler_facts(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_static_warranted"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            import string
+            import struct
+            import typing as t
+
+            _alphabet = f"{string.ascii_letters}{string.digits}-_=".encode("ascii")
+            _int64_struct = struct.Struct(">Q")
+            _int_to_bytes = _int64_struct.pack
+            _bytes_to_int = t.cast("t.Callable[[bytes], tuple[int]]", _int64_struct.unpack)
+
+            class Holder:
+                default_key_derivation: str = "django-concat"
+                typed_only: str
+
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            def skipped(value):
+                local = value
+                return local
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_static_warranted.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    static_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_static_warranted/encoding.py")
+        and locus["line"] in {6, 7, 8, 9}
+    ]
+    assert static_loci
+    assert {locus["status"] for locus in static_loci} == {"warranted"}
+    assert all("static binding" in locus.get("reason", "") for locus in static_loci)
+    class_static_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_static_warranted/encoding.py")
+        and locus["line"] == 12
+    ]
+    assert class_static_loci
+    assert not [locus for locus in class_static_loci if locus["status"] == "unclassified"]
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "AnnAssign"
+        for locus in class_static_loci
+    ), class_static_loci
+    assert any(
+        locus["status"] == "support"
+        and locus["file"].endswith("vendpkg_static_warranted/encoding.py")
+        and locus["line"] == 13
+        and locus.get("ast_kind") == "AnnAssign"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus["file"].endswith("vendpkg_static_warranted/encoding.py")
+        and locus["line"] == 19
+        and locus.get("ast_kind") == "Assign"
+        and "SSA alias" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_lift_source_warrants_local_name_assignment_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_local_name_warranted"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            def skipped(value):
+                alias = value
+                computed = helper(value)
+                flag = False
+                missing = None
+                empty = {}
+                return alias
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_local_name_warranted.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_local_name_warranted/encoding.py")
+    ]
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 6
+        and locus.get("ast_kind") == "Assign"
+        and "SSA alias" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] == 6
+        and locus.get("ast_kind") == "Name"
+        and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 7
+        and locus.get("ast_kind") == "Name"
+        and locus.get("ast_path", "").endswith(".targets[0]")
+        for locus in local_loci
+    ), local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus["line"] == 7
+        and locus.get("ast_kind") == "Call"
+        for locus in local_loci
+    ), local_loci
+    for line, ast_kind in ((8, "Constant"), (9, "Constant"), (10, "Dict")):
+        assert any(
+            locus["status"] == "warranted"
+            and locus["line"] == line
+            and locus.get("ast_kind") == ast_kind
+            and "local literal binding" in locus.get("reason", "")
+            for locus in local_loci
+        ), local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 8
+        and locus.get("ast_kind") == "Assign"
+        and "local literal binding" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+
+
+def test_lift_source_warrants_local_adapter_assignment_accounting(
+    tmp_path, monkeypatch
+):
+    from sugar_lift_py_tests.translate_universe import bytes_identity_universe_for_callee
+
+    pkg = tmp_path / "vendpkg_adapter_assignment_warranted"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            def want_bytes(s, encoding="utf-8", errors="strict"):
+                if isinstance(s, str):
+                    s = s.encode(encoding, errors)
+
+                return s
+
+            def skipped(value):
+                value = want_bytes(value)
+                nested = want_bytes(helper(value))
+                return value
+
+            class Holder:
+                def __init__(self, sep):
+                    self.sep = want_bytes(sep)
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    bytes_identity_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_adapter_assignment_warranted.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_adapter_assignment_warranted/encoding.py")
+    ]
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] == 9 and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 9
+        and locus.get("ast_kind") == "Call"
+        and "adapter assignment" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] == 15 and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 15
+        and locus.get("ast_kind") == "Call"
+        and "adapter assignment" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus["line"] == 10
+        and locus.get("ast_kind") == "Call"
+        for locus in local_loci
+    ), local_loci
+
+
+def test_lift_source_classifies_list_adapter_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_list_adapter_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def want_bytes(s, encoding="utf-8", errors="strict"):
+                if isinstance(s, str):
+                    s = s.encode(encoding, errors)
+
+                return s
+
+
+            def _make_keys_list(secret_key):
+                if isinstance(secret_key, (str, bytes)):
+                    return [want_bytes(secret_key)]
+
+                return [want_bytes(s) for s in secret_key]
+
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    bytes_identity_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_list_adapter_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    helper_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_list_adapter_body/encoding.py")
+        and locus.get("ast_path", "").startswith("$.module.body[1]")
+    ]
+    assert helper_loci
+    assert not [
+        locus for locus in helper_loci if locus["status"] == "unclassified"
+    ], helper_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "ListComp"
+        and "list-adapter" in locus.get("reason", "")
+        for locus in helper_loci
+    ), helper_loci
+
+
+def test_lift_source_classifies_delegation_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_delegation_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import typing as t
+
+            def g(seed):
+                return "fixed"
+
+
+            def f(seed):
+                return t.cast(str, g(seed))
+
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_delegation_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    helper_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_delegation_body/encoding.py")
+        and locus.get("ast_path", "").startswith("$.module.body[2]")
+    ]
+    assert helper_loci
+    assert not [
+        locus for locus in helper_loci if locus["status"] == "unclassified"
+    ], helper_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "delegation" in locus.get("reason", "")
+        for locus in helper_loci
+    ), helper_loci
+
+
+def test_lift_source_classifies_typing_cast_wrapper_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_cast_wrapper"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import typing as t
+
+            def dynamic(seed):
+                return t.cast(str, seed.transform(noisy()))
+
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_cast_wrapper.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_cast_wrapper/encoding.py")
+    ]
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and locus.get("ast_path") == "$.module.body[1].body[0].value"
+        and "transparent typing cast" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus.get("ast_kind") == "Call"
+        and locus.get("ast_path") == "$.module.body[1].body[0].value.args[1]"
+        for locus in local_loci
+    ), local_loci
+
+
+def test_lift_source_warrants_guarded_default_value_flow(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_guarded_default_warranted"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            class Holder:
+                default_value = "fallback"
+
+                def skipped(self, value, callback):
+                    if value is None:
+                        value = self.default_value
+                    if callback is None:
+                        callback = build_default()
+                    return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_guarded_default_warranted.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_guarded_default_warranted/encoding.py")
+    ]
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 6
+        and locus.get("ast_kind") == "If"
+        and "guarded default value flow" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] in {6, 7}
+        and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus["line"] == 9
+        and locus.get("ast_kind") == "Call"
+        for locus in local_loci
+    ), local_loci
+
+
+def test_lift_source_classifies_super_init_as_package_support(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_super_init_support"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            class PayloadError(Exception):
+                def __init__(self, message, payload=None):
+                    super().__init__(message, payload)
+                    self.payload = payload
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_super_init_support.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    super_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_super_init_support/encoding.py")
+        and locus["line"] == 4
+    ]
+    assert super_loci
+    assert not [
+        locus
+        for locus in super_loci
+        if locus["status"] == "unclassified"
+    ], super_loci
+    assert {locus["status"] for locus in super_loci} == {"support"}
+    assert {"Expr", "Call", "Attribute", "Name"} <= {
+        locus.get("ast_kind") for locus in super_loci
+    }
+    assert all(
+        "base constructor call" in locus.get("reason", "")
+        for locus in super_loci
+    )
+
+
+def test_lift_source_classifies_type_checking_blocks_as_support_or_inactive(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_type_checking"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            import typing as t
+
+            if t.TYPE_CHECKING:
+                import typing_extensions as te
+                _TSerialized = te.TypeVar("_TSerialized", bound=t.Union[str, bytes])
+            else:
+                _TSerialized = t.TypeVar("_TSerialized", bound=t.Union[str, bytes])
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_type_checking.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    type_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_type_checking/encoding.py")
+        and locus.get("ast_path", "").startswith("$.module.body[1]")
+    ]
+    assert type_loci
+    assert {locus["status"] for locus in type_loci} <= {"support", "inactive"}
+    assert not [
+        locus
+        for locus in type_loci
+        if locus["status"] == "unclassified"
+    ]
+    assert any(locus["status"] == "inactive" for locus in type_loci), type_loci
+
+
+def test_lift_source_classifies_overload_declarations_as_type_metadata(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_overload_metadata"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            import typing as t
+
+            class Codec:
+                @t.overload
+                def encode(self, value: str, fallback: None = None) -> str: ...
+
+                @t.overload
+                def encode(self, value: bytes, fallback: bytes | None = None) -> bytes: ...
+
+                def encode(self, value, fallback=None):
+                    return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_overload_metadata.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    overload_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_overload_metadata/encoding.py")
+        and (
+            locus.get("ast_path", "").startswith("$.module.body[1].body[0]")
+            or locus.get("ast_path", "").startswith("$.module.body[1].body[1]")
+        )
+    ]
+    assert overload_loci
+    assert not [
+        locus for locus in overload_loci if locus["status"] == "unclassified"
+    ], overload_loci
+    assert any(
+        locus["status"] == "support"
+        and locus.get("ast_kind") == "Attribute"
+        and "overload" in locus.get("reason", "")
+        for locus in overload_loci
+    ), overload_loci
+    assert any(
+        locus["status"] == "inactive"
+        and locus.get("ast_kind") == "Expr"
+        and "overload" in locus.get("reason", "")
+        for locus in overload_loci
+    ), overload_loci
+    assert any(
+        locus["file"].endswith("vendpkg_overload_metadata/encoding.py")
+        and locus.get("ast_path") == "$.module.body[1].body[2].body[0]"
+        and locus["status"] == "unclassified"
         for locus in audit["loci"]
     ), audit
 
@@ -466,6 +1349,34 @@ def b64e(s):
 '''
 
 
+VENDOR_WANT_BYTES_RSTRIP = '''
+def _inner(s):
+    return s
+
+
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+def b64e(s):
+    s = want_bytes(s)
+    return _inner(s).rstrip(b"=")
+'''
+
+
+VENDOR_LSTRIP = '''
+def _pack(n):
+    return b"\\x00\\x01"
+
+
+def int_to_bytes(n):
+    return _pack(n).lstrip(b"\\x00")
+'''
+
+
 def test_rstrip_family_walks(vendor_path):
     vendor_path("vendrstrip_ok", VENDOR_RSTRIP)
     universe, refusal = translate_universe_for_callee("vendrstrip_ok.b64e")
@@ -518,7 +1429,7 @@ def test_rstrip_source_audit_warrants_return_shape(vendor_path):
     )
     assert audit["totals"]["unclassified_source"] == 0
     assert any(
-        locus["status"] == "refused"
+        locus["status"] == "support"
         and locus.get("ast_kind") == "Assign"
         and locus.get("ast_path") == "$.body[0]"
         for locus in audit["loci"]
@@ -533,6 +1444,137 @@ def test_rstrip_source_audit_warrants_return_shape(vendor_path):
         locus["status"] == "warranted"
         and locus.get("ast_kind") == "Attribute"
         and locus.get("ast_path") == "$.body[1].value.func"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_rstrip_queues_want_bytes_identity_for_bytes_callsite(vendor_path):
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        translate_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    translate_universe_for_callee.cache_clear()
+    vendor_path("vendrstrip_want_bytes", VENDOR_WANT_BYTES_RSTRIP)
+    out = _lift(
+        """
+        import vendrstrip_want_bytes
+
+        def test_token():
+            assert vendrstrip_want_bytes.b64e(b"abc") == b"abc"
+        """
+    )
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    bytes_term = ctor("python:bytes", [str_const("abc")])
+    identity_atoms = []
+    for d in out.decls:
+        if not d.name.endswith("::assertion") or d.inv is None:
+            continue
+        for atom in _iter_conjuncts(d.inv):
+            if getattr(atom, "name", None) != "=":
+                continue
+            args = getattr(atom, "args", ())
+            if bytes_term not in args:
+                continue
+            if any(
+                "callresult_vendrstrip_want_bytes_want_bytes_a1"
+                in getattr(side, "name", "")
+                for side in args
+            ):
+                identity_atoms.append(atom)
+    assert identity_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "vendrstrip_want_bytes.b64e#euf#" in d.name
+    )
+    assert any(
+        warrant.get("role") == "python.bytes-identity-universe"
+        and warrant.get("source_function_name") == "want_bytes"
+        for warrant in assertion.source_warrants
+    )
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.bytes-identity-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "inactive" and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_lstrip_family_walks_no_prefix_chars(vendor_path):
+    vendor_path("vendlstrip_ok", VENDOR_LSTRIP)
+    universe, refusal = translate_universe_for_callee("vendlstrip_ok.int_to_bytes")
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "no-prefix-chars"
+    assert universe.forbidden == "\x00"
+
+
+def test_lstrip_emits_negated_prefix_conjunct(vendor_path):
+    vendor_path("vendlstrip_l2", VENDOR_LSTRIP)
+    out = _lift(
+        """
+        import vendlstrip_l2
+
+        def test_int_to_bytes():
+            assert vendlstrip_l2.int_to_bytes(1) == b"\\x01"
+        """
+    )
+
+    prefix_atoms = []
+    for d in out.decls:
+        if d.name.endswith("::assertion") and d.inv is not None:
+            for f in [d.inv] if not hasattr(d.inv, "operands") else list(d.inv.operands):
+                if getattr(f, "kind", None) == "not":
+                    inner = f.operands[0]
+                    if getattr(inner, "name", None) == "prefix-of":
+                        prefix_atoms.append(inner)
+    assert len(prefix_atoms) == 1
+    assert prefix_atoms[0].args[0].value == "\x00"
+
+
+def test_lstrip_source_audit_warrants_return_shape(vendor_path):
+    vendor_path("vendlstrip_audit", VENDOR_LSTRIP)
+    out = _lift(
+        """
+        import vendlstrip_audit
+
+        def test_int_to_bytes():
+            assert vendlstrip_audit.int_to_bytes(1) == b"\\x01"
+        """
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.translate-universe"
+        and audit["universe_kind"] == "no-prefix-chars"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        and locus.get("ast_path") == "$.body[0]"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Attribute"
+        and locus.get("ast_path") == "$.body[0].value.func"
         for locus in audit["loci"]
     ), audit
 
@@ -1210,7 +2252,8 @@ def test_constant_emits_equality_and_refutes_wrong(vendor_path):
     # the universe equality over the SAME subject coexists with the sworn
     # equality; a bad twin asserting a different constant would conjoin to
     # unsat. Here we just confirm an equality atom to the constant is present.
-    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
 
     eqs = []
     for d in out.decls:
@@ -1223,6 +2266,854 @@ def test_constant_emits_equality_and_refutes_wrong(vendor_path):
                 elif getattr(f, "kind", None) in ("and", "or", "not"):
                     stack.extend(f.operands)
     assert eqs
+
+
+def test_constant_universe_walks_constructor_bound_instance_method(vendor_path):
+    constant_universe_for_callee_clear()
+    vendor_path(
+        "vendconst_method",
+        '''
+class Algo:
+    def get_signature(self, key, value):
+        return b""
+''',
+    )
+    out = _lift(
+        """
+        import vendconst_method
+
+        def test_signature():
+            alg = vendconst_method.Algo()
+            assert alg.get_signature(b"k", b"v") == b""
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendconst_method.Algo.get_signature" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.constant-universe"
+        and warrant.get("source_function_name") == "Algo.get_signature"
+        and warrant.get("file", "").endswith("vendconst_method.py")
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    constant_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and any(
+            getattr(side, "name", "") == "callval_get_signature_a3"
+            for side in getattr(atom, "args", ())
+        )
+        and ctor("python:bytes", [str_const("")]) in getattr(atom, "args", ())
+    ]
+    assert constant_eqs
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.constant-universe"
+        and "vendconst_method.Algo.get_signature" in audit["contract"]["name"]
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_instance_field_universe_maps_constructor_arg_to_getter(vendor_path):
+    vendor_path(
+        "vendinst_field",
+        '''
+class Box(Exception):
+    def __init__(self, value):
+        super().__init__(value)
+        self.value = value
+
+    def get(self):
+        return self.value
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_field
+
+        def test_box():
+            box = vendinst_field.Box("raaaa")
+            assert box.get() == "wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_field.Box.get" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and any(
+            getattr(side, "name", "") == "callval_get_a1"
+            for side in getattr(atom, "args", ())
+        )
+        and str_const("raaaa") in getattr(atom, "args", ())
+    ]
+    assert field_eqs
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert {
+        warrant.get("source_function_name") for warrant in field_warrants
+    } == {"Box.__init__", "Box.get"}
+
+    audits = {
+        audit["source_memento"].get("source_function_name"): audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and "vendinst_field.Box.get" in audit["contract"]["name"]
+    }
+    assert set(audits) == {"Box.__init__", "Box.get"}
+    for audit in audits.values():
+        assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Assign"
+        for locus in audits["Box.__init__"]["loci"]
+    ), audits["Box.__init__"]
+    assert any(
+        locus["status"] == "support" and locus.get("ast_kind") == "Expr"
+        for locus in audits["Box.__init__"]["loci"]
+    ), audits["Box.__init__"]
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Return"
+        for locus in audits["Box.get"]["loci"]
+    ), audits["Box.get"]
+
+
+def test_instance_field_universe_maps_constructor_arg_to_attribute(vendor_path):
+    vendor_path(
+        "vendinst_attr",
+        '''
+class PayloadError(Exception):
+    def __init__(self, message, payload=None):
+        super().__init__(message)
+        self.payload: object = payload
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_attr
+
+        def test_payload():
+            err = vendinst_attr.PayloadError("bad", payload=b"payload")
+            assert err.payload == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_attr.PayloadError" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    payload_term = ctor("python:bytes", [str_const("payload")])
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and payload_term in getattr(atom, "args", ())
+        and any(
+            getattr(side, "name", "") == "err$0.payload"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert field_eqs
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert {
+        warrant.get("source_function_name") for warrant in field_warrants
+    } == {"PayloadError.__init__"}
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "PayloadError.__init__"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "AnnAssign"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "support" and locus.get("ast_kind") == "Expr"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_instance_field_universe_maps_one_of_multiple_constructor_fields(vendor_path):
+    vendor_path(
+        "vendinst_multi_attr",
+        '''
+class HeaderError(Exception):
+    def __init__(self, message, payload=None, header=None):
+        super().__init__(message, payload)
+        self.payload = payload
+        self.header = header
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_multi_attr
+
+        def test_header():
+            err = vendinst_multi_attr.HeaderError("bad", payload=b"payload", header="h")
+            assert err.header == "wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_multi_attr.HeaderError" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("h") in getattr(atom, "args", ())
+        and any(
+            getattr(side, "name", "") == "err$0.header"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert field_eqs
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "HeaderError.__init__"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        and locus.get("line") == 6
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_constructor_field_universe_reads_base_constructor_via_super(vendor_path):
+    vendor_path(
+        "vendinst_super_field",
+        '''
+class BaseError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+
+class PayloadError(BaseError):
+    def __init__(self, message, payload=None):
+        super().__init__(message)
+        self.payload = payload
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_super_field
+
+        def test_message():
+            err = vendinst_super_field.PayloadError("raaaa", payload=b"payload")
+            assert err.message == "wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_super_field.PayloadError" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("raaaa") in getattr(atom, "args", ())
+        and any(
+            getattr(side, "name", "") == "err$0.message"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert field_eqs
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert {
+        warrant.get("source_function_name") for warrant in field_warrants
+    } == {"BaseError.__init__", "PayloadError.__init__"}
+
+    audits = {
+        audit["source_memento"].get("source_function_name"): audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and "vendinst_super_field.PayloadError" in audit["contract"]["name"]
+    }
+    assert set(audits) == {"BaseError.__init__", "PayloadError.__init__"}
+    for audit in audits.values():
+        assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        for locus in audits["BaseError.__init__"]["loci"]
+    ), audits["BaseError.__init__"]
+    assert any(
+        locus["status"] == "support"
+        and locus.get("ast_kind") == "Expr"
+        for locus in audits["PayloadError.__init__"]["loci"]
+    ), audits["PayloadError.__init__"]
+
+
+def test_constructor_field_universe_maps_adapter_field_assignment(vendor_path):
+    from sugar_lift_py_tests.translate_universe import bytes_identity_universe_for_callee
+
+    bytes_identity_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_adapter_field",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep: bytes = want_bytes(sep)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_adapter_field
+
+        def test_sep():
+            signer = vendinst_adapter_field.Signer(sep=b".")
+            assert signer.sep == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_adapter_field.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    sep_term = ctor("python:bytes", [str_const(".")])
+    adapter_terms = []
+    field_eqs = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        adapter_side = next(
+            (
+                side
+                for side in args
+                if "callresult_vendinst_adapter_field_want_bytes_a1"
+                in getattr(side, "name", "")
+            ),
+            None,
+        )
+        if adapter_side is not None:
+            adapter_terms.append(adapter_side)
+        if adapter_side is not None and any(
+            getattr(side, "name", "") == "signer$0.sep" for side in args
+        ):
+            field_eqs.append(atom)
+        if adapter_side is not None and sep_term in args:
+            identity_eqs.append(atom)
+
+    assert field_eqs
+    assert identity_eqs
+    assert adapter_terms
+
+    roles = {
+        warrant.get("role")
+        for warrant in assertion.source_warrants
+    }
+    assert {"python.instance-field-universe", "python.bytes-identity-universe"} <= roles
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"] in {"python.instance-field-universe", "python.bytes-identity-universe"}
+        and "vendinst_adapter_field.Signer" in audit["contract"]["name"]
+    }
+    assert audits["python.instance-field-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
+
+
+def test_constructor_field_universe_maps_helper_list_adapter(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_helper_list",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_helper_list
+
+        def test_secret_keys():
+            signer = vendinst_helper_list.Signer(b"k")
+            assert signer.secret_keys == signer.secret_keys
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_helper_list.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    secret = ctor("python:bytes", [str_const("k")])
+    helper_terms = []
+    list_terms = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        helper_side = next(
+            (
+                side
+                for side in args
+                if "callresult_vendinst_helper_list__make_keys_list_a1"
+                in getattr(side, "name", "")
+            ),
+            None,
+        )
+        if helper_side is not None:
+            helper_terms.append(helper_side)
+        list_side = next(
+            (
+                side
+                for side in args
+                if getattr(side, "name", "") == "python:list"
+            ),
+            None,
+        )
+        if list_side is not None:
+            list_terms.append(list_side)
+        if any(
+            "callresult_vendinst_helper_list_want_bytes_a1" in getattr(side, "name", "")
+            for side in args
+        ) and secret in args:
+            identity_eqs.append(atom)
+
+    assert helper_terms
+    assert list_terms
+    assert identity_eqs
+
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {
+        "python.instance-field-universe",
+        "python.list-adapter-universe",
+        "python.bytes-identity-universe",
+    } <= roles
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"]
+        in {
+            "python.instance-field-universe",
+            "python.list-adapter-universe",
+            "python.bytes-identity-universe",
+        }
+        and "vendinst_helper_list" in audit["contract"]["name"]
+    }
+    assert set(audits) == {
+        "python.instance-field-universe",
+        "python.list-adapter-universe",
+        "python.bytes-identity-universe",
+    }
+    assert audits["python.instance-field-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.list-adapter-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
+
+
+def test_constructor_field_universe_maps_helper_list_adapter_iterable_branch(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_helper_listcomp",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_helper_listcomp
+
+        def test_secret_keys_iterable():
+            signer = vendinst_helper_listcomp.Signer([b"k"])
+            assert signer.secret_keys == signer.secret_keys
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_helper_listcomp.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    secret = ctor("python:bytes", [str_const("k")])
+    iterable_arg = ctor("python:list", [secret])
+    helper_eqs = []
+    output_list_eqs = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        helper_side = next(
+            (
+                side
+                for side in args
+                if "callresult_vendinst_helper_listcomp__make_keys_list_a1"
+                in getattr(side, "name", "")
+            ),
+            None,
+        )
+        list_side = next(
+            (
+                side
+                for side in args
+                if getattr(side, "name", "") == "python:list"
+            ),
+            None,
+        )
+        if (
+            helper_side is not None
+            and getattr(helper_side, "args", ()) == (iterable_arg,)
+        ):
+            helper_eqs.append(atom)
+        if list_side is not None and any(
+            "callresult_vendinst_helper_listcomp_want_bytes_a1"
+            in getattr(element, "name", "")
+            and getattr(element, "args", ()) == (secret,)
+            for element in getattr(list_side, "args", ())
+        ):
+            output_list_eqs.append(atom)
+        if any(
+            "callresult_vendinst_helper_listcomp_want_bytes_a1"
+            in getattr(side, "name", "")
+            and getattr(side, "args", ()) == (secret,)
+            for side in args
+        ) and secret in args:
+            identity_eqs.append(atom)
+
+    assert helper_eqs
+    assert output_list_eqs
+    assert identity_eqs
+
+    assert any(
+        warrant.get("role") == "python.list-adapter-universe"
+        and warrant.get("list_adapter_branch") == "iterable"
+        for warrant in assertion.source_warrants
+    )
+
+    list_audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.list-adapter-universe"
+        and "vendinst_helper_listcomp" in audit["contract"]["name"]
+    )
+    assert list_audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") in {"Return", "ListComp"}
+        and "iterable branch emitted" in locus.get("reason", "")
+        for locus in list_audit["loci"]
+    ), list_audit
+    assert any(
+        locus["status"] == "inactive"
+        and locus.get("ast_kind") == "If"
+        and "scalar branch inactive" in locus.get("reason", "")
+        for locus in list_audit["loci"]
+    ), list_audit
+
+
+def test_instance_field_universe_maps_default_constructor_field(vendor_path):
+    vendor_path(
+        "vendinst_default_attr",
+        '''
+class HeaderError(Exception):
+    def __init__(self, message, payload=None, header=None):
+        super().__init__(message, payload)
+        self.payload = payload
+        self.header = header
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_default_attr
+
+        def test_default_header():
+            err = vendinst_default_attr.HeaderError("bad")
+            assert err.header == None
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_default_attr.HeaderError" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    none_term = ctor("None", [])
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and none_term in getattr(atom, "args", ())
+        and any(
+            getattr(side, "name", "") == "err$0.header"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert field_eqs
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "HeaderError.__init__"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Constant"
+        and locus.get("line") == 3
+        and locus.get("ast_path") == "$.args.defaults[1]"
+        and "default constructor argument emitted" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_instance_field_universe_maps_conditional_default_constructor_field(vendor_path):
+    vendor_path(
+        "vendinst_conditional_default_attr",
+        '''
+class HMACAlgorithm:
+    default_digest_method = object()
+
+    def __init__(self, digest_method=None):
+        if digest_method is None:
+            digest_method = self.default_digest_method
+        self.digest_method = digest_method
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_conditional_default_attr
+
+        def test_default_digest_method():
+            alg = vendinst_conditional_default_attr.HMACAlgorithm()
+            assert alg.digest_method == alg.default_digest_method
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_conditional_default_attr.HMACAlgorithm" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "HMACAlgorithm.__init__"
+    assert field_warrants[0].get("constructor_default_param_names") == [
+        "digest_method"
+    ]
+    assert (
+        field_warrants[0].get("constructor_default_attr_name")
+        == "default_digest_method"
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "HMACAlgorithm.__init__"
+    )
+    assert audit["source_memento"].get("constructor_default_attr_name") == (
+        "default_digest_method"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Constant"
+        and locus.get("ast_path") == "$.args.defaults[0]"
+        and "default constructor argument emitted" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Assign"
+        for locus in audit["loci"]
+    ), audit
 
 
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
@@ -1323,6 +3214,96 @@ def test_predicate_impure_not_candidate(vendor_path):
     )
     u, r = predicate_universe_for_callee("vendpred_impure.f")
     assert u is None and r is None  # call in predicate -> not purely evaluable
+
+
+def test_return_isinstance_emits_boolean_equivalence_and_source_accounting(
+    vendor_path,
+):
+    from sugar_lift_py_tests.ir import _Ctor
+    from sugar_lift_py_tests.translate_universe import (
+        return_isinstance_universe_for_callee,
+    )
+
+    return_isinstance_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendisinst_serializer",
+        """
+        class Serializer:
+            def dumps(self, obj):
+                return "x"
+
+
+        def is_text_serializer(serializer):
+            return isinstance(serializer.dumps({}), str)
+        """,
+    )
+    out = _lift(
+        """
+        import vendisinst_serializer
+
+        def test_text_serializer():
+            serializer = vendisinst_serializer.Serializer()
+            assert vendisinst_serializer.is_text_serializer(serializer) == True
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendisinst_serializer.is_text_serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.return-isinstance-universe"
+        and warrant.get("source_function_name") == "is_text_serializer"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    def _walk_formula(formula):
+        stack = [formula]
+        while stack:
+            current = stack.pop()
+            yield current
+            stack.extend(getattr(current, "operands", ()))
+
+    isinstance_atoms = [
+        atom
+        for atom in _walk_formula(assertion.inv)
+        if getattr(atom, "name", None) == "isinstance"
+    ]
+    assert isinstance_atoms, assertion.inv
+    assert any(
+        isinstance(atom.args[0], _Ctor)
+        and atom.args[0].name == "callval_dumps_a2"
+        and isinstance(atom.args[1], _Ctor)
+        and atom.args[1].name == "pytype_str"
+        for atom in isinstance_atoms
+    ), isinstance_atoms
+    assert any(
+        getattr(formula, "kind", None) == "implies"
+        for formula in _walk_formula(assertion.inv)
+    ), assertion.inv
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.return-isinstance-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "isinstance" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
 
 
 # --- return-replace-literals family (single-char replace complement) ---
@@ -1835,6 +3816,564 @@ def test_delegation_emits_call_term_equality(vendor_path):
     # venddeleg_l2.g(2, 1) != 3 elsewhere would conjoin to UNSAT.
     atoms = _delegation_eq_atoms(out, "callresult_venddeleg_l2_g_a2")
     assert atoms, [d.name for d in out.decls]
+
+
+def test_delegation_queues_delegate_dig_and_carries_source_warrants(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_queue",
+        """
+        def g(seed):
+            return "fixed"
+
+
+        def f(seed):
+            return g(seed)
+        """,
+    )
+    out = _lift(
+        """
+        import venddeleg_queue
+
+        def test_route():
+            assert venddeleg_queue.f("raaaa") == "fixed"
+        """
+    )
+
+    atoms = _delegation_eq_atoms(out, "callresult_venddeleg_queue_g_a1")
+    assert atoms, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fixed_atoms = [
+        a
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for a in _iter_conjuncts(d.inv)
+        if getattr(a, "name", None) == "="
+        and str_const("fixed") in getattr(a, "args", ())
+        and any(
+            "callresult_venddeleg_queue_g_a1" in getattr(side, "name", "")
+            for side in getattr(a, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_queue.f#euf#" in d.name
+    )
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {"python.delegation-universe", "python.constant-universe"} <= roles
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "f"
+        for warrant in assertion.source_warrants
+    )
+    assert any(
+        warrant.get("role") == "python.constant-universe"
+        and warrant.get("source_function_name") == "g"
+        for warrant in assertion.source_warrants
+    )
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"] in {"python.delegation-universe", "python.constant-universe"}
+    }
+    assert set(audits) == {"python.delegation-universe", "python.constant-universe"}
+    assert audits["python.constant-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.delegation-universe"]["totals"]["unclassified_source"] == 0
+    assert any(
+        locus.get("ast_kind") == "Call" and locus["status"] == "support"
+        for locus in audits["python.delegation-universe"]["loci"]
+    ), audits["python.delegation-universe"]
+
+
+def test_receiver_method_delegation_composes_with_receiver_context(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver",
+        """
+        class Router:
+            def g(self, seed):
+                return "fixed"
+
+            def f(self, seed):
+                return self.g(seed)
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver.Router.g"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_receiver
+
+        def test_route():
+            router = venddeleg_receiver.Router()
+            assert router.f("raaaa") == "fixed"
+        """
+    )
+
+    atoms = _delegation_eq_atoms(out, "callval_g_a2")
+    assert atoms, [d.name for d in out.decls]
+    assert any(
+        any("callval_f_a2" in getattr(side, "name", "") for side in atom.args)
+        for atom in atoms
+    ), atoms
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_receiver.Router.f" in d.name
+    )
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {"python.delegation-universe", "python.constant-universe"} <= roles
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "Router.f"
+        for warrant in assertion.source_warrants
+    )
+    assert any(
+        warrant.get("role") == "python.constant-universe"
+        and warrant.get("source_function_name") == "Router.g"
+        for warrant in assertion.source_warrants
+    )
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"] in {"python.delegation-universe", "python.constant-universe"}
+        and "venddeleg_receiver.Router" in audit["contract"]["name"]
+    }
+    assert set(audits) == {"python.delegation-universe", "python.constant-universe"}
+    assert audits["python.delegation-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.constant-universe"]["totals"]["unclassified_source"] == 0
+
+
+def test_receiver_method_delegation_composes_through_local_alias(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_alias",
+        """
+        class Router:
+            def g(self, seed):
+                return "fixed"
+
+            def f(self, seed):
+                value = self.g(seed)
+                return value
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_alias.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_alias.Router.g"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_receiver_alias
+
+        def test_route():
+            router = venddeleg_receiver_alias.Router()
+            assert router.f("raaaa") == "fixed"
+        """
+    )
+
+    atoms = _delegation_eq_atoms(out, "callval_g_a2")
+    assert atoms, [d.name for d in out.decls]
+    assert any(
+        any("callval_f_a2" in getattr(side, "name", "") for side in atom.args)
+        for atom in atoms
+    ), atoms
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and "venddeleg_receiver_alias.Router.f" in audit["contract"]["name"]
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Assign"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_receiver_method_delegation_recurses_nested_receiver_call(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_recursive",
+        """
+        class Router:
+            def h(self, seed):
+                return "fixed"
+
+            def g(self, value):
+                return value
+
+            def f(self, seed):
+                return self.g(self.h(seed))
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_recursive.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_recursive.Router.g"
+    assert universe.args == (
+        (
+            "receiver-method-call",
+            "venddeleg_receiver_recursive.Router.h",
+            (("param", 0),),
+        ),
+    )
+
+    out = _lift(
+        """
+        import venddeleg_receiver_recursive
+
+        def test_route():
+            router = venddeleg_receiver_recursive.Router()
+            assert router.f("raaaa") == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callval_g_a2")
+    assert any(
+        any("callval_f_a2" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    assert any(
+        any(
+            "callval_h_a2" in getattr(arg, "name", "")
+            for side in atom.args
+            for arg in getattr(side, "args", ())
+        )
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    h_fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_h_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert h_fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_receiver_recursive.Router.f" in d.name
+    )
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "Router.f"
+        for warrant in assertion.source_warrants
+    )
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "Router.g"
+        for warrant in assertion.source_warrants
+    )
+    assert any(
+        warrant.get("role") == "python.constant-universe"
+        and warrant.get("source_function_name") == "Router.h"
+        for warrant in assertion.source_warrants
+    )
+
+    audits = {
+        (audit["role"], audit["source_memento"]["source_function_name"]): audit
+        for audit in out.source_audits
+        if "venddeleg_receiver_recursive.Router" in audit["contract"]["name"]
+        and audit["role"] in {"python.delegation-universe", "python.constant-universe"}
+    }
+    assert ("python.delegation-universe", "Router.f") in audits
+    assert ("python.delegation-universe", "Router.g") in audits
+    assert ("python.constant-universe", "Router.h") in audits
+    assert all(
+        audit["totals"]["unclassified_source"] == 0
+        for audit in audits.values()
+    ), audits
+
+
+def test_receiver_runtime_dispatch_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import delegation_universe_for_callee
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_dynamic",
+        """
+        class Router:
+            def direct(self, method_name, seed):
+                return getattr(self, method_name)(seed)
+
+            def alias(self, method_name, seed):
+                value = getattr(self, method_name)(seed)
+                return value
+        """,
+    )
+
+    direct_universe, direct_refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_dynamic.Router.direct"
+    )
+    assert direct_universe is None
+    assert direct_refusal is not None
+    assert "dynamic receiver dispatch" in direct_refusal.reason
+
+    alias_universe, alias_refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_dynamic.Router.alias"
+    )
+    assert alias_universe is None
+    assert alias_refusal is not None
+    assert "dynamic receiver dispatch" in alias_refusal.reason
+
+
+def test_delegation_unwraps_typing_cast_and_carries_source_warrants(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_cast",
+        """
+        import typing as t
+
+        def g(seed):
+            return "fixed"
+
+
+        def f(seed):
+            return t.cast(str, g(seed))
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee("venddeleg_cast.f")
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation"
+    assert universe.delegate == "venddeleg_cast.g"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_cast
+
+        def test_route():
+            assert venddeleg_cast.f("raaaa") == "fixed"
+        """
+    )
+
+    atoms = _delegation_eq_atoms(out, "callresult_venddeleg_cast_g_a1")
+    assert atoms, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callresult_venddeleg_cast_g_a1" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_cast.f#euf#" in d.name
+    )
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "f"
+        for warrant in assertion.source_warrants
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and "venddeleg_cast.f" in audit["contract"]["name"]
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "transparent typing cast" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_staticmethod_delegates_to_imported_stdlib_function(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendstdlib_deleg",
+        '''
+import json as _json
+
+
+class Compact:
+    @staticmethod
+    def loads(payload):
+        return _json.loads(payload)
+''',
+    )
+    out = _lift(
+        """
+        import vendstdlib_deleg
+
+        def test_loads():
+            assert vendstdlib_deleg.Compact.loads('{"ok": true}') == {"ok": True}
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendstdlib_deleg.Compact.loads" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    imported_delegate_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and any(
+            getattr(side, "name", "") == "callresult_json_loads_a1"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert imported_delegate_eqs
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "Compact.loads"
+        and warrant.get("universe_kind") == "delegation-stdlib"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and audit["universe_kind"] == "delegation-stdlib"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Call"
+        for locus in audit["loci"]
+    ), audit
 
 
 def test_identity_universe_contradicts_wrong_claim(vendor_path):
@@ -2801,6 +5340,43 @@ def test_chain_assign_feeds_delegation(vendor_path):
     assert u.args == (("param", 0), ("lit", 5, "int"))
 
 
+def test_chain_assign_source_audit_warrants_ssa_feed(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path("vendchain_audit", VENDOR_CHAIN)
+    out = _lift(
+        """
+        import vendchain_audit
+
+        def test_chain():
+            assert vendchain_audit.f(7) == 7
+        """
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and audit["universe_kind"] == "delegation"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        and locus.get("ast_path") == "$.body[0]"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        and locus.get("ast_path") == "$.body[1]"
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_chain_resolves_through_hops(vendor_path):
     vendor_path("vendchain_hop", VENDOR_CHAIN)
     u, r = _deleg("vendchain_hop.hop")
@@ -3029,6 +5605,58 @@ def test_raise_locus_contradicts_any_value_claim(vendor_path):
             ):
                 contradictions.append(a)
     assert contradictions, [d.name for d in out.decls]
+
+
+def test_pytest_raises_carries_raise_locus_source_warrant(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        raise_locus_universe_for_callee,
+    )
+
+    raise_locus_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendraise_source",
+        """
+        class Abstract:
+            def boom(self, value):
+                raise NotImplementedError()
+        """,
+    )
+    out = _lift(
+        """
+        import pytest
+        import vendraise_source
+
+        def test_boom():
+            with pytest.raises(NotImplementedError):
+                vendraise_source.Abstract.boom(None, 1)
+        """
+    )
+
+    assertion = next(
+        (
+            d for d in out.decls
+            if d.name == "test_boom"
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.raise-locus-universe"
+        and warrant.get("source_function_name") == "Abstract.boom"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.raise-locus-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Raise"
+        for locus in audit["loci"]
+    ), audit
 
 
 # ---------------------------------------------------------------------------

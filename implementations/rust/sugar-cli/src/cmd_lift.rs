@@ -177,10 +177,10 @@ struct LiftSourceReport {
 const SOURCE_LEDGER_FIELDS: [&str; 7] = [
     "source_loci",
     "source_warranted",
+    "source_support",
     "source_refused",
     "source_inactive",
     "source_refuted",
-    "source_work",
     "unclassified_source",
 ];
 
@@ -515,10 +515,8 @@ fn render_source_report_human(report: &LiftSourceReport) -> String {
                         .and_then(Value::as_i64)
                         .map(|line| line.to_string())
                         .unwrap_or_else(|| "?".to_string());
-                    let status = locus
-                        .get("status")
-                        .and_then(Value::as_str)
-                        .unwrap_or("unclassified");
+                    let status =
+                        normalized_source_status(locus.get("status").and_then(Value::as_str));
                     let ast_kind = locus.get("ast_kind").and_then(Value::as_str).unwrap_or("?");
                     let reason = locus.get("reason").and_then(Value::as_str).unwrap_or("");
                     if reason.is_empty() {
@@ -550,10 +548,7 @@ fn format_ast_type_summary(loci: &[&Value]) -> Vec<String> {
         if ast_kind.is_empty() || ast_kind == "?" {
             continue;
         }
-        let status = locus
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("unclassified");
+        let status = normalized_source_status(locus.get("status").and_then(Value::as_str));
         *by_status
             .entry(status.to_string())
             .or_default()
@@ -588,10 +583,7 @@ fn format_ast_rollup_summary(loci: &[&Value]) -> Vec<String> {
                 return None;
             }
             Some(AstRollupLocus {
-                status: locus
-                    .get("status")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unclassified")
+                status: normalized_source_status(locus.get("status").and_then(Value::as_str))
                     .to_string(),
                 ast_kind: ast_kind.to_string(),
                 ast_path: ast_path.to_string(),
@@ -773,12 +765,23 @@ fn format_ast_kind_counts(counts: &BTreeMap<String, i64>) -> String {
 fn source_status_order(status: &str) -> usize {
     match status {
         "warranted" => 0,
-        "refused" => 1,
-        "inactive" => 2,
-        "refuted" => 3,
-        "work" => 4,
+        "inactive" => 1,
+        "support" => 2,
+        "refused" => 3,
+        "refuted" => 4,
         "unclassified" => 5,
         _ => 6,
+    }
+}
+
+fn normalized_source_status(status: Option<&str>) -> &str {
+    match status {
+        Some("warranted") => "warranted",
+        Some("inactive") => "inactive",
+        Some("support") => "support",
+        Some("refused") => "refused",
+        Some("refuted") => "refuted",
+        _ => "unclassified",
     }
 }
 
@@ -824,13 +827,13 @@ fn format_fact_memento(memento: &Value) -> String {
 
 fn format_counts(value: &Value) -> String {
     format!(
-        "loci={} warranted={} refused={} inactive={} refuted={} work={} unclassified={}",
+        "loci={} warranted={} inactive={} support={} refused={} refuted={} unclassified={}",
         source_count(value, "source_loci"),
         source_count(value, "source_warranted"),
-        source_count(value, "source_refused"),
         source_count(value, "source_inactive"),
+        source_count(value, "source_support"),
+        source_count(value, "source_refused"),
         source_count(value, "source_refuted"),
-        source_count(value, "source_work"),
         source_count(value, "unclassified_source"),
     )
 }
@@ -1572,7 +1575,6 @@ mod tests {
                 "source_refused": 22,
                 "source_inactive": 32,
                 "source_refuted": 0,
-                "source_work": 0,
                 "unclassified_source": 0
             },
             "sourceAudits": [
@@ -1586,7 +1588,6 @@ mod tests {
                         "source_refused": 21,
                         "source_inactive": 19,
                         "source_refuted": 0,
-                        "source_work": 0,
                         "unclassified_source": 0
                     },
                     "loci": [
@@ -1608,7 +1609,6 @@ mod tests {
                         "source_refused": 1,
                         "source_inactive": 13,
                         "source_refuted": 0,
-                        "source_work": 0,
                         "unclassified_source": 0
                     },
                     "loci": [
@@ -1742,7 +1742,7 @@ mod tests {
                 .expect("filtered source report");
         let human = render_source_report_human(&report);
 
-        assert!(human.contains("source audit: loci=29 warranted=15 refused=1 inactive=13 refuted=0 work=0 unclassified=0"));
+        assert!(human.contains("source audit: loci=29 warranted=15 inactive=13 support=0 refused=1 refuted=0 unclassified=0"));
         assert!(human.contains("commons-codec.PureJavaCrc32::update(byte[],int,int)"));
         assert!(human.contains("facts observed:"));
         assert!(human.contains("CommonsCodecCrc32Test.java:44 testKnownVector() [java.test-fact]"));
@@ -1750,6 +1750,72 @@ mod tests {
         assert!(human.contains("606 warranted Assignment crc32.slicing-by-8 input fold"));
         assert!(human.contains("lifted FOL:"));
         assert!(human.contains("crc32.eq-walked(3808858755"));
+    }
+
+    #[test]
+    fn human_report_counts_source_support_axis() {
+        let response = serde_json::json!({
+            "kind": "ir-document",
+            "ir": [],
+            "sourceLedger": {
+                "source_loci": 3,
+                "source_warranted": 1,
+                "source_support": 2,
+                "source_refused": 0,
+                "source_inactive": 0,
+                "source_refuted": 0,
+                "unclassified_source": 0
+            },
+            "sourceAudits": [
+                {
+                    "kind": "source-audit",
+                    "role": "python.package-source",
+                    "contract": {"name": "vendpkg#source-accounting"},
+                    "totals": {
+                        "source_loci": 3,
+                        "source_warranted": 1,
+                        "source_support": 2,
+                        "source_refused": 0,
+                        "source_inactive": 0,
+                        "source_refuted": 0,
+                        "unclassified_source": 0
+                    },
+                    "loci": [
+                        {
+                            "line": 1,
+                            "status": "support",
+                            "ast_kind": "Import",
+                            "ast_path": "$.module.body[0]"
+                        },
+                        {
+                            "line": 1,
+                            "status": "support",
+                            "ast_kind": "alias",
+                            "ast_path": "$.module.body[0].names[0]"
+                        },
+                        {
+                            "line": 4,
+                            "status": "warranted",
+                            "ast_kind": "Return",
+                            "ast_path": "$.module.body[1]"
+                        }
+                    ]
+                }
+            ],
+            "sourceMementos": []
+        });
+        let report =
+            source_report_from_lift_response(&response, None).expect("source support report");
+        let human = render_source_report_human(&report);
+
+        assert!(human.contains(
+            "source audit: loci=3 warranted=1 inactive=0 support=2 refused=0 refuted=0 unclassified=0"
+        ));
+        assert!(human.contains(
+            "totals: loci=3 warranted=1 inactive=0 support=2 refused=0 refuted=0 unclassified=0"
+        ));
+        assert!(human.contains("support roots: Import=1"));
+        assert!(human.contains("support covered by parent: alias=1"));
     }
 
     #[test]
@@ -1763,7 +1829,6 @@ mod tests {
                 "source_refused": 0,
                 "source_inactive": 0,
                 "source_refuted": 0,
-                "source_work": 0,
                 "unclassified_source": 1
             },
             "sourceAudits": [
@@ -1780,7 +1845,6 @@ mod tests {
                         "source_refused": 0,
                         "source_inactive": 0,
                         "source_refuted": 0,
-                        "source_work": 0,
                         "unclassified_source": 1
                     },
                     "loci": [
@@ -1819,7 +1883,6 @@ mod tests {
                 "source_refused": 0,
                 "source_inactive": 0,
                 "source_refuted": 0,
-                "source_work": 0,
                 "unclassified_source": 4
             },
             "sourceAudits": [
@@ -1836,7 +1899,6 @@ mod tests {
                         "source_refused": 0,
                         "source_inactive": 0,
                         "source_refuted": 0,
-                        "source_work": 0,
                         "unclassified_source": 4
                     },
                     "loci": [
@@ -1887,7 +1949,6 @@ mod tests {
                 "source_refused": 0,
                 "source_inactive": 0,
                 "source_refuted": 0,
-                "source_work": 0,
                 "unclassified_source": 10
             },
             "sourceAudits": [
@@ -1904,7 +1965,6 @@ mod tests {
                         "source_refused": 0,
                         "source_inactive": 0,
                         "source_refuted": 0,
-                        "source_work": 0,
                         "unclassified_source": 10
                     },
                     "loci": [
@@ -2125,7 +2185,6 @@ mod tests {
                 "source_refused": 0,
                 "source_inactive": 0,
                 "source_refuted": 0,
-                "source_work": 0,
                 "unclassified_source": 0
             },
             "sourceAudits": [
@@ -2148,7 +2207,6 @@ mod tests {
                         "source_refused": 0,
                         "source_inactive": 0,
                         "source_refuted": 0,
-                        "source_work": 0,
                         "unclassified_source": 0
                     },
                     "loci": []
