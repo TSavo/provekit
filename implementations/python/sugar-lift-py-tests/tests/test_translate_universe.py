@@ -707,6 +707,74 @@ def test_lift_source_warrants_local_name_assignment_accounting(
     ), local_loci
 
 
+def test_lift_source_warrants_guarded_default_value_flow(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_guarded_default_warranted"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            class Holder:
+                default_value = "fallback"
+
+                def skipped(self, value, callback):
+                    if value is None:
+                        value = self.default_value
+                    if callback is None:
+                        callback = build_default()
+                    return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_guarded_default_warranted.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_guarded_default_warranted/encoding.py")
+    ]
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 6
+        and locus.get("ast_kind") == "If"
+        and "guarded default value flow" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] in {6, 7}
+        and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus["line"] == 9
+        and locus.get("ast_kind") == "Call"
+        for locus in local_loci
+    ), local_loci
+
+
 def test_lift_source_classifies_type_checking_blocks_as_support_or_inactive(
     tmp_path, monkeypatch
 ):

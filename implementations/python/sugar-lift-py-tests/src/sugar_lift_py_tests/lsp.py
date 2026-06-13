@@ -410,6 +410,9 @@ def _package_locus_classification(
     static_binding_status = _static_binding_status(node, ancestors)
     if static_binding_status is not None:
         return static_binding_status
+    guarded_default_status = _guarded_default_value_flow_status(node, ancestors)
+    if guarded_default_status is not None:
+        return guarded_default_status
     local_binding_status = _local_name_binding_status(node, ancestors)
     if local_binding_status is not None:
         return local_binding_status
@@ -599,6 +602,90 @@ def _is_known_static_assignment_call(node: ast.Call) -> bool:
         "typing.cast",
         "staticmethod",
     }
+
+
+def _guarded_default_value_flow_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    guarded_if = _guarded_default_if_for_locus(node, ancestors)
+    if guarded_if is None:
+        return None
+    return "warranted", "guarded default value flow admitted as compiler fact"
+
+
+def _guarded_default_if_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[ast.If]:
+    chain = ancestors + (node,)
+    for item in reversed(chain):
+        if not isinstance(item, ast.If):
+            continue
+        if _is_guarded_default_if(item):
+            return item
+        return None
+    return None
+
+
+def _is_guarded_default_if(node: ast.If) -> bool:
+    if node.orelse or len(node.body) != 1:
+        return False
+    assign = node.body[0]
+    if isinstance(assign, ast.Assign):
+        if len(assign.targets) != 1 or not isinstance(assign.targets[0], ast.Name):
+            return False
+        target = assign.targets[0]
+        value = assign.value
+    elif isinstance(assign, ast.AnnAssign):
+        if not isinstance(assign.target, ast.Name) or assign.value is None:
+            return False
+        target = assign.target
+        value = assign.value
+    else:
+        return False
+    guarded_name = _none_guard_name(node.test)
+    return (
+        guarded_name is not None
+        and guarded_name == target.id
+        and _is_guarded_default_value(value)
+    )
+
+
+def _none_guard_name(node: ast.AST) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Is)
+        or len(node.comparators) != 1
+    ):
+        return None
+    left = node.left
+    right = node.comparators[0]
+    if isinstance(left, ast.Name) and _is_none_literal_node(right):
+        return left.id
+    if isinstance(right, ast.Name) and _is_none_literal_node(left):
+        return right.id
+    return None
+
+
+def _is_none_literal_node(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def _is_guarded_default_value(node: ast.AST) -> bool:
+    if _is_local_literal_binding_value(node):
+        return True
+    if isinstance(node, ast.Attribute):
+        return _guarded_default_attribute_root(node) in {"self", "cls"}
+    return False
+
+
+def _guarded_default_attribute_root(node: ast.Attribute) -> str:
+    cur: ast.AST = node
+    while isinstance(cur, ast.Attribute):
+        cur = cur.value
+    return cur.id if isinstance(cur, ast.Name) else ""
 
 
 def _local_name_binding_status(
