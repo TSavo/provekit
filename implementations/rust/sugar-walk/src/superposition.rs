@@ -43,6 +43,58 @@ pub enum Statement {
     Fork(Vec<String>),
 }
 
+impl Statement {
+    /// Canonical value of the statement for the commit-object node CID.
+    fn to_value(&self) -> Arc<Value> {
+        match self {
+            Statement::Determined(c) => {
+                Value::object(vec![("determined".to_string(), Value::string(c.clone()))])
+            }
+            Statement::Fork(alts) => Value::object(vec![(
+                "fork".to_string(),
+                Value::array(alts.iter().cloned().map(Value::string).collect()),
+            )]),
+        }
+    }
+}
+
+/// The witness that licenses a node's place in the chain. The commit-object node
+/// CID commits to (base, statement, witness), so the SAME statement with a
+/// DIFFERENT witness is a DIFFERENT node — the proof of WHY it joined is part of
+/// its identity, recomputable by a third party.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsistencyWitness {
+    /// Asserted consistent without a check yet (slice-3 default / genesis spine).
+    Asserted,
+    /// Walked: SAT against the accumulated universe conjoined with the vendor's
+    /// pins. The statement joined the universe.
+    Sat,
+    /// Walked: UNSAT — carries the minimal unsat core (sorted CIDs of the
+    /// conflicting statements) that forced the fork.
+    Unsat { core: Vec<String> },
+}
+
+impl ConsistencyWitness {
+    fn to_value(&self) -> Arc<Value> {
+        match self {
+            ConsistencyWitness::Asserted => {
+                Value::object(vec![("witness".to_string(), Value::string("asserted"))])
+            }
+            ConsistencyWitness::Sat => {
+                Value::object(vec![("witness".to_string(), Value::string("sat"))])
+            }
+            ConsistencyWitness::Unsat { core } => {
+                let mut c = core.clone();
+                c.sort();
+                Value::object(vec![
+                    ("core".to_string(), Value::array(c.into_iter().map(Value::string).collect())),
+                    ("witness".to_string(), Value::string("unsat")),
+                ])
+            }
+        }
+    }
+}
+
 /// An immutable, structurally-shared chain. `.fork()`/`.assert()` return a new
 /// head linking onto `self` by Arc — the prefix is never copied.
 #[derive(Debug, Clone)]
@@ -50,6 +102,8 @@ pub enum Universe {
     Empty,
     Link {
         stmt: Statement,
+        /// Why this node joined the chain — part of the commit-object identity.
+        witness: ConsistencyWitness,
         prev: Arc<Universe>,
     },
 }
@@ -95,10 +149,22 @@ impl Universe {
     }
 
     /// Extend the fixedpoint with a determined fact (holds in every world).
-    /// Shares the entire prior chain by Arc; no copy.
+    /// Shares the entire prior chain by Arc; no copy. Witness defaults to
+    /// `Asserted` (no check yet); the engine uses `assert_with`.
     pub fn assert(self: &Arc<Self>, fact: impl Into<String>) -> Arc<Universe> {
+        self.assert_with(fact, ConsistencyWitness::Asserted)
+    }
+
+    /// Determined-fact extension carrying the witness that licensed it (the
+    /// engine's SAT certificate). Shares the prior chain by Arc; no copy.
+    pub fn assert_with(
+        self: &Arc<Self>,
+        fact: impl Into<String>,
+        witness: ConsistencyWitness,
+    ) -> Arc<Universe> {
         Arc::new(Universe::Link {
             stmt: Statement::Determined(fact.into()),
+            witness,
             prev: Arc::clone(self),
         })
     }
@@ -106,10 +172,56 @@ impl Universe {
     /// Append a fork: a mutual-exclusion group of alternatives (CIDs), exactly
     /// one per world. Shares the entire prior chain by Arc; no copy.
     pub fn fork(self: &Arc<Self>, alternatives: Vec<String>) -> Arc<Universe> {
+        self.fork_with(alternatives, ConsistencyWitness::Asserted)
+    }
+
+    /// Fork carrying the witness that forced it (the minimal unsat core). Shares
+    /// the prior chain by Arc; no copy.
+    pub fn fork_with(
+        self: &Arc<Self>,
+        alternatives: Vec<String>,
+        witness: ConsistencyWitness,
+    ) -> Arc<Universe> {
         Arc::new(Universe::Link {
             stmt: Statement::Fork(alternatives),
+            witness,
             prev: Arc::clone(self),
         })
+    }
+
+    /// The consistent closure. In the git model `getFixedpoint().fork()` is the
+    /// canonical move. Slice 3: with no engine yet, an all-asserted chain IS its
+    /// own fixedpoint (every assert was consistent by construction), so this
+    /// returns self by Arc; slice 4's engine performs real saturation.
+    pub fn fixedpoint(self: &Arc<Self>) -> Arc<Universe> {
+        Arc::clone(self)
+    }
+
+    /// The commit-object CID of THIS node: a content hash over (base node CID,
+    /// statement, witness) — exactly git's (parent, delta) shape. Genesis
+    /// (`Empty`) has a fixed CID; shared ancestry yields identical base CIDs, so
+    /// the chain dedups by hash. Distinct from `superposition_cid` (the whole-set
+    /// order-invariant handle): this identifies one node and its lineage.
+    pub fn node_cid(&self) -> String {
+        match self {
+            Universe::Empty => cid_of_value(&Value::object(vec![(
+                "kind".to_string(),
+                Value::string("universe-genesis"),
+            )])),
+            Universe::Link {
+                stmt,
+                witness,
+                prev,
+            } => {
+                let node = Value::object(vec![
+                    ("base".to_string(), Value::string(prev.node_cid())),
+                    ("kind".to_string(), Value::string("universe-node")),
+                    ("statement".to_string(), stmt.to_value()),
+                    ("witness".to_string(), witness.to_value()),
+                ]);
+                cid_of_value(&node)
+            }
+        }
     }
 
     /// Statements in forward (oldest-first) order. Borrows tied to `self`.
@@ -119,7 +231,7 @@ impl Universe {
         loop {
             match cur {
                 Universe::Empty => break,
-                Universe::Link { stmt, prev } => {
+                Universe::Link { stmt, prev, .. } => {
                     out.push(stmt);
                     cur = prev;
                 }
@@ -688,6 +800,81 @@ mod tests {
         // the bytes and recomputes the same superposition CID.
         let recovered = SuperpositionView::from_member_bytes(&input.members[&sup_cid]).unwrap();
         assert_eq!(recovered.cid(), sup_cid);
+    }
+
+    #[test]
+    fn node_cid_is_a_commit_object_over_base_statement_witness() {
+        // Deterministic, and grows with the chain (each node a distinct commit).
+        let g = Universe::empty();
+        let genesis = g.node_cid();
+        assert_eq!(genesis, Universe::empty().node_cid(), "genesis CID is fixed");
+
+        let a = g.assert(cid("a"));
+        let ab = a.assert(cid("b"));
+        assert_ne!(a.node_cid(), genesis);
+        assert_ne!(ab.node_cid(), a.node_cid());
+        // Recompute from scratch — third party gets the same node CID.
+        let ab2 = Universe::empty().assert(cid("a")).assert(cid("b"));
+        assert_eq!(ab.node_cid(), ab2.node_cid());
+    }
+
+    #[test]
+    fn same_statement_different_witness_is_a_different_node() {
+        // The witness is part of identity: a fact that joined by SAT is a
+        // different commit-object than the same fact merely Asserted.
+        let base = Universe::empty().assert(cid("a"));
+        let by_assert = base.assert_with(cid("b"), ConsistencyWitness::Asserted);
+        let by_sat = base.assert_with(cid("b"), ConsistencyWitness::Sat);
+        assert_ne!(by_assert.node_cid(), by_sat.node_cid());
+        // But the whole-set handle ignores the witness (it is a relation on the
+        // facts, not on why they joined).
+        assert_eq!(by_assert.superposition_cid(), by_sat.superposition_cid());
+    }
+
+    #[test]
+    fn shared_ancestry_dedups_by_base_cid() {
+        // git-model: two forks off one fixedpoint share the SAME base node CID.
+        let base = Universe::empty().assert(cid("a")).assert(cid("b"));
+        let fp = base.fixedpoint();
+        let w1 = fp.fork(vec![cid("x"), cid("y")]);
+        let w2 = fp.fork(vec![cid("p"), cid("q")]);
+        let base_of = |u: &Arc<Universe>| match &**u {
+            Universe::Link { prev, .. } => prev.node_cid(),
+            _ => panic!(),
+        };
+        assert_eq!(
+            base_of(&w1),
+            base_of(&w2),
+            "shared ancestry must dedup to one base CID"
+        );
+        assert_eq!(base_of(&w1), base.node_cid());
+    }
+
+    #[test]
+    fn fixedpoint_is_identity_in_slice3() {
+        let base = Universe::empty().assert(cid("a"));
+        assert!(Arc::ptr_eq(&base, &base.fixedpoint()));
+    }
+
+    #[test]
+    fn unsat_witness_core_is_in_the_node_cid() {
+        let base = Universe::empty().assert(cid("a"));
+        let f1 = base.fork_with(
+            vec![cid("x"), cid("y")],
+            ConsistencyWitness::Unsat { core: vec![cid("a"), cid("x")] },
+        );
+        let f2 = base.fork_with(
+            vec![cid("x"), cid("y")],
+            ConsistencyWitness::Unsat { core: vec![cid("a"), cid("z")] },
+        );
+        // Different core => different node (the WHY is recorded in identity).
+        assert_ne!(f1.node_cid(), f2.node_cid());
+        // Core order does not matter (sorted in the witness value).
+        let f1b = base.fork_with(
+            vec![cid("x"), cid("y")],
+            ConsistencyWitness::Unsat { core: vec![cid("x"), cid("a")] },
+        );
+        assert_eq!(f1.node_cid(), f1b.node_cid());
     }
 
     #[test]
