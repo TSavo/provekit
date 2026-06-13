@@ -618,6 +618,58 @@ impl SuperpositionReport {
         }
     }
 
+    /// Build a report for ONE symbol from the keystone outcome: a body warrant
+    /// checked against its vendor pins. With no findings the body warrant is the
+    /// single reading (Strong). With findings, the readings that disagree — the
+    /// body's vs each contradicting pin — form one fork group (Weak: bugs live in
+    /// ordering, not logic). `body_cid` is the warrant's CID; `finding_pin_cids`
+    /// are the pins it contradicts (vendor findings).
+    pub fn for_symbol(
+        symbol: impl Into<String>,
+        body_cid: String,
+        finding_pin_cids: Vec<String>,
+    ) -> Self {
+        let mut findings = finding_pin_cids;
+        findings.sort();
+        let mut acc = Accumulator::new();
+        let (determined, fork_groups, strength) = if findings.is_empty() {
+            acc.push(body_cid.clone(), WorldMembership::Determined);
+            (vec![body_cid.clone()], Vec::new(), Strength::Strong)
+        } else {
+            // The disagreeing readings: the body's, plus each contradicting pin.
+            let mut members = vec![body_cid.clone()];
+            members.extend(findings.iter().cloned());
+            members.sort();
+            for (m, cid) in members.iter().enumerate() {
+                acc.push(
+                    cid.clone(),
+                    WorldMembership::ForkMember {
+                        group: 0,
+                        member: m as u32,
+                    },
+                );
+            }
+            (Vec::new(), vec![members], Strength::Weak)
+        };
+        acc.mark_walked();
+        let universe = acc.universe();
+        let levers = match strength {
+            Strength::Strong => Vec::new(),
+            Strength::Weak | Strength::Undecidable => collapse_levers(),
+        };
+        SuperpositionReport {
+            symbol: symbol.into(),
+            determined,
+            fork_groups,
+            world_count: universe.world_count(),
+            strength,
+            verdict: strength.verdict().to_string(),
+            levers,
+            findings,
+            superposition_cid: universe.superposition_cid(),
+        }
+    }
+
     /// The content-addressed report node.
     pub fn canonical_value(&self) -> Arc<CValue> {
         let mut det = self.determined.clone();
@@ -661,6 +713,23 @@ impl SuperpositionReport {
                 CValue::string(self.world_count.to_string()),
             ),
         ])
+    }
+
+    /// Serde view for the RPC response (mirrors the canonical node + the CID).
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "superposition-report",
+            "symbol": self.symbol,
+            "determined": self.determined,
+            "forkGroups": self.fork_groups,
+            "worldCount": self.world_count.to_string(),
+            "strength": self.strength.tag(),
+            "verdict": self.verdict,
+            "levers": self.levers,
+            "findings": self.findings,
+            "superpositionCid": self.superposition_cid,
+            "cid": self.cid(),
+        })
     }
 
     /// The report CID — recomputable by a third party as blake3_512 of `member_bytes`.

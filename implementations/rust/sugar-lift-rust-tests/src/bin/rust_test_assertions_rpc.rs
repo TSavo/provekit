@@ -96,6 +96,10 @@ fn lift(params: &Value) -> Value {
     // whole source, not 0 by construction.
     let mut source_loci: Vec<Value> = Vec::new();
     let mut source_mementos: Vec<Value> = Vec::new();
+    // Per-symbol superposition reports: body warrant walked against its vendor
+    // pins via z3. Empty when z3 is absent (Unknown -> keystone retract) — the
+    // reports degrade gracefully, never crash the lift.
+    let mut superpositions: Vec<Value> = Vec::new();
     let options = match lift_options_from_config(&workspace_root, params) {
         Ok(options) => options,
         Err(reason) => {
@@ -168,6 +172,13 @@ fn lift(params: &Value) -> Value {
         // Real warrants emit ProofIR: contracts the recursive body-walk produced,
         // marshalled into the IR alongside the test-assertion decls (below).
         let mut value_decls: Vec<sugar_ir_symbolic::ContractDecl> = Vec::new();
+        // Superposition seam: vendor pins (assert_eq! over int literals) and body
+        // warrants (+ their param names) for this file, walked against each other
+        // by z3 to emit per-symbol superposition reports.
+        let mut superposition_pins: Vec<sugar_lift_rust_tests::superposition_pins::IntPin> =
+            Vec::new();
+        let mut superposition_warrants: Vec<(String, sugar_ir_symbolic::ContractDecl, Vec<String>)> =
+            Vec::new();
         // Oracle slice: unclassified method-call bodies queued for the RA daemon's
         // receiver/param-mutability verdict. (source_loci index, LSP positions).
         let mut oracle_pending: Vec<(usize, Vec<(u32, u32)>)> = Vec::new();
@@ -176,6 +187,10 @@ fn lift(params: &Value) -> Value {
                 source_oracle::source_memento_of(rel, src, fr.span, &fr.name, fr.sig, fr.block);
             let name = fr.name.clone();
             let is_test = fn_has_test_attr(fr.attrs);
+            if is_test {
+                superposition_pins
+                    .extend(sugar_lift_rust_tests::superposition_pins::extract_int_pins(fr.block));
+            }
             let warning = out
                 .warnings
                 .iter()
@@ -212,6 +227,11 @@ fn lift(params: &Value) -> Value {
                 // (harmless) or goes all-UNSAT and self-retracts; only a SAT
                 // licenses it, and only then are its UNSATs vendor findings. The
                 // decl flows into the IR; the universe is built from these demands.
+                superposition_warrants.push((
+                    name.clone(),
+                    decl.clone(),
+                    sugar_lift_rust_tests::superposition_pins::param_names(fr.sig),
+                ));
                 value_decls.push(decl);
                 ("warranted", None)
             } else if out.reduced_helpers.contains(&name) {
@@ -265,6 +285,23 @@ fn lift(params: &Value) -> Value {
         // unclassified (the conservative refuse-floor); the oracle never warrants
         // here (RefClean does not rule out IO/panic the signature can't show).
         oracle_reclassify_mutating(&workspace_root, rel, &oracle_pending, &mut source_loci);
+
+        // Superposition reports: for each body warrant in this file, walk it
+        // against its vendor pins (instantiate per pin, check by z3, apply the
+        // keystone). >=1 SAT licenses the lift; its UNSAT pins are vendor findings
+        // (Weak); all consistent is Strong; no SAT retracts (no report).
+        let oracle = sugar_walk::superposition_engine::Z3Oracle::default();
+        for (sym, decl, params) in &superposition_warrants {
+            if let Some(report) = sugar_lift_rust_tests::superposition_pins::symbol_report(
+                sym,
+                decl,
+                params,
+                &superposition_pins,
+                &oracle,
+            ) {
+                superpositions.push(report.to_json());
+            }
+        }
     }
 
     let ledger = source_ledger(&source_loci);
@@ -282,6 +319,10 @@ fn lift(params: &Value) -> Value {
         // Content-addressed mementos (file + span + BLAKE3-512 of body/template,
         // never source text) -- one per enumerated function, recompute-verifiable.
         "sourceMementos": source_mementos,
+        // Per-symbol superposition reports (body warrant walked against vendor
+        // pins by z3): determined facts + fork-groups + strength + verdict +
+        // levers + findings, each a content-addressed, recomputable node.
+        "superpositions": superpositions,
     })
 }
 
