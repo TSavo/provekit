@@ -632,7 +632,7 @@ def test_pattern4_per_row_multi_param_yields_per_row_decls():
 # A parametrize body with MULTIPLE assertion statements runs all asserts in the
 # SAME pytest instance per row, so within-row conjunction is sound.  Cross-row
 # independence is still preserved (one decl per row).  Mixed bodies with a
-# non-assert statement (setup/binding) stay refused — that is Pattern-6 work.
+# non-assert statement (setup/binding) stay refused pending Pattern-6 lifting.
 
 
 def test_pattern4_parametrize_multi_assert_body_conjoins_per_row():

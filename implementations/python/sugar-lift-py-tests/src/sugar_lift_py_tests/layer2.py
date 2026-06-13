@@ -104,14 +104,18 @@ from .ir import (
 )
 from .translate_universe import (
     branch_literal_universe_for_callee,
+    bytes_identity_universe_for_callee,
     callee_is_nondeterministic,
     collection_literal_canonical,
-    raise_locus_universe_for_callee,
+    constructor_field_universe_for_callee,
+    constructor_param_names_for_callee,
     constant_universe_for_callee,
     delegation_universe_for_callee,
     eval_predicate,
     guard_universe_for_callee,
+    instance_field_universe_for_callee,
     predicate_universe_for_callee,
+    raise_locus_universe_for_callee,
     translate_universe_for_callee,
 )
 
@@ -151,10 +155,10 @@ def _empty_source_ledger() -> dict[str, int]:
     return {
         "source_loci": 0,
         "source_warranted": 0,
+        "source_support": 0,
         "source_refused": 0,
         "source_inactive": 0,
         "source_refuted": 0,
-        "source_work": 0,
         "unclassified_source": 0,
     }
 
@@ -232,6 +236,12 @@ class _CallOrigin:
     # has symbolic args (location-keyed path, no substitution).
     euf_term: Optional["Term"] = None
     ssa_name: Optional[str] = None
+    # INSTANCE CONSTRUCTION: when a scoped variable is bound by ``C(args...)``,
+    # remember those constructor argument terms. A later ``var.method()``
+    # origin copies them so a source walk over ``__init__`` + ``method`` can
+    # instantiate constructor-field getter relations.
+    constructor_args: Optional[Tuple["Term", ...]] = None
+    receiver_constructor: Optional[str] = None
 
 
 @dataclass
@@ -310,6 +320,26 @@ def _assertion_call_subject(assertion: Formula) -> Optional[Term]:
                 or side.name.startswith("callresult_")
             ):
                 return side
+    return None
+
+
+def _assertion_origin_attribute_subject(
+    assertion: Formula,
+    origin: "_CallOrigin",
+) -> Optional[Tuple[Term, str]]:
+    if origin.ssa_name is None:
+        return None
+    prefix = f"{origin.ssa_name}."
+    for atom in _iter_conjuncts(assertion):
+        if atom.name != "=" or len(atom.args) != 2:
+            continue
+        for side in atom.args:
+            name = getattr(side, "name", "")
+            if isinstance(side, _Ctor) or not isinstance(name, str):
+                continue
+            if name.startswith(prefix) and len(name) > len(prefix):
+                field_name = name[len(prefix):].split(".", 1)[0]
+                return side, field_name
     return None
 
 
@@ -450,16 +480,17 @@ def _source_audit_for_warrant(
             LiftWarning(
                 file or "<source>",
                 contract_name,
-                f"source-audit: source oracle refused SourceMemento: {exc}",
+                f"source-audit: source oracle failed to resolve SourceMemento: {exc}",
             )
         )
         loci.append(
             _source_line_locus(
                 file,
                 _source_memento_start_line(source_memento),
-                "refused",
+                "unclassified",
                 role,
                 universe_kind,
+                reason="source-oracle resolution failed",
             )
         )
 
@@ -582,7 +613,13 @@ def _source_loci_for_memento(
     universe_kind: str,
 ) -> List[dict[str, Any]]:
     file = _string_field(source_memento, "file")
-    if role != "python.translate-universe":
+    if role not in {
+        "python.translate-universe",
+        "python.bytes-identity-universe",
+        "python.constant-universe",
+        "python.delegation-universe",
+        "python.instance-field-universe",
+    }:
         return [
             _source_line_locus(file, line, "warranted", role, universe_kind)
             for line in _source_memento_lines(source_memento)
@@ -598,7 +635,7 @@ def _source_loci_for_memento(
             _source_line_locus(
                 file,
                 _source_memento_start_line(source_memento),
-                "refused",
+                "unclassified",
                 role,
                 universe_kind,
                 reason="source function not found after source-oracle resolution",
@@ -607,10 +644,15 @@ def _source_loci_for_memento(
 
     loci: List[dict[str, Any]] = []
     for index, stmt in enumerate(fn.body):
-        status, reason = _classify_translate_source_statement(stmt)
         for node, ast_path in _iter_ast_nodes_with_paths(stmt, f"$.body[{index}]"):
             if not hasattr(node, "lineno"):
                 continue
+            status, reason = _classify_universe_source_node(
+                role,
+                universe_kind,
+                stmt,
+                node,
+            )
             loci.append(
                 _source_line_locus(
                     file,
@@ -692,13 +734,18 @@ def _locate_source_function_for_accounting(
     source_memento: dict[str, Any],
 ) -> Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]]:
     function_name = _string_field(source_memento, "source_function_name")
+    function_leaf = function_name.rsplit(".", 1)[-1] if function_name else ""
     span = source_memento.get("span") if isinstance(source_memento.get("span"), dict) else {}
     start = _int_field(span, "start_line", 0)
     matches = [
         node
         for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and (not function_name or node.name == function_name)
+        and (
+            not function_name
+            or node.name == function_name
+            or node.name == function_leaf
+        )
     ]
     if not matches:
         return None
@@ -711,14 +758,79 @@ def _locate_source_function_for_accounting(
     return matches[0]
 
 
+def _classify_universe_source_node(
+    role: str,
+    universe_kind: str,
+    stmt: ast.stmt,
+    node: ast.AST,
+) -> Tuple[str, str]:
+    if role == "python.delegation-universe" and isinstance(stmt, ast.Assign):
+        return (
+            "warranted",
+            "SSA chain assignment emitted into python.delegation-universe",
+        )
+    if role == "python.delegation-universe" and isinstance(node, ast.Call):
+        if universe_kind == "delegation-stdlib":
+            return "warranted", "emitted into python.delegation-universe"
+        return "support", "queued delegate dig for recursive universe walk"
+    return _classify_universe_source_statement(role, stmt)
+
+
+def _classify_universe_source_statement(
+    role: str,
+    stmt: ast.stmt,
+) -> Tuple[str, str]:
+    if role == "python.translate-universe":
+        return _classify_translate_source_statement(stmt)
+    if role == "python.constant-universe":
+        if _is_docstring_stmt(stmt):
+            return "support", "docstring metadata supports source accounting only"
+        if _is_constant_return(stmt):
+            return "warranted", "emitted into python.constant-universe"
+        if isinstance(stmt, (ast.If, ast.Assert)):
+            return "support", "guard support for constant return universe"
+        return "support", "non-constraint source support for constant-universe accounting"
+    if role == "python.bytes-identity-universe":
+        if _is_docstring_stmt(stmt):
+            return "support", "docstring metadata supports source accounting only"
+        if isinstance(stmt, ast.If):
+            return "inactive", "str encode branch inactive for concrete bytes callsite"
+        if isinstance(stmt, ast.Return):
+            return "warranted", "emitted into python.bytes-identity-universe"
+        return "support", "non-constraint source support for bytes-identity accounting"
+    if role == "python.delegation-universe":
+        if _is_docstring_stmt(stmt):
+            return "support", "docstring metadata supports source accounting only"
+        if isinstance(stmt, ast.Return):
+            return "warranted", "emitted into python.delegation-universe"
+        if isinstance(stmt, ast.Assign):
+            return "warranted", "SSA chain assignment emitted into python.delegation-universe"
+        if isinstance(stmt, (ast.If, ast.Assert)):
+            return "support", "guard support for delegation universe"
+        return "support", "non-constraint source support for delegation-universe accounting"
+    if role == "python.instance-field-universe":
+        if _is_docstring_stmt(stmt):
+            return "support", "docstring metadata supports source accounting only"
+        if _is_super_init_expr(stmt):
+            return "support", "base constructor call supports construction accounting"
+        if _is_instance_field_assign(stmt):
+            return "warranted", "emitted into python.instance-field-universe"
+        if _is_instance_field_return(stmt):
+            return "warranted", "emitted into python.instance-field-universe"
+        return "unclassified", "instance-field source not emitted"
+    return "unclassified", "source warrant role has no source-audit classifier"
+
+
 def _classify_translate_source_statement(stmt: ast.stmt) -> Tuple[str, str]:
     if _is_docstring_stmt(stmt):
-        return "refused", "docstring metadata is non-normative for the emitted relation"
+        return "support", "docstring metadata supports source accounting only"
     if _is_translate_return(stmt):
         return "warranted", "emitted into python.translate-universe"
     if _is_rstrip_return(stmt):
         return "warranted", "emitted into python no-suffix-chars universe"
-    return "refused", "not part of the emitted translate-universe relation"
+    if _is_lstrip_return(stmt):
+        return "warranted", "emitted into python no-prefix-chars universe"
+    return "support", "prelude/context support for translate-universe accounting"
 
 
 def _is_docstring_stmt(stmt: ast.stmt) -> bool:
@@ -760,6 +872,99 @@ def _is_rstrip_return(stmt: ast.stmt) -> bool:
     )
 
 
+def _is_lstrip_return(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Return):
+        return False
+    value = stmt.value
+    if not isinstance(value, ast.Call):
+        return False
+    func = value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "lstrip"
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Constant)
+        and isinstance(value.args[0].value, (bytes, str))
+    )
+
+
+def _is_instance_field_assign(stmt: ast.stmt) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    return (
+        isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+        and isinstance(value, ast.Name)
+    )
+
+
+def _is_instance_field_return(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Return):
+        return False
+    value = stmt.value
+    return (
+        isinstance(value, ast.Attribute)
+        and isinstance(value.value, ast.Name)
+        and value.value.id == "self"
+    )
+
+
+def _is_super_init_expr(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+        return False
+    call = stmt.value
+    if call.keywords:
+        return False
+    func = call.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "__init__"
+        and isinstance(func.value, ast.Call)
+        and isinstance(func.value.func, ast.Name)
+        and func.value.func.id == "super"
+        and not func.value.args
+        and not func.value.keywords
+    )
+
+
+def _is_constant_return(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Return) or stmt.value is None:
+        return False
+    return _literal_value_kind_for_accounting(stmt.value) is not None
+
+
+def _literal_value_kind_for_accounting(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, int):
+            return "int"
+        if isinstance(value, str):
+            return "str"
+        if isinstance(value, bytes):
+            return "bytes"
+        if value is None:
+            return "none"
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and type(node.operand.value) is int
+    ):
+        return "int"
+    return None
+
+
 def _source_totals(loci: List[dict[str, Any]]) -> dict[str, int]:
     totals = _empty_source_ledger()
     totals["source_loci"] = len(loci)
@@ -767,14 +972,14 @@ def _source_totals(loci: List[dict[str, Any]]) -> dict[str, int]:
         status = locus.get("status")
         if status == "warranted":
             totals["source_warranted"] += 1
+        elif status == "support":
+            totals["source_support"] += 1
         elif status == "refused":
             totals["source_refused"] += 1
         elif status == "inactive":
             totals["source_inactive"] += 1
         elif status == "refuted":
             totals["source_refuted"] += 1
-        elif status == "work":
-            totals["source_work"] += 1
         else:
             totals["unclassified_source"] += 1
     return totals
@@ -3604,22 +3809,50 @@ def _apply_value_scope_binding(
     out: List[_ValueScope] = []
     for scope in scopes:
         next_scope = scope.copy()
-        try:
-            rhs = _translate_term_scoped(value, scope)
-        except ValueError:
-            next_scope.current.pop(name, None)
-            next_scope.origins.pop(name, None)
-            out.append(next_scope)
-            continue
+        origin = _call_origin_from_expr(value)
+        constructor_args: Optional[Tuple[Term, ...]] = None
+        if (
+            isinstance(value, ast.Call)
+            and origin is not None
+            and _is_constructor_call_name(origin.callee)
+            and value.keywords
+        ):
+            constructor_args = _constructor_call_arg_terms(value, origin.callee, scope)
+            if constructor_args is None:
+                next_scope.current.pop(name, None)
+                next_scope.origins.pop(name, None)
+                out.append(next_scope)
+                continue
+            rhs = ctor(f"call:{origin.callee}", list(constructor_args))
+        else:
+            try:
+                rhs = _translate_term_scoped(value, scope)
+            except ValueError:
+                next_scope.current.pop(name, None)
+                next_scope.origins.pop(name, None)
+                out.append(next_scope)
+                continue
 
         version = versions.get(name, 0)
         versions[name] = version + 1
         ssa_name = f"{name}${version}"
         ssa = make_var(ssa_name)
         next_scope.current[name] = ssa
-        origin = _call_origin_from_expr(value)
         if origin is not None:
-            if not _is_constructor_call_name(origin.callee):
+            if _is_constructor_call_name(origin.callee):
+                try:
+                    assert isinstance(value, ast.Call)
+                    if constructor_args is None:
+                        constructor_args = tuple(
+                            _translate_term_scoped(arg, scope) for arg in value.args
+                        )
+                    origin.constructor_args = constructor_args
+                    origin.receiver_constructor = origin.callee
+                    origin.ssa_name = ssa_name
+                except (AssertionError, ValueError):
+                    origin.constructor_args = None
+                    origin.receiver_constructor = origin.callee
+            else:
                 # BINDING-FORM EUF SUBSTITUTION: check whether the RHS call has
                 # ALL-CONCRETE literal args.  If so, compute the EUF ctor term and
                 # store it alongside the SSA var name on the origin so
@@ -3649,6 +3882,43 @@ def _apply_value_scope_binding(
         next_scope.facts.append(eq(ssa, rhs))
         out.append(next_scope)
     return out
+
+
+def _constructor_call_arg_terms(
+    call: ast.Call,
+    callee: str,
+    scope: _ValueScope,
+) -> Optional[Tuple[Term, ...]]:
+    params = constructor_param_names_for_callee(callee)
+    if params is None:
+        if call.keywords:
+            return None
+        try:
+            return tuple(_translate_term_scoped(arg, scope) for arg in call.args)
+        except ValueError:
+            return None
+    if len(call.args) > len(params):
+        return None
+    terms: List[Optional[Term]] = [None for _ in params]
+    try:
+        for index, arg in enumerate(call.args):
+            terms[index] = _translate_term_scoped(arg, scope)
+        for keyword in call.keywords:
+            if keyword.arg is None or keyword.arg not in params:
+                return None
+            index = params.index(keyword.arg)
+            if terms[index] is not None:
+                return None
+            terms[index] = _translate_term_scoped(keyword.value, scope)
+    except ValueError:
+        return None
+    present_indexes = [index for index, term in enumerate(terms) if term is not None]
+    if not present_indexes:
+        return ()
+    last = present_indexes[-1]
+    if any(term is None for term in terms[: last + 1]):
+        return None
+    return tuple(term for term in terms[: last + 1] if term is not None)
 
 
 def _collect_value_scope_assertion_facts(
@@ -3754,6 +4024,14 @@ def _collect_value_scope_assertion_facts(
             # ::assertion: the verifier conjoins by NAME, so a sibling decl
             # would verify alone and be vacuously consistent.
             subject_term = _assertion_call_subject(assertion) or origin.euf_term
+            subject_field_name: Optional[str] = None
+            if subject_term is None:
+                attribute_subject = _assertion_origin_attribute_subject(
+                    assertion,
+                    origin,
+                )
+                if attribute_subject is not None:
+                    subject_term, subject_field_name = attribute_subject
             if subject_term is not None:
                 for conjunct in _universe_conjuncts(
                     origin.callee,
@@ -3762,6 +4040,8 @@ def _collect_value_scope_assertion_facts(
                     source_path,
                     test_name,
                     source_warrants=source_warrants_by_base[base],
+                    origin=origin,
+                    subject_field_name=subject_field_name,
                 ):
                     if conjunct not in assertion_atoms_by_base[base]:
                         assertion_atoms_by_base[base].append(conjunct)
@@ -3775,6 +4055,9 @@ def _universe_conjuncts(
     source_path: str,
     test_name: str,
     source_warrants: Optional[List[dict]] = None,
+    origin: Optional[_CallOrigin] = None,
+    subject_field_name: Optional[str] = None,
+    _seen: Optional[Set[Tuple[str, str]]] = None,
 ) -> List[Formula]:
     """Every walked universe for ``callee``, instantiated at
     ``subject_term`` -- the call-shaped side of the assertion's OWN equality
@@ -3788,6 +4071,11 @@ def _universe_conjuncts(
     Refused walks surface as loud warnings; non-candidates contribute
     nothing."""
     conjuncts: List[Formula] = []
+    seen = _seen if _seen is not None else set()
+    seen_key = (callee, _canonical_term_sig(subject_term))
+    if seen_key in seen:
+        return conjuncts
+    seen.add(seen_key)
     universe, walk_refusal = translate_universe_for_callee(callee)
     if walk_refusal is not None:
         out.warnings.append(
@@ -3801,6 +4089,11 @@ def _universe_conjuncts(
         if universe.kind == "no-suffix-chars":
             conjuncts.extend(
                 not_(atomic("suffix-of", [str_const(ch), subject_term]))
+                for ch in universe.forbidden
+            )
+        elif universe.kind == "no-prefix-chars":
+            conjuncts.extend(
+                not_(atomic("prefix-of", [str_const(ch), subject_term]))
                 for ch in universe.forbidden
             )
         elif universe.kind == "chars-in-set":
@@ -3835,6 +4128,29 @@ def _universe_conjuncts(
                 source_warrants,
                 _source_warrant_for_translate_universe(universe),
             )
+        if isinstance(subject_term, _Ctor):
+            call_args = (
+                subject_term.args[1:]
+                if subject_term.name.startswith("callval_")
+                else subject_term.args
+            )
+            for prelude_call in universe.queued_calls:
+                mapped = _mapped_delegate_args(prelude_call.args, call_args)
+                if mapped is None:
+                    continue
+                head = _call_result_head(prelude_call.delegate, len(mapped))
+                delegate_term = ctor(head, mapped)
+                conjuncts.extend(
+                    _universe_conjuncts(
+                        prelude_call.delegate,
+                        delegate_term,
+                        out,
+                        source_path,
+                        test_name,
+                        source_warrants=source_warrants,
+                        _seen=seen,
+                    )
+                )
 
     # BRANCH-LITERAL DISJUNCTION (census non-return:If, 75k bodies, and
     # the multi-return residual of return-constant): every Return in the
@@ -3919,6 +4235,15 @@ def _universe_conjuncts(
                 )
             )
         elif const_u is not None:
+            if source_warrants is not None and const_u.source_memento is not None:
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_universe(
+                        const_u,
+                        role="python.constant-universe",
+                        universe_kind="constant",
+                    ),
+                )
             k, v = const_u.value_kind, const_u.value
             if k == "int":
                 lit = num(v)
@@ -3971,6 +4296,43 @@ def _universe_conjuncts(
             if result is not None:
                 conjuncts.append(eq(subject_term, bool_const(result)))
 
+        # BYTES IDENTITY ADAPTER: for want_bytes-style bodies, a concrete
+        # python:bytes callsite takes the inactive str-encode branch and
+        # returns the same value. Emit the existing compiler shape exactly:
+        #   =(callresult_want_bytes_a1(python:bytes("abc")),
+        #     python:bytes("abc"))
+        bytes_u, bytes_refusal = bytes_identity_universe_for_callee(callee)
+        if bytes_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::bytes-identity-universe",
+                    reason=f"{bytes_refusal.callee}: {bytes_refusal.reason}",
+                )
+            )
+        elif bytes_u is not None:
+            call_args = (
+                subject_term.args[1:]
+                if subject_term.name.startswith("callval_")
+                else subject_term.args
+            )
+            if bytes_u.param_index < len(call_args):
+                arg = call_args[bytes_u.param_index]
+                if _is_bytes_literal_term(arg):
+                    if (
+                        source_warrants is not None
+                        and bytes_u.source_memento is not None
+                    ):
+                        _append_unique_source_warrant(
+                            source_warrants,
+                            _source_warrant_for_universe(
+                                bytes_u,
+                                role="python.bytes-identity-universe",
+                                universe_kind="bytes-identity",
+                            ),
+                        )
+                    conjuncts.append(eq(subject_term, arg))
+
         # PURE-DELEGATION + IDENTITY (census families, 57k + the param arm
         # of return-name's 146k): the body forwards verbatim, so the
         # output EQUALS the forwarded term — eq between call terms in EUF,
@@ -3988,6 +4350,15 @@ def _universe_conjuncts(
                 )
             )
         elif deleg_u is not None:
+            if source_warrants is not None and deleg_u.source_memento is not None:
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_universe(
+                        deleg_u,
+                        role="python.delegation-universe",
+                        universe_kind=deleg_u.kind,
+                    ),
+                )
             call_args = (
                 subject_term.args[1:]
                 if subject_term.name.startswith("callval_")
@@ -4000,8 +4371,18 @@ def _universe_conjuncts(
                     )
             elif deleg_u.kind == "delegation-splat":
                 head = _call_result_head(deleg_u.delegate, len(call_args))
-                conjuncts.append(
-                    eq(subject_term, ctor(head, list(call_args)))
+                delegate_term = ctor(head, list(call_args))
+                conjuncts.append(eq(subject_term, delegate_term))
+                conjuncts.extend(
+                    _universe_conjuncts(
+                        deleg_u.delegate,
+                        delegate_term,
+                        out,
+                        source_path,
+                        test_name,
+                        source_warrants=source_warrants,
+                        _seen=seen,
+                    )
                 )
             elif deleg_u.kind == "chain-expr":
                 # arithmetic structure: + - * lower to real Int math in
@@ -4020,9 +4401,25 @@ def _universe_conjuncts(
                     conjuncts.append(eq(subject_term, mapped[0]))
             else:
                 mapped = _mapped_delegate_args(deleg_u.args, call_args)
-                if mapped is not None and deleg_u.kind == "delegation":
+                if mapped is not None and deleg_u.kind in {
+                    "delegation",
+                    "delegation-stdlib",
+                }:
                     head = _call_result_head(deleg_u.delegate, len(mapped))
-                    conjuncts.append(eq(subject_term, ctor(head, mapped)))
+                    delegate_term = ctor(head, mapped)
+                    conjuncts.append(eq(subject_term, delegate_term))
+                    if deleg_u.kind == "delegation":
+                        conjuncts.extend(
+                            _universe_conjuncts(
+                                deleg_u.delegate,
+                                delegate_term,
+                                out,
+                                source_path,
+                                test_name,
+                                source_warrants=source_warrants,
+                                _seen=seen,
+                            )
+                        )
                 elif mapped is not None:  # delegation-method
                     # No vendor body backs a method delegate (the
                     # receiver's type is not static), so the equality
@@ -4035,6 +4432,100 @@ def _universe_conjuncts(
                     term = ctor(head, mapped)
                     if _euf_args_all_concrete(term):
                         conjuncts.append(eq(subject_term, term))
+
+        # INSTANCE FIELD GETTER: the source pair
+        # ``__init__: self.a = value`` and ``get: return self.a`` maps the
+        # method result to the observed constructor argument at this callsite.
+        inst_u, inst_refusal = instance_field_universe_for_callee(callee)
+        if inst_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::instance-field-universe",
+                    reason=f"{inst_refusal.callee}: {inst_refusal.reason}",
+                )
+            )
+        elif (
+            inst_u is not None
+            and origin is not None
+            and origin.receiver_constructor is not None
+            and origin.constructor_args is not None
+        ):
+            constructor_callee = inst_u.constructor_qualname.removesuffix(
+                ".__init__"
+            )
+            if (
+                origin.receiver_constructor == constructor_callee
+                and inst_u.constructor_param_index < len(origin.constructor_args)
+            ):
+                if source_warrants is not None:
+                    _append_unique_source_warrant(
+                        source_warrants,
+                        _source_warrant_for_instance_field_universe(
+                            inst_u,
+                            source_memento=inst_u.constructor_source_memento,
+                            source_function_name=_local_qualname(
+                                inst_u.module,
+                                inst_u.constructor_qualname,
+                            ),
+                        ),
+                    )
+                    _append_unique_source_warrant(
+                        source_warrants,
+                        _source_warrant_for_instance_field_universe(
+                            inst_u,
+                            source_memento=inst_u.source_memento,
+                            source_function_name=_local_qualname(
+                                inst_u.module,
+                                inst_u.qualname,
+                            ),
+                        ),
+                    )
+                conjuncts.append(
+                    eq(
+                        subject_term,
+                        origin.constructor_args[inst_u.constructor_param_index],
+                    )
+                )
+    if (
+        subject_field_name is not None
+        and origin is not None
+        and origin.constructor_args is not None
+    ):
+        field_u, field_refusal = constructor_field_universe_for_callee(
+            callee,
+            subject_field_name,
+        )
+        if field_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::instance-field-universe",
+                    reason=f"{field_refusal.callee}: {field_refusal.reason}",
+                )
+            )
+        elif (
+            field_u is not None
+            and field_u.constructor_param_index < len(origin.constructor_args)
+        ):
+            if source_warrants is not None:
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_instance_field_universe(
+                        field_u,
+                        source_memento=field_u.constructor_source_memento,
+                        source_function_name=_local_qualname(
+                            field_u.module,
+                            field_u.constructor_qualname,
+                        ),
+                    ),
+                )
+            conjuncts.append(
+                eq(
+                    subject_term,
+                    origin.constructor_args[field_u.constructor_param_index],
+                )
+            )
     return conjuncts
 
 
@@ -4042,10 +4533,51 @@ def _source_warrant_for_translate_universe(universe) -> dict:
     warrant = dict(universe.source_memento or {})
     warrant["kind"] = "source-memento"
     warrant["role"] = "python.translate-universe"
-    warrant["source_function_name"] = universe.qualname.rsplit(".", 1)[-1]
+    warrant["source_function_name"] = _universe_source_function_name(universe)
     warrant["universe_kind"] = universe.kind
     warrant["table_name"] = universe.table_name
     return warrant
+
+
+def _source_warrant_for_universe(
+    universe,
+    *,
+    role: str,
+    universe_kind: str,
+) -> dict:
+    warrant = dict(universe.source_memento or {})
+    warrant["kind"] = "source-memento"
+    warrant["role"] = role
+    warrant["source_function_name"] = _universe_source_function_name(universe)
+    warrant["universe_kind"] = universe_kind
+    return warrant
+
+
+def _source_warrant_for_instance_field_universe(
+    universe,
+    *,
+    source_memento: Optional[dict[str, Any]],
+    source_function_name: str,
+) -> dict:
+    warrant = dict(source_memento or {})
+    warrant["kind"] = "source-memento"
+    warrant["role"] = "python.instance-field-universe"
+    warrant["source_function_name"] = source_function_name
+    warrant["universe_kind"] = "constructor-field-getter"
+    warrant["field_name"] = universe.field_name
+    warrant["constructor_param_name"] = universe.constructor_param_name
+    return warrant
+
+
+def _universe_source_function_name(universe) -> str:
+    return _local_qualname(universe.module, str(universe.qualname))
+
+
+def _local_qualname(module: str, qualname: str) -> str:
+    prefix = f"{module}."
+    if qualname.startswith(prefix):
+        return qualname[len(prefix):]
+    return qualname.rsplit(".", 1)[-1]
 
 
 def _append_unique_source_warrant(warrants: List[dict], warrant: dict) -> None:
@@ -4133,7 +4665,7 @@ def _assertion_callsite_context(
     stmt: ast.stmt,
     scope: _ValueScope,
 ) -> Optional[Tuple[List[_CallOrigin], List[Formula], Formula]]:
-    direct_calls = _collect_assertion_calls(stmt)
+    direct_calls = _collect_assertion_calls(stmt, scope)
     # ARGUMENT-CARRYING EUF (the "for input x" model).  A bare call result
     # (``f(x)`` appearing directly in an assertion) is keyed on
     # (callee, SSA-resolved arg-terms) via ``_call_result_term`` rather than on
@@ -4166,7 +4698,7 @@ def _assertion_callsite_context(
     call_vars: Dict[Tuple[int, int], Term] = {}
     euf_origins: Dict[Tuple[int, int], _CallOrigin] = {}
     for call in direct_calls:
-        origin = _call_origin_from_expr(call)
+        origin = _call_origin_from_expr_scoped(call, scope)
         if origin is not None:
             euf_term = _call_result_term(call, origin, scope, call_vars)
             if (
@@ -4223,7 +4755,14 @@ def _assertion_callsite_context(
         transient_facts.append(eq(var_term, rhs))
         direct_origins.append(origin)
 
-    origins = _unique_origins(_origins_for_assertion(stmt, scope) + direct_origins)
+    scoped_origins = _origins_for_assertion(stmt, scope)
+    if direct_origins:
+        scoped_origins = [
+            origin
+            for origin in scoped_origins
+            if not _is_constructor_call_name(origin.callee)
+        ]
+    origins = _unique_origins(scoped_origins + direct_origins)
     if not origins:
         return None
 
@@ -4502,16 +5041,33 @@ def _module_attr_callee(func: ast.expr) -> Optional[str]:
     Returns None for a method call on a non-module receiver (``lst.append``):
     those are RECEIVER-DEPENDENT, so they must stay location-keyed -- unifying
     ``a.foo(5)`` with ``b.foo(5)`` would be a false refusal. Only a module-level
-    function (pure, receiver-free) is safe to key to the callsite."""
-    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-        module = _CURRENT_MODULE_ALIASES.get(func.value.id)
-        if module is not None:
-            return f"{module}.{func.attr}"
+    function (pure, receiver-free) is safe to key to the callsite. Nested paths
+    rooted at an imported module are still module-owned surfaces, e.g.
+    ``pkg.Class.staticmethod`` -> ``package.pkg.Class.staticmethod``."""
+    path = _attribute_path(func)
+    if path is None or len(path) < 2:
+        return None
+    root, *attrs = path
+    module = _CURRENT_MODULE_ALIASES.get(root)
+    if module is not None:
+        return ".".join([module, *attrs])
     return None
 
 
+def _attribute_path(node: ast.expr) -> Optional[List[str]]:
+    parts: List[str] = []
+    cur = node
+    while isinstance(cur, ast.Attribute):
+        parts.append(cur.attr)
+        cur = cur.value
+    if not isinstance(cur, ast.Name):
+        return None
+    parts.append(cur.id)
+    return list(reversed(parts))
+
+
 def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
-    if not (isinstance(node, ast.Call) and not node.keywords):
+    if not isinstance(node, ast.Call):
         return None
     if isinstance(node.func, ast.Name):
         # A from-imported function keys to its QUALIFIED name so the base
@@ -4525,6 +5081,8 @@ def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
         callee = _module_attr_callee(node.func)
     if callee is None:
         return None
+    if node.keywords and not _is_constructor_call_name(callee):
+        return None
     return _CallOrigin(
         callee=callee,
         lineno=getattr(node, "lineno", 0),
@@ -4532,8 +5090,41 @@ def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
     )
 
 
-def _is_constructor_call_expr(node: ast.Call) -> bool:
+def _call_origin_from_expr_scoped(
+    node: ast.expr,
+    scope: Optional[_ValueScope],
+) -> Optional[_CallOrigin]:
     origin = _call_origin_from_expr(node)
+    if origin is not None:
+        return origin
+    if scope is None:
+        return None
+    if not (isinstance(node, ast.Call) and not node.keywords):
+        return None
+    if not (
+        isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+    ):
+        return None
+    receiver_origin = scope.origins.get(node.func.value.id)
+    if receiver_origin is None:
+        return None
+    if not _is_constructor_call_name(receiver_origin.callee):
+        return None
+    return _CallOrigin(
+        callee=f"{receiver_origin.callee}.{node.func.attr}",
+        lineno=getattr(node, "lineno", 0),
+        col=getattr(node, "col_offset", 0),
+        constructor_args=receiver_origin.constructor_args,
+        receiver_constructor=receiver_origin.callee,
+    )
+
+
+def _is_constructor_call_expr(
+    node: ast.Call,
+    scope: Optional[_ValueScope] = None,
+) -> bool:
+    origin = _call_origin_from_expr_scoped(node, scope)
     return origin is not None and _is_constructor_call_name(origin.callee)
 
 
@@ -4554,16 +5145,19 @@ def _assertion_value_exprs(stmt: ast.stmt) -> List[ast.expr]:
     return exprs
 
 
-def _collect_assertion_calls(stmt: ast.stmt) -> List[ast.Call]:
+def _collect_assertion_calls(
+    stmt: ast.stmt,
+    scope: Optional[_ValueScope] = None,
+) -> List[ast.Call]:
     calls: List[ast.Call] = []
     seen: Set[Tuple[int, int]] = set()
     for expr in _assertion_value_exprs(stmt):
         for node in ast.walk(expr):
             if not isinstance(node, ast.Call):
                 continue
-            if _is_constructor_call_expr(node):
+            if _is_constructor_call_expr(node, scope):
                 continue
-            if _call_origin_from_expr(node) is None:
+            if _call_origin_from_expr_scoped(node, scope) is None:
                 continue
             key = _call_key(node)
             if key in seen:
@@ -4599,6 +5193,8 @@ def _translate_call_rhs(
     scope: _ValueScope,
     call_vars: Dict[Tuple[int, int], Term],
 ) -> Term:
+    if isinstance(call.func, ast.Attribute):
+        return _translate_term_scoped(call, scope, call_vars)
     if not isinstance(call.func, ast.Name):
         raise ValueError("call target must be a simple name")
     if call.keywords:

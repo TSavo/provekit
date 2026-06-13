@@ -52,14 +52,18 @@ Every source locus in the denominator has exactly one terminal status.
 
 - `warranted`: this locus supports emitted ProofIR. It may point at a contract
   atom, source warrant, universe family, or table row.
-- `refused`: the kit walked the locus and refused it by name. This is honest
-  residue and can be counted as work, not hidden.
+- `support`: the locus is required for source resolution, name/arity mapping,
+  declaration context, metadata accounting, or another non-constraint support
+  role, but does not itself emit a solver constraint.
+- `inactive`: the locus is a known branch or source shape that is out of scope
+  for this concrete callsite relation.
+- `refused`: the kit walked the locus and refused it by name because admitting
+  it as a constraint would be semantically hazardous, such as side effects.
 - `refuted`: the locus participates in a claim that verification proves cannot
   coexist with the vendor/source universe. This is a hard correctness result.
-- `work`: a named improvement bucket derived from a refusal family. It is not a
-  separate correctness state; it is the planning view over `refused`.
 - `unclassified`: a bug. The source is in the denominator but the kit neither
-  warranted nor refused it. This is never accepted by `sugar diff`.
+  warranted, marked inactive/support, nor refused it. This is never accepted by
+  `sugar diff`.
 
 No report may use missing data, skipped files, parse holes, or unsupported AST
 nodes as implicit success. They must become `refused` with a reason or
@@ -151,9 +155,10 @@ Shape:
   "totals": {
     "source_loci": 1,
     "warranted": 1,
+    "inactive": 0,
+    "support": 0,
     "refused": 0,
     "refuted": 0,
-    "work": 0,
     "unclassified_source": 0
   },
   "source_locus_multiset_cid": "blake3-512:<canonical sorted locus ids>"
@@ -182,17 +187,20 @@ Required fields for source-aware ledgers:
   "unclassified_source": 0,
   "source_loci": 0,
   "source_warranted": 0,
+  "source_inactive": 0,
+  "source_support": 0,
   "source_refused": 0,
   "source_refuted": 0,
-  "source_work": 0,
   "source_locus_multiset_cid": "blake3-512:<canonical sorted source locus ids>",
   "per_contract": []
 }
 ```
 
-`unclassified_source` is the hard totality gate. `source_work` is the product
-countdown. A valid run can have `source_work > 0`; it cannot have
-`unclassified_source > 0`.
+`unclassified_source` is the hard totality gate and the product countdown.
+A valid accepted target has no unclassified source. Loci should move to
+`warranted` by emitting ProofIR when possible; `inactive` and `support` are
+acceptable non-constraint accounting; `refused`/`refuted` are loud semantic
+hazards, not backlog labels.
 
 The next `sugar diff` enhancement after `unclassified_source` should pin
 `source_locus_multiset_cid` under `--frozen`, matching the existing
@@ -223,7 +231,7 @@ Responsibilities:
 Initial Java coverage should include the existing weak and strong universe
 families because they already carry source warrants. Numeric, regex, CRC, MT,
 instance, and error-sentinel families must either gain source warrants or appear
-as named work/refusal in the audit.
+as named refusals in the audit when the source shape is semantically hazardous.
 
 ## Python Producer
 
@@ -245,13 +253,16 @@ Responsibilities:
 - Walk `ast_template` recursively using stable template paths.
 - Classify every template node and source line inside the warranted span.
 - Keep `body_text` and raw source text out of durable proof-facing data.
-- Emit named refusal/work buckets for unsupported template nodes.
+- Emit named refusals for unsupported template nodes only when admitting the
+  shape would be semantically hazardous; otherwise leave it unclassified until
+  the kit emits the matching ProofIR, or classify it as support/inactive when it
+  is genuinely non-constraint source.
 - Roll contract audits into a source-aware ledger.
 
 Initial Python coverage should include `TranslateUniverse` because it already
 threads source mementos into contract warrants. Other universe families in
 `translate_universe.py` must either gain source warrants or appear as named
-work/refusal in the audit.
+refusals only when the source shape is semantically hazardous.
 
 ## CLI Surface
 
@@ -274,9 +285,9 @@ source pkg/module.py:10-20 source ok template ok
 line 14  warranted  $.body.stmts[0] Return
          emits blake3-512:abc...  reason return shape matched translate universe
 line 15  refused    $.body.stmts[1] If
-         work python.branch-guard-universe  reason unsupported guard expression
+         reason branch has side effects / unsound ordering dependency
 
-totals source_loci=2 warranted=1 refused=1 refuted=0 unclassified_source=0
+totals source_loci=2 warranted=1 inactive=0 support=0 refused=1 refuted=0 unclassified_source=0
 ```
 
 ## Gates
@@ -336,15 +347,15 @@ Each corpus reports:
 - total contracts audited
 - total source loci
 - warranted loci
-- refused/work loci
+- refused/refuted loci
 - refuted loci
 - unclassified source loci
 - source locus multiset CID
 
-The countdown number is `source_work`, partitioned by language and refusal
-family. The invariant is `unclassified_source == 0`. A target is not accepted
-until every source line in its selected source span is either warranted,
-refused/refuted, or mapped to named work, with no line left unclassified.
+The countdown number is `unclassified_source`, partitioned by language and AST
+shape. A target is not accepted until every source line in its selected source
+span is warranted, inactive, support, refused/refuted, with no line left
+unclassified.
 
 ## Acceptance Criteria
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import functools
 import importlib.util
+import sys
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
@@ -72,6 +73,8 @@ class TranslateUniverse:
       (derived from a total .rstrip of a bytes literal -- the
       token-padding family: rstrip(b"=") means no trailing padding,
       ever, for any input).
+    - ``no-prefix-chars``: the output STARTS WITH none of ``forbidden``
+      (the lstrip twin: lstrip(b"\0") means no leading zero byte).
 
     Provenance pins the claim to the vendor source."""
 
@@ -91,8 +94,18 @@ class TranslateUniverse:
     vendor_vector_source: Optional[str] = None
     # member-of-values payload: the pinned tuple's string elements.
     values: tuple = ()
+    # Same-module calls encountered before the returned translate/rstrip
+    # surface. These queue recursive digs without changing this universe's
+    # own emitted relation.
+    queued_calls: tuple = ()
     # Lean SourceMemento: locus + source/template CIDs, never source text.
     source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class PreludeCall:
+    delegate: str
+    args: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -277,6 +290,59 @@ class ConstantUniverse:
     lineno: int
     vendor_vectors_checked: int = 0
     vendor_vector_source: Optional[str] = None
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class InstanceFieldUniverse:
+    """A constructor-stored field returned by an instance method.
+
+    Shape:
+      class C:
+          def __init__(self, value):
+              self.field = value
+
+          def get(self):
+              return self.field
+
+    At a callsite where the receiver is known to be ``C(arg)``, the method
+    result is exactly that constructor argument. The emitted ProofIR is the
+    existing equality shape: ``eq(subject, constructor_args[param_index])``.
+    """
+
+    field_name: str
+    constructor_param_index: int
+    constructor_param_name: str
+    module: str
+    qualname: str
+    constructor_qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+    constructor_source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class ConstructorFieldUniverse:
+    """A constructor-stored field observed directly at a callsite.
+
+    Shape:
+      class C:
+          def __init__(self, value):
+              self.field = value
+
+    At a callsite where ``obj`` is known to be ``C(arg)`` and the assertion
+    mentions ``obj.field``, the field equals that constructor argument.
+    """
+
+    field_name: str
+    constructor_param_index: int
+    constructor_param_name: str
+    module: str
+    constructor_qualname: str
+    source_path: str
+    lineno: int
+    constructor_source_memento: Optional[dict[str, Any]] = None
 
 
 _GUARD_TAINTED = object()
@@ -576,10 +642,11 @@ def constant_universe_for_callee(
     A body that unconditionally returns one literal swears the EQUALITY
     universal: callee(<anything>) == that literal. A consumer asserting any
     other value for any input refutes against it."""
-    resolved = _resolve_vendor_function(callee)
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
     if resolved is None:
         return None, None
     tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
 
     def refuse(reason):
         return None, TranslateWalkRefusal(callee=callee, reason=reason)
@@ -628,8 +695,243 @@ def constant_universe_for_callee(
             lineno=fn.lineno,
             vendor_vectors_checked=len(vectors),
             vendor_vector_source=vector_source,
+            source_memento=source_memento,
         ),
         None,
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def instance_field_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[InstanceFieldUniverse], Optional[TranslateWalkRefusal]]:
+    """Constructor-field getter universe.
+
+    This family is intentionally narrow: a method returning ``self.a`` composes
+    with a constructor body whose only non-docstring statement is
+    ``self.a = <constructor-param>``. The callsite still supplies the concrete
+    constructor argument; this function only proves which constructor slot the
+    getter returns.
+    """
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+    if "." not in fn_name:
+        return None, None
+    class_qualname, method_name = fn_name.rsplit(".", 1)
+    if method_name == "__init__":
+        return None, None
+
+    method_params = _positional_param_names(fn)
+    if not method_params or method_params[0] != "self":
+        return None, None
+    method_body = _body_without_docstring(fn.body)
+    if (
+        len(method_body) != 1
+        or not isinstance(method_body[0], ast.Return)
+        or method_body[0].value is None
+    ):
+        return None, None
+    returned_field = _self_attribute_name(method_body[0].value, method_params[0])
+    if returned_field is None:
+        return None, None
+
+    cls = _find_class_path(tree.body, class_qualname.split("."))
+    if cls is None:
+        return None, None
+    init_fn = next(
+        (
+            stmt
+            for stmt in cls.body
+            if isinstance(stmt, ast.FunctionDef) and stmt.name == "__init__"
+        ),
+        None,
+    )
+    if init_fn is None or init_fn.decorator_list:
+        return None, None
+    init_params = _positional_param_names(init_fn)
+    if not init_params or init_params[0] != "self":
+        return None, None
+    init_body = _body_without_docstring(init_fn.body)
+    assign_indexes = [
+        index
+        for index, stmt in enumerate(init_body)
+        if isinstance(stmt, ast.Assign)
+    ]
+    if len(assign_indexes) != 1:
+        return None, None
+    assign_index = assign_indexes[0]
+    if any(not _is_super_init_expr(stmt) for stmt in init_body[:assign_index]):
+        return None, None
+    if init_body[assign_index + 1:]:
+        return None, None
+    assign = init_body[assign_index]
+    if len(assign.targets) != 1:
+        return None, None
+    assigned_field = _self_attribute_name(assign.targets[0], init_params[0])
+    if assigned_field != returned_field:
+        return None, None
+    if not isinstance(assign.value, ast.Name) or assign.value.id not in init_params[1:]:
+        return None, None
+
+    param_index = init_params[1:].index(assign.value.id)
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    constructor_source_memento = _source_memento_for_resolved_function(
+        init_fn,
+        spec_origin,
+    )
+    if source_memento is None or constructor_source_memento is None:
+        return None, None
+    return (
+        InstanceFieldUniverse(
+            field_name=returned_field,
+            constructor_param_index=param_index,
+            constructor_param_name=assign.value.id,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            constructor_qualname=f"{module_name}.{class_qualname}.__init__",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+            constructor_source_memento=constructor_source_memento,
+        ),
+        None,
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def constructor_field_universe_for_callee(
+    callee: str,
+    field_name: str,
+) -> Tuple[Optional[ConstructorFieldUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(f"{callee}.__init__", allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, init_fn, spec_origin, module_name, fn_name = resolved
+    if not fn_name.endswith(".__init__"):
+        return None, None
+    init_params = _positional_param_names(init_fn)
+    if not init_params or init_params[0] != "self":
+        return None, None
+    field = _constructor_field_assignment(init_fn, field_name, init_params)
+    if field is None:
+        return None, None
+    assign, param_name = field
+    param_index = init_params[1:].index(param_name)
+    constructor_source_memento = _source_memento_for_resolved_function(
+        init_fn,
+        spec_origin,
+    )
+    if constructor_source_memento is None:
+        return None, None
+    return (
+        ConstructorFieldUniverse(
+            field_name=field_name,
+            constructor_param_index=param_index,
+            constructor_param_name=param_name,
+            module=module_name,
+            constructor_qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=assign.lineno,
+            constructor_source_memento=constructor_source_memento,
+        ),
+        None,
+    )
+
+
+def _constructor_field_assignment(
+    init_fn: ast.FunctionDef,
+    field_name: str,
+    init_params: list[str],
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, str]]:
+    if init_fn.decorator_list:
+        return None
+    init_body = _body_without_docstring(init_fn.body)
+    assign_indexes = [
+        index
+        for index, stmt in enumerate(init_body)
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign))
+    ]
+    if len(assign_indexes) != 1:
+        return None
+    assign_index = assign_indexes[0]
+    if any(not _is_super_init_expr(stmt) for stmt in init_body[:assign_index]):
+        return None
+    if init_body[assign_index + 1:]:
+        return None
+    assign = init_body[assign_index]
+    if isinstance(assign, ast.Assign):
+        if len(assign.targets) != 1:
+            return None
+        target = assign.targets[0]
+        value = assign.value
+    else:
+        target = assign.target
+        value = assign.value
+    assigned_field = _self_attribute_name(target, init_params[0])
+    if assigned_field != field_name:
+        return None
+    if not isinstance(value, ast.Name) or value.id not in init_params[1:]:
+        return None
+    return assign, value.id
+
+
+@functools.lru_cache(maxsize=None)
+def constructor_param_names_for_callee(callee: str) -> Optional[Tuple[str, ...]]:
+    resolved = _resolve_vendor_function(f"{callee}.__init__", allow_methods=True)
+    if resolved is None:
+        return None
+    _tree, init_fn, _spec_origin, _module_name, fn_name = resolved
+    if not fn_name.endswith(".__init__"):
+        return None
+    params = _positional_param_names(init_fn)
+    if not params or params[0] != "self":
+        return None
+    return tuple(params[1:])
+
+
+def _body_without_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
+    return [
+        stmt
+        for stmt in body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+
+
+def _positional_param_names(fn: ast.FunctionDef) -> list[str]:
+    return [arg.arg for arg in (*fn.args.posonlyargs, *fn.args.args)]
+
+
+def _self_attribute_name(node: ast.AST, self_name: str) -> Optional[str]:
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == self_name
+    ):
+        return node.attr
+    return None
+
+
+def _is_super_init_expr(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+        return False
+    call = stmt.value
+    if call.keywords:
+        return False
+    func = call.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "__init__"
+        and isinstance(func.value, ast.Call)
+        and isinstance(func.value.func, ast.Name)
+        and func.value.func.id == "super"
+        and not func.value.args
+        and not func.value.keywords
     )
 
 
@@ -928,6 +1230,31 @@ class DelegationUniverse:
     expr_spec: tuple = ()
     vendor_vectors_checked: int = 0
     vendor_vector_source: Optional[str] = None
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class BytesIdentityUniverse:
+    """`want_bytes`-style adapter for concrete bytes callsites.
+
+    Shape:
+      if isinstance(s, str):
+          s = s.encode(...)
+      return s
+
+    When the callsite argument is already a python:bytes literal, the str
+    branch is inactive and the return swears an equality between the call
+    result and that exact argument. The str-encoding branch is deliberately
+    not modeled here.
+    """
+
+    param_index: int
+    param_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -1040,10 +1367,11 @@ def _resolve_expr_spec(node, params, env):
 def delegation_universe_for_callee(
     callee: str,
 ) -> Tuple[Optional[DelegationUniverse], Optional[TranslateWalkRefusal]]:
-    resolved = _resolve_vendor_function(callee)
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
     if resolved is None:
         return None, None
     tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
 
     def refuse(reason):
         return None, TranslateWalkRefusal(callee=callee, reason=reason)
@@ -1055,6 +1383,7 @@ def delegation_universe_for_callee(
                 qualname=f"{module_name}.{fn_name}",
                 source_path=spec_origin,
                 lineno=fn.lineno,
+                source_memento=source_memento,
                 **kw,
             ),
             None,
@@ -1149,6 +1478,31 @@ def delegation_universe_for_callee(
         if spec[0] == "param":
             return universe(kind="identity", param_index=spec[1])
         return universe(kind="chain-constant", args=(spec,))
+
+    # imported stdlib delegation: return json.loads(<params/literals>). The
+    # vendor source owns the forwarding relation, while the stdlib target is a
+    # compiler/runtime axiom outside the vendor package. We emit only the same
+    # callresult equality shape used by same-module delegation; no source text
+    # from the stdlib is copied into the memento.
+    stdlib_delegate = _stdlib_call_delegate(value, tree)
+    if stdlib_delegate is not None:
+        delegate_q, call_args = stdlib_delegate
+        if value.keywords:
+            return refuse(
+                "keyword arguments in imported-stdlib delegate call are not "
+                "yet walked (positional mapping only)"
+            )
+        specs = []
+        for arg in call_args:
+            spec = _resolve_spec(arg, params, env)
+            if spec is None:
+                return refuse(
+                    "imported-stdlib delegate argument is neither a parameter, "
+                    "literal, nor chain name; the forwarded value is not the "
+                    "callsite's"
+                )
+            specs.append(spec)
+        return universe(kind="delegation-stdlib", delegate=delegate_q, args=tuple(specs))
 
     # method delegation: return <param|literal>.method(<params|literals>)
     # (census return-method-call, 113k bodies). Unlike a function
@@ -1301,6 +1655,215 @@ def delegation_universe_for_callee(
     return universe(kind="delegation", delegate=delegate_q, args=tuple(specs))
 
 
+@functools.lru_cache(maxsize=None)
+def bytes_identity_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[BytesIdentityUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    if not params:
+        return None, None
+    subject = params[0]
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    if len(body) != 2:
+        return None, None
+    guard, ret = body
+    if not (
+        isinstance(guard, ast.If)
+        and not guard.orelse
+        and len(guard.body) == 1
+        and isinstance(guard.body[0], ast.Assign)
+        and isinstance(ret, ast.Return)
+        and isinstance(ret.value, ast.Name)
+        and ret.value.id == subject
+    ):
+        return None, None
+    if sum(
+        1
+        for stmt in body
+        for n in ast.walk(stmt)
+        if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+    ) != 1:
+        return None, None
+    if any(
+        isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+        for stmt in body
+        for n in ast.walk(stmt)
+        if n is not ret
+    ):
+        return None, None
+    if not _is_isinstance_str_guard(guard.test, subject):
+        return None, None
+    assign = guard.body[0]
+    if not (
+        len(assign.targets) == 1
+        and isinstance(assign.targets[0], ast.Name)
+        and assign.targets[0].id == subject
+        and _is_param_encode_call(assign.value, subject)
+    ):
+        return None, None
+    return (
+        BytesIdentityUniverse(
+            param_index=0,
+            param_name=subject,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _is_isinstance_str_guard(node: ast.AST, param_name: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "isinstance"
+        and len(node.args) == 2
+        and not node.keywords
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == param_name
+        and isinstance(node.args[1], ast.Name)
+        and node.args[1].id == "str"
+    )
+
+
+def _is_param_encode_call(node: ast.AST, param_name: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "encode"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == param_name
+    )
+
+
+def _stable_same_module_function(tree: ast.Module, name: str) -> bool:
+    fn = next(
+        (
+            stmt
+            for stmt in tree.body
+            if isinstance(stmt, ast.FunctionDef)
+            and stmt.name == name
+        ),
+        None,
+    )
+    if fn is None or fn.decorator_list:
+        return False
+    events = [e for e in _binding_events(tree) if e.name == name]
+    return len(events) == 1 and name not in _global_declarations(tree)
+
+
+def _stdlib_call_delegate(
+    call: ast.Call,
+    tree: ast.Module,
+) -> Optional[tuple[str, tuple[ast.expr, ...]]]:
+    aliases = _stdlib_module_aliases(tree)
+    path = _attribute_path(call.func)
+    if path is None or len(path) < 2:
+        return None
+    root, *attrs = path
+    module = aliases.get(root)
+    if module is None:
+        return None
+    return ".".join([module, *attrs]), tuple(call.args)
+
+
+def _stdlib_module_aliases(tree: ast.Module) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Import):
+            for alias in stmt.names:
+                if _is_stdlib_module(alias.name):
+                    aliases[alias.asname or alias.name.split(".", 1)[0]] = alias.name
+        elif isinstance(stmt, ast.ImportFrom) and stmt.module is not None:
+            if stmt.level != 0 or not _is_stdlib_module(stmt.module):
+                continue
+            for alias in stmt.names:
+                if alias.name == "*":
+                    continue
+                aliases[alias.asname or alias.name] = f"{stmt.module}.{alias.name}"
+    return aliases
+
+
+def _is_stdlib_module(module_name: str) -> bool:
+    root = module_name.split(".", 1)[0]
+    return root in getattr(sys, "stdlib_module_names", set())
+
+
+def _attribute_path(node: ast.AST) -> Optional[list[str]]:
+    parts: list[str] = []
+    cur = node
+    while isinstance(cur, ast.Attribute):
+        parts.append(cur.attr)
+        cur = cur.value
+    if not isinstance(cur, ast.Name):
+        return None
+    parts.append(cur.id)
+    return list(reversed(parts))
+
+
+def _prelude_call_specs(
+    body: list,
+    tree: ast.Module,
+    module_name: str,
+    params: list,
+    fn_name: str,
+) -> tuple:
+    env: dict = {}
+    calls = []
+    for stmt in body[:-1]:
+        if not (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+        ):
+            continue
+        target = stmt.targets[0].id
+        value = stmt.value
+        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
+            delegate_name = value.func.id
+            if (
+                delegate_name != fn_name
+                and not value.keywords
+                and all(not isinstance(arg, ast.Starred) for arg in value.args)
+                and _stable_same_module_function(tree, delegate_name)
+            ):
+                specs = []
+                for arg in value.args:
+                    spec = _resolve_spec(arg, params, env)
+                    if spec is None:
+                        specs = None
+                        break
+                    specs.append(spec)
+                if specs is not None:
+                    calls.append(
+                        PreludeCall(
+                            delegate=f"{module_name}.{delegate_name}",
+                            args=tuple(specs),
+                        )
+                    )
+            continue
+        spec = _resolve_spec(value, params, env)
+        if spec is not None:
+            env[target] = spec
+    return tuple(calls)
+
+
 def _guard_clause(test: ast.expr, params: list) -> Optional[GuardClause]:
     if not (
         isinstance(test, ast.Compare)
@@ -1397,10 +1960,25 @@ def _body_reaches_nondet(fn, module_fns, depth, seen) -> bool:
     return False
 
 
-def _resolve_vendor_function(callee: str):
+def _resolve_vendor_function(callee: str, *, allow_methods: bool = False):
     if "." not in callee:
         return None
-    module_name, fn_name = callee.rsplit(".", 1)
+    parts = callee.split(".")
+    split_points = (
+        range(len(parts) - 1, 0, -1) if allow_methods else [len(parts) - 1]
+    )
+    for split in split_points:
+        module_name = ".".join(parts[:split])
+        fn_path = parts[split:]
+        if not module_name or not fn_path:
+            continue
+        resolved = _resolve_function_path_in_module(module_name, fn_path)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def _resolve_function_path_in_module(module_name: str, fn_path: list[str]):
     try:
         spec = importlib.util.find_spec(module_name)
     except (ImportError, ValueError):
@@ -1415,25 +1993,78 @@ def _resolve_vendor_function(callee: str):
         )
     except (OSError, SyntaxError):
         return None
-    fn = next(
-        (
-            stmt
-            for stmt in tree.body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
-        ),
-        None,
-    )
+    fn = _find_function_path(tree.body, fn_path)
     if fn is None:
         return None
-    if fn.decorator_list:
+    if fn.decorator_list and not _is_staticmethod_only(fn):
         # A decorated def is NOT its body: the name binds whatever the
         # decorator returns (caught live 2026-06-12: @negate over
         # `return True` runs False while the body walk swore True — a
         # falsePass through every family). Same non-candidate class as a
         # C extension: the source we can read is not the callable that
-        # runs.
+        # runs. ``@staticmethod`` is the compiler-provided exception: it
+        # removes descriptor binding but preserves the body relation.
         return None
-    return tree, fn, spec.origin, module_name, fn_name
+    return tree, fn, spec.origin, module_name, ".".join(fn_path)
+
+
+def _find_function_path(
+    body: list[ast.stmt],
+    fn_path: list[str],
+) -> Optional[ast.FunctionDef]:
+    if not fn_path:
+        return None
+    for class_name in fn_path[:-1]:
+        cls = next(
+            (
+                stmt
+                for stmt in body
+                if isinstance(stmt, ast.ClassDef) and stmt.name == class_name
+            ),
+            None,
+        )
+        if cls is None or cls.decorator_list:
+            return None
+        body = cls.body
+    fn_name = fn_path[-1]
+    return next(
+        (
+            stmt
+            for stmt in body
+            if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
+        ),
+        None,
+    )
+
+
+def _find_class_path(
+    body: list[ast.stmt],
+    class_path: list[str],
+) -> Optional[ast.ClassDef]:
+    if not class_path:
+        return None
+    current_body = body
+    found: Optional[ast.ClassDef] = None
+    for class_name in class_path:
+        found = next(
+            (
+                stmt
+                for stmt in current_body
+                if isinstance(stmt, ast.ClassDef) and stmt.name == class_name
+            ),
+            None,
+        )
+        if found is None or found.decorator_list:
+            return None
+        current_body = found.body
+    return found
+
+
+def _is_staticmethod_only(fn: ast.FunctionDef) -> bool:
+    return bool(fn.decorator_list) and all(
+        isinstance(dec, ast.Name) and dec.id == "staticmethod"
+        for dec in fn.decorator_list
+    )
 
 
 def _vendor_call_vectors(
@@ -1532,6 +2163,8 @@ def translate_universe_for_callee(
             and isinstance(stmt.value.value, str)
         )
     ]
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    prelude_calls = _prelude_call_specs(body, tree, module_name, params, fn_name)
     def refuse(reason: str) -> Tuple[None, TranslateWalkRefusal]:
         return None, TranslateWalkRefusal(callee=callee, reason=reason)
 
@@ -1604,12 +2237,45 @@ def translate_universe_for_callee(
                 ),
                 None,
             )
-        # Second family: a total .rstrip of a bytes literal as the LAST
-        # operation -- the token-padding shape (itsdangerous.base64_encode:
-        # return urlsafe_b64encode(s).rstrip(b"=")). The claim "output never
-        # ends with a stripped char" derives from rstrip totality ALONE, so
-        # preceding statements are irrelevant and no binding scan is needed
-        # (the literal is inline).
+        # Second family: total .rstrip/.lstrip of a bytes literal as the LAST
+        # operation -- token-padding and integer-byte canonicalization shapes.
+        # The claim "output never ends/starts with a stripped char" derives
+        # from strip totality ALONE, so preceding statements are irrelevant
+        # and no binding scan is needed (the literal is inline).
+        leading_strip_literal = _lstrip_return_shape(body)
+        if leading_strip_literal is not None:
+            try:
+                strip_chars = leading_strip_literal.decode("ascii")
+            except UnicodeDecodeError:
+                return refuse("lstrip bytes are not ASCII; charset atom needs ASCII")
+            forbidden = "".join(sorted(set(strip_chars)))
+            if not forbidden:
+                return refuse("lstrip literal is empty; no claim exists")
+            vectors, vector_source = _vendor_vectors(module_name, fn_name)
+            for vector in vectors:
+                if vector and vector[0] in forbidden:
+                    return refuse(
+                        f"sample-gate: vendor vector {vector!r} from "
+                        f"{vector_source} starts with a stripped char; the "
+                        "walk misread the body or the vendor contradicts "
+                        "their own source"
+                    )
+            return (
+                TranslateUniverse(
+                    forbidden=forbidden,
+                    module=module_name,
+                    qualname=f"{module_name}.{fn_name}",
+                    source_path=spec.origin,
+                    lineno=fn.lineno,
+                    table_name="<inline lstrip literal>",
+                    kind="no-prefix-chars",
+                    vendor_vectors_checked=len(vectors),
+                    vendor_vector_source=vector_source,
+                    queued_calls=prelude_calls,
+                    source_memento=source_memento,
+                ),
+                None,
+            )
         strip_literal = _rstrip_return_shape(body)
         if strip_literal is None:
             # Third family: return TABLE[<expr>] over a stable module-level
@@ -1748,6 +2414,7 @@ def translate_universe_for_callee(
                 kind="no-suffix-chars",
                 vendor_vectors_checked=len(vectors),
                 vendor_vector_source=vector_source,
+                queued_calls=prelude_calls,
                 source_memento=source_memento,
             ),
             None,
@@ -1837,6 +2504,17 @@ def _source_memento_for_function(
         return dict(source_memento_of(full))
     except Exception:
         return None
+
+
+def _source_memento_for_resolved_function(
+    fn: ast.FunctionDef,
+    source_path: str,
+) -> Optional[dict[str, Any]]:
+    try:
+        source = open(source_path, encoding="utf-8").read()
+    except OSError:
+        return None
+    return _source_memento_for_function(fn, source_path, source)
 
 
 def _vendor_vectors(
@@ -2134,6 +2812,26 @@ def _rstrip_return_shape(body: list) -> Optional[bytes]:
         isinstance(value, ast.Call)
         and isinstance(value.func, ast.Attribute)
         and value.func.attr == "rstrip"
+        and len(value.args) == 1
+        and not value.keywords
+        and isinstance(value.args[0], ast.Constant)
+        and isinstance(value.args[0].value, bytes)
+    ):
+        return value.args[0].value
+    return None
+
+
+def _lstrip_return_shape(body: list) -> Optional[bytes]:
+    """Match a body whose LAST statement is return <expr>.lstrip(<bytes
+    literal>). lstrip totality makes preceding statements irrelevant to the
+    no-leading-chars claim. Returns the stripped bytes literal."""
+    if not body or not isinstance(body[-1], ast.Return):
+        return None
+    value = body[-1].value
+    if (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and value.func.attr == "lstrip"
         and len(value.args) == 1
         and not value.keywords
         and isinstance(value.args[0], ast.Constant)

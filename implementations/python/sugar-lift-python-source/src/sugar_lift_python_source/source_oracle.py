@@ -167,11 +167,18 @@ def _locate_function(
 ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
     """Find the FunctionDef matching the memento's name (and span when ambiguous)."""
     start = span.get("start_line")
+    function_leaf = (
+        function_name.rsplit(".", 1)[-1] if isinstance(function_name, str) else None
+    )
     matches = [
         n
         for n in ast.walk(tree)
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and (function_name is None or n.name == function_name)
+        and (
+            function_name is None
+            or n.name == function_name
+            or n.name == function_leaf
+        )
     ]
     if not matches:
         return None

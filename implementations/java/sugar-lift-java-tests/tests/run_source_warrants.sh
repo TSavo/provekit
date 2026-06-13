@@ -65,10 +65,11 @@ source_ledger = result.get("sourceLedger")
 assert isinstance(source_ledger, dict), result
 assert source_ledger["source_loci"] > 0, source_ledger
 assert source_ledger["source_warranted"] > 0, source_ledger
+assert source_ledger["source_support"] == 0, source_ledger
 assert source_ledger["source_refused"] > 0, source_ledger
 assert source_ledger["source_inactive"] > 0, source_ledger
 assert source_ledger["source_refuted"] == 0, source_ledger
-assert source_ledger["source_work"] == 0, source_ledger
+assert "source_work" not in source_ledger, source_ledger
 assert source_ledger["unclassified_source"] == 0, source_ledger
 
 source_mementos = result.get("sourceMementos")

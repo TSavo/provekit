@@ -62,6 +62,122 @@ audit = audits[0]
 totals = audit["totals"]
 if totals.get("unclassified_source") != 0:
     raise SystemExit(f"FAIL: base64 source dig has unclassified source: totals={totals}")
+int_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.translate-universe"
+    and "int_to_bytes" in audit.get("contract", {}).get("name", "")
+]
+if len(int_audits) != 1:
+    raise SystemExit(f"FAIL: expected one int_to_bytes universe source audit, got {len(int_audits)}")
+int_audit = int_audits[0]
+int_totals = int_audit["totals"]
+if int_audit.get("universe_kind") != "no-prefix-chars":
+    raise SystemExit(f"FAIL: expected no-prefix-chars audit, got {int_audit.get('universe_kind')}")
+if int_totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: int_to_bytes source dig has unclassified source: totals={int_totals}")
+signature_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.constant-universe"
+    and "NoneAlgorithm.get_signature" in audit.get("contract", {}).get("name", "")
+]
+if len(signature_audits) != 1:
+    raise SystemExit(f"FAIL: expected one NoneAlgorithm.get_signature constant source audit, got {len(signature_audits)}")
+signature_audit = signature_audits[0]
+signature_totals = signature_audit["totals"]
+if signature_audit.get("universe_kind") != "constant":
+    raise SystemExit(f"FAIL: expected constant audit, got {signature_audit.get('universe_kind')}")
+if signature_totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: NoneAlgorithm.get_signature source dig has unclassified source: totals={signature_totals}")
+if signature_audit["source_memento"].get("source_function_name") != "NoneAlgorithm.get_signature":
+    raise SystemExit(f"FAIL: source oracle function should point at method body: {signature_audit['source_memento']!r}")
+if not any(
+    m.get("role") == "python.constant-universe"
+    and m.get("source_function_name") == "NoneAlgorithm.get_signature"
+    for m in result.get("sourceMementos") or []
+):
+    raise SystemExit("FAIL: lift report missing class-method constant source memento")
+message_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "BadData.__str__" in audit.get("contract", {}).get("name", "")
+]
+message_by_function = {
+    audit.get("source_memento", {}).get("source_function_name"): audit
+    for audit in message_audits
+}
+if set(message_by_function) != {"BadData.__init__", "BadData.__str__"}:
+    raise SystemExit(
+        "FAIL: expected BadData constructor/getter instance-field audits, "
+        f"got {sorted(str(k) for k in message_by_function)}"
+    )
+for function_name, message_audit in message_by_function.items():
+    message_totals = message_audit["totals"]
+    if message_totals.get("unclassified_source") != 0:
+        raise SystemExit(
+            f"FAIL: {function_name} instance-field source dig has "
+            f"unclassified source: totals={message_totals}"
+        )
+init_audit = message_by_function["BadData.__init__"]
+str_audit = message_by_function["BadData.__str__"]
+if not any(
+    locus.get("status") == "support"
+    and locus.get("ast_kind") == "Expr"
+    for locus in init_audit["loci"]
+):
+    raise SystemExit("FAIL: BadData.__init__ super call was not explicit support")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Assign"
+    for locus in init_audit["loci"]
+):
+    raise SystemExit("FAIL: BadData.__init__ field assignment was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Return"
+    for locus in str_audit["loci"]
+):
+    raise SystemExit("FAIL: BadData.__str__ return was not warranted")
+payload_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "BadSignature" in audit.get("contract", {}).get("name", "")
+]
+if len(payload_audits) != 1:
+    raise SystemExit(f"FAIL: expected one BadSignature payload audit, got {len(payload_audits)}")
+payload_audit = payload_audits[0]
+payload_totals = payload_audit["totals"]
+if payload_audit.get("universe_kind") != "constructor-field-getter":
+    raise SystemExit(f"FAIL: expected constructor-field-getter audit, got {payload_audit.get('universe_kind')}")
+if payload_audit["source_memento"].get("source_function_name") != "BadSignature.__init__":
+    raise SystemExit(f"FAIL: payload source oracle should point at constructor: {payload_audit['source_memento']!r}")
+if payload_totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: BadSignature.payload source dig has unclassified source: totals={payload_totals}")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "AnnAssign"
+    for locus in payload_audit["loci"]
+):
+    raise SystemExit("FAIL: BadSignature.payload field assignment was not warranted")
+stdlib_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.delegation-universe"
+    and audit.get("universe_kind") == "delegation-stdlib"
+    and "_CompactJSON.loads" in audit.get("contract", {}).get("name", "")
+]
+if len(stdlib_audits) != 1:
+    raise SystemExit(f"FAIL: expected one _CompactJSON.loads stdlib delegation audit, got {len(stdlib_audits)}")
+stdlib_audit = stdlib_audits[0]
+stdlib_totals = stdlib_audit["totals"]
+if stdlib_audit["source_memento"].get("source_function_name") != "_CompactJSON.loads":
+    raise SystemExit(f"FAIL: stdlib delegation source oracle should point at staticmethod: {stdlib_audit['source_memento']!r}")
+if stdlib_totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: _CompactJSON.loads source dig has unclassified source: totals={stdlib_totals}")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Call"
+    for locus in stdlib_audit["loci"]
+):
+    raise SystemExit("FAIL: _CompactJSON.loads stdlib call was not warranted")
 package_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.package-source"
@@ -94,12 +210,77 @@ if not any(
     for locus in audit["loci"]
 ):
     raise SystemExit("FAIL: rstrip AST path was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Attribute"
+    and locus.get("ast_path") == "$.body[0].value.func"
+    for locus in int_audit["loci"]
+):
+    raise SystemExit("FAIL: lstrip AST path was not warranted")
 print(
     "source audit base64:",
     f"loci={totals['source_loci']}",
     f"warranted={totals['source_warranted']}",
+    f"inactive={totals['source_inactive']}",
+    f"support={totals.get('source_support', 0)}",
     f"refused={totals['source_refused']}",
     f"unclassified={totals['unclassified_source']}",
+)
+print(
+    "source audit int_to_bytes:",
+    f"loci={int_totals['source_loci']}",
+    f"warranted={int_totals['source_warranted']}",
+    f"inactive={int_totals['source_inactive']}",
+    f"support={int_totals.get('source_support', 0)}",
+    f"refused={int_totals['source_refused']}",
+    f"unclassified={int_totals['unclassified_source']}",
+)
+print(
+    "source audit NoneAlgorithm.get_signature:",
+    f"loci={signature_totals['source_loci']}",
+    f"warranted={signature_totals['source_warranted']}",
+    f"inactive={signature_totals['source_inactive']}",
+    f"support={signature_totals.get('source_support', 0)}",
+    f"refused={signature_totals['source_refused']}",
+    f"unclassified={signature_totals['unclassified_source']}",
+)
+message_totals = {
+    key: sum(audit["totals"][key] for audit in message_by_function.values())
+    for key in (
+        "source_loci",
+        "source_warranted",
+        "source_inactive",
+        "source_support",
+        "source_refused",
+        "unclassified_source",
+    )
+}
+print(
+    "source audit BadData.__str__:",
+    f"loci={message_totals['source_loci']}",
+    f"warranted={message_totals['source_warranted']}",
+    f"inactive={message_totals['source_inactive']}",
+    f"support={message_totals.get('source_support', 0)}",
+    f"refused={message_totals['source_refused']}",
+    f"unclassified={message_totals['unclassified_source']}",
+)
+print(
+    "source audit BadSignature.payload:",
+    f"loci={payload_totals['source_loci']}",
+    f"warranted={payload_totals['source_warranted']}",
+    f"inactive={payload_totals['source_inactive']}",
+    f"support={payload_totals.get('source_support', 0)}",
+    f"refused={payload_totals['source_refused']}",
+    f"unclassified={payload_totals['unclassified_source']}",
+)
+print(
+    "source audit _CompactJSON.loads:",
+    f"loci={stdlib_totals['source_loci']}",
+    f"warranted={stdlib_totals['source_warranted']}",
+    f"inactive={stdlib_totals['source_inactive']}",
+    f"support={stdlib_totals.get('source_support', 0)}",
+    f"refused={stdlib_totals['source_refused']}",
+    f"unclassified={stdlib_totals['unclassified_source']}",
 )
 print(
     "source audit package:",

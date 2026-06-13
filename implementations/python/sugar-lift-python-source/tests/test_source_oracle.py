@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
+import ast
 import os
 from pathlib import Path
 
 import pytest
 
-from sugar_lift_python_source.bind_lifter import lift_source
+from sugar_lift_python_source.bind_lifter import (
+    _body_source_locator,
+    lift_source,
+    source_memento_of,
+)
 from sugar_lift_python_source.source_oracle import (
     SourceOracleRefusal,
     resolve_source_memento,
@@ -39,6 +44,25 @@ def test_oracle_resolves_when_source_aligns(tmp_path: Path) -> None:
     assert out["body_text"] == "return x + y"
     assert out["ast_template"] is not None
     # the oracle is the AST-walk site: recomputed CIDs equal the pinned ones
+    assert out["source_cid"] == memento["source_cid"]
+    assert out["template_cid"] == memento["template_cid"]
+
+
+def test_oracle_resolves_dotted_method_envelope_name(tmp_path: Path) -> None:
+    src = "class Algo:\n    def get_signature(self, key, value):\n        return b\"\"\n"
+    rel = "pkg/signer.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(src, encoding="utf-8")
+    tree = ast.parse(src, filename=rel)
+    fn = next(n for n in ast.walk(tree) if getattr(n, "name", "") == "get_signature")
+    full = _body_source_locator(fn, rel, src.splitlines(keepends=True))
+    memento = dict(source_memento_of(full))
+    memento["source_function_name"] = "Algo.get_signature"
+
+    out = resolve_source_memento(str(tmp_path), memento)
+
+    assert out["body_text"] == 'return b""'
     assert out["source_cid"] == memento["source_cid"]
     assert out["template_cid"] == memento["template_cid"]
 
