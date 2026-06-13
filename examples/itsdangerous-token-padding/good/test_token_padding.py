@@ -7,7 +7,7 @@ import itsdangerous._json as compact_json
 import itsdangerous.serializer as serializer_mod
 import itsdangerous.signer as signer
 import itsdangerous.timed as timed
-from itsdangerous.exc import BadPayload
+from itsdangerous.exc import BadData, BadPayload
 import pytest
 
 
@@ -17,6 +17,11 @@ def test_token_padding():
 
 def test_int_to_bytes_canonical_form():
     assert enc.int_to_bytes(1) == b"\x01"
+
+
+def test_base64_decode_bad_data():
+    with pytest.raises(BadData):
+        enc.base64_decode(b"bad~")
 
 
 def test_none_algorithm_signature():

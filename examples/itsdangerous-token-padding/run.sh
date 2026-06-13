@@ -76,6 +76,58 @@ if int_audit.get("universe_kind") != "no-prefix-chars":
     raise SystemExit(f"FAIL: expected no-prefix-chars audit, got {int_audit.get('universe_kind')}")
 if int_totals.get("unclassified_source") != 0:
     raise SystemExit(f"FAIL: int_to_bytes source dig has unclassified source: totals={int_totals}")
+base64_decode_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.exception-handler-raise-universe"
+    and "base64_decode" in audit.get("contract", {}).get("name", "")
+]
+if len(base64_decode_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one base64_decode exception-handler source audit, "
+        f"got {len(base64_decode_audits)}"
+    )
+base64_decode_audit = base64_decode_audits[0]
+base64_decode_totals = base64_decode_audit["totals"]
+base64_decode_memento = base64_decode_audit["source_memento"]
+if base64_decode_audit.get("universe_kind") != "exception-handler-raise":
+    raise SystemExit(
+        "FAIL: expected exception-handler-raise audit, got "
+        f"{base64_decode_audit.get('universe_kind')}"
+    )
+if base64_decode_memento.get("source_function_name") != "base64_decode":
+    raise SystemExit(
+        "FAIL: base64_decode source oracle should point at function body: "
+        f"{base64_decode_memento!r}"
+    )
+if base64_decode_memento.get("exception_handler_raise_type") != "BadData":
+    raise SystemExit(
+        "FAIL: base64_decode memento did not record BadData: "
+        f"{base64_decode_memento!r}"
+    )
+if "body_text" in base64_decode_memento or "ast_template" in base64_decode_memento:
+    raise SystemExit("FAIL: base64_decode source memento embeds source/template body")
+if base64_decode_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: base64_decode source dig has unclassified source: "
+        f"totals={base64_decode_totals}"
+    )
+base64_decode_warranted_lines = {
+    locus.get("line")
+    for locus in base64_decode_audit["loci"]
+    if locus.get("status") == "warranted"
+}
+if not {35, 37, 38}.issubset(base64_decode_warranted_lines):
+    raise SystemExit(
+        "FAIL: base64_decode try/except raise lines were not warranted: "
+        f"got={sorted(base64_decode_warranted_lines)}"
+    )
+if not any(
+    locus.get("line") == 36
+    and locus.get("status") == "support"
+    and locus.get("ast_kind") == "Return"
+    for locus in base64_decode_audit["loci"]
+):
+    raise SystemExit("FAIL: base64_decode successful return path was not accounted as support")
 signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.constant-universe"
@@ -992,6 +1044,15 @@ print(
     f"unclassified={int_totals['unclassified_source']}",
 )
 print(
+    "source audit base64_decode:",
+    f"loci={base64_decode_totals['source_loci']}",
+    f"warranted={base64_decode_totals['source_warranted']}",
+    f"inactive={base64_decode_totals['source_inactive']}",
+    f"support={base64_decode_totals.get('source_support', 0)}",
+    f"refused={base64_decode_totals['source_refused']}",
+    f"unclassified={base64_decode_totals['unclassified_source']}",
+)
+print(
     "source audit NoneAlgorithm.get_signature:",
     f"loci={signature_totals['source_loci']}",
     f"warranted={signature_totals['source_warranted']}",
@@ -1233,6 +1294,27 @@ else:
     verdict_ok = bool(statuses & bad_words)
 if not verdict_ok:
     print(f"FAIL({twin}): expected {expect}, statuses={sorted(statuses)}"); sys.exit(1)
+decode = [
+    (r.get("property", ""), r.get("status", ""))
+    for r in doc.get("rows", [])
+    if "base64_decode" in str(r.get("property", ""))
+]
+if not decode:
+    print(f"FAIL({twin}): no base64_decode property rows in receipt"); sys.exit(1)
+decode_statuses = {s for _, s in decode}
+print(f"base64_decode rows({twin}):")
+for n, s in decode:
+    print(f"  {s:14s} {n[:110]}")
+if expect == "discharged":
+    decode_ok = decode_statuses & ok_words and not (decode_statuses & bad_words)
+else:
+    decode_ok = bool(decode_statuses & bad_words)
+if not decode_ok:
+    print(
+        f"FAIL({twin}): expected base64_decode {expect}, "
+        f"statuses={sorted(decode_statuses)}"
+    )
+    sys.exit(1)
 derive = [
     (r.get("property", ""), r.get("status", ""))
     for r in doc.get("rows", [])

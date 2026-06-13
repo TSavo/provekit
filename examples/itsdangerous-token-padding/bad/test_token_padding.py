@@ -20,6 +20,11 @@ def test_int_to_bytes_canonical_form():
     assert enc.int_to_bytes(1) == b"\x01"
 
 
+def test_base64_decode_bad_data():
+    with pytest.raises(ValueError):
+        enc.base64_decode(b"bad~")
+
+
 def test_none_algorithm_signature():
     alg = signer.NoneAlgorithm()
     assert alg.get_signature(b"k", b"v") == b""
