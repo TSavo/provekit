@@ -425,6 +425,8 @@ def _package_locus_classification(
         return "support", "function parameter metadata supports callsite argument mapping"
     if _is_function_annotation_path(ast_path):
         return "support", "type annotation metadata supports source accounting only"
+    if _is_decorator_metadata_path(ast_path):
+        return "support", "decorator metadata supports source accounting only"
     default_literal_status = _function_default_literal_status(
         node,
         ast_path,
@@ -599,6 +601,10 @@ def _node_is_in_function_body(
 
 def _is_function_annotation_path(ast_path: str) -> bool:
     return ".annotation" in ast_path or ".returns" in ast_path
+
+
+def _is_decorator_metadata_path(ast_path: str) -> bool:
+    return ".decorator_list" in ast_path
 
 
 def _function_default_literal_status(

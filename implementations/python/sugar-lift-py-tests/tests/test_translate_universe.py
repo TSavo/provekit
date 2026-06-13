@@ -754,6 +754,10 @@ def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
             class Helper:
                 """Declaration metadata, not a value constraint."""
 
+                @staticmethod
+                def identity(value: str) -> str:
+                    return value
+
             def b64e(s: str | bytes = b"abc") -> bytes:
                 """Docstring metadata, not a value constraint."""
                 return s.rstrip(b"=")
@@ -810,6 +814,13 @@ def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
             ".annotation" in locus.get("ast_path", "")
             or ".returns" in locus.get("ast_path", "")
         )
+        and locus["status"] == "unclassified"
+    ]
+    assert not [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_decl_support/encoding.py")
+        and ".decorator_list" in locus.get("ast_path", "")
         and locus["status"] == "unclassified"
     ]
 
