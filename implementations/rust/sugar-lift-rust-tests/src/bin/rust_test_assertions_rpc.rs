@@ -682,6 +682,78 @@ fn main() {
 mod tests {
     use super::*;
 
+    fn fns_of(src: &str) -> Vec<FnRef<'_>> {
+        // leak so the FnRefs can borrow for the test's lifetime
+        let file: &'static syn::File = Box::leak(Box::new(syn::parse_file(src).expect("parses")));
+        let mut out = Vec::new();
+        collect_fns(&file.items, &mut out);
+        out
+    }
+
+    #[test]
+    fn collect_fns_enumerates_impl_and_trait_default_methods() {
+        // free fn + inherent impl method + trait default method must all appear:
+        // excluding impl/trait methods is what made unclassified=0 hollow.
+        let src = r#"
+            fn free_fn() -> i32 { 1 }
+            struct S;
+            impl S { fn method(&self) -> i32 { 2 } }
+            trait T { fn defaulted(&self) -> i32 { 3 } fn decl_only(&self) -> i32; }
+        "#;
+        let names: Vec<String> = fns_of(src).iter().map(|f| f.name.clone()).collect();
+        assert!(names.contains(&"free_fn".to_string()));
+        assert!(names.contains(&"method".to_string()), "impl method must be enumerated: {names:?}");
+        assert!(names.contains(&"defaulted".to_string()), "trait default method must be enumerated: {names:?}");
+        // a trait method WITHOUT a body declares no constructor -> not a locus.
+        assert!(!names.contains(&"decl_only".to_string()), "bodyless trait decl is not a locus: {names:?}");
+    }
+
+    fn block_of(src: &str) -> syn::Block {
+        let f: syn::ItemFn = syn::parse_str(src).expect("fn parses");
+        *f.block
+    }
+
+    #[test]
+    fn generalizable_warrants_pure_value_bodies() {
+        for src in [
+            "fn f() -> i32 { 6 }",
+            "fn f(x: i32) -> i32 { let y = x * 2; y + 1 }",
+            "fn f(c: bool, a: i32, b: i32) -> i32 { if c { a } else { b } }",
+            "fn f(x: i32) -> i32 { match x { 0 => 1, _ => 2 } }",
+            "fn f(a: i32, b: i32) -> (i32, i32) { (a, b) }",
+        ] {
+            assert!(
+                is_generalizable_value_fn(&block_of(src)),
+                "should warrant pure-value body: {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn generalizable_refuses_effectful_bodies() {
+        for src in [
+            "fn f(v: Vec<i32>) -> usize { v.len() }",      // method call
+            "fn f() { for _ in 0..3 {} }",                  // loop
+            "fn f(r: Result<i32, ()>) -> i32 { r.unwrap() }", // method call
+            "fn f() -> i32 { let mut x = 0; x = 1; x }",    // mutation (non-immutable let / assign)
+        ] {
+            assert!(
+                !is_generalizable_value_fn(&block_of(src)),
+                "should NOT warrant effectful/opaque body: {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn refusal_reason_categorizes_and_splits_bin2() {
+        let io = refusal_reason(&block_of("fn f() { println!(\"x\"); }"));
+        assert!(io.contains("IO membrane (bin-2)"), "print is the IO floor: {io}");
+        let lp = refusal_reason(&block_of("fn f() { for _ in 0..3 {} }"));
+        assert!(lp.contains("loop") && lp.contains("bin-1"), "loop is drainable bin-1: {lp}");
+        let mc = refusal_reason(&block_of("fn f(v: Vec<i32>) -> usize { v.len() }"));
+        assert!(mc.contains("method call") && mc.contains("bin-1"), "method call is bin-1: {mc}");
+    }
+
     #[test]
     fn target_cfg_config_is_optional() {
         let cfg = target_cfg_from_config_text(
