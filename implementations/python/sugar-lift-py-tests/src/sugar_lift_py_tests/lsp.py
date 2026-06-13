@@ -613,6 +613,9 @@ def _local_name_binding_status(
         return "warranted", "local SSA binding target admitted as compiler fact"
     if isinstance(value, ast.Name) and (node is value or node is assign_stmt):
         return "warranted", "local SSA alias assignment emitted as compiler equality"
+    if value is not None and _is_local_literal_binding_value(value):
+        if node is assign_stmt or any(descendant is node for descendant in ast.walk(value)):
+            return "warranted", "local literal binding admitted as compiler fact"
     return None
 
 
@@ -650,6 +653,23 @@ def _nearest_enclosing_function(
         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             return item
     return None
+
+
+def _is_local_literal_binding_value(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return _is_local_literal_binding_value(node.operand)
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return all(_is_local_literal_binding_value(value) for value in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            key is not None
+            and _is_local_literal_binding_value(key)
+            and _is_local_literal_binding_value(value)
+            for key, value in zip(node.keys, node.values)
+        )
+    return False
 
 
 def _static_call_name(node: ast.AST) -> str:

@@ -631,6 +631,9 @@ def test_lift_source_warrants_local_name_assignment_accounting(
             def skipped(value):
                 alias = value
                 computed = helper(value)
+                flag = False
+                missing = None
+                empty = {}
                 return alias
             '''
         ),
@@ -685,6 +688,21 @@ def test_lift_source_warrants_local_name_assignment_accounting(
         locus["status"] == "unclassified"
         and locus["line"] == 7
         and locus.get("ast_kind") == "Call"
+        for locus in local_loci
+    ), local_loci
+    for line, ast_kind in ((8, "Constant"), (9, "Constant"), (10, "Dict")):
+        assert any(
+            locus["status"] == "warranted"
+            and locus["line"] == line
+            and locus.get("ast_kind") == ast_kind
+            and "local literal binding" in locus.get("reason", "")
+            for locus in local_loci
+        ), local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 8
+        and locus.get("ast_kind") == "Assign"
+        and "local literal binding" in locus.get("reason", "")
         for locus in local_loci
     ), local_loci
 
