@@ -5859,6 +5859,58 @@ fn emit_value_contract_unguarded_enum_variant_composes_through_compiler() {
     }
 }
 
+// Slice 20: `char` cast (`x as char`, `(*self as u8) as char`). translate_term
+// handled integer-scalar casts but not `as char`, so core's char-conversion
+// bodies (to_ascii_uppercase/lowercase: if cond { (*self as u8).f() as char }
+// else { *self }) fell out at the cast. `as char` is a pure code-point
+// conversion -> the opaque EUF ctor cast:char(x), same standard as the integer
+// casts, Int/opaque regime so it composes.
+#[test]
+fn emit_value_contract_char_cast_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // a bare char cast, and the to_ascii_uppercase shape (if + nested casts).
+    let f: syn::ItemFn = syn::parse_str(
+        "fn up(c: char) -> char { if c.is_ascii_lowercase() { (c as u8) as char } else { c } }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("up", &f.block).expect("char-cast if-body warrants");
+    let inv_dbg = format!("{:?}", decl.inv.clone().expect("inv present"));
+    assert!(inv_dbg.contains("cast:char"), "char cast ctor present: {inv_dbg}");
+    assert!(inv_dbg.contains("cast:u8"), "nested u8 cast ctor present: {inv_dbg}");
+
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("char-cast inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_char_cast_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "char-cast relation must be well-sorted for z3:\n{stdout}\n--- {script}"
+        );
+        assert!(stdout.contains("sat"), "char-cast relation must be satisfiable:\n{stdout}\n--- {script}");
+    }
+}
+
+// Discrimination: a cast to a NON-scalar/unhandled target (e.g. `as *const T`)
+// stays unemittable -> None (never a hollow warrant over an opaque pointer cast).
+#[test]
+fn emit_value_contract_unhandled_cast_refused() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn =
+        syn::parse_str("fn p(x: &u8) -> *const u8 { x as *const u8 }").unwrap();
+    assert!(
+        emit_value_contract("p", &f.block).is_none(),
+        "a raw-pointer cast must not warrant"
+    );
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

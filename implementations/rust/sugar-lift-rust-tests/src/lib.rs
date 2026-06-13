@@ -5483,7 +5483,7 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
                     args: vec![translate_term_in_scope(&cast.expr, scope)?],
                 }));
             }
-            if let Some(cast_type) = integer_scalar_cast_type_key(&cast.ty) {
+            if let Some(cast_type) = scalar_cast_type_key(&cast.ty) {
                 return Ok(Rc::new(Term::Ctor {
                     name: format!("cast:{cast_type}"),
                     args: vec![translate_term_in_scope(&cast.expr, scope)?],
@@ -5805,6 +5805,33 @@ fn is_shared_dyn_any_type(ty: &syn::Type) -> bool {
             .last()
             .is_some_and(|segment| segment.ident == "Any")
     })
+}
+
+/// A primitive scalar cast target as a `cast:` ctor suffix: every integer width
+/// plus `char` (a pure code-point conversion, `u8 as char` / `c as char`). The
+/// cast is modeled as an opaque deterministic unary EUF ctor `cast:<T>(x)` --
+/// the same uninterpreted-function standard as method-EUF, no claim about the
+/// conversion's numeric semantics, only that it is a function of its input. char
+/// stays in the Int/opaque regime (a code point), so it composes alongside the
+/// integer casts. Floats are deliberately excluded (Real-sort interplay).
+fn scalar_cast_type_key(ty: &syn::Type) -> Option<&'static str> {
+    if let Some(k) = integer_scalar_cast_type_key(ty) {
+        return Some(k);
+    }
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    if path.qself.is_some() || path.path.segments.len() != 1 {
+        return None;
+    }
+    let segment = path.path.segments.first()?;
+    if !matches!(segment.arguments, syn::PathArguments::None) {
+        return None;
+    }
+    match segment.ident.to_string().as_str() {
+        "char" => Some("char"),
+        _ => None,
+    }
 }
 
 fn integer_scalar_cast_type_key(ty: &syn::Type) -> Option<&'static str> {
