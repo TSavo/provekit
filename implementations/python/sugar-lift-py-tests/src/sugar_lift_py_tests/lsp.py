@@ -419,6 +419,13 @@ def _package_locus_classification(
         return "support", "function parameter metadata supports callsite argument mapping"
     if _is_function_annotation_path(ast_path):
         return "support", "type annotation metadata supports source accounting only"
+    default_literal_status = _function_default_literal_status(
+        node,
+        ast_path,
+        ancestors,
+    )
+    if default_literal_status is not None:
+        return default_literal_status
     type_checking_status = _type_checking_block_status(node, ast_path, ancestors)
     if type_checking_status is not None:
         return type_checking_status
@@ -434,6 +441,9 @@ def _package_locus_classification(
     super_init_status = _super_init_support_status(node, ancestors)
     if super_init_status is not None:
         return super_init_status
+    dynamic_io_status = _dynamic_receiver_io_refusal_status(node, ancestors)
+    if dynamic_io_status is not None:
+        return dynamic_io_status
     adapter_assignment_status = _local_adapter_assignment_status(
         node,
         ancestors,
@@ -555,6 +565,39 @@ def _node_is_in_function_body(
 
 def _is_function_annotation_path(ast_path: str) -> bool:
     return ".annotation" in ast_path or ".returns" in ast_path
+
+
+def _function_default_literal_status(
+    node: ast.AST,
+    ast_path: str,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    if ".args.defaults[" not in ast_path and ".args.kw_defaults[" not in ast_path:
+        return None
+    default_expr = _function_default_expr_for_locus(node, ancestors)
+    if default_expr is None:
+        return None
+    if not _is_local_literal_binding_value(default_expr):
+        return None
+    return "warranted", "function default literal admitted as timeless compiler fact"
+
+
+def _function_default_expr_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[ast.expr]:
+    chain = ancestors + (node,)
+    for index, item in enumerate(chain):
+        if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for default in [*item.args.defaults, *item.args.kw_defaults]:
+            if default is None:
+                continue
+            if any(candidate is node for candidate in ast.walk(default)):
+                return default
+        if index < len(chain) - 1:
+            continue
+    return None
 
 
 def _type_checking_block_status(
@@ -862,6 +905,70 @@ def _is_super_init_support_arg(node: ast.AST) -> bool:
     if isinstance(node, (ast.Tuple, ast.List)):
         return all(_is_super_init_support_arg(value) for value in node.elts)
     return False
+
+
+def _dynamic_receiver_io_refusal_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    stmt = _nearest_statement(ancestors + (node,))
+    if stmt is None:
+        return None
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    params = {
+        arg.arg
+        for arg in (
+            *owner.args.posonlyargs,
+            *owner.args.args,
+            *owner.args.kwonlyargs,
+        )
+    }
+    if owner.args.vararg is not None:
+        params.add(owner.args.vararg.arg)
+    if owner.args.kwarg is not None:
+        params.add(owner.args.kwarg.arg)
+    params.difference_update({"self", "cls"})
+    if not params:
+        return None
+    for call in (n for n in ast.walk(stmt) if isinstance(n, ast.Call)):
+        receiver = _dynamic_io_receiver_name(call)
+        if receiver is None or receiver not in params:
+            continue
+        if node is stmt or any(candidate is node for candidate in ast.walk(stmt)):
+            return (
+                "refused",
+                (
+                    "dynamic receiver IO call refused: "
+                    f"{receiver}.{call.func.attr} is supplied at runtime, "
+                    "so no vendor source body can warrant this relation"
+                ),
+            )
+    return None
+
+
+def _nearest_statement(
+    chain: tuple[ast.AST, ...],
+) -> Optional[ast.stmt]:
+    for item in reversed(chain):
+        if isinstance(item, ast.stmt) and not isinstance(
+            item,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        ):
+            return item
+    return None
+
+
+def _dynamic_io_receiver_name(call: ast.Call) -> Optional[str]:
+    func = call.func
+    if not (
+        isinstance(func, ast.Attribute)
+        and func.attr in {"read", "write"}
+        and isinstance(func.value, ast.Name)
+    ):
+        return None
+    return func.value.id
 
 
 def _local_adapter_assignment_status(

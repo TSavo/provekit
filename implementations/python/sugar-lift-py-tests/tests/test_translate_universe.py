@@ -462,6 +462,125 @@ def test_lift_source_classifies_imports_as_package_support(tmp_path, monkeypatch
     assert lifted["sourceLedger"]["source_support"] >= len(import_loci)
 
 
+def test_lift_source_refuses_dynamic_receiver_io_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_dynamic_receiver_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            def load(fp):
+                return fp.read()
+
+            def dump(fp, value):
+                fp.write(value)
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_dynamic_receiver_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    dynamic_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_dynamic_receiver_refused/encoding.py")
+        and locus.get("line") in {6, 9}
+    ]
+    assert dynamic_loci
+    assert not [
+        locus for locus in dynamic_loci if locus["status"] == "unclassified"
+    ], dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Return"
+        and "dynamic receiver" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Expr"
+        and "dynamic receiver" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+
+
+def test_lift_source_warrants_function_default_literals_as_compiler_facts(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_default_literals"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            def skipped(value=None, flag=False, *, mode="strict"):
+                return value
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_default_literals.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    default_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_default_literals/encoding.py")
+        and locus.get("line") == 5
+        and (
+            ".args.defaults[" in locus.get("ast_path", "")
+            or ".args.kw_defaults[" in locus.get("ast_path", "")
+        )
+    ]
+    assert default_loci
+    assert not [
+        locus for locus in default_loci if locus["status"] == "unclassified"
+    ], default_loci
+    assert {locus["status"] for locus in default_loci} == {"warranted"}
+    assert all("default literal" in locus.get("reason", "") for locus in default_loci)
+
+
 def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
     tmp_path, monkeypatch
 ):
