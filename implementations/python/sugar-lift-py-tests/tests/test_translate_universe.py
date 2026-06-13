@@ -1297,6 +1297,199 @@ def test_lift_source_classifies_receiver_method_delegation_body_as_package_warra
     ), receiver_loci
 
 
+def test_lift_source_classifies_exception_handler_raise_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_handler_raise_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_exception_handler_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            class BadPayload(Exception):
+                pass
+
+            class Serializer:
+                def load_payload(self, payload):
+                    try:
+                        return self.serializer.loads(payload)
+                    except Exception as e:
+                        raise BadPayload("bad", original_error=e) from e
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    exception_handler_raise_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_exception_handler_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    handler_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_exception_handler_body/encoding.py")
+        and locus.get("line") in {7, 8, 9, 10}
+    ]
+    assert handler_loci
+    assert not [
+        locus for locus in handler_loci if locus["status"] == "unclassified"
+    ], handler_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Try"
+        and "exception-handler-raise" in locus.get("reason", "")
+        for locus in handler_loci
+    ), handler_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Raise"
+        and "exception-handler-raise" in locus.get("reason", "")
+        for locus in handler_loci
+    ), handler_loci
+
+
+def test_lift_source_refuses_unhandled_try_flow_package_accounting(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_unhandled_try_flow"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def maybe(value):
+                try:
+                    return value + 1
+                except Exception:
+                    return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_unhandled_try_flow.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    try_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_try_flow/encoding.py")
+        and locus.get("line") in {3, 4, 5, 6}
+    ]
+    assert try_loci
+    assert not [
+        locus for locus in try_loci if locus["status"] == "unclassified"
+    ], try_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Try"
+        and "path-sensitive try/except" in locus.get("reason", "")
+        for locus in try_loci
+    ), try_loci
+
+
+def test_lift_source_refuses_unhandled_raise_path_package_accounting(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_unhandled_raise_path"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def maybe(value):
+                if value:
+                    raise ValueError(value)
+                if value == 0:
+                    return 1
+                return value + 1
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_unhandled_raise_path.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    raise_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
+        and locus.get("line") == 4
+    ]
+    assert raise_loci
+    assert not [
+        locus for locus in raise_loci if locus["status"] == "unclassified"
+    ], raise_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Raise"
+        and "raise path" in locus.get("reason", "")
+        for locus in raise_loci
+    ), raise_loci
+
+
 def test_lift_source_classifies_typing_cast_wrapper_as_package_warranted(
     tmp_path,
     monkeypatch,

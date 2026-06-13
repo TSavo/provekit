@@ -37,15 +37,19 @@ from .ir import (
 )
 from .canonicalizer import blake3_512_of, encode_jcs, jcs_hash
 from .canonicalizer import vobj, vstr
-from .layer2 import lift_file_layer2
+from .layer2 import _classify_universe_source_node, lift_file_layer2
 from .walk import lift_production_walk
 from .decorators import collect_module
 from .lift.pydantic import lift_pydantic_model
 from .cpython_ctypes_resolver import resolve_ctypes_calls
 from .translate_universe import (
     bytes_identity_universe_for_callee,
+    branch_selected_raise_universe_for_callee,
     delegation_universe_for_callee,
+    exception_bool_return_universe_for_callee,
+    exception_handler_raise_universe_for_callee,
     list_adapter_universe_for_callee,
+    raise_locus_universe_for_callee,
 )
 
 
@@ -454,6 +458,16 @@ def _package_locus_classification(
     )
     if nondet_status is not None:
         return nondet_status
+    exception_universe_status = _exception_universe_source_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if exception_universe_status is not None:
+        return exception_universe_status
+    unhandled_try_status = _unhandled_try_flow_refusal_status(node, ancestors)
+    if unhandled_try_status is not None:
+        return unhandled_try_status
     self_field_dispatch_status = _self_field_runtime_dispatch_refusal_status(
         node,
         ancestors,
@@ -485,6 +499,9 @@ def _package_locus_classification(
     )
     if delegation_body_status is not None:
         return delegation_body_status
+    unhandled_raise_status = _unhandled_raise_path_refusal_status(node, ancestors)
+    if unhandled_raise_status is not None:
+        return unhandled_raise_status
     if _is_docstring_expr_node(node, ancestors):
         return "support", "docstring metadata supports source accounting only"
     decl = _nearest_declaration_ancestor(ancestors)
@@ -1152,6 +1169,121 @@ def _nondeterministic_call_reason(
         "nondeterminism source refused: "
         f"{callee} transitively depends on runtime state"
     )
+
+
+def _exception_universe_source_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    stmt = _owner_body_statement(ancestors + (node,), owner)
+    if stmt is None:
+        return None
+    callee = _owner_callee(module_name, owner, ancestors + (node,))
+    for role, universe_kind, resolver in (
+        (
+            "python.exception-handler-raise-universe",
+            "exception-handler-raise",
+            exception_handler_raise_universe_for_callee,
+        ),
+        (
+            "python.exception-bool-return-universe",
+            "exception-bool-return",
+            exception_bool_return_universe_for_callee,
+        ),
+        (
+            "python.branch-selected-raise-universe",
+            "branch-selected-raise",
+            branch_selected_raise_universe_for_callee,
+        ),
+        (
+            "python.raise-locus-universe",
+            "raise-locus",
+            raise_locus_universe_for_callee,
+        ),
+    ):
+        universe, refusal = resolver(callee)
+        if refusal is not None or universe is None:
+            continue
+        source_memento = getattr(universe, "source_memento", None)
+        if source_memento is None:
+            continue
+        status, reason = _classify_universe_source_node(
+            role,
+            universe_kind,
+            stmt,
+            node,
+            source_memento,
+        )
+        if status != "unclassified":
+            return status, reason
+    return None
+
+
+def _owner_body_statement(
+    chain: tuple[ast.AST, ...],
+    owner: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> Optional[ast.stmt]:
+    try:
+        owner_index = next(
+            index for index, item in enumerate(chain) if item is owner
+        )
+    except StopIteration:
+        return _nearest_statement(chain)
+    for item in chain[owner_index + 1:]:
+        if isinstance(item, ast.stmt) and not isinstance(
+            item,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        ):
+            return item
+    return _nearest_statement(chain)
+
+
+def _unhandled_try_flow_refusal_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    chain = ancestors + (node,)
+    try_stmt = next(
+        (item for item in reversed(chain) if isinstance(item, ast.Try)),
+        None,
+    )
+    if try_stmt is None:
+        return None
+    if node is try_stmt or any(candidate is node for candidate in ast.walk(try_stmt)):
+        return (
+            "refused",
+            (
+                "path-sensitive try/except flow refused: no emitted "
+                "exception/value universe accounts for this control-flow relation"
+            ),
+        )
+    return None
+
+
+def _unhandled_raise_path_refusal_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    chain = ancestors + (node,)
+    raise_stmt = next(
+        (item for item in reversed(chain) if isinstance(item, ast.Raise)),
+        None,
+    )
+    if raise_stmt is None:
+        return None
+    if node is raise_stmt or any(candidate is node for candidate in ast.walk(raise_stmt)):
+        return (
+            "refused",
+            (
+                "raise path refused: no emitted no-return, branch-raise, "
+                "or exception-handler universe accounts for this path"
+            ),
+        )
+    return None
 
 
 def _direct_nondeterministic_call_name(call: ast.Call) -> str:
