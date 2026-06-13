@@ -5911,6 +5911,72 @@ fn emit_value_contract_unhandled_cast_refused() {
     );
 }
 
+// Slice 21: early-return GUARD CLAUSE -- `(if COND { return RET; })+ TAIL`. The
+// ?/let-else family of bin-1: a guard-clause body is semantically
+// `if COND { RET } else { TAIL }`, so it warrants with the value-if encoding:
+// out==RET under COND (and earlier guards negated), out==TAIL under all negated.
+// Plus unary negation of a non-literal (`-x` -> 0 - x) which a guard tail like
+// `{ if a > 0 { return a; } -a }` needs.
+#[test]
+fn emit_value_contract_guard_return_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str(
+        "fn sign(a: i32) -> i32 { if a > 0 { return 1; } if a < 0 { return 2; } 0 }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("sign", &f.block).expect("guard-clause body warrants");
+    let inv_dbg = format!("{:?}", decl.inv.clone().expect("inv present"));
+    assert!(inv_dbg.contains("implies"), "guard clauses encode via implies: {inv_dbg}");
+    assert!(inv_dbg.contains("out"), "return value related: {inv_dbg}");
+
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("guard-clause inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_guard_return_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "guard-clause relation must be well-sorted for z3:\n{stdout}\n--- {script}"
+        );
+        assert!(stdout.contains("sat"), "guard-clause relation must be satisfiable:\n{stdout}");
+    }
+}
+
+// Unary negation of a non-literal: `{ if a > 0 { return a; } -a }` -- the guard
+// returns a, the tail is `-a` (0 - a). Warrants now (was refused: unary neg of a
+// non-literal had no term).
+#[test]
+fn emit_value_contract_unary_neg_tail_warrants() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn =
+        syn::parse_str("fn abs_ish(a: i32) -> i32 { if a > 0 { return a; } -a }").unwrap();
+    let decl = emit_value_contract("abs_ish", &f.block).expect("unary-neg guard tail warrants");
+    assert!(decl.inv.is_some(), "inv present");
+}
+
+// Discrimination: a guard clause whose TAIL is not an EUF value (e.g. a mutating
+// or unmodelable tail) stays None -- never a partial/hollow warrant.
+#[test]
+fn emit_value_contract_guard_return_non_value_tail_refused() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // tail is a loop expression (not an EUF value) -> None.
+    let f: syn::ItemFn = syn::parse_str(
+        "fn f(a: i32) -> i32 { if a > 0 { return a; } loop { } }",
+    )
+    .unwrap();
+    assert!(
+        emit_value_contract("f", &f.block).is_none(),
+        "a non-value guard tail must not warrant"
+    );
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

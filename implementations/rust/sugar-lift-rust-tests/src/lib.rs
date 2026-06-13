@@ -4258,7 +4258,91 @@ fn block_inv(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Formula>> {
     if let [Stmt::Expr(tail, None)] = block.stmts.as_slice() {
         return tail_inv(tail, scope);
     }
-    let_prefix_inv(block, scope)
+    if let Some(inv) = let_prefix_inv(block, scope) {
+        return Some(inv);
+    }
+    emit_guard_return_value(block, scope)
+}
+
+/// A guard-clause body: `(if COND { return RET; })+ TAIL` -- one or more leading
+/// early-return guard clauses (the `?`/let-else family of bin-1) followed by a
+/// fall-through tail value. Semantically `if COND { RET } else { TAIL }`, so it
+/// reuses the value-`if` encoding: `out == RET` under `COND` (and the negation
+/// of every earlier guard), `out == TAIL` under all guards negated. Each guard's
+/// RET and the final TAIL must be EUF terms; the `if` must have NO `else` and a
+/// then-block that is exactly `return RET;`. Anything else -> None.
+fn emit_guard_return_value(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Formula>> {
+    let stmts = block.stmts.as_slice();
+    let mut clauses: Vec<(Rc<Formula>, Rc<Term>)> = Vec::new();
+    let mut negated: Vec<Rc<Formula>> = Vec::new();
+    let mut idx = 0;
+    while idx < stmts.len() {
+        let Stmt::Expr(Expr::If(if_expr), _) = &stmts[idx] else {
+            break;
+        };
+        if if_expr.else_branch.is_some() {
+            break;
+        }
+        let Some(ret_expr) = then_block_single_return(&if_expr.then_branch) else {
+            break;
+        };
+        let ret_term = translate_term_in_scope(ret_expr, scope).ok()?;
+        if !term_is_euf_value(&ret_term) {
+            return None;
+        }
+        let cond = match translate_bool_assertion(&if_expr.cond, scope, &FloatWidthScope::new()) {
+            Ok(entry) => entry.atom,
+            Err(_) => {
+                let t = translate_term_in_scope(&if_expr.cond, scope).ok()?;
+                if !term_is_euf_value(&t) {
+                    return None;
+                }
+                eq(t, bool_const(true))
+            }
+        };
+        let mut gp = negated.clone();
+        gp.push(cond.clone());
+        let guard = if gp.len() == 1 { gp.remove(0) } else { and_(gp) };
+        clauses.push((guard, ret_term));
+        negated.push(not_(cond));
+        idx += 1;
+    }
+    if clauses.is_empty() {
+        return None; // no leading guard clause -> not this shape
+    }
+    // The remaining statements are the fall-through tail value (under all guards
+    // negated). Reuse block_euf_term over a synthetic block of the rest.
+    let tail_block = syn::Block {
+        brace_token: block.brace_token,
+        stmts: stmts[idx..].to_vec(),
+    };
+    let tail_term = block_euf_term(&tail_block, scope)?;
+    let tail_guard = if negated.len() == 1 {
+        negated.remove(0)
+    } else {
+        and_(negated)
+    };
+    clauses.push((tail_guard, tail_term));
+    let out = make_var("out");
+    Some(and_(
+        clauses
+            .into_iter()
+            .map(|(guard, term)| implies(guard, eq(out.clone(), term)))
+            .collect(),
+    ))
+}
+
+/// The returned expression of a then-block that is exactly `return RET;` (or
+/// `{ return RET; }`). None if the block is not a single bare `return <expr>`.
+fn then_block_single_return(then_branch: &syn::Block) -> Option<&Expr> {
+    let [stmt] = then_branch.stmts.as_slice() else {
+        return None;
+    };
+    let ret = match stmt {
+        Stmt::Expr(Expr::Return(r), _) => r,
+        _ => return None,
+    };
+    ret.expr.as_deref()
 }
 
 /// The consistency `inv` for a SINGLE tail expression (no prefix). Tries, in
@@ -5325,10 +5409,14 @@ fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term
                 }
                 return Ok(real_const(format!("-{value}")));
             }
-            Err(format!(
-                "unsupported negative literal `{}`",
-                token_key(expr)
-            ))
+            // Arithmetic negation of a non-literal (`-x`): `0 - x`, the same
+            // integer-subtraction ctor as a binary `-`. Only signed operands
+            // compile with unary `-`, so the Int regime is sound. The inner term
+            // must itself be liftable (its named Err propagates).
+            Ok(Rc::new(Term::Ctor {
+                name: "-".to_string(),
+                args: vec![num(0), translate_term_in_scope(&unary.expr, scope)?],
+            }))
         }
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => Ok(Rc::new(Term::Ctor {
             name: "bit-not".to_string(),
