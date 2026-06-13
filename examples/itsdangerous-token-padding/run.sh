@@ -216,6 +216,77 @@ if not any(
     for locus in signer_key_audit["loci"]
 ):
     raise SystemExit("FAIL: Signer separator validation guard was not accounted as support")
+signer_secret_key_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "itsdangerous.signer.Signer" in audit.get("contract", {}).get("name", "")
+    and audit.get("source_memento", {}).get("source_function_name")
+    == "Signer.secret_key"
+]
+if len(signer_secret_key_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one Signer.secret_key property audit, "
+        f"got {len(signer_secret_key_audits)}"
+    )
+signer_secret_key_audit = signer_secret_key_audits[0]
+signer_secret_key_totals = signer_secret_key_audit["totals"]
+signer_secret_key_memento = signer_secret_key_audit["source_memento"]
+if signer_secret_key_memento.get("field_name") != "secret_keys":
+    raise SystemExit(
+        "FAIL: Signer.secret_key source memento did not record secret_keys: "
+        f"{signer_secret_key_memento!r}"
+    )
+if signer_secret_key_memento.get("field_projection") != ["index", -1]:
+    raise SystemExit(
+        "FAIL: Signer.secret_key source memento did not record [-1] projection: "
+        f"{signer_secret_key_memento!r}"
+    )
+if "body_text" in signer_secret_key_memento or "ast_template" in signer_secret_key_memento:
+    raise SystemExit("FAIL: Signer.secret_key source memento embeds source/template body")
+if signer_secret_key_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: Signer.secret_key source dig has unclassified source: "
+        f"totals={signer_secret_key_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Return"
+    and locus.get("line") == 180
+    for locus in signer_secret_key_audit["loci"]
+):
+    raise SystemExit("FAIL: Signer.secret_key return was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Subscript"
+    and locus.get("line") == 180
+    for locus in signer_secret_key_audit["loci"]
+):
+    raise SystemExit("FAIL: Signer.secret_key [-1] projection was not warranted")
+signer_secret_list_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.list-adapter-universe"
+    and "itsdangerous.signer.Signer" in audit.get("contract", {}).get("name", "")
+    and audit.get("source_memento", {}).get("source_function_name")
+    == "_make_keys_list"
+    and audit.get("source_memento", {}).get("list_adapter_branch") == "scalar"
+]
+if len(signer_secret_list_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one Signer.secret_key _make_keys_list audit, "
+        f"got {len(signer_secret_list_audits)}"
+    )
+signer_secret_list_audit = signer_secret_list_audits[0]
+signer_secret_list_totals = signer_secret_list_audit["totals"]
+if signer_secret_list_audit["source_memento"].get("list_adapter_branch") != "scalar":
+    raise SystemExit(
+        "FAIL: Signer.secret_key list-adapter memento did not record scalar branch: "
+        f"{signer_secret_list_audit['source_memento']!r}"
+    )
+if signer_secret_list_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: Signer.secret_key list-adapter source dig has unclassified source: "
+        f"totals={signer_secret_list_totals}"
+    )
 signer_derive_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.branch-selected-universe"
@@ -817,6 +888,15 @@ print(
     f"support={signer_key_totals.get('source_support', 0)}",
     f"refused={signer_key_totals['source_refused']}",
     f"unclassified={signer_key_totals['unclassified_source']}",
+)
+print(
+    "source audit Signer.secret_key:",
+    f"loci={signer_secret_key_totals['source_loci']}",
+    f"warranted={signer_secret_key_totals['source_warranted']}",
+    f"inactive={signer_secret_key_totals['source_inactive']}",
+    f"support={signer_secret_key_totals.get('source_support', 0)}",
+    f"refused={signer_secret_key_totals['source_refused']}",
+    f"unclassified={signer_secret_key_totals['unclassified_source']}",
 )
 print(
     "source audit Signer.derive_key:",

@@ -35,6 +35,11 @@ def test_signer_default_key_derivation():
     assert alg.key_derivation == signer.Signer.default_key_derivation
 
 
+def test_signer_secret_key_property():
+    alg = signer.Signer("secret")
+    assert alg.secret_key == b"secret"
+
+
 def test_signer_none_key_derivation_returns_secret_key():
     alg = signer.Signer("secret", key_derivation="none")
     assert alg.derive_key(b"raaaa") != b"raaaa"

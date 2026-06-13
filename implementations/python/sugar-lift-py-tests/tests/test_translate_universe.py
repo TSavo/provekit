@@ -2973,6 +2973,213 @@ class Signer:
     ), list_audit
 
 
+def test_instance_field_universe_walks_last_item_property_getter(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        instance_field_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    instance_field_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_property_last",
+        '''
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+
+    @property
+    def secret_key(self):
+        return self.secret_keys[-1]
+''',
+    )
+
+    universe, refusal = instance_field_universe_for_callee(
+        "vendinst_property_last.Signer.secret_key"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.field_name == "secret_keys"
+    assert universe.field_projection == ("index", -1)
+    assert universe.helper_callee == "vendinst_property_last._make_keys_list"
+
+
+def test_instance_field_last_item_property_composes_helper_list_adapter(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        instance_field_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    instance_field_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_property_compose",
+        '''
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+
+    @property
+    def secret_key(self):
+        return self.secret_keys[-1]
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_property_compose
+
+        def test_secret_key_property():
+            signer = vendinst_property_compose.Signer(b"k")
+            assert signer.secret_key == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_property_compose.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    secret = ctor("python:bytes", [str_const("k")])
+    adapter = ctor(
+        "callresult_vendinst_property_compose_want_bytes_a1",
+        [secret],
+    )
+    property_eqs = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        if adapter in args and any(
+            getattr(side, "name", "") == "signer$0.secret_key"
+            for side in args
+        ):
+            property_eqs.append(atom)
+        if adapter in args and secret in args:
+            identity_eqs.append(atom)
+
+    assert property_eqs
+    assert identity_eqs
+    assert {
+        "python.instance-field-universe",
+        "python.list-adapter-universe",
+        "python.bytes-identity-universe",
+    } <= {warrant.get("role") for warrant in assertion.source_warrants}
+
+
+def test_package_accounting_classifies_last_item_property_getter(tmp_path, monkeypatch):
+    pkg = tmp_path / "vendpkg_property_last"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "signer.py").write_text(
+        textwrap.dedent(
+            '''
+            def want_bytes(s):
+                if isinstance(s, str):
+                    s = s.encode()
+
+                return s
+
+
+            def _make_keys_list(secret_key):
+                if isinstance(secret_key, (str, bytes)):
+                    return [want_bytes(secret_key)]
+
+                return [want_bytes(s) for s in secret_key]
+
+
+            class Signer:
+                def __init__(self, secret_key):
+                    self.secret_keys = _make_keys_list(secret_key)
+
+                @property
+                def secret_key(self):
+                    return self.secret_keys[-1]
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        from vendpkg_property_last.signer import Signer
+
+        def test_secret_key_property():
+            signer = Signer(b"k")
+            assert signer.secret_key == b"wrong"
+        """,
+    )
+
+    property_audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.instance-field-universe"
+        and audit.get("source_memento", {}).get("source_function_name")
+        == "Signer.secret_key"
+    )
+    assert property_audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        for locus in property_audit["loci"]
+    ), property_audit
+
+    for audit in lifted["sourceAudits"]:
+        if audit.get("role") != "python.package-source":
+            continue
+        property_loci = [
+            locus
+            for locus in audit["loci"]
+            if locus["file"].endswith("vendpkg_property_last/signer.py")
+            and "self.secret_keys[-1]" in Path(locus["file"]).read_text()
+            and locus.get("ast_kind") in {"Return", "Subscript"}
+        ]
+        assert not [
+            locus for locus in property_loci if locus["status"] == "unclassified"
+        ], property_loci
+
+
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):
     vendor_path(
         "vendinst_default_attr",

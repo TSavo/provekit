@@ -320,6 +320,7 @@ class InstanceFieldUniverse:
     lineno: int
     source_memento: Optional[dict[str, Any]] = None
     constructor_source_memento: Optional[dict[str, Any]] = None
+    field_projection: Optional[tuple[str, int]] = None
     constructor_default_attr_name: Optional[str] = None
     constructor_default_literal: Optional[object] = None
     constructor_default_literal_kind: Optional[str] = None
@@ -853,7 +854,11 @@ def instance_field_universe_for_callee(
     constructor argument; this function only proves which constructor slot the
     getter returns.
     """
-    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    resolved = _resolve_vendor_function(
+        callee,
+        allow_methods=True,
+        allow_property=True,
+    )
     if resolved is None:
         return None, None
     tree, fn, spec_origin, module_name, fn_name = resolved
@@ -873,9 +878,10 @@ def instance_field_universe_for_callee(
         or method_body[0].value is None
     ):
         return None, None
-    returned_field = _self_attribute_name(method_body[0].value, method_params[0])
-    if returned_field is None:
+    returned = _self_attribute_return(method_body[0].value, method_params[0])
+    if returned is None:
         return None, None
+    returned_field, field_projection = returned
 
     cls = _find_class_path(tree.body, class_qualname.split("."))
     if cls is None:
@@ -924,6 +930,7 @@ def instance_field_universe_for_callee(
             lineno=fn.lineno,
             source_memento=source_memento,
             constructor_source_memento=constructor_source_memento,
+            field_projection=field_projection,
             constructor_default_attr_name=field.default_attr_name,
             constructor_default_literal=field.default_literal,
             constructor_default_literal_kind=field.default_literal_kind,
@@ -1574,6 +1581,37 @@ def _self_attribute_name(node: ast.AST, self_name: str) -> Optional[str]:
         and node.value.id == self_name
     ):
         return node.attr
+    return None
+
+
+def _self_attribute_return(
+    node: ast.AST,
+    self_name: str,
+) -> Optional[tuple[str, Optional[tuple[str, int]]]]:
+    field_name = _self_attribute_name(node, self_name)
+    if field_name is not None:
+        return field_name, None
+    if not isinstance(node, ast.Subscript):
+        return None
+    field_name = _self_attribute_name(node.value, self_name)
+    if field_name is None:
+        return None
+    index = _constant_int_index(node.slice)
+    if index is None:
+        return None
+    return field_name, ("index", index)
+
+
+def _constant_int_index(node: ast.AST) -> Optional[int]:
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return int(node.value)
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and type(node.operand.value) is int
+    ):
+        return -int(node.operand.value)
     return None
 
 
@@ -3821,7 +3859,12 @@ def _body_reaches_nondet(fn, module_fns, depth, seen) -> bool:
     return False
 
 
-def _resolve_vendor_function(callee: str, *, allow_methods: bool = False):
+def _resolve_vendor_function(
+    callee: str,
+    *,
+    allow_methods: bool = False,
+    allow_property: bool = False,
+):
     if "." not in callee:
         return None
     parts = callee.split(".")
@@ -3833,7 +3876,11 @@ def _resolve_vendor_function(callee: str, *, allow_methods: bool = False):
         fn_path = parts[split:]
         if not module_name or not fn_path:
             continue
-        resolved = _resolve_function_path_in_module(module_name, fn_path)
+        resolved = _resolve_function_path_in_module(
+            module_name,
+            fn_path,
+            allow_property=allow_property,
+        )
         if resolved is not None:
             return resolved
     return None
@@ -3877,7 +3924,12 @@ def _resolve_class_path_in_module(module_name: str, class_path: list[str]):
     return tree, cls, spec.origin, module_name, ".".join(class_path)
 
 
-def _resolve_function_path_in_module(module_name: str, fn_path: list[str]):
+def _resolve_function_path_in_module(
+    module_name: str,
+    fn_path: list[str],
+    *,
+    allow_property: bool = False,
+):
     try:
         spec = importlib.util.find_spec(module_name)
     except (ImportError, ValueError):
@@ -3895,7 +3947,11 @@ def _resolve_function_path_in_module(module_name: str, fn_path: list[str]):
     fn = _find_function_path(tree.body, fn_path)
     if fn is None:
         return None
-    if fn.decorator_list and not _is_staticmethod_only(fn):
+    if (
+        fn.decorator_list
+        and not _is_staticmethod_only(fn)
+        and not (allow_property and _is_property_only(fn))
+    ):
         # A decorated def is NOT its body: the name binds whatever the
         # decorator returns (caught live 2026-06-12: @negate over
         # `return True` runs False while the body walk swore True — a
@@ -3999,6 +4055,13 @@ def _class_member_binding_count(cls: ast.ClassDef, name: str) -> int:
 def _is_staticmethod_only(fn: ast.FunctionDef) -> bool:
     return bool(fn.decorator_list) and all(
         isinstance(dec, ast.Name) and dec.id == "staticmethod"
+        for dec in fn.decorator_list
+    )
+
+
+def _is_property_only(fn: ast.FunctionDef) -> bool:
+    return len(fn.decorator_list) == 1 and all(
+        isinstance(dec, ast.Name) and dec.id == "property"
         for dec in fn.decorator_list
     )
 

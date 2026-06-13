@@ -583,6 +583,7 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "template_cid",
         "param_names",
         "field_name",
+        "field_projection",
         "constructor_param_name",
         "constructor_default_param_names",
         "constructor_default_attr_name",
@@ -607,6 +608,8 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         elif field_name == "param_names" and isinstance(value, list):
             out[field_name] = list(value)
         elif field_name == "constructor_default_param_names" and isinstance(value, list):
+            out[field_name] = list(value)
+        elif field_name == "field_projection" and isinstance(value, list):
             out[field_name] = list(value)
         else:
             out[field_name] = value
@@ -1548,11 +1551,32 @@ def _is_instance_field_return(stmt: ast.stmt) -> bool:
     if not isinstance(stmt, ast.Return):
         return False
     value = stmt.value
-    return (
+    if (
         isinstance(value, ast.Attribute)
         and isinstance(value.value, ast.Name)
         and value.value.id == "self"
+    ):
+        return True
+    return (
+        isinstance(value, ast.Subscript)
+        and isinstance(value.value, ast.Attribute)
+        and isinstance(value.value.value, ast.Name)
+        and value.value.value.id == "self"
+        and _constant_int_index(value.slice) is not None
     )
+
+
+def _constant_int_index(node: ast.AST) -> Optional[int]:
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return int(node.value)
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and type(node.operand.value) is int
+    ):
+        return -int(node.operand.value)
+    return None
 
 
 def _is_super_init_expr(stmt: ast.stmt) -> bool:
@@ -5499,25 +5523,19 @@ def _universe_conjuncts(
                             ),
                         ),
                     )
-                conjuncts.append(eq(subject_term, value_term))
-                adapter_callee = getattr(inst_u, "adapter_callee", None)
-                if adapter_callee and isinstance(value_term, _Ctor):
-                    conjuncts.extend(
-                        _universe_conjuncts(
-                            adapter_callee,
-                            value_term,
-                            out,
-                            source_path,
-                            test_name,
-                            source_warrants=source_warrants,
-                            _seen=seen,
-                        )
+                    _append_constructor_field_projection_source_warrant(
+                        source_warrants,
+                        inst_u,
+                        origin,
                     )
-                helper_callee = getattr(inst_u, "helper_callee", None)
-                if helper_callee and isinstance(value_term, _Ctor):
+                conjuncts.append(eq(subject_term, value_term))
+                for recursive_callee in _constructor_field_recursive_callees(
+                    inst_u,
+                    value_term,
+                ):
                     conjuncts.extend(
                         _universe_conjuncts(
-                            helper_callee,
+                            recursive_callee,
                             value_term,
                             out,
                             source_path,
@@ -5589,11 +5607,13 @@ def _universe_conjuncts(
                         ),
                     )
             conjuncts.append(eq(subject_term, value_term))
-            adapter_callee = getattr(field_u, "adapter_callee", None)
-            if adapter_callee and isinstance(value_term, _Ctor):
+            for recursive_callee in _constructor_field_recursive_callees(
+                field_u,
+                value_term,
+            ):
                 conjuncts.extend(
                     _universe_conjuncts(
-                        adapter_callee,
+                        recursive_callee,
                         value_term,
                         out,
                         source_path,
@@ -5602,19 +5622,81 @@ def _universe_conjuncts(
                         _seen=seen,
                     )
                 )
-            helper_callee = getattr(field_u, "helper_callee", None)
-            if helper_callee and isinstance(value_term, _Ctor):
-                conjuncts.extend(
-                    _universe_conjuncts(
-                        helper_callee,
-                        value_term,
-                        out,
-                        source_path,
-                        test_name,
-                        source_warrants=source_warrants,
-                        _seen=seen,
+        if field_refusal is None and field_u is None:
+            property_callee = f"{callee}.{subject_field_name}"
+            property_u, property_refusal = instance_field_universe_for_callee(
+                property_callee
+            )
+            if property_refusal is not None:
+                out.warnings.append(
+                    LiftWarning(
+                        source_path=source_path,
+                        item_name=f"{test_name}::instance-field-universe",
+                        reason=f"{property_refusal.callee}: {property_refusal.reason}",
                     )
                 )
+            elif property_u is not None and property_u.constructor_param_index < len(
+                origin.constructor_args
+            ):
+                constructor_callee = property_u.constructor_qualname.removesuffix(
+                    ".__init__"
+                )
+                if constructor_callee == callee:
+                    value_term = _constructor_field_universe_value_term(
+                        subject_term,
+                        property_u.field_name,
+                        property_u,
+                        origin,
+                    )
+                    if source_warrants is not None:
+                        _append_unique_source_warrant(
+                            source_warrants,
+                            _source_warrant_for_instance_field_universe(
+                                property_u,
+                                source_memento=property_u.constructor_source_memento,
+                                source_function_name=_local_qualname(
+                                    property_u.module,
+                                    property_u.constructor_qualname,
+                                ),
+                                constructor_default_params=tuple(
+                                    param
+                                    for param in origin.constructor_default_params
+                                    if param == property_u.constructor_param_name
+                                ),
+                            ),
+                        )
+                        _append_unique_source_warrant(
+                            source_warrants,
+                            _source_warrant_for_instance_field_universe(
+                                property_u,
+                                source_memento=property_u.source_memento,
+                                source_function_name=_local_qualname(
+                                    property_u.module,
+                                    property_u.qualname,
+                                ),
+                            ),
+                        )
+                        _append_constructor_field_projection_source_warrant(
+                            source_warrants,
+                            property_u,
+                            origin,
+                        )
+                    conjuncts.append(eq(subject_term, value_term))
+                    for recursive_callee in _constructor_field_recursive_callees(
+                        property_u,
+                        value_term,
+                    ):
+                        conjuncts.extend(
+                            _universe_conjuncts(
+                                recursive_callee,
+                                value_term,
+                                out,
+                                source_path,
+                                test_name,
+                                source_warrants=source_warrants,
+                                _seen=seen,
+                            )
+                        )
     return conjuncts
 
 
@@ -5722,23 +5804,153 @@ def _constructor_field_universe_value_term(
                 getattr(universe, "constructor_default_literal", None),
             )
             if default_term is not None:
-                return default_term
-        return _constructor_field_adapter_term(universe, arg_term)
+                return _constructor_field_projection_term(
+                    universe,
+                    default_term,
+                    origin,
+                )
+        return _constructor_field_projection_term(
+            universe,
+            _constructor_field_adapter_term(universe, arg_term),
+            origin,
+        )
     default_attr_name = getattr(universe, "constructor_default_attr_name", None)
     if not default_attr_name:
-        return _constructor_field_adapter_term(universe, arg_term)
+        return _constructor_field_projection_term(
+            universe,
+            _constructor_field_adapter_term(universe, arg_term),
+            origin,
+        )
     if (
         universe.constructor_param_name not in origin.constructor_default_params
         and not _is_none_term(arg_term)
     ):
-        return _constructor_field_adapter_term(universe, arg_term)
+        return _constructor_field_projection_term(
+            universe,
+            _constructor_field_adapter_term(universe, arg_term),
+            origin,
+        )
     receiver_name = _receiver_name_for_constructor_field_subject(
         subject_term,
         field_name,
     )
     if receiver_name is None:
-        return _constructor_field_adapter_term(universe, arg_term)
-    return make_var(f"{receiver_name}.{default_attr_name}")
+        return _constructor_field_projection_term(
+            universe,
+            _constructor_field_adapter_term(universe, arg_term),
+            origin,
+        )
+    return _constructor_field_projection_term(
+        universe,
+        make_var(f"{receiver_name}.{default_attr_name}"),
+        origin,
+    )
+
+
+def _constructor_field_projection_term(
+    universe,
+    field_term: Term,
+    origin: _CallOrigin,
+) -> Term:
+    projection = getattr(universe, "field_projection", None)
+    if not projection:
+        return field_term
+    projection_kind, index = projection
+    if projection_kind != "index":
+        return field_term
+    projected = _project_list_adapter_index_term(universe, origin, int(index))
+    if projected is not None:
+        return projected
+    return ctor("index", [field_term, num(int(index))])
+
+
+def _project_list_adapter_index_term(
+    universe,
+    origin: _CallOrigin,
+    index: int,
+) -> Optional[Term]:
+    helper_callee = getattr(universe, "helper_callee", None)
+    if not helper_callee or origin.constructor_args is None:
+        return None
+    list_u, refusal = list_adapter_universe_for_callee(helper_callee)
+    if refusal is not None or list_u is None:
+        return None
+    if universe.constructor_param_index >= len(origin.constructor_args):
+        return None
+    arg = origin.constructor_args[universe.constructor_param_index]
+    if _is_str_or_bytes_literal_term(arg):
+        adapter_args = (arg,)
+    else:
+        adapter_args = _str_bytes_sequence_literal_elements(arg) or ()
+    if not adapter_args:
+        return None
+    try:
+        projected_arg = adapter_args[index]
+    except IndexError:
+        return None
+    return ctor(_call_result_head(list_u.adapter_callee, 1), [projected_arg])
+
+
+def _constructor_field_recursive_callees(universe, value_term: Term) -> Tuple[str, ...]:
+    if not isinstance(value_term, _Ctor):
+        return ()
+    field_projection = getattr(universe, "field_projection", None)
+    if field_projection:
+        adapter_callee = _projected_list_adapter_callee(universe)
+        if (
+            adapter_callee
+            and value_term.name == _call_result_head(adapter_callee, 1)
+        ):
+            return (adapter_callee,)
+        return ()
+    adapter_callee = getattr(universe, "adapter_callee", None)
+    if adapter_callee:
+        return (adapter_callee,)
+    helper_callee = getattr(universe, "helper_callee", None)
+    if helper_callee:
+        return (helper_callee,)
+    return ()
+
+
+def _projected_list_adapter_callee(universe) -> Optional[str]:
+    helper_callee = getattr(universe, "helper_callee", None)
+    if not helper_callee:
+        return None
+    list_u, refusal = list_adapter_universe_for_callee(helper_callee)
+    if refusal is not None or list_u is None:
+        return None
+    return list_u.adapter_callee
+
+
+def _append_constructor_field_projection_source_warrant(
+    source_warrants: List[dict],
+    universe,
+    origin: _CallOrigin,
+) -> None:
+    if not getattr(universe, "field_projection", None):
+        return
+    helper_callee = getattr(universe, "helper_callee", None)
+    if not helper_callee or origin.constructor_args is None:
+        return
+    list_u, refusal = list_adapter_universe_for_callee(helper_callee)
+    if refusal is not None or list_u is None or list_u.source_memento is None:
+        return
+    if universe.constructor_param_index >= len(origin.constructor_args):
+        return
+    arg = origin.constructor_args[universe.constructor_param_index]
+    if _is_str_or_bytes_literal_term(arg):
+        branch = "scalar"
+    elif _str_bytes_sequence_literal_elements(arg) is not None:
+        branch = "iterable"
+    else:
+        return
+    warrant = _source_warrant_for_universe(
+        list_u,
+        role="python.list-adapter-universe",
+        universe_kind="list-adapter",
+    )
+    warrant["list_adapter_branch"] = branch
+    _append_unique_source_warrant(source_warrants, warrant)
 
 
 def _constructor_field_adapter_term(universe, arg_term: Term) -> Term:
@@ -5836,6 +6048,9 @@ def _source_warrant_for_instance_field_universe(
     warrant["universe_kind"] = "constructor-field-getter"
     warrant["field_name"] = universe.field_name
     warrant["constructor_param_name"] = universe.constructor_param_name
+    field_projection = getattr(universe, "field_projection", None)
+    if field_projection:
+        warrant["field_projection"] = list(field_projection)
     default_attr_name = getattr(universe, "constructor_default_attr_name", None)
     if default_attr_name:
         warrant["constructor_default_attr_name"] = default_attr_name
