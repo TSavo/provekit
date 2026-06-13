@@ -1886,22 +1886,37 @@ def test_lift_source_refuses_unhandled_raise_path_package_accounting(
     pkg = tmp_path / "vendpkg_unhandled_raise_path"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("", encoding="utf-8")
-    (pkg / "encoding.py").write_text(
-        textwrap.dedent(
-            """
-            def maybe(value):
-                if value:
-                    raise ValueError(value)
-                if value == 0:
-                    return 1
-                return value + 1
+    source = textwrap.dedent(
+        """
+        def maybe(value):
+            if value:
+                if value == 2:
+                    pass
+                raise ValueError(value)
+            if value == 0:
+                return 1
+            return value + 1
 
-            def b64e(s):
-                return s.rstrip(b"=")
-            """
-        ),
-        encoding="utf-8",
+        def b64e(s):
+            return s.rstrip(b"=")
+        """
     )
+    outer_guard_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "if value:" in line
+    )
+    nested_guard_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "if value == 2" in line
+    )
+    raise_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "raise ValueError" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
     monkeypatch.syspath_prepend(str(tmp_path))
     translate_universe_for_callee.cache_clear()
 
@@ -1925,7 +1940,7 @@ def test_lift_source_refuses_unhandled_raise_path_package_accounting(
         locus
         for locus in audit["loci"]
         if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
-        and locus.get("line") == 4
+        and locus.get("line") == raise_line
     ]
     assert raise_loci
     assert not [
@@ -1941,12 +1956,24 @@ def test_lift_source_refuses_unhandled_raise_path_package_accounting(
         locus
         for locus in audit["loci"]
         if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
-        and locus.get("line") == 3
+        and locus.get("line") == outer_guard_line
         and locus.get("ast_kind") in {"If", "Name"}
     ]
     assert guard_loci
     assert {locus["status"] for locus in guard_loci} == {"refused"}
     assert all("raise path" in locus.get("reason", "") for locus in guard_loci)
+    nested_guard_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
+        and locus.get("line") == nested_guard_line
+        and locus.get("ast_kind") in {"If", "Compare", "Name", "Constant"}
+    ]
+    assert nested_guard_loci
+    assert {locus["status"] for locus in nested_guard_loci} == {"refused"}
+    assert all(
+        "raise path" in locus.get("reason", "") for locus in nested_guard_loci
+    )
 
 
 def test_lift_source_classifies_typing_cast_wrapper_as_package_warranted(

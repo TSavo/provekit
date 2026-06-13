@@ -1543,10 +1543,28 @@ def _raise_guard_for_locus(
         if not isinstance(item, ast.If):
             continue
         if node is item or any(candidate is node for candidate in ast.walk(item.test)):
-            if _stmt_list_eventually_raises(item.body):
+            if _stmt_list_eventually_raises(item.body) or _enclosing_body_raises(
+                item,
+                chain,
+            ):
                 return item
         return None
     return None
+
+
+def _enclosing_body_raises(stmt: ast.stmt, chain: tuple[ast.AST, ...]) -> bool:
+    try:
+        index = next(i for i, item in enumerate(chain) if item is stmt)
+    except StopIteration:
+        return False
+    if index == 0:
+        return False
+    parent = chain[index - 1]
+    for body_name in ("body", "orelse", "finalbody"):
+        body = getattr(parent, body_name, None)
+        if isinstance(body, list) and stmt in body:
+            return _stmt_list_eventually_raises(body)
+    return False
 
 
 def _stmt_list_eventually_raises(stmts: list[ast.stmt]) -> bool:
