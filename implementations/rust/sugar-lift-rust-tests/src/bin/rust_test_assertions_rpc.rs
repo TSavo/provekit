@@ -359,6 +359,16 @@ fn expr_is_pure_formula(expr: &syn::Expr) -> bool {
         Expr::Call(call) => {
             matches!(&*call.func, Expr::Path(_)) && call.args.iter().all(expr_is_pure_formula)
         }
+        // Pure value constructors over pure fields/elements.
+        Expr::Struct(s) => {
+            s.fields.iter().all(|f| expr_is_pure_formula(&f.expr))
+                && s.rest.as_ref().is_none_or(|r| expr_is_pure_formula(r))
+        }
+        Expr::Repeat(r) => expr_is_pure_formula(&r.expr) && expr_is_pure_formula(&r.len),
+        Expr::Range(r) => {
+            r.start.as_ref().is_none_or(|s| expr_is_pure_formula(s))
+                && r.end.as_ref().is_none_or(|e| expr_is_pure_formula(e))
+        }
         // Control-flow as a VALUE: an ite / match-tree over pure formulas is
         // itself a pure formula (result = ite(cond, then, else) / match-tree).
         Expr::If(e) => {
