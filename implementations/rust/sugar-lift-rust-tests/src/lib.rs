@@ -4274,7 +4274,7 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
     let plan = temporal_plan_for_stmts(&block.stmts);
     let scope = TemporalScope::new("rust-source", plan);
     if let Ok(term) = translate_term_in_scope(tail, &scope) {
-        if term_is_side_effect_free(&term) {
+        if term_is_euf_value(&term) {
             return Some(source_value_contract(name, eq(make_var("out"), term)));
         }
     }
@@ -4305,10 +4305,7 @@ fn bounded_output_universe(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Form
         let recv = translate_term_in_scope(&call.receiver, scope).ok()?;
         let lo = translate_term_in_scope(&call.args[0], scope).ok()?;
         let hi = translate_term_in_scope(&call.args[1], scope).ok()?;
-        if term_is_side_effect_free(&recv)
-            && term_is_side_effect_free(&lo)
-            && term_is_side_effect_free(&hi)
-        {
+        if term_is_euf_value(&recv) && term_is_euf_value(&lo) && term_is_euf_value(&hi) {
             return Some(and_(vec![
                 gte(make_var("out"), lo),
                 lte(make_var("out"), hi),
@@ -4332,28 +4329,35 @@ fn source_value_contract(name: &str, inv: Rc<Formula>) -> ContractDecl {
     }
 }
 
-/// True iff a value term is provably side-effect-free: built only from reads
-/// (var/const/deref/ref/field/index), total operators (arithmetic/bitwise/cast),
-/// and value constructors (tuple/array/struct/range). An OPAQUE call (`call:` to
-/// anything but the `None` ctor, or `method:`), an `await`, or a `macro:` var is
-/// NOT provably pure -- the term is then rejected (the body stays unclassified,
-/// never warranted as pure). Mirrors Python's value-position effect policy.
-fn term_is_side_effect_free(term: &Term) -> bool {
+/// True iff a value term is an emittable EUF value: reads, total operators,
+/// value constructors, AND value-position calls (`method:`/`call:`) treated as
+/// uninterpreted deterministic functions -- the method-call-as-EUF shape, the
+/// same policy Python's `_Emitter` applies to value-position calls (`out =
+/// m(recv, args)` over an uninterpreted `m`). Excluded: a known PANIC method
+/// (unwrap/expect family -> divergence, refused as an effect by `effect_refusal`),
+/// `await` (async effect), and a `macro:` var (unknown). Statement-level effects
+/// (assignment, `&mut`, loops) never reach here: an assignment/`&mut` tail fails
+/// translation and multi-statement bodies are not a single tail expr -- both fall
+/// through to `effect_refusal`.
+fn term_is_euf_value(term: &Term) -> bool {
     match term {
         Term::Var { name } => !name.starts_with("macro:"),
         Term::Const { .. } => true,
         Term::Ctor { name, args } => {
-            let opaque = name.starts_with("method:")
-                || name == "await"
-                || (name.starts_with("call:") && name != "call:None");
-            !opaque && args.iter().all(|a| term_is_side_effect_free(a))
+            let panicker = matches!(
+                name.as_str(),
+                "method:unwrap"
+                    | "method:expect"
+                    | "method:unwrap_unchecked"
+                    | "method:unwrap_err"
+                    | "method:expect_err"
+            );
+            let async_effect = name == "await";
+            !panicker && !async_effect && args.iter().all(|a| term_is_euf_value(a))
         }
-        Term::Lambda { body, .. } => term_is_side_effect_free(body),
+        Term::Lambda { body, .. } => term_is_euf_value(body),
         Term::Let { bindings, body } => {
-            bindings
-                .iter()
-                .all(|b| term_is_side_effect_free(&b.bound_term))
-                && term_is_side_effect_free(body)
+            bindings.iter().all(|b| term_is_euf_value(&b.bound_term)) && term_is_euf_value(body)
         }
     }
 }

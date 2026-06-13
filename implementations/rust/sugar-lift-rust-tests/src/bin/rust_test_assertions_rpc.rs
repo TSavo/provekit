@@ -346,6 +346,7 @@ struct BlockerScan {
     has_mut_borrow: bool,
     has_compound_assign: bool,
     panic_macro: Option<String>,
+    panic_method: Option<String>,
 }
 
 impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
@@ -396,6 +397,15 @@ impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
     }
     fn visit_expr_method_call(&mut self, n: &'ast syn::ExprMethodCall) {
         self.has_method = true;
+        if self.panic_method.is_none() {
+            let m = n.method.to_string();
+            if matches!(
+                m.as_str(),
+                "unwrap" | "expect" | "unwrap_unchecked" | "unwrap_err" | "expect_err"
+            ) {
+                self.panic_method = Some(m);
+            }
+        }
         syn::visit::visit_expr_method_call(self, n);
     }
     fn visit_expr_call(&mut self, n: &'ast syn::ExprCall) {
@@ -474,6 +484,9 @@ fn effect_refusal(block: &syn::Block) -> Option<String> {
     }
     if let Some(m) = s.panic_macro {
         return Some(format!("panic/divergence (effect): `{m}!`"));
+    }
+    if let Some(m) = s.panic_method {
+        return Some(format!("panic/divergence (effect): `.{m}()`"));
     }
     None
 }

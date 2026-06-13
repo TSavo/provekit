@@ -5580,10 +5580,12 @@ fn emit_value_contract_handles_or_of_matches() {
 #[test]
 fn emit_value_contract_refuses_unemittable_bodies() {
     use sugar_lift_rust_tests::emit_value_contract;
-    // method call (opaque receiver), guard, and multi-statement are NOT emittable
-    // yet -> None, so the caller leaves them UNCLASSIFIED (never a hollow warrant).
+    // A guard in matches!, a panic method (unwrap -> divergence), and a
+    // multi-statement body are NOT emittable here -> None, so the caller routes
+    // them to effect_refusal/unclassified (never a hollow warrant). (Value-position
+    // calls like v.len() DO emit as EUF -- see the method-EUF test below.)
     for src in [
-        "fn f(v: Vec<u8>) -> usize { v.len() }",
+        "fn f(r: Result<i32, ()>) -> i32 { r.unwrap() }",
         "fn f(c: char) -> bool { matches!(c, x if x == 'q') }",
         "fn f(c: char) -> bool { let _y = 1; matches!(c, 'A'..='Z') }",
     ] {
@@ -5660,11 +5662,11 @@ fn emit_value_contract_emits_side_effect_free_value_term() {
 }
 
 #[test]
-fn emit_value_contract_leaves_opaque_call_value_unclassified() {
+fn emit_value_contract_warrants_value_position_calls_as_euf() {
     use sugar_lift_rust_tests::emit_value_contract;
-    // An opaque call (method/path) in value position is NOT provably
-    // side-effect-free -> None -> the caller leaves it UNCLASSIFIED (not a pure
-    // warrant, and not refused -- we have not proven it effectful).
+    // method-call-as-EUF (the goal's sanctioned shape, mirroring Python's
+    // value-position policy): a value-position call is an uninterpreted
+    // deterministic function -> out = m(recv, args) / f(args), warranted.
     for src in [
         "fn f(v: Vec<u8>) -> usize { v.len() }",
         "fn f() -> i32 { g() }",
@@ -5672,8 +5674,20 @@ fn emit_value_contract_leaves_opaque_call_value_unclassified() {
     ] {
         let f: syn::ItemFn = syn::parse_str(src).unwrap();
         assert!(
+            emit_value_contract("f", &f.block).is_some(),
+            "value-position call must warrant as EUF: {src}"
+        );
+    }
+    // But a known PANIC method (divergence), await, or macro does NOT emit here
+    // -> routed to effect_refusal/unclassified, never a pure warrant.
+    for src in [
+        "fn f(r: Result<i32, ()>) -> i32 { r.unwrap() }",
+        "fn f(o: Option<i32>) -> i32 { o.expect(\"x\") }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        assert!(
             emit_value_contract("f", &f.block).is_none(),
-            "opaque-call value must stay unclassified: {src}"
+            "panic method must not warrant as pure EUF: {src}"
         );
     }
 }
@@ -5768,4 +5782,74 @@ fn clamp_universe_refutes_out_of_bound_bad_twin() {
         bad.contains("unsat"),
         "bad twin (out=11) must be refuted: {bad}"
     );
+}
+
+#[test]
+fn euf_call_value_composes_through_compiler() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str("fn f(v: Vec<u8>) -> usize { v.len() }").unwrap();
+    let decl = emit_value_contract("f", &f.block).unwrap();
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("EUF call inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_euf_call_compose.smt2");
+        std::fs::write(&path, &script).unwrap();
+        let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "EUF call relation must be well-sorted:\n{stdout}\n--- {script}"
+        );
+        assert!(
+            stdout.contains("sat"),
+            "EUF relation must be satisfiable:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn euf_value_decls_compose_across_diverse_shapes() {
+    // The method-EUF warrant must COMPOSE for the variety of real value bodies it
+    // emits, not just one shape -- otherwise 'warranted' would be hollow. Compile
+    // each real emitted decl through the prove compiler + z3.
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    let bodies = [
+        "fn f(v: &[u8]) -> usize { v.len() }",
+        "fn f(s: &str) -> usize { s.len() + 1 }",
+        "fn f(x: u32) -> u32 { x.swap_bytes() }",
+        "fn f(p: P) -> u64 { p.field.count_ones() as u64 }",
+        "fn f(a: u8, b: u8) -> u8 { a.wrapping_add(b) }",
+        "fn f(x: i32) -> i32 { helper(x) + g(x) * 2 }",
+        "fn f(v: &[u32]) -> u32 { v[0] & 0xff }",
+        "fn f(x: u64) -> u64 { x.rotate_left(13) ^ x }",
+    ];
+    for src in bodies {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let Some(decl) = emit_value_contract("f", &f.block) else {
+            panic!("expected an EUF/value warrant for: {src}");
+        };
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let inv = parsed[0]["inv"].clone();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+            .unwrap_or_else(|e| panic!("must compile to SMT-LIB: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_euf_diverse.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "must be well-sorted: {src}:\n{so}\n--- {script}"
+            );
+            assert!(so.contains("sat"), "must be satisfiable: {src}:\n{so}");
+        }
+    }
 }
