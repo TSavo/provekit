@@ -4252,6 +4252,67 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
     block_inv(block, &scope).map(|inv| source_value_contract(name, inv))
 }
 
+/// The BROAD warrant: every value body warrants, down to bare functionality.
+/// Either we THINK it constrains (so warrant it -- dumbly, opaquely if need be)
+/// or it NEVER constrains (no output -> None, the caller refuses by vacuity).
+/// There is no swamp in between.
+///
+/// Order = strongest constraint first: the STRUCTURAL lift (`emit_value_contract`
+/// -- membership, bounded universes, value-ifs, EUF terms: strong teeth), then
+/// the DUMB functional fallback `out = call:NAME(params)` -- "out is a
+/// deterministic function of the inputs" (weak teeth: bites only nondeterminism,
+/// but still a real vendor DEMAND). A unit-returning body has no output to
+/// constrain -> None.
+///
+/// Safe to be this dumb because the vendor is the referee (see the keystone): a
+/// bogus broad warrant either finds no pin (harmless, unrefuted) or goes
+/// all-UNSAT and self-retracts; it can only become a finding after a SAT
+/// licenses it. We never have to PROVE the lift sound -- the check does.
+pub fn broad_functional_warrant(
+    name: &str,
+    sig: &syn::Signature,
+    block: &syn::Block,
+) -> Option<ContractDecl> {
+    if let Some(decl) = emit_value_contract(name, block) {
+        return Some(decl); // structural -- strongest teeth
+    }
+    if sig_returns_unit(sig) {
+        return None; // no output to constrain -> the caller refuses by vacuity
+    }
+    // Bare functionality: out = call:NAME(params). The fn name keys it to the
+    // vendor's call-site pins (intra-kit; CID-canonicalization is downstream).
+    let term = Rc::new(Term::Ctor {
+        name: format!("call:{name}"),
+        args: sig_param_vars(sig),
+    });
+    Some(source_value_contract(name, eq(make_var("out"), term)))
+}
+
+/// True iff the signature returns `()` (explicit or default) -- no output to
+/// constrain. Mirrored in the RPC bin's classifier.
+pub fn sig_returns_unit(sig: &syn::Signature) -> bool {
+    match &sig.output {
+        syn::ReturnType::Default => true,
+        syn::ReturnType::Type(_, ty) => matches!(&**ty, syn::Type::Tuple(t) if t.elems.is_empty()),
+    }
+}
+
+/// The bound parameter names as EUF vars: a receiver -> `self`, a simple
+/// `ident: T` -> `ident`. Destructuring/complex param patterns are skipped (they
+/// only weaken the opaque functional term, never make it unsound).
+fn sig_param_vars(sig: &syn::Signature) -> Vec<Rc<Term>> {
+    sig.inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Receiver(_) => Some(make_var("self")),
+            syn::FnArg::Typed(pt) => match &*pt.pat {
+                syn::Pat::Ident(id) => Some(make_var(id.ident.to_string())),
+                _ => None,
+            },
+        })
+        .collect()
+}
+
 /// The new-doctrine check: conjoin a body's emitted warrant with a VENDOR pin --
 /// the sworn output at concrete arguments -- and hand the conjunction to the
 /// solver. We do NOT analyze the body's effects, order, or interior; we

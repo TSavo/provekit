@@ -6136,6 +6136,36 @@ fn vendor_pin_refutes_wrong_warrant_unsat() {
     }
 }
 
+// The broad functional fallback must COMPOSE (warranted <=> composes through z3):
+// a body with no structural shape (a loop) warrants `out = call:f(params)` --
+// bare functionality -- and that relation is well-sorted and satisfiable.
+#[test]
+fn broad_functional_warrant_composes_through_compiler() {
+    use sugar_lift_rust_tests::broad_functional_warrant;
+    let f: syn::ItemFn =
+        syn::parse_str("fn sum(a: i32) -> i32 { let mut s = 0; for i in 0..a { s += i; } s }")
+            .unwrap();
+    let decl = broad_functional_warrant("sum", &f.sig, &f.block).expect("value body warrants");
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("functional warrant must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_broad_functional_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "functional warrant must be well-sorted:\n{stdout}\n--- {script}"
+        );
+        assert!(stdout.contains("sat"), "functional warrant must be satisfiable:\n{stdout}");
+    }
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

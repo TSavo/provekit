@@ -201,42 +201,35 @@ fn lift(params: &Value) -> Value {
                     Some(w) => ("silent", Some(format!("vendor pin not liftable: {}", w.reason))),
                     None => ("warranted", None),
                 }
-            } else if let Some(decl) = sugar_lift_rust_tests::emit_value_contract(&name, fr.block) {
-                // REAL warrant: the kit EMITTED a closed consistency ProofIR
-                // contract for this body (verified to compile + compose via z3),
-                // recompute-verifiable from the memento. A syntactic "looks
-                // generalizable" flag that emits nothing is a hollow warrant --
-                // warranted now MEANS emission, so the decl flows into the IR.
+            } else if let Some(decl) =
+                sugar_lift_rust_tests::broad_functional_warrant(&name, fr.sig, fr.block)
+            {
+                // We THINK it constrains -> WARRANT it, broadly. Either a structural
+                // lift (strong teeth) or the dumb functional fallback
+                // `out = call:NAME(params)` (out is a deterministic function of the
+                // inputs -- weak teeth, but a real vendor DEMAND). Safe to be dumb:
+                // the vendor is the referee. A bogus broad warrant finds no pin
+                // (harmless) or goes all-UNSAT and self-retracts; only a SAT
+                // licenses it, and only then are its UNSATs vendor findings. The
+                // decl flows into the IR; the universe is built from these demands.
                 value_decls.push(decl);
                 ("warranted", None)
             } else if out.reduced_helpers.contains(&name) {
                 // a non-test fn the reducer inlined to discharge a test: it backs
                 // a warrant, so it is `support`.
                 ("support", None)
-            } else if let Some(effect) = effect_refusal(fr.block) {
-                // PROVABLY effectful (IO / mutation / panic-divergence / `?`) and no
-                // constraint was liftable -> REFUSED by name. This is the EASY,
-                // EXPECTED half of refused: the body is out of the consistency
-                // domain. (refused = effects [this] UNION unsat-vs-vendor [the
-                // analysis, wired separately]. Run AFTER try-warrant, never as a
-                // pre-gate: a volatile body that still lifts a constraint is
-                // warranted and judged by the vendor, not pre-refused here.)
-                ("refused", Some(effect))
-            } else if returns_unit(fr.sig) {
-                // No output to constrain (unit return), no liftable constraint, and
-                // no detected effect -> SILENT by design: a pure no-op makes no
-                // claim. Not a floor, not a refusal.
-                (
-                    "silent",
-                    Some("no output constraint to check (unit return); no vendor pin".to_string()),
-                )
             } else {
-                // A VALUE-returning body whose output constraint the lifter could
-                // not read YET -- the honest coverage residual (try-warrant
-                // extracted nothing). NOT refused: there is no UNSAT certificate,
-                // and we no longer sniff effects. The note records the construct the
-                // walker does not speak yet; it shrinks as try-warrant improves.
-                ("unclassified", Some(unclassified_reason(fr.block)))
+                // It NEVER constrains: a unit-returning body has no output to
+                // demand anything about. REFUSED BY VACUITY -- "adds no constraint"
+                // -- the reason names the effect if one is present (IO / mutation /
+                // panic / `?`), else bare vacuity. This is the EASY, EXPECTED half
+                // of refused (the analysis half is the UNSAT-vs-vendor certificate,
+                // wired at the body<->pin seam). There is no swamp left: every body
+                // is warranted (constrains) or refused (never constrains / UNSAT).
+                let reason = effect_refusal(fr.block).unwrap_or_else(|| {
+                    "vacuity: no output to constrain (unit return states no demand)".to_string()
+                });
+                ("refused", Some(reason))
             };
             let mut locus = json!({
                 "file": rel,
@@ -533,15 +526,6 @@ fn effect_refusal(block: &syn::Block) -> Option<String> {
     None
 }
 
-/// A unit-returning fn has NO output to constrain. With no liftable constraint
-/// and no detected effect it is SILENT (a pure no-op makes no claim) -- not a
-/// floor, not a refusal.
-fn returns_unit(sig: &syn::Signature) -> bool {
-    match &sig.output {
-        syn::ReturnType::Default => true,
-        syn::ReturnType::Type(_, ty) => matches!(&**ty, syn::Type::Tuple(t) if t.elems.is_empty()),
-    }
-}
 
 /// LSP-coordinate positions (0-based line, 0-based col) of every method-call
 /// ident in a body -- the positions the RA oracle resolves to receiver/param
@@ -637,42 +621,6 @@ fn is_io_path(path: &str) -> bool {
     ]
     .iter()
     .any(|m| path.contains(m))
-}
-
-/// The named, categorized note for an UNCLASSIFIED body: which construct the
-/// walker doesn't speak yet. IO markers => bin-2 (the named floor); everything
-/// else => a bin-1 category (a future walker slice classifies it). A diagnostic
-/// for the burndown, NOT a verdict -- the body is unclassified, not refused.
-fn unclassified_reason(block: &syn::Block) -> String {
-    let mut s = BlockerScan::default();
-    syn::visit::Visit::visit_block(&mut s, block);
-    if let Some(io) = s.io {
-        return format!("IO membrane (bin-2): {io}");
-    }
-    if s.has_loop {
-        return "loop: walker does not fold loops yet (bin-1)".to_string();
-    }
-    if s.has_try {
-        return "`?` operator: short-circuit not modeled yet (bin-1)".to_string();
-    }
-    if s.has_method {
-        return "method call: opaque receiver, needs oracle resolution (bin-1)".to_string();
-    }
-    if let Some(m) = s.macro_name {
-        return format!("opaque macro `{m}!` (bin-1)");
-    }
-    if s.has_assign {
-        return "mutation / reassignment not modeled yet (bin-1)".to_string();
-    }
-    if block
-        .stmts
-        .iter()
-        .any(|st| matches!(st, syn::Stmt::Local(l) if l.init.as_ref().is_some_and(|i| i.diverge.is_some())))
-    {
-        return "let-else short-circuit: refutable bind + diverging else not modeled yet (bin-1)"
-            .to_string();
-    }
-    "multi-statement / unmodeled body shape (bin-1)".to_string()
 }
 
 /// Roll the per-locus statuses into the `sourceLedger` the CLI source-audit gate
@@ -887,25 +835,6 @@ mod tests {
     }
 
     #[test]
-    fn unclassified_reason_categorizes_and_splits_bin2() {
-        let io = unclassified_reason(&block_of("fn f() { println!(\"x\"); }"));
-        assert!(
-            io.contains("IO membrane (bin-2)"),
-            "print is the IO floor: {io}"
-        );
-        let lp = unclassified_reason(&block_of("fn f() { for _ in 0..3 {} }"));
-        assert!(
-            lp.contains("loop") && lp.contains("bin-1"),
-            "loop is drainable bin-1: {lp}"
-        );
-        let mc = unclassified_reason(&block_of("fn f(v: Vec<i32>) -> usize { v.len() }"));
-        assert!(
-            mc.contains("method call") && mc.contains("bin-1"),
-            "method call is bin-1: {mc}"
-        );
-    }
-
-    #[test]
     fn target_cfg_config_is_optional() {
         let cfg = target_cfg_from_config_text(
             r#"
@@ -969,22 +898,25 @@ facts = [
     }
 
     #[test]
-    fn unit_return_is_silent_value_body_is_warranted_or_unclassified() {
-        // NEW DOCTRINE: classification no longer sniffs effects. A unit-returning
-        // body has no output to constrain -> SILENT (not refused, not a floor).
-        assert!(returns_unit(&unit_sig("fn f() {}")));
-        assert!(returns_unit(&unit_sig("fn f(x: &mut i32) { *x = 1; }")));
-        assert!(returns_unit(&unit_sig("fn f() -> () { }")));
-        // A value-returning body is NOT silent -- it either warrants (constraint
-        // read) or stays unclassified (constraint not read yet); never refused on
-        // an effect sniff.
-        assert!(!returns_unit(&unit_sig("fn f() -> i32 { 1 }")));
-        assert!(!returns_unit(&unit_sig("fn f(v: Vec<u8>) -> usize { v.len() }")));
-    }
+    fn binary_partition_warrant_or_refuse_by_vacuity() {
+        use sugar_lift_rust_tests::{broad_functional_warrant, sig_returns_unit};
+        let parse = |src: &str| -> syn::ItemFn { syn::parse_str(src).unwrap() };
 
-    #[cfg(test)]
-    fn unit_sig(src: &str) -> syn::Signature {
-        let f: syn::ItemFn = syn::parse_str(src).unwrap();
-        f.sig
+        // VALUE body with no structural shape (a loop result) -> we THINK it
+        // constrains -> broad functional warrant `out = call:f(params)`.
+        let f = parse("fn f(a: i32) -> i32 { let mut s = 0; for i in 0..a { s += i; } s }");
+        let decl = broad_functional_warrant("f", &f.sig, &f.block)
+            .expect("value body warrants down to bare functionality");
+        let inv = format!("{:?}", decl.inv.unwrap());
+        assert!(inv.contains("call:f") && inv.contains('a'), "functional warrant out=call:f(a): {inv}");
+
+        // UNIT body -> NEVER constrains (no output) -> None -> caller refuses by
+        // vacuity. Effectful or not, there is no output to demand anything about.
+        let u = parse("fn log(x: i32) { println!(\"{x}\"); }");
+        assert!(sig_returns_unit(&u.sig));
+        assert!(
+            broad_functional_warrant("log", &u.sig, &u.block).is_none(),
+            "a unit body states no output constraint -> None -> refuse by vacuity"
+        );
     }
 }
