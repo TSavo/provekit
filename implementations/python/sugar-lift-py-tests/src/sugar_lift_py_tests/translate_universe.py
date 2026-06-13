@@ -504,6 +504,40 @@ class PredicateUniverse:
     vendor_vector_source: Optional[str] = None
 
 
+ISINSTANCE_CONCRETE_BUILTINS = {
+    "int",
+    "str",
+    "float",
+    "complex",
+    "bytes",
+    "bytearray",
+    "list",
+    "tuple",
+    "dict",
+    "set",
+    "frozenset",
+    "bool",
+    "NoneType",
+    "type",
+}
+
+
+@dataclass(frozen=True)
+class ReturnIsinstanceUniverse:
+    """A body that returns ``isinstance(expr, T)`` swears Boolean equivalence
+    between the function result and that predicate. The emitter instantiates
+    the returned predicate over the callsite's argument terms and emits the
+    existing ProofIR implication/isinstance shape."""
+
+    expr: object  # ast.Call
+    params: tuple
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
 _MISSING = object()
 
 
@@ -579,6 +613,89 @@ def eval_predicate(node, env):
     except TypeError:
         return None
     return None
+
+
+@functools.lru_cache(maxsize=None)
+def return_isinstance_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ReturnIsinstanceUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    body = _body_without_docstring(fn.body)
+    if (
+        len(body) != 1
+        or not isinstance(body[0], ast.Return)
+        or body[0].value is None
+    ):
+        return None, None
+    expr = body[0].value
+    if not _is_isinstance_return_call(expr):
+        return None, None
+    type_arg = expr.args[1]
+    if isinstance(type_arg, ast.Tuple):
+        return None, TranslateWalkRefusal(
+            callee=callee,
+            reason=(
+                "return-isinstance: tuple-of-types requires a type-union "
+                "encoding; refused by name"
+            ),
+        )
+    if isinstance(type_arg, ast.Attribute):
+        return None, TranslateWalkRefusal(
+            callee=callee,
+            reason=(
+                "return-isinstance: attribute type expression has unknown "
+                "subtype hierarchy; refused by name"
+            ),
+        )
+    if not isinstance(type_arg, ast.Name):
+        return None, TranslateWalkRefusal(
+            callee=callee,
+            reason=(
+                "return-isinstance: type argument is not a bare builtin name; "
+                "refused by name"
+            ),
+        )
+    if type_arg.id not in ISINSTANCE_CONCRETE_BUILTINS:
+        return None, TranslateWalkRefusal(
+            callee=callee,
+            reason=(
+                f"return-isinstance: `{type_arg.id}` is not a recognized "
+                "concrete builtin type; type lattice required"
+            ),
+        )
+    if sum(
+        1
+        for stmt in body
+        for n in ast.walk(stmt)
+        if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+    ) != 1:
+        return None, None
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    return (
+        ReturnIsinstanceUniverse(
+            expr=expr,
+            params=tuple(a.arg for a in (*fn.args.posonlyargs, *fn.args.args)),
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _is_isinstance_return_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "isinstance"
+        and len(node.args) == 2
+        and not node.keywords
+    )
 
 
 @functools.lru_cache(maxsize=None)

@@ -103,6 +103,7 @@ from .ir import (
     subst_var_in_formula,
 )
 from .translate_universe import (
+    ISINSTANCE_CONCRETE_BUILTINS,
     branch_literal_universe_for_callee,
     bytes_identity_universe_for_callee,
     callee_is_nondeterministic,
@@ -117,6 +118,7 @@ from .translate_universe import (
     instance_field_universe_for_callee,
     predicate_universe_for_callee,
     raise_locus_universe_for_callee,
+    return_isinstance_universe_for_callee,
     translate_universe_for_callee,
 )
 
@@ -244,6 +246,13 @@ class _CallOrigin:
     constructor_args: Optional[Tuple["Term", ...]] = None
     constructor_default_params: Tuple[str, ...] = ()
     receiver_constructor: Optional[str] = None
+    # Instantiated call argument terms even when the call result itself is
+    # location-keyed. Source universes over symbolic callsites still need the
+    # parameter -> argument map.
+    arg_terms: Optional[Tuple["Term", ...]] = None
+    # The actual result term that appears in the assertion for direct calls:
+    # either the argument-keyed callresult ctor or the location-keyed Var.
+    result_term: Optional["Term"] = None
 
 
 @dataclass
@@ -637,6 +646,7 @@ def _source_loci_for_memento(
         "python.delegation-universe",
         "python.instance-field-universe",
         "python.raise-locus-universe",
+        "python.return-isinstance-universe",
     }:
         return [
             _source_line_locus(file, line, "warranted", role, universe_kind)
@@ -853,6 +863,14 @@ def _classify_universe_source_node(
         if universe_kind == "delegation-stdlib":
             return "warranted", "emitted into python.delegation-universe"
         return "support", "queued delegate dig for recursive universe walk"
+    if (
+        role == "python.return-isinstance-universe"
+        and isinstance(stmt, ast.Return)
+        and isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "isinstance"
+    ):
+        return "warranted", "isinstance predicate emitted into python.return-isinstance-universe"
     return _classify_universe_source_statement(role, stmt)
 
 
@@ -906,6 +924,12 @@ def _classify_universe_source_statement(
         if isinstance(stmt, (ast.Raise, ast.If)):
             return "warranted", "emitted into python.raise-locus-universe"
         return "support", "prelude support for raise-locus accounting"
+    if role == "python.return-isinstance-universe":
+        if _is_docstring_stmt(stmt):
+            return "support", "docstring metadata supports source accounting only"
+        if _is_return_isinstance_stmt(stmt):
+            return "warranted", "emitted into python.return-isinstance-universe"
+        return "unclassified", "return-isinstance source not emitted"
     return "unclassified", "source warrant role has no source-audit classifier"
 
 
@@ -1067,6 +1091,19 @@ def _is_constant_return(stmt: ast.stmt) -> bool:
     if not isinstance(stmt, ast.Return) or stmt.value is None:
         return False
     return _literal_value_kind_for_accounting(stmt.value) is not None
+
+
+def _is_return_isinstance_stmt(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Return):
+        return False
+    value = stmt.value
+    return (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id == "isinstance"
+        and len(value.args) == 2
+        and not value.keywords
+    )
 
 
 def _literal_value_kind_for_accounting(node: ast.AST) -> Optional[str]:
@@ -2177,22 +2214,7 @@ def _truthiness_call_head(callee: str, arity: int) -> str:
 ## must never assert pytype_int and pytype_bool disjoint.
 ## ---------------------------------------------------------------------------
 
-_ISINSTANCE_CONCRETE_BUILTINS: Set[str] = {
-    "int",
-    "str",
-    "float",
-    "complex",
-    "bytes",
-    "bytearray",
-    "list",
-    "tuple",
-    "dict",
-    "set",
-    "frozenset",
-    "bool",
-    "NoneType",
-    "type",
-}
+_ISINSTANCE_CONCRETE_BUILTINS: Set[str] = set(ISINSTANCE_CONCRETE_BUILTINS)
 
 
 def _lift_isinstance_call(node: ast.Call, translate_term_fn) -> Formula:
@@ -4012,6 +4034,9 @@ def _apply_value_scope_binding(
                 #   ZERO-arg calls (``r = f()``): no input to unify on, so stay
                 #     location-keyed/SSA-var.
                 euf_term = _call_result_term(value, origin, scope, {})
+                if isinstance(euf_term, _Ctor):
+                    origin.arg_terms = tuple(euf_term.args)
+                origin.result_term = ssa
                 if (
                     euf_term is not None
                     and isinstance(euf_term, _Ctor)
@@ -4193,7 +4218,11 @@ def _collect_value_scope_assertion_facts(
             # per-family doctrine). Appended INTO this base's conjoined
             # ::assertion: the verifier conjoins by NAME, so a sibling decl
             # would verify alone and be vacuously consistent.
-            subject_term = _assertion_call_subject(assertion) or origin.euf_term
+            subject_term = (
+                _assertion_call_subject(assertion)
+                or origin.euf_term
+                or origin.result_term
+            )
             subject_field_name: Optional[str] = None
             if subject_term is None:
                 attribute_subject = _assertion_origin_attribute_subject(
@@ -4371,6 +4400,49 @@ def _universe_conjuncts(
                 ),
             )
         conjuncts.append(eq(num(0), num(1)))
+
+    # RETURN-ISINSTANCE: the body returns `isinstance(expr, T)`, so the
+    # function result is equivalent to the existing ProofIR isinstance
+    # predicate instantiated over this callsite's argument terms. Unlike
+    # guard/constant/predicate ground-eval families, this can make contact
+    # with a location-keyed result Var as long as the origin carried arg terms.
+    isinst_u, isinst_refusal = return_isinstance_universe_for_callee(callee)
+    if isinst_refusal is not None:
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                f"{test_name}::return-isinstance-universe",
+                reason=f"{isinst_refusal.callee}: {isinst_refusal.reason}",
+            )
+        )
+    elif isinst_u is not None:
+        try:
+            isinst_conjuncts = _return_isinstance_universe_conjuncts(
+                isinst_u,
+                subject_term,
+                _universe_call_args(subject_term, origin),
+            )
+        except ValueError as exc:
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    f"{test_name}::return-isinstance-universe",
+                    reason=f"{callee}: {exc}",
+                )
+            )
+            isinst_conjuncts = []
+        if isinst_conjuncts:
+            if source_warrants is not None and isinst_u.source_memento is not None:
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_universe(
+                        isinst_u,
+                        role="python.return-isinstance-universe",
+                        universe_kind="return-isinstance",
+                    ),
+                )
+            conjuncts.extend(isinst_conjuncts)
+
     if isinstance(subject_term, _Ctor):
         guards, guard_refusal = guard_universe_for_callee(callee)
         if guard_refusal is not None:
@@ -4720,6 +4792,56 @@ def _universe_conjuncts(
     return conjuncts
 
 
+def _universe_call_args(
+    subject_term: Term,
+    origin: Optional[_CallOrigin],
+) -> Tuple[Term, ...]:
+    if origin is not None and origin.arg_terms is not None:
+        return origin.arg_terms
+    if isinstance(subject_term, _Ctor):
+        if subject_term.name.startswith("callval_"):
+            return tuple(subject_term.args[1:])
+        if subject_term.name.startswith("callresult_"):
+            return tuple(subject_term.args)
+    return ()
+
+
+def _return_isinstance_universe_conjuncts(
+    universe,
+    subject_term: Term,
+    call_args: Tuple[Term, ...],
+) -> List[Formula]:
+    param_terms = {
+        param_name: call_args[index]
+        for index, param_name in enumerate(universe.params)
+        if index < len(call_args)
+    }
+    missing = sorted(
+        {
+            node.id
+            for node in ast.walk(universe.expr)
+            if isinstance(node, ast.Name)
+            and node.id in universe.params
+            and node.id not in param_terms
+        }
+    )
+    if missing:
+        raise ValueError(
+            "return-isinstance: missing callsite terms for params "
+            + ", ".join(missing)
+        )
+    scope = _ValueScope(current=param_terms)
+
+    def _term(node: ast.expr) -> Term:
+        return _translate_term_scoped(node, scope)
+
+    predicate = _translate_truthiness_call_formula(universe.expr, _term)
+    return [
+        implies(eq(subject_term, bool_const(True)), predicate),
+        implies(eq(subject_term, bool_const(False)), not_(predicate)),
+    ]
+
+
 def _constructor_field_universe_value_term(
     subject_term: Term,
     field_name: str,
@@ -4941,6 +5063,8 @@ def _assertion_callsite_context(
         origin = _call_origin_from_expr_scoped(call, scope)
         if origin is not None:
             euf_term = _call_result_term(call, origin, scope, call_vars)
+            if isinstance(euf_term, _Ctor):
+                origin.arg_terms = tuple(euf_term.args)
             if (
                 euf_term is not None
                 and _euf_args_all_concrete(euf_term)
@@ -4967,8 +5091,11 @@ def _assertion_callsite_context(
                 # Carry the subject term so the universe walk can emit a
                 # sibling ::universe row over the same conjoin subject.
                 origin.euf_term = euf_term
+                origin.result_term = euf_term
             else:
-                call_vars[_call_key(call)] = make_var(_call_result_var_name(origin))
+                result_var = make_var(_call_result_var_name(origin))
+                call_vars[_call_key(call)] = result_var
+                origin.result_term = result_var
             euf_origins[_call_key(call)] = origin
 
     transient_facts: List[Formula] = []

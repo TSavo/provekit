@@ -2276,6 +2276,96 @@ def test_predicate_impure_not_candidate(vendor_path):
     assert u is None and r is None  # call in predicate -> not purely evaluable
 
 
+def test_return_isinstance_emits_boolean_equivalence_and_source_accounting(
+    vendor_path,
+):
+    from sugar_lift_py_tests.ir import _Ctor
+    from sugar_lift_py_tests.translate_universe import (
+        return_isinstance_universe_for_callee,
+    )
+
+    return_isinstance_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendisinst_serializer",
+        """
+        class Serializer:
+            def dumps(self, obj):
+                return "x"
+
+
+        def is_text_serializer(serializer):
+            return isinstance(serializer.dumps({}), str)
+        """,
+    )
+    out = _lift(
+        """
+        import vendisinst_serializer
+
+        def test_text_serializer():
+            serializer = vendisinst_serializer.Serializer()
+            assert vendisinst_serializer.is_text_serializer(serializer) == True
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendisinst_serializer.is_text_serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.return-isinstance-universe"
+        and warrant.get("source_function_name") == "is_text_serializer"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    def _walk_formula(formula):
+        stack = [formula]
+        while stack:
+            current = stack.pop()
+            yield current
+            stack.extend(getattr(current, "operands", ()))
+
+    isinstance_atoms = [
+        atom
+        for atom in _walk_formula(assertion.inv)
+        if getattr(atom, "name", None) == "isinstance"
+    ]
+    assert isinstance_atoms, assertion.inv
+    assert any(
+        isinstance(atom.args[0], _Ctor)
+        and atom.args[0].name == "callval_dumps_a2"
+        and isinstance(atom.args[1], _Ctor)
+        and atom.args[1].name == "pytype_str"
+        for atom in isinstance_atoms
+    ), isinstance_atoms
+    assert any(
+        getattr(formula, "kind", None) == "implies"
+        for formula in _walk_formula(assertion.inv)
+    ), assertion.inv
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.return-isinstance-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "isinstance" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+
+
 # --- return-replace-literals family (single-char replace complement) ---
 
 VENDOR_REPLACE = '''

@@ -4,6 +4,7 @@
 import itsdangerous.encoding as enc
 import itsdangerous.exc as exc
 import itsdangerous._json as compact_json
+import itsdangerous.serializer as serializer_mod
 import itsdangerous.signer as signer
 import pytest
 
@@ -53,3 +54,10 @@ def test_bad_payload_default_original_error():
 
 def test_compact_json_loads():
     assert compact_json._CompactJSON.loads('{"ok": true}') == {"ok": True}
+
+
+def test_default_serializer_is_text():
+    assert (
+        serializer_mod.is_text_serializer(serializer_mod.Serializer.default_serializer)
+        == True
+    )
