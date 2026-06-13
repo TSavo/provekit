@@ -625,6 +625,18 @@ impl RaOracle {
         hover_markdown(result)
     }
 
+    /// Resolve a method call's receiver/param mutability via its hover signature:
+    /// `Mutating` (`&mut self` / `&mut` param -> refuse "mutation through &mut"),
+    /// `RefClean` (no receiver/param mutation), or `Unknown` (hover unavailable or
+    /// no parseable `fn`). The source-audit datum that turns a side-effect-
+    /// undetermined method call into a verdict.
+    pub fn resolve_signature_effect(&mut self, q: &ResolveQuery) -> SignatureEffect {
+        match self.hover_markdown_raw(q) {
+            Some(md) => signature_effect_from_hover(&md),
+            None => SignatureEffect::Unknown,
+        }
+    }
+
     /// Send the `textDocument/definition` request for `q`, honouring the
     /// ContentModified not-ready retry/backoff, and return the raw `result`
     /// value:
