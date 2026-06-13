@@ -193,9 +193,7 @@ fn lift(params: &Value) -> Value {
                     Some(w) => ("refused", Some(w.reason.clone())),
                     None => ("warranted", None),
                 }
-            } else if let Some(decl) =
-                sugar_lift_rust_tests::emit_value_contract(&name, fr.block)
-            {
+            } else if let Some(decl) = sugar_lift_rust_tests::emit_value_contract(&name, fr.block) {
                 // REAL warrant: the kit EMITTED a closed consistency ProofIR
                 // contract for this body (verified to compile + compose via z3),
                 // recompute-verifiable from the memento. A syntactic "looks
