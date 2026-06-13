@@ -33,6 +33,7 @@ quote = { workspace = true }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 prettyplease = "0.2"
 sugar-ir-types = { path = "../sugar-ir-types" }
+sugar-ir-compiler-smt-lib = { path = "../sugar-ir-compiler-smt-lib" }
 sugar-lift-contracts = { path = "../sugar-lift-contracts" }
 sugar-canonicalizer = { path = "../sugar-canonicalizer" }
 sugar-claim-envelope = { path = "../sugar-claim-envelope" }

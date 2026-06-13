@@ -6166,6 +6166,47 @@ fn broad_functional_warrant_composes_through_compiler() {
     }
 }
 
+// ── Superposition engine (slice 4): the real z3 oracle drives the fork ──────
+//
+// Two warrants each SAT alone (out==6, out==7) but mutually UNSAT. Fed to the
+// engine with the real Z3Oracle, the closed check must FORK: two maximal
+// consistent worlds, Weak. This is the doctrine end-to-end on real z3 — the
+// mock-oracle tests prove the forking logic; this proves the wired oracle.
+#[test]
+fn superposition_engine_forks_two_contradictory_warrants_via_z3() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    use sugar_walk::superposition::Strength;
+    use sugar_walk::superposition_engine::{walk, EngineStatement, Z3Oracle};
+
+    let p_fn: syn::ItemFn = syn::parse_str("fn p() -> i32 { 6 }").unwrap();
+    let q_fn: syn::ItemFn = syn::parse_str("fn q() -> i32 { 7 }").unwrap();
+    let p = emit_value_contract("p", &p_fn.block).expect("const body warrants out==6");
+    let q = emit_value_contract("q", &q_fn.block).expect("const body warrants out==7");
+    // Both bind `out`, so the conjunction out==6 ∧ out==7 is UNSAT.
+    let stmt_p = EngineStatement::new("blake3-512:p", inv_json(&p));
+    let stmt_q = EngineStatement::new("blake3-512:q", inv_json(&q));
+
+    let r = walk(&[], &[stmt_p, stmt_q], &Z3Oracle::default(), 16);
+
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        assert_eq!(
+            r.worlds.len(),
+            2,
+            "out==6 and out==7 each hold alone but not together -> two worlds: {:?}",
+            r.worlds
+        );
+        assert_eq!(r.strength(), Strength::Weak);
+        assert!(r.determined.is_empty(), "neither warrant holds in both worlds");
+        assert!(r.factored, "a clean conflict pair factors");
+        assert_eq!(r.universe().world_count(), 2);
+    } else {
+        // z3 absent => Unknown is treated as "cannot refute"; both warrants
+        // coexist (no false fork). Skip-when-absent (host-tool convention).
+        assert_eq!(r.strength(), Strength::Strong);
+    }
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]
