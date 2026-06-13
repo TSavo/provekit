@@ -494,6 +494,15 @@ def _package_locus_classification(
     )
     if call_term_assignment_status is not None:
         return call_term_assignment_status
+    tuple_unpack_call_status = _local_tuple_unpack_call_status(
+        node,
+        ancestors,
+        call_aliases,
+        module_name,
+        tree,
+    )
+    if tuple_unpack_call_status is not None:
+        return tuple_unpack_call_status
     list_adapter_body_status = _list_adapter_body_status(
         node,
         ancestors,
@@ -1523,6 +1532,60 @@ def _local_call_term_assignment_statement_for_locus(
     return stmt, value
 
 
+def _local_tuple_unpack_call_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    call_aliases: Dict[str, str],
+    module_name: str,
+    tree: ast.Module,
+) -> Optional[tuple[str, str]]:
+    stmt = _local_tuple_unpack_call_statement_for_locus(node, ancestors)
+    if stmt is None:
+        return None
+    assign_stmt, value = stmt
+    if not any(descendant is node for descendant in ast.walk(assign_stmt)):
+        return None
+    if not _is_statically_nameable_call_term(
+        value,
+        ancestors + (node,),
+        call_aliases,
+        module_name,
+        tree,
+    ):
+        return None
+    return (
+        "warranted",
+        "local tuple-unpack call-term projection admitted as compiler equality",
+    )
+
+
+def _local_tuple_unpack_call_statement_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[ast.Assign, ast.Call]]:
+    chain = ancestors + (node,)
+    stmt_index: Optional[int] = None
+    stmt: Optional[ast.Assign] = None
+    for index in range(len(chain) - 1, -1, -1):
+        item = chain[index]
+        if isinstance(item, ast.Assign):
+            stmt_index = index
+            stmt = item
+            break
+    if stmt is None or stmt_index is None:
+        return None
+    owner = _nearest_enclosing_function(chain[:stmt_index])
+    if owner is None:
+        return None
+    if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Tuple):
+        return None
+    if not all(isinstance(elt, ast.Name) for elt in stmt.targets[0].elts):
+        return None
+    if not isinstance(stmt.value, ast.Call):
+        return None
+    return stmt, stmt.value
+
+
 def _is_statically_nameable_call_term(
     call: ast.Call,
     chain: tuple[ast.AST, ...],
@@ -1576,6 +1639,8 @@ def _is_statically_nameable_callee(
             return False
         cls = _find_class_by_qualname(tree, class_qualname)
         return cls is not None and _class_has_stable_method(cls, func.attr)
+    if isinstance(func.value, ast.Name):
+        return func.attr not in _NONDET_CALL_ATTRS
     static_name = _static_call_name(func)
     if not static_name:
         return False

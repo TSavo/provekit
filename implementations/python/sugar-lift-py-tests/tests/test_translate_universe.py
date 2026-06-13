@@ -4118,6 +4118,61 @@ def test_package_accounting_warrants_local_call_term_assignment(
     ), assignment_loci
 
 
+def test_package_accounting_warrants_tuple_unpack_call_projection(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_tuple_unpack_call"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "timed.py").write_text(
+        textwrap.dedent(
+            '''
+            def unsign(result, sep):
+                value, ts_bytes = result.rsplit(sep, 1)
+                return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_tuple_unpack_call.timed as timed
+
+        def test_token():
+            assert timed.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    unpack_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_tuple_unpack_call/timed.py")
+        and locus["line"] == 3
+    ]
+    assert unpack_loci
+    assert not [
+        locus for locus in unpack_loci if locus["status"] == "unclassified"
+    ], unpack_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Tuple"
+        and "tuple-unpack" in locus.get("reason", "")
+        for locus in unpack_loci
+    ), unpack_loci
+
+
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):
     vendor_path(
         "vendinst_default_attr",
