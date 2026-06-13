@@ -488,6 +488,13 @@ fn effect_refusal(block: &syn::Block) -> Option<String> {
     if let Some(m) = s.panic_method {
         return Some(format!("panic/divergence (effect): `.{m}()`"));
     }
+    if s.has_try {
+        // `?` short-circuits: the function returns early on `Err`/`None`, so the
+        // return value is NOT a pure function of the inputs (it diverges on a
+        // branch this consistency form does not model). Out of the `out = f(args)`
+        // domain -> a named divergence refusal, not unclassified.
+        return Some("panic/divergence (effect): `?` short-circuit".to_string());
+    }
     None
 }
 
@@ -821,8 +828,14 @@ facts = [
             effect_refusal(&block_of("fn f() -> i32 { panic!(\"no\") }"))
                 .is_some_and(|r| r.contains("panic/divergence"))
         );
+        // `?` short-circuits -> divergence (out of the consistency domain) -> refused.
+        assert!(
+            effect_refusal(&block_of("fn f(r: Result<i32, ()>) -> i32 { r? }"))
+                .is_some_and(|r| r.contains("divergence") && r.contains('?'))
+        );
         // UNDETERMINED -> None: stays unclassified, never refused (not proven effectful).
+        // A bare value-position call (no effect marker) is undetermined here; the
+        // EUF warrant handles it upstream in emit_value_contract.
         assert!(effect_refusal(&block_of("fn f(v: Vec<u8>) -> usize { v.len() }")).is_none());
-        assert!(effect_refusal(&block_of("fn f(r: Result<i32, ()>) -> i32 { r? }")).is_none());
     }
 }
