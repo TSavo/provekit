@@ -169,38 +169,51 @@ fn lift(params: &Value) -> Value {
             let memento = source_oracle::source_memento_of(rel, src, f);
             let name = f.sig.ident.to_string();
             let is_test = fn_has_test_attr(f);
-            let warned = out.warnings.iter().any(|w| {
+            let warning = out.warnings.iter().find(|w| {
                 w.item_name == name || w.item_name.ends_with(&format!("::{name}"))
             });
-            let status = if is_test {
-                // In this kit's universe: lifted (warranted) or loudly refused.
-                if warned {
-                    "refused"
-                } else {
-                    "warranted"
+            // TOTAL classifier (Phase 1 -- close the gate): every function exits
+            // into warranted / support / refused-by-name. There is NO
+            // `unclassified` fall-through: a function the kit cannot warrant is
+            // REFUSED with a named reason (loudly-bounded-lossy), never dark.
+            // `unclassified` can now only mean a classifier BUG, not a tuning
+            // number; the real meter is `refused` (= bin-1 to drain).
+            let (status, reason): (&str, Option<String>) = if is_test {
+                match warning {
+                    Some(w) => ("refused", Some(w.reason.clone())),
+                    None => ("warranted", None),
                 }
             } else if is_generalizable_value_fn(f) {
-                // A non-test fn whose body is a single pure formula over its
-                // params: its contract is `result = <body>`, constructible and
-                // recompute-verifiable from the memento -- WARRANTED.
-                "warranted"
+                // body is a pure formula over params: contract is `result = <body>`,
+                // constructible + recompute-verifiable from the memento.
+                ("warranted", None)
             } else if out.reduced_helpers.contains(&name) {
-                // A non-test fn the reducer INLINED to discharge a test: it backs
-                // a warrant, so it is `support` -- accounted, not dark.
-                "support"
+                // a non-test fn the reducer inlined to discharge a test: it backs
+                // a warrant, so it is `support`.
+                ("support", None)
             } else {
-                // The kit does not yet speak this function -- the dark. Driving
-                // this to 0 (generalizing such fns into warrants) is the burndown.
-                "unclassified"
+                (
+                    "refused",
+                    Some(
+                        "body not yet in the warrant grammar (not a pure-formula \
+                         value fn, not an inlined helper); refused by name pending \
+                         a walker slice for its constructor"
+                            .to_string(),
+                    ),
+                )
             };
-            source_loci.push(json!({
+            let mut locus = json!({
                 "file": rel,
                 "role": "rust-test-assertions",
                 "ast_kind": if is_test { "test-fn" } else { "fn" },
                 "ast_path": name,
                 "line": memento.span.start_line,
                 "status": status,
-            }));
+            });
+            if let Some(r) = reason {
+                locus["reason"] = json!(r);
+            }
+            source_loci.push(locus);
             source_mementos.push(memento.to_json());
         }
     }
