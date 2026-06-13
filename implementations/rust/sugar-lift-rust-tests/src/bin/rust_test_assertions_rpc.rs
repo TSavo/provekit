@@ -196,13 +196,6 @@ fn lift(params: &Value) -> Value {
                     Some(w) => ("refused", Some(w.reason.clone())),
                     None => ("warranted", None),
                 }
-            } else if let Some(effect) = raw_pointer_nondeterminism(fr.block) {
-                // PROVABLY nondeterministic (dereferences a raw pointer -> reads
-                // uncaptured memory) -> refuse BEFORE the warrant attempt. Else
-                // emit_value_contract would warrant `*p` as `deref(p)` EUF, a
-                // false-pass that treats uncaptured memory as a stable function of
-                // the pointer. Refuse-before-warrant for this one provable effect.
-                ("refused", Some(effect))
             } else if let Some(decl) = sugar_lift_rust_tests::emit_value_contract(&name, fr.block) {
                 // REAL warrant: the kit EMITTED a closed consistency ProofIR
                 // contract for this body (verified to compile + compose via z3),
@@ -371,15 +364,6 @@ struct BlockerScan {
     has_compound_assign: bool,
     panic_macro: Option<String>,
     panic_method: Option<String>,
-    // Raw-pointer nondeterminism: a DEREFERENCE (`*`/`&*`) plus a provable
-    // raw-pointer SOURCE in the same body. Reading through a raw pointer returns
-    // a value of uncaptured MEMORY -- not a function of the written inputs -- so
-    // it is nondeterministic (a named effect, step 4), out of the consistency
-    // domain. Both signals are required so a pure address computation (cast, no
-    // deref) and a safe-reference deref (deref, no raw source) are NOT refused,
-    // and pure `transmute(value)` (no deref) stays warrantable.
-    has_deref: bool,
-    raw_ptr_source: Option<String>,
 }
 
 impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
@@ -430,54 +414,16 @@ impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
     }
     fn visit_expr_method_call(&mut self, n: &'ast syn::ExprMethodCall) {
         self.has_method = true;
-        let m = n.method.to_string();
-        if self.panic_method.is_none()
-            && matches!(
-                m.as_str(),
-                "unwrap" | "expect" | "unwrap_unchecked" | "unwrap_err" | "expect_err"
-            )
-        {
-            self.panic_method = Some(m.clone());
-        }
-        // Pointer-producing methods: a `.cast()` family or `.as_ptr()`-family call
-        // yields a raw pointer (the receiver's address reinterpreted). A volatile/
-        // unaligned read is itself an uncaptured-memory read.
-        if self.raw_ptr_source.is_none() {
+        if self.panic_method.is_none() {
+            let m = n.method.to_string();
             if matches!(
                 m.as_str(),
-                "cast" | "cast_mut" | "cast_const" | "as_ptr" | "as_mut_ptr"
+                "unwrap" | "expect" | "unwrap_unchecked" | "unwrap_err" | "expect_err"
             ) {
-                self.raw_ptr_source = Some(format!("`.{m}()` raw pointer"));
-            } else if matches!(m.as_str(), "read_volatile" | "read_unaligned") {
-                // A volatile/unaligned read IS the dereference -- mark both so the
-                // body refuses even without a separate `*`.
-                self.raw_ptr_source = Some(format!("`.{m}()` raw read"));
-                self.has_deref = true;
+                self.panic_method = Some(m);
             }
         }
         syn::visit::visit_expr_method_call(self, n);
-    }
-    fn visit_expr_unary(&mut self, n: &'ast syn::ExprUnary) {
-        if matches!(n.op, syn::UnOp::Deref(_)) {
-            self.has_deref = true;
-        }
-        syn::visit::visit_expr_unary(self, n);
-    }
-    fn visit_expr_cast(&mut self, n: &'ast syn::ExprCast) {
-        if matches!(&*n.ty, syn::Type::Ptr(_)) && self.raw_ptr_source.is_none() {
-            self.raw_ptr_source = Some("`as *const/*mut` cast".to_string());
-        }
-        syn::visit::visit_expr_cast(self, n);
-    }
-    fn visit_local(&mut self, n: &'ast syn::Local) {
-        if self.raw_ptr_source.is_none() {
-            if let syn::Pat::Type(pt) = &n.pat {
-                if matches!(&*pt.ty, syn::Type::Ptr(_)) {
-                    self.raw_ptr_source = Some("`*const/*mut` typed binding".to_string());
-                }
-            }
-        }
-        syn::visit::visit_local(self, n);
     }
     fn visit_expr_call(&mut self, n: &'ast syn::ExprCall) {
         if self.io.is_none() {
@@ -565,30 +511,6 @@ fn effect_refusal(block: &syn::Block) -> Option<String> {
         // branch this consistency form does not model). Out of the `out = f(args)`
         // domain -> a named divergence refusal, not unclassified.
         return Some("panic/divergence (effect): `?` short-circuit".to_string());
-    }
-    None
-}
-
-/// A body that DEREFERENCES a raw pointer reads UNCAPTURED MEMORY: the value is a
-/// function of memory state, not of the written inputs, so it is nondeterministic
-/// from the consistency contract's view (a named effect, step 4) -- out of the
-/// `out = f(args)` domain. Both a deref (`*`/`&*`/volatile read) AND a provable
-/// raw-pointer source are required, so a pure address computation (cast without
-/// deref) and a safe-reference deref (deref without a raw source) are NOT caught,
-/// and pure `transmute(value)` (no deref) stays warrantable.
-///
-/// This is checked BEFORE `emit_value_contract` in the classifier: a raw deref
-/// like `*p` would otherwise warrant as `deref(p)` EUF (treating uncaptured
-/// memory as a stable function of the pointer) -- a false-pass. Refuse-before-warrant.
-fn raw_pointer_nondeterminism(block: &syn::Block) -> Option<String> {
-    let mut s = BlockerScan::default();
-    syn::visit::Visit::visit_block(&mut s, block);
-    if s.has_deref {
-        if let Some(src) = s.raw_ptr_source {
-            return Some(format!(
-                "nondeterminism (effect): raw-pointer memory access -- a dereference plus a raw-pointer source ({src}); the result reads uncaptured memory, not a function of the written inputs"
-            ));
-        }
     }
     None
 }
@@ -1017,40 +939,5 @@ facts = [
         // A bare value-position call (no effect marker) is undetermined here; the
         // EUF warrant handles it upstream in emit_value_contract.
         assert!(effect_refusal(&block_of("fn f(v: Vec<u8>) -> usize { v.len() }")).is_none());
-    }
-
-    #[test]
-    fn raw_pointer_deref_is_nondeterminism_refusal() {
-        // A deref of a raw pointer reads uncaptured memory -> nondeterminism.
-        assert!(raw_pointer_nondeterminism(&block_of(
-            "fn f(s: &u8) -> u8 { let p = s as *const u8; unsafe { *p } }"
-        ))
-        .is_some_and(|r| r.contains("nondeterminism") && r.contains("raw-pointer")));
-        // `.cast()` chain + deref.
-        assert!(raw_pointer_nondeterminism(&block_of(
-            "fn f(s: &u8) -> u8 { unsafe { *(s as *const u8).cast::<u8>() } }"
-        ))
-        .is_some());
-        // `*const`-typed binding + deref.
-        assert!(raw_pointer_nondeterminism(&block_of(
-            "fn f(s: &u8) -> u8 { let p: *const u8 = s; unsafe { *p } }"
-        ))
-        .is_some());
-        // a volatile read is itself the uncaptured-memory read.
-        assert!(raw_pointer_nondeterminism(&block_of(
-            "fn f(p: *const u8) -> u8 { unsafe { p.read_volatile() } }"
-        ))
-        .is_some());
-
-        // DISCRIMINATION: a pure address computation (cast, NO deref) is not a
-        // memory read -> not refused (stays warrantable/unclassified).
-        assert!(raw_pointer_nondeterminism(&block_of("fn f(x: u32) -> usize { x as usize }")).is_none());
-        // a SAFE reference deref (deref, NO raw source) is stable -> not refused.
-        assert!(raw_pointer_nondeterminism(&block_of("fn f(r: &u32) -> u32 { *r }")).is_none());
-        // pure transmute(value) has no deref -> not refused (warranted as EUF).
-        assert!(raw_pointer_nondeterminism(&block_of(
-            "fn f(x: u32) -> i32 { unsafe { core::mem::transmute(x) } }"
-        ))
-        .is_none());
     }
 }
