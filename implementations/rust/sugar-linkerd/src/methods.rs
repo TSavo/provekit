@@ -450,13 +450,21 @@ pub async fn handle_resolve_receiver_crate(
                     let pkey = format!("{line}:{col}");
                     match entry.positions.get(&pkey) {
                         Some(cached) if cached.deps.validate(&workspace_root) => {
-                            if let PosOutcome::Crate { krate, type_stem } = &cached.outcome {
-                                // Effect is not cached (re-fetched on a fresh
-                                // resolve); a cache hit reports "unknown" -> the
-                                // source-audit conservatively leaves it unclassified.
+                            if let PosOutcome::Crate {
+                                krate,
+                                type_stem,
+                                effect,
+                            } = &cached.outcome
+                            {
+                                // Effect is cached alongside the crate, so a hit
+                                // reproduces the oracle's verdict (Mutating ->
+                                // refused) with no RA spawn. An empty effect (old
+                                // cache file) renders as "unknown" -> conservatively
+                                // left unclassified.
+                                let effect_str = if effect.is_empty() { "unknown" } else { effect };
                                 resolved.insert(
                                     format!("{file}:{line}:{col}"),
-                                    resolution_value(krate, type_stem.as_deref(), "unknown"),
+                                    resolution_value(krate, type_stem.as_deref(), effect_str),
                                 );
                             }
                             // Refused -> stays unresolved (refuse-floor).
@@ -556,7 +564,12 @@ pub async fn handle_resolve_receiver_crate(
                         .unwrap_or_else(|| ResolutionDeps::workspace(&workspace_root));
                     file_res.positions.insert(
                         pkey,
-                        CachedPosition::resolved(krate, type_stem.as_deref(), deps),
+                        CachedPosition::resolved(
+                            krate,
+                            type_stem.as_deref(),
+                            sig_effect_str(*effect),
+                            deps,
+                        ),
                     );
                     n_resolved += 1;
                 }
