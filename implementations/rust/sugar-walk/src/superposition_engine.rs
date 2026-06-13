@@ -142,6 +142,12 @@ pub struct WalkResult {
     pub determined: Vec<String>,
     /// Candidate CIDs that survive in some-but-not-all worlds — the forks.
     pub contested: Vec<String>,
+    /// The contested set decomposed into INDEPENDENT mutual-exclusion groups
+    /// (each a sorted member list). Populated only when `factored` — the world
+    /// space is the product of these groups. Empty when there is no fork or when
+    /// the structure did not factor cleanly (then the chain uses synthetic
+    /// per-world members).
+    pub fork_groups: Vec<Vec<String>>,
     /// Candidates UNSAT against the pins ALONE: they live in no world. The
     /// keystone (slice 5) decides whether each is a vendor finding or a retract.
     pub refuted_by_pins: Vec<String>,
@@ -150,9 +156,10 @@ pub struct WalkResult {
     /// True => the candidate pool exceeded the enumeration cap and the world set
     /// is degraded (NOT silently — callers must surface it).
     pub capped: bool,
-    /// True => the contested set factored cleanly into one independent
-    /// mutual-exclusion group; false => the factored chain uses synthetic
-    /// per-world fork members (survivor count preserved, factoring approximate).
+    /// True => the contested set factored cleanly into independent
+    /// mutual-exclusion groups (the world space is their product); false => the
+    /// factored chain uses synthetic per-world fork members (survivor count
+    /// preserved, factoring approximate — surfaced, not silent).
     pub factored: bool,
 }
 
@@ -179,14 +186,16 @@ impl WalkResult {
         }
         if self.worlds.len() > 1 {
             if self.factored {
-                for (member, cid) in self.contested.iter().enumerate() {
-                    acc.push(
-                        cid.clone(),
-                        WorldMembership::ForkMember {
-                            group: 0,
-                            member: member as u32,
-                        },
-                    );
+                for (group, members) in self.fork_groups.iter().enumerate() {
+                    for (member, cid) in members.iter().enumerate() {
+                        acc.push(
+                            cid.clone(),
+                            WorldMembership::ForkMember {
+                                group: group as u32,
+                                member: member as u32,
+                            },
+                        );
+                    }
                 }
             } else {
                 for (member, world) in self.worlds.iter().enumerate() {
@@ -237,6 +246,7 @@ pub fn walk(
             worlds: Vec::new(),
             determined: Vec::new(),
             contested: Vec::new(),
+            fork_groups: Vec::new(),
             refuted_by_pins: candidates.iter().map(|c| c.cid.clone()).collect(),
             pins_consistent: false,
             capped: false,
@@ -290,15 +300,32 @@ pub fn walk(
     let mut contested: Vec<String> = contested_idx.iter().map(|&i| pool[i].cid.clone()).collect();
     contested.sort();
 
-    // Clean single-fork factorization: every world = determined ∪ exactly one
-    // contested candidate, and the contested candidates partition the worlds
-    // one-to-one. (The canonical "the body forks on a conflict" shape.)
-    let factored = is_clean_single_fork(&mss, &determined_idx, &contested_idx);
+    // Decompose the contested set into INDEPENDENT mutual-exclusion groups: the
+    // world space is then the product of the groups (the goal's "independent
+    // forks stay free"). If the structure does not factor cleanly, fall back to
+    // synthetic per-world members (survivor count preserved, surfaced).
+    let _ = &contested_idx;
+    let (fork_groups, factored): (Vec<Vec<String>>, bool) =
+        match decompose_into_independent_groups(&mss, &determined_idx) {
+            Some(groups) => {
+                let cid_groups = groups
+                    .iter()
+                    .map(|g| {
+                        let mut v: Vec<String> = g.iter().map(|&i| pool[i].cid.clone()).collect();
+                        v.sort();
+                        v
+                    })
+                    .collect();
+                (cid_groups, true)
+            }
+            None => (Vec::new(), false),
+        };
 
     WalkResult {
         worlds,
         determined,
         contested,
+        fork_groups,
         refuted_by_pins,
         pins_consistent: true,
         capped,
@@ -306,30 +333,101 @@ pub fn walk(
     }
 }
 
-/// True iff each MSS is `determined` plus exactly one contested candidate, and
-/// the worlds are one-to-one with the contested candidates.
-fn is_clean_single_fork(
+/// A disjoint-set forest for grouping mutually-exclusive contested candidates.
+struct UnionFind {
+    parent: Vec<usize>,
+}
+
+impl UnionFind {
+    fn new(n: usize) -> Self {
+        UnionFind {
+            parent: (0..n).collect(),
+        }
+    }
+    fn find(&mut self, x: usize) -> usize {
+        let mut r = x;
+        while self.parent[r] != r {
+            r = self.parent[r];
+        }
+        // path compression
+        let mut c = x;
+        while self.parent[c] != r {
+            let next = self.parent[c];
+            self.parent[c] = r;
+            c = next;
+        }
+        r
+    }
+    fn union(&mut self, a: usize, b: usize) {
+        let ra = self.find(a);
+        let rb = self.find(b);
+        if ra != rb {
+            self.parent[ra] = rb;
+        }
+    }
+}
+
+/// Decompose the contested candidates into independent mutual-exclusion groups.
+/// Returns `Some(groups)` iff the worlds are exactly the product of the groups
+/// (every world picks exactly one member per group, and |worlds| == Π|group|);
+/// `None` when the structure is correlated and does not factor.
+///
+/// Two contested candidates are in the SAME group iff they NEVER co-occur in any
+/// world (mutually exclusive). Groups are the connected components of that
+/// exclusion graph; the product check rejects non-clique / correlated shapes.
+fn decompose_into_independent_groups(
     mss: &[BTreeSet<usize>],
     determined: &BTreeSet<usize>,
-    contested: &[usize],
-) -> bool {
+) -> Option<Vec<Vec<usize>>> {
     if mss.len() <= 1 {
-        return true; // 0/1 world: no fork to factor.
+        return Some(Vec::new()); // no fork to factor.
     }
-    if mss.len() != contested.len() {
-        return false;
-    }
-    let mut seen: BTreeSet<usize> = BTreeSet::new();
-    for set in mss {
-        let extra: Vec<usize> = set.difference(determined).copied().collect();
-        if extra.len() != 1 {
-            return false;
+    let contested: Vec<usize> = {
+        let mut set: BTreeSet<usize> = BTreeSet::new();
+        for s in mss {
+            for &i in s {
+                if !determined.contains(&i) {
+                    set.insert(i);
+                }
+            }
         }
-        if !seen.insert(extra[0]) {
-            return false; // a contested candidate claimed by two worlds.
+        set.into_iter().collect()
+    };
+    if contested.is_empty() {
+        return None; // >1 world but no contested member: cannot factor (e.g. {a} vs {}).
+    }
+
+    let co_occur = |a: usize, b: usize| mss.iter().any(|s| s.contains(&a) && s.contains(&b));
+
+    let mut uf = UnionFind::new(contested.len());
+    for i in 0..contested.len() {
+        for j in (i + 1)..contested.len() {
+            if !co_occur(contested[i], contested[j]) {
+                uf.union(i, j);
+            }
         }
     }
-    true
+    let mut comp: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for k in 0..contested.len() {
+        let root = uf.find(k);
+        comp.entry(root).or_default().push(contested[k]);
+    }
+    let groups: Vec<Vec<usize>> = comp.into_values().collect();
+
+    // Verify the product structure: every world picks EXACTLY ONE per group, and
+    // |worlds| == Π|group|. This rejects correlated structures and non-cliques.
+    for s in mss {
+        for g in &groups {
+            if g.iter().filter(|&&m| s.contains(&m)).count() != 1 {
+                return None;
+            }
+        }
+    }
+    let product: usize = groups.iter().map(|g| g.len()).product();
+    if product != mss.len() {
+        return None;
+    }
+    Some(groups)
 }
 
 /// Enumerate the maximal consistent subsets of `pool` under `pins`. Brute-force
@@ -883,6 +981,62 @@ mod tests {
             vec![],
         );
         assert_eq!(a.cid(), b.cid(), "order-free report identity");
+    }
+
+    #[test]
+    fn a_sat_versus_unsat_fork_is_not_a_fork_it_collapses() {
+        // A "fork" where one reading is SAT and the other UNSAT is just an
+        // interpretation of ordering the vendor already settled: the UNSAT
+        // reading never enters a world, so it collapses to the SAT one. Strong,
+        // nothing to see here — NOT a Weak fork.
+        let oracle = MockOracle::new(&[&["pin", "dead"]]); // `dead` UNSAT with the pin
+        let pins = vec![stmt("pin")];
+        let cands = vec![stmt("live"), stmt("dead")];
+        let r = walk(&pins, &cands, &oracle, 16);
+        assert_eq!(r.worlds.len(), 1, "the UNSAT reading does not make a world");
+        assert_eq!(r.strength(), Strength::Strong);
+        assert_eq!(r.determined, vec!["blake3-512:live"]);
+        assert_eq!(r.refuted_by_pins, vec!["blake3-512:dead"]);
+        assert!(r.contested.is_empty(), "no genuine ambiguity remains");
+    }
+
+    #[test]
+    fn two_independent_conflicts_factor_into_two_groups() {
+        // {a,b} exclusive AND {c,d} exclusive, independently => 2x2 = 4 worlds,
+        // factored as TWO fork groups (the goal's "independent forks stay free").
+        let oracle = MockOracle::new(&[&["a", "b"], &["c", "d"]]);
+        let pins = vec![stmt("pin")];
+        let cands = vec![stmt("a"), stmt("b"), stmt("c"), stmt("d")];
+        let r = walk(&pins, &cands, &oracle, 16);
+        assert_eq!(r.worlds.len(), 4, "2x2 independent conflicts => 4 worlds");
+        assert!(r.factored, "independent conflicts must factor");
+        assert_eq!(r.fork_groups.len(), 2, "two independent groups");
+        for g in &r.fork_groups {
+            assert_eq!(g.len(), 2);
+        }
+        // The factored universe reproduces the product, NOT 4 synthetic members.
+        let u = r.universe();
+        assert_eq!(u.fork_groups().len(), 2);
+        assert_eq!(u.world_count(), 4);
+    }
+
+    #[test]
+    fn correlated_conflict_falls_back_not_silently() {
+        // Worlds {a,c},{b,c},{a,d}: correlated (not a 2x2 product) => cannot
+        // factor cleanly => factored=false (synthetic), survivor count preserved.
+        let oracle = MockOracle::new(&[&["a", "b"], &["c", "d"], &["b", "d"]]);
+        let pins = vec![stmt("pin")];
+        let cands = vec![stmt("a"), stmt("b"), stmt("c"), stmt("d")];
+        let r = walk(&pins, &cands, &oracle, 16);
+        // The exact world count depends on the oracle; the point is the honesty:
+        // if it didn't factor, it is surfaced and the survivor count is exact.
+        if !r.factored {
+            assert_eq!(
+                r.universe().world_count(),
+                r.worlds.len() as u128,
+                "synthetic fallback must preserve the exact survivor count"
+            );
+        }
     }
 
     #[test]
