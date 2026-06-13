@@ -35,8 +35,6 @@ pub mod ra_oracle;
 pub mod shadow;
 pub mod signature;
 pub mod sort_translate;
-pub mod superposition;
-pub mod superposition_engine;
 pub mod type_decl;
 pub mod walk;
 pub mod wp;
