@@ -5652,7 +5652,10 @@ fn emit_value_contract_emits_side_effect_free_value_term() {
         let decl = emit_value_contract("f", &f.block)
             .unwrap_or_else(|| panic!("side-effect-free value term must emit: {src}"));
         let inv = format!("{:?}", decl.inv.expect("inv present"));
-        assert!(inv.contains("out"), "out is the return value: {src} -> {inv}");
+        assert!(
+            inv.contains("out"),
+            "out is the return value: {src} -> {inv}"
+        );
     }
 }
 
@@ -5690,7 +5693,10 @@ fn emit_value_contract_value_term_composes_through_compiler() {
     if std::path::Path::new(z3).exists() {
         let path = std::env::temp_dir().join("sugar_value_term_compose.smt2");
         std::fs::write(&path, &script).expect("write smt2");
-        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let out = std::process::Command::new(z3)
+            .arg(&path)
+            .output()
+            .expect("run z3");
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
             !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
