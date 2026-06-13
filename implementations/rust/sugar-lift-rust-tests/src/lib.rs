@@ -7,6 +7,8 @@
 // ContractDecls. The verifier's existing consistency pass checks those closed
 // invariants with raw SAT: SAT => consistent/discharged; UNSAT => refused.
 
+pub mod source_oracle;
+
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::rc::Rc;

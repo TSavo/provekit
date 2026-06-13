@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use sugar_ir_symbolic::serialize::marshal_declarations;
+use sugar_lift_rust_tests::source_oracle;
 use sugar_lift_rust_tests::{lift_file_with_options, LiftOptions, TargetCfg};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -86,13 +87,15 @@ fn lift(params: &Value) -> Value {
 
     let mut entries = Vec::new();
     let mut diagnostics = Vec::new();
-    // Source-audit accounting (parity with the Java SourceWarrant/sourceLedger
-    // model #2134-#2136): every contract the kit produces is a `warranted`
-    // locus, every refusal a `refused` locus. The kit already accounts
-    // unenumerated assertions as warnings (no silent drop), so `unclassified` is
-    // 0 at this granularity. NOTE: loci are at contract/refusal granularity; the
-    // next slice carries real per-AST-line spans (the Java SourceMemento shape).
+    // Source-audit accounting (parity with Java's SourceWarrant/sourceLedger,
+    // #2134-#2136). The DENOMINATOR is the SourceOracle's enumeration of every
+    // function in the file -- not just the things the kit classified. A `#[test]`
+    // fn is in this kit's universe (warranted, or refused if the lift warned);
+    // a non-test fn the kit does not speak is `unclassified` -- the dark this
+    // metric exists to surface. `unclassified` is therefore MEASURED against the
+    // whole source, not 0 by construction.
     let mut source_loci: Vec<Value> = Vec::new();
+    let mut source_mementos: Vec<Value> = Vec::new();
     let options = match lift_options_from_config(&workspace_root, params) {
         Ok(options) => options,
         Err(reason) => {
@@ -144,38 +147,51 @@ fn lift(params: &Value) -> Value {
             }
         };
         let out = lift_file_with_options(&file, rel, &options);
-        // WARRANTED loci: each lifted contract is accounted by name.
-        for decl in &out.decls {
-            source_loci.push(json!({
-                "file": rel,
-                "role": "rust-test-assertions",
-                "ast_kind": "test-assertion-contract",
-                "ast_path": decl.name,
-                "status": "warranted",
-            }));
-        }
         let marshalled = marshal_declarations(&out.decls);
         let parsed: Value = serde_json::from_str(&marshalled).unwrap_or_else(|_| json!([]));
         if let Some(arr) = parsed.as_array() {
             entries.extend(arr.iter().cloned());
         }
         for w in &out.warnings {
-            // REFUSED loci: each refusal is accounted by name with its reason --
-            // loudly-bounded-lossy, never silent.
-            source_loci.push(json!({
-                "file": rel,
-                "role": "rust-test-assertions",
-                "ast_kind": "test-assertion",
-                "ast_path": w.item_name,
-                "status": "refused",
-                "reason": w.reason,
-            }));
             diagnostics.push(json!({
                 "kind": "lift-gap",
                 "path": w.source_path,
                 "item": w.item_name,
                 "reason": w.reason,
             }));
+        }
+        // DENOMINATOR: the oracle enumerates every function in the file. Each one
+        // gets a content-addressed memento and a classified locus, so the dark
+        // (functions the kit does not speak) is COUNTED, not skipped.
+        let mut fns: Vec<&syn::ItemFn> = Vec::new();
+        collect_item_fns(&file.items, &mut fns);
+        for f in fns {
+            let memento = source_oracle::source_memento_of(rel, src, f);
+            let name = f.sig.ident.to_string();
+            let is_test = fn_has_test_attr(f);
+            let warned = out.warnings.iter().any(|w| {
+                w.item_name == name || w.item_name.ends_with(&format!("::{name}"))
+            });
+            let status = if is_test {
+                // In this kit's universe: lifted (warranted) or loudly refused.
+                if warned {
+                    "refused"
+                } else {
+                    "warranted"
+                }
+            } else {
+                // The kit does not yet speak non-test functions -- the dark.
+                "unclassified"
+            };
+            source_loci.push(json!({
+                "file": rel,
+                "role": "rust-test-assertions",
+                "ast_kind": if is_test { "test-fn" } else { "fn" },
+                "ast_path": name,
+                "line": memento.span.start_line,
+                "status": status,
+            }));
+            source_mementos.push(memento.to_json());
         }
     }
 
@@ -191,10 +207,36 @@ fn lift(params: &Value) -> Value {
             "universe_kind": "test-assertion",
             "loci": source_loci,
         })],
-        // Per-locus content-addressed mementos for envelope minting are not yet
-        // emitted by the Rust kit (the next slice). Present-and-empty satisfies
-        // the CLI's source-audit gate; the ledger/audits carry the accounting.
-        "sourceMementos": [],
+        // Content-addressed mementos (file + span + BLAKE3-512 of body/template,
+        // never source text) -- one per enumerated function, recompute-verifiable.
+        "sourceMementos": source_mementos,
+    })
+}
+
+/// Collect every `fn` item in the file -- top-level and nested in inline
+/// modules -- as the source-audit denominator. (Impl methods are
+/// `ImplItemFn`, not `ItemFn`; they are a follow-on slice.)
+fn collect_item_fns<'a>(items: &'a [syn::Item], out: &mut Vec<&'a syn::ItemFn>) {
+    for item in items {
+        match item {
+            syn::Item::Fn(f) => out.push(f),
+            syn::Item::Mod(m) => {
+                if let Some((_, inner)) = &m.content {
+                    collect_item_fns(inner, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// True iff the function carries a `#[test]` (or `#[…::test]`) attribute.
+fn fn_has_test_attr(f: &syn::ItemFn) -> bool {
+    f.attrs.iter().any(|attr| {
+        attr.path()
+            .segments
+            .last()
+            .is_some_and(|seg| seg.ident == "test")
     })
 }
 
