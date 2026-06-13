@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use sugar_canonicalizer::{encode_jcs, Value};
 
-use crate::canonical::cid_of_value;
+use crate::canonical::{cid_of_value, jcs_bytes_of_value};
 
 /// One link of the chain: either a determined fact (the spine, every world) or
 /// a fork group (mutually-exclusive members, exactly one per world).
@@ -204,42 +204,129 @@ impl Universe {
     /// order is out of the membrane, so the chain is canonicalized by sorting.
     pub fn canonical_value(&self) -> Arc<Value> {
         let stmts = self.forward_statements();
-        let mut determined: Vec<String> = stmts
+        let determined: Vec<String> = stmts
             .iter()
             .filter_map(|s| match s {
                 Statement::Determined(c) => Some(c.clone()),
                 Statement::Fork(_) => None,
             })
             .collect();
-        determined.sort();
-        let mut forks: Vec<Arc<Value>> = stmts
+        let forks: Vec<Vec<String>> = stmts
             .iter()
             .filter_map(|s| match s {
-                Statement::Fork(alts) => {
-                    let mut members = alts.clone();
-                    members.sort();
-                    Some(Value::array(
-                        members.into_iter().map(Value::string).collect(),
-                    ))
-                }
+                Statement::Fork(alts) => Some(alts.clone()),
                 Statement::Determined(_) => None,
             })
             .collect();
-        forks.sort_by(|a, b| encode_jcs(a).cmp(&encode_jcs(b)));
-        Value::object(vec![
-            (
-                "determined".to_string(),
-                Value::array(determined.into_iter().map(Value::string).collect()),
-            ),
-            ("forks".to_string(), Value::array(forks)),
-            ("kind".to_string(), Value::string("superposition")),
-        ])
+        canonical_value_of(&determined, &forks)
     }
 
     /// CID of the whole superposition (order-invariant handle).
     pub fn superposition_cid(&self) -> String {
         cid_of_value(&self.canonical_value())
     }
+
+    /// The bytes a `.proof` envelope carries as this superposition's member:
+    /// the JCS-canonical bytes of the order-invariant node. A third party CIDs
+    /// the member by `blake3_512_of(bytes)`, which equals `superposition_cid`.
+    pub fn member_bytes(&self) -> Vec<u8> {
+        jcs_bytes_of_value(&self.canonical_value())
+    }
+}
+
+/// Build the order-invariant canonical node from a determined-fact list and a
+/// list of fork groups. Shared by `Universe::canonical_value` and the parse-back
+/// `SuperpositionView`, so the on-disk node and the recovered structure CID to
+/// the same handle. Idempotent: sorts everything, so re-canonicalizing a parsed
+/// view reproduces the byte-identical node.
+fn canonical_value_of(determined: &[String], forks: &[Vec<String>]) -> Arc<Value> {
+    let mut det = determined.to_vec();
+    det.sort();
+    let mut fk: Vec<Arc<Value>> = forks
+        .iter()
+        .map(|members| {
+            let mut m = members.clone();
+            m.sort();
+            Value::array(m.into_iter().map(Value::string).collect())
+        })
+        .collect();
+    fk.sort_by(|a, b| encode_jcs(a).cmp(&encode_jcs(b)));
+    Value::object(vec![
+        (
+            "determined".to_string(),
+            Value::array(det.into_iter().map(Value::string).collect()),
+        ),
+        ("forks".to_string(), Value::array(fk)),
+        ("kind".to_string(), Value::string("superposition")),
+    ])
+}
+
+/// The order-free structure a third party recovers from a superposition member's
+/// on-disk bytes: the N determined facts + the M fork groups. This IS the report
+/// content (minus per-world walking), recomputable from the `.proof` alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuperpositionView {
+    pub determined: Vec<String>,
+    pub forks: Vec<Vec<String>>,
+}
+
+impl SuperpositionView {
+    /// Parse a superposition member's JCS bytes back into its structure. Order
+    /// is not recovered (it is out of the membrane and never was in the CID);
+    /// the canonical multiset/sets are.
+    pub fn from_member_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let json: serde_json::Value =
+            serde_json::from_slice(bytes).map_err(|e| format!("not JSON: {e}"))?;
+        let obj = json.as_object().ok_or("member is not an object")?;
+        match obj.get("kind").and_then(|k| k.as_str()) {
+            Some("superposition") => {}
+            other => return Err(format!("not a superposition node: kind={other:?}")),
+        }
+        let determined = string_array(obj.get("determined"), "determined")?;
+        let forks_json = obj
+            .get("forks")
+            .and_then(|f| f.as_array())
+            .ok_or("missing forks array")?;
+        let mut forks = Vec::with_capacity(forks_json.len());
+        for (i, group) in forks_json.iter().enumerate() {
+            forks.push(string_array(Some(group), &format!("forks[{i}]"))?);
+        }
+        Ok(SuperpositionView { determined, forks })
+    }
+
+    /// Re-derive the superposition CID from the recovered structure. Equals the
+    /// originating `Universe::superposition_cid` (idempotent canonicalization).
+    pub fn cid(&self) -> String {
+        cid_of_value(&canonical_value_of(&self.determined, &self.forks))
+    }
+
+    /// Number of worlds = product of fork-group sizes (saturating). FACTORED.
+    pub fn world_count(&self) -> u128 {
+        self.forks
+            .iter()
+            .fold(1u128, |acc, g| acc.saturating_mul(g.len() as u128))
+    }
+
+    pub fn strength(&self) -> Strength {
+        match self.world_count() {
+            0 => Strength::Undecidable,
+            1 => Strength::Strong,
+            _ => Strength::Weak,
+        }
+    }
+}
+
+fn string_array(v: Option<&serde_json::Value>, field: &str) -> Result<Vec<String>, String> {
+    let arr = v
+        .and_then(|x| x.as_array())
+        .ok_or_else(|| format!("{field} must be an array"))?;
+    arr.iter()
+        .map(|e| {
+            e.as_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| format!("{field} entries must be strings"))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -365,6 +452,70 @@ mod tests {
         // Top of range valid, one past is not.
         assert!(u.world_cid((1u128 << 30) - 1).is_some());
         assert!(u.world_cid(1u128 << 30).is_none());
+    }
+
+    #[test]
+    fn member_cid_recomputes_from_bytes_alone() {
+        // Third-party recomputability: the member's CID is blake3_512 of its
+        // on-disk bytes, with no other input. Equals superposition_cid.
+        let u = Universe::empty()
+            .assert(cid("a"))
+            .fork(vec![cid("x"), cid("y")]);
+        let bytes = u.member_bytes();
+        assert_eq!(
+            sugar_canonicalizer::blake3_512_of(&bytes),
+            u.superposition_cid(),
+            "a third party must recompute the member CID from bytes alone"
+        );
+    }
+
+    #[test]
+    fn view_round_trips_structure_and_cid() {
+        let u = Universe::empty()
+            .assert(cid("a"))
+            .assert(cid("b"))
+            .fork(vec![cid("x"), cid("y")])
+            .fork(vec![cid("p"), cid("q"), cid("r")]);
+        let view = SuperpositionView::from_member_bytes(&u.member_bytes()).unwrap();
+        // Structure recovered (canonical/sorted form).
+        assert_eq!(view.determined, vec!["blake3-512:a", "blake3-512:b"]);
+        assert_eq!(view.forks.len(), 2);
+        assert_eq!(view.world_count(), 6);
+        assert_eq!(view.strength(), Strength::Weak);
+        // The recovered structure re-derives the SAME federation handle.
+        assert_eq!(view.cid(), u.superposition_cid());
+    }
+
+    #[test]
+    fn proof_envelope_carries_the_fork_node() {
+        use sugar_proof_envelope::{build_proof_envelope, ProofEnvelopeInput};
+        use std::collections::BTreeMap;
+
+        let u = Universe::empty()
+            .assert(cid("a"))
+            .fork(vec![cid("x"), cid("y")]);
+        let sup_cid = u.superposition_cid();
+
+        // The .proof admits the fork node as a content-addressed member.
+        let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        members.insert(sup_cid.clone(), u.member_bytes());
+
+        let input = ProofEnvelopeInput {
+            name: "superposition-slice1".to_string(),
+            version: "1".to_string(),
+            binary_cid: None,
+            metadata: None,
+            members,
+            signer_cid: "ed25519:AA".to_string(),
+            signer_seed: [0x42; 32],
+            declared_at: "2026-06-13T00:00:00.000Z".to_string(),
+        };
+        let out = build_proof_envelope(&input);
+        assert!(out.cid.starts_with("blake3-512:"));
+        // The catalog body carries the member keyed by its CID; a verifier pulls
+        // the bytes and recomputes the same superposition CID.
+        let recovered = SuperpositionView::from_member_bytes(&input.members[&sup_cid]).unwrap();
+        assert_eq!(recovered.cid(), sup_cid);
     }
 
     #[test]
