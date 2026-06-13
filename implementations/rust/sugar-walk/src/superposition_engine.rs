@@ -378,6 +378,80 @@ fn enumerate_mss(
     (mss, false)
 }
 
+// ── Slice 5: the keystone ───────────────────────────────────────────────────
+//
+// A UNSAT is one of two things, never both: a lift we never should have tried
+// (our overreach), or a vendor code smell. The discriminator is free: ONE SAT
+// refutes the "never". A bogus broad lift contradicts EVERY pin (all-UNSAT) and
+// self-retracts; the instant ANY pin is SAT, the lift is proven a real
+// constraint, so every UNSAT it produces elsewhere is a vendor finding. The SAT
+// is the lift's license. This is the no-false-accusation guarantee — and why
+// broad/dumb lifting is safe.
+
+/// One lift checked against one of a symbol's vendor pins.
+#[derive(Debug, Clone)]
+pub struct PinCheck {
+    pub pin_cid: String,
+    pub result: SatResult,
+}
+
+/// The keystone verdict for a lift over a symbol's pins.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LiftVerdict {
+    /// ≥1 SAT licenses the lift. The UNSAT pins are vendor findings (the code
+    /// contradicts its own sworn answers there). Findings are forks, not
+    /// single-blame.
+    Licensed {
+        licensing_pins: Vec<String>,
+        findings: Vec<String>,
+    },
+    /// No SAT (all UNSAT, or none decided). Retract the lift — our overreach.
+    /// Never an accusation against the vendor.
+    Retracted { checked: usize },
+}
+
+/// Apply the keystone to a lift's per-pin results.
+pub fn apply_keystone(checks: &[PinCheck]) -> LiftVerdict {
+    let licensing_pins: Vec<String> = checks
+        .iter()
+        .filter(|c| c.result == SatResult::Sat)
+        .map(|c| c.pin_cid.clone())
+        .collect();
+    if licensing_pins.is_empty() {
+        // No SAT vouches for the lift -> retract. A bogus broad warrant either
+        // finds no pin (harmless) or contradicts all of them (self-retracts);
+        // it can NEVER become a finding without a SAT licensing it first.
+        LiftVerdict::Retracted {
+            checked: checks.len(),
+        }
+    } else {
+        let findings: Vec<String> = checks
+            .iter()
+            .filter(|c| c.result == SatResult::Unsat)
+            .map(|c| c.pin_cid.clone())
+            .collect();
+        LiftVerdict::Licensed {
+            licensing_pins,
+            findings,
+        }
+    }
+}
+
+/// Check one lift formula against each of a symbol's pins (the closed check,
+/// per pin). Feeds `apply_keystone`.
+pub fn check_lift_against_pins(
+    lift: &Value,
+    pins: &[EngineStatement],
+    oracle: &dyn SatOracle,
+) -> Vec<PinCheck> {
+    pins.iter()
+        .map(|p| PinCheck {
+            pin_cid: p.cid.clone(),
+            result: oracle.check(&[lift, &p.formula]),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,6 +581,111 @@ mod tests {
         assert!(r.determined.is_empty());
         assert!(r.factored, "pairwise-exclusive triple is a clean single fork of 3");
         assert_eq!(r.universe().world_count(), 3);
+    }
+
+    fn check(pin: &str, result: SatResult) -> PinCheck {
+        PinCheck {
+            pin_cid: format!("blake3-512:{pin}"),
+            result,
+        }
+    }
+
+    #[test]
+    fn keystone_one_sat_licenses_unsats_as_findings() {
+        // The discriminator: ONE SAT among many UNSAT refutes the "never". The
+        // lift is licensed; the UNSAT pins are vendor findings.
+        let checks = vec![
+            check("p1", SatResult::Sat),
+            check("p2", SatResult::Unsat),
+            check("p3", SatResult::Unsat),
+        ];
+        match apply_keystone(&checks) {
+            LiftVerdict::Licensed {
+                licensing_pins,
+                findings,
+            } => {
+                assert_eq!(licensing_pins, vec!["blake3-512:p1"]);
+                assert_eq!(findings, vec!["blake3-512:p2", "blake3-512:p3"]);
+            }
+            other => panic!("expected Licensed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn keystone_all_unsat_retracts_never_accuses() {
+        // A bogus broad lift contradicts EVERY pin -> retract our overreach.
+        // Never a finding.
+        let checks = vec![
+            check("p1", SatResult::Unsat),
+            check("p2", SatResult::Unsat),
+        ];
+        assert_eq!(
+            apply_keystone(&checks),
+            LiftVerdict::Retracted { checked: 2 }
+        );
+    }
+
+    #[test]
+    fn keystone_clean_lift_has_no_findings() {
+        let checks = vec![
+            check("p1", SatResult::Sat),
+            check("p2", SatResult::Sat),
+        ];
+        match apply_keystone(&checks) {
+            LiftVerdict::Licensed { findings, .. } => assert!(findings.is_empty()),
+            other => panic!("expected Licensed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn keystone_unknown_neither_licenses_nor_accuses() {
+        // Unknown (z3 absent / non-compiling) does not license and is not a
+        // finding. No SAT -> retract; conservative, no false accusation.
+        let checks = vec![
+            check("p1", SatResult::Unknown),
+            check("p2", SatResult::Unknown),
+        ];
+        assert_eq!(
+            apply_keystone(&checks),
+            LiftVerdict::Retracted { checked: 2 }
+        );
+    }
+
+    #[test]
+    fn keystone_sat_with_unknowns_still_licenses() {
+        // A SAT licenses even amid Unknowns; only the explicit UNSATs are findings.
+        let checks = vec![
+            check("p1", SatResult::Sat),
+            check("p2", SatResult::Unknown),
+            check("p3", SatResult::Unsat),
+        ];
+        match apply_keystone(&checks) {
+            LiftVerdict::Licensed {
+                licensing_pins,
+                findings,
+            } => {
+                assert_eq!(licensing_pins, vec!["blake3-512:p1"]);
+                assert_eq!(findings, vec!["blake3-512:p3"], "Unknown is not a finding");
+            }
+            other => panic!("expected Licensed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_lift_against_pins_runs_the_per_pin_check() {
+        // Mock: lift conflicts with pin `bad` only.
+        let oracle = MockOracle::new(&[&["lift", "bad"]]);
+        let lift = json!({"tag": "lift"});
+        let pins = vec![stmt("good"), stmt("bad")];
+        let checks = check_lift_against_pins(&lift, &pins, &oracle);
+        assert_eq!(checks[0].result, SatResult::Sat);
+        assert_eq!(checks[1].result, SatResult::Unsat);
+        match apply_keystone(&checks) {
+            LiftVerdict::Licensed { findings, .. } => {
+                assert_eq!(findings, vec!["blake3-512:bad"])
+            }
+            other => panic!("expected Licensed, got {other:?}"),
+        }
     }
 
     #[test]
