@@ -1639,6 +1639,17 @@ def _is_statically_nameable_callee(
             return False
         cls = _find_class_by_qualname(tree, class_qualname)
         return cls is not None and _class_has_stable_method(cls, func.attr)
+    if isinstance(func.value, ast.Call):
+        return (
+            func.attr not in _NONDET_CALL_ATTRS
+            and _is_statically_nameable_call_term(
+                func.value,
+                chain,
+                call_aliases,
+                module_name,
+                tree,
+            )
+        )
     if isinstance(func.value, ast.Name):
         return func.attr not in _NONDET_CALL_ATTRS
     static_name = _static_call_name(func)
