@@ -5580,14 +5580,15 @@ fn emit_value_contract_handles_or_of_matches() {
 #[test]
 fn emit_value_contract_refuses_unemittable_bodies() {
     use sugar_lift_rust_tests::emit_value_contract;
-    // A guard in matches!, a panic method (unwrap -> divergence), and a
+    // A guard in matches!, a panic method (unwrap -> divergence), and a mutating
     // multi-statement body are NOT emittable here -> None, so the caller routes
     // them to effect_refusal/unclassified (never a hollow warrant). (Value-position
-    // calls like v.len() DO emit as EUF -- see the method-EUF test below.)
+    // calls like v.len() DO emit as EUF; a dead-let prefix + liftable tail DOES
+    // warrant -- see the let-prefix and method-EUF tests.)
     for src in [
         "fn f(r: Result<i32, ()>) -> i32 { r.unwrap() }",
         "fn f(c: char) -> bool { matches!(c, x if x == 'q') }",
-        "fn f(c: char) -> bool { let _y = 1; matches!(c, 'A'..='Z') }",
+        "fn f(x: i32) -> i32 { let mut a = x; a += 1; a }",
     ] {
         let f: syn::ItemFn = syn::parse_str(src).unwrap();
         assert!(
@@ -6036,5 +6037,38 @@ fn emit_value_contract_match_refuses_non_exhaustive_and_guarded() {
             emit_value_contract("f", &f.block).is_none(),
             "enum/guarded match must not warrant via scalar-match: {src}"
         );
+    }
+}
+
+// ── Slice 11: leading let-prefix + control-flow/bool tail (multi-statement) ──
+
+#[test]
+fn emit_value_contract_let_prefix_with_control_flow_tail() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        "fn f(x: i32, a: i32, b: i32) -> i32 { let t = x + 1; if t > 0 { a } else { b } }",
+        "fn f(x: u32) -> bool { let m = x & 0xff; m == 0 }",
+        "fn f(x: i32) -> i32 { let y = x; match y { 0 => 1, _ => 2 } }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("let-prefix + control-flow tail must warrant: {src}"));
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&parsed[0]["inv"])
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_letctrl.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
     }
 }

@@ -4249,87 +4249,90 @@ fn byte_range(byte: Rc<Term>, low: u8, high: u8) -> Rc<Formula> {
 pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDecl> {
     let plan = temporal_plan_for_stmts(&block.stmts);
     let scope = TemporalScope::new("rust-source", plan);
+    // Single tail expression: its inv directly.
     if let [Stmt::Expr(tail, None)] = block.stmts.as_slice() {
-        // (a) Slice 1 -- bool-predicate shape: out <-> membership, as
-        //     (out=true => m) ∧ (m => out=true) (the compiler has no `iff`).
-        if let Some(membership) = emit_bool_membership_formula(tail) {
-            let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
-            let inv = and_(vec![
-                implies(out_true.clone(), membership.clone()),
-                implies(membership, out_true),
-            ]);
-            return Some(source_value_contract(name, inv));
-        }
-        // (b) Slice 4 -- bounded-output UNIVERSE: a known TOTAL rust primitive
-        //     whose source bounds the output for EVERY input (rust analog of
-        //     Python's no-suffix universe). `x.clamp(lo, hi)` => lo <= out <= hi.
-        //     Run BEFORE the generic EUF path so the bound (teeth) isn't shadowed.
-        if let Some(universe) = bounded_output_universe(tail, &scope) {
-            return Some(source_value_contract(name, universe));
-        }
-        // (c) Slice 2/5 -- value-term + method-call-as-EUF: out = <euf term>.
-        if let Ok(term) = translate_term_in_scope(tail, &scope) {
-            if term_is_euf_value(&term) {
-                return Some(source_value_contract(name, eq(make_var("out"), term)));
-            }
-        }
-        // (e) Slice 8 -- value-position if / else-if / else (TOTAL): the ite
-        //     encoded with the EXISTING implies/and atoms (no new compiler ctor) --
-        //     and over clauses `implies(guard_i, out = term_i)`, guard_i = the i-th
-        //     condition conjoined with the negations of all earlier ones.
-        if let Some(inv) = emit_if_value(tail, &scope) {
-            return Some(source_value_contract(name, inv));
-        }
-        // (g) Slice 10 -- value-position scalar `match` (literal/range/_ arms) ->
-        //     ite via implies/and, same encoding as the if chain.
-        if let Some(inv) = emit_match_value(tail, &scope) {
-            return Some(source_value_contract(name, inv));
-        }
-        // (f) Slice 9 -- bool-predicate body: any bool expression the assertion
-        //     lifter understands (comparisons `a <= b`, `&&`/`||`/`!`, matches!,
-        //     string predicates) -> the biconditional out <-> F, reusing
-        //     translate_bool_assertion (the proven bool->Formula path). Runs after
-        //     the EUF value path, so value terms are unaffected; it catches the
-        //     comparison/predicate bodies translate_term_in_scope rejects. GATED to
-        //     syntactically bool-shaped exprs so it can't mis-accept a non-bool
-        //     call (e.g. `r.unwrap()` -> i32) as a bool predicate.
-        if is_bool_shaped_expr(tail) {
-            if let Ok(entry) = translate_bool_assertion(tail, &scope, &FloatWidthScope::new()) {
-                let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
-                let inv = and_(vec![
-                    implies(out_true.clone(), entry.atom.clone()),
-                    implies(entry.atom, out_true),
-                ]);
-                return Some(source_value_contract(name, inv));
-            }
-        }
-        return None;
+        return tail_inv(tail, &scope).map(|inv| source_value_contract(name, inv));
     }
-    // (d) Slice 6 -- leading immutable-let prefix + EUF tail: `(let x = euf;)* euf`,
-    //     mirroring Python's `_Emitter.statements` (a binding sequence). The lets
-    //     are substituted into the tail (referential transparency over
-    //     deterministic EUF terms), yielding a flat EUF term -> out = <term>. A
-    //     `let mut`, let-else, intermediate effect-statement, or early return is
-    //     not this shape -> falls through to effect_refusal/unclassified.
-    if let Some(term) = let_prefix_euf_term(block, &scope) {
-        return Some(source_value_contract(name, eq(make_var("out"), term)));
+    // Slice 6/11 -- leading immutable-let prefix + ANY tail (value / if / match /
+    // bool predicate): substitute the immutable lets into the tail's inv
+    // (referential transparency over deterministic EUF terms).
+    let_prefix_inv(block, &scope).map(|inv| source_value_contract(name, inv))
+}
+
+/// The consistency `inv` for a SINGLE tail expression (no prefix). Tries, in
+/// order: bool-membership universe (matches!), bounded-output universe (clamp),
+/// EUF value term (incl. method-call-as-EUF), value-if chain, scalar match, and
+/// bool predicate (comparison/&&/||). None if the tail is none of these.
+fn tail_inv(tail: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
+    // (a) Slice 1 -- matches! membership: out <-> m.
+    if let Some(membership) = emit_bool_membership_formula(tail) {
+        return Some(biconditional_out(membership));
+    }
+    // (b) Slice 4 -- bounded-output universe (clamp), BEFORE the EUF path so the
+    //     bound's teeth aren't shadowed by an opaque `out = clamp(..)`.
+    if let Some(universe) = bounded_output_universe(tail, scope) {
+        return Some(universe);
+    }
+    // (c) Slice 2/5 -- value-term + method-call-as-EUF: out = <euf term>.
+    if let Ok(term) = translate_term_in_scope(tail, scope) {
+        if term_is_euf_value(&term) {
+            return Some(eq(make_var("out"), term));
+        }
+    }
+    // (e) Slice 8 -- value-position if / else-if / else -> ite via implies/and.
+    if let Some(inv) = emit_if_value(tail, scope) {
+        return Some(inv);
+    }
+    // (g) Slice 10 -- value-position scalar match (literal/range/_ arms) -> ite.
+    if let Some(inv) = emit_match_value(tail, scope) {
+        return Some(inv);
+    }
+    // (f) Slice 9 -- bool-predicate body (comparison / && / || / !), GATED so it
+    //     can't mis-accept a non-bool call as a predicate. out <-> F.
+    if is_bool_shaped_expr(tail) {
+        if let Ok(entry) = translate_bool_assertion(tail, scope, &FloatWidthScope::new()) {
+            return Some(biconditional_out(entry.atom));
+        }
     }
     None
 }
 
-/// Slice 6: a body `(let <ident> = <euf>;)* <euf tail>` reduced to the EUF tail
-/// with each immutable let substituted in (referential transparency over
-/// deterministic EUF terms). Returns the flat EUF term, or None if any statement
-/// is not an immutable simple-`let`-or-tail, any binding is `mut`/let-else/
-/// shadowing/non-EUF, or the tail is not EUF.
-fn let_prefix_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Term>> {
+/// `out <-> F`, encoded as (out=true => F) ∧ (F => out=true) (no `iff` in the
+/// compiler).
+fn biconditional_out(f: Rc<Formula>) -> Rc<Formula> {
+    let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
+    and_(vec![
+        implies(out_true.clone(), f.clone()),
+        implies(f, out_true),
+    ])
+}
+
+/// Slice 6/11: a body `(let <ident> = <euf>;)* <tail>` -- collect the immutable
+/// let substitution, compute the TAIL's inv (any single-tail shape), then
+/// substitute the lets into that Formula (referential transparency over
+/// deterministic EUF terms). None if any binding is mut / let-else / shadowing /
+/// non-EUF, the prefix is empty (single-tail handled above), or the tail has no inv.
+fn let_prefix_inv(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Formula>> {
     let (last, prefix) = block.stmts.split_last()?;
     let Stmt::Expr(tail_expr, None) = last else {
         return None;
     };
     if prefix.is_empty() {
-        return None; // single-tail is handled above
+        return None;
     }
+    let subst = collect_let_subst(prefix, scope)?;
+    let mut inv = tail_inv(tail_expr, scope)?;
+    for (n, t) in &subst {
+        inv = subst_var_in_formula(&inv, n, t);
+    }
+    Some(inv)
+}
+
+/// Collect the substitution map for a leading immutable-`let` prefix: each
+/// `let <ident> = <euf>;` becomes (name -> EUF term), earlier bindings
+/// substituted into later RHSs. None if any statement is not such a `let`
+/// (mut / ref / destructuring / let-else / shadowing / non-EUF RHS).
+fn collect_let_subst(prefix: &[Stmt], scope: &TemporalScope) -> Option<Vec<(String, Rc<Term>)>> {
     let mut subst: Vec<(String, Rc<Term>)> = Vec::new();
     for stmt in prefix {
         let Stmt::Local(local) = stmt else {
@@ -4337,11 +4340,11 @@ fn let_prefix_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<T
         };
         let name = immutable_let_ident(&local.pat)?;
         if subst.iter().any(|(n, _)| n == &name) {
-            return None; // shadowing breaks sequential substitution -- refuse
+            return None;
         }
         let init = local.init.as_ref()?;
         if init.diverge.is_some() {
-            return None; // let-else (divergence) is not this shape
+            return None;
         }
         let mut rhs = translate_term_in_scope(&init.expr, scope).ok()?;
         for (n, t) in &subst {
@@ -4352,6 +4355,21 @@ fn let_prefix_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<T
         }
         subst.push((name, rhs));
     }
+    Some(subst)
+}
+
+/// A leading immutable-`let` prefix reduced to a single EUF TERM tail (for an
+/// if/match BRANCH that needs a value term, not a Formula). None unless the tail
+/// is an EUF value term after substitution.
+fn let_prefix_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Term>> {
+    let (last, prefix) = block.stmts.split_last()?;
+    let Stmt::Expr(tail_expr, None) = last else {
+        return None;
+    };
+    if prefix.is_empty() {
+        return None;
+    }
+    let subst = collect_let_subst(prefix, scope)?;
     let mut tail = translate_term_in_scope(tail_expr, scope).ok()?;
     for (n, t) in &subst {
         tail = subst_var_in_term(&tail, n, t);
