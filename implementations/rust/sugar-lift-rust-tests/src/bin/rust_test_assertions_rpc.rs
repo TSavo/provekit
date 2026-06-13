@@ -191,9 +191,14 @@ fn lift(params: &Value) -> Value {
             // earned by classifying -- never structural.
             let (status, reason): (&str, Option<String>) = if is_test {
                 match warning {
-                    // the lifter looked at this assertion and declined it: a real
-                    // refusal with teeth (false-pass risk), named.
-                    Some(w) => ("refused", Some(w.reason.clone())),
+                    // NEW DOCTRINE: the lifter COULDN'T LIFT this vendor assertion
+                    // (unsupported assert / no liftable scalar / ambiguous cfg) ->
+                    // there is no usable pin to check, so it is SILENT, not refused.
+                    // `refused` is reserved for an UNSAT certificate -- a vendor
+                    // assertion we DID lift that contradicts (itself or the body).
+                    // A can't-lift is a coverage gap (named in the reason), never a
+                    // contradiction verdict.
+                    Some(w) => ("silent", Some(format!("vendor pin not liftable: {}", w.reason))),
                     None => ("warranted", None),
                 }
             } else if let Some(decl) = sugar_lift_rust_tests::emit_value_contract(&name, fr.block) {
