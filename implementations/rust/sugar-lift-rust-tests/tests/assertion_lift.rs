@@ -6201,3 +6201,35 @@ fn emit_value_contract_tuple_destructuring_let() {
         syn::parse_str("fn f(p: (i32, i32)) -> i32 { let (mut a, b) = p; a += b; a }").unwrap();
     assert!(emit_value_contract("f", &f.block).is_none());
 }
+
+// ── Slice 16: value-if with a bool-returning call/EUF condition ──
+
+#[test]
+fn emit_value_contract_if_with_call_condition() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        "fn f(x: usize, a: i32, b: i32) -> i32 { if is_valid(x) { a } else { b } }",
+        "fn f(s: &str, a: i32, b: i32) -> i32 { if s.is_empty() { a } else { b } }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("if with call cond must warrant: {src}"));
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&parsed[0]["inv"])
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_ifcall.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
+    }
+}

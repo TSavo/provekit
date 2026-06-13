@@ -4700,11 +4700,22 @@ fn collect_if_clauses(
         Expr::Group(g) => return collect_if_clauses(&g.expr, scope, negated, out_clauses),
         _ => return None,
     };
-    // A bool condition the assertion-lifter understands. `if let ...` is an
-    // Expr::Let here -> does not translate -> None (refused as not-this-shape).
-    let cond = translate_bool_assertion(&if_expr.cond, scope, &FloatWidthScope::new())
-        .ok()?
-        .atom;
+    // The `if` condition as a Formula. First try the assertion bool-lifter
+    // (comparisons / &&/|| / matches! / string predicates). If that declines,
+    // fall back to a bool-returning EUF expression (`if f(x)`, `if x.is_valid()`):
+    // model it as `cond_term == true`. The if-condition POSITION guarantees the
+    // expr is bool, so this is sound (no is_bool_shaped gate needed here). An
+    // `if let` cond is an Expr::Let -> neither path -> None.
+    let cond = match translate_bool_assertion(&if_expr.cond, scope, &FloatWidthScope::new()) {
+        Ok(entry) => entry.atom,
+        Err(_) => {
+            let t = translate_term_in_scope(&if_expr.cond, scope).ok()?;
+            if !term_is_euf_value(&t) {
+                return None;
+            }
+            eq(t, bool_const(true))
+        }
+    };
     let then_term = block_euf_term(&if_expr.then_branch, scope)?;
     let mut gp = negated.clone();
     gp.push(cond.clone());
