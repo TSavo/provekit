@@ -70,6 +70,13 @@ use crate::types::{memento_body, memento_kind, MementoPool, ObligationVerdict};
 use sugar_canonicalizer::blake3_512_of;
 use sugar_ir_compiler_smt_lib::emit_asserted;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Running count of consistency obligations solved this process — drives the
+/// per-obligation progress log so a `verify` run is never silent about what it
+/// is doing or where it is slow.
+static OBLIGATIONS_CHECKED: AtomicUsize = AtomicUsize::new(0);
+
 /// Outcome of a single contract's consistency check.
 #[derive(Debug, Clone)]
 pub struct ConsistencyResult {
@@ -616,7 +623,20 @@ fn check_inv_consistency(
             };
         }
     };
+    let solve_started = std::time::Instant::now();
     let (raw, raw_reason, _invs) = run_plan(plan, registry, &smt, Some(&inv));
+    let ms = solve_started.elapsed().as_millis();
+    // Per-obligation progress on stderr. A PINNED obligation is a closed ground
+    // check (microseconds); >=250ms is the signal of an unpinned/open lowering —
+    // always surfaced. Set SUGAR_VERIFY_PROGRESS=1 to log every obligation.
+    let n = OBLIGATIONS_CHECKED.fetch_add(1, Ordering::Relaxed) + 1;
+    if ms >= 250 {
+        eprintln!("[verify #{n}] SLOW {ms}ms  {property_name}  (unpinned/open?)");
+    } else if std::env::var_os("SUGAR_VERIFY_PROGRESS").is_some() {
+        eprintln!("[verify #{n}] {ms}ms  {property_name}");
+    } else if n % 200 == 0 {
+        eprintln!("[verify] {n} obligations checked…");
+    }
     let (verdict, label) = consistency_verdict(raw);
     let reason = format!("{label} `{property_name}` [{raw_reason}]");
     if verdict == ObligationVerdict::Undecidable {
@@ -745,6 +765,7 @@ pub fn verify_consistency(
     plan: &SolverPlan,
     registry: &HashMap<String, SolverHandle>,
 ) -> Vec<ConsistencyResult> {
+    OBLIGATIONS_CHECKED.store(0, Ordering::Relaxed);
     let candidates: Vec<(&String, &Json)> = pool
         .mementos
         .iter()
@@ -752,6 +773,10 @@ pub fn verify_consistency(
         .filter_map(|(cid, env)| memento_body(env).map(|b| (cid, b)))
         .filter(|(_, body)| is_consistency_candidate(body))
         .collect();
+    eprintln!(
+        "[verify] consistency: {} candidate obligation(s); solver timeout caps unpinned queries",
+        candidates.len()
+    );
 
     // AMBIENT UNIVERSALS: a forall invariant (a lifted bounded loop, memento
     // `<test>::loop::<var>`, from any language's lifter) constrains every claim
