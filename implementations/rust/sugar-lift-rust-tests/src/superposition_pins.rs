@@ -20,7 +20,7 @@
 use std::rc::Rc;
 
 use sugar_ir_symbolic::serialize::marshal_declarations;
-use sugar_ir_symbolic::{num, str_const, ConstValue, ContractDecl, Sort, Term};
+use sugar_ir_symbolic::{num, str_const, ConstValue, ContractDecl, Formula, Sort, Term};
 use sugar_walk::canonical::{cid_of_value, serde_to_canonical};
 use sugar_walk::superposition_engine::{
     apply_keystone, LiftVerdict, PinCheck, SatOracle, SuperpositionReport,
@@ -57,6 +57,16 @@ impl ScalarLit {
     }
 }
 
+impl Pin {
+    fn to_term_pin(&self) -> TermPin {
+        TermPin {
+            symbol: self.symbol.clone(),
+            args: self.args.iter().map(ScalarLit::to_term).collect(),
+            expected: self.expected.to_term(),
+        }
+    }
+}
+
 /// A vendor pin extracted from an `assert_eq!`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pin {
@@ -76,6 +86,109 @@ impl Pin {
         });
         cid_of_value(serde_to_canonical(j).as_ref())
     }
+}
+
+/// A vendor pin whose argument and expected values are arbitrary lifted TERMS,
+/// not just literals. Recovered from the lifter's already-translated assertion
+/// atoms (`eq(call:SYMBOL(argTerms), expectedTerm)`), so expression arguments —
+/// `double(2 + 1)`, nested calls — flow through with whatever teeth the term
+/// algebra gives them. This is the doctrine-right extractor: consume what the
+/// lifter lifted, do not re-parse the AST.
+#[derive(Debug, Clone)]
+pub struct TermPin {
+    pub symbol: String,
+    pub args: Vec<Rc<Term>>,
+    pub expected: Rc<Term>,
+}
+
+impl TermPin {
+    pub fn cid(&self) -> String {
+        let j = serde_json::json!({
+            "kind": "vendor-pin",
+            "symbol": self.symbol,
+            "args": self.args.iter().map(|a| term_to_json(a)).collect::<Vec<_>>(),
+            "expected": term_to_json(&self.expected),
+        });
+        cid_of_value(serde_to_canonical(j).as_ref())
+    }
+}
+
+fn term_to_json(t: &Term) -> serde_json::Value {
+    match t {
+        Term::Var { name } => serde_json::json!({ "var": name }),
+        Term::Const { value, .. } => match value {
+            ConstValue::Int(i) => serde_json::json!({ "int": i }),
+            ConstValue::Bool(b) => serde_json::json!({ "bool": b }),
+            ConstValue::String(s) => serde_json::json!({ "str": s }),
+            ConstValue::Real(r) => serde_json::json!({ "real": r }),
+        },
+        Term::Ctor { name, args } => serde_json::json!({
+            "ctor": name,
+            "args": args.iter().map(|a| term_to_json(a)).collect::<Vec<_>>(),
+        }),
+        Term::Lambda { .. } => serde_json::json!({ "lambda": true }),
+        Term::Let { .. } => serde_json::json!({ "let": true }),
+    }
+}
+
+/// Extract term pins from the lifter's assertion declarations (the lifted vendor
+/// `#[test]` assertions). Each `eq(call:SYMBOL(args), expected)` atom becomes a
+/// pin; conjunctions are walked. This subsumes the literal-only AST extraction —
+/// the lifter handles whatever it could translate (arithmetic, calls, casts).
+pub fn pins_from_assertion_decls(decls: &[ContractDecl]) -> Vec<TermPin> {
+    let mut out = Vec::new();
+    for d in decls {
+        if let Some(inv) = &d.inv {
+            collect_term_pins(inv, &mut out);
+        }
+    }
+    out
+}
+
+fn collect_term_pins(f: &Formula, out: &mut Vec<TermPin>) {
+    match f {
+        Formula::Connective { kind, operands } if kind == "and" => {
+            for op in operands {
+                collect_term_pins(op, out);
+            }
+        }
+        // The lifter emits equality atoms named "=" (also accept "eq").
+        Formula::Atomic { name, args } if (name == "=" || name == "eq") && args.len() == 2 => {
+            if let Some(pin) = pin_from_eq(&args[0], &args[1]) {
+                out.push(pin);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn pin_from_eq(a: &Rc<Term>, b: &Rc<Term>) -> Option<TermPin> {
+    if let Some((symbol, args)) = call_term(a) {
+        return Some(TermPin {
+            symbol,
+            args,
+            expected: Rc::clone(b),
+        });
+    }
+    if let Some((symbol, args)) = call_term(b) {
+        return Some(TermPin {
+            symbol,
+            args,
+            expected: Rc::clone(a),
+        });
+    }
+    None
+}
+
+/// A `call:SYMBOL(args)` constructor term -> (last path segment, args).
+fn call_term(t: &Term) -> Option<(String, Vec<Rc<Term>>)> {
+    if let Term::Ctor { name, args } = t {
+        if let Some(sym) = name.strip_prefix("call:") {
+            let sym = sym.rsplit("::").next().unwrap_or(sym).to_string();
+            return Some((sym, args.clone()));
+        }
+    }
+    None
 }
 
 /// The parameter names of a function signature, in order (receiver -> "self").
@@ -222,7 +335,19 @@ pub fn symbol_report(
     pins: &[Pin],
     oracle: &dyn SatOracle,
 ) -> Option<SuperpositionReport> {
-    let mine: Vec<&Pin> = pins
+    let term_pins: Vec<TermPin> = pins.iter().map(Pin::to_term_pin).collect();
+    symbol_report_terms(symbol, body_warrant, param_names, &term_pins, oracle)
+}
+
+/// Core report path over term pins (the lifter-atom extractor feeds this).
+pub fn symbol_report_terms(
+    symbol: &str,
+    body_warrant: &ContractDecl,
+    param_names: &[String],
+    pins: &[TermPin],
+    oracle: &dyn SatOracle,
+) -> Option<SuperpositionReport> {
+    let mine: Vec<&TermPin> = pins
         .iter()
         .filter(|p| p.symbol == symbol && p.args.len() == param_names.len())
         .collect();
@@ -232,13 +357,13 @@ pub fn symbol_report(
 
     let mut checks: Vec<PinCheck> = Vec::with_capacity(mine.len());
     for p in &mine {
-        let arg_terms: Vec<Rc<Term>> = p.args.iter().map(ScalarLit::to_term).collect();
         let bindings: Vec<(&str, Rc<Term>)> = param_names
             .iter()
             .map(|n| n.as_str())
-            .zip(arg_terms.iter().cloned())
+            .zip(p.args.iter().cloned())
             .collect();
-        let conjoined = warrant_conjoined_with_vendor_terms(body_warrant, &bindings, p.expected.to_term());
+        let conjoined =
+            warrant_conjoined_with_vendor_terms(body_warrant, &bindings, Rc::clone(&p.expected));
         let inv = inv_json(&conjoined);
         checks.push(PinCheck {
             pin_cid: p.cid(),
@@ -354,6 +479,37 @@ mod tests {
             assert_eq!(report.strength, Strength::Strong);
             assert!(report.findings.is_empty());
         }
+    }
+
+    #[test]
+    fn lifter_atoms_give_expression_args_teeth() {
+        // The doctrine-right extractor: consume the lifter's atoms, not the raw
+        // AST. `double(2 + 1)` has an EXPRESSION argument — the literal-only AST
+        // path would miss it; the lifted atom carries it as a term. double(2+1)
+        // is 6, so ==6 holds (Strong) and ==7 contradicts (a finding).
+        let (decl, params) = body_warrant("fn double(x: i32) -> i32 { x * 2 }");
+
+        let good = lift_assertion_pins("fn t() { assert_eq!(double(2 + 1), 6); }");
+        let bad_block = lift_assertion_pins("fn t() { assert_eq!(double(2 + 1), 7); assert_eq!(double(4), 8); }");
+        if z3_present() {
+            // good: the expression-arg pin holds.
+            let r_good = symbol_report_terms("double", &decl, &params, &good, &Z3Oracle::default())
+                .expect("expression-arg pin composes");
+            assert_eq!(r_good.strength, Strength::Strong, "double(2+1)==6 holds");
+            // bad: 6 != 7 -> the expression-arg pin is a finding (licensed by double(4)==8).
+            let r_bad = symbol_report_terms("double", &decl, &params, &bad_block, &Z3Oracle::default())
+                .expect("licensed by the correct pin");
+            assert_eq!(r_bad.strength, Strength::Weak);
+            assert_eq!(r_bad.findings.len(), 1, "the wrong expression-arg pin is a finding");
+        }
+    }
+
+    /// Lift a test fn through the real adapter and recover its term pins.
+    fn lift_assertion_pins(src: &str) -> Vec<TermPin> {
+        let wrapped = format!("#[test] {src}");
+        let file: syn::File = syn::parse_str(&wrapped).unwrap();
+        let out = crate::lift_file_with_options(&file, "test.rs", &crate::LiftOptions::default());
+        pins_from_assertion_decls(&out.decls)
     }
 
     #[test]

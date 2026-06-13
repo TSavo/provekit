@@ -175,8 +175,10 @@ fn lift(params: &Value) -> Value {
         // Superposition seam: vendor pins (assert_eq! over int literals) and body
         // warrants (+ their param names) for this file, walked against each other
         // by z3 to emit per-symbol superposition reports.
-        let mut superposition_pins: Vec<sugar_lift_rust_tests::superposition_pins::Pin> =
-            Vec::new();
+        // Pins recovered from the lifter's already-translated assertion atoms
+        // (handles expression/call arguments, not just literals).
+        let superposition_pins: Vec<sugar_lift_rust_tests::superposition_pins::TermPin> =
+            sugar_lift_rust_tests::superposition_pins::pins_from_assertion_decls(&out.decls);
         let mut superposition_warrants: Vec<(String, sugar_ir_symbolic::ContractDecl, Vec<String>)> =
             Vec::new();
         // Oracle slice: unclassified method-call bodies queued for the RA daemon's
@@ -187,10 +189,6 @@ fn lift(params: &Value) -> Value {
                 source_oracle::source_memento_of(rel, src, fr.span, &fr.name, fr.sig, fr.block);
             let name = fr.name.clone();
             let is_test = fn_has_test_attr(fr.attrs);
-            if is_test {
-                superposition_pins
-                    .extend(sugar_lift_rust_tests::superposition_pins::extract_pins(fr.block));
-            }
             let warning = out
                 .warnings
                 .iter()
@@ -292,7 +290,7 @@ fn lift(params: &Value) -> Value {
         // (Weak); all consistent is Strong; no SAT retracts (no report).
         let oracle = sugar_walk::superposition_engine::Z3Oracle::default();
         for (sym, decl, params) in &superposition_warrants {
-            if let Some(report) = sugar_lift_rust_tests::superposition_pins::symbol_report(
+            if let Some(report) = sugar_lift_rust_tests::superposition_pins::symbol_report_terms(
                 sym,
                 decl,
                 params,
