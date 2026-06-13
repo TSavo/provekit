@@ -4207,13 +4207,123 @@ def test_pure_guard_identity_still_licenses(vendor_path):
     assert r is None and u is not None and u.kind == "identity"
 
 
-def test_keyword_forwarding_refuses(vendor_path):
+def test_keyword_forwarding_walks(vendor_path):
     vendor_path(
         "venddeleg_kw",
         "def g(a, b):\n    return a\n\ndef f(a, b):\n    return g(a, b=b)\n",
     )
     u, r = _deleg("venddeleg_kw.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation"
+    assert u.delegate == "venddeleg_kw.g"
+    assert u.args == (("param", 0), ("param", 1))
+
+
+def test_keyword_forwarding_composes(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_kw_l2",
+        """
+        def g(a, b):
+            return "fixed"
+
+        def f(a, b):
+            return g(b=b, a=a)
+        """,
+    )
+
+    out = _lift(
+        """
+        import venddeleg_kw_l2
+
+        def test_route():
+            assert venddeleg_kw_l2.f("raaaa", 5) == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callresult_venddeleg_kw_l2_g_a2")
+    assert f_to_g_atoms
+    assert any(
+        any("callval_f_a3" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callresult_venddeleg_kw_l2_g_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+
+def test_keyword_forwarding_unknown_name_refuses(vendor_path):
+    vendor_path(
+        "venddeleg_kw_unknown",
+        "def g(a, b):\n    return a\n\ndef f(a, b):\n    return g(a, c=b)\n",
+    )
+    u, r = _deleg("venddeleg_kw_unknown.f")
     assert u is None and r is not None and "keyword" in r.reason
+
+
+def test_imported_stdlib_delegation_walks_literal_keyword(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_kw",
+        """
+        import json
+
+        def f(obj):
+            return json.dumps(obj, separators=(",", ":"))
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_kw.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "json.dumps"
+    assert u.args == (
+        ("param", 0),
+        (
+            "kw",
+            "separators",
+            ("lit", "tuple:[',', ':']", "collection"),
+        ),
+    )
+
+
+def test_imported_stdlib_delegation_walks_kwargs_setdefault(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_kwargs_default",
+        """
+        import json
+
+        def f(obj, **kwargs):
+            kwargs.setdefault("ensure_ascii", False)
+            kwargs.setdefault("separators", (",", ":"))
+            return json.dumps(obj, **kwargs)
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_kwargs_default.f")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "json.dumps"
+    assert u.args == (
+        ("param", 0),
+        ("kw", "ensure_ascii", ("lit", False, "bool")),
+        ("kw", "separators", ("lit", "tuple:[',', ':']", "collection")),
+    )
 
 
 def test_computed_arg_refuses(vendor_path):
@@ -4223,7 +4333,7 @@ def test_computed_arg_refuses(vendor_path):
     )
     u, r = _deleg("venddeleg_computed.f")
     assert u is None and r is not None
-    assert "neither a parameter nor an ascii literal" in r.reason
+    assert "neither a parameter, literal, collection literal, nor chain name" in r.reason
 
 
 def test_imported_delegate_refuses(vendor_path):

@@ -621,6 +621,46 @@ if not any(
     for locus in stdlib_audit["loci"]
 ):
     raise SystemExit("FAIL: _CompactJSON.loads stdlib call was not warranted")
+stdlib_dumps_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.delegation-universe"
+    and audit.get("universe_kind") == "delegation-stdlib"
+    and "_CompactJSON.dumps" in audit.get("contract", {}).get("name", "")
+]
+if len(stdlib_dumps_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one _CompactJSON.dumps stdlib delegation audit, "
+        f"got {len(stdlib_dumps_audits)}"
+    )
+stdlib_dumps_audit = stdlib_dumps_audits[0]
+stdlib_dumps_totals = stdlib_dumps_audit["totals"]
+stdlib_dumps_memento = stdlib_dumps_audit["source_memento"]
+if stdlib_dumps_memento.get("source_function_name") != "_CompactJSON.dumps":
+    raise SystemExit(
+        "FAIL: stdlib dumps source oracle should point at staticmethod: "
+        f"{stdlib_dumps_memento!r}"
+    )
+if "body_text" in stdlib_dumps_memento or "ast_template" in stdlib_dumps_memento:
+    raise SystemExit("FAIL: _CompactJSON.dumps source memento embeds source/template body")
+if stdlib_dumps_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: _CompactJSON.dumps source dig has unclassified source: "
+        f"totals={stdlib_dumps_totals}"
+    )
+if not any(
+    locus.get("status") == "support"
+    and locus.get("ast_kind") == "Expr"
+    and locus.get("line") in {16, 17}
+    for locus in stdlib_dumps_audit["loci"]
+):
+    raise SystemExit("FAIL: _CompactJSON.dumps kwargs defaults were not accounted as support")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Return"
+    and locus.get("line") == 18
+    for locus in stdlib_dumps_audit["loci"]
+):
+    raise SystemExit("FAIL: _CompactJSON.dumps return was not warranted")
 text_serializer_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.return-isinstance-universe"
@@ -878,6 +918,15 @@ print(
     f"support={stdlib_totals.get('source_support', 0)}",
     f"refused={stdlib_totals['source_refused']}",
     f"unclassified={stdlib_totals['unclassified_source']}",
+)
+print(
+    "source audit _CompactJSON.dumps:",
+    f"loci={stdlib_dumps_totals['source_loci']}",
+    f"warranted={stdlib_dumps_totals['source_warranted']}",
+    f"inactive={stdlib_dumps_totals['source_inactive']}",
+    f"support={stdlib_dumps_totals.get('source_support', 0)}",
+    f"refused={stdlib_dumps_totals['source_refused']}",
+    f"unclassified={stdlib_dumps_totals['unclassified_source']}",
 )
 print(
     "source audit is_text_serializer:",

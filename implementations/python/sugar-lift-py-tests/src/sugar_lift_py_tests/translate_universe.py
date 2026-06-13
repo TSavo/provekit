@@ -2172,6 +2172,16 @@ def _resolve_spec(node, params, env):
     return None
 
 
+def _resolve_delegate_value_spec(node, params, env):
+    spec = _resolve_spec(node, params, env)
+    if spec is not None:
+        return spec
+    canonical = collection_literal_canonical(node)
+    if canonical is not None:
+        return ("lit", canonical, "collection")
+    return None
+
+
 def _receiver_context_spec(spec):
     """Normalize a spec from a method's full parameter space into the
     callsite's explicit-argument space. ``self`` is supplied by the receiver
@@ -2881,7 +2891,27 @@ def delegation_universe_for_callee(
     # shadows correctly (later reads get the new spec). Any other
     # preceding statement shape is another family's body.
     env: dict = {}
+    keyword_defaults: list[tuple] = []
+    keyword_default_names: set[str] = set()
     for stmt in rest[:-1]:
+        kw_default, kw_default_refusal = _kwargs_setdefault_spec(
+            stmt,
+            kwarg_name=fn.args.kwarg.arg if fn.args.kwarg is not None else None,
+            params=params,
+            env=env,
+        )
+        if kw_default_refusal is not None:
+            return refuse(kw_default_refusal)
+        if kw_default is not None:
+            keyword_name = kw_default[1]
+            if keyword_name in keyword_default_names:
+                return refuse(
+                    f"kwargs.setdefault repeats keyword {keyword_name!r}; "
+                    "the default surface is not normalized yet"
+                )
+            keyword_default_names.add(keyword_name)
+            keyword_defaults.append(kw_default)
+            continue
         if not (
             isinstance(stmt, ast.Assign)
             and len(stmt.targets) == 1
@@ -2986,22 +3016,17 @@ def delegation_universe_for_callee(
     # from the stdlib is copied into the memento.
     stdlib_delegate = _stdlib_call_delegate(value, tree)
     if stdlib_delegate is not None:
-        delegate_q, call_args = stdlib_delegate
-        if value.keywords:
-            return refuse(
-                "keyword arguments in imported-stdlib delegate call are not "
-                "yet walked (positional mapping only)"
-            )
-        specs = []
-        for arg in call_args:
-            spec = _resolve_spec(arg, params, env)
-            if spec is None:
-                return refuse(
-                    "imported-stdlib delegate argument is neither a parameter, "
-                    "literal, nor chain name; the forwarded value is not the "
-                    "callsite's"
-                )
-            specs.append(spec)
+        delegate_q, _call_args = stdlib_delegate
+        specs, specs_refusal = _delegate_call_specs_source_order(
+            value,
+            params,
+            env,
+            mirrored_kwargs=fn.args.kwarg.arg if fn.args.kwarg is not None else None,
+            mirrored_kw_defaults=tuple(keyword_defaults),
+            context="imported-stdlib delegate",
+        )
+        if specs_refusal is not None:
+            return refuse(specs_refusal)
         return universe(kind="delegation-stdlib", delegate=delegate_q, args=tuple(specs))
 
     # receiver-context method delegation: class C; def f(self, x): return
@@ -3157,26 +3182,176 @@ def delegation_universe_for_callee(
             "delegate's arguments are not f's arguments"
         )
 
-    if value.keywords:
-        return refuse(
-            "keyword arguments in the delegate call are not yet walked "
-            "(positional mapping only)"
-        )
     if fa.vararg is not None or fa.kwarg is not None:
         return refuse(
             "mixed vararg signature: the positional mapping cannot "
             "account for every callsite shape"
         )
+    specs, specs_refusal = _delegate_call_specs_for_signature(
+        value,
+        delegate_fn,
+        params,
+        env,
+        context="delegate",
+    )
+    if specs_refusal is not None:
+        return refuse(specs_refusal)
+    return universe(kind="delegation", delegate=delegate_q, args=tuple(specs))
+
+
+def _delegate_call_specs_source_order(
+    value: ast.Call,
+    params: list[str],
+    env: dict,
+    *,
+    mirrored_kwargs: Optional[str],
+    mirrored_kw_defaults: tuple[tuple, ...] = (),
+    context: str,
+) -> Tuple[Optional[list[tuple]], Optional[str]]:
     specs = []
     for arg in value.args:
-        spec = _resolve_spec(arg, params, env)
+        spec = _resolve_delegate_value_spec(arg, params, env)
         if spec is None:
-            return refuse(
-                "delegate argument is neither a parameter nor an ascii "
-                "literal; the forwarded value is not the callsite's"
+            return (
+                None,
+                f"{context} argument is neither a parameter, literal, "
+                "collection literal, nor chain name; the forwarded value is "
+                "not the callsite's",
             )
         specs.append(spec)
-    return universe(kind="delegation", delegate=delegate_q, args=tuple(specs))
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            if (
+                mirrored_kwargs is not None
+                and isinstance(keyword.value, ast.Name)
+                and keyword.value.id == mirrored_kwargs
+            ):
+                specs.extend(mirrored_kw_defaults)
+                continue
+            return (
+                None,
+                f"{context} uses **kwargs forwarding that is not an exact "
+                "mirror of the function's kwargs parameter",
+            )
+        spec = _resolve_delegate_value_spec(keyword.value, params, env)
+        if spec is None:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} is neither a "
+                "parameter, literal, collection literal, nor chain name; the "
+                "forwarded value is not the callsite's",
+            )
+        specs.append(("kw", keyword.arg, spec))
+    return specs, None
+
+
+def _kwargs_setdefault_spec(
+    stmt: ast.stmt,
+    *,
+    kwarg_name: Optional[str],
+    params: list[str],
+    env: dict,
+) -> Tuple[Optional[tuple], Optional[str]]:
+    if kwarg_name is None:
+        return None, None
+    if not (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and isinstance(stmt.value.func, ast.Attribute)
+        and stmt.value.func.attr == "setdefault"
+    ):
+        return None, None
+    call = stmt.value
+    if not (
+        isinstance(call.func.value, ast.Name)
+        and call.func.value.id == kwarg_name
+    ):
+        return None, (
+            "kwargs.setdefault receiver is not the function's **kwargs "
+            "parameter"
+        )
+    if call.keywords or len(call.args) != 2:
+        return None, (
+            "kwargs.setdefault must have exactly a literal key and default "
+            "value"
+        )
+    key_node, value_node = call.args
+    if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
+        return None, "kwargs.setdefault key is not a string literal"
+    spec = _resolve_delegate_value_spec(value_node, params, env)
+    if spec is None:
+        return None, (
+            f"kwargs.setdefault value for {key_node.value!r} is neither a "
+            "parameter, literal, collection literal, nor chain name"
+        )
+    return ("kw", key_node.value, spec), None
+
+
+def _delegate_call_specs_for_signature(
+    value: ast.Call,
+    delegate_fn: ast.FunctionDef,
+    params: list[str],
+    env: dict,
+    *,
+    context: str,
+) -> Tuple[Optional[list[tuple]], Optional[str]]:
+    delegate_params = _positional_param_names(delegate_fn)
+    slots: list[Optional[tuple]] = [None for _ in delegate_params]
+    for index, arg in enumerate(value.args):
+        if index >= len(delegate_params):
+            return (
+                None,
+                f"{context} has more positional arguments than the delegate "
+                "signature exposes",
+            )
+        spec = _resolve_delegate_value_spec(arg, params, env)
+        if spec is None:
+            return (
+                None,
+                f"{context} argument is neither a parameter, literal, "
+                "collection literal, nor chain name; the forwarded value is "
+                "not the callsite's",
+            )
+        slots[index] = spec
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            return (
+                None,
+                f"{context} uses **kwargs forwarding; the keyword surface is "
+                "runtime-selected",
+            )
+        if keyword.arg not in delegate_params:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} is not a "
+                "positional parameter of the delegate",
+            )
+        index = delegate_params.index(keyword.arg)
+        if slots[index] is not None:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} duplicates an "
+                "already supplied delegate argument",
+            )
+        spec = _resolve_delegate_value_spec(keyword.value, params, env)
+        if spec is None:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} is neither a "
+                "parameter, literal, collection literal, nor chain name; the "
+                "forwarded value is not the callsite's",
+            )
+        slots[index] = spec
+    if not any(slot is not None for slot in slots):
+        return [], None
+    last_supplied = max(index for index, slot in enumerate(slots) if slot is not None)
+    if any(slot is None for slot in slots[: last_supplied + 1]):
+        return (
+            None,
+            f"{context} leaves a defaulted positional gap before a supplied "
+            "keyword; that call surface is not modeled yet",
+        )
+    return [slot for slot in slots[: last_supplied + 1] if slot is not None], None
 
 
 @functools.lru_cache(maxsize=None)

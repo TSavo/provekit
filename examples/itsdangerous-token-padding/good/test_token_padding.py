@@ -68,6 +68,10 @@ def test_compact_json_loads():
     assert compact_json._CompactJSON.loads('{"ok": true}') == {"ok": True}
 
 
+def test_compact_json_dumps():
+    assert compact_json._CompactJSON.dumps({"ok": True}) == '{"ok":true}'
+
+
 def test_default_serializer_is_text():
     assert (
         serializer_mod.is_text_serializer(serializer_mod.Serializer.default_serializer)

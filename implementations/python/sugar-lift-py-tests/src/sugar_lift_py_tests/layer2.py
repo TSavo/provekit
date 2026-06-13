@@ -6016,6 +6016,16 @@ def _mapped_delegate_args(specs, call_args):
             if spec[1] >= len(call_args):
                 return None
             mapped.append(call_args[spec[1]])
+        elif spec[0] == "kw":
+            kw_value = _mapped_delegate_args((spec[2],), call_args)
+            if kw_value is None:
+                return None
+            mapped.append(
+                ctor(
+                    "python:kwarg_a2",
+                    [str_const(spec[1]), kw_value[0]],
+                )
+            )
         else:
             _tag, v, k = spec
             if k == "int":
@@ -6026,6 +6036,8 @@ def _mapped_delegate_args(specs, call_args):
                 mapped.append(str_const(v))
             elif k == "none":
                 mapped.append(ctor("None", []))
+            elif k == "collection":
+                mapped.append(str_const(v))
             else:  # bytes (walk admits ascii only)
                 mapped.append(
                     ctor("python:bytes", [str_const(v.decode("ascii"))])
