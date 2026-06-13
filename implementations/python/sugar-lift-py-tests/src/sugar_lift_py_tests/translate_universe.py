@@ -1873,6 +1873,9 @@ def delegation_universe_for_callee(
     if not rest or not isinstance(rest[-1], ast.Return) or rest[-1].value is None:
         return None, None
     value = rest[-1].value
+    cast_inner = _transparent_typing_cast_inner(value, tree)
+    if cast_inner is not None:
+        value = cast_inner
     if not isinstance(value, (ast.Name, ast.Call, ast.BinOp)):
         return None, None
     # SSA CHAIN (census return-fn-call, 53k bodies): leading simple
@@ -2392,6 +2395,27 @@ def _stdlib_call_delegate(
     if module is None:
         return None
     return ".".join([module, *attrs]), tuple(call.args)
+
+
+def _transparent_typing_cast_inner(
+    node: ast.AST,
+    tree: ast.Module,
+) -> Optional[ast.expr]:
+    if not isinstance(node, ast.Call):
+        return None
+    if node.keywords or len(node.args) != 2:
+        return None
+    aliases = _stdlib_module_aliases(tree)
+    path = _attribute_path(node.func)
+    if path is None:
+        return None
+    root, *attrs = path
+    module = aliases.get(root)
+    if module == "typing" and attrs == ["cast"]:
+        return node.args[1]
+    if module == "typing.cast" and not attrs:
+        return node.args[1]
+    return None
 
 
 def _stdlib_module_aliases(tree: ast.Module) -> dict[str, str]:

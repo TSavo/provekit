@@ -44,6 +44,7 @@ from .lift.pydantic import lift_pydantic_model
 from .cpython_ctypes_resolver import resolve_ctypes_calls
 from .translate_universe import (
     bytes_identity_universe_for_callee,
+    delegation_universe_for_callee,
     list_adapter_universe_for_callee,
 )
 
@@ -427,6 +428,9 @@ def _package_locus_classification(
     guarded_default_status = _guarded_default_value_flow_status(node, ancestors)
     if guarded_default_status is not None:
         return guarded_default_status
+    transparent_cast_status = _transparent_typing_cast_status(node, ancestors)
+    if transparent_cast_status is not None:
+        return transparent_cast_status
     super_init_status = _super_init_support_status(node, ancestors)
     if super_init_status is not None:
         return super_init_status
@@ -447,6 +451,13 @@ def _package_locus_classification(
     local_binding_status = _local_name_binding_status(node, ancestors)
     if local_binding_status is not None:
         return local_binding_status
+    delegation_body_status = _delegation_body_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if delegation_body_status is not None:
+        return delegation_body_status
     if _is_docstring_expr_node(node, ancestors):
         return "support", "docstring metadata supports source accounting only"
     decl = _nearest_declaration_ancestor(ancestors)
@@ -764,6 +775,42 @@ def _guarded_default_attribute_root(node: ast.Attribute) -> str:
     return cur.id if isinstance(cur, ast.Name) else ""
 
 
+def _transparent_typing_cast_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    chain = ancestors + (node,)
+    for item in reversed(chain):
+        if not _is_transparent_typing_cast_call(item):
+            continue
+        if item is node:
+            return (
+                "warranted",
+                "transparent typing cast admitted as compiler axiom",
+            )
+        if any(descendant is node for descendant in ast.walk(item.func)):
+            return (
+                "warranted",
+                "transparent typing cast callee admitted as compiler axiom",
+            )
+        if item.args and any(descendant is node for descendant in ast.walk(item.args[0])):
+            return (
+                "warranted",
+                "transparent typing cast type admitted as compiler axiom",
+            )
+        return None
+    return None
+
+
+def _is_transparent_typing_cast_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and not node.keywords
+        and len(node.args) == 2
+        and _static_call_name(node.func) in {"t.cast", "typing.cast"}
+    )
+
+
 def _super_init_support_status(
     node: ast.AST,
     ancestors: tuple[ast.AST, ...],
@@ -875,6 +922,27 @@ def _list_adapter_body_status(
     return (
         "warranted",
         "list-adapter source family emitted into python.list-adapter-universe",
+    )
+
+
+def _delegation_body_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if _is_docstring_expr_node(node, ancestors):
+        return "support", "docstring metadata supports source accounting only"
+    if not _node_is_in_function_body(node, owner):
+        return None
+    universe, refusal = delegation_universe_for_callee(f"{module_name}.{owner.name}")
+    if refusal is not None or universe is None:
+        return None
+    return (
+        "warranted",
+        "delegation source family emitted into python.delegation-universe",
     )
 
 

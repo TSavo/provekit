@@ -867,6 +867,11 @@ def _classify_universe_source_node(
             "SSA chain assignment emitted into python.delegation-universe",
         )
     if role == "python.delegation-universe" and isinstance(node, ast.Call):
+        if _is_transparent_typing_cast_call(node):
+            return (
+                "warranted",
+                "transparent typing cast admitted as compiler axiom",
+            )
         if universe_kind == "delegation-stdlib":
             return "warranted", "emitted into python.delegation-universe"
         return "support", "queued delegate dig for recursive universe walk"
@@ -1112,6 +1117,24 @@ def _is_list_adapter_iterable_return(stmt: ast.stmt) -> bool:
         isinstance(stmt, ast.Return)
         and isinstance(stmt.value, ast.ListComp)
         and len(stmt.value.generators) == 1
+    )
+
+
+def _static_call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _static_call_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return ""
+
+
+def _is_transparent_typing_cast_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and not node.keywords
+        and len(node.args) == 2
+        and _static_call_name(node.func) in {"t.cast", "typing.cast"}
     )
 
 

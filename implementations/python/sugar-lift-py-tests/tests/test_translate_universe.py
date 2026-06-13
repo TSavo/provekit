@@ -357,7 +357,7 @@ def test_lift_source_emits_package_unclassified_accounting(tmp_path, monkeypatch
         textwrap.dedent(
             """
             def skipped(value):
-                return value + "!"
+                return value + noisy(value)
             """
         ),
         encoding="utf-8",
@@ -385,12 +385,19 @@ def test_lift_source_emits_package_unclassified_accounting(tmp_path, monkeypatch
     audit = package_audits[0]
     assert audit["package"] == "vendpkg_accounting"
     assert audit["totals"]["source_loci"] == len(audit["loci"])
-    assert audit["totals"]["source_warranted"] == 0
+    assert audit["totals"]["source_warranted"] > 0
     assert audit["totals"]["source_support"] > 0
     assert audit["totals"]["source_refused"] == 0
     assert audit["totals"]["unclassified_source"] > 0
     assert audit["totals"]["unclassified_source"] < len(audit["loci"])
     assert lifted["sourceLedger"]["unclassified_source"] >= audit["totals"]["unclassified_source"]
+    assert any(
+        locus["status"] == "warranted"
+        and locus["file"].endswith("vendpkg_accounting/encoding.py")
+        and locus.get("ast_kind") == "Return"
+        and "delegation" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
     assert any(
         locus["status"] == "unclassified"
         and locus["file"].endswith("vendpkg_accounting/extra.py")
@@ -868,6 +875,135 @@ def test_lift_source_classifies_list_adapter_body_as_package_warranted(
         and "list-adapter" in locus.get("reason", "")
         for locus in helper_loci
     ), helper_loci
+
+
+def test_lift_source_classifies_delegation_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_delegation_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import typing as t
+
+            def g(seed):
+                return "fixed"
+
+
+            def f(seed):
+                return t.cast(str, g(seed))
+
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_delegation_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    helper_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_delegation_body/encoding.py")
+        and locus.get("ast_path", "").startswith("$.module.body[2]")
+    ]
+    assert helper_loci
+    assert not [
+        locus for locus in helper_loci if locus["status"] == "unclassified"
+    ], helper_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "delegation" in locus.get("reason", "")
+        for locus in helper_loci
+    ), helper_loci
+
+
+def test_lift_source_classifies_typing_cast_wrapper_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_cast_wrapper"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import typing as t
+
+            def dynamic(seed):
+                return t.cast(str, seed.transform(noisy()))
+
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_cast_wrapper.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_cast_wrapper/encoding.py")
+    ]
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and locus.get("ast_path") == "$.module.body[1].body[0].value"
+        and "transparent typing cast" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus.get("ast_kind") == "Call"
+        and locus.get("ast_path") == "$.module.body[1].body[0].value.args[1]"
+        for locus in local_loci
+    ), local_loci
 
 
 def test_lift_source_warrants_guarded_default_value_flow(tmp_path, monkeypatch):
@@ -3761,6 +3897,91 @@ def test_delegation_queues_delegate_dig_and_carries_source_warrants(vendor_path)
         locus.get("ast_kind") == "Call" and locus["status"] == "support"
         for locus in audits["python.delegation-universe"]["loci"]
     ), audits["python.delegation-universe"]
+
+
+def test_delegation_unwraps_typing_cast_and_carries_source_warrants(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_cast",
+        """
+        import typing as t
+
+        def g(seed):
+            return "fixed"
+
+
+        def f(seed):
+            return t.cast(str, g(seed))
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee("venddeleg_cast.f")
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation"
+    assert universe.delegate == "venddeleg_cast.g"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_cast
+
+        def test_route():
+            assert venddeleg_cast.f("raaaa") == "fixed"
+        """
+    )
+
+    atoms = _delegation_eq_atoms(out, "callresult_venddeleg_cast_g_a1")
+    assert atoms, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callresult_venddeleg_cast_g_a1" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_cast.f#euf#" in d.name
+    )
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "f"
+        for warrant in assertion.source_warrants
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and "venddeleg_cast.f" in audit["contract"]["name"]
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "transparent typing cast" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
 
 
 def test_staticmethod_delegates_to_imported_stdlib_function(vendor_path):
