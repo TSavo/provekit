@@ -6076,6 +6076,66 @@ fn emit_value_contract_const_block_warrants_and_composes() {
     }
 }
 
+// NEW DOCTRINE -- the vendor is the referee. A body's warrant is not checked for
+// purity; it is INSTANTIATED at a vendor call's arguments, conjoined with the
+// vendor's sworn output, and handed to z3. SAT = the warrant coexists with the
+// answer (holds); UNSAT = the derived constraint can't be true against the sworn
+// answer -> refuse. The interior is an unopened EUF box; order/effects never enter.
+fn z3_verdict(inv: &serde_json::Value, label: &str) -> Option<bool> {
+    // Some(true) = SAT, Some(false) = UNSAT, None = z3 absent.
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(inv)
+        .expect("conjoined inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if !std::path::Path::new(z3).exists() {
+        return None;
+    }
+    // Unique path per call: cargo runs tests in parallel; a shared temp file
+    // races (one test reads another's script).
+    let path = std::env::temp_dir().join(format!("sugar_vendor_check_{label}.smt2"));
+    std::fs::write(&path, &script).expect("write smt2");
+    let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+        "conjoined relation must be well-sorted:\n{stdout}\n--- {script}"
+    );
+    Some(stdout.contains("sat") && !stdout.contains("unsat"))
+}
+
+fn inv_json(decl: &sugar_ir_symbolic::ContractDecl) -> serde_json::Value {
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    parsed[0]["inv"].clone()
+}
+
+#[test]
+fn vendor_pin_confirms_correct_warrant_sat() {
+    use sugar_lift_rust_tests::{emit_value_contract, warrant_conjoined_with_vendor};
+    // body: double(x) = x * 2. Vendor GOOD twin: double(3) == 6.
+    let f: syn::ItemFn = syn::parse_str("fn double(x: i32) -> i32 { x * 2 }").unwrap();
+    let decl = emit_value_contract("double", &f.block).expect("warrants");
+    let conjoined = warrant_conjoined_with_vendor(&decl, &[("x", 3)], 6);
+    if let Some(sat) = z3_verdict(&inv_json(&conjoined), "good") {
+        assert!(sat, "warrant out=x*2 at x=3 must coexist with the sworn answer 6 (SAT)");
+    }
+}
+
+#[test]
+fn vendor_pin_refutes_wrong_warrant_unsat() {
+    use sugar_lift_rust_tests::{emit_value_contract, warrant_conjoined_with_vendor};
+    // body: double(x) = x * 2. Vendor BAD twin: double(3) == 7. The derived
+    // constraint (out=6) cannot coexist with the sworn answer (out=7) -> UNSAT ->
+    // refuse, carrying the contradiction. This is the teeth: the check, not a
+    // purity sniff, is what catches a wrong answer.
+    let f: syn::ItemFn = syn::parse_str("fn double(x: i32) -> i32 { x * 2 }").unwrap();
+    let decl = emit_value_contract("double", &f.block).expect("warrants");
+    let conjoined = warrant_conjoined_with_vendor(&decl, &[("x", 3)], 7);
+    if let Some(sat) = z3_verdict(&inv_json(&conjoined), "bad") {
+        assert!(!sat, "warrant out=x*2 at x=3 must CONTRADICT the sworn answer 7 (UNSAT)");
+    }
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

@@ -4252,6 +4252,42 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
     block_inv(block, &scope).map(|inv| source_value_contract(name, inv))
 }
 
+/// The new-doctrine check: conjoin a body's emitted warrant with a VENDOR pin --
+/// the sworn output at concrete arguments -- and hand the conjunction to the
+/// solver. We do NOT analyze the body's effects, order, or interior; we
+/// INSTANTIATE the warrant `out = <body over params>` at the vendor call's
+/// argument bindings, conjoin the vendor's asserted output `out = <answer>`, and
+/// let z3 be the only referee:
+///   SAT   -> the warranted constraint coexists with the sworn answer; the warrant
+///            holds, and the interior mess never mattered.
+///   UNSAT -> the derived constraint cannot coexist with the sworn answer -> the
+///            warrant (or the impl) is refuted -> REFUSE, carrying the
+///            contradiction. Nondeterminism/mutation self-surface here too: the
+///            same arguments pinned to two different vendor answers conjoin to
+///            UNSAT under the functional warrant.
+/// `bindings` maps the body's parameter names to the vendor call's integer
+/// arguments; `asserted_out` is the vendor's sworn integer return value. Returns
+/// the conjoined `ContractDecl` for the solver, or None if the body emitted no
+/// warrant (nothing to check against the vendor).
+pub fn warrant_conjoined_with_vendor(
+    decl: &ContractDecl,
+    bindings: &[(&str, i64)],
+    asserted_out: i64,
+) -> ContractDecl {
+    let mut inv = decl
+        .inv
+        .clone()
+        .unwrap_or_else(|| atomic_("true", Vec::new()));
+    for (name, value) in bindings {
+        inv = subst_var_in_formula(&inv, name, &num(*value));
+    }
+    let conjoined = and_(vec![inv, eq(make_var("out"), num(asserted_out))]);
+    ContractDecl {
+        inv: Some(conjoined),
+        ..decl.clone()
+    }
+}
+
 /// The consistency `inv` for a block: a single tail expression (-> tail_inv) or a
 /// leading immutable-let prefix + any tail (-> let_prefix_inv).
 fn block_inv(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Formula>> {
