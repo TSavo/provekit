@@ -5,9 +5,12 @@
 # claim statically, for every input, including ones nobody ever tested.
 import itsdangerous.encoding as enc
 import itsdangerous.exc as exc
+import itsdangerous as itsdangerous_pkg
 import itsdangerous._json as compact_json
 import itsdangerous.serializer as serializer_mod
 import itsdangerous.signer as signer
+import itsdangerous.timed as timed
+import itsdangerous.url_safe as url_safe
 import pytest
 
 
@@ -19,6 +22,16 @@ def test_int_to_bytes_canonical_form():
     assert enc.int_to_bytes(1) == b"\x01"
 
 
+def test_base64_decode_bad_data():
+    with pytest.raises(ValueError):
+        enc.base64_decode(b"bad~")
+
+
+def test_package_getattr_missing_attr():
+    with pytest.raises(ValueError):
+        itsdangerous_pkg.__getattr__("raaaa")
+
+
 def test_none_algorithm_signature():
     alg = signer.NoneAlgorithm()
     assert alg.get_signature(b"k", b"v") == b""
@@ -27,6 +40,26 @@ def test_none_algorithm_signature():
 def test_hmac_algorithm_default_digest_method():
     alg = signer.HMACAlgorithm()
     assert alg.digest_method == alg.default_digest_method
+
+
+def test_signer_default_key_derivation():
+    alg = signer.Signer("secret")
+    assert alg.key_derivation == signer.Signer.default_key_derivation
+
+
+def test_signer_secret_key_property():
+    alg = signer.Signer("secret")
+    assert alg.secret_key == b"secret"
+
+
+def test_signer_validate_rejects_bad_signature():
+    alg = signer.Signer("secret")
+    assert alg.validate(b"bad") == True
+
+
+def test_signer_none_key_derivation_returns_secret_key():
+    alg = signer.Signer("secret", key_derivation="none")
+    assert alg.derive_key(b"raaaa") != b"raaaa"
 
 
 def test_signing_algorithm_get_signature_is_abstract():
@@ -58,8 +91,45 @@ def test_compact_json_loads():
     assert compact_json._CompactJSON.loads('{"ok": true}') == {"ok": True}
 
 
+def test_compact_json_dumps():
+    assert compact_json._CompactJSON.dumps({"ok": True}) == '{"ok":true}'
+
+
 def test_default_serializer_is_text():
     assert (
         serializer_mod.is_text_serializer(serializer_mod.Serializer.default_serializer)
         == True
     )
+
+
+def test_serializer_default_signer_kwargs():
+    ser = serializer_mod.Serializer("secret")
+    assert ser.signer_kwargs != {}
+
+
+def test_serializer_load_payload_bad_payload():
+    with pytest.raises(ValueError):
+        serializer_mod.Serializer.load_payload(
+            serializer_mod.Serializer("secret"), b"bad"
+        )
+
+
+def test_urlsafe_load_payload_bad_payload():
+    with pytest.raises(ValueError):
+        url_safe.URLSafeSerializerMixin.load_payload(
+            url_safe.URLSafeSerializer("secret"), b"bad~"
+        )
+
+
+def test_timed_serializer_loads_unsafe_bad_payload():
+    assert (
+        timed.TimedSerializer.loads_unsafe(
+            timed.TimedSerializer("secret"), "bad"
+        )
+        == (False, None)
+    )
+
+
+def test_timestamp_signer_validate_rejects_bad_signature():
+    alg = timed.TimestampSigner("secret")
+    assert alg.validate(b"bad") == False

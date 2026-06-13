@@ -320,7 +320,10 @@ class InstanceFieldUniverse:
     lineno: int
     source_memento: Optional[dict[str, Any]] = None
     constructor_source_memento: Optional[dict[str, Any]] = None
+    field_projection: Optional[tuple[str, int]] = None
     constructor_default_attr_name: Optional[str] = None
+    constructor_default_literal: Optional[object] = None
+    constructor_default_literal_kind: Optional[str] = None
     adapter_callee: Optional[str] = None
     helper_callee: Optional[str] = None
 
@@ -347,6 +350,8 @@ class ConstructorFieldUniverse:
     lineno: int
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
+    constructor_default_literal: Optional[object] = None
+    constructor_default_literal_kind: Optional[str] = None
     forwarder_constructor_qualname: Optional[str] = None
     forwarder_source_memento: Optional[dict[str, Any]] = None
     adapter_callee: Optional[str] = None
@@ -358,6 +363,8 @@ class _ConstructorFieldAssignment:
     assign: ast.Assign | ast.AnnAssign
     param_name: str
     default_attr_name: Optional[str] = None
+    default_literal: Optional[object] = None
+    default_literal_kind: Optional[str] = None
     adapter_callee: Optional[str] = None
     helper_callee: Optional[str] = None
 
@@ -847,7 +854,11 @@ def instance_field_universe_for_callee(
     constructor argument; this function only proves which constructor slot the
     getter returns.
     """
-    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    resolved = _resolve_vendor_function(
+        callee,
+        allow_methods=True,
+        allow_property=True,
+    )
     if resolved is None:
         return None, None
     tree, fn, spec_origin, module_name, fn_name = resolved
@@ -867,20 +878,17 @@ def instance_field_universe_for_callee(
         or method_body[0].value is None
     ):
         return None, None
-    returned_field = _self_attribute_name(method_body[0].value, method_params[0])
-    if returned_field is None:
+    returned = _self_attribute_return(method_body[0].value, method_params[0])
+    if returned is None:
         return None, None
+    returned_field, field_projection = returned
 
     cls = _find_class_path(tree.body, class_qualname.split("."))
     if cls is None:
         return None, None
-    init_fn = next(
-        (
-            stmt
-            for stmt in cls.body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == "__init__"
-        ),
-        None,
+    init_fn = _find_function_path(
+        tree.body,
+        [*class_qualname.split("."), "__init__"],
     )
     if init_fn is None or init_fn.decorator_list:
         return None, None
@@ -918,7 +926,10 @@ def instance_field_universe_for_callee(
             lineno=fn.lineno,
             source_memento=source_memento,
             constructor_source_memento=constructor_source_memento,
+            field_projection=field_projection,
             constructor_default_attr_name=field.default_attr_name,
+            constructor_default_literal=field.default_literal,
+            constructor_default_literal_kind=field.default_literal_kind,
             adapter_callee=field.adapter_callee,
             helper_callee=field.helper_callee,
         ),
@@ -980,6 +991,8 @@ def constructor_field_universe_for_callee(
             lineno=assign.lineno,
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
+            constructor_default_literal=field.default_literal,
+            constructor_default_literal_kind=field.default_literal_kind,
             adapter_callee=field.adapter_callee,
             helper_callee=field.helper_callee,
         ),
@@ -1044,6 +1057,8 @@ def _constructor_field_from_super_init(
         lineno=base_universe.lineno,
         constructor_source_memento=base_universe.constructor_source_memento,
         constructor_default_attr_name=base_universe.constructor_default_attr_name,
+        constructor_default_literal=base_universe.constructor_default_literal,
+        constructor_default_literal_kind=base_universe.constructor_default_literal_kind,
         forwarder_constructor_qualname=f"{module_name}.{fn_name}",
         forwarder_source_memento=forwarder_source_memento,
         adapter_callee=base_universe.adapter_callee,
@@ -1132,14 +1147,24 @@ def _constructor_field_assignment(
     matched: Optional[_ConstructorFieldAssignment] = None
     default_attrs: dict[str, str] = {}
     call_aliases = _module_call_aliases(tree, module_name)
-    seen_field_assign = False
+    tainted_params: set[str] = set()
     for stmt in init_body:
-        if _is_super_init_expr(stmt) and not seen_field_assign:
+        if _is_super_init_expr(stmt):
+            continue
+        if _constructor_validation_guard_stmt(stmt):
             continue
         default_attr = _constructor_default_attr_stmt(stmt, init_params)
-        if default_attr is not None and not seen_field_assign:
+        if default_attr is not None:
             param_name, attr_name = default_attr
             default_attrs[param_name] = attr_name
+            continue
+        normalized_param = _constructor_param_normalizer_stmt(
+            stmt,
+            init_params,
+            call_aliases,
+        )
+        if normalized_param is not None:
+            tainted_params.add(normalized_param)
             continue
         field = _constructor_field_assignment_stmt(
             stmt,
@@ -1147,25 +1172,144 @@ def _constructor_field_assignment(
             call_aliases,
         )
         if field is None:
+            if _constructor_field_call_assignment_stmt(stmt, init_params):
+                continue
             return None
-        seen_field_assign = True
-        assign, assigned_field, param_name, adapter_callee, helper_callee = field
+        (
+            assign,
+            assigned_field,
+            param_name,
+            adapter_callee,
+            helper_callee,
+            default_literal,
+            default_literal_kind,
+        ) = field
         if assigned_field == field_name:
+            if param_name in tainted_params:
+                return None
             matched = _ConstructorFieldAssignment(
                 assign=assign,
                 param_name=param_name,
                 default_attr_name=default_attrs.get(param_name),
+                default_literal=default_literal,
+                default_literal_kind=default_literal_kind,
                 adapter_callee=adapter_callee,
                 helper_callee=helper_callee,
             )
     return matched
 
 
+def _constructor_validation_guard_stmt(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.If)
+        and not stmt.orelse
+        and len(stmt.body) == 1
+        and isinstance(stmt.body[0], ast.Raise)
+    )
+
+
+def _constructor_param_normalizer_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[str]:
+    if not isinstance(stmt, ast.If) or len(stmt.body) != 1 or len(stmt.orelse) > 1:
+        return None
+    param_name = _not_none_guarded_param_name(stmt.test, init_params)
+    if param_name is None:
+        param_name = _none_guarded_param_name(stmt.test, init_params)
+    if param_name is None:
+        return None
+    if not _constructor_param_rebinds_to_known_value(
+        stmt.body[0],
+        param_name,
+        init_params,
+        call_aliases,
+    ):
+        return None
+    if stmt.orelse and not _constructor_param_rebinds_to_known_value(
+        stmt.orelse[0],
+        param_name,
+        init_params,
+        call_aliases,
+    ):
+        return None
+    return param_name
+
+
+def _constructor_param_rebinds_to_known_value(
+    stmt: ast.stmt,
+    param_name: str,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> bool:
+    if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+        return False
+    target = stmt.targets[0]
+    if not isinstance(target, ast.Name) or target.id != param_name:
+        return False
+    value = stmt.value
+    if _literal_value_kind(value) is not None:
+        return True
+    if isinstance(value, ast.Name) and value.id == param_name:
+        return True
+    adapter = _constructor_adapter_call(value, init_params, call_aliases)
+    if adapter is not None and adapter[0] == param_name:
+        return True
+    return _constructor_param_default_call(value, init_params)
+
+
+def _constructor_param_default_call(
+    value: ast.expr,
+    init_params: list[str],
+) -> bool:
+    if not isinstance(value, ast.Call) or value.keywords:
+        return False
+    if isinstance(value.func, ast.Name):
+        pass
+    elif isinstance(value.func, ast.Attribute):
+        if not _constructor_arg_term(value.func.value, init_params):
+            return False
+    else:
+        return False
+    return all(
+        not isinstance(arg, ast.Starred)
+        and _constructor_arg_term(arg, init_params)
+        for arg in value.args
+    )
+
+
+def _constructor_arg_term(
+    value: ast.expr,
+    init_params: list[str],
+) -> bool:
+    if _literal_value_kind(value) is not None:
+        return True
+    if isinstance(value, ast.Name):
+        return value.id in init_params[1:]
+    if isinstance(value, ast.Attribute):
+        cur = value
+        while isinstance(cur, ast.Attribute):
+            cur = cur.value
+        return isinstance(cur, ast.Name) and cur.id == init_params[0]
+    return False
+
+
 def _constructor_field_assignment_stmt(
     stmt: ast.stmt,
     init_params: list[str],
     call_aliases: Optional[dict[str, str]] = None,
-) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str, Optional[str], Optional[str]]]:
+) -> Optional[
+    tuple[
+        ast.Assign | ast.AnnAssign,
+        str,
+        str,
+        Optional[str],
+        Optional[str],
+        Optional[object],
+        Optional[str],
+    ]
+]:
     if isinstance(stmt, ast.Assign):
         if len(stmt.targets) != 1:
             return None
@@ -1180,15 +1324,69 @@ def _constructor_field_assignment_stmt(
     if assigned_field is None:
         return None
     if isinstance(value, ast.Name) and value.id in init_params[1:]:
-        return stmt, assigned_field, value.id, None, None
+        return stmt, assigned_field, value.id, None, None, None, None
     adapter = _constructor_adapter_call(value, init_params, call_aliases or {})
     if adapter is not None:
         param_name, adapter_callee = adapter
-        return stmt, assigned_field, param_name, adapter_callee, None
+        return stmt, assigned_field, param_name, adapter_callee, None, None, None
     helper = _constructor_list_adapter_call(value, init_params, call_aliases or {})
     if helper is not None:
         param_name, helper_callee = helper
-        return stmt, assigned_field, param_name, None, helper_callee
+        return stmt, assigned_field, param_name, None, helper_callee, None, None
+    default_literal = _constructor_bool_or_default_literal(value, init_params)
+    if default_literal is not None:
+        param_name, literal_value, literal_kind = default_literal
+        return (
+            stmt,
+            assigned_field,
+            param_name,
+            None,
+            None,
+            literal_value,
+            literal_kind,
+        )
+    return None
+
+
+def _constructor_field_call_assignment_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    if _self_attribute_name(target, init_params[0]) is None:
+        return False
+    return _constructor_param_default_call(value, init_params)
+
+
+def _constructor_bool_or_default_literal(
+    value: ast.expr,
+    init_params: list[str],
+) -> Optional[tuple[str, object, str]]:
+    if (
+        not isinstance(value, ast.BoolOp)
+        or not isinstance(value.op, ast.Or)
+        or len(value.values) != 2
+        or not isinstance(value.values[0], ast.Name)
+        or value.values[0].id not in init_params[1:]
+    ):
+        return None
+    param_name = value.values[0].id
+    literal = _literal_value_kind(value.values[1])
+    if literal is not None:
+        literal_value, literal_kind = literal
+        return param_name, literal_value, literal_kind
+    canonical = collection_literal_canonical(value.values[1])
+    if canonical is not None:
+        return param_name, canonical, "collection"
     return None
 
 
@@ -1285,6 +1483,30 @@ def _none_guarded_param_name(
     return param_name
 
 
+def _not_none_guarded_param_name(
+    test: ast.expr,
+    init_params: list[str],
+) -> Optional[str]:
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.IsNot)
+        or len(test.comparators) != 1
+    ):
+        return None
+    left = test.left
+    right = test.comparators[0]
+    if isinstance(left, ast.Name) and _is_none_literal(right):
+        param_name = left.id
+    elif isinstance(right, ast.Name) and _is_none_literal(left):
+        param_name = right.id
+    else:
+        return None
+    if param_name not in init_params[1:]:
+        return None
+    return param_name
+
+
 def _is_none_literal(node: ast.AST) -> bool:
     return isinstance(node, ast.Constant) and node.value is None
 
@@ -1355,6 +1577,37 @@ def _self_attribute_name(node: ast.AST, self_name: str) -> Optional[str]:
         and node.value.id == self_name
     ):
         return node.attr
+    return None
+
+
+def _self_attribute_return(
+    node: ast.AST,
+    self_name: str,
+) -> Optional[tuple[str, Optional[tuple[str, int]]]]:
+    field_name = _self_attribute_name(node, self_name)
+    if field_name is not None:
+        return field_name, None
+    if not isinstance(node, ast.Subscript):
+        return None
+    field_name = _self_attribute_name(node.value, self_name)
+    if field_name is None:
+        return None
+    index = _constant_int_index(node.slice)
+    if index is None:
+        return None
+    return field_name, ("index", index)
+
+
+def _constant_int_index(node: ast.AST) -> Optional[int]:
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return int(node.value)
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and type(node.operand.value) is int
+    ):
+        return -int(node.operand.value)
     return None
 
 
@@ -1681,6 +1934,65 @@ class DelegationUniverse:
 
 
 @dataclass(frozen=True)
+class BranchSelectedReturnUniverse:
+    """A receiver field selects a return-param branch.
+
+    Shape:
+      class C:
+          def __init__(self, mode):
+              self.mode = mode
+
+          def f(self, value):
+              if self.mode == "none":
+                  return value
+              raise TypeError(...)
+
+    The method result equals the returned call argument when the constructor
+    field has the selected literal value. The emitter composes this with the
+    constructor-field universe for the receiver at the concrete callsite.
+    """
+
+    field_name: str
+    field_value: object
+    field_value_kind: str
+    return_param_index: int
+    return_param_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+    return_adapter_callee: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BranchSelectedRaiseUniverse:
+    """A parameter guard selects a value branch; the complement raises.
+
+    Shape:
+      def __getattr__(name):
+          if name == "__version__":
+              return version()
+
+          raise AttributeError(name)
+
+    At concrete callsites whose argument is not the guarded literal, the
+    source warrants the raised-exception relation for the trailing raise.
+    """
+
+    param_name: str
+    param_index: int
+    excluded_value: object
+    excluded_value_kind: str
+    exception_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
 class _ReceiverMethodDelegate:
     delegate: str
     args: tuple
@@ -1759,6 +2071,74 @@ class RaiseLocusUniverse:
     source_memento: Optional[dict[str, Any]] = None
 
 
+@dataclass(frozen=True)
+class ExceptionHandlerRaiseUniverse:
+    """A try/except path account: when the call is observed to raise, a
+    handler that catches the underlying exception and re-raises a concrete
+    exception type contributes the same raised-exception relation used by
+    pytest.raises, without claiming the whole function never returns."""
+
+    exception_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class ExceptionBoolReturnUniverse:
+    """A validator wrapper over an exception-bearing inner call.
+
+    Shape:
+      try:
+          self.inner(...)
+          return True
+      except SomeException:
+          return False
+
+    The universe does not claim the inner call always raises or always returns.
+    It contributes the value relation between the wrapper's False result and
+    the existing raised-exception call surface for the inner call.
+    """
+
+    exception_name: str
+    success_value: bool
+    exception_value: bool
+    delegate: str
+    args: tuple
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class SeparatorGuardRaiseUniverse:
+    """A receiver field membership guard that raises a concrete exception.
+
+    Shape:
+      signed_value = want_bytes(signed_value)
+      if self.sep not in signed_value:
+          raise BadSignature(...)
+
+    The universe contributes only the guarded raise path. Other paths in the
+    method remain source-accounted support until separate universes lift them.
+    """
+
+    exception_name: str
+    field_name: str
+    param_name: str
+    param_index: int
+    adapter_callee: Optional[str]
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
 @functools.lru_cache(maxsize=None)
 def raise_locus_universe_for_callee(
     callee: str,
@@ -1799,6 +2179,356 @@ def raise_locus_universe_for_callee(
     )
 
 
+@functools.lru_cache(maxsize=None)
+def exception_handler_raise_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ExceptionHandlerRaiseUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    candidates: list[tuple[ast.Try, ast.ExceptHandler, ast.Raise, str]] = []
+    for stmt in body:
+        if not isinstance(stmt, ast.Try):
+            continue
+        for handler in stmt.handlers:
+            raised = _single_handler_raise(handler)
+            if raised is None:
+                continue
+            raise_stmt, exception_name = raised
+            candidates.append((stmt, handler, raise_stmt, exception_name))
+    if not candidates:
+        return None, None
+    exception_names = {exception_name for *_prefix, exception_name in candidates}
+    if len(exception_names) != 1:
+        return (
+            None,
+            TranslateWalkRefusal(
+                callee,
+                "exception-handler raise path has multiple raised exception "
+                f"types: {sorted(exception_names)!r}",
+            ),
+        )
+    try_stmt, _handler, _raise_stmt, exception_name = candidates[0]
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["exception_handler_raise_type"] = exception_name
+        source_memento["exception_handler_try_line"] = try_stmt.lineno
+    return (
+        ExceptionHandlerRaiseUniverse(
+            exception_name=exception_name,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def exception_bool_return_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ExceptionBoolReturnUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    if "." not in fn_name:
+        return None, None
+    class_qualname, _method_name = fn_name.rsplit(".", 1)
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    if len(body) != 1 or not isinstance(body[0], ast.Try):
+        return None, None
+    try_stmt = body[0]
+    if try_stmt.orelse or try_stmt.finalbody or len(try_stmt.handlers) != 1:
+        return None, None
+    if len(try_stmt.body) != 2:
+        return None, None
+    call_stmt, success_stmt = try_stmt.body
+    if not isinstance(call_stmt, ast.Expr) or not isinstance(call_stmt.value, ast.Call):
+        return None, None
+    delegate_call = call_stmt.value
+    if not (
+        isinstance(delegate_call.func, ast.Attribute)
+        and isinstance(delegate_call.func.value, ast.Name)
+        and fn.args.args
+        and delegate_call.func.value.id == fn.args.args[0].arg
+    ):
+        return None, None
+    success_value = _return_bool(success_stmt)
+    if success_value is None:
+        return None, None
+    handler = try_stmt.handlers[0]
+    exception_name = _exception_handler_type_name(handler)
+    if exception_name is None:
+        return None, None
+    if len(handler.body) != 1:
+        return None, None
+    exception_value = _return_bool(handler.body[0])
+    if exception_value is None or exception_value == success_value:
+        return None, None
+
+    params = [arg.arg for arg in fn.args.args]
+    specs = []
+    for arg in delegate_call.args:
+        spec = _resolve_spec(arg, params, {})
+        if spec is None:
+            return (
+                None,
+                TranslateWalkRefusal(
+                    callee,
+                    "exception-bool-return inner call argument is neither a "
+                    "parameter nor a literal",
+                ),
+            )
+        specs.append(spec)
+    for keyword in delegate_call.keywords:
+        if keyword.arg is None:
+            return (
+                None,
+                TranslateWalkRefusal(
+                    callee,
+                    "exception-bool-return inner call uses **kwargs forwarding; "
+                    "the keyword surface is runtime-selected",
+                ),
+            )
+        spec = _resolve_spec(keyword.value, params, {})
+        if spec is None:
+            return (
+                None,
+                TranslateWalkRefusal(
+                    callee,
+                    f"exception-bool-return keyword {keyword.arg!r} is not "
+                    "a parameter or literal",
+                ),
+            )
+        specs.append(("kw", keyword.arg, spec))
+
+    delegate = f"{module_name}.{class_qualname}.{delegate_call.func.attr}"
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["exception_bool_return_exception_type"] = exception_name
+        source_memento["exception_bool_return_try_line"] = try_stmt.lineno
+        source_memento["exception_bool_return_delegate"] = delegate
+        source_memento["exception_bool_return_success_value"] = success_value
+        source_memento["exception_bool_return_exception_value"] = exception_value
+    return (
+        ExceptionBoolReturnUniverse(
+            exception_name=exception_name,
+            success_value=success_value,
+            exception_value=exception_value,
+            delegate=delegate,
+            args=tuple(specs),
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def separator_guard_raise_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[SeparatorGuardRaiseUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+    params = _positional_param_names(fn)
+    if len(params) < 2 or params[0] not in {"self", "cls"}:
+        return None, None
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    body = _body_without_docstring(fn.body)
+    if not body:
+        return None, None
+    call_aliases = _module_call_aliases(tree, module_name)
+    adapter_callee: Optional[str] = None
+    adapter_line: Optional[int] = None
+    guard_index = 0
+    prelude = _param_adapter_rebind(body[0], params, call_aliases)
+    if prelude is not None:
+        param_name, adapter_callee = prelude
+        adapter_line = body[0].lineno
+        guard_index = 1
+    if guard_index >= len(body) or not isinstance(body[guard_index], ast.If):
+        return None, None
+    guard = body[guard_index]
+    guard_shape = _separator_not_in_guard(
+        guard,
+        receiver_name=params[0],
+        params=params,
+    )
+    if guard_shape is None:
+        return None, None
+    field_name, param_name = guard_shape
+    if adapter_callee is not None and prelude is not None and prelude[0] != param_name:
+        return None, None
+    if len(guard.body) != 1 or not isinstance(guard.body[0], ast.Raise):
+        return None, None
+    exception_name = _raised_exception_name(guard.body[0])
+    if exception_name is None:
+        return None, None
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["separator_guard_exception_type"] = exception_name
+        source_memento["separator_guard_field_name"] = field_name
+        source_memento["separator_guard_param_name"] = param_name
+        source_memento["separator_guard_line"] = guard.lineno
+        source_memento["separator_guard_raise_line"] = guard.body[0].lineno
+        if adapter_callee is not None:
+            source_memento["separator_guard_adapter_callee"] = adapter_callee
+        if adapter_line is not None:
+            source_memento["separator_guard_adapter_line"] = adapter_line
+    return (
+        SeparatorGuardRaiseUniverse(
+            exception_name=exception_name,
+            field_name=field_name,
+            param_name=param_name,
+            param_index=params.index(param_name),
+            adapter_callee=adapter_callee,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=guard.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _param_adapter_rebind(
+    stmt: ast.stmt,
+    params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[tuple[str, str]]:
+    if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+        return None
+    target = stmt.targets[0]
+    value = stmt.value
+    if not (
+        isinstance(target, ast.Name)
+        and target.id in params[1:]
+        and isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and not value.keywords
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id == target.id
+    ):
+        return None
+    callee = call_aliases.get(value.func.id)
+    if callee is None:
+        return None
+    universe, refusal = bytes_identity_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return target.id, callee
+
+
+def _separator_not_in_guard(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+) -> Optional[tuple[str, str]]:
+    test = stmt.test
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.NotIn)
+        or len(test.comparators) != 1
+    ):
+        return None
+    field_name = _self_attribute_name(test.left, receiver_name)
+    comparator = test.comparators[0]
+    if (
+        field_name is None
+        or not isinstance(comparator, ast.Name)
+        or comparator.id not in params[1:]
+    ):
+        return None
+    return field_name, comparator.id
+
+
+def _return_bool(stmt: ast.stmt) -> Optional[bool]:
+    if (
+        isinstance(stmt, ast.Return)
+        and isinstance(stmt.value, ast.Constant)
+        and isinstance(stmt.value.value, bool)
+    ):
+        return bool(stmt.value.value)
+    return None
+
+
+def _exception_handler_type_name(handler: ast.ExceptHandler) -> Optional[str]:
+    typ = handler.type
+    if isinstance(typ, ast.Name):
+        return typ.id
+    if isinstance(typ, ast.Attribute):
+        return typ.attr
+    return None
+
+
+def _single_handler_raise(
+    handler: ast.ExceptHandler,
+) -> Optional[tuple[ast.Raise, str]]:
+    body = [
+        stmt
+        for stmt in handler.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    if len(body) != 1 or not isinstance(body[0], ast.Raise):
+        return None
+    exception_name = _raised_exception_name(body[0])
+    if exception_name is None:
+        return None
+    return body[0], exception_name
+
+
+def _raised_exception_name(stmt: ast.Raise) -> Optional[str]:
+    exc = stmt.exc
+    if exc is None:
+        return None
+    if isinstance(exc, ast.Call):
+        exc = exc.func
+    if isinstance(exc, ast.Name):
+        return exc.id
+    if isinstance(exc, ast.Attribute):
+        return exc.attr
+    return None
+
+
 def _resolve_spec(node, params, env):
     """A forwarding spec for ``node``: chain names first (shadowing),
     then params, then ascii literals. None for anything computed."""
@@ -1812,6 +2542,70 @@ def _resolve_spec(node, params, env):
     if vk is not None:
         return ("lit", vk[0], vk[1])
     return None
+
+
+def _resolve_delegate_value_spec(node, params, env):
+    spec = _resolve_spec(node, params, env)
+    if spec is not None:
+        return spec
+    canonical = collection_literal_canonical(node)
+    if canonical is not None:
+        return ("lit", canonical, "collection")
+    return None
+
+
+def _resolve_delegate_value_or_receiver_call_spec(
+    node,
+    params,
+    env,
+    *,
+    tree: Optional[ast.Module],
+    module_name: str,
+    fn_name: str,
+):
+    spec = _resolve_delegate_value_spec(node, params, env)
+    if spec is not None:
+        return spec, None
+    if tree is not None:
+        static_attr_spec = _resolve_static_attribute_value_spec(node, tree)
+        if static_attr_spec is not None:
+            return static_attr_spec, None
+    if tree is None or not isinstance(node, ast.Call):
+        return None, None
+    dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(node, params)
+    if dynamic_receiver_refusal is not None:
+        return None, dynamic_receiver_refusal
+    receiver_delegate, receiver_refusal = _receiver_method_delegate_for_call(
+        node,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        params=params,
+        env=env,
+    )
+    if receiver_refusal is not None:
+        return None, receiver_refusal
+    if receiver_delegate is None:
+        return None, None
+    return (
+        (
+            "receiver-method-call",
+            receiver_delegate.delegate,
+            receiver_delegate.args,
+        ),
+        None,
+    )
+
+
+def _resolve_static_attribute_value_spec(node: ast.AST, tree: ast.Module):
+    path = _attribute_path(node)
+    if path is None or len(path) < 2:
+        return None
+    root, *attrs = path
+    module = _stdlib_module_aliases(tree).get(root)
+    if module is None:
+        return None
+    return ("lit", f"attr:{'.'.join([module, *attrs])}", "collection")
 
 
 def _receiver_context_spec(spec):
@@ -1874,6 +2668,78 @@ def _resolve_receiver_context_arg_spec(
     )
 
 
+def _resolve_receiver_context_value_spec(
+    node,
+    *,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+    params: list[str],
+    env: dict,
+):
+    spec, refusal = _resolve_receiver_context_arg_spec(
+        node,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        params=params,
+        env=env,
+    )
+    if refusal is not None or spec is not None:
+        return spec, refusal
+    if not isinstance(node, ast.Dict):
+        return None, None
+
+    items = []
+    seen_keys = set()
+    for key_node, value_node in zip(node.keys, node.values):
+        if key_node is None:
+            return (
+                None,
+                "receiver-method delegate keyword dict uses ** unpacking; "
+                "the forwarded keys are runtime-selected",
+            )
+        if not (
+            isinstance(key_node, ast.Constant)
+            and isinstance(key_node.value, str)
+        ):
+            return (
+                None,
+                "receiver-method delegate keyword dict key is not a string "
+                "literal; the forwarded argument surface is not stable",
+            )
+        key = key_node.value
+        if key in seen_keys:
+            return (
+                None,
+                "receiver-method delegate keyword dict repeats key "
+                f"{key!r}; Python keeps the last value, which this walk "
+                "does not normalize yet",
+            )
+        seen_keys.add(key)
+        value_spec, value_refusal = _resolve_receiver_context_value_spec(
+            value_node,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+            params=params,
+            env=env,
+        )
+        if value_refusal is not None:
+            return None, value_refusal
+        if value_spec is None:
+            return (
+                None,
+                "receiver-method delegate keyword dict value for key "
+                f"{key!r} is neither a parameter, literal, chain name, "
+                "receiver-method call, nor nested literal-key dict",
+            )
+        items.append((key, value_spec))
+
+    items.sort(key=lambda item: item[0])
+    return ("dict", tuple(items)), None
+
+
 def _receiver_method_delegate_for_call(
     value: ast.Call,
     *,
@@ -1891,23 +2757,10 @@ def _receiver_method_delegate_for_call(
     else:
         current_method = fn_name
     self_param = params[0] if params else None
-    if not (
-        class_qualname is not None
-        and self_param is not None
-        and isinstance(value.func.value, ast.Name)
-        and value.func.value.id == self_param
-    ):
+    if class_qualname is None or self_param is None:
         return None, None
 
     delegate_name = value.func.attr
-    if delegate_name == current_method:
-        return None, "self-delegation: the equality would be vacuous"
-    if value.keywords:
-        return (
-            None,
-            "keyword arguments in receiver-method delegate call are not yet "
-            "walked (positional mapping only)",
-        )
     cls = _find_class_path(tree.body, class_qualname.split("."))
     if cls is None:
         return (
@@ -1915,25 +2768,75 @@ def _receiver_method_delegate_for_call(
             f"receiver-method delegate class {class_qualname} is not a stable "
             "undecorated class in the vendor module",
         )
-    delegate_fn = next(
-        (
-            stmt
-            for stmt in cls.body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == delegate_name
-        ),
-        None,
-    )
-    if delegate_fn is None:
-        if any(
-            isinstance(stmt, ast.AsyncFunctionDef)
-            and stmt.name == delegate_name
-            for stmt in cls.body
-        ):
+
+    if isinstance(value.func.value, ast.Call) and _is_zero_arg_super_call(
+        value.func.value
+    ):
+        inherited, inherited_refusal = _inherited_receiver_method_delegate(
+            tree,
+            cls,
+            module_name,
+            delegate_name,
+        )
+        if inherited_refusal is not None:
+            return None, inherited_refusal
+        if inherited is None:
             return (
                 None,
-                f"receiver-method delegate {delegate_name} is async: the call "
-                "term is a coroutine, not the awaited value",
+                f"receiver-method delegate {delegate_name} is not a stable "
+                "method on the explicit super() base class",
             )
+        delegate_fn, delegate_qualname, delegate_owner_cls = inherited
+    elif isinstance(value.func.value, ast.Name) and value.func.value.id == self_param:
+        if delegate_name == current_method:
+            return None, "self-delegation: the equality would be vacuous"
+        delegate_fn = next(
+            (
+                stmt
+                for stmt in cls.body
+                if isinstance(stmt, ast.FunctionDef) and stmt.name == delegate_name
+            ),
+            None,
+        )
+        delegate_qualname = f"{module_name}.{class_qualname}.{delegate_name}"
+        delegate_owner_cls = cls
+        if delegate_fn is None:
+            if any(
+                isinstance(stmt, ast.AsyncFunctionDef)
+                and stmt.name == delegate_name
+                for stmt in cls.body
+            ):
+                return (
+                    None,
+                    f"receiver-method delegate {delegate_name} is async: the call "
+                    "term is a coroutine, not the awaited value",
+                )
+            if _class_member_binding_count(cls, delegate_name) != 0:
+                return (
+                    None,
+                    f"receiver-method delegate {delegate_name} is shadowed in "
+                    "the current class body; inherited method lookup would not "
+                    "stably denote the base def",
+                )
+            inherited, inherited_refusal = _inherited_receiver_method_delegate(
+                tree,
+                cls,
+                module_name,
+                delegate_name,
+            )
+            if inherited_refusal is not None:
+                return None, inherited_refusal
+            if inherited is not None:
+                delegate_fn, delegate_qualname, delegate_owner_cls = inherited
+            else:
+                return (
+                    None,
+                    f"receiver-method delegate {delegate_name} is not a method in "
+                    "the current vendor class or a stable single base class",
+                )
+    else:
+        return None, None
+    if delegate_fn is None:
         return (
             None,
             f"receiver-method delegate {delegate_name} is not a method in the "
@@ -1946,7 +2849,7 @@ def _receiver_method_delegate_for_call(
             "body is not the runtime callable, so determinism evidence cannot "
             "be read from it",
         )
-    if _class_member_binding_count(cls, delegate_name) != 1:
+    if _class_member_binding_count(delegate_owner_cls, delegate_name) != 1:
         return (
             None,
             f"receiver-method delegate {delegate_name} is rebound in the class "
@@ -1972,13 +2875,132 @@ def _receiver_method_delegate_for_call(
                 "callsite's",
             )
         specs.append(spec)
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            return (
+                None,
+                "receiver-method delegate call uses **kwargs forwarding; "
+                "the keyword surface is runtime-selected",
+            )
+        spec, refusal = _resolve_receiver_context_value_spec(
+            keyword.value,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+            params=params,
+            env=env,
+        )
+        if refusal is not None:
+            return None, refusal
+        if spec is None:
+            return (
+                None,
+                "receiver-method delegate keyword argument is neither a "
+                "parameter, literal, chain name, receiver-method call, nor "
+                "literal-key dict; the forwarded value is not the callsite's",
+            )
+        specs.append(("kw", keyword.arg, spec))
     return (
         _ReceiverMethodDelegate(
-            delegate=f"{module_name}.{class_qualname}.{delegate_name}",
+            delegate=delegate_qualname,
             args=tuple(specs),
         ),
         None,
     )
+
+
+def _is_zero_arg_super_call(node: ast.Call) -> bool:
+    return (
+        isinstance(node.func, ast.Name)
+        and node.func.id == "super"
+        and not node.args
+        and not node.keywords
+    )
+
+
+def _inherited_receiver_method_delegate(
+    tree: ast.Module,
+    cls: ast.ClassDef,
+    module_name: str,
+    delegate_name: str,
+) -> Tuple[Optional[Tuple[ast.FunctionDef, str, ast.ClassDef]], Optional[str]]:
+    if not cls.bases:
+        return None, None
+    if len(cls.bases) != 1:
+        return (
+            None,
+            "receiver-method delegate is inherited through multiple base "
+            "classes; MRO-sensitive lookup is not admitted yet",
+        )
+    base = cls.bases[0]
+    resolved = _resolve_receiver_delegate_base_class(tree, base, module_name)
+    if resolved is None:
+        return None, None
+    _base_tree, base_cls, base_module, base_qualname = resolved
+    if _class_member_binding_count(base_cls, delegate_name) != 1:
+        if any(
+            isinstance(stmt, ast.AsyncFunctionDef)
+            and stmt.name == delegate_name
+            for stmt in base_cls.body
+        ):
+            return (
+                None,
+                f"receiver-method delegate {delegate_name} is async on the "
+                "base class: the call term is a coroutine, not the awaited value",
+            )
+        return None, None
+    delegate_fn = next(
+        (
+            stmt
+            for stmt in base_cls.body
+            if isinstance(stmt, ast.FunctionDef) and stmt.name == delegate_name
+        ),
+        None,
+    )
+    if delegate_fn is None:
+        return None, None
+    if delegate_fn.decorator_list:
+        return (
+            None,
+            f"receiver-method delegate {delegate_name} is decorated on the "
+            "base class; its def body is not the runtime callable",
+        )
+    return (
+        delegate_fn,
+        f"{base_module}.{base_qualname}.{delegate_name}",
+        base_cls,
+    ), None
+
+
+def _resolve_receiver_delegate_base_class(
+    tree: ast.Module,
+    base: ast.expr,
+    module_name: str,
+) -> Optional[Tuple[ast.Module, ast.ClassDef, str, str]]:
+    while isinstance(base, ast.Subscript):
+        base = base.value
+    if isinstance(base, ast.Name):
+        same_module = _find_class_path(tree.body, [base.id])
+        if same_module is not None:
+            return tree, same_module, module_name, base.id
+        aliases = _module_call_aliases(tree, module_name)
+        alias = aliases.get(base.id)
+        if alias is None:
+            return None
+        resolved = _resolve_vendor_class(alias)
+        if resolved is None:
+            return None
+        base_tree, base_cls, _base_origin, base_module, base_qualname = resolved
+        return base_tree, base_cls, base_module, base_qualname
+    path = _attribute_path(base)
+    if path is None:
+        return None
+    alias = ".".join(path)
+    resolved = _resolve_vendor_class(alias)
+    if resolved is None:
+        return None
+    base_tree, base_cls, _base_origin, base_module, base_qualname = resolved
+    return base_tree, base_cls, base_module, base_qualname
 
 
 def _dynamic_receiver_dispatch_reason(
@@ -2047,6 +3069,316 @@ def _resolve_expr_spec(node, params, env):
 
 
 @functools.lru_cache(maxsize=None)
+def branch_selected_return_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[BranchSelectedReturnUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    if len(params) < 2 or params[0] not in {"self", "cls"}:
+        return None, None
+    body = _body_without_docstring(fn.body)
+    if not body:
+        return None, None
+    call_aliases = _module_call_aliases(_tree, module_name)
+    env: dict[str, tuple] = {}
+    branch: Optional[Tuple[str, object, str, int, Optional[str]]] = None
+    for index, stmt in enumerate(body):
+        if isinstance(stmt, ast.Raise):
+            continue
+        if not isinstance(stmt, ast.If):
+            return None, None
+        branch = _branch_selected_return_from_if_chain(
+            stmt,
+            receiver_name=params[0],
+            params=params,
+            env=env,
+        )
+        if branch is not None:
+            if any(not isinstance(tail, ast.Raise) for tail in body[index + 1 :]):
+                return None, None
+            break
+        prelude = _non_none_adapter_prelude(stmt, params, call_aliases)
+        if prelude is None:
+            return None, None
+        param_name, adapter_callee = prelude
+        env[param_name] = ("adapter", adapter_callee)
+    if branch is None:
+        return None, None
+    (
+        field_name,
+        field_value,
+        field_value_kind,
+        return_param_index,
+        return_adapter_callee,
+    ) = branch
+    return (
+        BranchSelectedReturnUniverse(
+            field_name=field_name,
+            field_value=field_value,
+            field_value_kind=field_value_kind,
+            return_param_index=return_param_index - 1,
+            return_param_name=params[return_param_index],
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+            return_adapter_callee=return_adapter_callee,
+        ),
+        None,
+    )
+
+
+def _branch_selected_return_from_if_chain(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+    env: dict[str, tuple],
+) -> Optional[Tuple[str, object, str, int, Optional[str]]]:
+    current: ast.If = stmt
+    while True:
+        selected = _branch_selected_return_from_if(
+            current,
+            receiver_name=receiver_name,
+            params=params,
+            env=env,
+        )
+        if selected is not None:
+            return selected
+        if len(current.orelse) == 1 and isinstance(current.orelse[0], ast.If):
+            current = current.orelse[0]
+            continue
+        return None
+
+
+def _branch_selected_return_from_if(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+    env: dict[str, tuple],
+) -> Optional[Tuple[str, object, str, int, Optional[str]]]:
+    field = _self_field_literal_eq(stmt.test, receiver_name)
+    if field is None:
+        return None
+    if len(stmt.body) != 1 or not isinstance(stmt.body[0], ast.Return):
+        return None
+    value = stmt.body[0].value
+    if not isinstance(value, ast.Name):
+        return None
+    if value.id not in params or value.id == receiver_name:
+        return None
+    return_param_index = params.index(value.id)
+    field_name, field_value, field_value_kind = field
+    adapter_callee = None
+    spec = env.get(value.id)
+    if spec is not None:
+        if spec[0] != "adapter":
+            return None
+        adapter_callee = spec[1]
+    return field_name, field_value, field_value_kind, return_param_index, adapter_callee
+
+
+@functools.lru_cache(maxsize=None)
+def branch_selected_raise_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[BranchSelectedRaiseUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    if not params:
+        return None, None
+    body = _body_without_docstring(fn.body)
+    if len(body) != 2 or not isinstance(body[0], ast.If):
+        return None, None
+    branch_if = body[0]
+    if branch_if.orelse:
+        return None, None
+    guard = _param_literal_eq(branch_if.test, params)
+    if guard is None:
+        return None, None
+    if not _is_terminal_block(branch_if.body):
+        return None, None
+    if not any(
+        isinstance(n, ast.Return)
+        for stmt in branch_if.body
+        for n in ast.walk(stmt)
+    ):
+        return None, None
+    if not isinstance(body[1], ast.Raise):
+        return None, None
+    exception_name = _raised_exception_name(body[1])
+    if exception_name is None:
+        return None, None
+    param_name, param_index, excluded_value, excluded_value_kind = guard
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["branch_param_name"] = param_name
+        source_memento["branch_param_index"] = param_index
+        source_memento["branch_excluded_value"] = excluded_value
+        source_memento["branch_excluded_value_kind"] = excluded_value_kind
+        source_memento["branch_if_line"] = branch_if.lineno
+        source_memento["branch_raise_line"] = body[1].lineno
+        source_memento["branch_raise_exception_type"] = exception_name
+    return (
+        BranchSelectedRaiseUniverse(
+            param_name=param_name,
+            param_index=param_index,
+            excluded_value=excluded_value,
+            excluded_value_kind=excluded_value_kind,
+            exception_name=exception_name,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _param_literal_eq(
+    node: ast.AST,
+    params: list[str],
+) -> Optional[Tuple[str, int, object, str]]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Eq)
+        or len(node.comparators) != 1
+    ):
+        return None
+    if isinstance(node.left, ast.Name) and node.left.id in params:
+        literal = _literal_value_kind(node.comparators[0])
+        if literal is not None:
+            value, value_kind = literal
+            return node.left.id, params.index(node.left.id), value, value_kind
+    if isinstance(node.comparators[0], ast.Name) and node.comparators[0].id in params:
+        literal = _literal_value_kind(node.left)
+        if literal is not None:
+            value, value_kind = literal
+            name = node.comparators[0].id
+            return name, params.index(name), value, value_kind
+    return None
+
+
+def _non_none_adapter_prelude(
+    stmt: ast.If,
+    params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[Tuple[str, str]]:
+    param_name = _param_none_check_for_branch_prelude(stmt.test)
+    adapter_stmt: Optional[ast.stmt] = None
+    if param_name is not None:
+        if len(stmt.orelse) != 1:
+            return None
+        adapter_stmt = stmt.orelse[0]
+    else:
+        param_name = _param_not_none_check_for_branch_prelude(stmt.test)
+        if param_name is None or len(stmt.body) != 1:
+            return None
+        adapter_stmt = stmt.body[0]
+    if param_name not in params[1:]:
+        return None
+    if not (
+        isinstance(adapter_stmt, ast.Assign)
+        and len(adapter_stmt.targets) == 1
+        and isinstance(adapter_stmt.targets[0], ast.Name)
+        and adapter_stmt.targets[0].id == param_name
+    ):
+        return None
+    adapter = _adapter_call_over_name(
+        adapter_stmt.value,
+        param_name,
+        call_aliases,
+    )
+    if adapter is None:
+        return None
+    return param_name, adapter
+
+
+def _param_none_check_for_branch_prelude(node: ast.AST) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Is)
+        or len(node.comparators) != 1
+    ):
+        return None
+    return _none_compare_name(node.left, node.comparators[0])
+
+
+def _param_not_none_check_for_branch_prelude(node: ast.AST) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.IsNot)
+        or len(node.comparators) != 1
+    ):
+        return None
+    return _none_compare_name(node.left, node.comparators[0])
+
+
+def _none_compare_name(left: ast.AST, right: ast.AST) -> Optional[str]:
+    if (
+        isinstance(left, ast.Name)
+        and isinstance(right, ast.Constant)
+        and right.value is None
+    ):
+        return left.id
+    if (
+        isinstance(right, ast.Name)
+        and isinstance(left, ast.Constant)
+        and left.value is None
+    ):
+        return right.id
+    return None
+
+
+def _self_field_literal_eq(
+    node: ast.AST,
+    receiver_name: str,
+) -> Optional[Tuple[str, object, str]]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Eq)
+        or len(node.comparators) != 1
+    ):
+        return None
+    left = _self_field_name(node.left, receiver_name)
+    right_lit = _literal_value_kind(node.comparators[0])
+    if left is not None and right_lit is not None:
+        value, value_kind = right_lit
+        return left, value, value_kind
+    right = _self_field_name(node.comparators[0], receiver_name)
+    left_lit = _literal_value_kind(node.left)
+    if right is not None and left_lit is not None:
+        value, value_kind = left_lit
+        return right, value, value_kind
+    return None
+
+
+def _self_field_name(node: ast.AST, receiver_name: str) -> Optional[str]:
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == receiver_name
+    ):
+        return node.attr
+    return None
+
+
+@functools.lru_cache(maxsize=None)
 def delegation_universe_for_callee(
     callee: str,
 ) -> Tuple[Optional[DelegationUniverse], Optional[TranslateWalkRefusal]]:
@@ -2098,7 +3430,27 @@ def delegation_universe_for_callee(
     # shadows correctly (later reads get the new spec). Any other
     # preceding statement shape is another family's body.
     env: dict = {}
+    keyword_defaults: list[tuple] = []
+    keyword_default_names: set[str] = set()
     for stmt in rest[:-1]:
+        kw_default, kw_default_refusal = _kwargs_setdefault_spec(
+            stmt,
+            kwarg_name=fn.args.kwarg.arg if fn.args.kwarg is not None else None,
+            params=params,
+            env=env,
+        )
+        if kw_default_refusal is not None:
+            return refuse(kw_default_refusal)
+        if kw_default is not None:
+            keyword_name = kw_default[1]
+            if keyword_name in keyword_default_names:
+                return refuse(
+                    f"kwargs.setdefault repeats keyword {keyword_name!r}; "
+                    "the default surface is not normalized yet"
+                )
+            keyword_default_names.add(keyword_name)
+            keyword_defaults.append(kw_default)
+            continue
         if not (
             isinstance(stmt, ast.Assign)
             and len(stmt.targets) == 1
@@ -2203,22 +3555,20 @@ def delegation_universe_for_callee(
     # from the stdlib is copied into the memento.
     stdlib_delegate = _stdlib_call_delegate(value, tree)
     if stdlib_delegate is not None:
-        delegate_q, call_args = stdlib_delegate
-        if value.keywords:
-            return refuse(
-                "keyword arguments in imported-stdlib delegate call are not "
-                "yet walked (positional mapping only)"
-            )
-        specs = []
-        for arg in call_args:
-            spec = _resolve_spec(arg, params, env)
-            if spec is None:
-                return refuse(
-                    "imported-stdlib delegate argument is neither a parameter, "
-                    "literal, nor chain name; the forwarded value is not the "
-                    "callsite's"
-                )
-            specs.append(spec)
+        delegate_q, _call_args = stdlib_delegate
+        specs, specs_refusal = _delegate_call_specs_source_order(
+            value,
+            params,
+            env,
+            mirrored_kwargs=fn.args.kwarg.arg if fn.args.kwarg is not None else None,
+            mirrored_kw_defaults=tuple(keyword_defaults),
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+            context="imported-stdlib delegate",
+        )
+        if specs_refusal is not None:
+            return refuse(specs_refusal)
         return universe(kind="delegation-stdlib", delegate=delegate_q, args=tuple(specs))
 
     # receiver-context method delegation: class C; def f(self, x): return
@@ -2374,26 +3724,198 @@ def delegation_universe_for_callee(
             "delegate's arguments are not f's arguments"
         )
 
-    if value.keywords:
-        return refuse(
-            "keyword arguments in the delegate call are not yet walked "
-            "(positional mapping only)"
-        )
     if fa.vararg is not None or fa.kwarg is not None:
         return refuse(
             "mixed vararg signature: the positional mapping cannot "
             "account for every callsite shape"
         )
+    specs, specs_refusal = _delegate_call_specs_for_signature(
+        value,
+        delegate_fn,
+        params,
+        env,
+        context="delegate",
+    )
+    if specs_refusal is not None:
+        return refuse(specs_refusal)
+    return universe(kind="delegation", delegate=delegate_q, args=tuple(specs))
+
+
+def _delegate_call_specs_source_order(
+    value: ast.Call,
+    params: list[str],
+    env: dict,
+    *,
+    mirrored_kwargs: Optional[str],
+    mirrored_kw_defaults: tuple[tuple, ...] = (),
+    tree: Optional[ast.Module] = None,
+    module_name: str = "",
+    fn_name: str = "",
+    context: str,
+) -> Tuple[Optional[list[tuple]], Optional[str]]:
     specs = []
     for arg in value.args:
-        spec = _resolve_spec(arg, params, env)
+        spec, refusal = _resolve_delegate_value_or_receiver_call_spec(
+            arg,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if refusal is not None:
+            return None, refusal
         if spec is None:
-            return refuse(
-                "delegate argument is neither a parameter nor an ascii "
-                "literal; the forwarded value is not the callsite's"
+            return (
+                None,
+                f"{context} argument is neither a parameter, literal, "
+                "collection literal, chain name, nor receiver-method call; "
+                "the forwarded value is not the callsite's",
             )
         specs.append(spec)
-    return universe(kind="delegation", delegate=delegate_q, args=tuple(specs))
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            if (
+                mirrored_kwargs is not None
+                and isinstance(keyword.value, ast.Name)
+                and keyword.value.id == mirrored_kwargs
+            ):
+                specs.extend(mirrored_kw_defaults)
+                continue
+            return (
+                None,
+                f"{context} uses **kwargs forwarding that is not an exact "
+                "mirror of the function's kwargs parameter",
+            )
+        spec, refusal = _resolve_delegate_value_or_receiver_call_spec(
+            keyword.value,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if refusal is not None:
+            return None, refusal
+        if spec is None:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} is neither a "
+                "parameter, literal, collection literal, chain name, nor "
+                "receiver-method call; the forwarded value is not the "
+                "callsite's",
+            )
+        specs.append(("kw", keyword.arg, spec))
+    return specs, None
+
+
+def _kwargs_setdefault_spec(
+    stmt: ast.stmt,
+    *,
+    kwarg_name: Optional[str],
+    params: list[str],
+    env: dict,
+) -> Tuple[Optional[tuple], Optional[str]]:
+    if kwarg_name is None:
+        return None, None
+    if not (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and isinstance(stmt.value.func, ast.Attribute)
+        and stmt.value.func.attr == "setdefault"
+    ):
+        return None, None
+    call = stmt.value
+    if not (
+        isinstance(call.func.value, ast.Name)
+        and call.func.value.id == kwarg_name
+    ):
+        return None, (
+            "kwargs.setdefault receiver is not the function's **kwargs "
+            "parameter"
+        )
+    if call.keywords or len(call.args) != 2:
+        return None, (
+            "kwargs.setdefault must have exactly a literal key and default "
+            "value"
+        )
+    key_node, value_node = call.args
+    if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
+        return None, "kwargs.setdefault key is not a string literal"
+    spec = _resolve_delegate_value_spec(value_node, params, env)
+    if spec is None:
+        return None, (
+            f"kwargs.setdefault value for {key_node.value!r} is neither a "
+            "parameter, literal, collection literal, nor chain name"
+        )
+    return ("kw", key_node.value, spec), None
+
+
+def _delegate_call_specs_for_signature(
+    value: ast.Call,
+    delegate_fn: ast.FunctionDef,
+    params: list[str],
+    env: dict,
+    *,
+    context: str,
+) -> Tuple[Optional[list[tuple]], Optional[str]]:
+    delegate_params = _positional_param_names(delegate_fn)
+    slots: list[Optional[tuple]] = [None for _ in delegate_params]
+    for index, arg in enumerate(value.args):
+        if index >= len(delegate_params):
+            return (
+                None,
+                f"{context} has more positional arguments than the delegate "
+                "signature exposes",
+            )
+        spec = _resolve_delegate_value_spec(arg, params, env)
+        if spec is None:
+            return (
+                None,
+                f"{context} argument is neither a parameter, literal, "
+                "collection literal, nor chain name; the forwarded value is "
+                "not the callsite's",
+            )
+        slots[index] = spec
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            return (
+                None,
+                f"{context} uses **kwargs forwarding; the keyword surface is "
+                "runtime-selected",
+            )
+        if keyword.arg not in delegate_params:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} is not a "
+                "positional parameter of the delegate",
+            )
+        index = delegate_params.index(keyword.arg)
+        if slots[index] is not None:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} duplicates an "
+                "already supplied delegate argument",
+            )
+        spec = _resolve_delegate_value_spec(keyword.value, params, env)
+        if spec is None:
+            return (
+                None,
+                f"{context} keyword argument {keyword.arg!r} is neither a "
+                "parameter, literal, collection literal, nor chain name; the "
+                "forwarded value is not the callsite's",
+            )
+        slots[index] = spec
+    if not any(slot is not None for slot in slots):
+        return [], None
+    last_supplied = max(index for index, slot in enumerate(slots) if slot is not None)
+    if any(slot is None for slot in slots[: last_supplied + 1]):
+        return (
+            None,
+            f"{context} leaves a defaulted positional gap before a supplied "
+            "keyword; that call surface is not modeled yet",
+        )
+    return [slot for slot in slots[: last_supplied + 1] if slot is not None], None
 
 
 @functools.lru_cache(maxsize=None)
@@ -2863,7 +4385,12 @@ def _body_reaches_nondet(fn, module_fns, depth, seen) -> bool:
     return False
 
 
-def _resolve_vendor_function(callee: str, *, allow_methods: bool = False):
+def _resolve_vendor_function(
+    callee: str,
+    *,
+    allow_methods: bool = False,
+    allow_property: bool = False,
+):
     if "." not in callee:
         return None
     parts = callee.split(".")
@@ -2875,13 +4402,60 @@ def _resolve_vendor_function(callee: str, *, allow_methods: bool = False):
         fn_path = parts[split:]
         if not module_name or not fn_path:
             continue
-        resolved = _resolve_function_path_in_module(module_name, fn_path)
+        resolved = _resolve_function_path_in_module(
+            module_name,
+            fn_path,
+            allow_property=allow_property,
+        )
         if resolved is not None:
             return resolved
     return None
 
 
-def _resolve_function_path_in_module(module_name: str, fn_path: list[str]):
+def _resolve_vendor_class(
+    callee: str,
+) -> Optional[Tuple[ast.Module, ast.ClassDef, str, str, str]]:
+    if "." not in callee:
+        return None
+    parts = callee.split(".")
+    for split in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:split])
+        class_path = parts[split:]
+        if not module_name or not class_path:
+            continue
+        resolved = _resolve_class_path_in_module(module_name, class_path)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def _resolve_class_path_in_module(module_name: str, class_path: list[str]):
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except (ImportError, ValueError):
+        return None
+    if spec is None or spec.origin in (None, "built-in", "frozen"):
+        return None
+    if not spec.origin.endswith(".py"):
+        return None
+    try:
+        tree = ast.parse(
+            open(spec.origin, encoding="utf-8").read(), filename=spec.origin
+        )
+    except (OSError, SyntaxError):
+        return None
+    cls = _find_class_path(tree.body, class_path)
+    if cls is None:
+        return None
+    return tree, cls, spec.origin, module_name, ".".join(class_path)
+
+
+def _resolve_function_path_in_module(
+    module_name: str,
+    fn_path: list[str],
+    *,
+    allow_property: bool = False,
+):
     try:
         spec = importlib.util.find_spec(module_name)
     except (ImportError, ValueError):
@@ -2899,7 +4473,11 @@ def _resolve_function_path_in_module(module_name: str, fn_path: list[str]):
     fn = _find_function_path(tree.body, fn_path)
     if fn is None:
         return None
-    if fn.decorator_list and not _is_staticmethod_only(fn):
+    if (
+        fn.decorator_list
+        and not _is_staticmethod_only(fn)
+        and not (allow_property and _is_property_only(fn))
+    ):
         # A decorated def is NOT its body: the name binds whatever the
         # decorator returns (caught live 2026-06-12: @negate over
         # `return True` runs False while the body walk swore True — a
@@ -2930,14 +4508,31 @@ def _find_function_path(
             return None
         body = cls.body
     fn_name = fn_path[-1]
-    return next(
-        (
-            stmt
-            for stmt in body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
-        ),
-        None,
-    )
+    candidates = [
+        stmt
+        for stmt in body
+        if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
+    ]
+    for candidate in candidates:
+        if not _is_overload_stub(candidate):
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _is_overload_stub(fn: ast.FunctionDef) -> bool:
+    if not (
+        len(fn.body) == 1
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and fn.body[0].value.value is Ellipsis
+    ):
+        return False
+    for decorator in fn.decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id == "overload":
+            return True
+        if isinstance(decorator, ast.Attribute) and decorator.attr == "overload":
+            return True
+    return False
 
 
 def _find_class_path(
@@ -2986,6 +4581,13 @@ def _class_member_binding_count(cls: ast.ClassDef, name: str) -> int:
 def _is_staticmethod_only(fn: ast.FunctionDef) -> bool:
     return bool(fn.decorator_list) and all(
         isinstance(dec, ast.Name) and dec.id == "staticmethod"
+        for dec in fn.decorator_list
+    )
+
+
+def _is_property_only(fn: ast.FunctionDef) -> bool:
+    return len(fn.decorator_list) == 1 and all(
+        isinstance(dec, ast.Name) and dec.id == "property"
         for dec in fn.decorator_list
     )
 
