@@ -208,15 +208,22 @@ fn lift(params: &Value) -> Value {
                 // a non-test fn the reducer inlined to discharge a test: it backs
                 // a warrant, so it is `support`.
                 ("support", None)
-            } else if let Some(effect) = effect_refusal(fr.block) {
-                // PROVABLY effectful (IO / mutation / panic-divergence) -> a
-                // considered REFUSAL with teeth: it is out of the consistency
-                // domain (warranting an effect as a pure relation is a false-pass).
-                ("refused", Some(effect))
+            } else if returns_unit(fr.sig) {
+                // NEW DOCTRINE: no output to constrain (unit return) and no vendor
+                // pin -> SILENT by design. Nothing to lift, nothing to check; not a
+                // floor and NOT a refusal. We do NOT sniff the interior for effects
+                // -- `refused` is reserved for an UNSAT certificate against a
+                // vendor's sworn output, never an effect-detector verdict.
+                (
+                    "silent",
+                    Some("no output constraint to check (unit return); no vendor pin".to_string()),
+                )
             } else {
-                // not emittable AND not provably effectful -> UNCLASSIFIED, the
-                // honest residual. The note records the undetermined construct
-                // (opaque call / `?` / macro / multi-statement) -- never a verdict.
+                // A VALUE-returning body whose output constraint the lifter could
+                // not read YET -- the honest coverage residual (try-warrant
+                // extracted nothing). NOT refused: there is no UNSAT certificate,
+                // and we no longer sniff effects. The note records the construct the
+                // walker does not speak yet; it shrinks as try-warrant improves.
                 ("unclassified", Some(unclassified_reason(fr.block)))
             };
             let mut locus = json!({
@@ -484,35 +491,16 @@ impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
     }
 }
 
-/// A PROVABLE side effect makes a non-emittable body `refused` BY NAME (a
-/// considered no with teeth), not unclassified. Mirrors the four refuse
-/// categories: IO membrane, mutation (`&mut` / assignment / compound-assign),
-/// and panic/divergence (a panic-family macro). An undetermined body (opaque
-/// call, `?`, opaque macro, multi-statement) returns None -> it stays
-/// UNCLASSIFIED (we have not PROVEN it effectful). Refuse only what we can prove.
-fn effect_refusal(block: &syn::Block) -> Option<String> {
-    let mut s = BlockerScan::default();
-    syn::visit::Visit::visit_block(&mut s, block);
-    if let Some(io) = s.io {
-        return Some(format!("IO membrane (effect): {io}"));
+/// NEW DOCTRINE: a unit-returning fn has NO output to constrain, so there is
+/// nothing to warrant and nothing for a vendor to pin -> SILENT, not a floor and
+/// not an effect-sniffer refusal. (The old `effect_refusal` gate -- IO / mutation
+/// / panic / `?` detection -- was ripped out: we no longer pre-judge the interior;
+/// `refused` is now only an UNSAT certificate against a vendor's sworn output.)
+fn returns_unit(sig: &syn::Signature) -> bool {
+    match &sig.output {
+        syn::ReturnType::Default => true,
+        syn::ReturnType::Type(_, ty) => matches!(&**ty, syn::Type::Tuple(t) if t.elems.is_empty()),
     }
-    if s.has_assign || s.has_compound_assign || s.has_mut_borrow {
-        return Some("mutation (effect): assignment / `&mut` borrow".to_string());
-    }
-    if let Some(m) = s.panic_macro {
-        return Some(format!("panic/divergence (effect): `{m}!`"));
-    }
-    if let Some(m) = s.panic_method {
-        return Some(format!("panic/divergence (effect): `.{m}()`"));
-    }
-    if s.has_try {
-        // `?` short-circuits: the function returns early on `Err`/`None`, so the
-        // return value is NOT a pure function of the inputs (it diverges on a
-        // branch this consistency form does not model). Out of the `out = f(args)`
-        // domain -> a named divergence refusal, not unclassified.
-        return Some("panic/divergence (effect): `?` short-circuit".to_string());
-    }
-    None
 }
 
 /// LSP-coordinate positions (0-based line, 0-based col) of every method-call
@@ -663,6 +651,11 @@ fn source_ledger(loci: &[Value]) -> Value {
         "source_warranted": count("warranted"),
         "source_support": count("support"),
         "source_refused": count("refused"),
+        // SILENT (new doctrine): a body with no output to constrain (unit return)
+        // and no vendor pin -- nothing to lift, nothing to check. Partitioned out
+        // of `unclassified` so the residual is only value bodies the lifter cannot
+        // read yet, NOT effect-only operations parked on a floor.
+        "source_silent": count("silent"),
         "source_inactive": count("inactive"),
         "source_refuted": count("refuted"),
         "unclassified_source": count("unclassified"),
@@ -916,28 +909,22 @@ facts = [
     }
 
     #[test]
-    fn effect_refusal_refuses_provable_effects_only() {
-        // PROVABLE effects -> refused by name (the four categories).
-        assert!(effect_refusal(&block_of("fn f() { println!(\"x\"); }"))
-            .is_some_and(|r| r.contains("IO membrane")));
-        assert!(effect_refusal(&block_of("fn f(x: &mut i32) { *x = 1; }"))
-            .is_some_and(|r| r.contains("mutation")));
-        assert!(effect_refusal(&block_of(
-            "fn f(x: i32) -> i32 { let mut a = x; a += 1; a }"
-        ))
-        .is_some_and(|r| r.contains("mutation")));
-        assert!(
-            effect_refusal(&block_of("fn f() -> i32 { panic!(\"no\") }"))
-                .is_some_and(|r| r.contains("panic/divergence"))
-        );
-        // `?` short-circuits -> divergence (out of the consistency domain) -> refused.
-        assert!(
-            effect_refusal(&block_of("fn f(r: Result<i32, ()>) -> i32 { r? }"))
-                .is_some_and(|r| r.contains("divergence") && r.contains('?'))
-        );
-        // UNDETERMINED -> None: stays unclassified, never refused (not proven effectful).
-        // A bare value-position call (no effect marker) is undetermined here; the
-        // EUF warrant handles it upstream in emit_value_contract.
-        assert!(effect_refusal(&block_of("fn f(v: Vec<u8>) -> usize { v.len() }")).is_none());
+    fn unit_return_is_silent_value_body_is_warranted_or_unclassified() {
+        // NEW DOCTRINE: classification no longer sniffs effects. A unit-returning
+        // body has no output to constrain -> SILENT (not refused, not a floor).
+        assert!(returns_unit(&unit_sig("fn f() {}")));
+        assert!(returns_unit(&unit_sig("fn f(x: &mut i32) { *x = 1; }")));
+        assert!(returns_unit(&unit_sig("fn f() -> () { }")));
+        // A value-returning body is NOT silent -- it either warrants (constraint
+        // read) or stays unclassified (constraint not read yet); never refused on
+        // an effect sniff.
+        assert!(!returns_unit(&unit_sig("fn f() -> i32 { 1 }")));
+        assert!(!returns_unit(&unit_sig("fn f(v: Vec<u8>) -> usize { v.len() }")));
+    }
+
+    #[cfg(test)]
+    fn unit_sig(src: &str) -> syn::Signature {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        f.sig
     }
 }
