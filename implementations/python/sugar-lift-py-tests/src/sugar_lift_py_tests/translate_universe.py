@@ -2558,6 +2558,45 @@ def _resolve_delegate_value_spec(node, params, env):
     return None
 
 
+def _resolve_delegate_value_or_receiver_call_spec(
+    node,
+    params,
+    env,
+    *,
+    tree: Optional[ast.Module],
+    module_name: str,
+    fn_name: str,
+):
+    spec = _resolve_delegate_value_spec(node, params, env)
+    if spec is not None:
+        return spec, None
+    if tree is None or not isinstance(node, ast.Call):
+        return None, None
+    dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(node, params)
+    if dynamic_receiver_refusal is not None:
+        return None, dynamic_receiver_refusal
+    receiver_delegate, receiver_refusal = _receiver_method_delegate_for_call(
+        node,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        params=params,
+        env=env,
+    )
+    if receiver_refusal is not None:
+        return None, receiver_refusal
+    if receiver_delegate is None:
+        return None, None
+    return (
+        (
+            "receiver-method-call",
+            receiver_delegate.delegate,
+            receiver_delegate.args,
+        ),
+        None,
+    )
+
+
 def _receiver_context_spec(spec):
     """Normalize a spec from a method's full parameter space into the
     callsite's explicit-argument space. ``self`` is supplied by the receiver
@@ -3486,6 +3525,9 @@ def delegation_universe_for_callee(
             env,
             mirrored_kwargs=fn.args.kwarg.arg if fn.args.kwarg is not None else None,
             mirrored_kw_defaults=tuple(keyword_defaults),
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
             context="imported-stdlib delegate",
         )
         if specs_refusal is not None:
@@ -3669,17 +3711,29 @@ def _delegate_call_specs_source_order(
     *,
     mirrored_kwargs: Optional[str],
     mirrored_kw_defaults: tuple[tuple, ...] = (),
+    tree: Optional[ast.Module] = None,
+    module_name: str = "",
+    fn_name: str = "",
     context: str,
 ) -> Tuple[Optional[list[tuple]], Optional[str]]:
     specs = []
     for arg in value.args:
-        spec = _resolve_delegate_value_spec(arg, params, env)
+        spec, refusal = _resolve_delegate_value_or_receiver_call_spec(
+            arg,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if refusal is not None:
+            return None, refusal
         if spec is None:
             return (
                 None,
                 f"{context} argument is neither a parameter, literal, "
-                "collection literal, nor chain name; the forwarded value is "
-                "not the callsite's",
+                "collection literal, chain name, nor receiver-method call; "
+                "the forwarded value is not the callsite's",
             )
         specs.append(spec)
     for keyword in value.keywords:
@@ -3696,13 +3750,23 @@ def _delegate_call_specs_source_order(
                 f"{context} uses **kwargs forwarding that is not an exact "
                 "mirror of the function's kwargs parameter",
             )
-        spec = _resolve_delegate_value_spec(keyword.value, params, env)
+        spec, refusal = _resolve_delegate_value_or_receiver_call_spec(
+            keyword.value,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if refusal is not None:
+            return None, refusal
         if spec is None:
             return (
                 None,
                 f"{context} keyword argument {keyword.arg!r} is neither a "
-                "parameter, literal, collection literal, nor chain name; the "
-                "forwarded value is not the callsite's",
+                "parameter, literal, collection literal, chain name, nor "
+                "receiver-method call; the forwarded value is not the "
+                "callsite's",
             )
         specs.append(("kw", keyword.arg, spec))
     return specs, None

@@ -5662,7 +5662,15 @@ def _universe_conjuncts(
                         )
                     )
             else:
-                mapped = _mapped_delegate_args(deleg_u.args, call_args)
+                receiver_term = _receiver_term_for_callval_subject(subject_term)
+                mapped_and_queued = _mapped_delegate_args_and_queued(
+                    deleg_u.args,
+                    call_args,
+                    receiver_term,
+                )
+                mapped = (
+                    None if mapped_and_queued is None else mapped_and_queued[0]
+                )
                 if mapped is not None and deleg_u.kind in {
                     "delegation",
                     "delegation-stdlib",
@@ -5670,6 +5678,27 @@ def _universe_conjuncts(
                     head = _call_result_head(deleg_u.delegate, len(mapped))
                     delegate_term = ctor(head, mapped)
                     conjuncts.append(eq(subject_term, delegate_term))
+                    for nested_delegate, nested_args, nested_term in (
+                        mapped_and_queued[1]
+                    ):
+                        nested_origin = _receiver_delegate_origin(
+                            nested_delegate,
+                            origin,
+                            nested_args,
+                            nested_term,
+                        )
+                        conjuncts.extend(
+                            _universe_conjuncts(
+                                nested_delegate,
+                                nested_term,
+                                out,
+                                source_path,
+                                test_name,
+                                source_warrants=source_warrants,
+                                origin=nested_origin,
+                                _seen=seen,
+                            )
+                        )
                     if deleg_u.kind == "delegation":
                         conjuncts.extend(
                             _universe_conjuncts(
@@ -6742,6 +6771,68 @@ def _mapped_delegate_args(specs, call_args):
                     ctor("python:bytes", [str_const(v.decode("ascii"))])
                 )
     return mapped
+
+
+def _mapped_delegate_args_and_queued(
+    specs,
+    call_args,
+    receiver_term: Optional[Term],
+):
+    mapped = []
+    queued: List[Tuple[str, List[Term], Term]] = []
+    receiver_call_args = (
+        tuple(call_args[1:]) if receiver_term is not None else tuple(call_args)
+    )
+    for spec in specs:
+        mapped_spec = _mapped_delegate_spec_and_queued(
+            spec,
+            call_args,
+            receiver_term,
+            receiver_call_args,
+        )
+        if mapped_spec is None:
+            return None
+        term, term_queued = mapped_spec
+        mapped.append(term)
+        queued.extend(term_queued)
+    return mapped, queued
+
+
+def _mapped_delegate_spec_and_queued(
+    spec,
+    call_args,
+    receiver_term: Optional[Term],
+    receiver_call_args,
+) -> Optional[Tuple[Term, List[Tuple[str, List[Term], Term]]]]:
+    if spec[0] == "receiver-method-call":
+        if receiver_term is None:
+            return None
+        return _receiver_delegate_spec_term(
+            spec,
+            receiver_call_args,
+            receiver_term,
+        )
+    if spec[0] == "kw":
+        mapped_value = _mapped_delegate_spec_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+            receiver_call_args,
+        )
+        if mapped_value is None:
+            return None
+        value_term, queued = mapped_value
+        return (
+            ctor(
+                "python:kwarg_a2",
+                [str_const(spec[1]), value_term],
+            ),
+            queued,
+        )
+    mapped = _mapped_delegate_args((spec,), call_args)
+    if mapped is None:
+        return None
+    return mapped[0], []
 
 
 _PRED_MISSING = object()

@@ -1297,6 +1297,73 @@ def test_lift_source_classifies_receiver_method_delegation_body_as_package_warra
     ), receiver_loci
 
 
+def test_lift_source_accounts_stdlib_delegation_nested_receiver_arg(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_stdlib_receiver_arg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import hmac
+
+            class Algo:
+                def get_signature(self, key, value):
+                    return value
+
+                def verify_signature(self, key, value, sig):
+                    return hmac.compare_digest(
+                        sig,
+                        self.get_signature(key, value),
+                    )
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_stdlib_receiver_arg.encoding as enc
+
+        def test_token():
+            alg = enc.Algo()
+            assert alg.verify_signature(b"k", b"v", b"v") == True
+        """,
+    )
+
+    audits = {
+        audit["source_memento"]["source_function_name"]: audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.delegation-universe"
+        and audit["source_memento"]["file"].endswith(
+            "vendpkg_stdlib_receiver_arg/encoding.py"
+        )
+    }
+    assert {"Algo.verify_signature", "Algo.get_signature"} <= set(audits), audits
+    verify_audit = audits["Algo.verify_signature"]
+    assert verify_audit["universe_kind"] == "delegation-stdlib"
+    assert verify_audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "delegation" in locus.get("reason", "")
+        for locus in verify_audit["loci"]
+    ), verify_audit
+    helper_audit = audits["Algo.get_signature"]
+    assert helper_audit["universe_kind"] == "identity"
+    assert helper_audit["totals"]["unclassified_source"] == 0
+
+
 def test_lift_source_classifies_exception_handler_raise_body_as_package_warranted(
     tmp_path,
     monkeypatch,
@@ -5165,6 +5232,34 @@ def test_imported_stdlib_delegation_walks_kwargs_setdefault(vendor_path):
         ("param", 0),
         ("kw", "ensure_ascii", ("lit", False, "bool")),
         ("kw", "separators", ("lit", "tuple:[',', ':']", "collection")),
+    )
+
+
+def test_imported_stdlib_delegation_walks_nested_receiver_call(vendor_path):
+    vendor_path(
+        "venddeleg_stdlib_receiver_arg",
+        """
+        import hmac
+
+        class Algo:
+            def get_signature(self, key, value):
+                return value
+
+            def verify_signature(self, key, value, sig):
+                return hmac.compare_digest(sig, self.get_signature(key, value))
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_receiver_arg.Algo.verify_signature")
+    assert r is None and u is not None
+    assert u.kind == "delegation-stdlib"
+    assert u.delegate == "hmac.compare_digest"
+    assert u.args == (
+        ("param", 3),
+        (
+            "receiver-method-call",
+            "venddeleg_stdlib_receiver_arg.Algo.get_signature",
+            (("param", 0), ("param", 1)),
+        ),
     )
 
 
