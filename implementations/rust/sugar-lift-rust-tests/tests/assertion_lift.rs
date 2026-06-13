@@ -6043,6 +6043,39 @@ fn emit_value_contract_slice_pattern_discrimination() {
     );
 }
 
+// Slice 23: `const { EXPR }` value blocks. core uses const blocks for
+// const-generic / intrinsic constants (const { type_name::<T>() }, const { 4*8 }).
+// A const block is compile-time evaluation -- PURE, its value IS EXPR's value --
+// so it warrants as EXPR's term. The general term path lacked the Expr::Const arm
+// the assertion path already had.
+#[test]
+fn emit_value_contract_const_block_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str("fn k() -> usize { const { 4 * 8 } }").unwrap();
+    let decl = emit_value_contract("k", &f.block).expect("const-block value warrants");
+    let inv_dbg = format!("{:?}", decl.inv.clone().expect("inv present"));
+    assert!(inv_dbg.contains("out"), "return value related: {inv_dbg}");
+
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("const-block inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_const_block_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "const-block relation must be well-sorted for z3:\n{stdout}\n--- {script}"
+        );
+        assert!(stdout.contains("sat"), "const-block relation must be satisfiable:\n{stdout}");
+    }
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

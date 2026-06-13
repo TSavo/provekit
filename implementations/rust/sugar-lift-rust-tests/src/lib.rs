@@ -5447,6 +5447,24 @@ fn term_key(term: &Term) -> String {
 fn translate_term_in_scope(expr: &Expr, scope: &TemporalScope) -> Result<Rc<Term>, String> {
     match expr {
         Expr::Lit(lit) => translate_lit(lit),
+        // `const { EXPR }` is a compile-time evaluation of EXPR: PURE (no runtime
+        // effect), its value IS EXPR's value. Translate the inner expression-only
+        // block and scope its locals, mirroring the assertion-term path. core uses
+        // const blocks for const-generic / intrinsic constants
+        // (`const { type_name::<T>() }`, `const { 4 * 8 }`).
+        Expr::Const(const_block) => {
+            // A const block wrapping a bare PATH is (or may be) a function-item /
+            // const reference -- sugar, NOT a keyed value term (see the fn-pointer
+            // residual test; "function names are sugar"). Keep it residual. A const
+            // block wrapping a COMPUTED expression (arithmetic, call, ...) is a pure
+            // compile-time value -> translate it.
+            if let [Stmt::Expr(Expr::Path(_), None)] = const_block.block.stmts.as_slice() {
+                return Err(format!("unsupported term `{}`", token_key(expr)));
+            }
+            let term =
+                translate_expression_only_block_in_scope(&const_block.block, "const", scope)?;
+            Ok(scope_const_block_locals(term, scope.local_scope()))
+        }
         Expr::Unary(unary) if matches!(unary.op, UnOp::Neg(_)) => {
             if let Some(value) = const_int(&unary.expr) {
                 return Ok(num(-value));
