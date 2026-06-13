@@ -9,6 +9,7 @@ import itsdangerous._json as compact_json
 import itsdangerous.serializer as serializer_mod
 import itsdangerous.signer as signer
 import itsdangerous.timed as timed
+import itsdangerous.url_safe as url_safe
 import pytest
 
 
@@ -104,6 +105,13 @@ def test_serializer_load_payload_bad_payload():
     with pytest.raises(ValueError):
         serializer_mod.Serializer.load_payload(
             serializer_mod.Serializer("secret"), b"bad"
+        )
+
+
+def test_urlsafe_load_payload_bad_payload():
+    with pytest.raises(ValueError):
+        url_safe.URLSafeSerializerMixin.load_payload(
+            url_safe.URLSafeSerializer("secret"), b"bad~"
         )
 
 

@@ -517,6 +517,58 @@ if not any(
     for locus in load_payload_audit["loci"]
 ):
     raise SystemExit("FAIL: Serializer.load_payload BadPayload raise was not warranted")
+urlsafe_load_payload_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.exception-handler-raise-universe"
+    and audit.get("source_memento", {}).get("source_function_name")
+    == "URLSafeSerializerMixin.load_payload"
+    and audit.get("source_memento", {}).get("exception_handler_raise_type")
+    == "BadPayload"
+]
+if len(urlsafe_load_payload_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one URLSafeSerializerMixin.load_payload "
+        f"exception-handler audit, got {len(urlsafe_load_payload_audits)}"
+    )
+urlsafe_load_payload_audit = urlsafe_load_payload_audits[0]
+urlsafe_load_payload_totals = urlsafe_load_payload_audit["totals"]
+urlsafe_load_payload_memento = urlsafe_load_payload_audit["source_memento"]
+if urlsafe_load_payload_audit.get("universe_kind") != "exception-handler-raise":
+    raise SystemExit(
+        "FAIL: expected exception-handler-raise audit, got "
+        f"{urlsafe_load_payload_audit.get('universe_kind')}"
+    )
+if "body_text" in urlsafe_load_payload_memento or "ast_template" in urlsafe_load_payload_memento:
+    raise SystemExit("FAIL: URLSafeSerializerMixin.load_payload source memento embeds source/template body")
+if urlsafe_load_payload_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: URLSafeSerializerMixin.load_payload source dig has unclassified source: "
+        f"totals={urlsafe_load_payload_totals}"
+    )
+urlsafe_warranted_lines = {
+    locus.get("line")
+    for locus in urlsafe_load_payload_audit["loci"]
+    if locus.get("status") == "warranted"
+}
+if not {36, 38, 39, 40, 41, 42}.issubset(urlsafe_warranted_lines):
+    raise SystemExit(
+        "FAIL: URLSafeSerializerMixin.load_payload base64 exception lines "
+        f"were not warranted: got={sorted(urlsafe_warranted_lines)}"
+    )
+if not any(
+    locus.get("line") == 45
+    and locus.get("status") == "support"
+    and locus.get("ast_kind") == "Try"
+    for locus in urlsafe_load_payload_audit["loci"]
+):
+    raise SystemExit("FAIL: URLSafeSerializerMixin.load_payload decompression path was not accounted as support")
+if not any(
+    locus.get("line") == 53
+    and locus.get("status") == "support"
+    and locus.get("ast_kind") == "Return"
+    for locus in urlsafe_load_payload_audit["loci"]
+):
+    raise SystemExit("FAIL: URLSafeSerializerMixin.load_payload return path was not accounted as support")
 timed_loads_unsafe_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.delegation-universe"
@@ -1116,6 +1168,15 @@ print(
     f"unclassified={load_payload_totals['unclassified_source']}",
 )
 print(
+    "source audit URLSafeSerializerMixin.load_payload:",
+    f"loci={urlsafe_load_payload_totals['source_loci']}",
+    f"warranted={urlsafe_load_payload_totals['source_warranted']}",
+    f"inactive={urlsafe_load_payload_totals['source_inactive']}",
+    f"support={urlsafe_load_payload_totals.get('source_support', 0)}",
+    f"refused={urlsafe_load_payload_totals['source_refused']}",
+    f"unclassified={urlsafe_load_payload_totals['unclassified_source']}",
+)
+print(
     "source audit TimedSerializer.loads_unsafe:",
     f"loci={timed_loads_unsafe_totals['source_loci']}",
     f"warranted={timed_loads_unsafe_totals['source_warranted']}",
@@ -1379,6 +1440,27 @@ if not load_payload_ok:
     print(
         f"FAIL({twin}): expected Serializer.load_payload {expect}, "
         f"statuses={sorted(load_payload_statuses)}"
+    )
+    sys.exit(1)
+urlsafe_load_payload = [
+    (r.get("property", ""), r.get("status", ""))
+    for r in doc.get("rows", [])
+    if "test_urlsafe_load_payload_bad_payload" in str(r.get("property", ""))
+]
+if not urlsafe_load_payload:
+    print(f"FAIL({twin}): no URLSafeSerializerMixin.load_payload raises rows in receipt"); sys.exit(1)
+urlsafe_statuses = {s for _, s in urlsafe_load_payload}
+print(f"URLSafeSerializerMixin.load_payload rows({twin}):")
+for n, s in urlsafe_load_payload:
+    print(f"  {s:14s} {n[:110]}")
+if expect == "discharged":
+    urlsafe_ok = urlsafe_statuses & ok_words and not (urlsafe_statuses & bad_words)
+else:
+    urlsafe_ok = bool(urlsafe_statuses & bad_words)
+if not urlsafe_ok:
+    print(
+        f"FAIL({twin}): expected URLSafeSerializerMixin.load_payload {expect}, "
+        f"statuses={sorted(urlsafe_statuses)}"
     )
     sys.exit(1)
 validate_rows = [
