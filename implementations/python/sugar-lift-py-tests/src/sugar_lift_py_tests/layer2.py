@@ -116,6 +116,7 @@ from .translate_universe import (
     eval_predicate,
     guard_universe_for_callee,
     instance_field_universe_for_callee,
+    list_adapter_universe_for_callee,
     predicate_universe_for_callee,
     raise_locus_universe_for_callee,
     return_isinstance_universe_for_callee,
@@ -582,6 +583,7 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "constructor_default_param_names",
         "constructor_default_attr_name",
         "adapter_callee",
+        "helper_callee",
     ):
         if field_name not in warrant:
             continue
@@ -643,6 +645,7 @@ def _source_loci_for_memento(
     if role not in {
         "python.translate-universe",
         "python.bytes-identity-universe",
+        "python.list-adapter-universe",
         "python.constant-universe",
         "python.delegation-universe",
         "python.instance-field-universe",
@@ -900,6 +903,14 @@ def _classify_universe_source_statement(
         if isinstance(stmt, ast.Return):
             return "warranted", "emitted into python.bytes-identity-universe"
         return "support", "non-constraint source support for bytes-identity accounting"
+    if role == "python.list-adapter-universe":
+        if _is_docstring_stmt(stmt):
+            return "support", "docstring metadata supports source accounting only"
+        if _is_list_adapter_active_if(stmt):
+            return "warranted", "emitted into python.list-adapter-universe"
+        if _is_list_adapter_iterable_return(stmt):
+            return "inactive", "iterable branch inactive for concrete str/bytes callsite"
+        return "unclassified", "list-adapter source not emitted"
     if role == "python.delegation-universe":
         if _is_docstring_stmt(stmt):
             return "support", "docstring metadata supports source accounting only"
@@ -918,9 +929,12 @@ def _classify_universe_source_statement(
         if _is_instance_field_default_if(stmt):
             return "warranted", "emitted into python.instance-field-universe"
         adapter_callee = _string_field(source_memento, "adapter_callee")
+        helper_callee = _string_field(source_memento, "helper_callee")
         if _is_instance_field_assign(stmt):
             return "warranted", "emitted into python.instance-field-universe"
         if adapter_callee and _is_instance_field_adapter_assign(stmt, adapter_callee):
+            return "warranted", "emitted into python.instance-field-universe"
+        if helper_callee and _is_instance_field_helper_assign(stmt, helper_callee):
             return "warranted", "emitted into python.instance-field-universe"
         if _is_instance_field_return(stmt):
             return "warranted", "emitted into python.instance-field-universe"
@@ -1047,6 +1061,51 @@ def _is_instance_field_adapter_assign(stmt: ast.stmt, adapter_callee: str) -> bo
         and not value.keywords
         and len(value.args) == 1
         and isinstance(value.args[0], ast.Name)
+    )
+
+
+def _is_instance_field_helper_assign(stmt: ast.stmt, helper_callee: str) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    return (
+        isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+        and isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id == helper_callee.rsplit(".", 1)[-1]
+        and not value.keywords
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+    )
+
+
+def _is_list_adapter_active_if(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.If) or stmt.orelse or len(stmt.body) != 1:
+        return False
+    if not isinstance(stmt.body[0], ast.Return):
+        return False
+    value = stmt.body[0].value
+    return (
+        isinstance(value, ast.List)
+        and len(value.elts) == 1
+        and isinstance(value.elts[0], ast.Call)
+    )
+
+
+def _is_list_adapter_iterable_return(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.Return)
+        and isinstance(stmt.value, ast.ListComp)
+        and len(stmt.value.generators) == 1
     )
 
 
@@ -1938,6 +1997,12 @@ def _is_bytes_literal_term(term: Term) -> bool:
         and len(term.args) == 1
         and isinstance(term.args[0], _ConstStr)
     )
+
+
+def _is_str_or_bytes_literal_term(term: Term) -> bool:
+    from .ir import _ConstStr
+
+    return isinstance(term, _ConstStr) or _is_bytes_literal_term(term)
 
 
 def _comparison_from_symbol(sym: str, left: Term, right: Term) -> Formula:
@@ -4615,6 +4680,58 @@ def _universe_conjuncts(
                         )
                     conjuncts.append(eq(subject_term, arg))
 
+        # LIST ADAPTER: for `_make_keys_list`-style helpers, a concrete
+        # str/bytes argument takes the active branch that returns a one-item
+        # list over the element adapter call. The adapter's own universe is
+        # queued recursively so concrete bytes collapse to the original bytes.
+        list_u, list_refusal = list_adapter_universe_for_callee(callee)
+        if list_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::list-adapter-universe",
+                    reason=f"{list_refusal.callee}: {list_refusal.reason}",
+                )
+            )
+        elif list_u is not None:
+            call_args = (
+                subject_term.args[1:]
+                if subject_term.name.startswith("callval_")
+                else subject_term.args
+            )
+            if list_u.param_index < len(call_args):
+                arg = call_args[list_u.param_index]
+                if _is_str_or_bytes_literal_term(arg):
+                    if (
+                        source_warrants is not None
+                        and list_u.source_memento is not None
+                    ):
+                        _append_unique_source_warrant(
+                            source_warrants,
+                            _source_warrant_for_universe(
+                                list_u,
+                                role="python.list-adapter-universe",
+                                universe_kind="list-adapter",
+                            ),
+                        )
+                    adapter_term = ctor(
+                        _call_result_head(list_u.adapter_callee, 1),
+                        [arg],
+                    )
+                    list_term = ctor("python:list", [adapter_term])
+                    conjuncts.append(eq(subject_term, list_term))
+                    conjuncts.extend(
+                        _universe_conjuncts(
+                            list_u.adapter_callee,
+                            adapter_term,
+                            out,
+                            source_path,
+                            test_name,
+                            source_warrants=source_warrants,
+                            _seen=seen,
+                        )
+                    )
+
         # PURE-DELEGATION + IDENTITY (census families, 57k + the param arm
         # of return-name's 146k): the body forwards verbatim, so the
         # output EQUALS the forwarded term — eq between call terms in EUF,
@@ -4788,6 +4905,19 @@ def _universe_conjuncts(
                             _seen=seen,
                         )
                     )
+                helper_callee = getattr(inst_u, "helper_callee", None)
+                if helper_callee and isinstance(value_term, _Ctor):
+                    conjuncts.extend(
+                        _universe_conjuncts(
+                            helper_callee,
+                            value_term,
+                            out,
+                            source_path,
+                            test_name,
+                            source_warrants=source_warrants,
+                            _seen=seen,
+                        )
+                    )
     if (
         subject_field_name is not None
         and origin is not None
@@ -4856,6 +4986,19 @@ def _universe_conjuncts(
                 conjuncts.extend(
                     _universe_conjuncts(
                         adapter_callee,
+                        value_term,
+                        out,
+                        source_path,
+                        test_name,
+                        source_warrants=source_warrants,
+                        _seen=seen,
+                    )
+                )
+            helper_callee = getattr(field_u, "helper_callee", None)
+            if helper_callee and isinstance(value_term, _Ctor):
+                conjuncts.extend(
+                    _universe_conjuncts(
+                        helper_callee,
                         value_term,
                         out,
                         source_path,
@@ -4942,6 +5085,9 @@ def _constructor_field_universe_value_term(
 
 
 def _constructor_field_adapter_term(universe, arg_term: Term) -> Term:
+    helper_callee = getattr(universe, "helper_callee", None)
+    if helper_callee:
+        return ctor(_call_result_head(helper_callee, 1), [arg_term])
     adapter_callee = getattr(universe, "adapter_callee", None)
     if not adapter_callee:
         return arg_term
@@ -5011,6 +5157,9 @@ def _source_warrant_for_instance_field_universe(
     adapter_callee = getattr(universe, "adapter_callee", None)
     if adapter_callee:
         warrant["adapter_callee"] = adapter_callee
+    helper_callee = getattr(universe, "helper_callee", None)
+    if helper_callee:
+        warrant["helper_callee"] = helper_callee
     if constructor_default_params:
         warrant["constructor_default_param_names"] = list(constructor_default_params)
     return warrant

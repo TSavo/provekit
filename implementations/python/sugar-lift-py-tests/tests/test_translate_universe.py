@@ -2511,6 +2511,123 @@ class Signer:
     assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
 
 
+def test_constructor_field_universe_maps_helper_list_adapter(vendor_path):
+    from sugar_lift_py_tests.translate_universe import bytes_identity_universe_for_callee
+
+    bytes_identity_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_helper_list",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_helper_list
+
+        def test_secret_keys():
+            signer = vendinst_helper_list.Signer(b"k")
+            assert signer.secret_keys == signer.secret_keys
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_helper_list.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    secret = ctor("python:bytes", [str_const("k")])
+    helper_terms = []
+    list_terms = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        helper_side = next(
+            (
+                side
+                for side in args
+                if "callresult_vendinst_helper_list__make_keys_list_a1"
+                in getattr(side, "name", "")
+            ),
+            None,
+        )
+        if helper_side is not None:
+            helper_terms.append(helper_side)
+        list_side = next(
+            (
+                side
+                for side in args
+                if getattr(side, "name", "") == "python:list"
+            ),
+            None,
+        )
+        if list_side is not None:
+            list_terms.append(list_side)
+        if any(
+            "callresult_vendinst_helper_list_want_bytes_a1" in getattr(side, "name", "")
+            for side in args
+        ) and secret in args:
+            identity_eqs.append(atom)
+
+    assert helper_terms
+    assert list_terms
+    assert identity_eqs
+
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {
+        "python.instance-field-universe",
+        "python.list-adapter-universe",
+        "python.bytes-identity-universe",
+    } <= roles
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"]
+        in {
+            "python.instance-field-universe",
+            "python.list-adapter-universe",
+            "python.bytes-identity-universe",
+        }
+        and "vendinst_helper_list" in audit["contract"]["name"]
+    }
+    assert set(audits) == {
+        "python.instance-field-universe",
+        "python.list-adapter-universe",
+        "python.bytes-identity-universe",
+    }
+    assert audits["python.instance-field-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.list-adapter-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
+
+
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):
     vendor_path(
         "vendinst_default_attr",

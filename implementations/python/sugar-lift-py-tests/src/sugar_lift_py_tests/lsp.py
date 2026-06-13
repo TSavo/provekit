@@ -42,7 +42,10 @@ from .walk import lift_production_walk
 from .decorators import collect_module
 from .lift.pydantic import lift_pydantic_model
 from .cpython_ctypes_resolver import resolve_ctypes_calls
-from .translate_universe import bytes_identity_universe_for_callee
+from .translate_universe import (
+    bytes_identity_universe_for_callee,
+    list_adapter_universe_for_callee,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -829,11 +832,19 @@ def _local_adapter_assignment_status(
     if callee is None:
         return None
     universe, refusal = bytes_identity_universe_for_callee(callee)
+    if refusal is not None:
+        return None
+    if universe is not None:
+        return (
+            "warranted",
+            "source-backed adapter assignment emitted as recursive universe dig",
+        )
+    universe, refusal = list_adapter_universe_for_callee(callee)
     if refusal is not None or universe is None:
         return None
     return (
         "warranted",
-        "source-backed adapter assignment emitted as recursive universe dig",
+        "source-backed helper assignment emitted as recursive universe dig",
     )
 
 

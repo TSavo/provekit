@@ -322,6 +322,7 @@ class InstanceFieldUniverse:
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
     adapter_callee: Optional[str] = None
+    helper_callee: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -349,6 +350,7 @@ class ConstructorFieldUniverse:
     forwarder_constructor_qualname: Optional[str] = None
     forwarder_source_memento: Optional[dict[str, Any]] = None
     adapter_callee: Optional[str] = None
+    helper_callee: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -357,6 +359,7 @@ class _ConstructorFieldAssignment:
     param_name: str
     default_attr_name: Optional[str] = None
     adapter_callee: Optional[str] = None
+    helper_callee: Optional[str] = None
 
 
 _GUARD_TAINTED = object()
@@ -917,6 +920,7 @@ def instance_field_universe_for_callee(
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
             adapter_callee=field.adapter_callee,
+            helper_callee=field.helper_callee,
         ),
         None,
     )
@@ -977,6 +981,7 @@ def constructor_field_universe_for_callee(
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
             adapter_callee=field.adapter_callee,
+            helper_callee=field.helper_callee,
         ),
         None,
     )
@@ -1042,6 +1047,7 @@ def _constructor_field_from_super_init(
         forwarder_constructor_qualname=f"{module_name}.{fn_name}",
         forwarder_source_memento=forwarder_source_memento,
         adapter_callee=base_universe.adapter_callee,
+        helper_callee=base_universe.helper_callee,
     )
 
 
@@ -1143,13 +1149,14 @@ def _constructor_field_assignment(
         if field is None:
             return None
         seen_field_assign = True
-        assign, assigned_field, param_name, adapter_callee = field
+        assign, assigned_field, param_name, adapter_callee, helper_callee = field
         if assigned_field == field_name:
             matched = _ConstructorFieldAssignment(
                 assign=assign,
                 param_name=param_name,
                 default_attr_name=default_attrs.get(param_name),
                 adapter_callee=adapter_callee,
+                helper_callee=helper_callee,
             )
     return matched
 
@@ -1158,7 +1165,7 @@ def _constructor_field_assignment_stmt(
     stmt: ast.stmt,
     init_params: list[str],
     call_aliases: Optional[dict[str, str]] = None,
-) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str, Optional[str]]]:
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str, Optional[str], Optional[str]]]:
     if isinstance(stmt, ast.Assign):
         if len(stmt.targets) != 1:
             return None
@@ -1173,11 +1180,15 @@ def _constructor_field_assignment_stmt(
     if assigned_field is None:
         return None
     if isinstance(value, ast.Name) and value.id in init_params[1:]:
-        return stmt, assigned_field, value.id, None
+        return stmt, assigned_field, value.id, None, None
     adapter = _constructor_adapter_call(value, init_params, call_aliases or {})
     if adapter is not None:
         param_name, adapter_callee = adapter
-        return stmt, assigned_field, param_name, adapter_callee
+        return stmt, assigned_field, param_name, adapter_callee, None
+    helper = _constructor_list_adapter_call(value, init_params, call_aliases or {})
+    if helper is not None:
+        param_name, helper_callee = helper
+        return stmt, assigned_field, param_name, None, helper_callee
     return None
 
 
@@ -1200,6 +1211,30 @@ def _constructor_adapter_call(
     if callee is None:
         return None
     universe, refusal = bytes_identity_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return value.args[0].id, callee
+
+
+def _constructor_list_adapter_call(
+    value: ast.expr,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[tuple[str, str]]:
+    if not (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and not value.keywords
+        and len(value.args) == 1
+        and not isinstance(value.args[0], ast.Starred)
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id in init_params[1:]
+    ):
+        return None
+    callee = call_aliases.get(value.func.id)
+    if callee is None:
+        return None
+    universe, refusal = list_adapter_universe_for_callee(callee)
     if refusal is not None or universe is None:
         return None
     return value.args[0].id, callee
@@ -1656,6 +1691,32 @@ class BytesIdentityUniverse:
 
     param_index: int
     param_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
+class ListAdapterUniverse:
+    """`_make_keys_list`-style adapter for concrete str/bytes callsites.
+
+    Shape:
+      if isinstance(secret_key, (str, bytes)):
+          return [want_bytes(secret_key)]
+
+      return [want_bytes(s) for s in secret_key]
+
+    For a concrete str/bytes callsite, the iterable branch is inactive and
+    the result is a one-element list whose element is the adapter call result.
+    The adapter itself is recursively accounted for by BytesIdentityUniverse
+    when the argument is concrete bytes.
+    """
+
+    param_index: int
+    param_name: str
+    adapter_callee: str
     module: str
     qualname: str
     source_path: str
@@ -2137,6 +2198,62 @@ def bytes_identity_universe_for_callee(
     )
 
 
+@functools.lru_cache(maxsize=None)
+def list_adapter_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ListAdapterUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    if not params:
+        return None, None
+    subject = params[0]
+    body = _body_without_docstring(fn.body)
+    if len(body) != 2:
+        return None, None
+    first, second = body
+    if not (
+        isinstance(first, ast.If)
+        and not first.orelse
+        and len(first.body) == 1
+        and isinstance(first.body[0], ast.Return)
+        and _is_isinstance_str_or_bytes_guard(first.test, subject)
+        and isinstance(second, ast.Return)
+    ):
+        return None, None
+    call_aliases = _module_call_aliases(tree, module_name)
+    adapter_callee = _single_list_adapter_return_callee(
+        first.body[0],
+        subject,
+        call_aliases,
+    )
+    if adapter_callee is None:
+        return None, None
+    iterable_adapter = _iterable_list_adapter_return_callee(
+        second,
+        subject,
+        call_aliases,
+    )
+    if iterable_adapter != adapter_callee:
+        return None, None
+    return (
+        ListAdapterUniverse(
+            param_index=0,
+            param_name=subject,
+            adapter_callee=adapter_callee,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
 def _is_isinstance_str_guard(node: ast.AST, param_name: str) -> bool:
     return (
         isinstance(node, ast.Call)
@@ -2149,6 +2266,91 @@ def _is_isinstance_str_guard(node: ast.AST, param_name: str) -> bool:
         and isinstance(node.args[1], ast.Name)
         and node.args[1].id == "str"
     )
+
+
+def _is_isinstance_str_or_bytes_guard(node: ast.AST, param_name: str) -> bool:
+    if not (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "isinstance"
+        and len(node.args) == 2
+        and not node.keywords
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == param_name
+    ):
+        return False
+    typ = node.args[1]
+    if isinstance(typ, ast.Name):
+        return typ.id in {"str", "bytes"}
+    if isinstance(typ, ast.Tuple):
+        names = {
+            elt.id
+            for elt in typ.elts
+            if isinstance(elt, ast.Name)
+        }
+        return {"str", "bytes"} <= names
+    return False
+
+
+def _single_list_adapter_return_callee(
+    stmt: ast.Return,
+    param_name: str,
+    call_aliases: dict[str, str],
+) -> Optional[str]:
+    value = stmt.value
+    if not (
+        isinstance(value, ast.List)
+        and len(value.elts) == 1
+        and isinstance(value.elts[0], ast.Call)
+    ):
+        return None
+    return _adapter_call_over_name(value.elts[0], param_name, call_aliases)
+
+
+def _iterable_list_adapter_return_callee(
+    stmt: ast.Return,
+    param_name: str,
+    call_aliases: dict[str, str],
+) -> Optional[str]:
+    value = stmt.value
+    if not (
+        isinstance(value, ast.ListComp)
+        and len(value.generators) == 1
+        and isinstance(value.elt, ast.Call)
+    ):
+        return None
+    gen = value.generators[0]
+    if (
+        gen.ifs
+        or gen.is_async
+        or not isinstance(gen.target, ast.Name)
+        or not isinstance(gen.iter, ast.Name)
+        or gen.iter.id != param_name
+    ):
+        return None
+    return _adapter_call_over_name(value.elt, gen.target.id, call_aliases)
+
+
+def _adapter_call_over_name(
+    value: ast.Call,
+    arg_name: str,
+    call_aliases: dict[str, str],
+) -> Optional[str]:
+    if not (
+        isinstance(value.func, ast.Name)
+        and not value.keywords
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id == arg_name
+    ):
+        return None
+    callee = call_aliases.get(value.func.id)
+    if callee is None:
+        return None
+    universe, refusal = bytes_identity_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return callee
 
 
 def _is_param_encode_call(node: ast.AST, param_name: str) -> bool:
