@@ -3899,6 +3899,99 @@ def test_delegation_queues_delegate_dig_and_carries_source_warrants(vendor_path)
     ), audits["python.delegation-universe"]
 
 
+def test_receiver_method_delegation_composes_with_receiver_context(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver",
+        """
+        class Router:
+            def g(self, seed):
+                return "fixed"
+
+            def f(self, seed):
+                return self.g(seed)
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver.Router.g"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_receiver
+
+        def test_route():
+            router = venddeleg_receiver.Router()
+            assert router.f("raaaa") == "fixed"
+        """
+    )
+
+    atoms = _delegation_eq_atoms(out, "callval_g_a2")
+    assert atoms, [d.name for d in out.decls]
+    assert any(
+        any("callval_f_a2" in getattr(side, "name", "") for side in atom.args)
+        for atom in atoms
+    ), atoms
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_receiver.Router.f" in d.name
+    )
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {"python.delegation-universe", "python.constant-universe"} <= roles
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "Router.f"
+        for warrant in assertion.source_warrants
+    )
+    assert any(
+        warrant.get("role") == "python.constant-universe"
+        and warrant.get("source_function_name") == "Router.g"
+        for warrant in assertion.source_warrants
+    )
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"] in {"python.delegation-universe", "python.constant-universe"}
+        and "venddeleg_receiver.Router" in audit["contract"]["name"]
+    }
+    assert set(audits) == {"python.delegation-universe", "python.constant-universe"}
+    assert audits["python.delegation-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.constant-universe"]["totals"]["unclassified_source"] == 0
+
+
 def test_delegation_unwraps_typing_cast_and_carries_source_warrants(vendor_path):
     from sugar_lift_py_tests.ir import str_const
     from sugar_lift_py_tests.translate_universe import (

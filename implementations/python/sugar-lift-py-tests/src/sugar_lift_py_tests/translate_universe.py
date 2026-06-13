@@ -1640,6 +1640,12 @@ class DelegationUniverse:
     - ``delegation-splat``: ``def f(*a): return g(*a)`` (optionally
       ``**k`` mirrored) — the delegate receives exactly f's args:
       eq(subject, callresult_<module.g>(call_args)).
+    - ``delegation-receiver-method``: ``class C: def f(self, x): return
+      self.g(x)`` — eq(callval_f(recv, x), callval_g(recv, x)), then queue
+      a recursive source walk over ``C.g`` with the same receiver context.
+      This is the Java P5c/Voltron rule in Python shape: receiver-dependent
+      values stay receiver-keyed, but the owning class makes the target body
+      concrete enough to read.
     - ``delegation-method``: ``return <param|literal>.method(...)``
       (census return-method-call, 113k bodies) —
       eq(subject, callval_<method>(recv, args...)). No body backs a
@@ -1800,6 +1806,25 @@ def _resolve_spec(node, params, env):
     if vk is not None:
         return ("lit", vk[0], vk[1])
     return None
+
+
+def _receiver_context_spec(spec):
+    """Normalize a spec from a method's full parameter space into the
+    callsite's explicit-argument space. ``self`` is supplied by the receiver
+    term, so param 0 maps to a receiver placeholder and param N maps to
+    call_args[N-1]."""
+    if spec is None:
+        return None
+    if spec[0] != "param":
+        return spec
+    index = spec[1]
+    if index == 0:
+        return ("receiver",)
+    return ("param", index - 1)
+
+
+def _resolve_receiver_context_spec(node, params, env):
+    return _receiver_context_spec(_resolve_spec(node, params, env))
 
 
 _BINOP_SPEC_OPS = {
@@ -1976,6 +2001,87 @@ def delegation_universe_for_callee(
                 )
             specs.append(spec)
         return universe(kind="delegation-stdlib", delegate=delegate_q, args=tuple(specs))
+
+    # receiver-context method delegation: class C; def f(self, x): return
+    # self.g(x). The target body is concrete (same class), but the value remains
+    # receiver-dependent, so the emitter uses callval_g(receiver, args...) and
+    # queues a recursive source walk over C.g with the same receiver context.
+    if isinstance(value.func, ast.Attribute):
+        class_qualname: Optional[str] = None
+        if "." in fn_name:
+            class_qualname, current_method = fn_name.rsplit(".", 1)
+        else:
+            current_method = fn_name
+        self_param = params[0] if params else None
+        if (
+            class_qualname is not None
+            and self_param is not None
+            and isinstance(value.func.value, ast.Name)
+            and value.func.value.id == self_param
+        ):
+            delegate_name = value.func.attr
+            if delegate_name == current_method:
+                return refuse("self-delegation: the equality would be vacuous")
+            if value.keywords:
+                return refuse(
+                    "keyword arguments in receiver-method delegate call are "
+                    "not yet walked (positional mapping only)"
+                )
+            cls = _find_class_path(tree.body, class_qualname.split("."))
+            if cls is None:
+                return refuse(
+                    f"receiver-method delegate class {class_qualname} is not "
+                    "a stable undecorated class in the vendor module"
+                )
+            delegate_fn = next(
+                (
+                    stmt
+                    for stmt in cls.body
+                    if isinstance(stmt, ast.FunctionDef)
+                    and stmt.name == delegate_name
+                ),
+                None,
+            )
+            if delegate_fn is None:
+                if any(
+                    isinstance(stmt, ast.AsyncFunctionDef)
+                    and stmt.name == delegate_name
+                    for stmt in cls.body
+                ):
+                    return refuse(
+                        f"receiver-method delegate {delegate_name} is async: "
+                        "the call term is a coroutine, not the awaited value"
+                    )
+                return refuse(
+                    f"receiver-method delegate {delegate_name} is not a "
+                    "method in the current vendor class"
+                )
+            if delegate_fn.decorator_list:
+                return refuse(
+                    f"receiver-method delegate {delegate_name} is decorated; "
+                    "its def body is not the runtime callable, so determinism "
+                    "evidence cannot be read from it"
+                )
+            if _class_member_binding_count(cls, delegate_name) != 1:
+                return refuse(
+                    f"receiver-method delegate {delegate_name} is rebound in "
+                    "the class body; the name does not stably denote the def"
+                )
+            specs = []
+            for arg in value.args:
+                spec = _resolve_receiver_context_spec(arg, params, env)
+                if spec is None:
+                    return refuse(
+                        "receiver-method delegate argument is neither a "
+                        "parameter, literal, nor chain name; the forwarded "
+                        "value is not the callsite's"
+                    )
+                specs.append(spec)
+            return universe(
+                kind="delegation-receiver-method",
+                delegate=f"{module_name}.{class_qualname}.{delegate_name}",
+                args=tuple(specs),
+            )
 
     # method delegation: return <param|literal>.method(<params|literals>)
     # (census return-method-call, 113k bodies). Unlike a function
@@ -2693,6 +2799,26 @@ def _find_class_path(
             return None
         current_body = found.body
     return found
+
+
+def _class_member_binding_count(cls: ast.ClassDef, name: str) -> int:
+    count = 0
+    for stmt in cls.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if stmt.name == name:
+                count += 1
+            continue
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    count += 1
+        elif isinstance(stmt, ast.AnnAssign):
+            if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
+                count += 1
+        elif isinstance(stmt, ast.AugAssign):
+            if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
+                count += 1
+    return count
 
 
 def _is_staticmethod_only(fn: ast.FunctionDef) -> bool:

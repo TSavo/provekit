@@ -4874,6 +4874,41 @@ def _universe_conjuncts(
                 mapped = _mapped_delegate_args(deleg_u.args, call_args)
                 if mapped is not None:
                     conjuncts.append(eq(subject_term, mapped[0]))
+            elif deleg_u.kind == "delegation-receiver-method":
+                receiver_term = _receiver_term_for_callval_subject(subject_term)
+                mapped = (
+                    _mapped_receiver_delegate_args(
+                        deleg_u.args,
+                        call_args,
+                        receiver_term,
+                    )
+                    if receiver_term is not None
+                    else None
+                )
+                if mapped is not None:
+                    delegate_args = [receiver_term, *mapped]
+                    method_name = deleg_u.delegate.rsplit(".", 1)[-1]
+                    head = _callval_head(method_name, len(delegate_args))
+                    delegate_term = ctor(head, delegate_args)
+                    conjuncts.append(eq(subject_term, delegate_term))
+                    delegate_origin = _receiver_delegate_origin(
+                        deleg_u.delegate,
+                        origin,
+                        mapped,
+                        delegate_term,
+                    )
+                    conjuncts.extend(
+                        _universe_conjuncts(
+                            deleg_u.delegate,
+                            delegate_term,
+                            out,
+                            source_path,
+                            test_name,
+                            source_warrants=source_warrants,
+                            origin=delegate_origin,
+                            _seen=seen,
+                        )
+                    )
             else:
                 mapped = _mapped_delegate_args(deleg_u.args, call_args)
                 if mapped is not None and deleg_u.kind in {
@@ -5277,6 +5312,53 @@ def _term_leaves_all_const_int(term) -> bool:
     if isinstance(term, _Ctor):
         return all(_term_leaves_all_const_int(a) for a in term.args)
     return isinstance(term, _ConstInt)
+
+
+def _receiver_term_for_callval_subject(subject_term: Term) -> Optional[Term]:
+    if (
+        isinstance(subject_term, _Ctor)
+        and subject_term.name.startswith("callval_")
+        and subject_term.args
+    ):
+        return subject_term.args[0]
+    return None
+
+
+def _mapped_receiver_delegate_args(specs, call_args, receiver_term: Term):
+    mapped = []
+    for spec in specs:
+        if spec[0] == "receiver":
+            mapped.append(receiver_term)
+        elif spec[0] == "param":
+            if spec[1] >= len(call_args):
+                return None
+            mapped.append(call_args[spec[1]])
+        else:
+            lit = _mapped_delegate_args((spec,), call_args)
+            if lit is None:
+                return None
+            mapped.extend(lit)
+    return mapped
+
+
+def _receiver_delegate_origin(
+    delegate: str,
+    origin: Optional[_CallOrigin],
+    mapped_args: List[Term],
+    delegate_term: Term,
+) -> Optional[_CallOrigin]:
+    if origin is None:
+        return None
+    return _CallOrigin(
+        callee=delegate,
+        lineno=origin.lineno,
+        col=origin.col,
+        constructor_args=origin.constructor_args,
+        constructor_default_params=origin.constructor_default_params,
+        receiver_constructor=origin.receiver_constructor,
+        arg_terms=tuple(mapped_args),
+        result_term=delegate_term,
+    )
 
 
 def _mapped_delegate_args(specs, call_args):
