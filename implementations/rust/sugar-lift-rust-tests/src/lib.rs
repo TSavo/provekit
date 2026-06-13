@@ -4273,6 +4273,13 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
                 return Some(source_value_contract(name, eq(make_var("out"), term)));
             }
         }
+        // (e) Slice 8 -- value-position if / else-if / else (TOTAL): the ite
+        //     encoded with the EXISTING implies/and atoms (no new compiler ctor) --
+        //     and over clauses `implies(guard_i, out = term_i)`, guard_i = the i-th
+        //     condition conjoined with the negations of all earlier ones.
+        if let Some(inv) = emit_if_value(tail, &scope) {
+            return Some(source_value_contract(name, inv));
+        }
         return None;
     }
     // (d) Slice 6 -- leading immutable-let prefix + EUF tail: `(let x = euf;)* euf`,
@@ -4327,6 +4334,88 @@ fn let_prefix_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<T
         tail = subst_var_in_term(&tail, n, t);
     }
     term_is_euf_value(&tail).then_some(tail)
+}
+
+/// A block's value as an EUF term: a single EUF tail expression, or a leading
+/// immutable-let prefix substituted into an EUF tail. None if neither shape.
+fn block_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Term>> {
+    if let [Stmt::Expr(tail, None)] = block.stmts.as_slice() {
+        let t = translate_term_in_scope(tail, scope).ok()?;
+        return term_is_euf_value(&t).then_some(t);
+    }
+    let_prefix_euf_term(block, scope)
+}
+
+/// A value-position `if` / `else if` / `else` chain (TOTAL -- a final `else` is
+/// required, else `out` is undefined on a branch and we cannot warrant). Encoded
+/// as the ite via the EXISTING implies/and atoms: `and_i implies(guard_i, out =
+/// term_i)`, where guard_i is the i-th branch condition conjoined with the
+/// negations of all earlier conditions. None if any condition does not translate
+/// to a Formula (e.g. `if let`), any branch is not an EUF block, or no final else.
+fn emit_if_value(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
+    let mut clauses: Vec<(Rc<Formula>, Rc<Term>)> = Vec::new();
+    collect_if_clauses(expr, scope, &mut Vec::new(), &mut clauses)?;
+    if clauses.is_empty() {
+        return None;
+    }
+    let out = make_var("out");
+    Some(and_(
+        clauses
+            .into_iter()
+            .map(|(guard, term)| implies(guard, eq(out.clone(), term)))
+            .collect(),
+    ))
+}
+
+fn collect_if_clauses(
+    expr: &Expr,
+    scope: &TemporalScope,
+    negated: &mut Vec<Rc<Formula>>,
+    out_clauses: &mut Vec<(Rc<Formula>, Rc<Term>)>,
+) -> Option<()> {
+    let if_expr = match expr {
+        Expr::If(i) => i,
+        Expr::Paren(p) => return collect_if_clauses(&p.expr, scope, negated, out_clauses),
+        Expr::Group(g) => return collect_if_clauses(&g.expr, scope, negated, out_clauses),
+        _ => return None,
+    };
+    // A bool condition the assertion-lifter understands. `if let ...` is an
+    // Expr::Let here -> does not translate -> None (refused as not-this-shape).
+    let cond = translate_bool_assertion(&if_expr.cond, scope, &FloatWidthScope::new())
+        .ok()?
+        .atom;
+    let then_term = block_euf_term(&if_expr.then_branch, scope)?;
+    let mut gp = negated.clone();
+    gp.push(cond.clone());
+    let guard = if gp.len() == 1 {
+        gp.remove(0)
+    } else {
+        and_(gp)
+    };
+    out_clauses.push((guard, then_term));
+    // A final `else` is required for totality.
+    let (_, else_expr) = if_expr.else_branch.as_ref()?;
+    match &**else_expr {
+        Expr::If(_) => {
+            negated.push(not_(cond));
+            let r = collect_if_clauses(else_expr, scope, negated, out_clauses);
+            negated.pop();
+            r
+        }
+        Expr::Block(b) => {
+            let else_term = block_euf_term(&b.block, scope)?;
+            let mut gp = negated.clone();
+            gp.push(not_(cond));
+            let guard = if gp.len() == 1 {
+                gp.remove(0)
+            } else {
+                and_(gp)
+            };
+            out_clauses.push((guard, else_term));
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 /// The bound name of an immutable simple `let` pattern (`let x` / `let x: T`),

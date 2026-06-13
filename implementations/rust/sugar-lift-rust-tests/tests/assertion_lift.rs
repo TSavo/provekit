@@ -5904,3 +5904,53 @@ fn emit_value_contract_let_prefix_refuses_mut_and_letelse() {
         );
     }
 }
+
+// ── Slice 8: value-position if/else-if/else -> ite via implies/and (no compiler ctor) ──
+
+#[test]
+fn emit_value_contract_if_else_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        "fn f(x: i32, a: i32, b: i32) -> i32 { if x > 0 { a } else { b } }",
+        "fn f(x: i32) -> i32 { if x > 10 { 1 } else if x > 5 { 2 } else { 3 } }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("if/else value must warrant: {src}"));
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let inv = parsed[0]["inv"].clone();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_if.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
+    }
+}
+
+#[test]
+fn emit_value_contract_if_refuses_non_total_and_if_let() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // no final else (out undefined on a branch) and if-let (cond is not a bool
+    // formula) are NOT this shape -> None (routed to unclassified/effect_refusal).
+    for src in [
+        "fn f(x: i32) { if x > 0 { let _ = x; } }",
+        "fn f(o: Option<i32>) -> i32 { if let Some(x) = o { x } else { 0 } }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        assert!(
+            emit_value_contract("f", &f.block).is_none(),
+            "non-total / if-let must not warrant via the if path: {src}"
+        );
+    }
+}
