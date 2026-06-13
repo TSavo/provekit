@@ -454,6 +454,13 @@ def _package_locus_classification(
     )
     if nondet_status is not None:
         return nondet_status
+    self_field_dispatch_status = _self_field_runtime_dispatch_refusal_status(
+        node,
+        ancestors,
+        tree,
+    )
+    if self_field_dispatch_status is not None:
+        return self_field_dispatch_status
     adapter_assignment_status = _local_adapter_assignment_status(
         node,
         ancestors,
@@ -979,6 +986,84 @@ def _dynamic_io_receiver_name(call: ast.Call) -> Optional[str]:
     ):
         return None
     return func.value.id
+
+
+def _self_field_runtime_dispatch_refusal_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    tree: ast.Module,
+) -> Optional[tuple[str, str]]:
+    stmt = _nearest_statement(ancestors + (node,))
+    if stmt is None:
+        return None
+    chain = ancestors + (node,)
+    class_qualname = _nearest_class_qualname(chain)
+    if not class_qualname:
+        return None
+    cls = _find_class_by_qualname(tree, class_qualname)
+    if cls is None:
+        methods: set[str] = set()
+        fields: set[str] = set()
+        has_bases = False
+    else:
+        methods = {
+            item.name
+            for item in cls.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        fields = _class_receiver_field_names(cls)
+        has_bases = bool(cls.bases)
+    for call in (n for n in ast.walk(stmt) if isinstance(n, ast.Call)):
+        path = _call_func_attribute_path(call.func)
+        if len(path) < 2 or path[0] not in {"self", "cls"}:
+            continue
+        if len(path) == 2 and path[1] in methods:
+            continue
+        if len(path) == 2 and path[1] not in fields and has_bases:
+            continue
+        if node is stmt or any(candidate is node for candidate in ast.walk(stmt)):
+            return (
+                "refused",
+                (
+                    "runtime field dispatch refused: "
+                    f"{'.'.join(path)} is supplied by receiver state, "
+                    "so no stable vendor method body can warrant this relation"
+                ),
+            )
+    return None
+
+
+def _class_receiver_field_names(cls: ast.ClassDef) -> set[str]:
+    fields: set[str] = set()
+    for node in ast.walk(cls):
+        targets: list[ast.AST] = []
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            if isinstance(node, ast.Assign):
+                targets.extend(node.targets)
+            else:
+                targets.append(node.target)
+        elif isinstance(node, ast.AugAssign):
+            targets.append(node.target)
+        for target in targets:
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"self", "cls"}
+            ):
+                fields.add(target.attr)
+    return fields
+
+
+def _call_func_attribute_path(node: ast.AST) -> tuple[str, ...]:
+    parts: list[str] = []
+    current = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return ()
+    parts.append(current.id)
+    return tuple(reversed(parts))
 
 
 _NONDET_CALL_ATTRS = frozenset(

@@ -651,6 +651,97 @@ def test_lift_source_refuses_nondeterministic_time_package_accounting(
     ), nondet_loci
 
 
+def test_lift_source_refuses_self_field_runtime_dispatch_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_self_field_dispatch_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            class Base:
+                def inherited(self, value):
+                    return value
+
+            class C(Base):
+                def __init__(self, signer, plugin):
+                    self.signer = signer
+                    self.plugin = plugin
+
+                def helper(self, value):
+                    return value
+
+                def inherited_call(self, value):
+                    return self.inherited(value)
+
+                def same_class(self, value):
+                    return self.helper(value)
+
+                def dynamic_method(self, value):
+                    return self.plugin.run(value)
+
+                def dynamic_callable(self, value):
+                    return self.signer(value)
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_self_field_dispatch_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    dynamic_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_self_field_dispatch_refused/encoding.py")
+        and locus.get("line") in {24, 27}
+    ]
+    assert dynamic_loci
+    assert not [
+        locus for locus in dynamic_loci if locus["status"] == "unclassified"
+    ], dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 24
+        and locus.get("ast_kind") == "Return"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 27
+        and locus.get("ast_kind") == "Return"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in dynamic_loci
+    ), dynamic_loci
+    assert not [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_self_field_dispatch_refused/encoding.py")
+        and locus.get("line") in {18, 21}
+        and locus.get("status") == "refused"
+    ], audit["loci"]
+
+
 def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
     tmp_path, monkeypatch
 ):
