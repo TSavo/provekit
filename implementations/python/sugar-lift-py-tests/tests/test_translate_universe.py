@@ -4056,6 +4056,68 @@ def test_package_accounting_discovers_untriggered_instance_field_getter(
     ), property_loci
 
 
+def test_package_accounting_warrants_local_call_term_assignment(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_local_call_binding"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "signer.py").write_text(
+        textwrap.dedent(
+            '''
+            class Signer:
+                def derive_key(self):
+                    return b"k"
+
+                def verify_signature(self, secret_keys):
+                    for secret_key in secret_keys:
+                        key = self.derive_key(secret_key)
+                        if key:
+                            return True
+                    return False
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_local_call_binding.signer as signer
+
+        def test_token():
+            assert signer.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    assignment_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_local_call_binding/signer.py")
+        and locus["line"] == 8
+    ]
+    assert assignment_loci
+    assert not [
+        locus for locus in assignment_loci if locus["status"] == "unclassified"
+    ], assignment_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "call-term SSA" in locus.get("reason", "")
+        for locus in assignment_loci
+    ), assignment_loci
+
+
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):
     vendor_path(
         "vendinst_default_attr",

@@ -485,6 +485,15 @@ def _package_locus_classification(
     )
     if adapter_assignment_status is not None:
         return adapter_assignment_status
+    call_term_assignment_status = _local_call_term_assignment_status(
+        node,
+        ancestors,
+        call_aliases,
+        module_name,
+        tree,
+    )
+    if call_term_assignment_status is not None:
+        return call_term_assignment_status
     list_adapter_body_status = _list_adapter_body_status(
         node,
         ancestors,
@@ -541,6 +550,9 @@ def _package_call_aliases(tree: ast.Module, module_name: str) -> Dict[str, str]:
     for stmt in tree.body:
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             aliases[stmt.name] = f"{module_name}.{stmt.name}"
+        elif isinstance(stmt, ast.Import):
+            for alias in stmt.names:
+                aliases[alias.asname or alias.name.split(".", 1)[0]] = alias.name
         elif isinstance(stmt, ast.ImportFrom):
             imported_module = _resolved_import_from_module(module_name, stmt)
             if imported_module is None:
@@ -1451,6 +1463,155 @@ def _local_adapter_assignment_status(
         "warranted",
         "source-backed helper assignment emitted as recursive universe dig",
     )
+
+
+def _local_call_term_assignment_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    call_aliases: Dict[str, str],
+    module_name: str,
+    tree: ast.Module,
+) -> Optional[tuple[str, str]]:
+    stmt = _local_call_term_assignment_statement_for_locus(node, ancestors)
+    if stmt is None:
+        return None
+    assign_stmt, value = stmt
+    if not any(descendant is node for descendant in ast.walk(assign_stmt)):
+        return None
+    if not _is_statically_nameable_call_term(
+        value,
+        ancestors + (node,),
+        call_aliases,
+        module_name,
+        tree,
+    ):
+        return None
+    return (
+        "warranted",
+        "local call-term SSA binding admitted as compiler equality",
+    )
+
+
+def _local_call_term_assignment_statement_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, ast.Call]]:
+    chain = ancestors + (node,)
+    stmt_index: Optional[int] = None
+    stmt: Optional[ast.Assign | ast.AnnAssign] = None
+    for index in range(len(chain) - 1, -1, -1):
+        item = chain[index]
+        if isinstance(item, (ast.Assign, ast.AnnAssign)):
+            stmt_index = index
+            stmt = item
+            break
+    if stmt is None or stmt_index is None:
+        return None
+    owner = _nearest_enclosing_function(chain[:stmt_index])
+    if owner is None:
+        return None
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+            return None
+        value = stmt.value
+    else:
+        if not isinstance(stmt.target, ast.Name):
+            return None
+        value = stmt.value
+    if not isinstance(value, ast.Call):
+        return None
+    return stmt, value
+
+
+def _is_statically_nameable_call_term(
+    call: ast.Call,
+    chain: tuple[ast.AST, ...],
+    call_aliases: Dict[str, str],
+    module_name: str,
+    tree: ast.Module,
+) -> bool:
+    if not _is_statically_nameable_callee(
+        call.func,
+        chain,
+        call_aliases,
+        module_name,
+        tree,
+    ):
+        return False
+    if any(isinstance(arg, ast.Starred) for arg in call.args):
+        return False
+    if not all(
+        _is_call_term_arg(arg, chain, call_aliases, module_name, tree)
+        for arg in call.args
+    ):
+        return False
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            return False
+        if not _is_call_term_arg(
+            keyword.value,
+            chain,
+            call_aliases,
+            module_name,
+            tree,
+        ):
+            return False
+    return True
+
+
+def _is_statically_nameable_callee(
+    func: ast.expr,
+    chain: tuple[ast.AST, ...],
+    call_aliases: Dict[str, str],
+    module_name: str,
+    tree: ast.Module,
+) -> bool:
+    if isinstance(func, ast.Name):
+        return func.id in call_aliases
+    if not isinstance(func, ast.Attribute):
+        return False
+    if isinstance(func.value, ast.Name) and func.value.id == "self":
+        class_qualname = _nearest_class_qualname(chain)
+        if not class_qualname:
+            return False
+        cls = _find_class_by_qualname(tree, class_qualname)
+        return cls is not None and _class_has_stable_method(cls, func.attr)
+    static_name = _static_call_name(func)
+    if not static_name:
+        return False
+    root = static_name.split(".", 1)[0]
+    return root in call_aliases
+
+
+def _class_has_stable_method(cls: ast.ClassDef, name: str) -> bool:
+    candidates = [
+        stmt
+        for stmt in cls.body
+        if isinstance(stmt, ast.FunctionDef) and stmt.name == name
+    ]
+    return len(candidates) == 1 and not candidates[0].decorator_list
+
+
+def _is_call_term_arg(
+    node: ast.AST,
+    chain: tuple[ast.AST, ...],
+    call_aliases: Dict[str, str],
+    module_name: str,
+    tree: ast.Module,
+) -> bool:
+    if isinstance(node, (ast.Constant, ast.Name)):
+        return True
+    if isinstance(node, ast.Attribute):
+        return _is_call_term_arg(node.value, chain, call_aliases, module_name, tree)
+    if isinstance(node, ast.Call):
+        return _is_statically_nameable_call_term(
+            node,
+            chain,
+            call_aliases,
+            module_name,
+            tree,
+        )
+    return False
 
 
 def _list_adapter_body_status(
