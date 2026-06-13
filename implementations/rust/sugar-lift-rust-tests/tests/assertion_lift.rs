@@ -5784,6 +5784,81 @@ fn emit_value_contract_guarded_matches_composes_through_compiler() {
     }
 }
 
+// Slice 19: UNGUARDED enum-variant `matches!` (matches!(x, Enum::Variant(..))).
+// The ubiquitous discriminator predicate -- is_ipv4 { matches!(self, IpAddr::V4(_)) },
+// is_some, is_ok, ... The unguarded membership path only handled scalar/string
+// code points; an enum-variant pattern fell through to a hollow "opaque macro
+// matches!" unclassified. Route it (when scalar membership is None) through
+// match_arm_discriminant -> `out <-> variant_of(x) == "variant::Variant"`.
+#[test]
+fn emit_value_contract_unguarded_enum_variant_matches_warrants() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str(
+        "fn is_v4(s: &IpKind) -> bool { matches!(s, IpKind::V4(_)) }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("is_v4", &f.block).expect("enum-variant matches! warrants");
+    let inv = format!("{:?}", decl.inv.expect("inv present"));
+    assert!(inv.contains("variant_of"), "discriminant present: {inv}");
+    assert!(inv.contains("V4"), "the matched variant tag is present: {inv}");
+}
+
+// Discrimination: is_v4 and is_v6 over the same subject are DISTINCT discriminants
+// (variant::V4 vs variant::V6), and a bare binding/wildcard pattern (always
+// matches -> no teeth) stays None.
+#[test]
+fn emit_value_contract_unguarded_enum_variant_discrimination() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let v4: syn::ItemFn =
+        syn::parse_str("fn f(s: &IpKind) -> bool { matches!(s, IpKind::V4(_)) }").unwrap();
+    let v6: syn::ItemFn =
+        syn::parse_str("fn f(s: &IpKind) -> bool { matches!(s, IpKind::V6(_)) }").unwrap();
+    let i4 = format!("{:?}", emit_value_contract("f", &v4.block).unwrap().inv.unwrap());
+    let i6 = format!("{:?}", emit_value_contract("f", &v6.block).unwrap().inv.unwrap());
+    assert!(i4.contains("V4") && !i4.contains("V6"), "v4 discriminant: {i4}");
+    assert!(i6.contains("V6") && !i6.contains("V4"), "v6 discriminant: {i6}");
+    // a bare binding pattern is always-true (vacuous) -> not warranted.
+    let bind: syn::ItemFn =
+        syn::parse_str("fn f(s: &IpKind) -> bool { matches!(s, _anything) }").unwrap();
+    assert!(
+        emit_value_contract("f", &bind.block).is_none(),
+        "a vacuous always-matching pattern must not warrant"
+    );
+}
+
+#[test]
+fn emit_value_contract_unguarded_enum_variant_composes_through_compiler() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str(
+        "fn is_v4(s: &IpKind) -> bool { matches!(s, IpKind::V4(_)) }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("is_v4", &f.block).unwrap();
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("emitted enum-variant inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_enum_variant_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "enum-variant relation must be well-sorted for z3:\n{stdout}\n--- {script}"
+        );
+        assert!(
+            stdout.contains("sat"),
+            "enum-variant relation must be satisfiable:\n{stdout}\n--- {script}"
+        );
+    }
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

@@ -4884,9 +4884,20 @@ fn matches_membership_formula(mac: &syn::Macro, scope: &TemporalScope) -> Option
         })
         .ok()?;
     let Some(guard) = guard else {
-        // Unguarded: the scalar/string code-point membership (fast path).
+        // Unguarded. First the scalar/string code-point membership (fast path).
         let scrutinee_term = scrutinee_scalar_var(&scrutinee)?;
-        return pattern_membership_formula(&scrutinee_term, &pat);
+        if let Some(f) = pattern_membership_formula(&scrutinee_term, &pat) {
+            return Some(f);
+        }
+        // Then enum-variant discrimination: `matches!(x, Enum::Variant(..))` (the
+        // ubiquitous `is_ipv4`/`is_some`/`is_*` predicate) warrants `out <->
+        // variant_of(x) == "variant::Variant"` via match_arm_discriminant -- the
+        // SAME discriminant a value-match emits. Bindings are irrelevant with no
+        // guard. A bare binding/wildcard pattern has no discriminant (disc=None)
+        // -> vacuous (always matches), so we return None and it stays unclassified
+        // rather than emit a teethless `out <-> true`.
+        let (disc, _bindings) = match_arm_discriminant(&scrutinee_term, &pat)?;
+        return disc;
     };
     // Guarded: discriminant /\ guard[pattern bindings := payload accessors].
     let scrutinee_term = scrutinee_scalar_var(&scrutinee)?;
