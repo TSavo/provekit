@@ -2757,17 +2757,10 @@ def _receiver_method_delegate_for_call(
     else:
         current_method = fn_name
     self_param = params[0] if params else None
-    if not (
-        class_qualname is not None
-        and self_param is not None
-        and isinstance(value.func.value, ast.Name)
-        and value.func.value.id == self_param
-    ):
+    if class_qualname is None or self_param is None:
         return None, None
 
     delegate_name = value.func.attr
-    if delegate_name == current_method:
-        return None, "self-delegation: the equality would be vacuous"
     cls = _find_class_path(tree.body, class_qualname.split("."))
     if cls is None:
         return (
@@ -2775,34 +2768,10 @@ def _receiver_method_delegate_for_call(
             f"receiver-method delegate class {class_qualname} is not a stable "
             "undecorated class in the vendor module",
         )
-    delegate_fn = next(
-        (
-            stmt
-            for stmt in cls.body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == delegate_name
-        ),
-        None,
-    )
-    delegate_qualname = f"{module_name}.{class_qualname}.{delegate_name}"
-    delegate_owner_cls = cls
-    if delegate_fn is None:
-        if any(
-            isinstance(stmt, ast.AsyncFunctionDef)
-            and stmt.name == delegate_name
-            for stmt in cls.body
-        ):
-            return (
-                None,
-                f"receiver-method delegate {delegate_name} is async: the call "
-                "term is a coroutine, not the awaited value",
-            )
-        if _class_member_binding_count(cls, delegate_name) != 0:
-            return (
-                None,
-                f"receiver-method delegate {delegate_name} is shadowed in "
-                "the current class body; inherited method lookup would not "
-                "stably denote the base def",
-            )
+
+    if isinstance(value.func.value, ast.Call) and _is_zero_arg_super_call(
+        value.func.value
+    ):
         inherited, inherited_refusal = _inherited_receiver_method_delegate(
             tree,
             cls,
@@ -2811,14 +2780,62 @@ def _receiver_method_delegate_for_call(
         )
         if inherited_refusal is not None:
             return None, inherited_refusal
-        if inherited is not None:
-            delegate_fn, delegate_qualname, delegate_owner_cls = inherited
-        else:
+        if inherited is None:
             return (
                 None,
-                f"receiver-method delegate {delegate_name} is not a method in "
-                "the current vendor class or a stable single base class",
+                f"receiver-method delegate {delegate_name} is not a stable "
+                "method on the explicit super() base class",
             )
+        delegate_fn, delegate_qualname, delegate_owner_cls = inherited
+    elif isinstance(value.func.value, ast.Name) and value.func.value.id == self_param:
+        if delegate_name == current_method:
+            return None, "self-delegation: the equality would be vacuous"
+        delegate_fn = next(
+            (
+                stmt
+                for stmt in cls.body
+                if isinstance(stmt, ast.FunctionDef) and stmt.name == delegate_name
+            ),
+            None,
+        )
+        delegate_qualname = f"{module_name}.{class_qualname}.{delegate_name}"
+        delegate_owner_cls = cls
+        if delegate_fn is None:
+            if any(
+                isinstance(stmt, ast.AsyncFunctionDef)
+                and stmt.name == delegate_name
+                for stmt in cls.body
+            ):
+                return (
+                    None,
+                    f"receiver-method delegate {delegate_name} is async: the call "
+                    "term is a coroutine, not the awaited value",
+                )
+            if _class_member_binding_count(cls, delegate_name) != 0:
+                return (
+                    None,
+                    f"receiver-method delegate {delegate_name} is shadowed in "
+                    "the current class body; inherited method lookup would not "
+                    "stably denote the base def",
+                )
+            inherited, inherited_refusal = _inherited_receiver_method_delegate(
+                tree,
+                cls,
+                module_name,
+                delegate_name,
+            )
+            if inherited_refusal is not None:
+                return None, inherited_refusal
+            if inherited is not None:
+                delegate_fn, delegate_qualname, delegate_owner_cls = inherited
+            else:
+                return (
+                    None,
+                    f"receiver-method delegate {delegate_name} is not a method in "
+                    "the current vendor class or a stable single base class",
+                )
+    else:
+        return None, None
     if delegate_fn is None:
         return (
             None,
@@ -2889,6 +2906,15 @@ def _receiver_method_delegate_for_call(
             args=tuple(specs),
         ),
         None,
+    )
+
+
+def _is_zero_arg_super_call(node: ast.Call) -> bool:
+    return (
+        isinstance(node.func, ast.Name)
+        and node.func.id == "super"
+        and not node.args
+        and not node.keywords
     )
 
 

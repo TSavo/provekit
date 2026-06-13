@@ -6086,6 +6086,55 @@ def test_receiver_method_delegation_composes_with_receiver_context(vendor_path):
     assert audits["python.constant-universe"]["totals"]["unclassified_source"] == 0
 
 
+def test_super_receiver_method_delegation_walks_casted_return(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_super_receiver",
+        """
+        import typing as t
+
+        class Base:
+            def iter_items(self, salt):
+                return salt
+
+        class Child(Base):
+            def iter_items(self, salt):
+                return t.cast("object", super().iter_items(salt))
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_super_receiver.Child.iter_items"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_super_receiver.Base.iter_items"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_super_receiver
+
+        def test_route():
+            child = venddeleg_super_receiver.Child()
+            assert child.iter_items("raaaa") == "raaaa"
+        """
+    )
+    audits = [
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and "venddeleg_super_receiver.Child.iter_items" in audit["contract"]["name"]
+    ]
+    assert audits
+    assert audits[0]["totals"]["unclassified_source"] == 0
+
+
 def test_receiver_method_delegation_composes_through_local_alias(vendor_path):
     from sugar_lift_py_tests.ir import str_const
     from sugar_lift_py_tests.translate_universe import (
