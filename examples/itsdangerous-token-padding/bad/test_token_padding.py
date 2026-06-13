@@ -37,5 +37,10 @@ def test_bad_header_header():
     assert err.header == {"kid": "k"}
 
 
+def test_bad_payload_default_original_error():
+    err = exc.BadPayload("bad")
+    assert err.original_error == None
+
+
 def test_compact_json_loads():
     assert compact_json._CompactJSON.loads('{"ok": true}') == {"ok": True}

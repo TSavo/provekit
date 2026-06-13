@@ -158,6 +158,40 @@ if not any(
     for locus in payload_audit["loci"]
 ):
     raise SystemExit("FAIL: BadSignature.payload field assignment was not warranted")
+bad_payload_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "BadPayload" in audit.get("contract", {}).get("name", "")
+]
+if len(bad_payload_audits) != 1:
+    raise SystemExit(f"FAIL: expected one BadPayload default-field audit, got {len(bad_payload_audits)}")
+bad_payload_audit = bad_payload_audits[0]
+bad_payload_totals = bad_payload_audit["totals"]
+if bad_payload_audit.get("universe_kind") != "constructor-field-getter":
+    raise SystemExit(f"FAIL: expected constructor-field-getter audit, got {bad_payload_audit.get('universe_kind')}")
+bad_payload_memento = bad_payload_audit["source_memento"]
+if bad_payload_memento.get("source_function_name") != "BadPayload.__init__":
+    raise SystemExit(f"FAIL: BadPayload source oracle should point at constructor: {bad_payload_memento!r}")
+if bad_payload_memento.get("constructor_default_param_names") != ["original_error"]:
+    raise SystemExit(f"FAIL: BadPayload source memento did not record the defaulted field: {bad_payload_memento!r}")
+if "body_text" in bad_payload_memento or "ast_template" in bad_payload_memento:
+    raise SystemExit("FAIL: BadPayload source memento embeds source/template body")
+if bad_payload_totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: BadPayload.original_error source dig has unclassified source: totals={bad_payload_totals}")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Constant"
+    and locus.get("ast_path") == "$.args.defaults[0]"
+    and "default constructor argument emitted" in locus.get("reason", "")
+    for locus in bad_payload_audit["loci"]
+):
+    raise SystemExit("FAIL: BadPayload.original_error default argument was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "AnnAssign"
+    for locus in bad_payload_audit["loci"]
+):
+    raise SystemExit("FAIL: BadPayload.original_error field assignment was not warranted")
 header_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.instance-field-universe"
@@ -301,6 +335,15 @@ print(
     f"support={payload_totals.get('source_support', 0)}",
     f"refused={payload_totals['source_refused']}",
     f"unclassified={payload_totals['unclassified_source']}",
+)
+print(
+    "source audit BadPayload.original_error:",
+    f"loci={bad_payload_totals['source_loci']}",
+    f"warranted={bad_payload_totals['source_warranted']}",
+    f"inactive={bad_payload_totals['source_inactive']}",
+    f"support={bad_payload_totals.get('source_support', 0)}",
+    f"refused={bad_payload_totals['source_refused']}",
+    f"unclassified={bad_payload_totals['unclassified_source']}",
 )
 print(
     "source audit BadHeader.header:",

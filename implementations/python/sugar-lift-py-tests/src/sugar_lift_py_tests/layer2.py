@@ -108,6 +108,7 @@ from .translate_universe import (
     callee_is_nondeterministic,
     collection_literal_canonical,
     constructor_field_universe_for_callee,
+    constructor_param_defaults_for_callee,
     constructor_param_names_for_callee,
     constant_universe_for_callee,
     delegation_universe_for_callee,
@@ -241,6 +242,7 @@ class _CallOrigin:
     # origin copies them so a source walk over ``__init__`` + ``method`` can
     # instantiate constructor-field getter relations.
     constructor_args: Optional[Tuple["Term", ...]] = None
+    constructor_default_params: Tuple[str, ...] = ()
     receiver_constructor: Optional[str] = None
 
 
@@ -334,12 +336,23 @@ def _assertion_origin_attribute_subject(
         if atom.name != "=" or len(atom.args) != 2:
             continue
         for side in atom.args:
-            name = getattr(side, "name", "")
-            if isinstance(side, _Ctor) or not isinstance(name, str):
-                continue
-            if name.startswith(prefix) and len(name) > len(prefix):
-                field_name = name[len(prefix):].split(".", 1)[0]
-                return side, field_name
+            found = _origin_attribute_term(side, prefix)
+            if found is not None:
+                return found
+    return None
+
+
+def _origin_attribute_term(term: Term, prefix: str) -> Optional[Tuple[Term, str]]:
+    name = getattr(term, "name", "")
+    if not isinstance(term, _Ctor) and isinstance(name, str):
+        if name.startswith(prefix) and len(name) > len(prefix):
+            field_name = name[len(prefix):].split(".", 1)[0]
+            return term, field_name
+    if isinstance(term, _Ctor):
+        for arg in term.args:
+            found = _origin_attribute_term(arg, prefix)
+            if found is not None:
+                return found
     return None
 
 
@@ -557,6 +570,7 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "source_cid",
         "template_cid",
         "param_names",
+        "constructor_default_param_names",
     ):
         if field_name not in warrant:
             continue
@@ -564,6 +578,8 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         if field_name == "span" and isinstance(value, dict):
             out[field_name] = dict(value)
         elif field_name == "param_names" and isinstance(value, list):
+            out[field_name] = list(value)
+        elif field_name == "constructor_default_param_names" and isinstance(value, list):
             out[field_name] = list(value)
         else:
             out[field_name] = value
@@ -643,6 +659,15 @@ def _source_loci_for_memento(
         ]
 
     loci: List[dict[str, Any]] = []
+    loci.extend(
+        _source_header_loci_for_memento(
+            fn,
+            source_memento,
+            file,
+            role,
+            universe_kind,
+        )
+    )
     for index, stmt in enumerate(fn.body):
         for node, ast_path in _iter_ast_nodes_with_paths(stmt, f"$.body[{index}]"):
             if not hasattr(node, "lineno"):
@@ -653,6 +678,59 @@ def _source_loci_for_memento(
                 stmt,
                 node,
             )
+            loci.append(
+                _source_line_locus(
+                    file,
+                    getattr(node, "lineno", _source_memento_start_line(source_memento)),
+                    status,
+                    role,
+                    universe_kind,
+                    ast_kind=type(node).__name__,
+                    ast_path=ast_path,
+                    span=_ast_node_span(node),
+                    reason=reason,
+                )
+            )
+    return loci
+
+
+def _source_header_loci_for_memento(
+    fn: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+    source_memento: dict[str, Any],
+    file: str,
+    role: str,
+    universe_kind: str,
+) -> List[dict[str, Any]]:
+    if role != "python.instance-field-universe":
+        return []
+    raw_default_params = source_memento.get("constructor_default_param_names")
+    default_params = {
+        param
+        for param in raw_default_params
+        if isinstance(param, str)
+    } if isinstance(raw_default_params, list) else set()
+    params = [arg.arg for arg in (*fn.args.posonlyargs, *fn.args.args)]
+    if params and params[0] == "self":
+        params = params[1:]
+    defaults = list(fn.args.defaults)
+    if not defaults or len(defaults) > len(params):
+        return []
+    start = len(params) - len(defaults)
+    loci: List[dict[str, Any]] = []
+    for offset, default_node in enumerate(defaults):
+        param_name = params[start + offset]
+        status = "warranted" if param_name in default_params else "support"
+        reason = (
+            "default constructor argument emitted into python.instance-field-universe"
+            if status == "warranted"
+            else "constructor default metadata supports callsite argument mapping"
+        )
+        for node, ast_path in _iter_ast_nodes_with_paths(
+            default_node,
+            f"$.args.defaults[{offset}]",
+        ):
+            if not hasattr(node, "lineno"):
+                continue
             loci.append(
                 _source_line_locus(
                     file,
@@ -3811,18 +3889,24 @@ def _apply_value_scope_binding(
         next_scope = scope.copy()
         origin = _call_origin_from_expr(value)
         constructor_args: Optional[Tuple[Term, ...]] = None
+        constructor_default_params: Tuple[str, ...] = ()
         if (
             isinstance(value, ast.Call)
             and origin is not None
             and _is_constructor_call_name(origin.callee)
             and value.keywords
         ):
-            constructor_args = _constructor_call_arg_terms(value, origin.callee, scope)
-            if constructor_args is None:
+            constructor_mapping = _constructor_call_arg_mapping(
+                value,
+                origin.callee,
+                scope,
+            )
+            if constructor_mapping is None:
                 next_scope.current.pop(name, None)
                 next_scope.origins.pop(name, None)
                 out.append(next_scope)
                 continue
+            constructor_args, constructor_default_params = constructor_mapping
             rhs = ctor(f"call:{origin.callee}", list(constructor_args))
         else:
             try:
@@ -3843,14 +3927,27 @@ def _apply_value_scope_binding(
                 try:
                     assert isinstance(value, ast.Call)
                     if constructor_args is None:
-                        constructor_args = tuple(
-                            _translate_term_scoped(arg, scope) for arg in value.args
+                        constructor_mapping = _constructor_call_arg_mapping(
+                            value,
+                            origin.callee,
+                            scope,
                         )
+                        if constructor_mapping is not None:
+                            constructor_args, constructor_default_params = (
+                                constructor_mapping
+                            )
+                        else:
+                            constructor_args = tuple(
+                                _translate_term_scoped(arg, scope)
+                                for arg in value.args
+                            )
                     origin.constructor_args = constructor_args
+                    origin.constructor_default_params = constructor_default_params
                     origin.receiver_constructor = origin.callee
                     origin.ssa_name = ssa_name
                 except (AssertionError, ValueError):
                     origin.constructor_args = None
+                    origin.constructor_default_params = ()
                     origin.receiver_constructor = origin.callee
             else:
                 # BINDING-FORM EUF SUBSTITUTION: check whether the RHS call has
@@ -3884,19 +3981,25 @@ def _apply_value_scope_binding(
     return out
 
 
-def _constructor_call_arg_terms(
+def _constructor_call_arg_mapping(
     call: ast.Call,
     callee: str,
     scope: _ValueScope,
-) -> Optional[Tuple[Term, ...]]:
+) -> Optional[Tuple[Tuple[Term, ...], Tuple[str, ...]]]:
     params = constructor_param_names_for_callee(callee)
     if params is None:
         if call.keywords:
             return None
         try:
-            return tuple(_translate_term_scoped(arg, scope) for arg in call.args)
+            return (
+                tuple(_translate_term_scoped(arg, scope) for arg in call.args),
+                (),
+            )
         except ValueError:
             return None
+    defaults = constructor_param_defaults_for_callee(callee)
+    if defaults is None:
+        defaults = tuple(None for _ in params)
     if len(call.args) > len(params):
         return None
     terms: List[Optional[Term]] = [None for _ in params]
@@ -3912,13 +4015,31 @@ def _constructor_call_arg_terms(
             terms[index] = _translate_term_scoped(keyword.value, scope)
     except ValueError:
         return None
-    present_indexes = [index for index, term in enumerate(terms) if term is not None]
-    if not present_indexes:
-        return ()
-    last = present_indexes[-1]
-    if any(term is None for term in terms[: last + 1]):
-        return None
-    return tuple(term for term in terms[: last + 1] if term is not None)
+    defaulted: List[str] = []
+    for index, term in enumerate(terms):
+        if term is not None:
+            continue
+        default = defaults[index] if index < len(defaults) else None
+        if default is None:
+            return None
+        terms[index] = _constructor_default_term(default)
+        defaulted.append(params[index])
+    return tuple(term for term in terms if term is not None), tuple(defaulted)
+
+
+def _constructor_default_term(default: Tuple[object, str]) -> Term:
+    value, kind = default
+    if kind == "none":
+        return ctor("None", [])
+    if kind == "bool":
+        return bool_const(bool(value))
+    if kind == "int":
+        return num(int(value))
+    if kind == "str":
+        return str_const(str(value))
+    if kind == "bytes" and isinstance(value, bytes):
+        return ctor("python:bytes", [str_const(value.decode("ascii"))])
+    raise ValueError(f"unsupported constructor default kind: {kind}")
 
 
 def _collect_value_scope_assertion_facts(
@@ -4468,6 +4589,11 @@ def _universe_conjuncts(
                                 inst_u.module,
                                 inst_u.constructor_qualname,
                             ),
+                            constructor_default_params=tuple(
+                                param
+                                for param in origin.constructor_default_params
+                                if param == inst_u.constructor_param_name
+                            ),
                         ),
                     )
                     _append_unique_source_warrant(
@@ -4518,6 +4644,11 @@ def _universe_conjuncts(
                             field_u.module,
                             field_u.constructor_qualname,
                         ),
+                        constructor_default_params=tuple(
+                            param
+                            for param in origin.constructor_default_params
+                            if param == field_u.constructor_param_name
+                        ),
                     ),
                 )
             conjuncts.append(
@@ -4558,6 +4689,7 @@ def _source_warrant_for_instance_field_universe(
     *,
     source_memento: Optional[dict[str, Any]],
     source_function_name: str,
+    constructor_default_params: Tuple[str, ...] = (),
 ) -> dict:
     warrant = dict(source_memento or {})
     warrant["kind"] = "source-memento"
@@ -4566,6 +4698,8 @@ def _source_warrant_for_instance_field_universe(
     warrant["universe_kind"] = "constructor-field-getter"
     warrant["field_name"] = universe.field_name
     warrant["constructor_param_name"] = universe.constructor_param_name
+    if constructor_default_params:
+        warrant["constructor_default_param_names"] = list(constructor_default_params)
     return warrant
 
 
@@ -5116,6 +5250,7 @@ def _call_origin_from_expr_scoped(
         lineno=getattr(node, "lineno", 0),
         col=getattr(node, "col_offset", 0),
         constructor_args=receiver_origin.constructor_args,
+        constructor_default_params=receiver_origin.constructor_default_params,
         receiver_constructor=receiver_origin.callee,
     )
 

@@ -882,6 +882,35 @@ def constructor_param_names_for_callee(callee: str) -> Optional[Tuple[str, ...]]
     return tuple(params[1:])
 
 
+@functools.lru_cache(maxsize=None)
+def constructor_param_defaults_for_callee(
+    callee: str,
+) -> Optional[Tuple[Optional[Tuple[object, str]], ...]]:
+    resolved = _resolve_vendor_function(f"{callee}.__init__", allow_methods=True)
+    if resolved is None:
+        return None
+    _tree, init_fn, _spec_origin, _module_name, fn_name = resolved
+    if not fn_name.endswith(".__init__"):
+        return None
+    params = _positional_param_names(init_fn)
+    if not params or params[0] != "self":
+        return None
+    constructor_params = params[1:]
+    defaults: list[Optional[Tuple[object, str]]] = [None for _ in constructor_params]
+    ast_defaults = list(init_fn.args.defaults)
+    if not ast_defaults:
+        return tuple(defaults)
+    if len(ast_defaults) > len(constructor_params):
+        return None
+    start = len(constructor_params) - len(ast_defaults)
+    for offset, default_node in enumerate(ast_defaults):
+        default = _literal_value_kind(default_node)
+        if default is None:
+            return None
+        defaults[start + offset] = default
+    return tuple(defaults)
+
+
 def _body_without_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
     return [
         stmt

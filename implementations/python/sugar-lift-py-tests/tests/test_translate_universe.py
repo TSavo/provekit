@@ -1954,6 +1954,72 @@ class HeaderError(Exception):
     ), audit
 
 
+def test_instance_field_universe_maps_default_constructor_field(vendor_path):
+    vendor_path(
+        "vendinst_default_attr",
+        '''
+class HeaderError(Exception):
+    def __init__(self, message, payload=None, header=None):
+        super().__init__(message, payload)
+        self.payload = payload
+        self.header = header
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_default_attr
+
+        def test_default_header():
+            err = vendinst_default_attr.HeaderError("bad")
+            assert err.header == None
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_default_attr.HeaderError" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    none_term = ctor("None", [])
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and none_term in getattr(atom, "args", ())
+        and any(
+            getattr(side, "name", "") == "err$0.header"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert field_eqs
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "HeaderError.__init__"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Constant"
+        and locus.get("line") == 3
+        and locus.get("ast_path") == "$.args.defaults[1]"
+        and "default constructor argument emitted" in locus.get("reason", "")
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 
