@@ -45,6 +45,7 @@ from .cpython_ctypes_resolver import resolve_ctypes_calls
 from .translate_universe import (
     bytes_identity_universe_for_callee,
     branch_selected_raise_universe_for_callee,
+    conditional_chain_universe_for_callee,
     constructor_field_universe_for_callee,
     delegation_universe_for_callee,
     exception_bool_return_universe_for_callee,
@@ -448,6 +449,13 @@ def _package_locus_classification(
     transparent_cast_status = _transparent_typing_cast_status(node, ancestors)
     if transparent_cast_status is not None:
         return transparent_cast_status
+    conditional_chain_status = _conditional_chain_source_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if conditional_chain_status is not None:
+        return conditional_chain_status
     super_init_status = _super_init_support_status(node, ancestors)
     if super_init_status is not None:
         return super_init_status
@@ -587,6 +595,27 @@ def _package_call_aliases(tree: ast.Module, module_name: str) -> Dict[str, str]:
                     f"{imported_module}.{alias.name}"
                 )
     return aliases
+
+
+def _conditional_chain_source_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    chain = ancestors + (node,)
+    owner = _nearest_enclosing_function(chain)
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if not _node_is_in_function_body(node, owner):
+        return None
+    callee = _owner_callee(module_name, owner, chain)
+    universe, refusal = conditional_chain_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return (
+        "warranted",
+        "conditional SSA branch emitted into python.conditional-chain-universe",
+    )
 
 
 def _resolved_import_from_module(
