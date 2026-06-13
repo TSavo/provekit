@@ -636,6 +636,14 @@ fn unclassified_reason(block: &syn::Block) -> String {
     if s.has_assign {
         return "mutation / reassignment not modeled yet (bin-1)".to_string();
     }
+    if block
+        .stmts
+        .iter()
+        .any(|st| matches!(st, syn::Stmt::Local(l) if l.init.as_ref().is_some_and(|i| i.diverge.is_some())))
+    {
+        return "let-else short-circuit: refutable bind + diverging else not modeled yet (bin-1)"
+            .to_string();
+    }
     "multi-statement / unmodeled body shape (bin-1)".to_string()
 }
 
