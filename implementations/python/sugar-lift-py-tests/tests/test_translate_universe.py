@@ -802,6 +802,97 @@ def test_lift_source_refuses_self_field_runtime_dispatch_package_accounting(
     ], audit["loci"]
 
 
+def test_lift_source_refuses_runtime_dispatch_guarded_return_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_runtime_dispatch_guarded_return"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        class Verifier:
+            def __init__(self, algorithm):
+                self.algorithm = algorithm
+
+            def derive_key(self, value):
+                return value
+
+            def verify(self, key, value, sig):
+                for secret in [key]:
+                    derived = self.derive_key(secret)
+                    if self.algorithm.verify_signature(derived, value, sig):
+                        return True
+
+                return False
+        """
+    )
+    derived_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "derived = self.derive_key" in line
+    )
+    return_true_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return True" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_runtime_dispatch_guarded_return.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    guarded_return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_guarded_return/encoding.py"
+        )
+        and locus.get("line") == return_true_line
+        and locus.get("ast_kind") in {"Return", "Constant"}
+    ]
+    derived_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_guarded_return/encoding.py"
+        )
+        and locus.get("line") == derived_line
+    ]
+    assert derived_loci
+    assert not [
+        locus for locus in derived_loci if locus["status"] == "refused"
+    ], derived_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        for locus in derived_loci
+    ), derived_loci
+    assert guarded_return_loci
+    assert {locus["status"] for locus in guarded_return_loci} == {"refused"}
+    assert all(
+        "runtime field dispatch" in locus.get("reason", "")
+        for locus in guarded_return_loci
+    )
+
+
 def test_lift_source_refuses_generator_flow_package_accounting(
     tmp_path,
     monkeypatch,

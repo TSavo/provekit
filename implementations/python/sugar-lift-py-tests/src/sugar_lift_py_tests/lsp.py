@@ -1122,9 +1122,6 @@ def _self_field_runtime_dispatch_refusal_status(
     ancestors: tuple[ast.AST, ...],
     tree: ast.Module,
 ) -> Optional[tuple[str, str]]:
-    stmt = _nearest_statement(ancestors + (node,))
-    if stmt is None:
-        return None
     chain = ancestors + (node,)
     class_qualname = _nearest_class_qualname(chain)
     if not class_qualname:
@@ -1142,7 +1139,43 @@ def _self_field_runtime_dispatch_refusal_status(
         }
         fields = _class_receiver_field_names(cls)
         has_bases = bool(cls.bases)
-    for call in (n for n in ast.walk(stmt) if isinstance(n, ast.Call)):
+    stmt = _nearest_statement(chain)
+    if stmt is not None:
+        reason = _runtime_field_dispatch_refusal_reason(
+            stmt,
+            methods,
+            fields,
+            has_bases,
+        )
+        if reason is not None:
+            return "refused", reason
+    for guard in _enclosing_if_statements(chain):
+        reason = _runtime_field_dispatch_refusal_reason(
+            guard.test,
+            methods,
+            fields,
+            has_bases,
+        )
+        if reason is not None:
+            return "refused", reason
+    return None
+
+
+def _enclosing_if_statements(chain: tuple[ast.AST, ...]) -> list[ast.If]:
+    return [
+        item
+        for item in reversed(chain)
+        if isinstance(item, ast.If)
+    ]
+
+
+def _runtime_field_dispatch_refusal_reason(
+    node: ast.AST,
+    methods: set[str],
+    fields: set[str],
+    has_bases: bool,
+) -> Optional[str]:
+    for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
         path = _call_func_attribute_path(call.func)
         if len(path) < 2 or path[0] not in {"self", "cls"}:
             continue
@@ -1150,15 +1183,11 @@ def _self_field_runtime_dispatch_refusal_status(
             continue
         if len(path) == 2 and path[1] not in fields and has_bases:
             continue
-        if node is stmt or any(candidate is node for candidate in ast.walk(stmt)):
-            return (
-                "refused",
-                (
-                    "runtime field dispatch refused: "
-                    f"{'.'.join(path)} is supplied by receiver state, "
-                    "so no stable vendor method body can warrant this relation"
-                ),
-            )
+        return (
+            "runtime field dispatch refused: "
+            f"{'.'.join(path)} is supplied by receiver state, "
+            "so no stable vendor method body can warrant this relation"
+        )
     return None
 
 
