@@ -5635,3 +5635,70 @@ fn emit_value_contract_char_class_composes_through_compiler() {
         );
     }
 }
+
+// ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
+
+#[test]
+fn emit_value_contract_emits_side_effect_free_value_term() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // pure arithmetic / read / constructor bodies -> out = <term>.
+    for src in [
+        "fn f(x: i32) -> i32 { x * 2 + 1 }",
+        "fn f(a: u32, b: u32) -> u32 { (a ^ b) & 0xff }",
+        "fn f(a: u32) -> u32 { a >> 2 }",
+        "fn f(p: (i32, i32)) -> i32 { p.0 + p.1 }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("side-effect-free value term must emit: {src}"));
+        let inv = format!("{:?}", decl.inv.expect("inv present"));
+        assert!(inv.contains("out"), "out is the return value: {src} -> {inv}");
+    }
+}
+
+#[test]
+fn emit_value_contract_leaves_opaque_call_value_unclassified() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // An opaque call (method/path) in value position is NOT provably
+    // side-effect-free -> None -> the caller leaves it UNCLASSIFIED (not a pure
+    // warrant, and not refused -- we have not proven it effectful).
+    for src in [
+        "fn f(v: Vec<u8>) -> usize { v.len() }",
+        "fn f() -> i32 { g() }",
+        "fn f(x: i32) -> i32 { helper(x) + 1 }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        assert!(
+            emit_value_contract("f", &f.block).is_none(),
+            "opaque-call value must stay unclassified: {src}"
+        );
+    }
+}
+
+#[test]
+fn emit_value_contract_value_term_composes_through_compiler() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str("fn f(x: i32) -> i32 { x * 2 + 1 }").unwrap();
+    let decl = emit_value_contract("f", &f.block).unwrap();
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("emitted value-term inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_value_term_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3).arg(&path).output().expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "value-term relation must be well-sorted:\n{stdout}\n--- script ---\n{script}"
+        );
+        assert!(
+            stdout.contains("sat"),
+            "value-term consistency relation must be satisfiable:\n{stdout}\n--- script ---\n{script}"
+        );
+    }
+}

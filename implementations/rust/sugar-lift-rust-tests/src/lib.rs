@@ -4253,14 +4253,37 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
         [Stmt::Expr(expr, None)] => expr,
         _ => return None,
     };
-    let membership = emit_bool_membership_formula(tail)?;
-    // out: Bool <-> membership, as (out=true => m) ∧ (m => out=true).
-    let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
-    let inv = and_(vec![
-        implies(out_true.clone(), membership.clone()),
-        implies(membership, out_true),
-    ]);
-    Some(ContractDecl {
+    // (a) Slice 1 -- bool-predicate shape: out <-> membership, as
+    //     (out=true => m) ∧ (m => out=true) (the compiler has no `iff`).
+    if let Some(membership) = emit_bool_membership_formula(tail) {
+        let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
+        let inv = and_(vec![
+            implies(out_true.clone(), membership.clone()),
+            implies(membership, out_true),
+        ]);
+        return Some(source_value_contract(name, inv));
+    }
+    // (b) Slice 2 -- value-term shape: out = <side-effect-free term>. Mirrors the
+    //     Python source kit's `return_value = body`, reusing the kit's existing
+    //     expr->Term translation (`translate_term_in_scope`, the same atoms the
+    //     test-assertion path compiles to Z3 -- no new semantic path). A term that
+    //     contains an OPAQUE call (`call:`/`method:`/`await`) or a macro is NOT
+    //     provably side-effect-free, so it is left UNCLASSIFIED, never warranted
+    //     as pure (mirrors Python: value-position reads/operators/constructors are
+    //     pure; the effects it NAMES are loops/raises/mutation, handled elsewhere).
+    let plan = temporal_plan_for_stmts(&block.stmts);
+    let scope = TemporalScope::new("rust-source", plan);
+    if let Ok(term) = translate_term_in_scope(tail, &scope) {
+        if term_is_side_effect_free(&term) {
+            return Some(source_value_contract(name, eq(make_var("out"), term)));
+        }
+    }
+    None
+}
+
+/// A closed consistency source contract `inv` over `out` (the return value).
+fn source_value_contract(name: &str, inv: Rc<Formula>) -> ContractDecl {
+    ContractDecl {
         name: format!("rust-source::{name}"),
         pre: None,
         post: None,
@@ -4269,7 +4292,33 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
         evidence: None,
         panic_loci: Vec::new(),
         concept_hint: None,
-    })
+    }
+}
+
+/// True iff a value term is provably side-effect-free: built only from reads
+/// (var/const/deref/ref/field/index), total operators (arithmetic/bitwise/cast),
+/// and value constructors (tuple/array/struct/range). An OPAQUE call (`call:` to
+/// anything but the `None` ctor, or `method:`), an `await`, or a `macro:` var is
+/// NOT provably pure -- the term is then rejected (the body stays unclassified,
+/// never warranted as pure). Mirrors Python's value-position effect policy.
+fn term_is_side_effect_free(term: &Term) -> bool {
+    match term {
+        Term::Var { name } => !name.starts_with("macro:"),
+        Term::Const { .. } => true,
+        Term::Ctor { name, args } => {
+            let opaque = name.starts_with("method:")
+                || name == "await"
+                || (name.starts_with("call:") && name != "call:None");
+            !opaque && args.iter().all(|a| term_is_side_effect_free(a))
+        }
+        Term::Lambda { body, .. } => term_is_side_effect_free(body),
+        Term::Let { bindings, body } => {
+            bindings
+                .iter()
+                .all(|b| term_is_side_effect_free(&b.bound_term))
+                && term_is_side_effect_free(body)
+        }
+    }
 }
 
 /// A boolean body as a membership formula: `matches!` predicates joined by
