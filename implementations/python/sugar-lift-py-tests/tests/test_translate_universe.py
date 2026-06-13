@@ -4097,6 +4097,58 @@ def test_raise_locus_contradicts_any_value_claim(vendor_path):
     assert contradictions, [d.name for d in out.decls]
 
 
+def test_pytest_raises_carries_raise_locus_source_warrant(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        raise_locus_universe_for_callee,
+    )
+
+    raise_locus_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendraise_source",
+        """
+        class Abstract:
+            def boom(self, value):
+                raise NotImplementedError()
+        """,
+    )
+    out = _lift(
+        """
+        import pytest
+        import vendraise_source
+
+        def test_boom():
+            with pytest.raises(NotImplementedError):
+                vendraise_source.Abstract.boom(None, 1)
+        """
+    )
+
+    assertion = next(
+        (
+            d for d in out.decls
+            if d.name == "test_boom"
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.raise-locus-universe"
+        and warrant.get("source_function_name") == "Abstract.boom"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.raise-locus-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Raise"
+        for locus in audit["loci"]
+    ), audit
+
+
 # ---------------------------------------------------------------------------
 # chain-expr (census return-binop, 17k bodies): the returned arithmetic
 # expression as STRUCTURE — eq(subject, ctor("+", ...)) over the same

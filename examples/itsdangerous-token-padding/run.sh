@@ -97,6 +97,43 @@ if not any(
     for m in result.get("sourceMementos") or []
 ):
     raise SystemExit("FAIL: lift report missing class-method constant source memento")
+abstract_signature_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.raise-locus-universe"
+    and "test_signing_algorithm_get_signature_is_abstract"
+    in audit.get("contract", {}).get("name", "")
+]
+if len(abstract_signature_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one SigningAlgorithm.get_signature raise-locus "
+        f"audit, got {len(abstract_signature_audits)}"
+    )
+abstract_signature_audit = abstract_signature_audits[0]
+abstract_signature_totals = abstract_signature_audit["totals"]
+if abstract_signature_audit.get("universe_kind") != "raise-locus":
+    raise SystemExit(
+        f"FAIL: expected raise-locus audit, got "
+        f"{abstract_signature_audit.get('universe_kind')}"
+    )
+if (
+    abstract_signature_audit["source_memento"].get("source_function_name")
+    != "SigningAlgorithm.get_signature"
+):
+    raise SystemExit(
+        "FAIL: abstract signature source oracle should point at method body: "
+        f"{abstract_signature_audit['source_memento']!r}"
+    )
+if abstract_signature_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: SigningAlgorithm.get_signature raise-locus source dig has "
+        f"unclassified source: totals={abstract_signature_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Raise"
+    for locus in abstract_signature_audit["loci"]
+):
+    raise SystemExit("FAIL: SigningAlgorithm.get_signature raise statement was not warranted")
 message_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.instance-field-universe"
@@ -335,6 +372,15 @@ print(
     f"support={signature_totals.get('source_support', 0)}",
     f"refused={signature_totals['source_refused']}",
     f"unclassified={signature_totals['unclassified_source']}",
+)
+print(
+    "source audit SigningAlgorithm.get_signature:",
+    f"loci={abstract_signature_totals['source_loci']}",
+    f"warranted={abstract_signature_totals['source_warranted']}",
+    f"inactive={abstract_signature_totals['source_inactive']}",
+    f"support={abstract_signature_totals.get('source_support', 0)}",
+    f"refused={abstract_signature_totals['source_refused']}",
+    f"unclassified={abstract_signature_totals['unclassified_source']}",
 )
 message_totals = {
     key: sum(audit["totals"][key] for audit in message_by_function.values())

@@ -5,6 +5,7 @@ import itsdangerous.encoding as enc
 import itsdangerous.exc as exc
 import itsdangerous._json as compact_json
 import itsdangerous.signer as signer
+import pytest
 
 
 def test_token_padding():
@@ -18,6 +19,11 @@ def test_int_to_bytes_canonical_form():
 def test_none_algorithm_signature():
     alg = signer.NoneAlgorithm()
     assert alg.get_signature(b"k", b"v") == b""
+
+
+def test_signing_algorithm_get_signature_is_abstract():
+    with pytest.raises(NotImplementedError):
+        signer.SigningAlgorithm.get_signature(None, b"k", b"v")
 
 
 def test_bad_data_message():

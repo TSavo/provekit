@@ -1297,16 +1297,18 @@ class RaiseLocusUniverse:
     qualname: str
     source_path: str
     lineno: int
+    source_memento: Optional[dict[str, Any]] = None
 
 
 @functools.lru_cache(maxsize=None)
 def raise_locus_universe_for_callee(
     callee: str,
 ) -> Tuple[Optional[RaiseLocusUniverse], Optional[TranslateWalkRefusal]]:
-    resolved = _resolve_vendor_function(callee)
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
     if resolved is None:
         return None, None
     tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
     body = [
         stmt
         for stmt in fn.body
@@ -1332,6 +1334,7 @@ def raise_locus_universe_for_callee(
             qualname=f"{module_name}.{fn_name}",
             source_path=spec_origin,
             lineno=fn.lineno,
+            source_memento=source_memento,
         ),
         None,
     )

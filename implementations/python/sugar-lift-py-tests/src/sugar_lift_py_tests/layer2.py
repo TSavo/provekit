@@ -635,6 +635,7 @@ def _source_loci_for_memento(
         "python.constant-universe",
         "python.delegation-universe",
         "python.instance-field-universe",
+        "python.raise-locus-universe",
     }:
         return [
             _source_line_locus(file, line, "warranted", role, universe_kind)
@@ -896,6 +897,12 @@ def _classify_universe_source_statement(
         if _is_instance_field_return(stmt):
             return "warranted", "emitted into python.instance-field-universe"
         return "unclassified", "instance-field source not emitted"
+    if role == "python.raise-locus-universe":
+        if _is_docstring_stmt(stmt):
+            return "support", "docstring metadata supports source accounting only"
+        if isinstance(stmt, (ast.Raise, ast.If)):
+            return "warranted", "emitted into python.raise-locus-universe"
+        return "support", "prelude support for raise-locus accounting"
     return "unclassified", "source warrant role has no source-audit classifier"
 
 
@@ -4312,6 +4319,15 @@ def _universe_conjuncts(
     # it makes no contact with this conjunct.)
     raise_u, _raise_refusal = raise_locus_universe_for_callee(callee)
     if raise_u is not None:
+        if source_warrants is not None and raise_u.source_memento is not None:
+            _append_unique_source_warrant(
+                source_warrants,
+                _source_warrant_for_universe(
+                    raise_u,
+                    role="python.raise-locus-universe",
+                    universe_kind="raise-locus",
+                ),
+            )
         conjuncts.append(eq(num(0), num(1)))
     if isinstance(subject_term, _Ctor):
         guards, guard_refusal = guard_universe_for_callee(callee)
@@ -5630,6 +5646,12 @@ def _unparse(node: ast.AST) -> str:
 # GATE: fires when the body contains AT LEAST ONE ``ast.With`` node.
 
 
+@dataclass(frozen=True)
+class _RaisesBlockLift:
+    formula: Formula
+    source_warrants: Tuple[dict, ...] = ()
+
+
 def _is_pytest_raises_func(func: ast.expr) -> bool:
     """Return True iff ``func`` is ``pytest.raises`` or bare ``raises``."""
     # bare: ``raises(ExcType)``
@@ -5662,11 +5684,11 @@ def _lift_raises_block(
     stmt: ast.With,
     source_path: str,
     test_name: str,
-) -> "Union[Formula, str]":
+) -> "Union[_RaisesBlockLift, str]":
     """Try to lift a single ``with pytest.raises(ExcType): <call>`` block.
 
     Returns:
-      - A ``Formula`` (the raised-exc eq atom) on success.
+      - A ``_RaisesBlockLift`` carrying the raised-exc eq atom on success.
       - A ``str`` loud-refuse reason on any unsupported shape.
 
     Callers must treat a str return as a LOUD REFUSE (claim, warn, no contract).
@@ -5751,7 +5773,20 @@ def _lift_raises_block(
     # term.  Arity suffix "_a1" encodes arity=1 (one arg: the call term).
     raised_term = ctor("raised_exc_a1", [call_term])
     exc_const = str_const(exc_name)
-    return eq(raised_term, exc_const)
+    source_warrants: List[dict] = []
+    origin = _call_origin_from_expr(call_expr)
+    if origin is not None:
+        raise_u, _raise_refusal = raise_locus_universe_for_callee(origin.callee)
+        if raise_u is not None and raise_u.source_memento is not None:
+            _append_unique_source_warrant(
+                source_warrants,
+                _source_warrant_for_universe(
+                    raise_u,
+                    role="python.raise-locus-universe",
+                    universe_kind="raise-locus",
+                ),
+            )
+    return _RaisesBlockLift(eq(raised_term, exc_const), tuple(source_warrants))
 
 
 def _classify_raises_body(
@@ -5812,6 +5847,7 @@ def _classify_raises_body(
 
     # Try to lift each With block.
     atoms: List[Formula] = []
+    source_warrants: List[dict] = []
     for stmt in body:
         if isinstance(stmt, ast.Pass):
             continue
@@ -5828,7 +5864,9 @@ def _classify_raises_body(
                 )
             )
             return True
-        atoms.append(result)
+        atoms.append(result.formula)
+        for warrant in result.source_warrants:
+            _append_unique_source_warrant(source_warrants, warrant)
 
     if not atoms:
         # Body was all Pass — vacuous; loud refuse.
@@ -5845,7 +5883,9 @@ def _classify_raises_body(
 
     # All blocks lifted successfully.
     inv = atoms[0] if len(atoms) == 1 else and_(atoms)
-    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.decls.append(
+        ContractDecl(name=test_name, inv=inv, source_warrants=source_warrants)
+    )
     out.lifted += 1
     out.raises_lifted += 1
     return True
