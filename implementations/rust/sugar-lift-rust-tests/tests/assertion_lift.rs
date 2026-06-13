@@ -5639,6 +5639,71 @@ fn emit_value_contract_char_class_composes_through_compiler() {
     }
 }
 
+// Slice 17: STRING-literal `matches!` membership. core/std are full of pure
+// `fn is_x(name: &str) -> bool { matches!(name, "a" | "b" | ..) }` predicates --
+// `is_io_method`, `is_known_pure_method`, `is_panic_leaf` are this exact shape.
+// They are side-effect-free (a pattern match over a &str against string
+// literals), so they WARRANT as `out <-> (name == "a" \/ name == "b" \/ ..)` in
+// the compiler's String-theory regime. Before this slice the membership emitter
+// only handled char/byte/int code points, so a string scrutinee fell out as a
+// hollow `opaque macro matches!` unclassified locus.
+#[test]
+fn emit_value_contract_string_matches_membership_warrants() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str(
+        "fn is_io(name: &str) -> bool { matches!(name, \"write\" | \"write_all\" | \"read\") }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("is_io", &f.block).expect("string-membership body emits");
+    assert_eq!(decl.out_binding, "out");
+    let inv = format!("{:?}", decl.inv.expect("inv present"));
+    for lit in ["write", "write_all", "read"] {
+        assert!(inv.contains(lit), "membership literal {lit} present: {inv}");
+    }
+    assert!(inv.contains("out"), "return value `out` is related: {inv}");
+    assert!(inv.contains("implies"), "biconditional via implies: {inv}");
+}
+
+// Step 7 for string membership: the emitted relation must COMPOSE through the
+// real compiler -- well-sorted under z3's String theory AND satisfiable (the
+// scrutinee can be one of the literals -> out=true, or anything else -> out=false:
+// real teeth, not a contradiction).
+#[test]
+fn emit_value_contract_string_matches_composes_through_compiler() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str(
+        "fn is_io(name: &str) -> bool { matches!(name, \"write\" | \"write_all\" | \"read\") }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("is_io", &f.block).unwrap();
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("emitted string-membership inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_string_matches_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3)
+            .arg(&path)
+            .output()
+            .expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "emitted string-membership relation must be well-sorted for z3:\n{stdout}\n--- script ---\n{script}"
+        );
+        assert!(
+            stdout.contains("sat"),
+            "emitted string-membership relation must be satisfiable:\n{stdout}\n--- script ---\n{script}"
+        );
+    }
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

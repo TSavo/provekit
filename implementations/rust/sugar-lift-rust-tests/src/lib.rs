@@ -4911,7 +4911,7 @@ fn pattern_membership_formula(scrutinee: &Rc<Term>, pat: &Pat) -> Option<Rc<Form
             }
             Some(or_(cases))
         }
-        Pat::Lit(p) => Some(eq(scrutinee.clone(), num(lit_codepoint(&p.lit)?))),
+        Pat::Lit(p) => Some(eq(scrutinee.clone(), lit_membership_term(&p.lit)?)),
         Pat::Range(r) => {
             let inclusive = matches!(r.limits, syn::RangeLimits::Closed(_));
             let mut conj = Vec::new();
@@ -4931,6 +4931,19 @@ fn pattern_membership_formula(scrutinee: &Rc<Term>, pat: &Pat) -> Option<Rc<Form
             Some(and_(conj))
         }
         _ => None,
+    }
+}
+
+/// A `matches!` literal pattern bound as a membership *term* to equate the
+/// scrutinee against: a string literal becomes a `String`-sorted constant
+/// (string-theory regime; the scrutinee is the string value itself), every
+/// scalar (char/byte/int) becomes its `Int` code point. A `matches!` arm is
+/// homogeneous in practice (`matches!(x, "a" | 1)` is a type error), so a
+/// String/Int mix never reaches the same scrutinee.
+fn lit_membership_term(lit: &Lit) -> Option<Rc<Term>> {
+    match lit {
+        Lit::Str(s) => Some(str_const(s.value())),
+        _ => Some(num(lit_codepoint(lit)?)),
     }
 }
 
