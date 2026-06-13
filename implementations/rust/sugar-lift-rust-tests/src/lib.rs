@@ -4280,6 +4280,11 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
         if let Some(inv) = emit_if_value(tail, &scope) {
             return Some(source_value_contract(name, inv));
         }
+        // (g) Slice 10 -- value-position scalar `match` (literal/range/_ arms) ->
+        //     ite via implies/and, same encoding as the if chain.
+        if let Some(inv) = emit_match_value(tail, &scope) {
+            return Some(source_value_contract(name, inv));
+        }
         // (f) Slice 9 -- bool-predicate body: any bool expression the assertion
         //     lifter understands (comparisons `a <= b`, `&&`/`||`/`!`, matches!,
         //     string predicates) -> the biconditional out <-> F, reusing
@@ -4376,6 +4381,78 @@ fn is_bool_shaped_expr(expr: &Expr) -> bool {
         Expr::Paren(p) => is_bool_shaped_expr(&p.expr),
         Expr::Group(g) => is_bool_shaped_expr(&g.expr),
         _ => false,
+    }
+}
+
+/// A value-position `match` on a scalar (int/char) scrutinee with literal / range
+/// / or / `_` arms and NO arm guards, EXHAUSTIVE via a final `_`. Encoded as the
+/// ite via the existing implies/and atoms: `and_i implies(guard_i, out = term_i)`,
+/// guard_i = the i-th arm's pattern-membership over the scrutinee conjoined with
+/// the negations of earlier arms; the `_` arm is the negation of all earlier.
+/// None if the scrutinee isn't an EUF term, any arm has a guard, any pattern is
+/// not a scalar membership (e.g. enum variant), any body isn't EUF, or there is
+/// no final `_`.
+fn emit_match_value(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
+    let m = match expr {
+        Expr::Match(m) => m,
+        Expr::Paren(p) => return emit_match_value(&p.expr, scope),
+        Expr::Group(g) => return emit_match_value(&g.expr, scope),
+        _ => return None,
+    };
+    let scrutinee = translate_term_in_scope(&m.expr, scope).ok()?;
+    if !term_is_euf_value(&scrutinee) {
+        return None;
+    }
+    let mut negated: Vec<Rc<Formula>> = Vec::new();
+    let mut clauses: Vec<(Rc<Formula>, Rc<Term>)> = Vec::new();
+    let mut saw_catchall = false;
+    for arm in &m.arms {
+        if arm.guard.is_some() {
+            return None;
+        }
+        let body = arm_body_euf_term(&arm.body, scope)?;
+        if matches!(&arm.pat, Pat::Wild(_)) {
+            let guard = match negated.len() {
+                0 => atomic_("true", vec![]),
+                1 => negated[0].clone(),
+                _ => and_(negated.clone()),
+            };
+            clauses.push((guard, body));
+            saw_catchall = true;
+            break;
+        }
+        let membership = pattern_membership_formula(&scrutinee, &arm.pat)?;
+        let mut gp = negated.clone();
+        gp.push(membership.clone());
+        let guard = if gp.len() == 1 {
+            gp.remove(0)
+        } else {
+            and_(gp)
+        };
+        clauses.push((guard, body));
+        negated.push(not_(membership));
+    }
+    if !saw_catchall || clauses.is_empty() {
+        return None;
+    }
+    let out = make_var("out");
+    Some(and_(
+        clauses
+            .into_iter()
+            .map(|(g, t)| implies(g, eq(out.clone(), t)))
+            .collect(),
+    ))
+}
+
+/// A match arm's body as an EUF term (a block via block_euf_term, else a direct
+/// EUF tail expression).
+fn arm_body_euf_term(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Term>> {
+    match expr {
+        Expr::Block(b) => block_euf_term(&b.block, scope),
+        other => {
+            let t = translate_term_in_scope(other, scope).ok()?;
+            term_is_euf_value(&t).then_some(t)
+        }
     }
 }
 
