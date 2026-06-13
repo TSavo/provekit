@@ -1570,6 +1570,7 @@ dependencies = [
  "quote",
  "serde_json",
  "sugar-canonicalizer",
+ "sugar-ir-compiler-smt-lib",
  "sugar-ir-symbolic",
  "syn",
  "toml",

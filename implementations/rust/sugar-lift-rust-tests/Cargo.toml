@@ -9,6 +9,10 @@ description = "Sugar Rust test-assertion consistency lifter: lift #[test] scalar
 [lib]
 doctest = false
 
+[dev-dependencies]
+# Step-7 composition check: feed emitted ProofIR through the real prove compiler.
+sugar-ir-compiler-smt-lib = { path = "../sugar-ir-compiler-smt-lib" }
+
 [dependencies]
 sugar-ir-symbolic = { path = "../sugar-ir-symbolic" }
 sugar-canonicalizer = { path = "../sugar-canonicalizer" }

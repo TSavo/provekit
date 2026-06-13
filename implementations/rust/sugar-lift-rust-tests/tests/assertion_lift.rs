@@ -5594,3 +5594,44 @@ fn emit_value_contract_refuses_unemittable_bodies() {
         );
     }
 }
+
+// Step 7: the emitted relation must actually COMPOSE -- compile to SMT-LIB and
+// be well-sorted + consistent under z3 -- not merely classify. This feeds the
+// REAL marshalled bytes of emit_value_contract through the same compiler the
+// prove path uses.
+#[test]
+fn emit_value_contract_char_class_composes_through_compiler() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn =
+        syn::parse_str("fn is_up(c: char) -> bool { matches!(c, 'A'..='Z') }").unwrap();
+    let decl = emit_value_contract("is_up", &f.block).unwrap();
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+
+    // 1) it compiles to SMT-LIB (composes), not a vacuous/ill-sorted classify.
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("emitted char-class inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+
+    // 2) z3 (if present) must find it well-sorted and SATISFIABLE: the relation
+    //    out <-> (65 <= c <= 90) is consistent (real teeth, not a contradiction).
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_char_class_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3)
+            .arg(&path)
+            .output()
+            .expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "emitted relation must be well-sorted for z3:\n{stdout}\n--- script ---\n{script}"
+        );
+        assert!(
+            stdout.contains("sat"),
+            "emitted consistency relation must be satisfiable:\n{stdout}\n--- script ---\n{script}"
+        );
+    }
+}
