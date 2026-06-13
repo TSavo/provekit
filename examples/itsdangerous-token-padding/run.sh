@@ -1083,10 +1083,10 @@ package_audits = [
 if len(package_audits) != 1:
     raise SystemExit(f"FAIL: expected one itsdangerous package accounting audit, got {len(package_audits)}")
 package_totals = package_audits[0]["totals"]
-if package_totals.get("unclassified_source", 0) <= 0:
-    raise SystemExit(f"FAIL: itsdangerous package audit did not expose unclassified source: {package_totals}")
-if ledger.get("unclassified_source") != package_totals.get("unclassified_source"):
-    raise SystemExit(f"FAIL: package unclassified source not reflected in ledger: ledger={ledger} package={package_totals}")
+if package_totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: itsdangerous package audit still has unclassified source: {package_totals}")
+if ledger.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: source ledger still has unclassified source: ledger={ledger}")
 serializer_overload_loci = [
     locus for locus in package_audits[0]["loci"]
     if str(locus.get("file", "")).endswith("/serializer.py")

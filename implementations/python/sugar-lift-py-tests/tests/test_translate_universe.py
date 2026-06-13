@@ -893,6 +893,181 @@ def test_lift_source_refuses_runtime_dispatch_guarded_return_package_accounting(
     )
 
 
+def test_lift_source_refuses_return_from_runtime_dispatch_binding_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_runtime_dispatch_binding_return"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        class Signer:
+            def __init__(self, algorithm):
+                self.algorithm = algorithm
+
+            def get_signature(self, value):
+                sig = self.algorithm.get_signature(value)
+                return b64e(sig)
+        """
+    )
+    sig_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "sig = self.algorithm.get_signature" in line
+    )
+    return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return b64e(sig)" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_runtime_dispatch_binding_return.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_binding_return/encoding.py"
+        )
+        and locus.get("line") == return_line
+    ]
+    sig_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_binding_return/encoding.py"
+        )
+        and locus.get("line") == sig_line
+    ]
+    assert sig_loci
+    assert return_loci
+    assert not [
+        locus for locus in return_loci if locus["status"] == "unclassified"
+    ], return_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Assign"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in sig_loci
+    ), sig_loci
+    assert all(
+        locus["status"] == "refused"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in return_loci
+    ), return_loci
+
+
+def test_lift_source_refuses_terminal_return_after_try_flow_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_terminal_return_after_try"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        def parse(value):
+            return value
+
+        class Timed:
+            def to_dt(self, value):
+                return value
+
+            def unsign(self, flag=False):
+                try:
+                    result = self.load()
+                except Exception:
+                    result = b""
+
+                value, stamp = result.rsplit(b".", 1)
+                stamp_int = None
+
+                try:
+                    stamp_int = parse(stamp)
+                except Exception:
+                    pass
+
+                if flag:
+                    return value, self.to_dt(stamp_int)
+
+                return value
+        """
+    )
+    if_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "if flag" in line
+    )
+    tuple_return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return value, self.to_dt" in line
+    )
+    fallback_return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if line_no > tuple_return_line and line.strip() == "return value"
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_terminal_return_after_try.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    tail_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_terminal_return_after_try/encoding.py")
+        and locus.get("line")
+        in {if_line, tuple_return_line, fallback_return_line}
+    ]
+    assert tail_loci
+    assert not [
+        locus for locus in tail_loci if locus["status"] == "unclassified"
+    ], tail_loci
+    assert all(
+        locus["status"] == "refused"
+        and "terminal return" in locus.get("reason", "")
+        for locus in tail_loci
+    ), tail_loci
+
+
 def test_lift_source_refuses_receiver_iteration_header_package_accounting(
     tmp_path, monkeypatch
 ):
