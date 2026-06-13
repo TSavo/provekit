@@ -339,6 +339,148 @@ impl SuperpositionView {
     }
 }
 
+/// Where a lifted statement lives in the world-space. This is the slice-2
+/// vocabulary: the lift "tags each emitted statement with the world(s) it
+/// survives in, so the accumulator can fork" — no flat decl list.
+///
+/// At lift time NOTHING has been walked against a pin, so a fresh warrant is a
+/// `Candidate`: an unchecked demand that provisionally claims the base (all
+/// worlds) until a check keeps it (-> `Determined`) or forks it (-> `ForkMember`).
+/// A Candidate is NOT a verdict — `Accumulator::strength` withholds a grade
+/// until the engine has walked (no fake green).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorldMembership {
+    /// Lifted, not yet walked against any vendor pin. Claims the base; no verdict.
+    Candidate,
+    /// Walked and SAT in every world: part of the determined spine.
+    Determined,
+    /// Walked into a fork: alternative `member` of mutual-exclusion group `group`.
+    ForkMember { group: u32, member: u32 },
+}
+
+impl WorldMembership {
+    pub fn to_json(self) -> serde_json::Value {
+        match self {
+            WorldMembership::Candidate => serde_json::json!({"membership": "candidate"}),
+            WorldMembership::Determined => serde_json::json!({"membership": "determined"}),
+            WorldMembership::ForkMember { group, member } => {
+                serde_json::json!({"membership": "fork", "group": group, "member": member})
+            }
+        }
+    }
+
+    pub fn from_json(v: &serde_json::Value) -> Result<Self, String> {
+        match v.get("membership").and_then(|m| m.as_str()) {
+            Some("candidate") => Ok(WorldMembership::Candidate),
+            Some("determined") => Ok(WorldMembership::Determined),
+            Some("fork") => {
+                let group = v
+                    .get("group")
+                    .and_then(|g| g.as_u64())
+                    .ok_or("fork membership missing group")? as u32;
+                let member = v
+                    .get("member")
+                    .and_then(|m| m.as_u64())
+                    .ok_or("fork membership missing member")? as u32;
+                Ok(WorldMembership::ForkMember { group, member })
+            }
+            other => Err(format!("unknown membership: {other:?}")),
+        }
+    }
+}
+
+/// A lifted statement tagged with its world-membership: the wire unit that
+/// replaces a bare decl in the flat list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaggedStatement {
+    /// CID of the lifted fact (in practice a `contract_cid`).
+    pub cid: String,
+    pub membership: WorldMembership,
+}
+
+/// Accumulates tagged statements into the factored `Universe`. This is "the
+/// accumulator" of slice 2: statements arrive tagged so it can fork them into
+/// the chain. The incremental check-sat engine (slice 4) drives the tags;
+/// here we only fold tagged statements into a chain and honestly withhold a
+/// strength grade until `mark_walked()`.
+#[derive(Debug, Default, Clone)]
+pub struct Accumulator {
+    walked: bool,
+    statements: Vec<TaggedStatement>,
+}
+
+impl Accumulator {
+    pub fn new() -> Self {
+        Accumulator::default()
+    }
+
+    pub fn push(&mut self, cid: impl Into<String>, membership: WorldMembership) {
+        self.statements.push(TaggedStatement {
+            cid: cid.into(),
+            membership,
+        });
+    }
+
+    /// The engine calls this once it has actually walked the candidates against
+    /// the vendor's pins. Until then `strength()` returns None — an unwalked
+    /// accumulator has reached no verdict.
+    pub fn mark_walked(&mut self) {
+        self.walked = true;
+    }
+
+    pub fn is_walked(&self) -> bool {
+        self.walked
+    }
+
+    pub fn statements(&self) -> &[TaggedStatement] {
+        &self.statements
+    }
+
+    /// Fold the tagged statements into the factored chain. Candidates and
+    /// Determined statements become spine facts; ForkMembers group by `group`
+    /// (ordered by `member`) into forks. Order is out of the membrane, so the
+    /// spine is sorted for determinism; the superposition CID is unaffected.
+    pub fn universe(&self) -> Arc<Universe> {
+        use std::collections::BTreeMap;
+        let mut spine: Vec<String> = self
+            .statements
+            .iter()
+            .filter_map(|s| match s.membership {
+                WorldMembership::Candidate | WorldMembership::Determined => Some(s.cid.clone()),
+                WorldMembership::ForkMember { .. } => None,
+            })
+            .collect();
+        spine.sort();
+        let mut groups: BTreeMap<u32, Vec<(u32, String)>> = BTreeMap::new();
+        for s in &self.statements {
+            if let WorldMembership::ForkMember { group, member } = s.membership {
+                groups.entry(group).or_default().push((member, s.cid.clone()));
+            }
+        }
+        let mut u = Universe::empty();
+        for cid in spine {
+            u = u.assert(cid);
+        }
+        for (_group, mut members) in groups {
+            members.sort_by_key(|(m, _)| *m);
+            let alts: Vec<String> = members.into_iter().map(|(_, c)| c).collect();
+            u = u.fork(alts);
+        }
+        u
+    }
+
+    /// The strength grade — ONLY after walking. Pre-walk we have made no verdict
+    /// (every statement is an unchecked Candidate); returning a grade here would
+    /// be a fake green. None means "not yet walked".
+    pub fn strength(&self) -> Option<Strength> {
+        if self.walked {
+            Some(self.universe().strength())
+        } else {
+            None
+        }
+    }
+}
+
 fn string_array(v: Option<&serde_json::Value>, field: &str) -> Result<Vec<String>, String> {
     let arr = v
         .and_then(|x| x.as_array())
@@ -546,6 +688,65 @@ mod tests {
         // the bytes and recomputes the same superposition CID.
         let recovered = SuperpositionView::from_member_bytes(&input.members[&sup_cid]).unwrap();
         assert_eq!(recovered.cid(), sup_cid);
+    }
+
+    #[test]
+    fn world_membership_json_round_trips() {
+        for m in [
+            WorldMembership::Candidate,
+            WorldMembership::Determined,
+            WorldMembership::ForkMember { group: 2, member: 1 },
+        ] {
+            let j = m.to_json();
+            assert_eq!(WorldMembership::from_json(&j).unwrap(), m);
+        }
+    }
+
+    #[test]
+    fn accumulator_withholds_strength_until_walked() {
+        // No fake green: an unwalked accumulator has reached NO verdict, even
+        // though its candidates would structurally form a single world.
+        let mut acc = Accumulator::new();
+        acc.push(cid("a"), WorldMembership::Candidate);
+        acc.push(cid("b"), WorldMembership::Candidate);
+        assert!(!acc.is_walked());
+        assert_eq!(acc.strength(), None, "pre-walk must withhold a grade");
+        acc.mark_walked();
+        assert_eq!(acc.strength(), Some(Strength::Strong));
+    }
+
+    #[test]
+    fn accumulator_folds_tags_into_factored_chain() {
+        // Two determined facts + a fork group of two members + a fork group of
+        // three => 6 worlds, two fork groups, two determined facts.
+        let mut acc = Accumulator::new();
+        acc.push(cid("a"), WorldMembership::Determined);
+        acc.push(cid("b"), WorldMembership::Determined);
+        acc.push(cid("x"), WorldMembership::ForkMember { group: 0, member: 0 });
+        acc.push(cid("y"), WorldMembership::ForkMember { group: 0, member: 1 });
+        acc.push(cid("p"), WorldMembership::ForkMember { group: 1, member: 0 });
+        acc.push(cid("q"), WorldMembership::ForkMember { group: 1, member: 1 });
+        acc.push(cid("r"), WorldMembership::ForkMember { group: 1, member: 2 });
+        let u = acc.universe();
+        assert_eq!(u.determined_facts().len(), 2);
+        assert_eq!(u.fork_groups().len(), 2);
+        assert_eq!(u.world_count(), 6);
+        acc.mark_walked();
+        assert_eq!(acc.strength(), Some(Strength::Weak));
+    }
+
+    #[test]
+    fn accumulator_orders_fork_members_by_index() {
+        // Members pushed out of order must land in member-index order in the fork.
+        let mut acc = Accumulator::new();
+        acc.push(cid("second"), WorldMembership::ForkMember { group: 0, member: 1 });
+        acc.push(cid("first"), WorldMembership::ForkMember { group: 0, member: 0 });
+        let u = acc.universe();
+        let group: Vec<String> = u.fork_groups()[0].to_vec();
+        assert_eq!(
+            group,
+            vec!["blake3-512:first".to_string(), "blake3-512:second".to_string()]
+        );
     }
 
     #[test]
