@@ -410,6 +410,9 @@ def _package_locus_classification(
     static_binding_status = _static_binding_status(node, ancestors)
     if static_binding_status is not None:
         return static_binding_status
+    local_binding_status = _local_name_binding_status(node, ancestors)
+    if local_binding_status is not None:
+        return local_binding_status
     if _is_docstring_expr_node(node, ancestors):
         return "support", "docstring metadata supports source accounting only"
     decl = _nearest_declaration_ancestor(ancestors)
@@ -596,6 +599,57 @@ def _is_known_static_assignment_call(node: ast.Call) -> bool:
         "typing.cast",
         "staticmethod",
     }
+
+
+def _local_name_binding_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    stmt = _local_name_binding_statement_for_locus(node, ancestors)
+    if stmt is None:
+        return None
+    assign_stmt, target, value = stmt
+    if node is target:
+        return "warranted", "local SSA binding target admitted as compiler fact"
+    if isinstance(value, ast.Name) and (node is value or node is assign_stmt):
+        return "warranted", "local SSA alias assignment emitted as compiler equality"
+    return None
+
+
+def _local_name_binding_statement_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, ast.Name, ast.expr | None]]:
+    chain = ancestors + (node,)
+    stmt_index: Optional[int] = None
+    stmt: Optional[ast.Assign | ast.AnnAssign] = None
+    for index in range(len(chain) - 1, -1, -1):
+        item = chain[index]
+        if isinstance(item, (ast.Assign, ast.AnnAssign)):
+            stmt_index = index
+            stmt = item
+            break
+    if stmt is None or stmt_index is None:
+        return None
+    owner = _nearest_enclosing_function(chain[:stmt_index])
+    if owner is None:
+        return None
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+            return None
+        return stmt, stmt.targets[0], stmt.value
+    if not isinstance(stmt.target, ast.Name):
+        return None
+    return stmt, stmt.target, stmt.value
+
+
+def _nearest_enclosing_function(
+    chain: tuple[ast.AST, ...],
+) -> Optional[ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda]:
+    for item in reversed(chain):
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            return item
+    return None
 
 
 def _static_call_name(node: ast.AST) -> str:

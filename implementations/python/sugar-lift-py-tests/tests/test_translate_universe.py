@@ -607,12 +607,86 @@ def test_lift_source_classifies_static_assignments_as_warranted_compiler_facts(
         for locus in audit["loci"]
     ), audit
     assert any(
-        locus["status"] == "unclassified"
+        locus["status"] == "warranted"
         and locus["file"].endswith("vendpkg_static_warranted/encoding.py")
         and locus["line"] == 19
         and locus.get("ast_kind") == "Assign"
+        and "SSA alias" in locus.get("reason", "")
         for locus in audit["loci"]
     ), audit
+
+
+def test_lift_source_warrants_local_name_assignment_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_local_name_warranted"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            def skipped(value):
+                alias = value
+                computed = helper(value)
+                return alias
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_local_name_warranted.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    local_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_local_name_warranted/encoding.py")
+    ]
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 6
+        and locus.get("ast_kind") == "Assign"
+        and "SSA alias" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] == 6
+        and locus.get("ast_kind") == "Name"
+        and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 7
+        and locus.get("ast_kind") == "Name"
+        and locus.get("ast_path", "").endswith(".targets[0]")
+        for locus in local_loci
+    ), local_loci
+    assert any(
+        locus["status"] == "unclassified"
+        and locus["line"] == 7
+        and locus.get("ast_kind") == "Call"
+        for locus in local_loci
+    ), local_loci
 
 
 def test_lift_source_classifies_type_checking_blocks_as_support_or_inactive(
