@@ -104,6 +104,7 @@ from .ir import (
 )
 from .translate_universe import (
     ISINSTANCE_CONCRETE_BUILTINS,
+    branch_selected_raise_universe_for_callee,
     branch_selected_return_universe_for_callee,
     branch_literal_universe_for_callee,
     bytes_identity_universe_for_callee,
@@ -599,6 +600,13 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "branch_field_value_kind",
         "branch_return_param_name",
         "branch_return_adapter_callee",
+        "branch_param_name",
+        "branch_param_index",
+        "branch_excluded_value",
+        "branch_excluded_value_kind",
+        "branch_if_line",
+        "branch_raise_line",
+        "branch_raise_exception_type",
         "exception_handler_raise_type",
         "exception_handler_try_line",
         "exception_bool_return_exception_type",
@@ -909,6 +917,8 @@ def _classify_universe_source_node(
         return "support", "queued delegate dig for recursive universe walk"
     if role == "python.branch-selected-universe":
         return _classify_branch_selected_source_node(stmt, node, source_memento)
+    if role == "python.branch-selected-raise-universe":
+        return _classify_branch_selected_raise_source_node(stmt, node, source_memento)
     if role == "python.exception-handler-raise-universe":
         return _classify_exception_handler_raise_source_node(stmt, node, source_memento)
     if role == "python.exception-bool-return-universe":
@@ -974,6 +984,8 @@ def _classify_universe_source_statement(
         return "support", "non-constraint source support for delegation-universe accounting"
     if role == "python.branch-selected-universe":
         return _classify_branch_selected_source_node(stmt, stmt, source_memento)
+    if role == "python.branch-selected-raise-universe":
+        return _classify_branch_selected_raise_source_node(stmt, stmt, source_memento)
     if role == "python.instance-field-universe":
         if _is_docstring_stmt(stmt):
             return "support", "docstring metadata supports source accounting only"
@@ -1281,6 +1293,79 @@ def _branch_selected_if_matches(
     right_field = _self_field_name_for_accounting(test.comparators[0])
     left_lit = _literal_for_accounting(test.left)
     return right_field == field_name and left_lit == field_value
+
+
+def _classify_branch_selected_raise_source_node(
+    stmt: ast.stmt,
+    node: ast.AST,
+    source_memento: dict[str, Any],
+) -> Tuple[str, str]:
+    if _is_docstring_stmt(stmt):
+        return "support", "docstring metadata supports source accounting only"
+    param_name = _string_field(source_memento, "branch_param_name")
+    excluded_value = source_memento.get("branch_excluded_value")
+    raise_type = _string_field(source_memento, "branch_raise_exception_type")
+    if isinstance(stmt, ast.If) and _branch_selected_raise_if_matches(
+        stmt,
+        param_name,
+        excluded_value,
+    ):
+        if node is stmt or _ast_contains_node(stmt.test, node):
+            return (
+                "warranted",
+                "branch guard emitted into python.branch-selected-raise-universe",
+            )
+        return "inactive", "return branch inactive for selected raise relation"
+    if isinstance(stmt, ast.Raise):
+        if (
+            _raise_node_exception_name(stmt) == raise_type
+            and _ast_contains_node(stmt, node)
+        ):
+            return (
+                "warranted",
+                "raised exception emitted into python.branch-selected-raise-universe",
+            )
+        return (
+            "support",
+            "unrelated raise path supports branch-selected raise accounting",
+        )
+    return (
+        "support",
+        "non-constraint source support for branch-selected raise accounting",
+    )
+
+
+def _branch_selected_raise_if_matches(
+    node: ast.If,
+    param_name: str,
+    excluded_value: Any,
+) -> bool:
+    test = node.test
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.Eq)
+        or len(test.comparators) != 1
+    ):
+        return False
+    if (
+        isinstance(test.left, ast.Name)
+        and test.left.id == param_name
+        and _literal_for_accounting(test.comparators[0]) == excluded_value
+    ):
+        return True
+    return (
+        isinstance(test.comparators[0], ast.Name)
+        and test.comparators[0].id == param_name
+        and _literal_for_accounting(test.left) == excluded_value
+    )
+
+
+def _ast_contains_node(root: ast.AST, node: ast.AST) -> bool:
+    return any(
+        candidate is node
+        for candidate, _ast_path in _iter_ast_nodes_with_paths(root, "$")
+    )
 
 
 def _self_field_name_for_accounting(node: ast.AST) -> Optional[str]:
@@ -5063,6 +5148,36 @@ def _universe_conjuncts(
             )
         conjuncts.append(eq(num(0), num(1)))
 
+    branch_raise_u, branch_raise_refusal = branch_selected_raise_universe_for_callee(
+        callee
+    )
+    if branch_raise_refusal is not None:
+        out.warnings.append(
+            LiftWarning(
+                source_path=source_path,
+                item_name=f"{test_name}::branch-selected-raise-universe",
+                reason=f"{branch_raise_refusal.callee}: {branch_raise_refusal.reason}",
+            )
+        )
+    elif branch_raise_u is not None and _branch_selected_raise_applies(
+        branch_raise_u,
+        subject_term,
+        origin,
+    ):
+        if (
+            source_warrants is not None
+            and branch_raise_u.source_memento is not None
+        ):
+            _append_unique_source_warrant(
+                source_warrants,
+                _source_warrant_for_universe(
+                    branch_raise_u,
+                    role="python.branch-selected-raise-universe",
+                    universe_kind="branch-selected-raise",
+                ),
+            )
+        conjuncts.append(eq(num(0), num(1)))
+
     # RETURN-ISINSTANCE: the body returns `isinstance(expr, T)`, so the
     # function result is equivalent to the existing ProofIR isinstance
     # predicate instantiated over this callsite's argument terms. Unlike
@@ -5944,6 +6059,20 @@ def _universe_literal_term(value_kind: str, value: Any) -> Optional[Term]:
     if value_kind == "collection" and isinstance(value, str):
         return str_const(value)
     return None
+
+
+def _branch_selected_raise_applies(
+    universe,
+    subject_term: Term,
+    origin: Optional[_CallOrigin],
+) -> bool:
+    call_args = _universe_call_args(subject_term, origin)
+    if universe.param_index >= len(call_args):
+        return False
+    value = _term_python_value(call_args[universe.param_index])
+    if value is _PRED_MISSING:
+        return False
+    return value != universe.excluded_value
 
 
 def _delegation_universe_call_args(
@@ -7641,6 +7770,24 @@ def _lift_raises_block(
                         handler_u,
                         role="python.exception-handler-raise-universe",
                         universe_kind="exception-handler-raise",
+                    ),
+                )
+        branch_raise_u, _branch_raise_refusal = (
+            branch_selected_raise_universe_for_callee(origin.callee)
+        )
+        if branch_raise_u is not None and _branch_selected_raise_applies(
+            branch_raise_u,
+            call_term,
+            origin,
+        ):
+            formulas.append(eq(raised_term, str_const(branch_raise_u.exception_name)))
+            if branch_raise_u.source_memento is not None:
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_universe(
+                        branch_raise_u,
+                        role="python.branch-selected-raise-universe",
+                        universe_kind="branch-selected-raise",
                     ),
                 )
     return _RaisesBlockLift(

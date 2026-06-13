@@ -3,6 +3,7 @@
 # vendor's sworn behavior; the walked no-suffix universe agrees.
 import itsdangerous.encoding as enc
 import itsdangerous.exc as exc
+import itsdangerous as itsdangerous_pkg
 import itsdangerous._json as compact_json
 import itsdangerous.serializer as serializer_mod
 import itsdangerous.signer as signer
@@ -23,6 +24,11 @@ def test_int_to_bytes_canonical_form():
 def test_base64_decode_bad_data():
     with pytest.raises(BadData):
         enc.base64_decode(b"bad~")
+
+
+def test_package_getattr_missing_attr():
+    with pytest.raises(AttributeError):
+        itsdangerous_pkg.__getattr__("raaaa")
 
 
 def test_none_algorithm_signature():

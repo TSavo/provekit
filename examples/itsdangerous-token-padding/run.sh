@@ -128,6 +128,57 @@ if not any(
     for locus in base64_decode_audit["loci"]
 ):
     raise SystemExit("FAIL: base64_decode successful return path was not accounted as support")
+package_getattr_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.branch-selected-raise-universe"
+    and audit.get("source_memento", {}).get("source_function_name")
+    == "__getattr__"
+]
+if len(package_getattr_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one __getattr__ branch-selected raise source audit, "
+        f"got {len(package_getattr_audits)}"
+    )
+package_getattr_audit = package_getattr_audits[0]
+package_getattr_totals = package_getattr_audit["totals"]
+package_getattr_memento = package_getattr_audit["source_memento"]
+if package_getattr_audit.get("universe_kind") != "branch-selected-raise":
+    raise SystemExit(
+        "FAIL: expected branch-selected-raise audit, got "
+        f"{package_getattr_audit.get('universe_kind')}"
+    )
+if package_getattr_memento.get("branch_param_name") != "name":
+    raise SystemExit(
+        "FAIL: __getattr__ source memento did not record guarded param: "
+        f"{package_getattr_memento!r}"
+    )
+if package_getattr_memento.get("branch_excluded_value") != "__version__":
+    raise SystemExit(
+        "FAIL: __getattr__ source memento did not record return branch value: "
+        f"{package_getattr_memento!r}"
+    )
+if package_getattr_memento.get("branch_raise_exception_type") != "AttributeError":
+    raise SystemExit(
+        "FAIL: __getattr__ source memento did not record AttributeError: "
+        f"{package_getattr_memento!r}"
+    )
+if "body_text" in package_getattr_memento or "ast_template" in package_getattr_memento:
+    raise SystemExit("FAIL: __getattr__ source memento embeds source/template body")
+if package_getattr_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: __getattr__ source dig has unclassified source: "
+        f"totals={package_getattr_totals}"
+    )
+package_getattr_warranted_lines = {
+    locus.get("line")
+    for locus in package_getattr_audit["loci"]
+    if locus.get("status") == "warranted"
+}
+if not {25, 38}.issubset(package_getattr_warranted_lines):
+    raise SystemExit(
+        "FAIL: __getattr__ guard/raise lines were not warranted: "
+        f"got={sorted(package_getattr_warranted_lines)}"
+    )
 signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.constant-universe"
@@ -1119,6 +1170,15 @@ print(
     f"unclassified={base64_decode_totals['unclassified_source']}",
 )
 print(
+    "source audit __getattr__:",
+    f"loci={package_getattr_totals['source_loci']}",
+    f"warranted={package_getattr_totals['source_warranted']}",
+    f"inactive={package_getattr_totals['source_inactive']}",
+    f"support={package_getattr_totals.get('source_support', 0)}",
+    f"refused={package_getattr_totals['source_refused']}",
+    f"unclassified={package_getattr_totals['unclassified_source']}",
+)
+print(
     "source audit NoneAlgorithm.get_signature:",
     f"loci={signature_totals['source_loci']}",
     f"warranted={signature_totals['source_warranted']}",
@@ -1388,6 +1448,30 @@ if not decode_ok:
     print(
         f"FAIL({twin}): expected base64_decode {expect}, "
         f"statuses={sorted(decode_statuses)}"
+    )
+    sys.exit(1)
+package_getattr = [
+    (r.get("property", ""), r.get("status", ""))
+    for r in doc.get("rows", [])
+    if "test_package_getattr_missing_attr" in str(r.get("property", ""))
+]
+if not package_getattr:
+    print(f"FAIL({twin}): no __getattr__ raises rows in receipt"); sys.exit(1)
+package_getattr_statuses = {s for _, s in package_getattr}
+print(f"__getattr__ rows({twin}):")
+for n, s in package_getattr:
+    print(f"  {s:14s} {n[:110]}")
+if expect == "discharged":
+    package_getattr_ok = (
+        package_getattr_statuses & ok_words
+        and not (package_getattr_statuses & bad_words)
+    )
+else:
+    package_getattr_ok = bool(package_getattr_statuses & bad_words)
+if not package_getattr_ok:
+    print(
+        f"FAIL({twin}): expected __getattr__ {expect}, "
+        f"statuses={sorted(package_getattr_statuses)}"
     )
     sys.exit(1)
 derive = [

@@ -3846,6 +3846,95 @@ class Signer:
     ), assertion.inv
 
 
+def test_branch_selected_raise_universe_walks_param_guard(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        branch_selected_raise_universe_for_callee,
+    )
+
+    branch_selected_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbranch_raise_source",
+        """
+        def __getattr__(name):
+            if name == "__version__":
+                return "2.2.0"
+
+            raise AttributeError(name)
+        """,
+    )
+    u, r = branch_selected_raise_universe_for_callee(
+        "vendbranch_raise_source.__getattr__"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "AttributeError"
+    assert u.param_name == "name"
+    assert u.param_index == 0
+    assert u.excluded_value == "__version__"
+    assert u.excluded_value_kind == "str"
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "__getattr__"
+    assert u.source_memento["branch_raise_exception_type"] == "AttributeError"
+
+
+def test_pytest_raises_conjoins_branch_selected_raise_universe(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        branch_selected_raise_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _ConstStr, _Ctor
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    branch_selected_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbranch_raise_l2",
+        """
+        def __getattr__(name):
+            if name == "__version__":
+                return "2.2.0"
+
+            raise AttributeError(name)
+        """,
+    )
+    out = _lift(
+        """
+        import pytest
+        import vendbranch_raise_l2
+
+        def test_missing_attr():
+            with pytest.raises(ValueError):
+                vendbranch_raise_l2.__getattr__("missing")
+        """
+    )
+    decl = next(d for d in out.decls if d.name == "test_missing_attr")
+    raised = []
+    for atom in _iter_conjuncts(decl.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        lhs, rhs = getattr(atom, "args", ())
+        if isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1":
+            raised.append((lhs, rhs))
+    assert [rhs.value for _, rhs in raised if isinstance(rhs, _ConstStr)] == [
+        "ValueError",
+        "AttributeError",
+    ]
+    assert raised[0][0] == raised[1][0]
+    assert any(
+        warrant.get("role") == "python.branch-selected-raise-universe"
+        and warrant.get("source_function_name") == "__getattr__"
+        and warrant.get("branch_raise_exception_type") == "AttributeError"
+        for warrant in decl.source_warrants
+    ), decl.source_warrants
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.branch-selected-raise-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 

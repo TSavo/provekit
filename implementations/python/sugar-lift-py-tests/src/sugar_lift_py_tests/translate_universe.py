@@ -1970,6 +1970,33 @@ class BranchSelectedReturnUniverse:
 
 
 @dataclass(frozen=True)
+class BranchSelectedRaiseUniverse:
+    """A parameter guard selects a value branch; the complement raises.
+
+    Shape:
+      def __getattr__(name):
+          if name == "__version__":
+              return version()
+
+          raise AttributeError(name)
+
+    At concrete callsites whose argument is not the guarded literal, the
+    source warrants the raised-exception relation for the trailing raise.
+    """
+
+    param_name: str
+    param_index: int
+    excluded_value: object
+    excluded_value_kind: str
+    exception_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
 class _ReceiverMethodDelegate:
     delegate: str
     args: tuple
@@ -3079,6 +3106,93 @@ def _branch_selected_return_from_if(
             return None
         adapter_callee = spec[1]
     return field_name, field_value, field_value_kind, return_param_index, adapter_callee
+
+
+@functools.lru_cache(maxsize=None)
+def branch_selected_raise_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[BranchSelectedRaiseUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    if not params:
+        return None, None
+    body = _body_without_docstring(fn.body)
+    if len(body) != 2 or not isinstance(body[0], ast.If):
+        return None, None
+    branch_if = body[0]
+    if branch_if.orelse:
+        return None, None
+    guard = _param_literal_eq(branch_if.test, params)
+    if guard is None:
+        return None, None
+    if not _is_terminal_block(branch_if.body):
+        return None, None
+    if not any(
+        isinstance(n, ast.Return)
+        for stmt in branch_if.body
+        for n in ast.walk(stmt)
+    ):
+        return None, None
+    if not isinstance(body[1], ast.Raise):
+        return None, None
+    exception_name = _raised_exception_name(body[1])
+    if exception_name is None:
+        return None, None
+    param_name, param_index, excluded_value, excluded_value_kind = guard
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["branch_param_name"] = param_name
+        source_memento["branch_param_index"] = param_index
+        source_memento["branch_excluded_value"] = excluded_value
+        source_memento["branch_excluded_value_kind"] = excluded_value_kind
+        source_memento["branch_if_line"] = branch_if.lineno
+        source_memento["branch_raise_line"] = body[1].lineno
+        source_memento["branch_raise_exception_type"] = exception_name
+    return (
+        BranchSelectedRaiseUniverse(
+            param_name=param_name,
+            param_index=param_index,
+            excluded_value=excluded_value,
+            excluded_value_kind=excluded_value_kind,
+            exception_name=exception_name,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _param_literal_eq(
+    node: ast.AST,
+    params: list[str],
+) -> Optional[Tuple[str, int, object, str]]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Eq)
+        or len(node.comparators) != 1
+    ):
+        return None
+    if isinstance(node.left, ast.Name) and node.left.id in params:
+        literal = _literal_value_kind(node.comparators[0])
+        if literal is not None:
+            value, value_kind = literal
+            return node.left.id, params.index(node.left.id), value, value_kind
+    if isinstance(node.comparators[0], ast.Name) and node.comparators[0].id in params:
+        literal = _literal_value_kind(node.left)
+        if literal is not None:
+            value, value_kind = literal
+            name = node.comparators[0].id
+            return name, params.index(name), value, value_kind
+    return None
 
 
 def _non_none_adapter_prelude(
