@@ -53,6 +53,7 @@ from .translate_universe import (
     instance_field_universe_for_callee,
     list_adapter_universe_for_callee,
     raise_locus_universe_for_callee,
+    translate_universe_for_callee,
 )
 
 
@@ -301,37 +302,6 @@ def _python_package_root_for_file(file: Any) -> Optional[Path]:
     return root
 
 
-def _covered_source_lines(source_audits: List[Any]) -> Dict[Path, Set[int]]:
-    covered: Dict[Path, Set[int]] = {}
-    for audit in source_audits:
-        if not isinstance(audit, dict):
-            continue
-        if audit.get("role") == "python.package-source":
-            continue
-        for locus in audit.get("loci") or []:
-            if not isinstance(locus, dict):
-                continue
-            path = _path_for_source_file(locus.get("file"))
-            if path is None:
-                continue
-            line_range = locus.get("line_range")
-            if (
-                isinstance(line_range, list)
-                and len(line_range) == 2
-                and all(isinstance(v, int) for v in line_range)
-            ):
-                start, end = line_range
-            else:
-                line = locus.get("line")
-                if not isinstance(line, int):
-                    continue
-                start = end = line
-            if end < start:
-                end = start
-            covered.setdefault(path, set()).update(range(start, end + 1))
-    return covered
-
-
 def _package_roots_from_source_audits(source_audits: List[Any]) -> Dict[Path, str]:
     roots: Dict[Path, str] = {}
     for audit in source_audits:
@@ -350,9 +320,64 @@ def _package_roots_from_source_audits(source_audits: List[Any]) -> Dict[Path, st
     return roots
 
 
-def _package_unclassified_loci(
+_SOURCE_STATUS_RANK = {
+    "unclassified": 0,
+    "support": 1,
+    "inactive": 2,
+    "refuted": 3,
+    "refused": 4,
+    "warranted": 5,
+}
+
+
+def _source_status_rank(status: Any) -> int:
+    return _SOURCE_STATUS_RANK.get(str(status or ""), 0)
+
+
+def _emitted_source_locus_index(
+    source_audits: List[Any],
+) -> Dict[tuple[Path, int, str], Dict[str, Any]]:
+    index: Dict[tuple[Path, int, str], Dict[str, Any]] = {}
+    for audit in source_audits:
+        if not isinstance(audit, dict) or audit.get("role") == "python.package-source":
+            continue
+        for locus in audit.get("loci") or []:
+            if not isinstance(locus, dict):
+                continue
+            path = _path_for_source_file(locus.get("file"))
+            line = locus.get("line")
+            ast_kind = locus.get("ast_kind")
+            if path is None or not isinstance(line, int):
+                continue
+            if _source_status_rank(locus.get("status")) <= 0:
+                continue
+            key = (path, line, ast_kind if isinstance(ast_kind, str) else "")
+            current = index.get(key)
+            if current is None or _source_status_rank(
+                locus.get("status")
+            ) > _source_status_rank(current.get("status")):
+                indexed = dict(locus)
+                indexed["source_audit_role"] = audit.get("role")
+                indexed["source_audit_universe_kind"] = audit.get("universe_kind")
+                index[key] = indexed
+    return index
+
+
+def _emitted_source_locus_for_package_node(
+    emitted_loci: Dict[tuple[Path, int, str], Dict[str, Any]],
+    path: Path,
+    line: int,
+    node: ast.AST,
+) -> Optional[Dict[str, Any]]:
+    resolved = path.resolve()
+    return emitted_loci.get((resolved, line, type(node).__name__)) or emitted_loci.get(
+        (resolved, line, "")
+    )
+
+
+def _package_accounting_loci(
     root: Path,
-    covered_lines: Dict[Path, Set[int]],
+    emitted_loci: Dict[tuple[Path, int, str], Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     loci: List[Dict[str, Any]] = []
     for path in sorted(root.rglob("*.py")):
@@ -377,10 +402,9 @@ def _package_unclassified_loci(
 
         module_name = _package_module_name(root, path)
         call_aliases = _package_call_aliases(tree, module_name)
-        already_classified = covered_lines.get(path.resolve(), set())
         for node, ast_path, ancestors in _iter_ast_nodes_with_paths(tree, "$.module"):
             line = getattr(node, "lineno", None)
-            if not isinstance(line, int) or line in already_classified:
+            if not isinstance(line, int):
                 continue
             span = _ast_node_span(node)
             status, reason = _package_locus_classification(
@@ -391,19 +415,34 @@ def _package_unclassified_loci(
                 module_name,
                 tree,
             )
-            loci.append(
-                _source_line_locus(
-                    file,
-                    line,
-                    status,
-                    "python.package-source",
-                    "package-accounting",
-                    ast_kind=type(node).__name__,
-                    ast_path=ast_path,
-                    span=span,
-                    reason=reason,
-                )
+            replayed = _emitted_source_locus_for_package_node(
+                emitted_loci,
+                path,
+                line,
+                node,
             )
+            if replayed is not None and _source_status_rank(
+                replayed.get("status")
+            ) > _source_status_rank(status):
+                status = str(replayed.get("status") or status)
+                reason = str(replayed.get("reason") or reason)
+            locus = _source_line_locus(
+                file,
+                line,
+                status,
+                "python.package-source",
+                "package-accounting",
+                ast_kind=type(node).__name__,
+                ast_path=ast_path,
+                span=span,
+                reason=reason,
+            )
+            if replayed is not None:
+                locus["source_audit_role"] = replayed.get("source_audit_role")
+                locus["source_audit_universe_kind"] = replayed.get(
+                    "source_audit_universe_kind"
+                )
+            loci.append(locus)
     return loci
 
 
@@ -538,6 +577,20 @@ def _package_locus_classification(
     )
     if tuple_unpack_call_status is not None:
         return tuple_unpack_call_status
+    translate_body_status = _translate_body_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if translate_body_status is not None:
+        return translate_body_status
+    bytes_identity_body_status = _bytes_identity_body_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if bytes_identity_body_status is not None:
+        return bytes_identity_body_status
     list_adapter_body_status = _list_adapter_body_status(
         node,
         ancestors,
@@ -2221,6 +2274,72 @@ def _instance_field_body_status(
     )
 
 
+def _translate_body_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if not _node_is_in_function_body(node, owner):
+        return None
+    stmt = _owner_body_statement(ancestors + (node,), owner)
+    if stmt is None:
+        return None
+    universe, refusal = translate_universe_for_callee(
+        _owner_callee(module_name, owner, ancestors + (node,))
+    )
+    if refusal is not None or universe is None:
+        return None
+    source_memento = getattr(universe, "source_memento", None)
+    if source_memento is None:
+        return None
+    status, reason = _classify_universe_source_node(
+        "python.translate-universe",
+        str(source_memento.get("universe_kind") or "translate"),
+        stmt,
+        node,
+        source_memento,
+    )
+    if status == "unclassified":
+        return None
+    return status, reason
+
+
+def _bytes_identity_body_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if not _node_is_in_function_body(node, owner):
+        return None
+    stmt = _owner_body_statement(ancestors + (node,), owner)
+    if stmt is None:
+        return None
+    universe, refusal = bytes_identity_universe_for_callee(
+        _owner_callee(module_name, owner, ancestors + (node,))
+    )
+    if refusal is not None or universe is None:
+        return None
+    source_memento = getattr(universe, "source_memento", None)
+    if source_memento is None:
+        return None
+    status, reason = _classify_universe_source_node(
+        "python.bytes-identity-universe",
+        "bytes-identity",
+        stmt,
+        node,
+        source_memento,
+    )
+    if status == "unclassified":
+        return None
+    return status, reason
+
+
 def _delegation_body_status(
     node: ast.AST,
     ancestors: tuple[ast.AST, ...],
@@ -2413,13 +2532,13 @@ def _is_docstring_expr_node(
 
 
 def _package_source_audits(source_audits: List[Any]) -> List[Dict[str, Any]]:
-    covered_lines = _covered_source_lines(source_audits)
+    emitted_loci = _emitted_source_locus_index(source_audits)
     audits: List[Dict[str, Any]] = []
     for root, package in sorted(
         _package_roots_from_source_audits(source_audits).items(),
         key=lambda item: str(item[0]),
     ):
-        loci = _package_unclassified_loci(root, covered_lines)
+        loci = _package_accounting_loci(root, emitted_loci)
         if not loci:
             continue
         audits.append(

@@ -15,7 +15,7 @@ for p in (str(PY_TESTS_SRC), str(PKG_SRC)):
         sys.path.insert(0, p)
 
 from sugar_lift_py_tests.layer2 import lift_file_layer2
-from sugar_lift_py_tests.lsp import _lift_source
+from sugar_lift_py_tests.lsp import _lift_source, _with_package_source_accounting
 from sugar_lift_py_tests.translate_universe import translate_universe_for_callee
 
 VENDOR_TRANSLATE = '''
@@ -460,6 +460,194 @@ def test_lift_source_classifies_imports_as_package_support(tmp_path, monkeypatch
     assert {locus["status"] for locus in import_loci} == {"support"}
     assert audit["totals"]["source_support"] >= len(import_loci)
     assert lifted["sourceLedger"]["source_support"] >= len(import_loci)
+
+
+def test_lift_source_warrants_translate_return_in_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_translate_accounting"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import base64
+
+            def want_bytes(s):
+                return s
+
+            def b64e(s):
+                s = want_bytes(s)
+                return base64.urlsafe_b64encode(s).rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_translate_accounting.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"YWJj"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_translate_accounting/encoding.py")
+        and locus.get("line") == 9
+        and locus.get("ast_kind") in {"Return", "Call", "Attribute", "Name", "Constant"}
+    ]
+    assert return_loci
+    assert not [
+        locus for locus in return_loci if locus["status"] == "unclassified"
+    ], return_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        and "no-suffix-chars" in locus.get("reason", "")
+        for locus in return_loci
+    ), return_loci
+
+
+def test_lift_source_reuses_emitted_audit_statuses_in_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_replayed_accounting"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "serializer.py").write_text(
+        textwrap.dedent(
+            """
+            class Serializer:
+                def dumps(self, obj):
+                    return "x"
+
+            def is_text_serializer(serializer):
+                return isinstance(serializer.dumps({}), str)
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_replayed_accounting.serializer as ser
+
+        def test_text_serializer():
+            serializer = ser.Serializer()
+            assert ser.is_text_serializer(serializer) == True
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_replayed_accounting/serializer.py")
+        and locus.get("line") == 7
+        and locus.get("ast_kind") in {"Return", "Call", "Attribute", "Name", "Dict"}
+    ]
+    assert return_loci
+    assert not [
+        locus for locus in return_loci if locus["status"] == "unclassified"
+    ], return_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "return-isinstance" in locus.get("reason", "")
+        for locus in return_loci
+    ), return_loci
+
+
+def test_package_accounting_reuses_line_level_source_warrants(tmp_path):
+    pkg = tmp_path / "vendpkg_line_replay"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source_file = pkg / "mod.py"
+    source_file.write_text("def f(x):\n    return x\n", encoding="utf-8")
+
+    lifted = {
+        "sourceAudits": [
+            {
+                "kind": "source-audit",
+                "language": "python",
+                "contract": {"name": "vendpkg_line_replay.mod.f::assertion"},
+                "role": "python.legacy-line-universe",
+                "universe_kind": "legacy-line",
+                "source_memento": {
+                    "kind": "source-memento",
+                    "file": str(source_file),
+                    "source_function_name": "f",
+                },
+                "loci": [
+                    {
+                        "kind": "source-line",
+                        "file": str(source_file),
+                        "line": 2,
+                        "status": "warranted",
+                        "role": "python.legacy-line-universe",
+                        "universe_kind": "legacy-line",
+                        "reason": "legacy line-level source warrant",
+                    }
+                ],
+                "totals": {
+                    "source_loci": 1,
+                    "source_warranted": 1,
+                    "source_support": 0,
+                    "source_refused": 0,
+                    "source_inactive": 0,
+                    "source_refuted": 0,
+                    "unclassified_source": 0,
+                },
+            }
+        ],
+        "sourceLedger": {
+            "source_loci": 1,
+            "source_warranted": 1,
+            "source_support": 0,
+            "source_refused": 0,
+            "source_inactive": 0,
+            "source_refuted": 0,
+            "unclassified_source": 0,
+        },
+    }
+
+    out = _with_package_source_accounting(lifted)
+    audit = next(
+        audit
+        for audit in out["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_line_replay/mod.py")
+        and locus.get("line") == 2
+    ]
+    assert {locus.get("ast_kind") for locus in return_loci} == {"Return", "Name"}
+    assert {locus["status"] for locus in return_loci} == {"warranted"}
+    assert {
+        locus.get("source_audit_role") for locus in return_loci
+    } == {"python.legacy-line-universe"}
 
 
 def test_lift_source_warrants_constructor_field_assignments_in_package_accounting(
