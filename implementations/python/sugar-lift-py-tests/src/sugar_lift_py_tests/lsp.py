@@ -391,6 +391,9 @@ def _package_locus_classification(
     ast_path: str,
     ancestors: tuple[ast.AST, ...],
 ) -> tuple[str, str]:
+    overload_status = _overload_declaration_status(node, ancestors)
+    if overload_status is not None:
+        return overload_status
     if isinstance(node, (ast.Import, ast.ImportFrom, ast.alias)):
         return "support", "import support for recursive name resolution"
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -414,6 +417,47 @@ def _package_locus_classification(
     if decl is not None and isinstance(line, int) and line == decl.lineno:
         return "support", "declaration metadata supports callsite arity/name resolution"
     return "unclassified", "not classified by any emitted Python source warrant"
+
+
+def _overload_declaration_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    fn = _nearest_overload_function(node, ancestors)
+    if fn is None:
+        return None
+    if _node_is_in_function_body(node, fn):
+        return "inactive", "typing overload body inactive at runtime"
+    return "support", "typing overload declaration metadata supports source accounting only"
+
+
+def _nearest_overload_function(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[ast.FunctionDef | ast.AsyncFunctionDef]:
+    chain = ancestors + (node,)
+    for item in reversed(chain):
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+            _is_overload_decorator(decorator)
+            for decorator in item.decorator_list
+        ):
+            return item
+    return None
+
+
+def _is_overload_decorator(node: ast.AST) -> bool:
+    return _static_call_name(node) in {"t.overload", "typing.overload"}
+
+
+def _node_is_in_function_body(
+    node: ast.AST,
+    fn: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    return any(
+        descendant is node
+        for stmt in fn.body
+        for descendant in ast.walk(stmt)
+    )
 
 
 def _is_function_annotation_path(ast_path: str) -> bool:

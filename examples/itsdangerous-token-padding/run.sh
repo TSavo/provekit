@@ -49,6 +49,7 @@ audit_good_source() {
   }
   python3 - "$report" <<'PY' || {
 import json, sys
+from collections import Counter
 result = json.load(open(sys.argv[1], encoding="utf-8"))
 ledger = result.get("sourceLedger") or {}
 audits = [
@@ -253,6 +254,34 @@ if package_totals.get("unclassified_source", 0) <= 0:
     raise SystemExit(f"FAIL: itsdangerous package audit did not expose unclassified source: {package_totals}")
 if ledger.get("unclassified_source") != package_totals.get("unclassified_source"):
     raise SystemExit(f"FAIL: package unclassified source not reflected in ledger: ledger={ledger} package={package_totals}")
+serializer_overload_loci = [
+    locus for locus in package_audits[0]["loci"]
+    if str(locus.get("file", "")).endswith("/serializer.py")
+    and any(
+        str(locus.get("ast_path", "")).startswith(f"$.module.body[12].body[{index}]")
+        for index in range(4, 9)
+    )
+]
+if not serializer_overload_loci:
+    raise SystemExit("FAIL: serializer overload metadata loci missing from package audit")
+serializer_overload_totals = Counter(locus.get("status") for locus in serializer_overload_loci)
+if serializer_overload_totals.get("unclassified", 0):
+    raise SystemExit(
+        "FAIL: serializer overload metadata still has unclassified source: "
+        f"{serializer_overload_totals}"
+    )
+if not any(
+    locus.get("status") == "support"
+    and "overload" in locus.get("reason", "")
+    for locus in serializer_overload_loci
+):
+    raise SystemExit("FAIL: serializer overload declaration metadata was not support")
+if not any(
+    locus.get("status") == "inactive"
+    and "overload" in locus.get("reason", "")
+    for locus in serializer_overload_loci
+):
+    raise SystemExit("FAIL: serializer overload ellipsis body was not inactive")
 if audit.get("universe_kind") != "no-suffix-chars":
     raise SystemExit(f"FAIL: expected no-suffix-chars audit, got {audit.get('universe_kind')}")
 if "body_text" in audit["source_memento"] or "ast_template" in audit["source_memento"]:
@@ -367,6 +396,13 @@ print(
     "source audit package:",
     f"loci={package_totals['source_loci']}",
     f"unclassified={package_totals['unclassified_source']}",
+)
+print(
+    "source audit serializer overload metadata:",
+    f"loci={len(serializer_overload_loci)}",
+    f"support={serializer_overload_totals.get('support', 0)}",
+    f"inactive={serializer_overload_totals.get('inactive', 0)}",
+    f"unclassified={serializer_overload_totals.get('unclassified', 0)}",
 )
 PY
     rm -f "$report"

@@ -673,6 +673,85 @@ def test_lift_source_classifies_type_checking_blocks_as_support_or_inactive(
     assert any(locus["status"] == "inactive" for locus in type_loci), type_loci
 
 
+def test_lift_source_classifies_overload_declarations_as_type_metadata(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_overload_metadata"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            '''
+            import typing as t
+
+            class Codec:
+                @t.overload
+                def encode(self, value: str, fallback: None = None) -> str: ...
+
+                @t.overload
+                def encode(self, value: bytes, fallback: bytes | None = None) -> bytes: ...
+
+                def encode(self, value, fallback=None):
+                    return value
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_overload_metadata.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    overload_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_overload_metadata/encoding.py")
+        and (
+            locus.get("ast_path", "").startswith("$.module.body[1].body[0]")
+            or locus.get("ast_path", "").startswith("$.module.body[1].body[1]")
+        )
+    ]
+    assert overload_loci
+    assert not [
+        locus for locus in overload_loci if locus["status"] == "unclassified"
+    ], overload_loci
+    assert any(
+        locus["status"] == "support"
+        and locus.get("ast_kind") == "Attribute"
+        and "overload" in locus.get("reason", "")
+        for locus in overload_loci
+    ), overload_loci
+    assert any(
+        locus["status"] == "inactive"
+        and locus.get("ast_kind") == "Expr"
+        and "overload" in locus.get("reason", "")
+        for locus in overload_loci
+    ), overload_loci
+    assert any(
+        locus["file"].endswith("vendpkg_overload_metadata/encoding.py")
+        and locus.get("ast_path") == "$.module.body[1].body[2].body[0]"
+        and locus["status"] == "unclassified"
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_universe_row_emitted_once_per_base_across_tests(vendor_path):
     # Same callee + same concrete args in TWO test functions: the bases
     # collapse cross-location (EUF), and the bundle must carry exactly ONE
