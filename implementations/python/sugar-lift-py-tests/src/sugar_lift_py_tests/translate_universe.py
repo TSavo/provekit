@@ -2091,6 +2091,31 @@ class ExceptionBoolReturnUniverse:
     source_memento: Optional[dict[str, Any]] = None
 
 
+@dataclass(frozen=True)
+class SeparatorGuardRaiseUniverse:
+    """A receiver field membership guard that raises a concrete exception.
+
+    Shape:
+      signed_value = want_bytes(signed_value)
+      if self.sep not in signed_value:
+          raise BadSignature(...)
+
+    The universe contributes only the guarded raise path. Other paths in the
+    method remain source-accounted support until separate universes lift them.
+    """
+
+    exception_name: str
+    field_name: str
+    param_name: str
+    param_index: int
+    adapter_callee: Optional[str]
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
 @functools.lru_cache(maxsize=None)
 def raise_locus_universe_for_callee(
     callee: str,
@@ -2302,6 +2327,131 @@ def exception_bool_return_universe_for_callee(
         ),
         None,
     )
+
+
+@functools.lru_cache(maxsize=None)
+def separator_guard_raise_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[SeparatorGuardRaiseUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+    params = _positional_param_names(fn)
+    if len(params) < 2 or params[0] not in {"self", "cls"}:
+        return None, None
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    body = _body_without_docstring(fn.body)
+    if not body:
+        return None, None
+    call_aliases = _module_call_aliases(tree, module_name)
+    adapter_callee: Optional[str] = None
+    adapter_line: Optional[int] = None
+    guard_index = 0
+    prelude = _param_adapter_rebind(body[0], params, call_aliases)
+    if prelude is not None:
+        param_name, adapter_callee = prelude
+        adapter_line = body[0].lineno
+        guard_index = 1
+    if guard_index >= len(body) or not isinstance(body[guard_index], ast.If):
+        return None, None
+    guard = body[guard_index]
+    guard_shape = _separator_not_in_guard(
+        guard,
+        receiver_name=params[0],
+        params=params,
+    )
+    if guard_shape is None:
+        return None, None
+    field_name, param_name = guard_shape
+    if adapter_callee is not None and prelude is not None and prelude[0] != param_name:
+        return None, None
+    if len(guard.body) != 1 or not isinstance(guard.body[0], ast.Raise):
+        return None, None
+    exception_name = _raised_exception_name(guard.body[0])
+    if exception_name is None:
+        return None, None
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["separator_guard_exception_type"] = exception_name
+        source_memento["separator_guard_field_name"] = field_name
+        source_memento["separator_guard_param_name"] = param_name
+        source_memento["separator_guard_line"] = guard.lineno
+        source_memento["separator_guard_raise_line"] = guard.body[0].lineno
+        if adapter_callee is not None:
+            source_memento["separator_guard_adapter_callee"] = adapter_callee
+        if adapter_line is not None:
+            source_memento["separator_guard_adapter_line"] = adapter_line
+    return (
+        SeparatorGuardRaiseUniverse(
+            exception_name=exception_name,
+            field_name=field_name,
+            param_name=param_name,
+            param_index=params.index(param_name),
+            adapter_callee=adapter_callee,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=guard.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _param_adapter_rebind(
+    stmt: ast.stmt,
+    params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[tuple[str, str]]:
+    if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+        return None
+    target = stmt.targets[0]
+    value = stmt.value
+    if not (
+        isinstance(target, ast.Name)
+        and target.id in params[1:]
+        and isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and not value.keywords
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id == target.id
+    ):
+        return None
+    callee = call_aliases.get(value.func.id)
+    if callee is None:
+        return None
+    universe, refusal = bytes_identity_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return target.id, callee
+
+
+def _separator_not_in_guard(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+) -> Optional[tuple[str, str]]:
+    test = stmt.test
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.NotIn)
+        or len(test.comparators) != 1
+    ):
+        return None
+    field_name = _self_attribute_name(test.left, receiver_name)
+    comparator = test.comparators[0]
+    if (
+        field_name is None
+        or not isinstance(comparator, ast.Name)
+        or comparator.id not in params[1:]
+    ):
+        return None
+    return field_name, comparator.id
 
 
 def _return_bool(stmt: ast.stmt) -> Optional[bool]:

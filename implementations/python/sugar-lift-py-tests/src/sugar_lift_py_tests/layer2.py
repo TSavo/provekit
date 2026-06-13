@@ -123,6 +123,7 @@ from .translate_universe import (
     predicate_universe_for_callee,
     raise_locus_universe_for_callee,
     return_isinstance_universe_for_callee,
+    separator_guard_raise_universe_for_callee,
     translate_universe_for_callee,
 )
 
@@ -605,6 +606,13 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "exception_bool_return_delegate",
         "exception_bool_return_success_value",
         "exception_bool_return_exception_value",
+        "separator_guard_exception_type",
+        "separator_guard_field_name",
+        "separator_guard_param_name",
+        "separator_guard_line",
+        "separator_guard_raise_line",
+        "separator_guard_adapter_callee",
+        "separator_guard_adapter_line",
     ):
         if field_name not in warrant:
             continue
@@ -905,6 +913,8 @@ def _classify_universe_source_node(
         return _classify_exception_handler_raise_source_node(stmt, node, source_memento)
     if role == "python.exception-bool-return-universe":
         return _classify_exception_bool_return_source_node(stmt, node, source_memento)
+    if role == "python.separator-guard-raise-universe":
+        return _classify_separator_guard_raise_source_node(stmt, node, source_memento)
     if (
         role == "python.return-isinstance-universe"
         and isinstance(stmt, ast.Return)
@@ -1010,6 +1020,8 @@ def _classify_universe_source_statement(
         return _classify_exception_handler_raise_source_node(stmt, stmt, source_memento)
     if role == "python.exception-bool-return-universe":
         return _classify_exception_bool_return_source_node(stmt, stmt, source_memento)
+    if role == "python.separator-guard-raise-universe":
+        return _classify_separator_guard_raise_source_node(stmt, stmt, source_memento)
     if role == "python.return-isinstance-universe":
         if _is_docstring_stmt(stmt):
             return "support", "docstring metadata supports source accounting only"
@@ -1132,6 +1144,33 @@ def _node_inside_exception_bool_return(stmt: ast.Try, node: ast.AST) -> bool:
             ):
                 return True
     return False
+
+
+def _classify_separator_guard_raise_source_node(
+    stmt: ast.stmt,
+    node: ast.AST,
+    source_memento: dict[str, Any],
+) -> Tuple[str, str]:
+    if _is_docstring_stmt(stmt):
+        return "support", "docstring metadata supports source accounting only"
+    adapter_line = _int_field(source_memento, "separator_guard_adapter_line", 0)
+    guard_line = _int_field(source_memento, "separator_guard_line", 0)
+    if adapter_line and getattr(stmt, "lineno", 0) == adapter_line:
+        return (
+            "warranted",
+            "parameter normalization emitted into python.separator-guard-raise-universe",
+        )
+    if isinstance(stmt, ast.If) and getattr(stmt, "lineno", 0) == guard_line:
+        return (
+            "warranted",
+            "membership guard raise emitted into python.separator-guard-raise-universe",
+        )
+    if getattr(node, "lineno", 0) in {adapter_line, guard_line}:
+        return (
+            "warranted",
+            "membership guard expression emitted into python.separator-guard-raise-universe",
+        )
+    return "support", "non-selected path support for separator-guard accounting"
 
 
 def _raise_node_exception_name(node: ast.Raise) -> Optional[str]:
@@ -5541,6 +5580,34 @@ def _universe_conjuncts(
                     if _euf_args_all_concrete(term):
                         conjuncts.append(eq(subject_term, term))
 
+        sep_guard_u, sep_guard_refusal = separator_guard_raise_universe_for_callee(
+            callee
+        )
+        if sep_guard_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::separator-guard-raise-universe",
+                    reason=(
+                        f"{sep_guard_refusal.callee}: "
+                        f"{sep_guard_refusal.reason}"
+                    ),
+                )
+            )
+        elif sep_guard_u is not None:
+            conjuncts.extend(
+                _separator_guard_raise_conjuncts(
+                    sep_guard_u,
+                    subject_term,
+                    out,
+                    source_path,
+                    test_name,
+                    source_warrants,
+                    origin,
+                    seen,
+                )
+            )
+
         exception_bool_u, exception_bool_refusal = (
             exception_bool_return_universe_for_callee(callee)
         )
@@ -5568,11 +5635,12 @@ def _universe_conjuncts(
                         universe_kind="exception-bool-return",
                     ),
                 )
-            inner_call_term = _exception_bool_inner_call_term(
+            inner_call = _exception_bool_inner_call(
                 exception_bool_u,
                 subject_term,
             )
-            if inner_call_term is not None:
+            if inner_call is not None:
+                inner_call_term, mapped_args = inner_call
                 raised_term = ctor("raised_exc_a1", [inner_call_term])
                 caught = eq(raised_term, str_const(exception_bool_u.exception_name))
                 exception_result = eq(
@@ -5589,6 +5657,24 @@ def _universe_conjuncts(
                         implies(caught, exception_result),
                         implies(success_result, not_(caught)),
                     ]
+                )
+                nested_origin = _receiver_delegate_origin(
+                    exception_bool_u.delegate,
+                    origin,
+                    mapped_args,
+                    inner_call_term,
+                )
+                conjuncts.extend(
+                    _universe_conjuncts(
+                        exception_bool_u.delegate,
+                        inner_call_term,
+                        out,
+                        source_path,
+                        test_name,
+                        source_warrants=source_warrants,
+                        origin=nested_origin,
+                        _seen=seen,
+                    )
                 )
 
         # INSTANCE FIELD GETTER: the source pair
@@ -6349,6 +6435,16 @@ def _receiver_delegate_origin(
 
 
 def _exception_bool_inner_call_term(universe, subject_term: Term) -> Optional[Term]:
+    inner = _exception_bool_inner_call(universe, subject_term)
+    if inner is None:
+        return None
+    return inner[0]
+
+
+def _exception_bool_inner_call(
+    universe,
+    subject_term: Term,
+) -> Optional[Tuple[Term, List[Term]]]:
     if not isinstance(subject_term, _Ctor) or not subject_term.args:
         return None
     call_args = tuple(subject_term.args)
@@ -6361,8 +6457,123 @@ def _exception_bool_inner_call_term(universe, subject_term: Term) -> Optional[Te
         receiver_term = call_args[0]
         method_name = universe.delegate.rsplit(".", 1)[-1]
         delegate_args = [receiver_term, *mapped]
-        return ctor(_callval_head(method_name, len(delegate_args)), delegate_args)
-    return ctor(_call_result_head(universe.delegate, len(mapped)), mapped)
+        return (
+            ctor(_callval_head(method_name, len(delegate_args)), delegate_args),
+            mapped,
+        )
+    return ctor(_call_result_head(universe.delegate, len(mapped)), mapped), mapped
+
+
+def _separator_guard_raise_conjuncts(
+    universe,
+    subject_term: Term,
+    out: Layer2Output,
+    source_path: str,
+    test_name: str,
+    source_warrants: Optional[List[dict]],
+    origin: Optional[_CallOrigin],
+    seen: Set[Tuple[str, str]],
+) -> List[Formula]:
+    if (
+        not isinstance(subject_term, _Ctor)
+        or not subject_term.name.startswith("callval_")
+        or not subject_term.args
+        or origin is None
+        or origin.receiver_constructor is None
+        or origin.constructor_args is None
+    ):
+        return []
+    call_args = tuple(subject_term.args)
+    if universe.param_index >= len(call_args):
+        return []
+    field_u, field_refusal = constructor_field_universe_for_callee(
+        origin.receiver_constructor,
+        universe.field_name,
+    )
+    if field_refusal is not None:
+        out.warnings.append(
+            LiftWarning(
+                source_path=source_path,
+                item_name=f"{test_name}::separator-guard-raise-universe",
+                reason=f"{field_refusal.callee}: {field_refusal.reason}",
+            )
+        )
+        return []
+    if (
+        field_u is None
+        or field_u.constructor_param_index >= len(origin.constructor_args)
+    ):
+        return []
+
+    signed_term = call_args[universe.param_index]
+    adapter_callee = getattr(universe, "adapter_callee", None)
+    if adapter_callee:
+        signed_term = ctor(_call_result_head(adapter_callee, 1), [signed_term])
+    sep_term = _constructor_field_universe_value_term(
+        subject_term,
+        universe.field_name,
+        field_u,
+        origin,
+    )
+
+    conjuncts: List[Formula] = []
+    if source_warrants is not None:
+        _append_unique_source_warrant(
+            source_warrants,
+            _source_warrant_for_universe(
+                universe,
+                role="python.separator-guard-raise-universe",
+                universe_kind="separator-guard-raise",
+            ),
+        )
+        _append_unique_source_warrant(
+            source_warrants,
+            _source_warrant_for_instance_field_universe(
+                field_u,
+                source_memento=field_u.constructor_source_memento,
+                source_function_name=_local_qualname(
+                    field_u.module,
+                    field_u.constructor_qualname,
+                ),
+                constructor_default_params=tuple(
+                    param
+                    for param in origin.constructor_default_params
+                    if param == field_u.constructor_param_name
+                ),
+            ),
+        )
+
+    if adapter_callee and isinstance(signed_term, _Ctor):
+        conjuncts.extend(
+            _universe_conjuncts(
+                adapter_callee,
+                signed_term,
+                out,
+                source_path,
+                test_name,
+                source_warrants=source_warrants,
+                _seen=seen,
+            )
+        )
+    for recursive_callee in _constructor_field_recursive_callees(field_u, sep_term):
+        conjuncts.extend(
+            _universe_conjuncts(
+                recursive_callee,
+                sep_term,
+                out,
+                source_path,
+                test_name,
+                source_warrants=source_warrants,
+                _seen=seen,
+            )
+        )
+    contains = atomic("contains", [signed_term, sep_term])
+    raised = eq(
+        ctor("raised_exc_a1", [subject_term]),
+        str_const(universe.exception_name),
+    )
+    conjuncts.append(implies(not_(contains), raised))
+    return conjuncts
 
 
 def _mapped_delegate_args(specs, call_args):

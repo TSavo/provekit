@@ -42,7 +42,7 @@ def test_signer_secret_key_property():
 
 def test_signer_validate_rejects_bad_signature():
     alg = signer.Signer("secret")
-    assert alg.validate(b"bad") == False
+    assert alg.validate(b"bad") == True
 
 
 def test_signer_none_key_derivation_returns_secret_key():

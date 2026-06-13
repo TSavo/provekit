@@ -579,6 +579,66 @@ timestamp_validate_audit, timestamp_validate_totals = require_validate_audit(
     "itsdangerous.timed.TimestampSigner.unsign",
     range(160, 168),
 )
+separator_guard_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.separator-guard-raise-universe"
+    and "Signer.validate" in audit.get("contract", {}).get("name", "")
+]
+if len(separator_guard_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one Signer.unsign separator-guard audit, "
+        f"got {len(separator_guard_audits)}"
+    )
+separator_guard_audit = separator_guard_audits[0]
+separator_guard_totals = separator_guard_audit["totals"]
+separator_guard_memento = separator_guard_audit["source_memento"]
+if separator_guard_audit.get("universe_kind") != "separator-guard-raise":
+    raise SystemExit(
+        "FAIL: expected separator-guard-raise audit, got "
+        f"{separator_guard_audit.get('universe_kind')}"
+    )
+if separator_guard_memento.get("source_function_name") != "Signer.unsign":
+    raise SystemExit(
+        "FAIL: separator guard source oracle should point at Signer.unsign: "
+        f"{separator_guard_memento!r}"
+    )
+if separator_guard_memento.get("separator_guard_exception_type") != "BadSignature":
+    raise SystemExit(
+        "FAIL: separator guard memento did not record BadSignature: "
+        f"{separator_guard_memento!r}"
+    )
+if separator_guard_memento.get("separator_guard_field_name") != "sep":
+    raise SystemExit(
+        "FAIL: separator guard memento did not record sep field: "
+        f"{separator_guard_memento!r}"
+    )
+if separator_guard_memento.get("separator_guard_param_name") != "signed_value":
+    raise SystemExit(
+        "FAIL: separator guard memento did not record signed_value param: "
+        f"{separator_guard_memento!r}"
+    )
+if separator_guard_memento.get("separator_guard_adapter_callee") != "itsdangerous.encoding.want_bytes":
+    raise SystemExit(
+        "FAIL: separator guard memento did not record want_bytes adapter: "
+        f"{separator_guard_memento!r}"
+    )
+if "body_text" in separator_guard_memento or "ast_template" in separator_guard_memento:
+    raise SystemExit("FAIL: separator guard source memento embeds source/template body")
+if separator_guard_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: Signer.unsign separator guard has unclassified source: "
+        f"totals={separator_guard_totals}"
+    )
+separator_guard_lines = {
+    locus.get("line")
+    for locus in separator_guard_audit["loci"]
+    if locus.get("status") == "warranted"
+}
+if separator_guard_lines != set(range(244, 257)):
+    raise SystemExit(
+        "FAIL: Signer.unsign separator guard warranted lines mismatch: "
+        f"got={sorted(separator_guard_lines)}"
+    )
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -1013,6 +1073,15 @@ print(
     f"unclassified={signer_validate_totals['unclassified_source']}",
 )
 print(
+    "source audit Signer.unsign separator guard:",
+    f"loci={separator_guard_totals['source_loci']}",
+    f"warranted={separator_guard_totals['source_warranted']}",
+    f"inactive={separator_guard_totals['source_inactive']}",
+    f"support={separator_guard_totals.get('source_support', 0)}",
+    f"refused={separator_guard_totals['source_refused']}",
+    f"unclassified={separator_guard_totals['unclassified_source']}",
+)
+print(
     "source audit TimestampSigner.validate:",
     f"loci={timestamp_validate_totals['source_loci']}",
     f"warranted={timestamp_validate_totals['source_warranted']}",
@@ -1238,14 +1307,42 @@ validate_rows = [
 if len(validate_rows) != 2:
     print(f"FAIL({twin}): expected two validate rows, got {len(validate_rows)}")
     sys.exit(1)
-validate_statuses = {s for _, s in validate_rows}
 print(f"validate rows({twin}):")
 for n, s in validate_rows:
     print(f"  {s:14s} {n[:110]}")
-if not (validate_statuses & ok_words) or (validate_statuses & bad_words):
+
+def row_statuses(needle):
+    statuses = {s for n, s in validate_rows if needle in str(n)}
+    if not statuses:
+        print(f"FAIL({twin}): no validate row matching {needle}")
+        sys.exit(1)
+    return statuses
+
+signer_validate_statuses = row_statuses("itsdangerous.signer.Signer.validate")
+timestamp_validate_statuses = row_statuses(
+    "itsdangerous.timed.TimestampSigner.validate"
+)
+if twin == "bad":
+    signer_validate_ok = bool(signer_validate_statuses & bad_words)
+else:
+    signer_validate_ok = (
+        signer_validate_statuses & ok_words
+        and not (signer_validate_statuses & bad_words)
+    )
+if not signer_validate_ok:
     print(
-        f"FAIL({twin}): expected validate rows to discharge, "
-        f"statuses={sorted(validate_statuses)}"
+        f"FAIL({twin}): unexpected Signer.validate statuses="
+        f"{sorted(signer_validate_statuses)}"
+    )
+    sys.exit(1)
+timestamp_validate_ok = (
+    timestamp_validate_statuses & ok_words
+    and not (timestamp_validate_statuses & bad_words)
+)
+if not timestamp_validate_ok:
+    print(
+        f"FAIL({twin}): expected TimestampSigner.validate to discharge, "
+        f"statuses={sorted(timestamp_validate_statuses)}"
     )
     sys.exit(1)
 print(f"OK({twin}): {expect}")

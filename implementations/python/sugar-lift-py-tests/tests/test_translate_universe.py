@@ -6937,6 +6937,196 @@ def test_exception_bool_return_source_accounting(vendor_path):
     assert warranted_lines == set(range(9, 15)), audit
 
 
+def test_separator_guard_raise_universe_walks_membership_guard(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        separator_guard_raise_universe_for_callee,
+    )
+
+    separator_guard_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendsep_guard_source",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class BadSignature(Exception):
+    pass
+
+
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep: bytes = want_bytes(sep)
+
+    def unsign(self, signed_value):
+        signed_value = want_bytes(signed_value)
+        if self.sep not in signed_value:
+            raise BadSignature("No sep found")
+        return signed_value
+''',
+    )
+    u, r = separator_guard_raise_universe_for_callee(
+        "vendsep_guard_source.Signer.unsign"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "BadSignature"
+    assert u.field_name == "sep"
+    assert u.param_name == "signed_value"
+    assert u.param_index == 1
+    assert u.adapter_callee == "vendsep_guard_source.want_bytes"
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "Signer.unsign"
+    assert u.source_memento["separator_guard_exception_type"] == "BadSignature"
+    assert u.source_memento["separator_guard_field_name"] == "sep"
+    assert u.source_memento["separator_guard_param_name"] == "signed_value"
+
+
+def test_separator_guard_raise_conjoins_validate_inner_unsign(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+        separator_guard_raise_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _Atomic, _Connective, _ConstStr, _Ctor
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    separator_guard_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendsep_guard_l2",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class BadSignature(Exception):
+    pass
+
+
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep: bytes = want_bytes(sep)
+
+    def unsign(self, signed_value):
+        signed_value = want_bytes(signed_value)
+        if self.sep not in signed_value:
+            raise BadSignature("No sep found")
+        return signed_value
+
+    def validate(self, value):
+        try:
+            self.unsign(value)
+            return True
+        except BadSignature:
+            return False
+''',
+    )
+    out = _lift(
+        """
+        import vendsep_guard_l2
+
+        def test_validate():
+            signer = vendsep_guard_l2.Signer(sep=b".")
+            assert signer.validate(b"bad") == True
+        """
+    )
+    decl = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "vendsep_guard_l2.Signer.validate" in d.name
+    )
+    atoms = []
+
+    def walk_formula(formula):
+        if isinstance(formula, _Atomic):
+            atoms.append(formula)
+            return
+        if isinstance(formula, _Connective):
+            for operand in formula.operands:
+                walk_formula(operand)
+
+    walk_formula(decl.inv)
+    assert any(
+        atom.name == "contains"
+        and any(
+            isinstance(arg, _Ctor)
+            and "callresult_vendsep_guard_l2_want_bytes_a1" in arg.name
+            for arg in atom.args
+        )
+        and any(
+            isinstance(arg, _Ctor)
+            and "callresult_vendsep_guard_l2_want_bytes_a1" in arg.name
+            and arg.args
+            and isinstance(arg.args[0], _Ctor)
+            and arg.args[0].name == "python:bytes"
+            and arg.args[0].args
+            and isinstance(arg.args[0].args[0], _ConstStr)
+            and arg.args[0].args[0].value == "."
+            for arg in atom.args
+        )
+        for atom in atoms
+    )
+    assert any(
+        atom.name == "="
+        and any(
+            isinstance(arg, _Ctor)
+            and "callresult_vendsep_guard_l2_want_bytes_a1" in arg.name
+            and arg.args
+            and isinstance(arg.args[0], _Ctor)
+            and arg.args[0].name == "python:bytes"
+            and arg.args[0].args
+            and isinstance(arg.args[0].args[0], _ConstStr)
+            and arg.args[0].args[0].value == "."
+            for arg in atom.args
+        )
+        and any(
+            isinstance(arg, _Ctor)
+            and arg.name == "python:bytes"
+            and arg.args
+            and isinstance(arg.args[0], _ConstStr)
+            and arg.args[0].value == "."
+            for arg in atom.args
+        )
+        for atom in atoms
+    )
+    assert any(
+        atom.name == "="
+        and any(
+            isinstance(arg, _Ctor)
+            and arg.name == "raised_exc_a1"
+            and arg.args
+            and isinstance(arg.args[0], _Ctor)
+            and arg.args[0].name.startswith("callval_unsign")
+            for arg in atom.args
+        )
+        and any(
+            isinstance(arg, _ConstStr) and arg.value == "BadSignature"
+            for arg in atom.args
+        )
+        for atom in atoms
+    )
+    roles = {warrant.get("role") for warrant in decl.source_warrants}
+    assert "python.separator-guard-raise-universe" in roles
+    assert "python.bytes-identity-universe" in roles
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.separator-guard-raise-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    warranted_lines = {
+        locus["line"]
+        for locus in audit["loci"]
+        if locus["status"] == "warranted"
+    }
+    assert {19, 20}.issubset(warranted_lines), audit
+
+
 # ---------------------------------------------------------------------------
 # chain-expr (census return-binop, 17k bodies): the returned arithmetic
 # expression as STRUCTURE — eq(subject, ctor("+", ...)) over the same
