@@ -165,6 +165,9 @@ fn lift(params: &Value) -> Value {
         // (functions the kit does not speak) is COUNTED, not skipped.
         let mut fns: Vec<FnRef> = Vec::new();
         collect_fns(&file.items, &mut fns);
+        // Real warrants emit ProofIR: contracts the recursive body-walk produced,
+        // marshalled into the IR alongside the test-assertion decls (below).
+        let mut value_decls: Vec<sugar_ir_symbolic::ContractDecl> = Vec::new();
         for fr in fns {
             let memento =
                 source_oracle::source_memento_of(rel, src, fr.span, &fr.name, fr.sig, fr.block);
@@ -190,9 +193,15 @@ fn lift(params: &Value) -> Value {
                     Some(w) => ("refused", Some(w.reason.clone())),
                     None => ("warranted", None),
                 }
-            } else if is_generalizable_value_fn(fr.block) {
-                // body is a pure formula over params: contract is `result = <body>`,
-                // constructible + recompute-verifiable from the memento.
+            } else if let Some(decl) =
+                sugar_lift_rust_tests::emit_value_contract(&name, fr.block)
+            {
+                // REAL warrant: the kit EMITTED a closed consistency ProofIR
+                // contract for this body (verified to compile + compose via z3),
+                // recompute-verifiable from the memento. A syntactic "looks
+                // generalizable" flag that emits nothing is a hollow warrant --
+                // warranted now MEANS emission, so the decl flows into the IR.
+                value_decls.push(decl);
                 ("warranted", None)
             } else if out.reduced_helpers.contains(&name) {
                 // a non-test fn the reducer inlined to discharge a test: it backs
@@ -217,6 +226,12 @@ fn lift(params: &Value) -> Value {
             }
             source_loci.push(locus);
             source_mementos.push(memento.to_json());
+        }
+        // Flow the emitted value-fn contracts into the IR document, so a
+        // `warranted` source locus is backed by a real relation in `ir`.
+        let value_marshalled = marshal_declarations(&value_decls);
+        if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(&value_marshalled) {
+            entries.extend(arr);
         }
     }
 
@@ -300,156 +315,6 @@ fn collect_fns<'a>(items: &'a [syn::Item], out: &mut Vec<FnRef<'a>>) {
             }
             _ => {}
         }
-    }
-}
-
-/// True iff the function body is a single non-diverging tail expression that is
-/// a PURE FORMULA over params/literals -- its contract is `result = <body>`,
-/// warrantable by construction. (The narrow, sound shape; widens slice by slice.)
-fn is_generalizable_value_fn(block: &syn::Block) -> bool {
-    block_reduces_to_pure_formula(block)
-}
-
-/// A block whose VALUE is a pure formula: zero or more immutable
-/// `let <ident> = <pure formula>;` bindings, then a single pure-formula tail
-/// expression. The contract is `result = <tail, lets substituted>` -- still a
-/// pure formula, so still sound.
-fn block_reduces_to_pure_formula(block: &syn::Block) -> bool {
-    let Some((syn::Stmt::Expr(tail, None), prefix)) = block.stmts.split_last() else {
-        return false;
-    };
-    expr_is_pure_formula(tail) && prefix.iter().all(is_immutable_pure_let)
-}
-
-/// `let <immutable binding> = <pure formula>;` with no `else` arm. The binding
-/// may destructure (tuple / struct / tuple-struct / slice) -- a plain `let` that
-/// compiles is irrefutable, so destructuring just binds names to pure sub-values
-/// and the block stays a pure formula. A let-else (`init.diverge`) is excluded
-/// (divergence is not modeled yet).
-fn is_immutable_pure_let(stmt: &syn::Stmt) -> bool {
-    let syn::Stmt::Local(local) = stmt else {
-        return false;
-    };
-    let pat_ok = pat_is_immutable_binding(&local.pat);
-    let init_pure = local
-        .init
-        .as_ref()
-        .is_some_and(|init| init.diverge.is_none() && expr_is_pure_formula(&init.expr));
-    pat_ok && init_pure
-}
-
-/// True iff a `let` pattern binds only immutable, by-value names in a shape we
-/// treat as irrefutable destructuring. Any `mut`, `ref`, or refutable/opaque
-/// shape (literal / range / or-pattern) is rejected -- conservative is sound.
-fn pat_is_immutable_binding(pat: &syn::Pat) -> bool {
-    use syn::Pat;
-    match pat {
-        Pat::Ident(p) => {
-            p.by_ref.is_none()
-                && p.mutability.is_none()
-                && p.subpat
-                    .as_ref()
-                    .is_none_or(|(_, sp)| pat_is_immutable_binding(sp))
-        }
-        Pat::Wild(_) | Pat::Rest(_) => true,
-        Pat::Paren(p) => pat_is_immutable_binding(&p.pat),
-        Pat::Reference(r) => r.mutability.is_none() && pat_is_immutable_binding(&r.pat),
-        Pat::Type(t) => pat_is_immutable_binding(&t.pat),
-        Pat::Tuple(t) => t.elems.iter().all(pat_is_immutable_binding),
-        Pat::TupleStruct(t) => t.elems.iter().all(pat_is_immutable_binding),
-        Pat::Struct(s) => s.fields.iter().all(|f| pat_is_immutable_binding(&f.pat)),
-        Pat::Slice(s) => s.elems.iter().all(pat_is_immutable_binding),
-        _ => false,
-    }
-}
-
-/// A pure formula over params and literals: literals, paths, arithmetic/bit ops,
-/// casts, references, field/index, tuples/arrays, and pure named calls. A method
-/// call, macro, `?`, await, or closure is opaque/effectful -> not a pure formula.
-fn expr_is_pure_formula(expr: &syn::Expr) -> bool {
-    use syn::Expr;
-    match expr {
-        Expr::Lit(_) | Expr::Path(_) => true,
-        Expr::Paren(p) => expr_is_pure_formula(&p.expr),
-        Expr::Group(g) => expr_is_pure_formula(&g.expr),
-        Expr::Reference(r) => expr_is_pure_formula(&r.expr),
-        Expr::Cast(c) => expr_is_pure_formula(&c.expr),
-        Expr::Unary(u) => expr_is_pure_formula(&u.expr),
-        Expr::Binary(b) => expr_is_pure_formula(&b.left) && expr_is_pure_formula(&b.right),
-        Expr::Field(f) => expr_is_pure_formula(&f.base),
-        Expr::Index(i) => expr_is_pure_formula(&i.expr) && expr_is_pure_formula(&i.index),
-        Expr::Tuple(t) => t.elems.iter().all(expr_is_pure_formula),
-        Expr::Array(a) => a.elems.iter().all(expr_is_pure_formula),
-        Expr::Call(call) => {
-            matches!(&*call.func, Expr::Path(_)) && call.args.iter().all(expr_is_pure_formula)
-        }
-        // Pure value constructors over pure fields/elements.
-        Expr::Struct(s) => {
-            s.fields.iter().all(|f| expr_is_pure_formula(&f.expr))
-                && s.rest.as_ref().is_none_or(|r| expr_is_pure_formula(r))
-        }
-        Expr::Repeat(r) => expr_is_pure_formula(&r.expr) && expr_is_pure_formula(&r.len),
-        Expr::Range(r) => {
-            r.start.as_ref().is_none_or(|s| expr_is_pure_formula(s))
-                && r.end.as_ref().is_none_or(|e| expr_is_pure_formula(e))
-        }
-        // Control-flow as a VALUE: an ite / match-tree over pure formulas is
-        // itself a pure formula (result = ite(cond, then, else) / match-tree).
-        Expr::If(e) => {
-            expr_is_pure_formula(&e.cond)
-                && block_reduces_to_pure_formula(&e.then_branch)
-                && e.else_branch
-                    .as_ref()
-                    .is_some_and(|(_, els)| expr_is_pure_formula(els))
-        }
-        Expr::Match(m) => {
-            expr_is_pure_formula(&m.expr)
-                && m.arms
-                    .iter()
-                    .all(|a| a.guard.is_none() && expr_is_pure_formula(&a.body))
-        }
-        Expr::Block(b) => block_reduces_to_pure_formula(&b.block),
-        // `unsafe { <pure> }` has the VALUE of its inner expression: `unsafe` is a
-        // compile-time obligation, not a value transform -> still a pure formula.
-        Expr::Unsafe(u) => block_reduces_to_pure_formula(&u.block),
-        // `matches!(<pure>, <pat> [if <pure>])` is a pure boolean formula.
-        Expr::Macro(m) => macro_is_pure_formula(&m.mac),
-        _ => false,
-    }
-}
-
-/// `matches!(<scrutinee>, <pattern> [if <guard>])` is a pure boolean formula: it
-/// desugars to `match <scrutinee> { <pattern> [if guard] => true, _ => false }`,
-/// sound to warrant when the scrutinee and any guard are themselves pure formulas
-/// (patterns carry no effects). This is core's `is_ascii_*` / character-class
-/// family -- the marquee predicate shape. Any other macro stays opaque.
-fn macro_is_pure_formula(mac: &syn::Macro) -> bool {
-    if !mac
-        .path
-        .segments
-        .last()
-        .is_some_and(|s| s.ident == "matches")
-    {
-        return false;
-    }
-    let parsed = mac.parse_body_with(|input: syn::parse::ParseStream| {
-        let scrutinee: syn::Expr = input.parse()?;
-        input.parse::<syn::Token![,]>()?;
-        let _pat = syn::Pat::parse_multi_with_leading_vert(input)?;
-        let guard = if input.peek(syn::Token![if]) {
-            input.parse::<syn::Token![if]>()?;
-            Some(input.parse::<syn::Expr>()?)
-        } else {
-            None
-        };
-        Ok::<_, syn::Error>((scrutinee, guard))
-    });
-    match parsed {
-        Ok((scrutinee, guard)) => {
-            expr_is_pure_formula(&scrutinee)
-                && guard.as_ref().is_none_or(|g| expr_is_pure_formula(g))
-        }
-        Err(_) => false,
     }
 }
 
@@ -792,113 +657,6 @@ mod tests {
     fn block_of(src: &str) -> syn::Block {
         let f: syn::ItemFn = syn::parse_str(src).expect("fn parses");
         *f.block
-    }
-
-    #[test]
-    fn generalizable_warrants_pure_value_bodies() {
-        for src in [
-            "fn f() -> i32 { 6 }",
-            "fn f(x: i32) -> i32 { let y = x * 2; y + 1 }",
-            "fn f(c: bool, a: i32, b: i32) -> i32 { if c { a } else { b } }",
-            "fn f(x: i32) -> i32 { match x { 0 => 1, _ => 2 } }",
-            "fn f(a: i32, b: i32) -> (i32, i32) { (a, b) }",
-        ] {
-            assert!(
-                is_generalizable_value_fn(&block_of(src)),
-                "should warrant pure-value body: {src}"
-            );
-        }
-    }
-
-    #[test]
-    fn generalizable_warrants_pure_matches_char_class_predicates() {
-        // The marquee character-classification shape: `matches!(<pure>, <pat>)`
-        // desugars to a pure match-tree -> warrantable by construction. This is
-        // core's `is_ascii_*` family (and base64-alphabet predicates downstream).
-        for src in [
-            "fn f(c: char) -> bool { matches!(c, 'A'..='Z') }",
-            "fn f(c: char) -> bool { matches!(*&c, 'a'..='z' | 'A'..='Z') }",
-            // compound: three OR'd matches! (core's is_ascii_alphanumeric)
-            // cascades through the existing Binary arm once each matches! is pure.
-            "fn f(c: char) -> bool { matches!(c, '0'..='9') | matches!(c, 'A'..='Z') | matches!(c, 'a'..='z') }",
-            // a pure guard is fine.
-            "fn f(c: char) -> bool { matches!(c, x if x == 'q') }",
-        ] {
-            assert!(
-                is_generalizable_value_fn(&block_of(src)),
-                "matches! over a pure scrutinee is a pure boolean formula: {src}"
-            );
-        }
-    }
-
-    #[test]
-    fn generalizable_refuses_matches_over_impure_scrutinee_or_guard() {
-        // matches! must not launder an opaque receiver: an impure scrutinee or
-        // guard (method call) keeps the body refused (bin-1), never a false
-        // warrant. A non-`matches!` macro stays opaque too.
-        for src in [
-            "fn f(s: &str) -> bool { matches!(s.len(), 0) }",
-            "fn f(c: char) -> bool { matches!(c.to_ascii_uppercase(), 'A'..='Z') }",
-            "fn f(v: Vec<i32>) -> bool { matches!(0, x if v.contains(&x)) }",
-            "fn f() -> i32 { vec![1, 2, 3].len() as i32 }",
-            "fn f(x: i32) -> i32 { some_other_macro!(x) }",
-        ] {
-            assert!(
-                !is_generalizable_value_fn(&block_of(src)),
-                "matches! must not launder an opaque/effectful scrutinee or guard: {src}"
-            );
-        }
-    }
-
-    #[test]
-    fn generalizable_warrants_destructuring_lets_and_unsafe_value_blocks() {
-        // An irrefutable destructuring `let` binds names to pure sub-values, and
-        // an `unsafe { <pure> }` block has the value of its inner expression --
-        // both keep the body a pure formula (core's Layout::for_value shape).
-        for src in [
-            "fn f(p: (i32, i32)) -> i32 { let (a, b) = p; a + b }",
-            "fn f(p: Point) -> i32 { let Point { x, y } = p; x + y }",
-            "fn f(p: (i32, (i32, i32))) -> i32 { let (a, (b, _)) = p; a + b }",
-            "fn f(x: usize) -> usize { unsafe { id(x) } }",
-            "fn f(t: usize) -> usize { let (s, a) = (sz(t), al(t)); unsafe { mk(s, a) } }",
-        ] {
-            assert!(
-                is_generalizable_value_fn(&block_of(src)),
-                "irrefutable destructuring + unsafe-value block stay pure formulas: {src}"
-            );
-        }
-    }
-
-    #[test]
-    fn generalizable_refuses_mut_ref_destructuring_and_effectful_unsafe() {
-        // A `mut`/`ref` binding is a mutation/alias surface, and an `unsafe` block
-        // whose value is a method call has an opaque receiver -- both stay refused
-        // (never laundered into a false warrant).
-        for src in [
-            "fn f(p: (i32, i32)) -> i32 { let (mut a, b) = p; a + b }",
-            "fn f(p: (i32, i32)) -> i32 { let (ref a, b) = p; b }",
-            "fn f(p: *const i32) -> i32 { unsafe { p.read() } }",
-        ] {
-            assert!(
-                !is_generalizable_value_fn(&block_of(src)),
-                "mut/ref destructuring or effectful unsafe must stay refused: {src}"
-            );
-        }
-    }
-
-    #[test]
-    fn generalizable_refuses_effectful_bodies() {
-        for src in [
-            "fn f(v: Vec<i32>) -> usize { v.len() }", // method call
-            "fn f() { for _ in 0..3 {} }",            // loop
-            "fn f(r: Result<i32, ()>) -> i32 { r.unwrap() }", // method call
-            "fn f() -> i32 { let mut x = 0; x = 1; x }", // mutation (non-immutable let / assign)
-        ] {
-            assert!(
-                !is_generalizable_value_fn(&block_of(src)),
-                "should NOT warrant effectful/opaque body: {src}"
-            );
-        }
     }
 
     #[test]
