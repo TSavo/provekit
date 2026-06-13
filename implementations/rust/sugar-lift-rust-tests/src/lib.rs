@@ -4512,37 +4512,76 @@ fn match_arm_discriminant(
         Pat::Path(p) => Some((Some(variant_eq(&path_to_variant_string(&p.path))), vec![])),
         Pat::TupleStruct(ts) => {
             let tag = path_to_variant_string(&ts.path);
-            if ts
+            // A `..` rest makes positional payload indices ambiguous -> only
+            // allowed when there are no bindings at all (all wild/rest).
+            let all_inert = ts
                 .elems
                 .iter()
-                .all(|e| matches!(e, Pat::Wild(_) | Pat::Rest(_)))
-            {
-                Some((Some(variant_eq(&tag)), vec![]))
-            } else if ts.elems.len() == 1 {
-                match &ts.elems[0] {
+                .all(|e| matches!(e, Pat::Wild(_) | Pat::Rest(_)));
+            if all_inert {
+                return Some((Some(variant_eq(&tag)), vec![]));
+            }
+            if ts.elems.iter().any(|e| matches!(e, Pat::Rest(_))) {
+                return None; // rest + bindings: ambiguous positions, refuse
+            }
+            let n = ts.elems.len();
+            let mut bindings = Vec::new();
+            for (i, elem) in ts.elems.iter().enumerate() {
+                match elem {
+                    Pat::Wild(_) => {}
                     Pat::Ident(id)
                         if id.subpat.is_none()
                             && id.mutability.is_none()
                             && id.by_ref.is_none() =>
                     {
-                        let payload = Rc::new(Term::Ctor {
-                            name: format!("payload:{tag}"),
-                            args: vec![scrutinee.clone()],
-                        });
-                        Some((
-                            Some(variant_eq(&tag)),
-                            vec![(id.ident.to_string(), payload)],
-                        ))
+                        // Single-field keeps `payload:tag` (matches the kit's
+                        // wrapped_variant_entry congruence); multi-field is indexed.
+                        let acc = if n == 1 {
+                            format!("payload:{tag}")
+                        } else {
+                            format!("payload:{tag}.{i}")
+                        };
+                        bindings.push((
+                            id.ident.to_string(),
+                            Rc::new(Term::Ctor {
+                                name: acc,
+                                args: vec![scrutinee.clone()],
+                            }),
+                        ));
                     }
-                    Pat::Wild(_) | Pat::Rest(_) => Some((Some(variant_eq(&tag)), vec![])),
-                    _ => None,
+                    _ => return None, // nested pattern -> refuse
                 }
-            } else {
-                None // multi-field binding: payload accessors deferred
             }
+            Some((Some(variant_eq(&tag)), bindings))
         }
-        Pat::Struct(s) if s.fields.iter().all(|f| matches!(&*f.pat, Pat::Wild(_))) => {
-            Some((Some(variant_eq(&path_to_variant_string(&s.path))), vec![]))
+        Pat::Struct(s) => {
+            let tag = path_to_variant_string(&s.path);
+            let mut bindings = Vec::new();
+            for f in &s.fields {
+                let field_name = match &f.member {
+                    syn::Member::Named(id) => id.to_string(),
+                    syn::Member::Unnamed(idx) => idx.index.to_string(),
+                };
+                match &*f.pat {
+                    Pat::Wild(_) => {}
+                    Pat::Ident(id)
+                        if id.subpat.is_none()
+                            && id.mutability.is_none()
+                            && id.by_ref.is_none() =>
+                    {
+                        bindings.push((
+                            id.ident.to_string(),
+                            Rc::new(Term::Ctor {
+                                name: format!("payload:{tag}.{field_name}"),
+                                args: vec![scrutinee.clone()],
+                            }),
+                        ));
+                    }
+                    _ => return None,
+                }
+            }
+            // A `..` rest is fine here (it only drops unbound fields, no index shift).
+            Some((Some(variant_eq(&tag)), bindings))
         }
         Pat::Reference(r) => match_arm_discriminant(scrutinee, &r.pat),
         _ => None,

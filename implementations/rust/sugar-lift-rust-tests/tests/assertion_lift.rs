@@ -6024,19 +6024,49 @@ fn emit_value_contract_scalar_match_warrants_and_composes() {
 }
 
 #[test]
-fn emit_value_contract_match_refuses_guarded_and_multifield() {
+fn emit_value_contract_match_refuses_guarded_and_nested() {
     use sugar_lift_rust_tests::emit_value_contract;
-    // an arm guard and a multi-field tuple-variant binding (payload accessors
-    // deferred) are NOT this shape -> None.
+    // an arm guard and a NESTED binding pattern (a sub-pattern that isn't a plain
+    // ident/wild) are NOT this shape -> None.
     for src in [
         "fn f(x: i32) -> i32 { match x { n if n > 0 => 1, _ => 0 } }",
-        "fn f(p: Pair) -> i32 { match p { Pair(a, b) => a, _ => 0 } }",
+        "fn f(o: Option<Option<i32>>) -> i32 { match o { Some(Some(x)) => x, _ => 0 } }",
     ] {
         let f: syn::ItemFn = syn::parse_str(src).unwrap();
         assert!(
             emit_value_contract("f", &f.block).is_none(),
-            "guarded / multi-field-binding match must not warrant: {src}"
+            "guarded / nested-pattern match must not warrant: {src}"
         );
+    }
+}
+
+#[test]
+fn emit_value_contract_multifield_enum_match_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        "fn f(p: Pair) -> i32 { match p { Pair(a, b) => a + b, _ => 0 } }",
+        "fn f(e: E) -> i32 { match e { E::P { x, y } => x + y, _ => 0 } }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("multi-field enum match must warrant: {src}"));
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&parsed[0]["inv"])
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_multifield.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
     }
 }
 
