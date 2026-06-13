@@ -893,6 +893,80 @@ def test_lift_source_refuses_runtime_dispatch_guarded_return_package_accounting(
     )
 
 
+def test_lift_source_refuses_receiver_iteration_header_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_receiver_iteration_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        class Loader:
+            def iter_items(self, salt):
+                return ()
+
+            def loads(self, salt):
+                for signer in self.iter_items(salt):
+                    return signer
+
+                return None
+        """
+    )
+    for_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "for signer in self.iter_items" in line
+    )
+    return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return signer" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_receiver_iteration_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    loop_header_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_iteration_refused/encoding.py")
+        and locus.get("line") == for_line
+    ]
+    assert loop_header_loci
+    assert {locus["status"] for locus in loop_header_loci} == {"refused"}
+    assert all(
+        "runtime receiver iteration" in locus.get("reason", "")
+        for locus in loop_header_loci
+    )
+    body_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_iteration_refused/encoding.py")
+        and locus.get("line") == return_line
+    ]
+    assert body_loci
+    assert not [locus for locus in body_loci if locus["status"] == "refused"]
+
+
 def test_lift_source_refuses_generator_flow_package_accounting(
     tmp_path,
     monkeypatch,

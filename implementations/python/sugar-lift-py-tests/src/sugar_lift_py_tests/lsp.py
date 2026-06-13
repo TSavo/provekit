@@ -486,6 +486,12 @@ def _package_locus_classification(
     )
     if self_field_dispatch_status is not None:
         return self_field_dispatch_status
+    receiver_iteration_status = _receiver_iteration_refusal_status(
+        node,
+        ancestors,
+    )
+    if receiver_iteration_status is not None:
+        return receiver_iteration_status
     adapter_assignment_status = _local_adapter_assignment_status(
         node,
         ancestors,
@@ -1188,6 +1194,47 @@ def _runtime_field_dispatch_refusal_reason(
             f"{'.'.join(path)} is supplied by receiver state, "
             "so no stable vendor method body can warrant this relation"
         )
+    return None
+
+
+def _receiver_iteration_refusal_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    for_stmt = _receiver_iteration_header_for_locus(node, ancestors)
+    if for_stmt is None:
+        return None
+    iter_call = for_stmt.iter
+    if not isinstance(iter_call, ast.Call):
+        return None
+    path = _call_func_attribute_path(iter_call.func)
+    if len(path) < 2 or path[0] not in {"self", "cls"}:
+        return None
+    return (
+        "refused",
+        (
+            "runtime receiver iteration refused: "
+            f"{'.'.join(path)} supplies the loop sequence from receiver state, "
+            "so ordering/path semantics are not a timeless value relation"
+        ),
+    )
+
+
+def _receiver_iteration_header_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[ast.For]:
+    chain = ancestors + (node,)
+    for item in reversed(chain):
+        if not isinstance(item, ast.For):
+            continue
+        if node is item:
+            return item
+        if any(descendant is node for descendant in ast.walk(item.target)):
+            return item
+        if any(descendant is node for descendant in ast.walk(item.iter)):
+            return item
+        return None
     return None
 
 
