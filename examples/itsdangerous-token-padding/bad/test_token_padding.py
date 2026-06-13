@@ -8,6 +8,7 @@ import itsdangerous.exc as exc
 import itsdangerous._json as compact_json
 import itsdangerous.serializer as serializer_mod
 import itsdangerous.signer as signer
+import itsdangerous.timed as timed
 import pytest
 
 
@@ -85,3 +86,12 @@ def test_serializer_load_payload_bad_payload():
         serializer_mod.Serializer.load_payload(
             serializer_mod.Serializer("secret"), b"bad"
         )
+
+
+def test_timed_serializer_loads_unsafe_bad_payload():
+    assert (
+        timed.TimedSerializer.loads_unsafe(
+            timed.TimedSerializer("secret"), "bad"
+        )
+        == (False, None)
+    )

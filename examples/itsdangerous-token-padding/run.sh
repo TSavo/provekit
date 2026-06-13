@@ -394,6 +394,51 @@ if not any(
     for locus in load_payload_audit["loci"]
 ):
     raise SystemExit("FAIL: Serializer.load_payload BadPayload raise was not warranted")
+timed_loads_unsafe_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.delegation-universe"
+    and audit.get("source_memento", {}).get("source_function_name")
+    == "TimedSerializer.loads_unsafe"
+]
+if len(timed_loads_unsafe_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one TimedSerializer.loads_unsafe delegation audit, "
+        f"got {len(timed_loads_unsafe_audits)}"
+    )
+timed_loads_unsafe_audit = timed_loads_unsafe_audits[0]
+timed_loads_unsafe_totals = timed_loads_unsafe_audit["totals"]
+timed_loads_unsafe_memento = timed_loads_unsafe_audit["source_memento"]
+if timed_loads_unsafe_audit.get("universe_kind") != "delegation-receiver-method":
+    raise SystemExit(
+        "FAIL: expected receiver-method delegation audit, got "
+        f"{timed_loads_unsafe_audit.get('universe_kind')}"
+    )
+if timed_loads_unsafe_memento.get("source_function_name") != "TimedSerializer.loads_unsafe":
+    raise SystemExit(
+        "FAIL: TimedSerializer.loads_unsafe source oracle should point at "
+        f"method body: {timed_loads_unsafe_memento!r}"
+    )
+if "body_text" in timed_loads_unsafe_memento or "ast_template" in timed_loads_unsafe_memento:
+    raise SystemExit("FAIL: TimedSerializer.loads_unsafe source memento embeds source/template body")
+if timed_loads_unsafe_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: TimedSerializer.loads_unsafe source dig has unclassified source: "
+        f"totals={timed_loads_unsafe_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Return"
+    and locus.get("line") == 228
+    for locus in timed_loads_unsafe_audit["loci"]
+):
+    raise SystemExit("FAIL: TimedSerializer.loads_unsafe return was not warranted")
+if not any(
+    locus.get("status") == "support"
+    and locus.get("ast_kind") == "Call"
+    and locus.get("line") == 228
+    for locus in timed_loads_unsafe_audit["loci"]
+):
+    raise SystemExit("FAIL: TimedSerializer.loads_unsafe delegate call was not queued as support")
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -759,6 +804,15 @@ print(
     f"support={load_payload_totals.get('source_support', 0)}",
     f"refused={load_payload_totals['source_refused']}",
     f"unclassified={load_payload_totals['unclassified_source']}",
+)
+print(
+    "source audit TimedSerializer.loads_unsafe:",
+    f"loci={timed_loads_unsafe_totals['source_loci']}",
+    f"warranted={timed_loads_unsafe_totals['source_warranted']}",
+    f"inactive={timed_loads_unsafe_totals['source_inactive']}",
+    f"support={timed_loads_unsafe_totals.get('source_support', 0)}",
+    f"refused={timed_loads_unsafe_totals['source_refused']}",
+    f"unclassified={timed_loads_unsafe_totals['unclassified_source']}",
 )
 print(
     "source audit SigningAlgorithm.get_signature:",

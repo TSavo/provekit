@@ -5917,34 +5917,73 @@ def _mapped_receiver_delegate_args_and_queued(
     mapped = []
     nested_delegates = []
     for spec in specs:
-        if spec[0] == "receiver":
-            mapped.append(receiver_term)
-        elif spec[0] == "param":
-            if spec[1] >= len(call_args):
-                return None
-            mapped.append(call_args[spec[1]])
-        elif spec[0] == "receiver-method-call":
-            nested = _mapped_receiver_delegate_args_and_queued(
-                spec[2],
+        mapped_spec = _receiver_delegate_spec_term(
+            spec,
+            call_args,
+            receiver_term,
+        )
+        if mapped_spec is None:
+            return None
+        term, queued = mapped_spec
+        mapped.append(term)
+        nested_delegates.extend(queued)
+    return mapped, nested_delegates
+
+
+def _receiver_delegate_spec_term(
+    spec,
+    call_args,
+    receiver_term: Term,
+) -> Optional[Tuple[Term, List[Tuple[str, List[Term], Term]]]]:
+    if spec[0] == "receiver":
+        return receiver_term, []
+    if spec[0] == "param":
+        if spec[1] >= len(call_args):
+            return None
+        return call_args[spec[1]], []
+    if spec[0] == "receiver-method-call":
+        nested = _mapped_receiver_delegate_args_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+        )
+        if nested is None:
+            return None
+        nested_args, nested_queues = nested
+        nested_delegate_args = [receiver_term, *nested_args]
+        method_name = spec[1].rsplit(".", 1)[-1]
+        head = _callval_head(method_name, len(nested_delegate_args))
+        nested_term = ctor(head, nested_delegate_args)
+        queued = list(nested_queues)
+        queued.append((spec[1], nested_args, nested_term))
+        return nested_term, queued
+    if spec[0] == "kw":
+        return _receiver_delegate_spec_term(spec[2], call_args, receiver_term)
+    if spec[0] == "dict":
+        entries = []
+        queued: List[Tuple[str, List[Term], Term]] = []
+        for key, value_spec in spec[1]:
+            mapped_value = _receiver_delegate_spec_term(
+                value_spec,
                 call_args,
                 receiver_term,
             )
-            if nested is None:
+            if mapped_value is None:
                 return None
-            nested_args, nested_queues = nested
-            nested_delegate_args = [receiver_term, *nested_args]
-            method_name = spec[1].rsplit(".", 1)[-1]
-            head = _callval_head(method_name, len(nested_delegate_args))
-            nested_term = ctor(head, nested_delegate_args)
-            mapped.append(nested_term)
-            nested_delegates.extend(nested_queues)
-            nested_delegates.append((spec[1], nested_args, nested_term))
-        else:
-            lit = _mapped_delegate_args((spec,), call_args)
-            if lit is None:
-                return None
-            mapped.extend(lit)
-    return mapped, nested_delegates
+            value_term, value_queued = mapped_value
+            entries.append(
+                ctor(
+                    "python:dict-entry_a2",
+                    [str_const(key), value_term],
+                )
+            )
+            queued.extend(value_queued)
+        return ctor(f"python:dict_a{len(entries)}", entries), queued
+
+    lit = _mapped_delegate_args((spec,), call_args)
+    if lit is None:
+        return None
+    return lit[0], []
 
 
 def _receiver_delegate_origin(

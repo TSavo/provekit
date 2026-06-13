@@ -2232,6 +2232,78 @@ def _resolve_receiver_context_arg_spec(
     )
 
 
+def _resolve_receiver_context_value_spec(
+    node,
+    *,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+    params: list[str],
+    env: dict,
+):
+    spec, refusal = _resolve_receiver_context_arg_spec(
+        node,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        params=params,
+        env=env,
+    )
+    if refusal is not None or spec is not None:
+        return spec, refusal
+    if not isinstance(node, ast.Dict):
+        return None, None
+
+    items = []
+    seen_keys = set()
+    for key_node, value_node in zip(node.keys, node.values):
+        if key_node is None:
+            return (
+                None,
+                "receiver-method delegate keyword dict uses ** unpacking; "
+                "the forwarded keys are runtime-selected",
+            )
+        if not (
+            isinstance(key_node, ast.Constant)
+            and isinstance(key_node.value, str)
+        ):
+            return (
+                None,
+                "receiver-method delegate keyword dict key is not a string "
+                "literal; the forwarded argument surface is not stable",
+            )
+        key = key_node.value
+        if key in seen_keys:
+            return (
+                None,
+                "receiver-method delegate keyword dict repeats key "
+                f"{key!r}; Python keeps the last value, which this walk "
+                "does not normalize yet",
+            )
+        seen_keys.add(key)
+        value_spec, value_refusal = _resolve_receiver_context_value_spec(
+            value_node,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+            params=params,
+            env=env,
+        )
+        if value_refusal is not None:
+            return None, value_refusal
+        if value_spec is None:
+            return (
+                None,
+                "receiver-method delegate keyword dict value for key "
+                f"{key!r} is neither a parameter, literal, chain name, "
+                "receiver-method call, nor nested literal-key dict",
+            )
+        items.append((key, value_spec))
+
+    items.sort(key=lambda item: item[0])
+    return ("dict", tuple(items)), None
+
+
 def _receiver_method_delegate_for_call(
     value: ast.Call,
     *,
@@ -2260,12 +2332,6 @@ def _receiver_method_delegate_for_call(
     delegate_name = value.func.attr
     if delegate_name == current_method:
         return None, "self-delegation: the equality would be vacuous"
-    if value.keywords:
-        return (
-            None,
-            "keyword arguments in receiver-method delegate call are not yet "
-            "walked (positional mapping only)",
-        )
     cls = _find_class_path(tree.body, class_qualname.split("."))
     if cls is None:
         return (
@@ -2281,6 +2347,8 @@ def _receiver_method_delegate_for_call(
         ),
         None,
     )
+    delegate_qualname = f"{module_name}.{class_qualname}.{delegate_name}"
+    delegate_owner_cls = cls
     if delegate_fn is None:
         if any(
             isinstance(stmt, ast.AsyncFunctionDef)
@@ -2292,6 +2360,30 @@ def _receiver_method_delegate_for_call(
                 f"receiver-method delegate {delegate_name} is async: the call "
                 "term is a coroutine, not the awaited value",
             )
+        if _class_member_binding_count(cls, delegate_name) != 0:
+            return (
+                None,
+                f"receiver-method delegate {delegate_name} is shadowed in "
+                "the current class body; inherited method lookup would not "
+                "stably denote the base def",
+            )
+        inherited, inherited_refusal = _inherited_receiver_method_delegate(
+            tree,
+            cls,
+            module_name,
+            delegate_name,
+        )
+        if inherited_refusal is not None:
+            return None, inherited_refusal
+        if inherited is not None:
+            delegate_fn, delegate_qualname, delegate_owner_cls = inherited
+        else:
+            return (
+                None,
+                f"receiver-method delegate {delegate_name} is not a method in "
+                "the current vendor class or a stable single base class",
+            )
+    if delegate_fn is None:
         return (
             None,
             f"receiver-method delegate {delegate_name} is not a method in the "
@@ -2304,7 +2396,7 @@ def _receiver_method_delegate_for_call(
             "body is not the runtime callable, so determinism evidence cannot "
             "be read from it",
         )
-    if _class_member_binding_count(cls, delegate_name) != 1:
+    if _class_member_binding_count(delegate_owner_cls, delegate_name) != 1:
         return (
             None,
             f"receiver-method delegate {delegate_name} is rebound in the class "
@@ -2330,13 +2422,123 @@ def _receiver_method_delegate_for_call(
                 "callsite's",
             )
         specs.append(spec)
+    for keyword in value.keywords:
+        if keyword.arg is None:
+            return (
+                None,
+                "receiver-method delegate call uses **kwargs forwarding; "
+                "the keyword surface is runtime-selected",
+            )
+        spec, refusal = _resolve_receiver_context_value_spec(
+            keyword.value,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+            params=params,
+            env=env,
+        )
+        if refusal is not None:
+            return None, refusal
+        if spec is None:
+            return (
+                None,
+                "receiver-method delegate keyword argument is neither a "
+                "parameter, literal, chain name, receiver-method call, nor "
+                "literal-key dict; the forwarded value is not the callsite's",
+            )
+        specs.append(("kw", keyword.arg, spec))
     return (
         _ReceiverMethodDelegate(
-            delegate=f"{module_name}.{class_qualname}.{delegate_name}",
+            delegate=delegate_qualname,
             args=tuple(specs),
         ),
         None,
     )
+
+
+def _inherited_receiver_method_delegate(
+    tree: ast.Module,
+    cls: ast.ClassDef,
+    module_name: str,
+    delegate_name: str,
+) -> Tuple[Optional[Tuple[ast.FunctionDef, str, ast.ClassDef]], Optional[str]]:
+    if not cls.bases:
+        return None, None
+    if len(cls.bases) != 1:
+        return (
+            None,
+            "receiver-method delegate is inherited through multiple base "
+            "classes; MRO-sensitive lookup is not admitted yet",
+        )
+    base = cls.bases[0]
+    resolved = _resolve_receiver_delegate_base_class(tree, base, module_name)
+    if resolved is None:
+        return None, None
+    _base_tree, base_cls, base_module, base_qualname = resolved
+    if _class_member_binding_count(base_cls, delegate_name) != 1:
+        if any(
+            isinstance(stmt, ast.AsyncFunctionDef)
+            and stmt.name == delegate_name
+            for stmt in base_cls.body
+        ):
+            return (
+                None,
+                f"receiver-method delegate {delegate_name} is async on the "
+                "base class: the call term is a coroutine, not the awaited value",
+            )
+        return None, None
+    delegate_fn = next(
+        (
+            stmt
+            for stmt in base_cls.body
+            if isinstance(stmt, ast.FunctionDef) and stmt.name == delegate_name
+        ),
+        None,
+    )
+    if delegate_fn is None:
+        return None, None
+    if delegate_fn.decorator_list:
+        return (
+            None,
+            f"receiver-method delegate {delegate_name} is decorated on the "
+            "base class; its def body is not the runtime callable",
+        )
+    return (
+        delegate_fn,
+        f"{base_module}.{base_qualname}.{delegate_name}",
+        base_cls,
+    ), None
+
+
+def _resolve_receiver_delegate_base_class(
+    tree: ast.Module,
+    base: ast.expr,
+    module_name: str,
+) -> Optional[Tuple[ast.Module, ast.ClassDef, str, str]]:
+    while isinstance(base, ast.Subscript):
+        base = base.value
+    if isinstance(base, ast.Name):
+        same_module = _find_class_path(tree.body, [base.id])
+        if same_module is not None:
+            return tree, same_module, module_name, base.id
+        aliases = _module_call_aliases(tree, module_name)
+        alias = aliases.get(base.id)
+        if alias is None:
+            return None
+        resolved = _resolve_vendor_class(alias)
+        if resolved is None:
+            return None
+        base_tree, base_cls, _base_origin, base_module, base_qualname = resolved
+        return base_tree, base_cls, base_module, base_qualname
+    path = _attribute_path(base)
+    if path is None:
+        return None
+    alias = ".".join(path)
+    resolved = _resolve_vendor_class(alias)
+    if resolved is None:
+        return None
+    base_tree, base_cls, _base_origin, base_module, base_qualname = resolved
+    return base_tree, base_cls, base_module, base_qualname
 
 
 def _dynamic_receiver_dispatch_reason(
@@ -3460,6 +3662,44 @@ def _resolve_vendor_function(callee: str, *, allow_methods: bool = False):
         if resolved is not None:
             return resolved
     return None
+
+
+def _resolve_vendor_class(
+    callee: str,
+) -> Optional[Tuple[ast.Module, ast.ClassDef, str, str, str]]:
+    if "." not in callee:
+        return None
+    parts = callee.split(".")
+    for split in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:split])
+        class_path = parts[split:]
+        if not module_name or not class_path:
+            continue
+        resolved = _resolve_class_path_in_module(module_name, class_path)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def _resolve_class_path_in_module(module_name: str, class_path: list[str]):
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except (ImportError, ValueError):
+        return None
+    if spec is None or spec.origin in (None, "built-in", "frozen"):
+        return None
+    if not spec.origin.endswith(".py"):
+        return None
+    try:
+        tree = ast.parse(
+            open(spec.origin, encoding="utf-8").read(), filename=spec.origin
+        )
+    except (OSError, SyntaxError):
+        return None
+    cls = _find_class_path(tree.body, class_path)
+    if cls is None:
+        return None
+    return tree, cls, spec.origin, module_name, ".".join(class_path)
 
 
 def _resolve_function_path_in_module(module_name: str, fn_path: list[str]):

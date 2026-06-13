@@ -4708,6 +4708,183 @@ def test_receiver_method_delegation_recurses_nested_receiver_call(vendor_path):
     ), audits
 
 
+def test_receiver_method_delegation_walks_keyword_dict_forwarding(vendor_path):
+    from sugar_lift_py_tests.translate_universe import delegation_universe_for_callee
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_kwargs",
+        """
+        class Router:
+            def g(self, seed, load_kwargs=None):
+                return "fixed"
+
+            def f(self, seed, max_age=None):
+                return self.g(seed, load_kwargs={"max_age": max_age})
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_kwargs.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_kwargs.Router.g"
+    assert universe.args == (
+        ("param", 0),
+        ("kw", "load_kwargs", ("dict", (("max_age", ("param", 1)),))),
+    )
+
+
+def test_receiver_method_delegation_composes_keyword_dict_forwarding(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_kwargs_l2",
+        """
+        class Router:
+            def g(self, seed, load_kwargs=None):
+                return "fixed"
+
+            def f(self, seed, max_age=None):
+                return self.g(seed, load_kwargs={"max_age": max_age})
+        """,
+    )
+
+    out = _lift(
+        """
+        import venddeleg_receiver_kwargs_l2
+
+        def test_route():
+            router = venddeleg_receiver_kwargs_l2.Router()
+            assert router.f("raaaa", 5) == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callval_g_a3")
+    assert any(
+        any("callval_f_a3" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a3" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_receiver_kwargs_l2.Router.f" in d.name
+    )
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {"python.delegation-universe", "python.constant-universe"} <= roles
+    audits = {
+        (audit["role"], audit["source_memento"]["source_function_name"]): audit
+        for audit in out.source_audits
+        if "venddeleg_receiver_kwargs_l2.Router" in audit["contract"]["name"]
+        and audit["role"] in {"python.delegation-universe", "python.constant-universe"}
+    }
+    assert ("python.delegation-universe", "Router.f") in audits
+    assert ("python.constant-universe", "Router.g") in audits
+    assert all(
+        audit["totals"]["unclassified_source"] == 0
+        for audit in audits.values()
+    ), audits
+
+
+def test_receiver_method_delegation_walks_imported_base_keyword_dict(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_base",
+        """
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Base(Generic[T]):
+            def g(self, seed, load_kwargs=None):
+                return "fixed"
+        """,
+    )
+    vendor_path(
+        "venddeleg_receiver_child",
+        """
+        from venddeleg_receiver_base import Base
+
+        class Child(Base[str]):
+            def f(self, seed, max_age=None):
+                return self.g(seed, load_kwargs={"max_age": max_age})
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_child.Child.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_base.Base.g"
+    assert universe.args == (
+        ("param", 0),
+        ("kw", "load_kwargs", ("dict", (("max_age", ("param", 1)),))),
+    )
+
+    out = _lift(
+        """
+        import venddeleg_receiver_child
+
+        def test_route():
+            child = venddeleg_receiver_child.Child()
+            assert child.f("raaaa", 5) == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callval_g_a3")
+    assert any(
+        any("callval_f_a3" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a3" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+
 def test_receiver_runtime_dispatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import delegation_universe_for_callee
 
