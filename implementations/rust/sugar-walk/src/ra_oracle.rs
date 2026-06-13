@@ -1200,21 +1200,48 @@ pub enum SignatureEffect {
 /// method returning `&mut T` / `*mut T` is correctly `RefClean` (it hands out a
 /// mutable view but does not itself mutate the receiver).
 pub fn signature_effect_from_hover(markdown: &str) -> SignatureEffect {
-    let Some(block) = first_rust_fenced_block(markdown) else {
-        return SignatureEffect::Unknown;
-    };
-    let joined: String = block.lines().map(str::trim).collect::<Vec<_>>().join(" ");
-    let Some(fnpos) = joined.find("fn ") else {
-        return SignatureEffect::Unknown;
-    };
-    let Some(params) = first_balanced_parens(&joined[fnpos..]) else {
-        return SignatureEffect::Unknown;
-    };
-    if params.contains("&mut ") {
-        SignatureEffect::Mutating
-    } else {
-        SignatureEffect::RefClean
+    // RA's method hover has MULTIPLE ```rust blocks: the receiver TYPE block
+    // (`core::option::Option`, no `fn`) then the impl/signature block
+    // (`impl<T> Option<T>\npub const fn unwrap(self) -> T`). Scan every fenced
+    // block for the one carrying the `fn` signature.
+    for block in rust_fenced_blocks(markdown) {
+        let joined: String = block.lines().map(str::trim).collect::<Vec<_>>().join(" ");
+        let Some(fnpos) = joined.find("fn ") else {
+            continue;
+        };
+        let Some(params) = first_balanced_parens(&joined[fnpos..]) else {
+            continue;
+        };
+        return if params.contains("&mut ") {
+            SignatureEffect::Mutating
+        } else {
+            SignatureEffect::RefClean
+        };
     }
+    SignatureEffect::Unknown
+}
+
+/// Every ```rust (or bare ```) fenced block body in `markdown`, in order.
+fn rust_fenced_blocks(markdown: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut lines = markdown.lines();
+    while let Some(line) = lines.next() {
+        if let Some(rest) = line.trim_start().strip_prefix("```") {
+            let tag = rest.trim();
+            let is_rust_or_bare = tag.is_empty() || tag.eq_ignore_ascii_case("rust");
+            let mut body: Vec<&str> = Vec::new();
+            for inner in lines.by_ref() {
+                if inner.trim_start().starts_with("```") {
+                    break;
+                }
+                body.push(inner);
+            }
+            if is_rust_or_bare {
+                out.push(body.join("\n"));
+            }
+        }
+    }
+    out
 }
 
 /// The content between the first `(` and its matching `)` in `s` (depth-balanced,
@@ -1507,6 +1534,14 @@ mod tests {
             Unknown
         );
         assert_eq!(signature_effect_from_hover("not markdown"), Unknown);
+
+        // REAL rust-analyzer hover shape: a receiver-TYPE block FIRST (no fn),
+        // then the impl/signature block. The parser must scan past the first
+        // block to the fn signature (captured live: Option::unwrap, Vec::push).
+        let unwrap_md = "```rust\ncore::option::Option\n```\n\n```rust\nimpl<T> Option<T>\npub const fn unwrap(self) -> T\n```\n\n---\n`T` = `i32`";
+        assert_eq!(signature_effect_from_hover(unwrap_md), RefClean);
+        let push_md = "```rust\nalloc::vec::Vec\n```\n\n```rust\nimpl<T, A> Vec<T, A>\npub fn push(&mut self, value: T)\n```";
+        assert_eq!(signature_effect_from_hover(push_md), Mutating);
     }
 
     #[test]
