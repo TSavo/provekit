@@ -279,6 +279,62 @@ if not any(
     for locus in signer_derive_audit["loci"]
 ):
     raise SystemExit("FAIL: Signer.derive_key none return was not warranted")
+serializer_kwargs_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "itsdangerous.serializer.Serializer" in audit.get("contract", {}).get("name", "")
+    and audit.get("source_memento", {}).get("source_function_name")
+    == "Serializer.__init__"
+    and audit.get("source_memento", {}).get("field_name") == "signer_kwargs"
+    and audit.get("source_memento", {}).get("constructor_param_name")
+    == "signer_kwargs"
+]
+if len(serializer_kwargs_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one Serializer.signer_kwargs constructor-field audit, "
+        f"got {len(serializer_kwargs_audits)}"
+    )
+serializer_kwargs_audit = serializer_kwargs_audits[0]
+serializer_kwargs_totals = serializer_kwargs_audit["totals"]
+serializer_kwargs_memento = serializer_kwargs_audit["source_memento"]
+if serializer_kwargs_memento.get("constructor_default_literal_kind") != "collection":
+    raise SystemExit(
+        "FAIL: Serializer.signer_kwargs source memento did not record a "
+        f"collection default: {serializer_kwargs_memento!r}"
+    )
+if serializer_kwargs_memento.get("constructor_default_literal") != "dict:{}":
+    raise SystemExit(
+        "FAIL: Serializer.signer_kwargs source memento did not record dict:{} "
+        f"default: {serializer_kwargs_memento!r}"
+    )
+if "body_text" in serializer_kwargs_memento or "ast_template" in serializer_kwargs_memento:
+    raise SystemExit("FAIL: Serializer.signer_kwargs source memento embeds source/template body")
+if serializer_kwargs_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: Serializer.signer_kwargs source dig has unclassified source: "
+        f"totals={serializer_kwargs_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "AnnAssign"
+    and locus.get("line") == 228
+    for locus in serializer_kwargs_audit["loci"]
+):
+    raise SystemExit("FAIL: Serializer.signer_kwargs assignment was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "BoolOp"
+    and locus.get("line") == 228
+    for locus in serializer_kwargs_audit["loci"]
+):
+    raise SystemExit("FAIL: Serializer.signer_kwargs bool-or default was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Dict"
+    and locus.get("line") == 228
+    for locus in serializer_kwargs_audit["loci"]
+):
+    raise SystemExit("FAIL: Serializer.signer_kwargs dict default was not warranted")
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -628,6 +684,15 @@ print(
     f"unclassified={signer_derive_totals['unclassified_source']}",
 )
 print(
+    "source audit Serializer.signer_kwargs:",
+    f"loci={serializer_kwargs_totals['source_loci']}",
+    f"warranted={serializer_kwargs_totals['source_warranted']}",
+    f"inactive={serializer_kwargs_totals['source_inactive']}",
+    f"support={serializer_kwargs_totals.get('source_support', 0)}",
+    f"refused={serializer_kwargs_totals['source_refused']}",
+    f"unclassified={serializer_kwargs_totals['unclassified_source']}",
+)
+print(
     "source audit SigningAlgorithm.get_signature:",
     f"loci={abstract_signature_totals['source_loci']}",
     f"warranted={abstract_signature_totals['source_warranted']}",
@@ -780,6 +845,30 @@ if not derive_ok:
     print(
         f"FAIL({twin}): expected derive_key {expect}, "
         f"statuses={sorted(derive_statuses)}"
+    )
+    sys.exit(1)
+serializer_kwargs = [
+    (r.get("property", ""), r.get("status", ""))
+    for r in doc.get("rows", [])
+    if "itsdangerous.serializer.Serializer@test_token_padding.py" in str(r.get("property", ""))
+]
+if not serializer_kwargs:
+    print(f"FAIL({twin}): no Serializer constructor property rows in receipt"); sys.exit(1)
+serializer_kwargs_statuses = {s for _, s in serializer_kwargs}
+print(f"Serializer.signer_kwargs rows({twin}):")
+for n, s in serializer_kwargs:
+    print(f"  {s:14s} {n[:110]}")
+if expect == "discharged":
+    signer_kwargs_ok = (
+        serializer_kwargs_statuses & ok_words
+        and not (serializer_kwargs_statuses & bad_words)
+    )
+else:
+    signer_kwargs_ok = bool(serializer_kwargs_statuses & bad_words)
+if not signer_kwargs_ok:
+    print(
+        f"FAIL({twin}): expected Serializer.signer_kwargs {expect}, "
+        f"statuses={sorted(serializer_kwargs_statuses)}"
     )
     sys.exit(1)
 print(f"OK({twin}): {expect}")

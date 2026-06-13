@@ -344,7 +344,7 @@ def _assertion_origin_attribute_subject(
         return None
     prefix = f"{origin.ssa_name}."
     for atom in _iter_conjuncts(assertion):
-        if atom.name != "=" or len(atom.args) != 2:
+        if atom.name not in {"=", "≠"} or len(atom.args) != 2:
             continue
         for side in atom.args:
             found = _origin_attribute_term(side, prefix)
@@ -581,8 +581,12 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "source_cid",
         "template_cid",
         "param_names",
+        "field_name",
+        "constructor_param_name",
         "constructor_default_param_names",
         "constructor_default_attr_name",
+        "constructor_default_literal",
+        "constructor_default_literal_kind",
         "adapter_callee",
         "helper_callee",
         "list_adapter_branch",
@@ -974,6 +978,8 @@ def _classify_universe_source_statement(
             return "warranted", "emitted into python.instance-field-universe"
         if _is_instance_field_call_assign(stmt):
             return "support", "unrelated constructor field call assignment supports source accounting"
+        if _is_instance_field_bool_or_default_assign(stmt):
+            return "warranted", "constructor bool-or default emitted into python.instance-field-universe"
         if _is_instance_field_return(stmt):
             return "warranted", "emitted into python.instance-field-universe"
         return "unclassified", "instance-field source not emitted"
@@ -1271,6 +1277,32 @@ def _is_instance_field_call_assign(stmt: ast.stmt) -> bool:
         and isinstance(value.func, ast.Name)
         and len(value.args) == 1
         and isinstance(value.args[0], ast.Name)
+    )
+
+
+def _is_instance_field_bool_or_default_assign(stmt: ast.stmt) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    return (
+        isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+        and isinstance(value, ast.BoolOp)
+        and isinstance(value.op, ast.Or)
+        and len(value.values) == 2
+        and isinstance(value.values[0], ast.Name)
+        and (
+            _literal_value_kind_for_accounting(value.values[1]) is not None
+            or isinstance(value.values[1], (ast.Dict, ast.List, ast.Tuple, ast.Set))
+        )
     )
 
 
@@ -5545,6 +5577,8 @@ def _universe_literal_term(value_kind: str, value: Any) -> Optional[Term]:
             return ctor("python:bytes", [str_const(value.decode("ascii"))])
         except UnicodeDecodeError:
             return None
+    if value_kind == "collection" and isinstance(value, str):
+        return str_const(value)
     return None
 
 
@@ -5608,6 +5642,19 @@ def _constructor_field_universe_value_term(
     origin: _CallOrigin,
 ) -> Term:
     arg_term = origin.constructor_args[universe.constructor_param_index]
+    default_literal_kind = getattr(universe, "constructor_default_literal_kind", None)
+    if default_literal_kind:
+        if (
+            universe.constructor_param_name in origin.constructor_default_params
+            or _is_none_term(arg_term)
+        ):
+            default_term = _universe_literal_term(
+                default_literal_kind,
+                getattr(universe, "constructor_default_literal", None),
+            )
+            if default_term is not None:
+                return default_term
+        return _constructor_field_adapter_term(universe, arg_term)
     default_attr_name = getattr(universe, "constructor_default_attr_name", None)
     if not default_attr_name:
         return _constructor_field_adapter_term(universe, arg_term)
@@ -5723,6 +5770,17 @@ def _source_warrant_for_instance_field_universe(
     default_attr_name = getattr(universe, "constructor_default_attr_name", None)
     if default_attr_name:
         warrant["constructor_default_attr_name"] = default_attr_name
+    default_literal_kind = getattr(
+        universe,
+        "constructor_default_literal_kind",
+        None,
+    )
+    if default_literal_kind:
+        warrant["constructor_default_literal_kind"] = default_literal_kind
+        warrant["constructor_default_literal"] = _json_safe_literal_value(
+            getattr(universe, "constructor_default_literal", None),
+            default_literal_kind,
+        )
     adapter_callee = getattr(universe, "adapter_callee", None)
     if adapter_callee:
         warrant["adapter_callee"] = adapter_callee

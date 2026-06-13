@@ -321,6 +321,8 @@ class InstanceFieldUniverse:
     source_memento: Optional[dict[str, Any]] = None
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
+    constructor_default_literal: Optional[object] = None
+    constructor_default_literal_kind: Optional[str] = None
     adapter_callee: Optional[str] = None
     helper_callee: Optional[str] = None
 
@@ -347,6 +349,8 @@ class ConstructorFieldUniverse:
     lineno: int
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
+    constructor_default_literal: Optional[object] = None
+    constructor_default_literal_kind: Optional[str] = None
     forwarder_constructor_qualname: Optional[str] = None
     forwarder_source_memento: Optional[dict[str, Any]] = None
     adapter_callee: Optional[str] = None
@@ -358,6 +362,8 @@ class _ConstructorFieldAssignment:
     assign: ast.Assign | ast.AnnAssign
     param_name: str
     default_attr_name: Optional[str] = None
+    default_literal: Optional[object] = None
+    default_literal_kind: Optional[str] = None
     adapter_callee: Optional[str] = None
     helper_callee: Optional[str] = None
 
@@ -919,6 +925,8 @@ def instance_field_universe_for_callee(
             source_memento=source_memento,
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
+            constructor_default_literal=field.default_literal,
+            constructor_default_literal_kind=field.default_literal_kind,
             adapter_callee=field.adapter_callee,
             helper_callee=field.helper_callee,
         ),
@@ -980,6 +988,8 @@ def constructor_field_universe_for_callee(
             lineno=assign.lineno,
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
+            constructor_default_literal=field.default_literal,
+            constructor_default_literal_kind=field.default_literal_kind,
             adapter_callee=field.adapter_callee,
             helper_callee=field.helper_callee,
         ),
@@ -1044,6 +1054,8 @@ def _constructor_field_from_super_init(
         lineno=base_universe.lineno,
         constructor_source_memento=base_universe.constructor_source_memento,
         constructor_default_attr_name=base_universe.constructor_default_attr_name,
+        constructor_default_literal=base_universe.constructor_default_literal,
+        constructor_default_literal_kind=base_universe.constructor_default_literal_kind,
         forwarder_constructor_qualname=f"{module_name}.{fn_name}",
         forwarder_source_memento=forwarder_source_memento,
         adapter_callee=base_universe.adapter_callee,
@@ -1157,8 +1169,18 @@ def _constructor_field_assignment(
             call_aliases,
         )
         if field is None:
+            if _constructor_field_call_assignment_stmt(stmt, init_params):
+                continue
             return None
-        assign, assigned_field, param_name, adapter_callee, helper_callee = field
+        (
+            assign,
+            assigned_field,
+            param_name,
+            adapter_callee,
+            helper_callee,
+            default_literal,
+            default_literal_kind,
+        ) = field
         if assigned_field == field_name:
             if param_name in tainted_params:
                 return None
@@ -1166,6 +1188,8 @@ def _constructor_field_assignment(
                 assign=assign,
                 param_name=param_name,
                 default_attr_name=default_attrs.get(param_name),
+                default_literal=default_literal,
+                default_literal_kind=default_literal_kind,
                 adapter_callee=adapter_callee,
                 helper_callee=helper_callee,
             )
@@ -1272,7 +1296,17 @@ def _constructor_field_assignment_stmt(
     stmt: ast.stmt,
     init_params: list[str],
     call_aliases: Optional[dict[str, str]] = None,
-) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str, Optional[str], Optional[str]]]:
+) -> Optional[
+    tuple[
+        ast.Assign | ast.AnnAssign,
+        str,
+        str,
+        Optional[str],
+        Optional[str],
+        Optional[object],
+        Optional[str],
+    ]
+]:
     if isinstance(stmt, ast.Assign):
         if len(stmt.targets) != 1:
             return None
@@ -1287,15 +1321,69 @@ def _constructor_field_assignment_stmt(
     if assigned_field is None:
         return None
     if isinstance(value, ast.Name) and value.id in init_params[1:]:
-        return stmt, assigned_field, value.id, None, None
+        return stmt, assigned_field, value.id, None, None, None, None
     adapter = _constructor_adapter_call(value, init_params, call_aliases or {})
     if adapter is not None:
         param_name, adapter_callee = adapter
-        return stmt, assigned_field, param_name, adapter_callee, None
+        return stmt, assigned_field, param_name, adapter_callee, None, None, None
     helper = _constructor_list_adapter_call(value, init_params, call_aliases or {})
     if helper is not None:
         param_name, helper_callee = helper
-        return stmt, assigned_field, param_name, None, helper_callee
+        return stmt, assigned_field, param_name, None, helper_callee, None, None
+    default_literal = _constructor_bool_or_default_literal(value, init_params)
+    if default_literal is not None:
+        param_name, literal_value, literal_kind = default_literal
+        return (
+            stmt,
+            assigned_field,
+            param_name,
+            None,
+            None,
+            literal_value,
+            literal_kind,
+        )
+    return None
+
+
+def _constructor_field_call_assignment_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    if _self_attribute_name(target, init_params[0]) is None:
+        return False
+    return _constructor_param_default_call(value, init_params)
+
+
+def _constructor_bool_or_default_literal(
+    value: ast.expr,
+    init_params: list[str],
+) -> Optional[tuple[str, object, str]]:
+    if (
+        not isinstance(value, ast.BoolOp)
+        or not isinstance(value.op, ast.Or)
+        or len(value.values) != 2
+        or not isinstance(value.values[0], ast.Name)
+        or value.values[0].id not in init_params[1:]
+    ):
+        return None
+    param_name = value.values[0].id
+    literal = _literal_value_kind(value.values[1])
+    if literal is not None:
+        literal_value, literal_kind = literal
+        return param_name, literal_value, literal_kind
+    canonical = collection_literal_canonical(value.values[1])
+    if canonical is not None:
+        return param_name, canonical, "collection"
     return None
 
 
@@ -3316,14 +3404,31 @@ def _find_function_path(
             return None
         body = cls.body
     fn_name = fn_path[-1]
-    return next(
-        (
-            stmt
-            for stmt in body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
-        ),
-        None,
-    )
+    candidates = [
+        stmt
+        for stmt in body
+        if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
+    ]
+    for candidate in candidates:
+        if not _is_overload_stub(candidate):
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _is_overload_stub(fn: ast.FunctionDef) -> bool:
+    if not (
+        len(fn.body) == 1
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and fn.body[0].value.value is Ellipsis
+    ):
+        return False
+    for decorator in fn.decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id == "overload":
+            return True
+        if isinstance(decorator, ast.Attribute) and decorator.attr == "overload":
+            return True
+    return False
 
 
 def _find_class_path(

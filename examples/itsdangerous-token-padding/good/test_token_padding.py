@@ -71,3 +71,8 @@ def test_default_serializer_is_text():
         serializer_mod.is_text_serializer(serializer_mod.Serializer.default_serializer)
         == True
     )
+
+
+def test_serializer_default_signer_kwargs():
+    ser = serializer_mod.Serializer("secret")
+    assert ser.signer_kwargs == {}

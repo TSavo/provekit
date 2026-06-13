@@ -3221,6 +3221,192 @@ class Signer:
     ), audit
 
 
+def test_instance_field_universe_maps_bool_or_default_collection(vendor_path):
+    vendor_path(
+        "vendinst_bool_or_default",
+        '''
+class Serializer:
+    def __init__(self, signer_kwargs=None):
+        self.signer_kwargs = signer_kwargs or {}
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_bool_or_default
+
+        def test_default_signer_kwargs():
+            serializer = vendinst_bool_or_default.Serializer()
+            assert serializer.signer_kwargs == {}
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_bool_or_default.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "Serializer.__init__"
+    assert field_warrants[0].get("constructor_default_literal_kind") == "collection"
+    assert field_warrants[0].get("constructor_default_literal") == "dict:{}"
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "Serializer.__init__"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") in {"Assign", "BoolOp", "Dict"}
+        and locus.get("line") == 4
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_constructor_field_universe_skips_overload_stubs(vendor_path):
+    vendor_path(
+        "vendinst_overloaded_init",
+        '''
+import typing as t
+
+
+class Serializer:
+    default_serializer = object()
+
+    @t.overload
+    def __init__(self, serializer=None): ...
+
+    def __init__(self, serializer=None):
+        if serializer is None:
+            serializer = self.default_serializer
+
+        self.serializer = serializer
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_overloaded_init
+
+        def test_default_serializer():
+            serializer = vendinst_overloaded_init.Serializer()
+            assert serializer.serializer == serializer.default_serializer
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_overloaded_init.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "Serializer.__init__"
+    assert (
+        field_warrants[0].get("constructor_default_attr_name")
+        == "default_serializer"
+    )
+    assert field_warrants[0].get("span", {}).get("start_line") == 11
+
+
+def test_constructor_field_universe_scans_past_unrelated_call_field(vendor_path):
+    vendor_path(
+        "vendinst_unrelated_call_field",
+        '''
+def is_text_serializer(serializer):
+    return True
+
+
+class Serializer:
+    def __init__(self, signer_kwargs=None):
+        self.signer_kwargs = signer_kwargs or {}
+        self.is_text_serializer = is_text_serializer(signer_kwargs)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_unrelated_call_field
+
+        def test_default_signer_kwargs():
+            serializer = vendinst_unrelated_call_field.Serializer()
+            assert serializer.signer_kwargs == {}
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_unrelated_call_field.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.instance-field-universe"
+        and warrant.get("constructor_default_literal") == "dict:{}"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+
+def test_constructor_field_universe_contacts_not_equal_attribute_claim(vendor_path):
+    vendor_path(
+        "vendinst_attr_not_equal",
+        '''
+class Serializer:
+    def __init__(self, signer_kwargs=None):
+        self.signer_kwargs = signer_kwargs or {}
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_attr_not_equal
+
+        def test_default_signer_kwargs_not_equal():
+            serializer = vendinst_attr_not_equal.Serializer()
+            assert serializer.signer_kwargs != {}
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_attr_not_equal.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.instance-field-universe"
+        and warrant.get("constructor_default_literal") == "dict:{}"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+
 def test_branch_selected_self_field_return_maps_method_result(vendor_path):
     vendor_path(
         "vendbranch_self_field",
