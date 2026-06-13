@@ -742,6 +742,76 @@ def test_lift_source_refuses_self_field_runtime_dispatch_package_accounting(
     ], audit["loci"]
 
 
+def test_lift_source_refuses_generator_flow_package_accounting(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_generator_flow_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def iter_values(items, fallback):
+                yield fallback(items)
+
+                for item in items:
+                    if isinstance(item, dict):
+                        kwargs = item
+                    else:
+                        kwargs = {}
+
+                    yield fallback(item, **kwargs)
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_generator_flow_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    generator_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_generator_flow_refused/encoding.py")
+        and locus.get("ast_path", "").startswith("$.module.body[0].body")
+    ]
+    assert generator_loci
+    assert not [
+        locus for locus in generator_loci if locus["status"] == "unclassified"
+    ], generator_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Yield"
+        and "generator/yield flow" in locus.get("reason", "")
+        for locus in generator_loci
+    ), generator_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "For"
+        and "generator/yield flow" in locus.get("reason", "")
+        for locus in generator_loci
+    ), generator_loci
+
+
 def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
     tmp_path, monkeypatch
 ):

@@ -491,6 +491,9 @@ def _package_locus_classification(
     )
     if list_adapter_body_status is not None:
         return list_adapter_body_status
+    generator_flow_status = _generator_flow_refusal_status(node, ancestors)
+    if generator_flow_status is not None:
+        return generator_flow_status
     local_binding_status = _local_name_binding_status(node, ancestors)
     if local_binding_status is not None:
         return local_binding_status
@@ -1290,6 +1293,46 @@ def _unhandled_raise_path_refusal_status(
             ),
         )
     return None
+
+
+def _generator_flow_refusal_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if not _node_is_in_function_body(node, owner):
+        return None
+    if _is_docstring_expr_node(node, ancestors):
+        return None
+    if not _function_body_has_yield(owner):
+        return None
+    return (
+        "refused",
+        (
+            "generator/yield flow refused: emitted sequence order is "
+            "runtime-selected and not modeled as a timeless value relation"
+        ),
+    )
+
+
+def _function_body_has_yield(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any(_node_has_yield_outside_nested_scope(stmt) for stmt in fn.body)
+
+
+def _node_has_yield_outside_nested_scope(node: ast.AST) -> bool:
+    if isinstance(node, (ast.Yield, ast.YieldFrom)):
+        return True
+    if isinstance(
+        node,
+        (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda),
+    ):
+        return False
+    return any(
+        _node_has_yield_outside_nested_scope(child)
+        for child in ast.iter_child_nodes(node)
+    )
 
 
 def _direct_nondeterministic_call_name(call: ast.Call) -> str:
