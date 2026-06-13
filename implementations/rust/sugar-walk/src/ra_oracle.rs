@@ -1160,6 +1160,71 @@ fn first_rust_fenced_block(markdown: &str) -> Option<String> {
     None
 }
 
+/// The side-effect signal a resolved method's hover SIGNATURE carries: whether
+/// it can mutate caller-observable state through its receiver or a `&mut`
+/// parameter. This is the oracle datum the source-audit needs to turn a
+/// side-effect-UNDETERMINED method call into a verdict:
+///   - `Mutating`  -> `&mut self` or a `&mut`-typed parameter is present. The
+///                    provable "mutation through &mut" effect -> REFUSE.
+///   - `RefClean`  -> only `&self` / by-value `self` / shared-ref / value params.
+///                    No receiver/param mutation -> consistent with the EUF value
+///                    warrant. (The body could still do IO/panic, which a
+///                    signature does not reveal -- so this CONFIRMS the warrant is
+///                    not a `&mut` false-pass, it does not by itself prove total
+///                    purity.)
+///   - `Unknown`   -> no `fn` signature could be parsed from the hover.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignatureEffect {
+    Mutating,
+    RefClean,
+    Unknown,
+}
+
+/// Parse the receiver/param mutability of a method from its rust-analyzer hover
+/// markdown (the same hover the oracle already fetches). `&mut self` or any
+/// `&mut`-typed parameter in the FIRST balanced `(...)` group of the `fn`
+/// signature => `Mutating`; otherwise `RefClean`; no parseable signature =>
+/// `Unknown`. The return type (after the matched `)`) is excluded, so a `&self`
+/// method returning `&mut T` / `*mut T` is correctly `RefClean` (it hands out a
+/// mutable view but does not itself mutate the receiver).
+pub fn signature_effect_from_hover(markdown: &str) -> SignatureEffect {
+    let Some(block) = first_rust_fenced_block(markdown) else {
+        return SignatureEffect::Unknown;
+    };
+    let joined: String = block.lines().map(str::trim).collect::<Vec<_>>().join(" ");
+    let Some(fnpos) = joined.find("fn ") else {
+        return SignatureEffect::Unknown;
+    };
+    let Some(params) = first_balanced_parens(&joined[fnpos..]) else {
+        return SignatureEffect::Unknown;
+    };
+    if params.contains("&mut ") {
+        SignatureEffect::Mutating
+    } else {
+        SignatureEffect::RefClean
+    }
+}
+
+/// The content between the first `(` and its matching `)` in `s` (depth-balanced,
+/// so nested parens in param types are handled), or None if unbalanced/absent.
+fn first_balanced_parens(s: &str) -> Option<&str> {
+    let start = s.find('(')?;
+    let mut depth = 0usize;
+    for (i, c) in s[start..].char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&s[start + 1..start + i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Map a definition-target file URI to its defining crate name, or `None` when
 /// the path is outside the known roots (sysroot / cargo registry). A
 /// workspace-local path is intentionally `None`: Tier 2a already resolves the
@@ -1396,6 +1461,40 @@ mod tests {
         format!(
             "\n```rust\n{receiver_type_block}\n```\n\n```rust\n{signature_block}\n```\n\n---\n\ndocs..."
         )
+    }
+
+    #[test]
+    fn signature_effect_classifies_receiver_and_param_mutability() {
+        use super::{signature_effect_from_hover, SignatureEffect::*};
+        let md = |sig: &str| format!("```rust\n{sig}\n```");
+        // &mut self / &mut param -> Mutating (the "mutation through &mut" effect).
+        for sig in [
+            "pub fn push(&mut self, value: T)",
+            "fn write_u64(&mut self, i: u64)",
+            "pub fn swap(&mut self, a: usize, b: usize)",
+            "fn replace(&mut self, src: T) -> T",
+            "pub fn read(self, buf: &mut [u8]) -> usize",
+        ] {
+            assert_eq!(signature_effect_from_hover(&md(sig)), Mutating, "{sig}");
+        }
+        // &self / by-value self / shared-ref / value params -> RefClean. A &self
+        // method returning &mut T is RefClean (it does not mutate the receiver).
+        for sig in [
+            "pub fn len(&self) -> usize",
+            "pub const fn unwrap(self) -> T",
+            "pub fn clone(&self) -> Self",
+            "pub fn get(&self, i: usize) -> Option<&T>",
+            "pub fn as_mut_ptr(&self) -> *mut T",
+            "pub fn from_raw_parts(ptr: *const T, len: usize) -> Self",
+        ] {
+            assert_eq!(signature_effect_from_hover(&md(sig)), RefClean, "{sig}");
+        }
+        // No fn signature (bare receiver-type block) -> Unknown.
+        assert_eq!(
+            signature_effect_from_hover("```rust\nVec<u8>\n```"),
+            Unknown
+        );
+        assert_eq!(signature_effect_from_hover("not markdown"), Unknown);
     }
 
     #[test]
