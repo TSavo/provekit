@@ -1639,6 +1639,11 @@ def _is_statically_nameable_callee(
             return False
         cls = _find_class_by_qualname(tree, class_qualname)
         return cls is not None and _class_has_stable_method(cls, func.attr)
+    if isinstance(func.value, ast.Call) and _is_zero_arg_super_call(func.value):
+        return (
+            func.attr not in _NONDET_CALL_ATTRS
+            and _current_class_has_single_base(chain, tree)
+        )
     if isinstance(func.value, ast.Call):
         return (
             func.attr not in _NONDET_CALL_ATTRS
@@ -1666,6 +1671,26 @@ def _class_has_stable_method(cls: ast.ClassDef, name: str) -> bool:
         if isinstance(stmt, ast.FunctionDef) and stmt.name == name
     ]
     return len(candidates) == 1 and not candidates[0].decorator_list
+
+
+def _is_zero_arg_super_call(node: ast.Call) -> bool:
+    return (
+        isinstance(node.func, ast.Name)
+        and node.func.id == "super"
+        and not node.args
+        and not node.keywords
+    )
+
+
+def _current_class_has_single_base(
+    chain: tuple[ast.AST, ...],
+    tree: ast.Module,
+) -> bool:
+    class_qualname = _nearest_class_qualname(chain)
+    if not class_qualname:
+        return False
+    cls = _find_class_by_qualname(tree, class_qualname)
+    return cls is not None and len(cls.bases) == 1
 
 
 def _is_call_term_arg(

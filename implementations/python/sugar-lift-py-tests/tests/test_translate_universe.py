@@ -4236,6 +4236,66 @@ def test_package_accounting_warrants_computed_receiver_call_binding(
     ), binding_loci
 
 
+def test_package_accounting_warrants_super_receiver_call_binding(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_super_receiver_call"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "serializer.py").write_text(
+        textwrap.dedent(
+            '''
+            class Base:
+                def dump_payload(self, obj):
+                    return obj
+
+            class Child(Base):
+                def dump_payload(self, obj):
+                    payload = super().dump_payload(obj)
+                    return payload
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_super_receiver_call.serializer as serializer
+
+        def test_token():
+            assert serializer.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    binding_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_super_receiver_call/serializer.py")
+        and locus["line"] == 8
+    ]
+    assert binding_loci
+    assert not [
+        locus for locus in binding_loci if locus["status"] == "unclassified"
+    ], binding_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Call"
+        and "call-term SSA" in locus.get("reason", "")
+        for locus in binding_loci
+    ), binding_loci
+
+
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):
     vendor_path(
         "vendinst_default_attr",
