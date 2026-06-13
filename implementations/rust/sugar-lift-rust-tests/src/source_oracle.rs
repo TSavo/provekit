@@ -58,8 +58,14 @@ impl SourceMemento {
 /// `file_rel` the workspace-relative path. `source_cid` hashes the on-disk body
 /// fragment (the bytes a third party re-reads at the locus); `template_cid`
 /// hashes a deterministic token-structure of the body.
-pub fn source_memento_of(file_rel: &str, src: &str, item: &syn::ItemFn) -> SourceMemento {
-    let span = item.span();
+pub fn source_memento_of(
+    file_rel: &str,
+    src: &str,
+    span: proc_macro2::Span,
+    name: &str,
+    sig: &syn::Signature,
+    block: &syn::Block,
+) -> SourceMemento {
     let start = span.start();
     let end = span.end();
     let src_span = SrcSpan {
@@ -69,15 +75,20 @@ pub fn source_memento_of(file_rel: &str, src: &str, item: &syn::ItemFn) -> Sourc
         end_col: end.column,
     };
     let body_text = fragment_text(src, src_span.start_line, src_span.end_line);
-    let template = template_json(item);
+    let template = template_json(sig, block);
     SourceMemento {
         file: file_rel.to_string(),
-        function_name: item.sig.ident.to_string(),
-        param_names: param_names(item),
+        function_name: name.to_string(),
+        param_names: param_names(sig),
         source_cid: blake3_512_of(body_text.as_bytes()),
         template_cid: blake3_512_of(template.as_bytes()),
         span: src_span,
     }
+}
+
+/// Convenience: build a memento for a free `fn` item.
+pub fn source_memento_of_item_fn(file_rel: &str, src: &str, item: &syn::ItemFn) -> SourceMemento {
+    source_memento_of(file_rel, src, item.span(), &item.sig.ident.to_string(), &item.sig, &item.block)
 }
 
 /// The source fragment text for an inclusive 1-based line range. This is what a
@@ -96,18 +107,17 @@ fn fragment_text(src: &str, start_line: usize, end_line: usize) -> String {
 /// A deterministic AST template (kind + param count + the body's token string),
 /// mirroring the shape of `JavaSourceOracle.templateJson`. Field order is fixed
 /// so the bytes -- and thus `template_cid` -- recompute.
-fn template_json(item: &syn::ItemFn) -> String {
-    let body_tokens = item.block.to_token_stream().to_string();
+fn template_json(sig: &syn::Signature, block: &syn::Block) -> String {
+    let body_tokens = block.to_token_stream().to_string();
     format!(
         r#"{{"kind":"rust-fn-body","param_count":{},"tokens":{}}}"#,
-        item.sig.inputs.len(),
+        sig.inputs.len(),
         serde_json::to_string(&body_tokens).unwrap_or_else(|_| "\"\"".to_string()),
     )
 }
 
-fn param_names(item: &syn::ItemFn) -> Vec<String> {
-    item.sig
-        .inputs
+fn param_names(sig: &syn::Signature) -> Vec<String> {
+    sig.inputs
         .iter()
         .filter_map(|arg| match arg {
             syn::FnArg::Typed(pt) => match &*pt.pat {
@@ -131,9 +141,9 @@ mod tests {
             panic!("expected a fn item");
         };
 
-        let m1 = source_memento_of("demo.rs", src, item);
+        let m1 = source_memento_of_item_fn("demo.rs", src, item);
         // Recomputable: same source -> byte-identical memento (any machine).
-        let m2 = source_memento_of("demo.rs", src, item);
+        let m2 = source_memento_of_item_fn("demo.rs", src, item);
         assert_eq!(m1, m2, "memento must be deterministic (recomputable)");
 
         // Content-addressed: CIDs present and non-empty.
@@ -158,8 +168,8 @@ mod tests {
         let (syn::Item::Fn(ia), syn::Item::Fn(ib)) = (&a.items[0], &b.items[0]) else {
             panic!();
         };
-        let ma = source_memento_of("a.rs", "fn f() -> i64 { 1 }", ia);
-        let mb = source_memento_of("b.rs", "fn f() -> i64 { 2 }", ib);
+        let ma = source_memento_of_item_fn("a.rs", "fn f() -> i64 { 1 }", ia);
+        let mb = source_memento_of_item_fn("b.rs", "fn f() -> i64 { 2 }", ib);
         assert_ne!(
             ma.source_cid, mb.source_cid,
             "distinct bodies must hash to distinct source CIDs (teeth)"

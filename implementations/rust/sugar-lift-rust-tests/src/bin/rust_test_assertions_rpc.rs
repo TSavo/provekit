@@ -163,12 +163,13 @@ fn lift(params: &Value) -> Value {
         // DENOMINATOR: the oracle enumerates every function in the file. Each one
         // gets a content-addressed memento and a classified locus, so the dark
         // (functions the kit does not speak) is COUNTED, not skipped.
-        let mut fns: Vec<&syn::ItemFn> = Vec::new();
-        collect_item_fns(&file.items, &mut fns);
-        for f in fns {
-            let memento = source_oracle::source_memento_of(rel, src, f);
-            let name = f.sig.ident.to_string();
-            let is_test = fn_has_test_attr(f);
+        let mut fns: Vec<FnRef> = Vec::new();
+        collect_fns(&file.items, &mut fns);
+        for fr in fns {
+            let memento =
+                source_oracle::source_memento_of(rel, src, fr.span, &fr.name, fr.sig, fr.block);
+            let name = fr.name.clone();
+            let is_test = fn_has_test_attr(fr.attrs);
             let warning = out.warnings.iter().find(|w| {
                 w.item_name == name || w.item_name.ends_with(&format!("::{name}"))
             });
@@ -183,7 +184,7 @@ fn lift(params: &Value) -> Value {
                     Some(w) => ("refused", Some(w.reason.clone())),
                     None => ("warranted", None),
                 }
-            } else if is_generalizable_value_fn(f) {
+            } else if is_generalizable_value_fn(fr.block) {
                 // body is a pure formula over params: contract is `result = <body>`,
                 // constructible + recompute-verifiable from the memento.
                 ("warranted", None)
@@ -238,14 +239,62 @@ fn lift(params: &Value) -> Value {
 
 /// Collect every `fn` item in the file -- top-level and nested in inline
 /// modules -- as the source-audit denominator. (Impl methods are
-/// `ImplItemFn`, not `ItemFn`; they are a follow-on slice.)
-fn collect_item_fns<'a>(items: &'a [syn::Item], out: &mut Vec<&'a syn::ItemFn>) {
+/// `ImplItemFn`, not `ItemFn`; handled below.)
+struct FnRef<'a> {
+    span: proc_macro2::Span,
+    name: String,
+    sig: &'a syn::Signature,
+    block: &'a syn::Block,
+    attrs: &'a [syn::Attribute],
+}
+
+/// Enumerate EVERY function body in the file as the source-audit denominator:
+/// free `fn` items, methods in `impl` blocks, and trait methods with default
+/// bodies, recursing into inline modules. A trait method without a body declares
+/// no constructor here, so it is not a locus. Impl methods are the bulk of real
+/// code -- excluding them would make `unclassified=0` hollow.
+fn collect_fns<'a>(items: &'a [syn::Item], out: &mut Vec<FnRef<'a>>) {
+    use syn::spanned::Spanned;
     for item in items {
         match item {
-            syn::Item::Fn(f) => out.push(f),
+            syn::Item::Fn(f) => out.push(FnRef {
+                span: f.span(),
+                name: f.sig.ident.to_string(),
+                sig: &f.sig,
+                block: &f.block,
+                attrs: &f.attrs,
+            }),
             syn::Item::Mod(m) => {
                 if let Some((_, inner)) = &m.content {
-                    collect_item_fns(inner, out);
+                    collect_fns(inner, out);
+                }
+            }
+            syn::Item::Impl(im) => {
+                for ii in &im.items {
+                    if let syn::ImplItem::Fn(m) = ii {
+                        out.push(FnRef {
+                            span: m.span(),
+                            name: m.sig.ident.to_string(),
+                            sig: &m.sig,
+                            block: &m.block,
+                            attrs: &m.attrs,
+                        });
+                    }
+                }
+            }
+            syn::Item::Trait(tr) => {
+                for ti in &tr.items {
+                    if let syn::TraitItem::Fn(m) = ti {
+                        if let Some(block) = &m.default {
+                            out.push(FnRef {
+                                span: m.span(),
+                                name: m.sig.ident.to_string(),
+                                sig: &m.sig,
+                                block,
+                                attrs: &m.attrs,
+                            });
+                        }
+                    }
                 }
             }
             _ => {}
@@ -256,11 +305,37 @@ fn collect_item_fns<'a>(items: &'a [syn::Item], out: &mut Vec<&'a syn::ItemFn>) 
 /// True iff the function body is a single non-diverging tail expression that is
 /// a PURE FORMULA over params/literals -- its contract is `result = <body>`,
 /// warrantable by construction. (The narrow, sound shape; widens slice by slice.)
-fn is_generalizable_value_fn(f: &syn::ItemFn) -> bool {
-    match f.block.stmts.as_slice() {
-        [syn::Stmt::Expr(e, None)] => expr_is_pure_formula(e),
-        _ => false,
+fn is_generalizable_value_fn(block: &syn::Block) -> bool {
+    // The body must be: zero or more immutable `let <ident> = <pure formula>;`
+    // bindings, followed by a single pure-formula tail expression. The contract
+    // is `result = <tail with the lets substituted>` -- still a pure formula, so
+    // still sound. (Slice: pure-tail + leading-let.)
+    let Some((syn::Stmt::Expr(tail, None), prefix)) = block.stmts.split_last() else {
+        return false;
+    };
+    if !expr_is_pure_formula(tail) {
+        return false;
     }
+    prefix.iter().all(is_immutable_pure_let)
+}
+
+/// `let <immutable ident> = <pure formula>;` with no `else` arm.
+fn is_immutable_pure_let(stmt: &syn::Stmt) -> bool {
+    let syn::Stmt::Local(local) = stmt else {
+        return false;
+    };
+    let ident_immutable = match &local.pat {
+        syn::Pat::Ident(p) => p.mutability.is_none() && p.subpat.is_none(),
+        syn::Pat::Type(pt) => {
+            matches!(&*pt.pat, syn::Pat::Ident(p) if p.mutability.is_none() && p.subpat.is_none())
+        }
+        _ => false,
+    };
+    let init_pure = local
+        .init
+        .as_ref()
+        .is_some_and(|init| init.diverge.is_none() && expr_is_pure_formula(&init.expr));
+    ident_immutable && init_pure
 }
 
 /// A pure formula over params and literals: literals, paths, arithmetic/bit ops,
@@ -288,8 +363,8 @@ fn expr_is_pure_formula(expr: &syn::Expr) -> bool {
 }
 
 /// True iff the function carries a `#[test]` (or `#[…::test]`) attribute.
-fn fn_has_test_attr(f: &syn::ItemFn) -> bool {
-    f.attrs.iter().any(|attr| {
+fn fn_has_test_attr(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| {
         attr.path()
             .segments
             .last()
