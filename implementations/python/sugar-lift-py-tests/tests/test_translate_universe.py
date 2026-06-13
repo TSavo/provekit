@@ -4069,6 +4069,122 @@ def test_receiver_method_delegation_composes_through_local_alias(vendor_path):
     ), audit
 
 
+def test_receiver_method_delegation_recurses_nested_receiver_call(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_recursive",
+        """
+        class Router:
+            def h(self, seed):
+                return "fixed"
+
+            def g(self, value):
+                return value
+
+            def f(self, seed):
+                return self.g(self.h(seed))
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_recursive.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_recursive.Router.g"
+    assert universe.args == (
+        (
+            "receiver-method-call",
+            "venddeleg_receiver_recursive.Router.h",
+            (("param", 0),),
+        ),
+    )
+
+    out = _lift(
+        """
+        import venddeleg_receiver_recursive
+
+        def test_route():
+            router = venddeleg_receiver_recursive.Router()
+            assert router.f("raaaa") == "fixed"
+        """
+    )
+
+    f_to_g_atoms = _delegation_eq_atoms(out, "callval_g_a2")
+    assert any(
+        any("callval_f_a2" in getattr(side, "name", "") for side in atom.args)
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+    assert any(
+        any(
+            "callval_h_a2" in getattr(arg, "name", "")
+            for side in atom.args
+            for arg in getattr(side, "args", ())
+        )
+        for atom in f_to_g_atoms
+    ), f_to_g_atoms
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    h_fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_h_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert h_fixed_atoms, [d.name for d in out.decls]
+
+    assertion = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "venddeleg_receiver_recursive.Router.f" in d.name
+    )
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "Router.f"
+        for warrant in assertion.source_warrants
+    )
+    assert any(
+        warrant.get("role") == "python.delegation-universe"
+        and warrant.get("source_function_name") == "Router.g"
+        for warrant in assertion.source_warrants
+    )
+    assert any(
+        warrant.get("role") == "python.constant-universe"
+        and warrant.get("source_function_name") == "Router.h"
+        for warrant in assertion.source_warrants
+    )
+
+    audits = {
+        (audit["role"], audit["source_memento"]["source_function_name"]): audit
+        for audit in out.source_audits
+        if "venddeleg_receiver_recursive.Router" in audit["contract"]["name"]
+        and audit["role"] in {"python.delegation-universe", "python.constant-universe"}
+    }
+    assert ("python.delegation-universe", "Router.f") in audits
+    assert ("python.delegation-universe", "Router.g") in audits
+    assert ("python.constant-universe", "Router.h") in audits
+    assert all(
+        audit["totals"]["unclassified_source"] == 0
+        for audit in audits.values()
+    ), audits
+
+
 def test_receiver_runtime_dispatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import delegation_universe_for_callee
 

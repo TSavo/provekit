@@ -4834,11 +4834,7 @@ def _universe_conjuncts(
                         universe_kind=deleg_u.kind,
                     ),
                 )
-            call_args = (
-                subject_term.args[1:]
-                if subject_term.name.startswith("callval_")
-                else subject_term.args
-            )
+            call_args = _delegation_universe_call_args(deleg_u, subject_term)
             if deleg_u.kind == "identity":
                 if deleg_u.param_index < len(call_args):
                     conjuncts.append(
@@ -4876,8 +4872,8 @@ def _universe_conjuncts(
                     conjuncts.append(eq(subject_term, mapped[0]))
             elif deleg_u.kind == "delegation-receiver-method":
                 receiver_term = _receiver_term_for_callval_subject(subject_term)
-                mapped = (
-                    _mapped_receiver_delegate_args(
+                mapped_and_queued = (
+                    _mapped_receiver_delegate_args_and_queued(
                         deleg_u.args,
                         call_args,
                         receiver_term,
@@ -4885,12 +4881,32 @@ def _universe_conjuncts(
                     if receiver_term is not None
                     else None
                 )
-                if mapped is not None:
+                if mapped_and_queued is not None:
+                    mapped, nested_delegates = mapped_and_queued
                     delegate_args = [receiver_term, *mapped]
                     method_name = deleg_u.delegate.rsplit(".", 1)[-1]
                     head = _callval_head(method_name, len(delegate_args))
                     delegate_term = ctor(head, delegate_args)
                     conjuncts.append(eq(subject_term, delegate_term))
+                    for nested_delegate, nested_args, nested_term in nested_delegates:
+                        nested_origin = _receiver_delegate_origin(
+                            nested_delegate,
+                            origin,
+                            nested_args,
+                            nested_term,
+                        )
+                        conjuncts.extend(
+                            _universe_conjuncts(
+                                nested_delegate,
+                                nested_term,
+                                out,
+                                source_path,
+                                test_name,
+                                source_warrants=source_warrants,
+                                origin=nested_origin,
+                                _seen=seen,
+                            )
+                        )
                     delegate_origin = _receiver_delegate_origin(
                         deleg_u.delegate,
                         origin,
@@ -5135,6 +5151,23 @@ def _universe_call_args(
     return ()
 
 
+def _delegation_universe_call_args(
+    universe,
+    subject_term: Term,
+) -> Tuple[Term, ...]:
+    if not isinstance(subject_term, _Ctor):
+        return ()
+    if not subject_term.name.startswith("callval_"):
+        return tuple(subject_term.args)
+    if universe.kind == "delegation-receiver-method":
+        return tuple(subject_term.args[1:])
+    source_memento = getattr(universe, "source_memento", None) or {}
+    param_names = source_memento.get("param_names") or ()
+    if param_names and param_names[0] in {"self", "cls"}:
+        return tuple(subject_term.args)
+    return tuple(subject_term.args[1:])
+
+
 def _return_isinstance_universe_conjuncts(
     universe,
     subject_term: Term,
@@ -5324,8 +5357,13 @@ def _receiver_term_for_callval_subject(subject_term: Term) -> Optional[Term]:
     return None
 
 
-def _mapped_receiver_delegate_args(specs, call_args, receiver_term: Term):
+def _mapped_receiver_delegate_args_and_queued(
+    specs,
+    call_args,
+    receiver_term: Term,
+):
     mapped = []
+    nested_delegates = []
     for spec in specs:
         if spec[0] == "receiver":
             mapped.append(receiver_term)
@@ -5333,12 +5371,28 @@ def _mapped_receiver_delegate_args(specs, call_args, receiver_term: Term):
             if spec[1] >= len(call_args):
                 return None
             mapped.append(call_args[spec[1]])
+        elif spec[0] == "receiver-method-call":
+            nested = _mapped_receiver_delegate_args_and_queued(
+                spec[2],
+                call_args,
+                receiver_term,
+            )
+            if nested is None:
+                return None
+            nested_args, nested_queues = nested
+            nested_delegate_args = [receiver_term, *nested_args]
+            method_name = spec[1].rsplit(".", 1)[-1]
+            head = _callval_head(method_name, len(nested_delegate_args))
+            nested_term = ctor(head, nested_delegate_args)
+            mapped.append(nested_term)
+            nested_delegates.extend(nested_queues)
+            nested_delegates.append((spec[1], nested_args, nested_term))
         else:
             lit = _mapped_delegate_args((spec,), call_args)
             if lit is None:
                 return None
             mapped.extend(lit)
-    return mapped
+    return mapped, nested_delegates
 
 
 def _receiver_delegate_origin(

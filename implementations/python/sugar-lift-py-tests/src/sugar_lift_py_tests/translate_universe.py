@@ -1835,6 +1835,45 @@ def _resolve_receiver_context_spec(node, params, env):
     return _receiver_context_spec(_resolve_spec(node, params, env))
 
 
+def _resolve_receiver_context_arg_spec(
+    node,
+    *,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+    params: list[str],
+    env: dict,
+):
+    spec = _resolve_receiver_context_spec(node, params, env)
+    if spec is not None:
+        return spec, None
+    if not isinstance(node, ast.Call):
+        return None, None
+    dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(node, params)
+    if dynamic_receiver_refusal is not None:
+        return None, dynamic_receiver_refusal
+    receiver_delegate, receiver_refusal = _receiver_method_delegate_for_call(
+        node,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        params=params,
+        env=env,
+    )
+    if receiver_refusal is not None:
+        return None, receiver_refusal
+    if receiver_delegate is None:
+        return None, None
+    return (
+        (
+            "receiver-method-call",
+            receiver_delegate.delegate,
+            receiver_delegate.args,
+        ),
+        None,
+    )
+
+
 def _receiver_method_delegate_for_call(
     value: ast.Call,
     *,
@@ -1915,7 +1954,16 @@ def _receiver_method_delegate_for_call(
         )
     specs = []
     for arg in value.args:
-        spec = _resolve_receiver_context_spec(arg, params, env)
+        spec, refusal = _resolve_receiver_context_arg_spec(
+            arg,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+            params=params,
+            env=env,
+        )
+        if refusal is not None:
+            return None, refusal
         if spec is None:
             return (
                 None,
