@@ -27,6 +27,16 @@ def test_hmac_algorithm_default_digest_method():
     assert alg.digest_method == alg.default_digest_method
 
 
+def test_signer_default_key_derivation():
+    alg = signer.Signer("secret")
+    assert alg.key_derivation == signer.Signer.default_key_derivation
+
+
+def test_signer_none_key_derivation_returns_secret_key():
+    alg = signer.Signer("secret", key_derivation="none")
+    assert alg.derive_key(b"raaaa") == b"raaaa"
+
+
 def test_signing_algorithm_get_signature_is_abstract():
     with pytest.raises(NotImplementedError):
         signer.SigningAlgorithm.get_signature(None, b"k", b"v")
@@ -61,3 +71,8 @@ def test_default_serializer_is_text():
         serializer_mod.is_text_serializer(serializer_mod.Serializer.default_serializer)
         == True
     )
+
+
+def test_serializer_default_signer_kwargs():
+    ser = serializer_mod.Serializer("secret")
+    assert ser.signer_kwargs == {}

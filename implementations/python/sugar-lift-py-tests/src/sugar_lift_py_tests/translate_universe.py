@@ -321,6 +321,8 @@ class InstanceFieldUniverse:
     source_memento: Optional[dict[str, Any]] = None
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
+    constructor_default_literal: Optional[object] = None
+    constructor_default_literal_kind: Optional[str] = None
     adapter_callee: Optional[str] = None
     helper_callee: Optional[str] = None
 
@@ -347,6 +349,8 @@ class ConstructorFieldUniverse:
     lineno: int
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
+    constructor_default_literal: Optional[object] = None
+    constructor_default_literal_kind: Optional[str] = None
     forwarder_constructor_qualname: Optional[str] = None
     forwarder_source_memento: Optional[dict[str, Any]] = None
     adapter_callee: Optional[str] = None
@@ -358,6 +362,8 @@ class _ConstructorFieldAssignment:
     assign: ast.Assign | ast.AnnAssign
     param_name: str
     default_attr_name: Optional[str] = None
+    default_literal: Optional[object] = None
+    default_literal_kind: Optional[str] = None
     adapter_callee: Optional[str] = None
     helper_callee: Optional[str] = None
 
@@ -919,6 +925,8 @@ def instance_field_universe_for_callee(
             source_memento=source_memento,
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
+            constructor_default_literal=field.default_literal,
+            constructor_default_literal_kind=field.default_literal_kind,
             adapter_callee=field.adapter_callee,
             helper_callee=field.helper_callee,
         ),
@@ -980,6 +988,8 @@ def constructor_field_universe_for_callee(
             lineno=assign.lineno,
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
+            constructor_default_literal=field.default_literal,
+            constructor_default_literal_kind=field.default_literal_kind,
             adapter_callee=field.adapter_callee,
             helper_callee=field.helper_callee,
         ),
@@ -1044,6 +1054,8 @@ def _constructor_field_from_super_init(
         lineno=base_universe.lineno,
         constructor_source_memento=base_universe.constructor_source_memento,
         constructor_default_attr_name=base_universe.constructor_default_attr_name,
+        constructor_default_literal=base_universe.constructor_default_literal,
+        constructor_default_literal_kind=base_universe.constructor_default_literal_kind,
         forwarder_constructor_qualname=f"{module_name}.{fn_name}",
         forwarder_source_memento=forwarder_source_memento,
         adapter_callee=base_universe.adapter_callee,
@@ -1132,14 +1144,24 @@ def _constructor_field_assignment(
     matched: Optional[_ConstructorFieldAssignment] = None
     default_attrs: dict[str, str] = {}
     call_aliases = _module_call_aliases(tree, module_name)
-    seen_field_assign = False
+    tainted_params: set[str] = set()
     for stmt in init_body:
-        if _is_super_init_expr(stmt) and not seen_field_assign:
+        if _is_super_init_expr(stmt):
+            continue
+        if _constructor_validation_guard_stmt(stmt):
             continue
         default_attr = _constructor_default_attr_stmt(stmt, init_params)
-        if default_attr is not None and not seen_field_assign:
+        if default_attr is not None:
             param_name, attr_name = default_attr
             default_attrs[param_name] = attr_name
+            continue
+        normalized_param = _constructor_param_normalizer_stmt(
+            stmt,
+            init_params,
+            call_aliases,
+        )
+        if normalized_param is not None:
+            tainted_params.add(normalized_param)
             continue
         field = _constructor_field_assignment_stmt(
             stmt,
@@ -1147,25 +1169,144 @@ def _constructor_field_assignment(
             call_aliases,
         )
         if field is None:
+            if _constructor_field_call_assignment_stmt(stmt, init_params):
+                continue
             return None
-        seen_field_assign = True
-        assign, assigned_field, param_name, adapter_callee, helper_callee = field
+        (
+            assign,
+            assigned_field,
+            param_name,
+            adapter_callee,
+            helper_callee,
+            default_literal,
+            default_literal_kind,
+        ) = field
         if assigned_field == field_name:
+            if param_name in tainted_params:
+                return None
             matched = _ConstructorFieldAssignment(
                 assign=assign,
                 param_name=param_name,
                 default_attr_name=default_attrs.get(param_name),
+                default_literal=default_literal,
+                default_literal_kind=default_literal_kind,
                 adapter_callee=adapter_callee,
                 helper_callee=helper_callee,
             )
     return matched
 
 
+def _constructor_validation_guard_stmt(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.If)
+        and not stmt.orelse
+        and len(stmt.body) == 1
+        and isinstance(stmt.body[0], ast.Raise)
+    )
+
+
+def _constructor_param_normalizer_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[str]:
+    if not isinstance(stmt, ast.If) or len(stmt.body) != 1 or len(stmt.orelse) > 1:
+        return None
+    param_name = _not_none_guarded_param_name(stmt.test, init_params)
+    if param_name is None:
+        param_name = _none_guarded_param_name(stmt.test, init_params)
+    if param_name is None:
+        return None
+    if not _constructor_param_rebinds_to_known_value(
+        stmt.body[0],
+        param_name,
+        init_params,
+        call_aliases,
+    ):
+        return None
+    if stmt.orelse and not _constructor_param_rebinds_to_known_value(
+        stmt.orelse[0],
+        param_name,
+        init_params,
+        call_aliases,
+    ):
+        return None
+    return param_name
+
+
+def _constructor_param_rebinds_to_known_value(
+    stmt: ast.stmt,
+    param_name: str,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> bool:
+    if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+        return False
+    target = stmt.targets[0]
+    if not isinstance(target, ast.Name) or target.id != param_name:
+        return False
+    value = stmt.value
+    if _literal_value_kind(value) is not None:
+        return True
+    if isinstance(value, ast.Name) and value.id == param_name:
+        return True
+    adapter = _constructor_adapter_call(value, init_params, call_aliases)
+    if adapter is not None and adapter[0] == param_name:
+        return True
+    return _constructor_param_default_call(value, init_params)
+
+
+def _constructor_param_default_call(
+    value: ast.expr,
+    init_params: list[str],
+) -> bool:
+    if not isinstance(value, ast.Call) or value.keywords:
+        return False
+    if isinstance(value.func, ast.Name):
+        pass
+    elif isinstance(value.func, ast.Attribute):
+        if not _constructor_arg_term(value.func.value, init_params):
+            return False
+    else:
+        return False
+    return all(
+        not isinstance(arg, ast.Starred)
+        and _constructor_arg_term(arg, init_params)
+        for arg in value.args
+    )
+
+
+def _constructor_arg_term(
+    value: ast.expr,
+    init_params: list[str],
+) -> bool:
+    if _literal_value_kind(value) is not None:
+        return True
+    if isinstance(value, ast.Name):
+        return value.id in init_params[1:]
+    if isinstance(value, ast.Attribute):
+        cur = value
+        while isinstance(cur, ast.Attribute):
+            cur = cur.value
+        return isinstance(cur, ast.Name) and cur.id == init_params[0]
+    return False
+
+
 def _constructor_field_assignment_stmt(
     stmt: ast.stmt,
     init_params: list[str],
     call_aliases: Optional[dict[str, str]] = None,
-) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str, Optional[str], Optional[str]]]:
+) -> Optional[
+    tuple[
+        ast.Assign | ast.AnnAssign,
+        str,
+        str,
+        Optional[str],
+        Optional[str],
+        Optional[object],
+        Optional[str],
+    ]
+]:
     if isinstance(stmt, ast.Assign):
         if len(stmt.targets) != 1:
             return None
@@ -1180,15 +1321,69 @@ def _constructor_field_assignment_stmt(
     if assigned_field is None:
         return None
     if isinstance(value, ast.Name) and value.id in init_params[1:]:
-        return stmt, assigned_field, value.id, None, None
+        return stmt, assigned_field, value.id, None, None, None, None
     adapter = _constructor_adapter_call(value, init_params, call_aliases or {})
     if adapter is not None:
         param_name, adapter_callee = adapter
-        return stmt, assigned_field, param_name, adapter_callee, None
+        return stmt, assigned_field, param_name, adapter_callee, None, None, None
     helper = _constructor_list_adapter_call(value, init_params, call_aliases or {})
     if helper is not None:
         param_name, helper_callee = helper
-        return stmt, assigned_field, param_name, None, helper_callee
+        return stmt, assigned_field, param_name, None, helper_callee, None, None
+    default_literal = _constructor_bool_or_default_literal(value, init_params)
+    if default_literal is not None:
+        param_name, literal_value, literal_kind = default_literal
+        return (
+            stmt,
+            assigned_field,
+            param_name,
+            None,
+            None,
+            literal_value,
+            literal_kind,
+        )
+    return None
+
+
+def _constructor_field_call_assignment_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    if _self_attribute_name(target, init_params[0]) is None:
+        return False
+    return _constructor_param_default_call(value, init_params)
+
+
+def _constructor_bool_or_default_literal(
+    value: ast.expr,
+    init_params: list[str],
+) -> Optional[tuple[str, object, str]]:
+    if (
+        not isinstance(value, ast.BoolOp)
+        or not isinstance(value.op, ast.Or)
+        or len(value.values) != 2
+        or not isinstance(value.values[0], ast.Name)
+        or value.values[0].id not in init_params[1:]
+    ):
+        return None
+    param_name = value.values[0].id
+    literal = _literal_value_kind(value.values[1])
+    if literal is not None:
+        literal_value, literal_kind = literal
+        return param_name, literal_value, literal_kind
+    canonical = collection_literal_canonical(value.values[1])
+    if canonical is not None:
+        return param_name, canonical, "collection"
     return None
 
 
@@ -1269,6 +1464,30 @@ def _none_guarded_param_name(
         not isinstance(test, ast.Compare)
         or len(test.ops) != 1
         or not isinstance(test.ops[0], ast.Is)
+        or len(test.comparators) != 1
+    ):
+        return None
+    left = test.left
+    right = test.comparators[0]
+    if isinstance(left, ast.Name) and _is_none_literal(right):
+        param_name = left.id
+    elif isinstance(right, ast.Name) and _is_none_literal(left):
+        param_name = right.id
+    else:
+        return None
+    if param_name not in init_params[1:]:
+        return None
+    return param_name
+
+
+def _not_none_guarded_param_name(
+    test: ast.expr,
+    init_params: list[str],
+) -> Optional[str]:
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.IsNot)
         or len(test.comparators) != 1
     ):
         return None
@@ -1681,6 +1900,38 @@ class DelegationUniverse:
 
 
 @dataclass(frozen=True)
+class BranchSelectedReturnUniverse:
+    """A receiver field selects a return-param branch.
+
+    Shape:
+      class C:
+          def __init__(self, mode):
+              self.mode = mode
+
+          def f(self, value):
+              if self.mode == "none":
+                  return value
+              raise TypeError(...)
+
+    The method result equals the returned call argument when the constructor
+    field has the selected literal value. The emitter composes this with the
+    constructor-field universe for the receiver at the concrete callsite.
+    """
+
+    field_name: str
+    field_value: object
+    field_value_kind: str
+    return_param_index: int
+    return_param_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+    return_adapter_callee: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class _ReceiverMethodDelegate:
     delegate: str
     args: tuple
@@ -2044,6 +2295,229 @@ def _resolve_expr_spec(node, params, env):
             )
         return ("binop", op, left, right)
     return _resolve_spec(node, params, env)
+
+
+@functools.lru_cache(maxsize=None)
+def branch_selected_return_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[BranchSelectedReturnUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    if len(params) < 2 or params[0] not in {"self", "cls"}:
+        return None, None
+    body = _body_without_docstring(fn.body)
+    if not body:
+        return None, None
+    call_aliases = _module_call_aliases(_tree, module_name)
+    env: dict[str, tuple] = {}
+    branch: Optional[Tuple[str, object, str, int, Optional[str]]] = None
+    for index, stmt in enumerate(body):
+        if isinstance(stmt, ast.Raise):
+            continue
+        if not isinstance(stmt, ast.If):
+            return None, None
+        branch = _branch_selected_return_from_if_chain(
+            stmt,
+            receiver_name=params[0],
+            params=params,
+            env=env,
+        )
+        if branch is not None:
+            if any(not isinstance(tail, ast.Raise) for tail in body[index + 1 :]):
+                return None, None
+            break
+        prelude = _non_none_adapter_prelude(stmt, params, call_aliases)
+        if prelude is None:
+            return None, None
+        param_name, adapter_callee = prelude
+        env[param_name] = ("adapter", adapter_callee)
+    if branch is None:
+        return None, None
+    (
+        field_name,
+        field_value,
+        field_value_kind,
+        return_param_index,
+        return_adapter_callee,
+    ) = branch
+    return (
+        BranchSelectedReturnUniverse(
+            field_name=field_name,
+            field_value=field_value,
+            field_value_kind=field_value_kind,
+            return_param_index=return_param_index - 1,
+            return_param_name=params[return_param_index],
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+            return_adapter_callee=return_adapter_callee,
+        ),
+        None,
+    )
+
+
+def _branch_selected_return_from_if_chain(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+    env: dict[str, tuple],
+) -> Optional[Tuple[str, object, str, int, Optional[str]]]:
+    current: ast.If = stmt
+    while True:
+        selected = _branch_selected_return_from_if(
+            current,
+            receiver_name=receiver_name,
+            params=params,
+            env=env,
+        )
+        if selected is not None:
+            return selected
+        if len(current.orelse) == 1 and isinstance(current.orelse[0], ast.If):
+            current = current.orelse[0]
+            continue
+        return None
+
+
+def _branch_selected_return_from_if(
+    stmt: ast.If,
+    *,
+    receiver_name: str,
+    params: list[str],
+    env: dict[str, tuple],
+) -> Optional[Tuple[str, object, str, int, Optional[str]]]:
+    field = _self_field_literal_eq(stmt.test, receiver_name)
+    if field is None:
+        return None
+    if len(stmt.body) != 1 or not isinstance(stmt.body[0], ast.Return):
+        return None
+    value = stmt.body[0].value
+    if not isinstance(value, ast.Name):
+        return None
+    if value.id not in params or value.id == receiver_name:
+        return None
+    return_param_index = params.index(value.id)
+    field_name, field_value, field_value_kind = field
+    adapter_callee = None
+    spec = env.get(value.id)
+    if spec is not None:
+        if spec[0] != "adapter":
+            return None
+        adapter_callee = spec[1]
+    return field_name, field_value, field_value_kind, return_param_index, adapter_callee
+
+
+def _non_none_adapter_prelude(
+    stmt: ast.If,
+    params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[Tuple[str, str]]:
+    param_name = _param_none_check_for_branch_prelude(stmt.test)
+    adapter_stmt: Optional[ast.stmt] = None
+    if param_name is not None:
+        if len(stmt.orelse) != 1:
+            return None
+        adapter_stmt = stmt.orelse[0]
+    else:
+        param_name = _param_not_none_check_for_branch_prelude(stmt.test)
+        if param_name is None or len(stmt.body) != 1:
+            return None
+        adapter_stmt = stmt.body[0]
+    if param_name not in params[1:]:
+        return None
+    if not (
+        isinstance(adapter_stmt, ast.Assign)
+        and len(adapter_stmt.targets) == 1
+        and isinstance(adapter_stmt.targets[0], ast.Name)
+        and adapter_stmt.targets[0].id == param_name
+    ):
+        return None
+    adapter = _adapter_call_over_name(
+        adapter_stmt.value,
+        param_name,
+        call_aliases,
+    )
+    if adapter is None:
+        return None
+    return param_name, adapter
+
+
+def _param_none_check_for_branch_prelude(node: ast.AST) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Is)
+        or len(node.comparators) != 1
+    ):
+        return None
+    return _none_compare_name(node.left, node.comparators[0])
+
+
+def _param_not_none_check_for_branch_prelude(node: ast.AST) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.IsNot)
+        or len(node.comparators) != 1
+    ):
+        return None
+    return _none_compare_name(node.left, node.comparators[0])
+
+
+def _none_compare_name(left: ast.AST, right: ast.AST) -> Optional[str]:
+    if (
+        isinstance(left, ast.Name)
+        and isinstance(right, ast.Constant)
+        and right.value is None
+    ):
+        return left.id
+    if (
+        isinstance(right, ast.Name)
+        and isinstance(left, ast.Constant)
+        and left.value is None
+    ):
+        return right.id
+    return None
+
+
+def _self_field_literal_eq(
+    node: ast.AST,
+    receiver_name: str,
+) -> Optional[Tuple[str, object, str]]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Eq)
+        or len(node.comparators) != 1
+    ):
+        return None
+    left = _self_field_name(node.left, receiver_name)
+    right_lit = _literal_value_kind(node.comparators[0])
+    if left is not None and right_lit is not None:
+        value, value_kind = right_lit
+        return left, value, value_kind
+    right = _self_field_name(node.comparators[0], receiver_name)
+    left_lit = _literal_value_kind(node.left)
+    if right is not None and left_lit is not None:
+        value, value_kind = left_lit
+        return right, value, value_kind
+    return None
+
+
+def _self_field_name(node: ast.AST, receiver_name: str) -> Optional[str]:
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == receiver_name
+    ):
+        return node.attr
+    return None
 
 
 @functools.lru_cache(maxsize=None)
@@ -2930,14 +3404,31 @@ def _find_function_path(
             return None
         body = cls.body
     fn_name = fn_path[-1]
-    return next(
-        (
-            stmt
-            for stmt in body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
-        ),
-        None,
-    )
+    candidates = [
+        stmt
+        for stmt in body
+        if isinstance(stmt, ast.FunctionDef) and stmt.name == fn_name
+    ]
+    for candidate in candidates:
+        if not _is_overload_stub(candidate):
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _is_overload_stub(fn: ast.FunctionDef) -> bool:
+    if not (
+        len(fn.body) == 1
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and fn.body[0].value.value is Ellipsis
+    ):
+        return False
+    for decorator in fn.decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id == "overload":
+            return True
+        if isinstance(decorator, ast.Attribute) and decorator.attr == "overload":
+            return True
+    return False
 
 
 def _find_class_path(

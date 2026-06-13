@@ -3116,6 +3116,529 @@ class HMACAlgorithm:
     ), audit
 
 
+def test_instance_field_universe_scans_later_constructor_defaults(vendor_path):
+    vendor_path(
+        "vendinst_later_default_attr",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class Signer:
+    _base64_alphabet = b"abcdefghijklmnopqrstuvwxyz"
+    default_key_derivation = "django-concat"
+
+    def __init__(
+        self,
+        secret_key,
+        salt=b"itsdangerous.Signer",
+        sep=b".",
+        key_derivation=None,
+    ):
+        self.secret_key = secret_key
+        self.sep = want_bytes(sep)
+
+        if self.sep in self._base64_alphabet:
+            raise ValueError("bad separator")
+
+        if salt is not None:
+            salt = want_bytes(salt)
+        else:
+            salt = b"itsdangerous.Signer"
+
+        self.salt = salt
+
+        if key_derivation is None:
+            key_derivation = self.default_key_derivation
+
+        self.key_derivation = key_derivation
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_later_default_attr
+
+        def test_default_key_derivation():
+            signer = vendinst_later_default_attr.Signer("secret")
+            assert signer.key_derivation == signer.default_key_derivation
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_later_default_attr.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "Signer.__init__"
+    assert field_warrants[0].get("constructor_default_param_names") == [
+        "key_derivation"
+    ]
+    assert (
+        field_warrants[0].get("constructor_default_attr_name")
+        == "default_key_derivation"
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "Signer.__init__"
+    )
+    assert audit["source_memento"].get("constructor_default_attr_name") == (
+        "default_key_derivation"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "support"
+        and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_instance_field_universe_maps_bool_or_default_collection(vendor_path):
+    vendor_path(
+        "vendinst_bool_or_default",
+        '''
+class Serializer:
+    def __init__(self, signer_kwargs=None):
+        self.signer_kwargs = signer_kwargs or {}
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_bool_or_default
+
+        def test_default_signer_kwargs():
+            serializer = vendinst_bool_or_default.Serializer()
+            assert serializer.signer_kwargs == {}
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_bool_or_default.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "Serializer.__init__"
+    assert field_warrants[0].get("constructor_default_literal_kind") == "collection"
+    assert field_warrants[0].get("constructor_default_literal") == "dict:{}"
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "Serializer.__init__"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") in {"Assign", "BoolOp", "Dict"}
+        and locus.get("line") == 4
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_constructor_field_universe_skips_overload_stubs(vendor_path):
+    vendor_path(
+        "vendinst_overloaded_init",
+        '''
+import typing as t
+
+
+class Serializer:
+    default_serializer = object()
+
+    @t.overload
+    def __init__(self, serializer=None): ...
+
+    def __init__(self, serializer=None):
+        if serializer is None:
+            serializer = self.default_serializer
+
+        self.serializer = serializer
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_overloaded_init
+
+        def test_default_serializer():
+            serializer = vendinst_overloaded_init.Serializer()
+            assert serializer.serializer == serializer.default_serializer
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_overloaded_init.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "Serializer.__init__"
+    assert (
+        field_warrants[0].get("constructor_default_attr_name")
+        == "default_serializer"
+    )
+    assert field_warrants[0].get("span", {}).get("start_line") == 11
+
+
+def test_constructor_field_universe_scans_past_unrelated_call_field(vendor_path):
+    vendor_path(
+        "vendinst_unrelated_call_field",
+        '''
+def is_text_serializer(serializer):
+    return True
+
+
+class Serializer:
+    def __init__(self, signer_kwargs=None):
+        self.signer_kwargs = signer_kwargs or {}
+        self.is_text_serializer = is_text_serializer(signer_kwargs)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_unrelated_call_field
+
+        def test_default_signer_kwargs():
+            serializer = vendinst_unrelated_call_field.Serializer()
+            assert serializer.signer_kwargs == {}
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_unrelated_call_field.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.instance-field-universe"
+        and warrant.get("constructor_default_literal") == "dict:{}"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+
+def test_constructor_field_universe_contacts_not_equal_attribute_claim(vendor_path):
+    vendor_path(
+        "vendinst_attr_not_equal",
+        '''
+class Serializer:
+    def __init__(self, signer_kwargs=None):
+        self.signer_kwargs = signer_kwargs or {}
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_attr_not_equal
+
+        def test_default_signer_kwargs_not_equal():
+            serializer = vendinst_attr_not_equal.Serializer()
+            assert serializer.signer_kwargs != {}
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_attr_not_equal.Serializer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.instance-field-universe"
+        and warrant.get("constructor_default_literal") == "dict:{}"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+
+def test_branch_selected_self_field_return_maps_method_result(vendor_path):
+    vendor_path(
+        "vendbranch_self_field",
+        '''
+class Signer:
+    def __init__(self, key_derivation):
+        self.key_derivation = key_derivation
+
+    def derive_key(self, secret_key):
+        if self.key_derivation == "none":
+            return secret_key
+
+        raise TypeError("unknown key derivation")
+''',
+    )
+    out = _lift(
+        """
+        import vendbranch_self_field
+
+        def test_none_key_derivation():
+            signer = vendbranch_self_field.Signer("none")
+            assert signer.derive_key("raaaa") == "raaaa"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbranch_self_field.Signer.derive_key" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import str_const
+
+    def walk(formula):
+        yield formula
+        for child in getattr(formula, "operands", ()):
+            yield from walk(child)
+
+    implications = [
+        formula
+        for formula in walk(assertion.inv)
+        if getattr(formula, "kind", None) == "implies"
+    ]
+    assert any(
+        getattr(imp.operands[1], "name", None) == "="
+        and str_const("raaaa") in getattr(imp.operands[1], "args", ())
+        and any(
+            getattr(side, "name", "") == "callval_derive_key_a2"
+            for side in getattr(imp.operands[1], "args", ())
+        )
+        for imp in implications
+    ), assertion.inv
+
+    assert any(
+        warrant.get("role") == "python.branch-selected-universe"
+        and warrant.get("source_function_name") == "Signer.derive_key"
+        and warrant.get("branch_field_name") == "key_derivation"
+        and warrant.get("branch_field_value") == "none"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.branch-selected-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "Signer.derive_key"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Return"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "inactive"
+        and locus.get("ast_kind") == "Raise"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_branch_selected_self_field_return_maps_normalized_method_arg(vendor_path):
+    vendor_path(
+        "vendbranch_normalized_arg",
+        '''
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+class Signer:
+    def __init__(self, key_derivation):
+        self.key_derivation = key_derivation
+
+    def derive_key(self, secret_key=None):
+        if secret_key is None:
+            secret_key = self.secret_keys[-1]
+        else:
+            secret_key = want_bytes(secret_key)
+
+        if self.key_derivation == "none":
+            return secret_key
+
+        raise TypeError("unknown key derivation")
+''',
+    )
+    out = _lift(
+        """
+        import vendbranch_normalized_arg
+
+        def test_none_key_derivation_normalizes_key():
+            signer = vendbranch_normalized_arg.Signer("none")
+            assert signer.derive_key(b"raaaa") == b"raaaa"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbranch_normalized_arg.Signer.derive_key" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+
+    def walk(formula):
+        yield formula
+        for child in getattr(formula, "operands", ()):
+            yield from walk(child)
+
+    adapter_term = ctor(
+        "callresult_vendbranch_normalized_arg_want_bytes_a1",
+        [ctor("python:bytes", [str_const("raaaa")])],
+    )
+    implications = [
+        formula
+        for formula in walk(assertion.inv)
+        if getattr(formula, "kind", None) == "implies"
+    ]
+    assert any(
+        getattr(imp.operands[1], "name", None) == "="
+        and adapter_term in getattr(imp.operands[1], "args", ())
+        and any(
+            getattr(side, "name", "") == "callval_derive_key_a2"
+            for side in getattr(imp.operands[1], "args", ())
+        )
+        for imp in implications
+    ), assertion.inv
+
+    roles = {warrant.get("role") for warrant in assertion.source_warrants}
+    assert {
+        "python.branch-selected-universe",
+        "python.bytes-identity-universe",
+    } <= roles
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"]
+        in {"python.branch-selected-universe", "python.bytes-identity-universe"}
+        and "vendbranch_normalized_arg" in audit["contract"]["name"]
+    }
+    assert audits["python.branch-selected-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
+
+
+def test_branch_selected_universe_contacts_not_equal_claim(vendor_path):
+    vendor_path(
+        "vendbranch_not_equal",
+        '''
+class Signer:
+    def __init__(self, key_derivation):
+        self.key_derivation = key_derivation
+
+    def derive_key(self, secret_key):
+        if self.key_derivation == "none":
+            return secret_key
+
+        raise TypeError("unknown key derivation")
+''',
+    )
+    out = _lift(
+        """
+        import vendbranch_not_equal
+
+        def test_none_key_derivation_not_equal():
+            signer = vendbranch_not_equal.Signer("none")
+            assert signer.derive_key("raaaa") != "raaaa"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbranch_not_equal.Signer.derive_key" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+    assert any(
+        warrant.get("role") == "python.branch-selected-universe"
+        for warrant in assertion.source_warrants
+    ), assertion.source_warrants
+
+    def walk(formula):
+        yield formula
+        for child in getattr(formula, "operands", ()):
+            yield from walk(child)
+
+    assert any(
+        getattr(formula, "kind", None) == "implies"
+        for formula in walk(assertion.inv)
+    ), assertion.inv
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 
