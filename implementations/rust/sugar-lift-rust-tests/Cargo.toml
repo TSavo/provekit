@@ -16,6 +16,9 @@ sugar-ir-compiler-smt-lib = { path = "../sugar-ir-compiler-smt-lib" }
 [dependencies]
 sugar-ir-symbolic = { path = "../sugar-ir-symbolic" }
 sugar-canonicalizer = { path = "../sugar-canonicalizer" }
+# Oracle slice: query the resident RA host (sugar-linkerd) for method-call
+# receiver/param mutability over RPC.
+sugar-walk = { path = "../sugar-walk" }
 syn = { workspace = true }
 quote = { workspace = true }
 proc-macro2 = { workspace = true, features = ["span-locations"] }

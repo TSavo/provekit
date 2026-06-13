@@ -168,6 +168,9 @@ fn lift(params: &Value) -> Value {
         // Real warrants emit ProofIR: contracts the recursive body-walk produced,
         // marshalled into the IR alongside the test-assertion decls (below).
         let mut value_decls: Vec<sugar_ir_symbolic::ContractDecl> = Vec::new();
+        // Oracle slice: unclassified method-call bodies queued for the RA daemon's
+        // receiver/param-mutability verdict. (source_loci index, LSP positions).
+        let mut oracle_pending: Vec<(usize, Vec<(u32, u32)>)> = Vec::new();
         for fr in fns {
             let memento =
                 source_oracle::source_memento_of(rel, src, fr.span, &fr.name, fr.sig, fr.block);
@@ -227,6 +230,12 @@ fn lift(params: &Value) -> Value {
             if let Some(r) = reason {
                 locus["reason"] = json!(r);
             }
+            if status == "unclassified" {
+                let positions = method_call_positions(fr.block);
+                if !positions.is_empty() {
+                    oracle_pending.push((source_loci.len(), positions));
+                }
+            }
             source_loci.push(locus);
             source_mementos.push(memento.to_json());
         }
@@ -236,6 +245,14 @@ fn lift(params: &Value) -> Value {
         if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(&value_marshalled) {
             entries.extend(arr);
         }
+        // Oracle slice: ask the resident RA daemon (sugar-linkerd) to resolve the
+        // receiver/param mutability of each queued method-call position. A method
+        // call that is `&mut self` / takes a `&mut` param is the provable
+        // "mutation through &mut" effect -> reclassify the body REFUSED. An
+        // unreachable/cold daemon yields no resolutions -> every body stays
+        // unclassified (the conservative refuse-floor); the oracle never warrants
+        // here (RefClean does not rule out IO/panic the signature can't show).
+        oracle_reclassify_mutating(&workspace_root, rel, &oracle_pending, &mut source_loci);
     }
 
     let ledger = source_ledger(&source_loci);
@@ -496,6 +513,83 @@ fn effect_refusal(block: &syn::Block) -> Option<String> {
         return Some("panic/divergence (effect): `?` short-circuit".to_string());
     }
     None
+}
+
+/// LSP-coordinate positions (0-based line, 0-based col) of every method-call
+/// ident in a body -- the positions the RA oracle resolves to receiver/param
+/// mutability. proc-macro2 spans are 1-based line / 0-based column, so the line
+/// is decremented to LSP space.
+#[derive(Default)]
+struct MethodCallPositions(Vec<(u32, u32)>);
+
+impl<'ast> syn::visit::Visit<'ast> for MethodCallPositions {
+    fn visit_expr_method_call(&mut self, n: &'ast syn::ExprMethodCall) {
+        let s = n.method.span().start();
+        if s.line >= 1 {
+            self.0.push(((s.line - 1) as u32, s.column as u32));
+        }
+        syn::visit::visit_expr_method_call(self, n);
+    }
+}
+
+fn method_call_positions(block: &syn::Block) -> Vec<(u32, u32)> {
+    let mut v = MethodCallPositions::default();
+    syn::visit::Visit::visit_block(&mut v, block);
+    v.0
+}
+
+/// Oracle slice: resolve the queued unclassified method-call bodies against the
+/// resident RA daemon and reclassify any body with a `&mut self` / `&mut`-param
+/// (Mutating) method call to `refused` "mutation through &mut". Sound + safe: an
+/// unreachable/cold daemon returns no resolutions -> a conservative no-op (every
+/// body stays unclassified). Never WARRANTS here -- `RefClean` does not prove the
+/// body free of IO/panic the signature can't reveal.
+fn oracle_reclassify_mutating(
+    workspace_root: &Path,
+    rel: &str,
+    pending: &[(usize, Vec<(u32, u32)>)],
+    source_loci: &mut [Value],
+) {
+    if pending.is_empty() {
+        return;
+    }
+    // OFF by default: resolve_receiver_crates can SPAWN the daemon (-> RA index,
+    // the heavy/Mac-cooking path), so the oracle pass only runs when explicitly
+    // enabled (the supervised run, on a box with a warm RA host). Default builds,
+    // CI, and local measurements stay a pure no-op.
+    if std::env::var("SUGAR_SOURCE_AUDIT_ORACLE").as_deref() != Ok("1") {
+        return;
+    }
+    use sugar_walk::ra_daemon_client::{resolve_receiver_crates, DaemonQuery};
+    let abs = workspace_root.join(rel).to_string_lossy().to_string();
+    let mut queries = Vec::new();
+    for (_, positions) in pending {
+        for &(line, col) in positions {
+            queries.push(DaemonQuery {
+                file: abs.clone(),
+                line,
+                col,
+            });
+        }
+    }
+    let batch = resolve_receiver_crates(workspace_root, &queries);
+    if batch.resolutions.is_empty() {
+        return; // daemon down/cold/not-ready -> conservative no-op
+    }
+    for (idx, positions) in pending {
+        let mutating = positions.iter().any(|&(line, col)| {
+            batch
+                .resolutions
+                .get(&(abs.clone(), line, col))
+                .is_some_and(|r| r.effect == "mutating")
+        });
+        if mutating {
+            if let Some(locus) = source_loci.get_mut(*idx) {
+                locus["status"] = json!("refused");
+                locus["reason"] = json!("mutation through &mut (oracle)");
+            }
+        }
+    }
 }
 
 fn is_io_path(path: &str) -> bool {
