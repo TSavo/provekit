@@ -193,15 +193,9 @@ fn lift(params: &Value) -> Value {
                 // a warrant, so it is `support`.
                 ("support", None)
             } else {
-                (
-                    "refused",
-                    Some(
-                        "body not yet in the warrant grammar (not a pure-formula \
-                         value fn, not an inlined helper); refused by name pending \
-                         a walker slice for its constructor"
-                            .to_string(),
-                    ),
-                )
+                // Refused BY NAME with a categorized reason (conjunct 4): the IO
+                // membrane (bin-2, the floor) split from drainable bin-1.
+                ("refused", Some(refusal_reason(fr.block)))
             };
             let mut locus = json!({
                 "file": rel,
@@ -397,6 +391,129 @@ fn fn_has_test_attr(attrs: &[syn::Attribute]) -> bool {
             .last()
             .is_some_and(|seg| seg.ident == "test")
     })
+}
+
+/// Scan a refused body for the dominant blocker, so every `refused` carries a
+/// NAMED, CATEGORIZED reason -- and the IO membrane (bin-2, the floor) is split
+/// from drainable bin-1 (loop / `?` / method-call / macro).
+#[derive(Default)]
+struct BlockerScan {
+    io: Option<String>,
+    has_loop: bool,
+    has_try: bool,
+    has_method: bool,
+    macro_name: Option<String>,
+    has_assign: bool,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for BlockerScan {
+    fn visit_expr_for_loop(&mut self, n: &'ast syn::ExprForLoop) {
+        self.has_loop = true;
+        syn::visit::visit_expr_for_loop(self, n);
+    }
+    fn visit_expr_while(&mut self, n: &'ast syn::ExprWhile) {
+        self.has_loop = true;
+        syn::visit::visit_expr_while(self, n);
+    }
+    fn visit_expr_loop(&mut self, n: &'ast syn::ExprLoop) {
+        self.has_loop = true;
+        syn::visit::visit_expr_loop(self, n);
+    }
+    fn visit_expr_try(&mut self, n: &'ast syn::ExprTry) {
+        self.has_try = true;
+        syn::visit::visit_expr_try(self, n);
+    }
+    fn visit_expr_assign(&mut self, n: &'ast syn::ExprAssign) {
+        self.has_assign = true;
+        syn::visit::visit_expr_assign(self, n);
+    }
+    fn visit_expr_method_call(&mut self, n: &'ast syn::ExprMethodCall) {
+        self.has_method = true;
+        syn::visit::visit_expr_method_call(self, n);
+    }
+    fn visit_expr_call(&mut self, n: &'ast syn::ExprCall) {
+        if self.io.is_none() {
+            if let syn::Expr::Path(p) = &*n.func {
+                let path = p
+                    .path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                if is_io_path(&path) {
+                    self.io = Some(format!("call `{path}`"));
+                }
+            }
+        }
+        syn::visit::visit_expr_call(self, n);
+    }
+    fn visit_macro(&mut self, m: &'ast syn::Macro) {
+        let name = m
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .unwrap_or_default();
+        if self.io.is_none()
+            && matches!(
+                name.as_str(),
+                "println" | "print" | "eprintln" | "eprint" | "write" | "writeln"
+            )
+        {
+            self.io = Some(format!("macro `{name}!`"));
+        }
+        if self.macro_name.is_none() {
+            self.macro_name = Some(name);
+        }
+        syn::visit::visit_macro(self, m);
+    }
+}
+
+fn is_io_path(path: &str) -> bool {
+    [
+        "fs::",
+        "io::",
+        "net::",
+        "process::",
+        "time::Instant",
+        "time::SystemTime",
+        "File",
+        "stdin",
+        "stdout",
+        "stderr",
+        "thread::spawn",
+        "thread::sleep",
+    ]
+    .iter()
+    .any(|m| path.contains(m))
+}
+
+/// The named, categorized refusal reason for a body the kit can't warrant.
+/// IO markers => bin-2 (the named floor); everything else => a bin-1 category
+/// (a future walker slice migrates it to `warranted`).
+fn refusal_reason(block: &syn::Block) -> String {
+    let mut s = BlockerScan::default();
+    syn::visit::Visit::visit_block(&mut s, block);
+    if let Some(io) = s.io {
+        return format!("IO membrane (bin-2): {io}");
+    }
+    if s.has_loop {
+        return "loop: walker does not fold loops yet (bin-1)".to_string();
+    }
+    if s.has_try {
+        return "`?` operator: short-circuit not modeled yet (bin-1)".to_string();
+    }
+    if s.has_method {
+        return "method call: opaque receiver, needs oracle resolution (bin-1)".to_string();
+    }
+    if let Some(m) = s.macro_name {
+        return format!("opaque macro `{m}!` (bin-1)");
+    }
+    if s.has_assign {
+        return "mutation / reassignment not modeled yet (bin-1)".to_string();
+    }
+    "multi-statement / unmodeled body shape (bin-1)".to_string()
 }
 
 /// Roll the per-locus statuses into the `sourceLedger` the CLI source-audit gate
