@@ -3770,6 +3770,57 @@ class Signer:
     assert universe.helper_callee == "vendinst_property_last._make_keys_list"
 
 
+def test_instance_field_universe_skips_overload_init_stubs(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        instance_field_universe_for_callee,
+        list_adapter_universe_for_callee,
+    )
+
+    instance_field_universe_for_callee.cache_clear()
+    list_adapter_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_property_overloaded_init",
+        '''
+import typing as t
+
+
+def want_bytes(s):
+    if isinstance(s, str):
+        s = s.encode()
+
+    return s
+
+
+def _make_keys_list(secret_key):
+    if isinstance(secret_key, (str, bytes)):
+        return [want_bytes(secret_key)]
+
+    return [want_bytes(s) for s in secret_key]
+
+
+class Signer:
+    @t.overload
+    def __init__(self, secret_key): ...
+
+    def __init__(self, secret_key):
+        self.secret_keys = _make_keys_list(secret_key)
+
+    @property
+    def secret_key(self):
+        return self.secret_keys[-1]
+''',
+    )
+
+    universe, refusal = instance_field_universe_for_callee(
+        "vendinst_property_overloaded_init.Signer.secret_key"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.field_name == "secret_keys"
+    assert universe.field_projection == ("index", -1)
+    assert universe.helper_callee == "vendinst_property_overloaded_init._make_keys_list"
+
+
 def test_instance_field_last_item_property_composes_helper_list_adapter(vendor_path):
     from sugar_lift_py_tests.translate_universe import (
         bytes_identity_universe_for_callee,
@@ -3930,6 +3981,79 @@ def test_package_accounting_classifies_last_item_property_getter(tmp_path, monke
         assert not [
             locus for locus in property_loci if locus["status"] == "unclassified"
         ], property_loci
+
+
+def test_package_accounting_discovers_untriggered_instance_field_getter(
+    tmp_path,
+    monkeypatch,
+):
+    pkg = tmp_path / "vendpkg_property_last_untriggered"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "signer.py").write_text(
+        textwrap.dedent(
+            '''
+            def want_bytes(s):
+                if isinstance(s, str):
+                    s = s.encode()
+
+                return s
+
+
+            def _make_keys_list(secret_key):
+                if isinstance(secret_key, (str, bytes)):
+                    return [want_bytes(secret_key)]
+
+                return [want_bytes(s) for s in secret_key]
+
+
+            class Signer:
+                def __init__(self, secret_key):
+                    self.secret_keys = _make_keys_list(secret_key)
+
+                @property
+                def secret_key(self):
+                    return self.secret_keys[-1]
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            '''
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_property_last_untriggered.signer as signer
+
+        def test_token():
+            assert signer.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    property_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_property_last_untriggered/signer.py")
+        and locus.get("ast_path", "").startswith("$.module.body[2].body[1].body")
+    ]
+    assert property_loci
+    assert not [
+        locus for locus in property_loci if locus["status"] == "unclassified"
+    ], property_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") in {"Return", "Subscript"}
+        and "instance-field" in locus.get("reason", "")
+        for locus in property_loci
+    ), property_loci
 
 
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):

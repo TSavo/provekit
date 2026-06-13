@@ -48,6 +48,7 @@ from .translate_universe import (
     delegation_universe_for_callee,
     exception_bool_return_universe_for_callee,
     exception_handler_raise_universe_for_callee,
+    instance_field_universe_for_callee,
     list_adapter_universe_for_callee,
     raise_locus_universe_for_callee,
 )
@@ -491,6 +492,13 @@ def _package_locus_classification(
     )
     if list_adapter_body_status is not None:
         return list_adapter_body_status
+    instance_field_body_status = _instance_field_body_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if instance_field_body_status is not None:
+        return instance_field_body_status
     generator_flow_status = _generator_flow_refusal_status(node, ancestors)
     if generator_flow_status is not None:
         return generator_flow_status
@@ -1465,6 +1473,29 @@ def _list_adapter_body_status(
     return (
         "warranted",
         "list-adapter source family emitted into python.list-adapter-universe",
+    )
+
+
+def _instance_field_body_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    owner = _nearest_enclosing_function(ancestors + (node,))
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if _is_docstring_expr_node(node, ancestors):
+        return "support", "docstring metadata supports source accounting only"
+    if not _node_is_in_function_body(node, owner):
+        return None
+    universe, refusal = instance_field_universe_for_callee(
+        _owner_callee(module_name, owner, ancestors + (node,))
+    )
+    if refusal is not None or universe is None:
+        return None
+    return (
+        "warranted",
+        "instance-field source family emitted into python.instance-field-universe",
     )
 
 

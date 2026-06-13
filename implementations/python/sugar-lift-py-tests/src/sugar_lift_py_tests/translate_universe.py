@@ -886,13 +886,9 @@ def instance_field_universe_for_callee(
     cls = _find_class_path(tree.body, class_qualname.split("."))
     if cls is None:
         return None, None
-    init_fn = next(
-        (
-            stmt
-            for stmt in cls.body
-            if isinstance(stmt, ast.FunctionDef) and stmt.name == "__init__"
-        ),
-        None,
+    init_fn = _find_function_path(
+        tree.body,
+        [*class_qualname.split("."), "__init__"],
     )
     if init_fn is None or init_fn.decorator_list:
         return None, None
