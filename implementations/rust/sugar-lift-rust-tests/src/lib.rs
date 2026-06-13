@@ -4282,7 +4282,7 @@ fn tail_inv(tail: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
         return tail_inv(&g.expr, scope);
     }
     // (a) Slice 1 -- matches! membership: out <-> m.
-    if let Some(membership) = emit_bool_membership_formula(tail) {
+    if let Some(membership) = emit_bool_membership_formula(tail, scope) {
         return Some(biconditional_out(membership));
     }
     // (b) Slice 4 -- bounded-output universe (clamp), BEFORE the EUF path so the
@@ -4827,32 +4827,40 @@ fn term_is_euf_value(term: &Term) -> bool {
 
 /// A boolean body as a membership formula: `matches!` predicates joined by
 /// `&&`/`||`/`!`. Any other shape is not emittable here (-> None).
-fn emit_bool_membership_formula(expr: &Expr) -> Option<Rc<Formula>> {
+fn emit_bool_membership_formula(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
     match expr {
-        Expr::Paren(p) => emit_bool_membership_formula(&p.expr),
-        Expr::Group(g) => emit_bool_membership_formula(&g.expr),
+        Expr::Paren(p) => emit_bool_membership_formula(&p.expr, scope),
+        Expr::Group(g) => emit_bool_membership_formula(&g.expr, scope),
         Expr::Unary(u) if matches!(u.op, UnOp::Not(_)) => {
-            Some(not_(emit_bool_membership_formula(&u.expr)?))
+            Some(not_(emit_bool_membership_formula(&u.expr, scope)?))
         }
         Expr::Binary(b) => match b.op {
             BinOp::Or(_) | BinOp::BitOr(_) => Some(or_(vec![
-                emit_bool_membership_formula(&b.left)?,
-                emit_bool_membership_formula(&b.right)?,
+                emit_bool_membership_formula(&b.left, scope)?,
+                emit_bool_membership_formula(&b.right, scope)?,
             ])),
             BinOp::And(_) | BinOp::BitAnd(_) => Some(and_(vec![
-                emit_bool_membership_formula(&b.left)?,
-                emit_bool_membership_formula(&b.right)?,
+                emit_bool_membership_formula(&b.left, scope)?,
+                emit_bool_membership_formula(&b.right, scope)?,
             ])),
             _ => None,
         },
-        Expr::Macro(m) => matches_membership_formula(&m.mac),
+        Expr::Macro(m) => matches_membership_formula(&m.mac, scope),
         _ => None,
     }
 }
 
-/// `matches!(<scalar scrutinee>, <pattern>)` -> the membership formula over the
-/// scrutinee's code point. A guard (`if ...`) is not modeled here (-> None).
-fn matches_membership_formula(mac: &syn::Macro) -> Option<Rc<Formula>> {
+/// `matches!(<scrutinee>, <pattern> [if <guard>])` -> the membership formula.
+/// Unguarded scalar/string patterns reduce over the scrutinee's value
+/// (`scrutinee_scalar_var` + `pattern_membership_formula`). A guard, or an enum
+/// pattern with bindings, routes through `match_arm_discriminant` (the SAME
+/// `variant_of`/`payload:` machinery as a value-`match`): the discriminant is
+/// conjoined with the guard translated as a bool predicate, with each pattern
+/// binding substituted by its payload accessor (`p` in `Punct(p)` -> the
+/// `payload:Punct(scrutinee)` term). The guard must be a bool-predicate the
+/// assertion translator accepts and must compose; anything else -> None (the
+/// body stays unclassified, never a hollow warrant).
+fn matches_membership_formula(mac: &syn::Macro, scope: &TemporalScope) -> Option<Rc<Formula>> {
     if !mac
         .path
         .segments
@@ -4875,11 +4883,23 @@ fn matches_membership_formula(mac: &syn::Macro) -> Option<Rc<Formula>> {
             Ok::<_, syn::Error>((scrutinee, pat, guard))
         })
         .ok()?;
-    if guard.is_some() {
-        return None;
-    }
+    let Some(guard) = guard else {
+        // Unguarded: the scalar/string code-point membership (fast path).
+        let scrutinee_term = scrutinee_scalar_var(&scrutinee)?;
+        return pattern_membership_formula(&scrutinee_term, &pat);
+    };
+    // Guarded: discriminant /\ guard[pattern bindings := payload accessors].
     let scrutinee_term = scrutinee_scalar_var(&scrutinee)?;
-    pattern_membership_formula(&scrutinee_term, &pat)
+    let (disc, bindings) = match_arm_discriminant(&scrutinee_term, &pat)?;
+    let entry = translate_bool_assertion(&guard, scope, &FloatWidthScope::new()).ok()?;
+    let mut guard_f = entry.atom;
+    for (name, term) in &bindings {
+        guard_f = subst_var_in_formula(&guard_f, name, term);
+    }
+    Some(match disc {
+        Some(d) => and_(vec![d, guard_f]),
+        None => guard_f,
+    })
 }
 
 /// The scrutinee of a char/byte `matches!` reduces to a single bound name (its

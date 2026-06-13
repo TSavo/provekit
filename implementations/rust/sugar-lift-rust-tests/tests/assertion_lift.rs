@@ -5580,14 +5580,17 @@ fn emit_value_contract_handles_or_of_matches() {
 #[test]
 fn emit_value_contract_refuses_unemittable_bodies() {
     use sugar_lift_rust_tests::emit_value_contract;
-    // A guard in matches!, a panic method (unwrap -> divergence), and a mutating
-    // multi-statement body are NOT emittable here -> None, so the caller routes
-    // them to effect_refusal/unclassified (never a hollow warrant). (Value-position
-    // calls like v.len() DO emit as EUF; a dead-let prefix + liftable tail DOES
-    // warrant -- see the let-prefix and method-EUF tests.)
+    // A panic method (unwrap -> divergence), a mutating multi-statement body, and
+    // a guarded matches! over a NESTED pattern (match_arm_discriminant refuses
+    // nested binders -> ambiguous payload positions) are NOT emittable here ->
+    // None, so the caller routes them to effect_refusal/unclassified (never a
+    // hollow warrant). (Value-position calls like v.len() DO emit as EUF; a
+    // dead-let prefix + liftable tail DOES warrant; a guarded matches! over a
+    // FLAT pattern with a pure-predicate guard DOES warrant -- see the
+    // guarded-matches tests below.)
     for src in [
         "fn f(r: Result<i32, ()>) -> i32 { r.unwrap() }",
-        "fn f(c: char) -> bool { matches!(c, x if x == 'q') }",
+        "fn f(p: Option<Result<i32, ()>>) -> bool { matches!(p, Some(Ok(n)) if n > 0) }",
         "fn f(x: i32) -> i32 { let mut a = x; a += 1; a }",
     ] {
         let f: syn::ItemFn = syn::parse_str(src).unwrap();
@@ -5700,6 +5703,83 @@ fn emit_value_contract_string_matches_composes_through_compiler() {
         assert!(
             stdout.contains("sat"),
             "emitted string-membership relation must be satisfiable:\n{stdout}\n--- script ---\n{script}"
+        );
+    }
+}
+
+// Slice 18: GUARDED `matches!` (matches!(x, Pat if guard)). Pervasive in core:
+// matches!(token, TokenTree::Punct(p) if p.as_char() == ',') and friends. The
+// match is side-effect-free (pattern test + a pure guard predicate), so it
+// warrants `out <-> (variant_of(x) == "variant::Pat" /\ guard[p := payload(x)])`
+// -- the discriminant conjoined with the guard, with the pattern binding mapped
+// to its payload accessor via the SAME match_arm_discriminant machinery a value
+// `match` uses. A nested pattern or a non-predicate guard stays None (refused).
+#[test]
+fn emit_value_contract_guarded_matches_warrants() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // A flat enum-variant pattern with a pure comparison guard over the binding.
+    let f: syn::ItemFn = syn::parse_str(
+        "fn pos(p: Option<i32>) -> bool { matches!(p, Some(n) if n > 0) }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("pos", &f.block).expect("guarded matches! warrants");
+    assert_eq!(decl.out_binding, "out");
+    let inv = format!("{:?}", decl.inv.expect("inv present"));
+    assert!(inv.contains("variant_of"), "discriminant present: {inv}");
+    assert!(inv.contains("payload:"), "binding mapped to payload accessor: {inv}");
+    assert!(inv.contains("out"), "return value related: {inv}");
+}
+
+// Discrimination: a binding-only catch-all guard (matches!(v, x if x == 5))
+// reduces to `out <-> v == 5` -- the binding maps straight to the scrutinee, no
+// variant discriminant. This is the shape that USED to be refused (a guard was a
+// blanket None) and now warrants, because the guard is a pure predicate.
+#[test]
+fn emit_value_contract_guarded_matches_binding_only_warrants() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn =
+        syn::parse_str("fn isfive(v: i32) -> bool { matches!(v, x if x == 5) }").unwrap();
+    let decl = emit_value_contract("isfive", &f.block).expect("binding-only guard warrants");
+    let inv = format!("{:?}", decl.inv.expect("inv present"));
+    // the guard reduces to v == 5 (the binding x maps straight to v, no variant_of).
+    assert!(inv.contains('5'), "guard reduced to v == 5: {inv}");
+    assert!(!inv.contains("variant_of"), "no discriminant for a binding pattern: {inv}");
+}
+
+// Step 7 for guarded matches!: the emitted relation must COMPOSE -- well-sorted
+// under z3 AND satisfiable (real teeth: some p makes it true, some false).
+#[test]
+fn emit_value_contract_guarded_matches_composes_through_compiler() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str(
+        "fn pos(p: Option<i32>) -> bool { matches!(p, Some(n) if n > 0) }",
+    )
+    .unwrap();
+    let decl = emit_value_contract("pos", &f.block).unwrap();
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let inv = parsed[0]["inv"].clone();
+
+    let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+        .expect("emitted guarded-matches inv must compile to SMT-LIB");
+    let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+
+    let z3 = "/usr/local/bin/z3";
+    if std::path::Path::new(z3).exists() {
+        let path = std::env::temp_dir().join("sugar_guarded_matches_compose.smt2");
+        std::fs::write(&path, &script).expect("write smt2");
+        let out = std::process::Command::new(z3)
+            .arg(&path)
+            .output()
+            .expect("run z3");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains("unknown constant") && !stdout.to_lowercase().contains("error"),
+            "emitted guarded-matches relation must be well-sorted for z3:\n{stdout}\n--- script ---\n{script}"
+        );
+        assert!(
+            stdout.contains("sat"),
+            "emitted guarded-matches relation must be satisfiable:\n{stdout}\n--- script ---\n{script}"
         );
     }
 }
