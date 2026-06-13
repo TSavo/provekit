@@ -753,29 +753,12 @@ def instance_field_universe_for_callee(
     init_params = _positional_param_names(init_fn)
     if not init_params or init_params[0] != "self":
         return None, None
-    init_body = _body_without_docstring(init_fn.body)
-    assign_indexes = [
-        index
-        for index, stmt in enumerate(init_body)
-        if isinstance(stmt, ast.Assign)
-    ]
-    if len(assign_indexes) != 1:
+    field = _constructor_field_assignment(init_fn, returned_field, init_params)
+    if field is None:
         return None, None
-    assign_index = assign_indexes[0]
-    if any(not _is_super_init_expr(stmt) for stmt in init_body[:assign_index]):
-        return None, None
-    if init_body[assign_index + 1:]:
-        return None, None
-    assign = init_body[assign_index]
-    if len(assign.targets) != 1:
-        return None, None
-    assigned_field = _self_attribute_name(assign.targets[0], init_params[0])
-    if assigned_field != returned_field:
-        return None, None
-    if not isinstance(assign.value, ast.Name) or assign.value.id not in init_params[1:]:
-        return None, None
+    _assign, param_name = field
 
-    param_index = init_params[1:].index(assign.value.id)
+    param_index = init_params[1:].index(param_name)
     source_memento = _source_memento_for_resolved_function(fn, spec_origin)
     constructor_source_memento = _source_memento_for_resolved_function(
         init_fn,
@@ -787,7 +770,7 @@ def instance_field_universe_for_callee(
         InstanceFieldUniverse(
             field_name=returned_field,
             constructor_param_index=param_index,
-            constructor_param_name=assign.value.id,
+            constructor_param_name=param_name,
             module=module_name,
             qualname=f"{module_name}.{fn_name}",
             constructor_qualname=f"{module_name}.{class_qualname}.__init__",
@@ -848,33 +831,41 @@ def _constructor_field_assignment(
     if init_fn.decorator_list:
         return None
     init_body = _body_without_docstring(init_fn.body)
-    assign_indexes = [
-        index
-        for index, stmt in enumerate(init_body)
-        if isinstance(stmt, (ast.Assign, ast.AnnAssign))
-    ]
-    if len(assign_indexes) != 1:
-        return None
-    assign_index = assign_indexes[0]
-    if any(not _is_super_init_expr(stmt) for stmt in init_body[:assign_index]):
-        return None
-    if init_body[assign_index + 1:]:
-        return None
-    assign = init_body[assign_index]
-    if isinstance(assign, ast.Assign):
-        if len(assign.targets) != 1:
+    matched: Optional[tuple[ast.Assign | ast.AnnAssign, str]] = None
+    seen_field_assign = False
+    for stmt in init_body:
+        if _is_super_init_expr(stmt) and not seen_field_assign:
+            continue
+        field = _constructor_field_assignment_stmt(stmt, init_params)
+        if field is None:
             return None
-        target = assign.targets[0]
-        value = assign.value
+        seen_field_assign = True
+        assign, assigned_field, param_name = field
+        if assigned_field == field_name:
+            matched = (assign, param_name)
+    return matched
+
+
+def _constructor_field_assignment_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str]]:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return None
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
     else:
-        target = assign.target
-        value = assign.value
-    assigned_field = _self_attribute_name(target, init_params[0])
-    if assigned_field != field_name:
         return None
+    assigned_field = _self_attribute_name(target, init_params[0])
     if not isinstance(value, ast.Name) or value.id not in init_params[1:]:
         return None
-    return assign, value.id
+    if assigned_field is None:
+        return None
+    return stmt, assigned_field, value.id
 
 
 @functools.lru_cache(maxsize=None)

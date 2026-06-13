@@ -158,6 +158,35 @@ if not any(
     for locus in payload_audit["loci"]
 ):
     raise SystemExit("FAIL: BadSignature.payload field assignment was not warranted")
+header_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "BadHeader" in audit.get("contract", {}).get("name", "")
+]
+if len(header_audits) != 1:
+    raise SystemExit(f"FAIL: expected one BadHeader header audit, got {len(header_audits)}")
+header_audit = header_audits[0]
+header_totals = header_audit["totals"]
+if header_audit.get("universe_kind") != "constructor-field-getter":
+    raise SystemExit(f"FAIL: expected constructor-field-getter audit, got {header_audit.get('universe_kind')}")
+if header_audit["source_memento"].get("source_function_name") != "BadHeader.__init__":
+    raise SystemExit(f"FAIL: header source oracle should point at constructor: {header_audit['source_memento']!r}")
+if header_totals.get("unclassified_source") != 0:
+    raise SystemExit(f"FAIL: BadHeader.header source dig has unclassified source: totals={header_totals}")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "AnnAssign"
+    and locus.get("line") == 85
+    for locus in header_audit["loci"]
+):
+    raise SystemExit("FAIL: BadHeader.header field assignment was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "AnnAssign"
+    and locus.get("line") == 89
+    for locus in header_audit["loci"]
+):
+    raise SystemExit("FAIL: BadHeader.original_error field assignment was not accounted")
 stdlib_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.delegation-universe"
@@ -272,6 +301,15 @@ print(
     f"support={payload_totals.get('source_support', 0)}",
     f"refused={payload_totals['source_refused']}",
     f"unclassified={payload_totals['unclassified_source']}",
+)
+print(
+    "source audit BadHeader.header:",
+    f"loci={header_totals['source_loci']}",
+    f"warranted={header_totals['source_warranted']}",
+    f"inactive={header_totals['source_inactive']}",
+    f"support={header_totals.get('source_support', 0)}",
+    f"refused={header_totals['source_refused']}",
+    f"unclassified={header_totals['unclassified_source']}",
 )
 print(
     "source audit _CompactJSON.loads:",

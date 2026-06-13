@@ -30,5 +30,10 @@ def test_bad_signature_payload():
     assert err.payload == b"payload"
 
 
+def test_bad_header_header():
+    err = exc.BadHeader("bad", payload=b"payload", header={"kid": "k"})
+    assert err.header == {"kid": "k"}
+
+
 def test_compact_json_loads():
     assert compact_json._CompactJSON.loads('{"ok": true}') == {"ok": True}

@@ -1891,6 +1891,69 @@ class PayloadError(Exception):
     ), audit
 
 
+def test_instance_field_universe_maps_one_of_multiple_constructor_fields(vendor_path):
+    vendor_path(
+        "vendinst_multi_attr",
+        '''
+class HeaderError(Exception):
+    def __init__(self, message, payload=None, header=None):
+        super().__init__(message, payload)
+        self.payload = payload
+        self.header = header
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_multi_attr
+
+        def test_header():
+            err = vendinst_multi_attr.HeaderError("bad", payload=b"payload", header="h")
+            assert err.header == "wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_multi_attr.HeaderError" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    field_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("h") in getattr(atom, "args", ())
+        and any(
+            getattr(side, "name", "") == "err$0.header"
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert field_eqs
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "HeaderError.__init__"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        and locus.get("line") == 6
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 
