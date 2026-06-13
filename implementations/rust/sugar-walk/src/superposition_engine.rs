@@ -25,7 +25,9 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::canonical::cid_of_value;
+use sugar_canonicalizer::{encode_jcs, Value as CValue};
+
+use crate::canonical::{cid_of_value, jcs_bytes_of_value};
 use crate::superposition::{Accumulator, Strength, Universe, WorldMembership};
 
 /// A statement fed to the engine: a CID + the IR `inv` formula it asserts.
@@ -452,6 +454,128 @@ pub fn check_lift_against_pins(
         .collect()
 }
 
+// ── Slice 6: the report ─────────────────────────────────────────────────────
+//
+// The finish line: a vendor body + its pins produce a content-addressed
+// superposition report — N determined facts + M exclusion-groups + a per-output
+// strength grade with its verdict, levers named for weak/undecidable outputs,
+// and the vendor findings — recomputable by a third party from its bytes alone.
+
+/// The two levers a vendor pulls to collapse a weak/undecidable output.
+pub fn collapse_levers() -> Vec<String> {
+    vec![
+        "pin it: add a vendor assertion that selects one reading".to_string(),
+        "get the side effect off the critical path".to_string(),
+    ]
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuperpositionReport {
+    /// The vendor output/symbol this report grades.
+    pub symbol: String,
+    /// N determined facts — the warranted core, true in every world.
+    pub determined: Vec<String>,
+    /// M mutual-exclusion groups — the forks (the Dr-Who debugging loops).
+    pub fork_groups: Vec<Vec<String>>,
+    /// Live world-count (saturating).
+    pub world_count: u128,
+    pub strength: Strength,
+    /// The vendor-facing verdict line.
+    pub verdict: String,
+    /// Empty for Strong; the two levers for Weak/Undecidable.
+    pub levers: Vec<String>,
+    /// Vendor findings (pins the licensed lift contradicts), from the keystone.
+    pub findings: Vec<String>,
+    /// The order-invariant superposition handle (the universe's CID).
+    pub superposition_cid: String,
+}
+
+impl SuperpositionReport {
+    /// Assemble the report from a walk over a symbol's candidates + any keystone
+    /// findings. The strength is the authoritative survivor count.
+    pub fn from_walk(symbol: impl Into<String>, walk: &WalkResult, findings: Vec<String>) -> Self {
+        let universe = walk.universe();
+        let strength = walk.strength();
+        let fork_groups: Vec<Vec<String>> = universe
+            .fork_groups()
+            .into_iter()
+            .map(|g| g.to_vec())
+            .collect();
+        let levers = match strength {
+            Strength::Strong => Vec::new(),
+            Strength::Weak | Strength::Undecidable => collapse_levers(),
+        };
+        let mut findings = findings;
+        findings.sort();
+        SuperpositionReport {
+            symbol: symbol.into(),
+            determined: walk.determined.clone(),
+            fork_groups,
+            world_count: walk.worlds.len() as u128,
+            strength,
+            verdict: strength.verdict().to_string(),
+            levers,
+            findings,
+            superposition_cid: universe.superposition_cid(),
+        }
+    }
+
+    /// The content-addressed report node.
+    pub fn canonical_value(&self) -> Arc<CValue> {
+        let mut det = self.determined.clone();
+        det.sort();
+        let mut forks: Vec<Arc<CValue>> = self
+            .fork_groups
+            .iter()
+            .map(|g| {
+                let mut m = g.clone();
+                m.sort();
+                CValue::array(m.into_iter().map(CValue::string).collect())
+            })
+            .collect();
+        forks.sort_by(|a, b| encode_jcs(a).cmp(&encode_jcs(b)));
+        let mut findings = self.findings.clone();
+        findings.sort();
+        CValue::object(vec![
+            (
+                "determined".to_string(),
+                CValue::array(det.into_iter().map(CValue::string).collect()),
+            ),
+            (
+                "findings".to_string(),
+                CValue::array(findings.into_iter().map(CValue::string).collect()),
+            ),
+            ("forkGroups".to_string(), CValue::array(forks)),
+            ("kind".to_string(), CValue::string("superposition-report")),
+            (
+                "levers".to_string(),
+                CValue::array(self.levers.iter().cloned().map(CValue::string).collect()),
+            ),
+            ("strength".to_string(), CValue::string(self.strength.tag())),
+            (
+                "superpositionCid".to_string(),
+                CValue::string(self.superposition_cid.clone()),
+            ),
+            ("symbol".to_string(), CValue::string(self.symbol.clone())),
+            ("verdict".to_string(), CValue::string(self.verdict.clone())),
+            (
+                "worldCount".to_string(),
+                CValue::string(self.world_count.to_string()),
+            ),
+        ])
+    }
+
+    /// The report CID — recomputable by a third party as blake3_512 of `member_bytes`.
+    pub fn cid(&self) -> String {
+        cid_of_value(self.canonical_value().as_ref())
+    }
+
+    /// The bytes a `.proof` envelope carries as this report's member.
+    pub fn member_bytes(&self) -> Vec<u8> {
+        jcs_bytes_of_value(self.canonical_value().as_ref())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -686,6 +810,79 @@ mod tests {
             }
             other => panic!("expected Licensed, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn report_strong_has_no_levers_and_the_one_reading_verdict() {
+        let oracle = MockOracle::new(&[]);
+        let pins = vec![stmt("pin")];
+        let cands = vec![stmt("a"), stmt("b")];
+        let walk_r = walk(&pins, &cands, &oracle, 16);
+        let report = SuperpositionReport::from_walk("vendor::f", &walk_r, vec![]);
+        assert_eq!(report.strength, Strength::Strong);
+        assert!(report.verdict.contains("one reading"));
+        assert!(report.levers.is_empty(), "Strong needs no levers");
+        assert_eq!(report.world_count, 1);
+        assert!(report.fork_groups.is_empty());
+    }
+
+    #[test]
+    fn report_weak_names_both_levers_and_the_ordering_verdict() {
+        let oracle = MockOracle::new(&[&["a", "b"]]);
+        let pins = vec![stmt("pin")];
+        let cands = vec![stmt("a"), stmt("b"), stmt("c")];
+        let walk_r = walk(&pins, &cands, &oracle, 16);
+        let report = SuperpositionReport::from_walk("vendor::g", &walk_r, vec![]);
+        assert_eq!(report.strength, Strength::Weak);
+        assert!(report.verdict.contains("ordering, not logic"));
+        assert_eq!(report.levers.len(), 2, "Weak names both levers");
+        assert_eq!(report.world_count, 2);
+        assert_eq!(report.fork_groups.len(), 1);
+        assert_eq!(report.determined, vec!["blake3-512:c"]);
+    }
+
+    #[test]
+    fn report_carries_keystone_findings() {
+        let oracle = MockOracle::new(&[]);
+        let pins = vec![stmt("pin")];
+        let walk_r = walk(&pins, &[stmt("a")], &oracle, 16);
+        let report = SuperpositionReport::from_walk(
+            "vendor::h",
+            &walk_r,
+            vec!["blake3-512:bad_pin".to_string()],
+        );
+        assert_eq!(report.findings, vec!["blake3-512:bad_pin"]);
+    }
+
+    #[test]
+    fn report_cid_recomputes_from_member_bytes() {
+        // Finish-line third-party recomputability.
+        let oracle = MockOracle::new(&[&["a", "b"]]);
+        let pins = vec![stmt("pin")];
+        let walk_r = walk(&pins, &[stmt("a"), stmt("b")], &oracle, 16);
+        let report = SuperpositionReport::from_walk("vendor::k", &walk_r, vec![]);
+        assert_eq!(
+            sugar_canonicalizer::blake3_512_of(&report.member_bytes()),
+            report.cid(),
+            "a third party recomputes the report CID from its bytes alone"
+        );
+    }
+
+    #[test]
+    fn report_is_deterministic() {
+        let oracle = MockOracle::new(&[&["a", "b"]]);
+        let pins = vec![stmt("pin")];
+        let a = SuperpositionReport::from_walk(
+            "s",
+            &walk(&pins, &[stmt("a"), stmt("b"), stmt("c")], &oracle, 16),
+            vec![],
+        );
+        let b = SuperpositionReport::from_walk(
+            "s",
+            &walk(&pins, &[stmt("c"), stmt("b"), stmt("a")], &oracle, 16),
+            vec![],
+        );
+        assert_eq!(a.cid(), b.cid(), "order-free report identity");
     }
 
     #[test]

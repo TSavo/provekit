@@ -6207,6 +6207,77 @@ fn superposition_engine_forks_two_contradictory_warrants_via_z3() {
     }
 }
 
+// ── Superposition report (slice 6): the finish line ─────────────────────────
+//
+// A vendor body + its pins produce a content-addressed superposition report —
+// determined facts + fork-groups + strength grade + verdict + levers — via the
+// real z3 oracle, recomputable by a third party. This is the whole chain end to
+// end: body -> warrant -> walk -> report -> CID.
+#[test]
+fn finish_line_vendor_body_and_pins_produce_a_recomputable_report() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    use sugar_walk::superposition::Strength;
+    use sugar_walk::superposition_engine::{walk, EngineStatement, SuperpositionReport, Z3Oracle};
+
+    let z3_present = std::path::Path::new("/usr/local/bin/z3").exists();
+
+    // Strong: a single consistent reading -> "only one reading made sense", no levers.
+    let a_fn: syn::ItemFn = syn::parse_str("fn a() -> i32 { 6 }").unwrap();
+    let a = emit_value_contract("a", &a_fn.block).expect("warrants");
+    let strong_walk = walk(
+        &[],
+        &[EngineStatement::new("blake3-512:a", inv_json(&a))],
+        &Z3Oracle::default(),
+        16,
+    );
+    let strong = SuperpositionReport::from_walk("vendor::a", &strong_walk, vec![]);
+    assert_eq!(strong.strength, Strength::Strong);
+    assert!(strong.verdict.contains("one reading"));
+    assert!(strong.levers.is_empty());
+    // Recomputable by a third party from the bytes alone.
+    assert_eq!(
+        sugar_walk::superposition::Strength::tag(&strong.strength),
+        "strong"
+    );
+    assert_eq!(
+        sugar_canonicalizer::blake3_512_of(&strong.member_bytes()),
+        strong.cid(),
+        "report CID must recompute from its bytes alone"
+    );
+
+    // Weak: two mutually-exclusive readings (out==6 vs out==7), each consistent
+    // alone -> "bugs live in ordering, not logic", both levers named.
+    let p_fn: syn::ItemFn = syn::parse_str("fn p() -> i32 { 6 }").unwrap();
+    let q_fn: syn::ItemFn = syn::parse_str("fn q() -> i32 { 7 }").unwrap();
+    let p = emit_value_contract("p", &p_fn.block).expect("warrants");
+    let q = emit_value_contract("q", &q_fn.block).expect("warrants");
+    let weak_walk = walk(
+        &[],
+        &[
+            EngineStatement::new("blake3-512:p", inv_json(&p)),
+            EngineStatement::new("blake3-512:q", inv_json(&q)),
+        ],
+        &Z3Oracle::default(),
+        16,
+    );
+    let weak = SuperpositionReport::from_walk("vendor::pq", &weak_walk, vec![]);
+    assert_eq!(
+        sugar_canonicalizer::blake3_512_of(&weak.member_bytes()),
+        weak.cid()
+    );
+    if z3_present {
+        assert_eq!(weak.strength, Strength::Weak);
+        assert!(weak.verdict.contains("ordering, not logic"));
+        assert_eq!(weak.levers.len(), 2, "Weak names both collapse levers");
+        assert_eq!(weak.world_count, 2);
+        assert_eq!(weak.fork_groups.len(), 1);
+        // The two reports are distinct content-addressed artifacts.
+        assert_ne!(strong.cid(), weak.cid());
+    } else {
+        assert_eq!(weak.strength, Strength::Strong); // Unknown -> no false fork
+    }
+}
+
 // ── Slice 2: value-term emission (out = <side-effect-free term>) ────────────
 
 #[test]

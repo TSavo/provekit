@@ -125,6 +125,15 @@ pub enum Strength {
 }
 
 impl Strength {
+    /// Stable machine tag for the content-addressed report.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Strength::Strong => "strong",
+            Strength::Weak => "weak",
+            Strength::Undecidable => "undecidable",
+        }
+    }
+
     /// The report's verdict line for this grade — what the vendor reads.
     pub fn verdict(&self) -> &'static str {
         match self {
