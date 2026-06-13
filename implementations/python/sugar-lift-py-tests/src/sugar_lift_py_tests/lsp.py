@@ -45,6 +45,7 @@ from .cpython_ctypes_resolver import resolve_ctypes_calls
 from .translate_universe import (
     bytes_identity_universe_for_callee,
     branch_selected_raise_universe_for_callee,
+    conditional_chain_universe_for_callee,
     constructor_field_universe_for_callee,
     delegation_universe_for_callee,
     exception_bool_return_universe_for_callee,
@@ -448,6 +449,13 @@ def _package_locus_classification(
     transparent_cast_status = _transparent_typing_cast_status(node, ancestors)
     if transparent_cast_status is not None:
         return transparent_cast_status
+    conditional_chain_status = _conditional_chain_source_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if conditional_chain_status is not None:
+        return conditional_chain_status
     super_init_status = _super_init_support_status(node, ancestors)
     if super_init_status is not None:
         return super_init_status
@@ -486,6 +494,19 @@ def _package_locus_classification(
     )
     if self_field_dispatch_status is not None:
         return self_field_dispatch_status
+    refused_binding_status = _return_from_refused_binding_status(
+        node,
+        ancestors,
+        tree,
+    )
+    if refused_binding_status is not None:
+        return refused_binding_status
+    terminal_refused_status = _terminal_return_after_refused_flow_status(
+        node,
+        ancestors,
+    )
+    if terminal_refused_status is not None:
+        return terminal_refused_status
     receiver_iteration_status = _receiver_iteration_refusal_status(
         node,
         ancestors,
@@ -587,6 +608,27 @@ def _package_call_aliases(tree: ast.Module, module_name: str) -> Dict[str, str]:
                     f"{imported_module}.{alias.name}"
                 )
     return aliases
+
+
+def _conditional_chain_source_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    chain = ancestors + (node,)
+    owner = _nearest_enclosing_function(chain)
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    if not _node_is_in_function_body(node, owner):
+        return None
+    callee = _owner_callee(module_name, owner, chain)
+    universe, refusal = conditional_chain_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return (
+        "warranted",
+        "conditional SSA branch emitted into python.conditional-chain-universe",
+    )
 
 
 def _resolved_import_from_module(
@@ -1195,6 +1237,160 @@ def _runtime_field_dispatch_refusal_reason(
             "so no stable vendor method body can warrant this relation"
         )
     return None
+
+
+def _return_from_refused_binding_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    tree: ast.Module,
+) -> Optional[tuple[str, str]]:
+    chain = ancestors + (node,)
+    stmt = _nearest_statement(chain)
+    if not isinstance(stmt, ast.Return):
+        return None
+    if not (node is stmt or any(candidate is node for candidate in ast.walk(stmt))):
+        return None
+    owner = _nearest_enclosing_function(chain)
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    loaded_names = _loaded_name_ids(stmt)
+    if not loaded_names:
+        return None
+    previous = _previous_function_body_statements(owner, stmt)
+    if previous is None:
+        return None
+
+    class_qualname = _nearest_class_qualname(chain)
+    if not class_qualname:
+        return None
+    cls = _find_class_by_qualname(tree, class_qualname)
+    if cls is None:
+        return None
+    methods = {
+        item.name
+        for item in cls.body
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    fields = _class_receiver_field_names(cls)
+    has_bases = bool(cls.bases)
+
+    for prior in reversed(previous):
+        assignment = _single_name_assignment(prior)
+        if assignment is None:
+            continue
+        name, value = assignment
+        if name not in loaded_names or value is None:
+            continue
+        reason = _runtime_field_dispatch_refusal_reason(
+            value,
+            methods,
+            fields,
+            has_bases,
+        )
+        if reason is not None:
+            return (
+                "refused",
+                (
+                    "return depends on refused runtime field dispatch binding "
+                    f"{name!r}: {reason}"
+                ),
+            )
+    return None
+
+
+def _terminal_return_after_refused_flow_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[str, str]]:
+    chain = ancestors + (node,)
+    owner = _nearest_enclosing_function(chain)
+    if owner is None or isinstance(owner, ast.Lambda):
+        return None
+    body = _body_without_docstring(owner.body)
+    if len(body) < 2:
+        return None
+    branch = body[-2]
+    fallback = body[-1]
+    if (
+        not isinstance(branch, ast.If)
+        or branch.orelse
+        or len(branch.body) != 1
+        or not isinstance(branch.body[0], ast.Return)
+        or not isinstance(fallback, ast.Return)
+    ):
+        return None
+    tail_statements = (branch, branch.body[0], fallback)
+    if not any(
+        node is stmt or any(candidate is node for candidate in ast.walk(stmt))
+        for stmt in tail_statements
+    ):
+        return None
+    prelude = body[:-2]
+    if not _body_contains_refused_path_sensitive_flow(prelude):
+        return None
+    return (
+        "refused",
+        (
+            "terminal return refused: earlier path-sensitive try/raise flow "
+            "is not emitted as a value relation"
+        ),
+    )
+
+
+def _loaded_name_ids(node: ast.AST) -> set[str]:
+    return {
+        candidate.id
+        for candidate in ast.walk(node)
+        if isinstance(candidate, ast.Name) and isinstance(candidate.ctx, ast.Load)
+    }
+
+
+def _previous_function_body_statements(
+    owner: ast.FunctionDef | ast.AsyncFunctionDef,
+    stmt: ast.stmt,
+) -> Optional[list[ast.stmt]]:
+    try:
+        index = next(i for i, candidate in enumerate(owner.body) if candidate is stmt)
+    except StopIteration:
+        for i, candidate in enumerate(owner.body):
+            if any(descendant is stmt for descendant in ast.walk(candidate)):
+                return owner.body[:i]
+        return None
+    return owner.body[:index]
+
+
+def _single_name_assignment(
+    stmt: ast.stmt,
+) -> Optional[tuple[str, Optional[ast.expr]]]:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+            return None
+        return stmt.targets[0].id, stmt.value
+    if isinstance(stmt, ast.AnnAssign):
+        if not isinstance(stmt.target, ast.Name):
+            return None
+        return stmt.target.id, stmt.value
+    return None
+
+
+def _body_without_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        return body[1:]
+    return body
+
+
+def _body_contains_refused_path_sensitive_flow(body: list[ast.stmt]) -> bool:
+    for stmt in body:
+        if isinstance(stmt, ast.Try):
+            return True
+        if any(isinstance(node, ast.Raise) for node in ast.walk(stmt)):
+            return True
+    return False
 
 
 def _receiver_iteration_refusal_status(

@@ -893,6 +893,181 @@ def test_lift_source_refuses_runtime_dispatch_guarded_return_package_accounting(
     )
 
 
+def test_lift_source_refuses_return_from_runtime_dispatch_binding_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_runtime_dispatch_binding_return"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        class Signer:
+            def __init__(self, algorithm):
+                self.algorithm = algorithm
+
+            def get_signature(self, value):
+                sig = self.algorithm.get_signature(value)
+                return b64e(sig)
+        """
+    )
+    sig_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "sig = self.algorithm.get_signature" in line
+    )
+    return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return b64e(sig)" in line
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_runtime_dispatch_binding_return.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    return_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_binding_return/encoding.py"
+        )
+        and locus.get("line") == return_line
+    ]
+    sig_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith(
+            "vendpkg_runtime_dispatch_binding_return/encoding.py"
+        )
+        and locus.get("line") == sig_line
+    ]
+    assert sig_loci
+    assert return_loci
+    assert not [
+        locus for locus in return_loci if locus["status"] == "unclassified"
+    ], return_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("ast_kind") == "Assign"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in sig_loci
+    ), sig_loci
+    assert all(
+        locus["status"] == "refused"
+        and "runtime field dispatch" in locus.get("reason", "")
+        for locus in return_loci
+    ), return_loci
+
+
+def test_lift_source_refuses_terminal_return_after_try_flow_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_terminal_return_after_try"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    source = textwrap.dedent(
+        """
+        def b64e(s):
+            return s.rstrip(b"=")
+
+        def parse(value):
+            return value
+
+        class Timed:
+            def to_dt(self, value):
+                return value
+
+            def unsign(self, flag=False):
+                try:
+                    result = self.load()
+                except Exception:
+                    result = b""
+
+                value, stamp = result.rsplit(b".", 1)
+                stamp_int = None
+
+                try:
+                    stamp_int = parse(stamp)
+                except Exception:
+                    pass
+
+                if flag:
+                    return value, self.to_dt(stamp_int)
+
+                return value
+        """
+    )
+    if_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "if flag" in line
+    )
+    tuple_return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if "return value, self.to_dt" in line
+    )
+    fallback_return_line = next(
+        line_no
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if line_no > tuple_return_line and line.strip() == "return value"
+    )
+    (pkg / "encoding.py").write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_terminal_return_after_try.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    tail_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_terminal_return_after_try/encoding.py")
+        and locus.get("line")
+        in {if_line, tuple_return_line, fallback_return_line}
+    ]
+    assert tail_loci
+    assert not [
+        locus for locus in tail_loci if locus["status"] == "unclassified"
+    ], tail_loci
+    assert all(
+        locus["status"] == "refused"
+        and "terminal return" in locus.get("reason", "")
+        for locus in tail_loci
+    ), tail_loci
+
+
 def test_lift_source_refuses_receiver_iteration_header_package_accounting(
     tmp_path, monkeypatch
 ):
@@ -5863,16 +6038,17 @@ def test_free_name_return_is_not_identity(vendor_path):
 
 
 def test_rebound_param_is_not_identity(vendor_path):
-    # `x = x + 1; return x` is chain-SHAPED but the chain value is
-    # computed: since the SSA-chain rung this refuses LOUDLY (it used to
-    # be a silent two-statement non-candidate) — and it must never be
-    # identity, which would forward the caller's x unincremented.
+    # `x = x + 1; return x` is chain-SHAPED and computed. It must never be
+    # identity, which would forward the caller's x unincremented; it is now
+    # admitted as the explicit chain expression the source actually states.
     vendor_path(
         "venddeleg_rebind", "def f(x):\n    x = x + 1\n    return x\n"
     )
     u, r = _deleg("venddeleg_rebind.f")
-    assert u is None
-    assert r is not None and "chain value is computed" in r.reason
+    assert r is None
+    assert u is not None
+    assert u.kind == "chain-expr"
+    assert u.expr_spec == ("binop", "+", ("param", 0), ("lit", 1, "int"))
 
 
 def test_walrus_guard_delegation_refuses(vendor_path):
@@ -6065,6 +6241,90 @@ def test_imported_stdlib_delegation_walks_nested_receiver_call(vendor_path):
             (("param", 0), ("param", 1)),
         ),
     )
+
+
+def test_chain_assignment_stdlib_bridge_method_return(vendor_path):
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constructor_field_universe_for_callee,
+    )
+
+    constructor_field_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_stdlib_chain_method",
+        """
+        import hmac
+
+        class Algo:
+            def __init__(self, digest_method):
+                self.digest_method = digest_method
+
+            def get_signature(self, key, value):
+                mac = hmac.new(key, msg=value, digestmod=self.digest_method)
+                return mac.digest()
+        """,
+    )
+    u, r = _deleg("venddeleg_stdlib_chain_method.Algo.get_signature")
+    assert r is None and u is not None
+    assert u.kind == "chain-expr"
+    assert u.expr_spec[0] == "method-call"
+    assert u.expr_spec[1] == "digest"
+    assert u.expr_spec[2][0][0] == "function-call"
+    assert u.expr_spec[2][0][1] == "hmac.new"
+
+    out = _lift(
+        """
+        import venddeleg_stdlib_chain_method
+
+        def test_sig():
+            alg = venddeleg_stdlib_chain_method.Algo("sha1")
+            assert alg.get_signature(b"k", b"v") == b"sig"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "venddeleg_stdlib_chain_method.Algo.get_signature" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    expr_eqs = [
+        atom
+        for atom in _iter_conjuncts(assertion.inv)
+        if getattr(atom, "name", None) == "="
+    ]
+    assert any(
+        contains_ctor(side, "callval_digest_a1")
+        for atom in expr_eqs
+        for side in getattr(atom, "args", ())
+    )
+    assert any(
+        contains_ctor(side, "callresult_hmac_new_a3")
+        for atom in expr_eqs
+        for side in getattr(atom, "args", ())
+    )
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert (
+        "python.delegation-universe",
+        "Algo.get_signature",
+    ) in warranted
+    assert (
+        "python.instance-field-universe",
+        "Algo.__init__",
+    ) in warranted
 
 
 def test_computed_arg_refuses(vendor_path):
@@ -8804,3 +9064,637 @@ def test_binop_skips_string_instantiation():
         [num(4)],
     )
     assert l2._term_leaves_all_const_int(ok)
+
+
+def test_binop_emits_bytes_concat_with_receiver_field_and_method(vendor_path):
+    from sugar_lift_py_tests.ir import _ConstStr
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbinop_receiver_concat",
+        '''
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep = sep
+
+    def get_signature(self, value):
+        return b"sig"
+
+    def sign(self, value):
+        return value + self.sep + self.get_signature(value)
+''',
+    )
+
+    out = _lift(
+        """
+        import vendbinop_receiver_concat
+
+        def test_sign():
+            signer = vendbinop_receiver_concat.Signer()
+            assert signer.sign(b"raaaa") == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbinop_receiver_concat.Signer.sign" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    def contains_str(term, value):
+        return (
+            isinstance(term, _ConstStr)
+            and term.value == value
+        ) or any(contains_str(arg, value) for arg in getattr(term, "args", ()))
+
+    concat_eqs = []
+    signature_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        if any(getattr(side, "name", "") == "callval_sign_a2" for side in args):
+            if any(contains_ctor(side, "str.++") for side in args):
+                concat_eqs.append(atom)
+        if any(
+            getattr(side, "name", "") == "callval_get_signature_a2"
+            for side in args
+        ) and any(contains_str(side, "sig") for side in args):
+            signature_eqs.append(atom)
+
+    assert concat_eqs
+    assert signature_eqs
+    assert any(
+        contains_ctor(side, "callval_get_signature_a2")
+        for atom in concat_eqs
+        for side in atom.args
+    )
+    assert any(
+        contains_str(side, ".")
+        for atom in concat_eqs
+        for side in atom.args
+    )
+
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert ("python.delegation-universe", "Signer.sign") in warranted
+    assert ("python.instance-field-universe", "Signer.__init__") in warranted
+    assert ("python.constant-universe", "Signer.get_signature") in warranted
+
+
+def test_binop_emits_bytes_concat_after_adapter_assignment(vendor_path):
+    from sugar_lift_py_tests.ir import _ConstStr
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbinop_adapter_concat",
+        '''
+def want_bytes(value):
+    return value
+
+
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep = sep
+
+    def get_signature(self, value):
+        return b"sig"
+
+    def sign(self, value):
+        value = want_bytes(value)
+        return value + self.sep + self.get_signature(value)
+''',
+    )
+
+    out = _lift(
+        """
+        import vendbinop_adapter_concat
+
+        def test_sign():
+            signer = vendbinop_adapter_concat.Signer()
+            assert signer.sign(b"raaaa") == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbinop_adapter_concat.Signer.sign" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    def contains_str(term, value):
+        return (
+            isinstance(term, _ConstStr)
+            and term.value == value
+        ) or any(contains_str(arg, value) for arg in getattr(term, "args", ()))
+
+    concat_eqs = []
+    adapter_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        if any(getattr(side, "name", "") == "callval_sign_a2" for side in args):
+            if any(contains_ctor(side, "str.++") for side in args):
+                concat_eqs.append(atom)
+        if any(
+            getattr(side, "name", "")
+            == "callresult_vendbinop_adapter_concat_want_bytes_a1"
+            for side in args
+        ) and any(contains_str(side, "raaaa") for side in args):
+            adapter_eqs.append(atom)
+
+    assert concat_eqs
+    assert adapter_eqs
+    assert any(
+        contains_ctor(
+            side,
+            "callresult_vendbinop_adapter_concat_want_bytes_a1",
+        )
+        for atom in concat_eqs
+        for side in atom.args
+    )
+
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert ("python.delegation-universe", "Signer.sign") in warranted
+    assert ("python.delegation-universe", "want_bytes") in warranted
+    assert ("python.instance-field-universe", "Signer.__init__") in warranted
+    assert ("python.constant-universe", "Signer.get_signature") in warranted
+
+
+def test_binop_emits_nested_adapter_concat_with_receiver_timestamp(vendor_path):
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbinop_timestamp_concat",
+        '''
+def want_bytes(value):
+    return value
+
+
+def int_to_bytes(value):
+    return value
+
+
+def base64_encode(value):
+    return value
+
+
+class TimestampSigner:
+    def __init__(self, sep=b"."):
+        self.sep = sep
+
+    def get_timestamp(self):
+        return b"ts"
+
+    def get_signature(self, value):
+        return b"sig"
+
+    def sign(self, value):
+        value = want_bytes(value)
+        timestamp = base64_encode(int_to_bytes(self.get_timestamp()))
+        sep = want_bytes(self.sep)
+        value = value + sep + timestamp
+        return value + sep + self.get_signature(value)
+''',
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "vendbinop_timestamp_concat.TimestampSigner.sign"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "chain-expr"
+
+    out = _lift(
+        """
+        import vendbinop_timestamp_concat
+
+        def test_sign():
+            signer = vendbinop_timestamp_concat.TimestampSigner()
+            assert signer.sign(b"raaaa") == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbinop_timestamp_concat.TimestampSigner.sign" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    concat_eqs = []
+    timestamp_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        if any(getattr(side, "name", "") == "callval_sign_a2" for side in args):
+            if any(contains_ctor(side, "str.++") for side in args):
+                concat_eqs.append(atom)
+        if any(
+            getattr(side, "name", "")
+            == "callresult_vendbinop_timestamp_concat_base64_encode_a1"
+            for side in args
+        ):
+            timestamp_eqs.append(atom)
+
+    assert concat_eqs
+    assert timestamp_eqs
+    assert any(
+        contains_ctor(side, "callval_get_timestamp_a1")
+        for atom in concat_eqs
+        for side in atom.args
+    )
+
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert ("python.delegation-universe", "TimestampSigner.sign") in warranted
+    assert ("python.delegation-universe", "base64_encode") in warranted
+    assert ("python.delegation-universe", "int_to_bytes") in warranted
+    assert ("python.delegation-universe", "want_bytes") in warranted
+    assert ("python.constant-universe", "TimestampSigner.get_timestamp") in warranted
+
+
+def test_chain_expr_emits_subscripted_static_call(vendor_path):
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import delegation_universe_for_callee
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendexpr_subscript_call",
+        '''
+_bytes_to_int = object()
+
+
+def bytes_to_int(bytestr):
+    return _bytes_to_int(bytestr.rjust(8, b"\\x00"))[0]
+''',
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "vendexpr_subscript_call.bytes_to_int"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "chain-expr"
+
+    out = _lift(
+        """
+        import vendexpr_subscript_call
+
+        def test_bytes_to_int():
+            assert vendexpr_subscript_call.bytes_to_int(b"\\x01") == 1
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendexpr_subscript_call.bytes_to_int" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    subject_head = None
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        for side in args:
+            name = getattr(side, "name", "")
+            if name in {
+                "callresult_vendexpr_subscript_call_bytes_to_int_a1",
+                "callval_bytes_to_int_a2",
+            }:
+                subject_head = name
+                break
+        if subject_head is not None:
+            break
+
+    assert subject_head is not None
+
+    expr_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        if any(
+            getattr(side, "name", "") == subject_head
+            for side in args
+        ) and any(contains_ctor(side, "subscript") for side in args):
+            expr_eqs.append(atom)
+
+    assert expr_eqs
+    assert any(
+        contains_ctor(side, "callresult_vendexpr_subscript_call__bytes_to_int_a1")
+        for atom in expr_eqs
+        for side in atom.args
+    )
+    assert any(
+        contains_ctor(side, "callval_rjust_a3")
+        for atom in expr_eqs
+        for side in atom.args
+    )
+
+
+def test_branch_chain_expr_emits_compression_prefix_universe(vendor_path):
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+    from sugar_lift_py_tests.translate_universe import (
+        bytes_identity_universe_for_callee,
+        conditional_chain_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    bytes_identity_universe_for_callee.cache_clear()
+    conditional_chain_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendbranch_compress_prefix",
+        '''
+import zlib
+
+
+def render(obj):
+    return obj
+
+
+def base64_encode(value):
+    return value
+
+
+def dump_payload(obj):
+    json = render(obj)
+    is_compressed = False
+    compressed = zlib.compress(json)
+
+    if len(compressed) < (len(json) - 1):
+        json = compressed
+        is_compressed = True
+
+    base64d = base64_encode(json)
+
+    if is_compressed:
+        base64d = b"." + base64d
+
+    return base64d
+''',
+    )
+
+    universe, refusal = conditional_chain_universe_for_callee(
+        "vendbranch_compress_prefix.dump_payload"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "conditional-chain-expr"
+
+    out = _lift(
+        """
+        import vendbranch_compress_prefix
+
+        def test_dump_payload():
+            assert vendbranch_compress_prefix.dump_payload(b"aaaaaaaa") == b"bad"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendbranch_compress_prefix.dump_payload" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    def walk_formula(formula):
+        yield formula
+        for operand in getattr(formula, "operands", ()):
+            yield from walk_formula(operand)
+
+    implies_atoms = [
+        formula
+        for formula in walk_formula(assertion.inv)
+        if getattr(formula, "kind", None) == "implies"
+    ]
+    assert implies_atoms
+    assert any(
+        contains_ctor(arg, "str.len")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+    assert any(
+        contains_ctor(arg, "callresult_zlib_compress_a1")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+    assert any(
+        contains_ctor(arg, "str.++")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+    assert any(
+        contains_ctor(arg, "callresult_vendbranch_compress_prefix_base64_encode_a1")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert (
+        "python.conditional-chain-universe",
+        "dump_payload",
+    ) in warranted
+    assert (
+        "python.delegation-universe",
+        "base64_encode",
+    ) in warranted
+
+
+def test_terminal_if_return_emits_receiver_field_branch_universe(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        conditional_chain_universe_for_callee,
+        constructor_field_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    conditional_chain_universe_for_callee.cache_clear()
+    constructor_field_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendterminal_return",
+        '''
+def want_bytes(value):
+    return value
+
+
+class Signer:
+    def sign(self, value):
+        return value
+
+
+class Serializer:
+    def __init__(self, is_text):
+        self.is_text_serializer = is_text
+
+    def make_signer(self, salt):
+        return Signer()
+
+    def dump_payload(self, obj):
+        return obj
+
+    def dumps(self, obj, salt=None):
+        payload = want_bytes(self.dump_payload(obj))
+        rv = self.make_signer(salt).sign(payload)
+
+        if self.is_text_serializer:
+            return rv.decode("utf-8")
+
+        return rv
+''',
+    )
+
+    universe, refusal = conditional_chain_universe_for_callee(
+        "vendterminal_return.Serializer.dumps"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "conditional-chain-expr"
+    assert len(universe.branches) == 2
+
+    out = _lift(
+        """
+        import vendterminal_return
+
+        def test_dumps():
+            serializer = vendterminal_return.Serializer(True)
+            assert serializer.dumps(b"payload", None) == "payload"
+        """
+    )
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendterminal_return.Serializer.dumps" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    def walk_formula(formula):
+        yield formula
+        for operand in getattr(formula, "operands", ()):
+            yield from walk_formula(operand)
+
+    implies_atoms = [
+        atom
+        for atom in walk_formula(assertion.inv)
+        if getattr(atom, "kind", None) == "implies"
+    ]
+    assert implies_atoms
+    assert any(
+        contains_ctor(arg, "callval_decode_a2")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+    assert any(
+        contains_ctor(arg, "callval_sign_a2")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+    assert any(
+        contains_ctor(arg, "callval_dump_payload_a2")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert (
+        "python.conditional-chain-universe",
+        "Serializer.dumps",
+    ) in warranted
+    assert (
+        "python.instance-field-universe",
+        "Serializer.__init__",
+    ) in warranted

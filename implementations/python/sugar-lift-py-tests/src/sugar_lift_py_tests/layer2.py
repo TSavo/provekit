@@ -110,6 +110,7 @@ from .translate_universe import (
     bytes_identity_universe_for_callee,
     callee_is_nondeterministic,
     collection_literal_canonical,
+    conditional_chain_universe_for_callee,
     constructor_field_universe_for_callee,
     constructor_param_defaults_for_callee,
     constructor_param_names_for_callee,
@@ -5544,6 +5545,147 @@ def _universe_conjuncts(
                                 )
                             )
 
+        # CONDITIONAL SSA CHAIN: branch guards select assignment values before
+        # the final return. Emit the same implication/equality ProofIR shape
+        # used by branch-selected receiver-field universes, but with guard
+        # and return terms read from the vendor's straight-line source.
+        conditional_u, conditional_refusal = conditional_chain_universe_for_callee(
+            callee
+        )
+        if conditional_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::conditional-chain-universe",
+                    reason=(
+                        f"{conditional_refusal.callee}: "
+                        f"{conditional_refusal.reason}"
+                    ),
+                )
+            )
+        elif conditional_u is not None:
+            if (
+                source_warrants is not None
+                and conditional_u.source_memento is not None
+            ):
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_universe(
+                        conditional_u,
+                        role="python.conditional-chain-universe",
+                        universe_kind=conditional_u.kind,
+                    ),
+                )
+            call_args = _conditional_chain_universe_call_args(
+                conditional_u,
+                subject_term,
+                origin,
+            )
+            receiver_term = _receiver_term_for_callval_subject(subject_term)
+            for branch in conditional_u.branches:
+                branch_formula = _conditional_chain_condition_formula(
+                    branch.conditions,
+                    call_args,
+                    receiver_term=receiver_term,
+                    origin=origin,
+                    subject_term=subject_term,
+                )
+                mapped_expr = _expr_spec_term_and_queued(
+                    branch.expr_spec,
+                    call_args,
+                    receiver_term=receiver_term,
+                    origin=origin,
+                    subject_term=subject_term,
+                    receiver_context=False,
+                )
+                if branch_formula is None or mapped_expr is None:
+                    continue
+                term, nested_delegates, field_terms, _term_kind = mapped_expr
+                condition_field_terms = _conditional_chain_condition_field_terms(
+                    branch.conditions,
+                    origin,
+                    subject_term,
+                )
+                conjuncts.append(implies(branch_formula, eq(subject_term, term)))
+                for field_u, _field_term in condition_field_terms:
+                    if source_warrants is not None:
+                        _append_unique_source_warrant(
+                            source_warrants,
+                            _source_warrant_for_instance_field_universe(
+                                field_u,
+                                source_memento=field_u.constructor_source_memento,
+                                source_function_name=_local_qualname(
+                                    field_u.module,
+                                    field_u.constructor_qualname,
+                                ),
+                                constructor_default_params=tuple(
+                                    param
+                                    for param in (
+                                        origin.constructor_default_params
+                                        if origin is not None
+                                        else ()
+                                    )
+                                    if param == field_u.constructor_param_name
+                                ),
+                            ),
+                        )
+                for field_u, field_term in field_terms:
+                    if source_warrants is not None:
+                        _append_unique_source_warrant(
+                            source_warrants,
+                            _source_warrant_for_instance_field_universe(
+                                field_u,
+                                source_memento=field_u.constructor_source_memento,
+                                source_function_name=_local_qualname(
+                                    field_u.module,
+                                    field_u.constructor_qualname,
+                                ),
+                                constructor_default_params=tuple(
+                                    param
+                                    for param in (
+                                        origin.constructor_default_params
+                                        if origin is not None
+                                        else ()
+                                    )
+                                    if param == field_u.constructor_param_name
+                                ),
+                            ),
+                        )
+                    for recursive_callee in _constructor_field_recursive_callees(
+                        field_u,
+                        field_term,
+                    ):
+                        conjuncts.extend(
+                            _universe_conjuncts(
+                                recursive_callee,
+                                field_term,
+                                out,
+                                source_path,
+                                test_name,
+                                source_warrants=source_warrants,
+                                _seen=seen,
+                            )
+                        )
+                for nested_delegate, nested_args, nested_term in nested_delegates:
+                    nested_origin = _receiver_delegate_origin(
+                        nested_delegate,
+                        origin,
+                        nested_args,
+                        nested_term,
+                    )
+                    conjuncts.extend(
+                        _universe_conjuncts(
+                            nested_delegate,
+                            nested_term,
+                            out,
+                            source_path,
+                            test_name,
+                            source_warrants=source_warrants,
+                            origin=nested_origin,
+                            _seen=seen,
+                        )
+                    )
+
         # PURE-DELEGATION + IDENTITY (census families, 57k + the param arm
         # of return-name's 146k): the body forwards verbatim, so the
         # output EQUALS the forwarded term — eq between call terms in EUF,
@@ -5592,14 +5734,84 @@ def _universe_conjuncts(
                     )
                 )
             elif deleg_u.kind == "chain-expr":
-                # arithmetic structure: + - * lower to real Int math in
-                # the substrate, so a string leaf here would be the
-                # concat-vs-arithmetic dispatch mislower — every mapped
-                # leaf must be an Int constant (ground bridges only,
-                # like method delegation)
-                term = _expr_spec_term(deleg_u.expr_spec, call_args)
-                if term is not None and _term_leaves_all_const_int(term):
-                    conjuncts.append(eq(subject_term, term))
+                # arithmetic/concat structure: + - * / % use the same term
+                # shape as the consumer side. A + whose callsite leaves are
+                # string/bytes-compatible lowers to the existing str.++
+                # ProofIR op instead of the Int + op.
+                receiver_term = _receiver_term_for_callval_subject(subject_term)
+                mapped_expr = _expr_spec_term_and_queued(
+                    deleg_u.expr_spec,
+                    call_args,
+                    receiver_term=receiver_term,
+                    origin=origin,
+                    subject_term=subject_term,
+                    receiver_context=False,
+                )
+                if mapped_expr is not None:
+                    term, nested_delegates, field_terms, _term_kind = mapped_expr
+                    if _chain_expr_emittable_term(term):
+                        conjuncts.append(eq(subject_term, term))
+                        for field_u, field_term in field_terms:
+                            if source_warrants is not None:
+                                _append_unique_source_warrant(
+                                    source_warrants,
+                                    _source_warrant_for_instance_field_universe(
+                                        field_u,
+                                        source_memento=field_u.constructor_source_memento,
+                                        source_function_name=_local_qualname(
+                                            field_u.module,
+                                            field_u.constructor_qualname,
+                                        ),
+                                        constructor_default_params=tuple(
+                                            param
+                                            for param in (
+                                                origin.constructor_default_params
+                                                if origin is not None
+                                                else ()
+                                            )
+                                            if param == field_u.constructor_param_name
+                                        ),
+                                    ),
+                                )
+                                _append_constructor_field_projection_source_warrant(
+                                    source_warrants,
+                                    field_u,
+                                    origin,
+                                )
+                            for recursive_callee in _constructor_field_recursive_callees(
+                                field_u,
+                                field_term,
+                            ):
+                                conjuncts.extend(
+                                    _universe_conjuncts(
+                                        recursive_callee,
+                                        field_term,
+                                        out,
+                                        source_path,
+                                        test_name,
+                                        source_warrants=source_warrants,
+                                        _seen=seen,
+                                    )
+                                )
+                        for nested_delegate, nested_args, nested_term in nested_delegates:
+                            nested_origin = _receiver_delegate_origin(
+                                nested_delegate,
+                                origin,
+                                nested_args,
+                                nested_term,
+                            )
+                            conjuncts.extend(
+                                _universe_conjuncts(
+                                    nested_delegate,
+                                    nested_term,
+                                    out,
+                                    source_path,
+                                    test_name,
+                                    source_warrants=source_warrants,
+                                    origin=nested_origin,
+                                    _seen=seen,
+                                )
+                            )
             elif deleg_u.kind == "chain-constant":
                 # `x = 5; return x`: the chain resolves the returned
                 # name to a literal — the output EQUALS it, no delegate
@@ -6071,6 +6283,23 @@ def _universe_call_args(
     return ()
 
 
+def _conditional_chain_universe_call_args(
+    universe,
+    subject_term: Term,
+    origin: Optional[_CallOrigin],
+) -> Tuple[Term, ...]:
+    source_memento = getattr(universe, "source_memento", None) or {}
+    param_names = source_memento.get("param_names") or ()
+    if (
+        param_names
+        and param_names[0] in {"self", "cls"}
+        and isinstance(subject_term, _Ctor)
+        and subject_term.name.startswith("callval_")
+    ):
+        return tuple(subject_term.args)
+    return _universe_call_args(subject_term, origin)
+
+
 def _universe_literal_term(value_kind: str, value: Any) -> Optional[Term]:
     if value_kind == "int":
         return num(value)
@@ -6466,15 +6695,528 @@ def _append_unique_source_warrant(warrants: List[dict], warrant: dict) -> None:
 def _expr_spec_term(spec, call_args):
     """Instantiate a chain-expr spec tree at this callsite's argument
     terms. None when a forwarded param is defaulted here."""
+    mapped = _expr_spec_term_and_queued(
+        spec,
+        call_args,
+        receiver_term=None,
+        origin=None,
+        subject_term=None,
+        receiver_context=False,
+    )
+    return None if mapped is None else mapped[0]
+
+
+def _expr_spec_term_and_queued(
+    spec,
+    call_args,
+    *,
+    receiver_term: Optional[Term],
+    origin: Optional[_CallOrigin],
+    subject_term: Optional[Term],
+    receiver_context: bool,
+):
+    """Instantiate a chain-expr and retain the recursive digs it exposes."""
     if isinstance(spec, tuple) and spec and spec[0] == "binop":
         _tag, op, left, right = spec
-        lt_ = _expr_spec_term(left, call_args)
-        rt_ = _expr_spec_term(right, call_args)
-        if lt_ is None or rt_ is None:
+        left_mapped = _expr_spec_term_and_queued(
+            left,
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=receiver_context,
+        )
+        right_mapped = _expr_spec_term_and_queued(
+            right,
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=receiver_context,
+        )
+        if left_mapped is None or right_mapped is None:
             return None
-        return ctor(op, [lt_, rt_])
+        lt_, left_delegates, left_fields, left_kind = left_mapped
+        rt_, right_delegates, right_fields, right_kind = right_mapped
+        term, term_kind = _chain_expr_binop_term(
+            op,
+            lt_,
+            rt_,
+            left_kind,
+            right_kind,
+        )
+        return (
+            term,
+            [*left_delegates, *right_delegates],
+            [*left_fields, *right_fields],
+            term_kind,
+        )
+    if isinstance(spec, tuple) and spec and spec[0] == "subscript":
+        base_mapped = _expr_spec_term_and_queued(
+            spec[1],
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=receiver_context,
+        )
+        index_mapped = _expr_spec_term_and_queued(
+            spec[2],
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=receiver_context,
+        )
+        if base_mapped is None or index_mapped is None:
+            return None
+        base_term, base_delegates, base_fields, _base_kind = base_mapped
+        index_term, index_delegates, index_fields, _index_kind = index_mapped
+        return (
+            ctor("subscript", [base_term, index_term]),
+            [*base_delegates, *index_delegates],
+            [*base_fields, *index_fields],
+            "unknown",
+        )
+    if isinstance(spec, tuple) and spec and spec[0] == "ctor-call":
+        mapped_exprs = _expr_specs_terms_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+            origin,
+            subject_term,
+            receiver_context=receiver_context,
+        )
+        if mapped_exprs is None:
+            return None
+        mapped, queued, fields, _arg_kinds = mapped_exprs
+        term = ctor(spec[1], mapped)
+        return term, queued, fields, _chain_expr_concat_kind(term)
+    if isinstance(spec, tuple) and spec and spec[0] == "method-call":
+        mapped_exprs = _expr_specs_terms_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+            origin,
+            subject_term,
+            receiver_context=receiver_context,
+        )
+        if mapped_exprs is None:
+            return None
+        mapped, queued, fields, arg_kinds = mapped_exprs
+        term = ctor(_callval_head(spec[1], len(mapped)), mapped)
+        return (
+            term,
+            queued,
+            fields,
+            _method_return_concat_kind(spec[1], arg_kinds),
+        )
+    if isinstance(spec, tuple) and spec and spec[0] == "receiver-method-call":
+        if receiver_term is None:
+            return None
+        receiver_call_args = (
+            tuple(call_args) if receiver_context else tuple(call_args[1:])
+        )
+        mapped = _expr_specs_terms_and_queued(
+            spec[2],
+            receiver_call_args,
+            receiver_term,
+            origin,
+            subject_term,
+            receiver_context=True,
+        )
+        if mapped is None:
+            return None
+        mapped_args, queued, fields, arg_kinds = mapped
+        delegate_args = [receiver_term, *mapped_args]
+        method_name = spec[1].rsplit(".", 1)[-1]
+        term = ctor(_callval_head(method_name, len(delegate_args)), delegate_args)
+        return (
+            term,
+            [*queued, (spec[1], mapped_args, term)],
+            fields,
+            _callee_return_concat_kind(spec[1], mapped_args, arg_kinds),
+        )
+    if isinstance(spec, tuple) and spec and spec[0] == "function-call":
+        mapped_exprs = _expr_specs_terms_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+            origin,
+            subject_term,
+            receiver_context=receiver_context,
+        )
+        if mapped_exprs is None:
+            return None
+        mapped, queued, fields, arg_kinds = mapped_exprs
+        delegate_term = ctor(_call_result_head(spec[1], len(mapped)), mapped)
+        return (
+            delegate_term,
+            [*queued, (spec[1], mapped, delegate_term)],
+            fields,
+            _callee_return_concat_kind(spec[1], mapped, arg_kinds),
+        )
+    if isinstance(spec, tuple) and spec and spec[0] == "receiver-field":
+        if (
+            origin is None
+            or origin.receiver_constructor is None
+            or origin.constructor_args is None
+            or subject_term is None
+        ):
+            return None
+        field_name = spec[1]
+        field_u, field_refusal = constructor_field_universe_for_callee(
+            origin.receiver_constructor,
+            field_name,
+        )
+        if (
+            field_refusal is not None
+            or field_u is None
+            or field_u.constructor_param_index >= len(origin.constructor_args)
+        ):
+            return None
+        value_term = _constructor_field_universe_value_term(
+            subject_term,
+            field_name,
+            field_u,
+            origin,
+        )
+        return value_term, [], [(field_u, value_term)], _chain_expr_concat_kind(value_term)
+    if isinstance(spec, tuple) and spec and spec[0] == "receiver":
+        if receiver_term is None:
+            return None
+        return receiver_term, [], [], "unknown"
+    if isinstance(spec, tuple) and spec and spec[0] == "kw":
+        mapped = _expr_spec_term_and_queued(
+            spec[2],
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=receiver_context,
+        )
+        if mapped is None:
+            return None
+        value_term, queued, fields, _value_kind = mapped
+        return (
+            ctor("python:kwarg_a2", [str_const(spec[1]), value_term]),
+            queued,
+            fields,
+            "unknown",
+        )
+    if isinstance(spec, tuple) and spec and spec[0] == "dict":
+        entries = []
+        queued = []
+        fields = []
+        for key, value_spec in spec[1]:
+            mapped = _expr_spec_term_and_queued(
+                value_spec,
+                call_args,
+                receiver_term=receiver_term,
+                origin=origin,
+                subject_term=subject_term,
+                receiver_context=receiver_context,
+            )
+            if mapped is None:
+                return None
+            value_term, value_queued, value_fields, _value_kind = mapped
+            entries.append(
+                ctor("python:dict-entry_a2", [str_const(key), value_term])
+            )
+            queued.extend(value_queued)
+            fields.extend(value_fields)
+        return ctor(f"python:dict_a{len(entries)}", entries), queued, fields, "unknown"
     mapped = _mapped_delegate_args((spec,), call_args)
-    return None if mapped is None else mapped[0]
+    return None if mapped is None else (mapped[0], [], [], _chain_expr_concat_kind(mapped[0]))
+
+
+def _expr_specs_terms_and_queued(
+    specs,
+    call_args,
+    receiver_term: Optional[Term],
+    origin: Optional[_CallOrigin],
+    subject_term: Optional[Term],
+    *,
+    receiver_context: bool,
+):
+    terms = []
+    queued = []
+    fields = []
+    kinds = []
+    for spec in specs:
+        mapped = _expr_spec_term_and_queued(
+            spec,
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=receiver_context,
+        )
+        if mapped is None:
+            return None
+        term, term_queued, term_fields, term_kind = mapped
+        terms.append(term)
+        queued.extend(term_queued)
+        fields.extend(term_fields)
+        kinds.append(term_kind)
+    return terms, queued, fields, kinds
+
+
+def _chain_expr_binop_term(
+    op: str,
+    left: Term,
+    right: Term,
+    left_kind: str,
+    right_kind: str,
+) -> Tuple[Term, str]:
+    if op == "+" and _chain_expr_concat_operands(left_kind, right_kind):
+        return ctor("str.++", [left, right]), "string"
+    term = ctor(op, [left, right])
+    if _term_leaves_all_const_int(term):
+        return term, "number"
+    return term, _chain_expr_concat_kind(term)
+
+
+def _chain_expr_concat_operands(left_kind: str, right_kind: str) -> bool:
+    if "number" in {left_kind, right_kind}:
+        return False
+    return "string" in {left_kind, right_kind}
+
+
+def _callee_return_concat_kind(callee: str, mapped_args, arg_kinds) -> str:
+    const_u, const_refusal = constant_universe_for_callee(callee)
+    if const_refusal is None and const_u is not None:
+        return _literal_value_kind_concat_kind(const_u.value_kind)
+    bytes_u, bytes_refusal = bytes_identity_universe_for_callee(callee)
+    if bytes_refusal is None and bytes_u is not None:
+        return "string"
+    translate_u, translate_refusal = translate_universe_for_callee(callee)
+    if translate_refusal is None and translate_u is not None:
+        return "string"
+    deleg_u, deleg_refusal = delegation_universe_for_callee(callee)
+    if deleg_refusal is None and deleg_u is not None:
+        if deleg_u.kind == "identity" and deleg_u.param_index < len(arg_kinds):
+            return arg_kinds[deleg_u.param_index]
+        if deleg_u.kind == "chain-constant" and deleg_u.args:
+            return _spec_concat_kind(deleg_u.args[0])
+    leaf = callee.rsplit(".", 1)[-1]
+    if leaf in {"want_bytes", "base64_encode", "int_to_bytes"}:
+        return "string"
+    return "unknown"
+
+
+def _method_return_concat_kind(method: str, arg_kinds) -> str:
+    if method in {"decode", "encode", "join", "ljust", "lower", "lstrip", "replace", "rjust", "rstrip", "strip", "upper"}:
+        return "string"
+    return "unknown"
+
+
+def _literal_value_kind_concat_kind(value_kind: str) -> str:
+    if value_kind in {"str", "bytes"}:
+        return "string"
+    if value_kind == "int":
+        return "number"
+    return "unknown"
+
+
+def _spec_concat_kind(spec) -> str:
+    if not (isinstance(spec, tuple) and spec):
+        return "unknown"
+    if spec[0] == "lit":
+        return _literal_value_kind_concat_kind(spec[2])
+    return "unknown"
+
+
+def _chain_expr_concat_kind(term: Term) -> str:
+    from .ir import _ConstBool, _ConstInt, _ConstReal, _ConstStr, _Var
+
+    if isinstance(term, _ConstStr) or _is_bytes_literal_term(term):
+        return "string"
+    if isinstance(term, (_ConstBool, _ConstInt, _ConstReal)):
+        return "number"
+    if isinstance(term, _Ctor):
+        if term.name == "str.len":
+            return "number"
+        if term.name == "str.++":
+            return "string"
+        if term.name.startswith("callval_") or term.name.startswith("callresult_"):
+            return "unknown"
+        if term.name in {"python:list", "python:tuple", "python:dict-entry_a2"}:
+            return "number"
+        kinds = {_chain_expr_concat_kind(arg) for arg in term.args}
+        if "number" in kinds:
+            return "number"
+        if "string" in kinds:
+            return "string"
+        return "unknown"
+    if isinstance(term, _Var):
+        return "unknown"
+    return "unknown"
+
+
+def _chain_expr_emittable_term(term: Term) -> bool:
+    return (
+        _term_leaves_all_const_int(term)
+        or _chain_expr_is_concat_term(term)
+        or _chain_expr_is_structural_term(term)
+    )
+
+
+def _chain_expr_is_concat_term(term: Term) -> bool:
+    if not (isinstance(term, _Ctor) and term.name == "str.++"):
+        return False
+    return all(_chain_expr_concat_operand_term(arg) for arg in term.args)
+
+
+def _chain_expr_concat_operand_term(term: Term) -> bool:
+    if _chain_expr_concat_kind(term) != "number":
+        return True
+    return False
+
+
+def _conditional_chain_condition_formula(
+    conditions,
+    call_args,
+    *,
+    receiver_term: Optional[Term],
+    origin: Optional[_CallOrigin],
+    subject_term: Term,
+) -> Optional[Formula]:
+    formulas = []
+    for condition in conditions:
+        formula = _conditional_chain_single_condition_formula(
+            condition,
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+        )
+        if formula is None:
+            return None
+        formulas.append(formula)
+    if not formulas:
+        return eq(num(1), num(1))
+    return formulas[0] if len(formulas) == 1 else and_(formulas)
+
+
+def _conditional_chain_single_condition_formula(
+    condition,
+    call_args,
+    *,
+    receiver_term: Optional[Term],
+    origin: Optional[_CallOrigin],
+    subject_term: Term,
+) -> Optional[Formula]:
+    if not (isinstance(condition, tuple) and condition):
+        return None
+    if condition[0] == "not":
+        inner = _conditional_chain_single_condition_formula(
+            condition[1],
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+        )
+        return None if inner is None else not_(inner)
+    if condition[0] == "compare":
+        left = _expr_spec_term_and_queued(
+            condition[2],
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=False,
+        )
+        right = _expr_spec_term_and_queued(
+            condition[3],
+            call_args,
+            receiver_term=receiver_term,
+            origin=origin,
+            subject_term=subject_term,
+            receiver_context=False,
+        )
+        if left is None or right is None:
+            return None
+        left_term = left[0]
+        right_term = right[0]
+        return _comparison_from_symbol(condition[1], left_term, right_term)
+    mapped = _expr_spec_term_and_queued(
+        condition,
+        call_args,
+        receiver_term=receiver_term,
+        origin=origin,
+        subject_term=subject_term,
+        receiver_context=False,
+    )
+    if mapped is None:
+        return None
+    return eq(mapped[0], bool_const(True))
+
+
+def _conditional_chain_condition_field_terms(
+    conditions,
+    origin: Optional[_CallOrigin],
+    subject_term: Term,
+) -> List[Tuple[Any, Term]]:
+    fields: List[Tuple[Any, Term]] = []
+
+    def walk(condition) -> None:
+        if not (isinstance(condition, tuple) and condition):
+            return
+        if condition[0] == "not":
+            walk(condition[1])
+            return
+        if condition[0] == "compare":
+            walk(condition[2])
+            walk(condition[3])
+            return
+        if condition[0] == "receiver-field":
+            if (
+                origin is None
+                or origin.receiver_constructor is None
+                or origin.constructor_args is None
+            ):
+                return
+            field_u, field_refusal = constructor_field_universe_for_callee(
+                origin.receiver_constructor,
+                condition[1],
+            )
+            if (
+                field_refusal is not None
+                or field_u is None
+                or field_u.constructor_param_index >= len(origin.constructor_args)
+            ):
+                return
+            fields.append(
+                (
+                    field_u,
+                    _constructor_field_universe_value_term(
+                        subject_term,
+                        condition[1],
+                        field_u,
+                        origin,
+                    ),
+                )
+            )
+            return
+        for part in condition[1:]:
+            walk(part)
+
+    for condition in conditions:
+        walk(condition)
+    return fields
+
+
+def _chain_expr_is_structural_term(term: Term) -> bool:
+    from .ir import _ConstBool, _ConstInt, _ConstReal, _ConstStr, _Var
+
+    if isinstance(term, (_ConstBool, _ConstInt, _ConstReal, _ConstStr, _Var)):
+        return True
+    if not isinstance(term, _Ctor):
+        return False
+    if term.name in {"+", "-", "*", "/", "%"}:
+        return _term_leaves_all_const_int(term)
+    return all(_chain_expr_is_structural_term(arg) for arg in term.args)
 
 
 def _term_leaves_all_const_int(term) -> bool:
@@ -6521,6 +7263,47 @@ def _receiver_delegate_spec_term(
     call_args,
     receiver_term: Term,
 ) -> Optional[Tuple[Term, List[Tuple[str, List[Term], Term]]]]:
+    if spec[0] == "binop":
+        left = _receiver_delegate_spec_term(spec[2], call_args, receiver_term)
+        right = _receiver_delegate_spec_term(spec[3], call_args, receiver_term)
+        if left is None or right is None:
+            return None
+        left_term, left_queued = left
+        right_term, right_queued = right
+        term, _kind = _chain_expr_binop_term(
+            spec[1],
+            left_term,
+            right_term,
+            _chain_expr_concat_kind(left_term),
+            _chain_expr_concat_kind(right_term),
+        )
+        return (
+            term,
+            [*left_queued, *right_queued],
+        )
+    if spec[0] == "subscript":
+        base = _receiver_delegate_spec_term(spec[1], call_args, receiver_term)
+        index = _receiver_delegate_spec_term(spec[2], call_args, receiver_term)
+        if base is None or index is None:
+            return None
+        base_term, base_queued = base
+        index_term, index_queued = index
+        return (
+            ctor("subscript", [base_term, index_term]),
+            [*base_queued, *index_queued],
+        )
+    if spec[0] == "method-call":
+        mapped = _mapped_receiver_delegate_args_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+        )
+        if mapped is None:
+            return None
+        mapped_args, nested_queues = mapped
+        return ctor(_callval_head(spec[1], len(mapped_args)), mapped_args), list(
+            nested_queues
+        )
     if spec[0] == "receiver":
         return receiver_term, []
     if spec[0] == "param":
@@ -6543,6 +7326,19 @@ def _receiver_delegate_spec_term(
         queued = list(nested_queues)
         queued.append((spec[1], nested_args, nested_term))
         return nested_term, queued
+    if spec[0] == "function-call":
+        mapped = _mapped_receiver_delegate_args_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+        )
+        if mapped is None:
+            return None
+        mapped_args, nested_queues = mapped
+        delegate_term = ctor(_call_result_head(spec[1], len(mapped_args)), mapped_args)
+        queued = list(nested_queues)
+        queued.append((spec[1], mapped_args, delegate_term))
+        return delegate_term, queued
     if spec[0] == "kw":
         return _receiver_delegate_spec_term(spec[2], call_args, receiver_term)
     if spec[0] == "dict":
@@ -6804,6 +7600,62 @@ def _mapped_delegate_spec_and_queued(
     receiver_term: Optional[Term],
     receiver_call_args,
 ) -> Optional[Tuple[Term, List[Tuple[str, List[Term], Term]]]]:
+    if spec[0] == "binop":
+        left = _mapped_delegate_spec_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+            receiver_call_args,
+        )
+        right = _mapped_delegate_spec_and_queued(
+            spec[3],
+            call_args,
+            receiver_term,
+            receiver_call_args,
+        )
+        if left is None or right is None:
+            return None
+        left_term, left_queued = left
+        right_term, right_queued = right
+        term, _kind = _chain_expr_binop_term(
+            spec[1],
+            left_term,
+            right_term,
+            _chain_expr_concat_kind(left_term),
+            _chain_expr_concat_kind(right_term),
+        )
+        return term, [*left_queued, *right_queued]
+    if spec[0] == "subscript":
+        base = _mapped_delegate_spec_and_queued(
+            spec[1],
+            call_args,
+            receiver_term,
+            receiver_call_args,
+        )
+        index = _mapped_delegate_spec_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+            receiver_call_args,
+        )
+        if base is None or index is None:
+            return None
+        base_term, base_queued = base
+        index_term, index_queued = index
+        return (
+            ctor("subscript", [base_term, index_term]),
+            [*base_queued, *index_queued],
+        )
+    if spec[0] == "method-call":
+        mapped_and_queued = _mapped_delegate_args_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+        )
+        if mapped_and_queued is None:
+            return None
+        mapped, queued = mapped_and_queued
+        return ctor(_callval_head(spec[1], len(mapped)), mapped), queued
     if spec[0] == "receiver-method-call":
         if receiver_term is None:
             return None
@@ -6812,6 +7664,17 @@ def _mapped_delegate_spec_and_queued(
             receiver_call_args,
             receiver_term,
         )
+    if spec[0] == "function-call":
+        mapped_and_queued = _mapped_delegate_args_and_queued(
+            spec[2],
+            call_args,
+            receiver_term,
+        )
+        if mapped_and_queued is None:
+            return None
+        mapped, queued = mapped_and_queued
+        delegate_term = ctor(_call_result_head(spec[1], len(mapped)), mapped)
+        return delegate_term, [*queued, (spec[1], mapped, delegate_term)]
     if spec[0] == "kw":
         mapped_value = _mapped_delegate_spec_and_queued(
             spec[2],

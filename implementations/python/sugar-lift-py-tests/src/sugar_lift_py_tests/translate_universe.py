@@ -1934,6 +1934,30 @@ class DelegationUniverse:
 
 
 @dataclass(frozen=True)
+class ConditionalChainBranch:
+    conditions: tuple
+    expr_spec: tuple
+
+
+@dataclass(frozen=True)
+class ConditionalChainUniverse:
+    """A straight-line SSA body with pure assignment branches before return.
+
+    The emitted ProofIR is implication-guarded equality, one branch at a
+    time: ``guard => subject == expr``. The guard and expression specs reuse
+    the same term constructors as chain-expr/delegation.
+    """
+
+    kind: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    branches: tuple
+    source_memento: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
 class BranchSelectedReturnUniverse:
     """A receiver field selects a return-param branch.
 
@@ -2566,12 +2590,39 @@ def _resolve_delegate_value_or_receiver_call_spec(
     spec = _resolve_delegate_value_spec(node, params, env)
     if spec is not None:
         return spec, None
+    field_spec = _receiver_field_spec(node, params)
+    if field_spec is not None:
+        return field_spec, None
     if tree is not None:
         static_attr_spec = _resolve_static_attribute_value_spec(node, tree)
         if static_attr_spec is not None:
             return static_attr_spec, None
     if tree is None or not isinstance(node, ast.Call):
         return None, None
+    method_spec, method_refusal = _method_call_value_spec(
+        node,
+        params=params,
+        env=env,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+    )
+    if method_refusal is not None:
+        return None, method_refusal
+    if method_spec is not None:
+        return method_spec, None
+    call_spec, call_refusal = _function_call_value_spec(
+        node,
+        params=params,
+        env=env,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+    )
+    if call_refusal is not None:
+        return None, call_refusal
+    if call_spec is not None:
+        return call_spec, None
     dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(node, params)
     if dynamic_receiver_refusal is not None:
         return None, dynamic_receiver_refusal
@@ -2597,6 +2648,117 @@ def _resolve_delegate_value_or_receiver_call_spec(
     )
 
 
+def _function_call_value_spec(
+    value: ast.Call,
+    *,
+    params: list[str],
+    env: dict,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+) -> Tuple[Optional[tuple], Optional[str]]:
+    if not isinstance(value.func, ast.Name):
+        return None, None
+    if any(isinstance(arg, ast.Starred) for arg in value.args):
+        return None, (
+            "chain function-call assignment uses *args forwarding; the "
+            "argument surface is runtime-selected"
+        )
+    call_aliases = _module_call_aliases(tree, module_name)
+    delegate = call_aliases.get(value.func.id)
+    if delegate is None:
+        if not _stable_module_binding(tree, value.func.id):
+            return None, None
+        delegate = f"{module_name}.{value.func.id}"
+    if delegate == f"{module_name}.{fn_name}":
+        return None, "self-delegation: the equality would be vacuous"
+    if not _stable_module_binding(tree, value.func.id):
+        return None, (
+            f"chain function-call assignment target {value.func.id!r} is not "
+            "a stable binding in the vendor module"
+        )
+    specs, specs_refusal = _delegate_call_specs_source_order(
+        value,
+        params,
+        env,
+        mirrored_kwargs=None,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        context="chain function-call assignment",
+    )
+    if specs_refusal is not None:
+        return None, specs_refusal
+    return ("function-call", delegate, tuple(specs or ())), None
+
+
+def _stable_module_binding(tree: ast.Module, name: str) -> bool:
+    events = [event for event in _binding_events(tree) if event.name == name]
+    return len(events) == 1 and name not in _global_declarations(tree)
+
+
+def _method_call_value_spec(
+    node: ast.Call,
+    *,
+    params: list[str],
+    env: dict,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+) -> Tuple[Optional[tuple], Optional[str]]:
+    if not isinstance(node.func, ast.Attribute):
+        return None, None
+    if (
+        params
+        and params[0] in {"self", "cls"}
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == params[0]
+    ):
+        return None, None
+    if node.keywords:
+        return None, (
+            "chain method-call uses keyword arguments; the method call "
+            "surface is not normalized yet"
+        )
+    method = node.func.attr
+    if method in _NONDET_ATTRS:
+        return None, (
+            f"method call .{method} is a nondeterminism marker; its call "
+            "terms must not unify"
+        )
+    receiver, receiver_refusal = _resolve_delegate_value_or_receiver_call_spec(
+        node.func.value,
+        params,
+        env,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+    )
+    if receiver_refusal is not None:
+        return None, receiver_refusal
+    if receiver is None:
+        return None, None
+    specs = [receiver]
+    for arg in node.args:
+        spec, refusal = _resolve_delegate_value_or_receiver_call_spec(
+            arg,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if refusal is not None:
+            return None, refusal
+        if spec is None:
+            return None, (
+                "chain method-call argument is neither a parameter, literal, "
+                "collection literal, chain name, nor nested call"
+            )
+        specs.append(spec)
+    return ("method-call", method, tuple(specs)), None
+
+
 def _resolve_static_attribute_value_spec(node: ast.AST, tree: ast.Module):
     path = _attribute_path(node)
     if path is None or len(path) < 2:
@@ -2615,8 +2777,48 @@ def _receiver_context_spec(spec):
     call_args[N-1]."""
     if spec is None:
         return None
+    if spec[0] == "binop":
+        left = _receiver_context_spec(spec[2])
+        right = _receiver_context_spec(spec[3])
+        if left is None or right is None:
+            return None
+        return ("binop", spec[1], left, right)
+    if spec[0] == "function-call":
+        args = tuple(_receiver_context_spec(arg) for arg in spec[2])
+        if any(arg is None for arg in args):
+            return None
+        return ("function-call", spec[1], args)
+    if spec[0] == "method-call":
+        args = tuple(_receiver_context_spec(arg) for arg in spec[2])
+        if any(arg is None for arg in args):
+            return None
+        return ("method-call", spec[1], args)
+    if spec[0] == "subscript":
+        base = _receiver_context_spec(spec[1])
+        index = _receiver_context_spec(spec[2])
+        if base is None or index is None:
+            return None
+        return ("subscript", base, index)
     if spec[0] == "receiver-method-call":
-        return None
+        args = tuple(_receiver_context_spec(arg) for arg in spec[2])
+        if any(arg is None for arg in args):
+            return None
+        return ("receiver-method-call", spec[1], args)
+    if spec[0] == "kw":
+        value = _receiver_context_spec(spec[2])
+        if value is None:
+            return None
+        return ("kw", spec[1], value)
+    if spec[0] == "dict":
+        items = []
+        for key, value_spec in spec[1]:
+            value = _receiver_context_spec(value_spec)
+            if value is None:
+                return None
+            items.append((key, value))
+        return ("dict", tuple(items))
+    if spec[0] == "receiver-field":
+        return spec
     if spec[0] != "param":
         return spec
     index = spec[1]
@@ -3046,7 +3248,27 @@ _BINOP_SPEC_OPS = {
 }
 
 
-def _resolve_expr_spec(node, params, env):
+def _receiver_field_spec(node: ast.AST, params: list[str]) -> Optional[tuple]:
+    self_param = params[0] if params else None
+    if (
+        self_param is not None
+        and isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == self_param
+    ):
+        return ("receiver-field", node.attr)
+    return None
+
+
+def _resolve_expr_spec(
+    node,
+    params,
+    env,
+    *,
+    tree: Optional[ast.Module] = None,
+    module_name: str = "",
+    fn_name: str = "",
+):
     """A nested spec tree for an arithmetic return expression: leaves are
     forwarding specs, interior nodes are ("binop", op, left, right) with
     op drawn from the SAME operator map the consumer-side term translator
@@ -3058,14 +3280,631 @@ def _resolve_expr_spec(node, params, env):
         op = _BINOP_SPEC_OPS.get(type(node.op))
         if op is None:
             return "REFUSE-OP"
-        left = _resolve_expr_spec(node.left, params, env)
-        right = _resolve_expr_spec(node.right, params, env)
+        left = _resolve_expr_spec(
+            node.left,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        right = _resolve_expr_spec(
+            node.right,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
         if left in (None, "REFUSE-OP") or right in (None, "REFUSE-OP"):
             return left if left == "REFUSE-OP" else (
                 right if right == "REFUSE-OP" else None
             )
         return ("binop", op, left, right)
-    return _resolve_spec(node, params, env)
+    if isinstance(node, ast.Subscript):
+        base = _resolve_expr_spec(
+            node.value,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        index = _resolve_expr_spec(
+            node.slice,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if base in (None, "REFUSE-OP") or index in (None, "REFUSE-OP"):
+            return None
+        return ("subscript", base, index)
+    spec = _resolve_spec(node, params, env)
+    if spec is not None:
+        return spec
+    field_spec = _receiver_field_spec(node, params)
+    if field_spec is not None:
+        return field_spec
+    if tree is not None and isinstance(node, ast.Call):
+        method_spec, method_refusal = _method_call_value_spec(
+            node,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if method_refusal is not None:
+            return None
+        if method_spec is not None:
+            return method_spec
+        call_spec, call_refusal = _function_call_value_spec(
+            node,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if call_refusal is not None:
+            return None
+        if call_spec is not None:
+            return call_spec
+        dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(node, params)
+        if dynamic_receiver_refusal is not None:
+            return None
+        receiver_delegate, receiver_refusal = _receiver_method_delegate_for_call(
+            node,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+            params=params,
+            env=env,
+        )
+        if receiver_refusal is not None or receiver_delegate is None:
+            return None
+        return (
+            "receiver-method-call",
+            receiver_delegate.delegate,
+            receiver_delegate.args,
+        )
+    return None
+
+
+@functools.lru_cache(maxsize=None)
+def conditional_chain_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ConditionalChainUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
+    body = _body_without_docstring(fn.body)
+    tail_return = _terminal_if_return_chain_universe(
+        callee,
+        body,
+        params=params,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        source_path=spec_origin,
+        source_memento=source_memento,
+    )
+    if tail_return[0] is not None or tail_return[1] is not None:
+        return tail_return
+    if not body or not isinstance(body[-1], ast.Return):
+        return None, None
+    ret = body[-1].value
+    if not isinstance(ret, ast.Name):
+        return None, None
+
+    saw_branch = False
+    scopes: list[tuple[dict, tuple]] = [({}, ())]
+    for stmt in body[:-1]:
+        next_scopes: list[tuple[dict, tuple]] = []
+        if _conditional_chain_simple_assign(stmt):
+            for env, conditions in scopes:
+                spec, refusal = _conditional_chain_value_spec(
+                    stmt.value,
+                    params=params,
+                    env=env,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if refusal is not None:
+                    return None, TranslateWalkRefusal(callee, refusal)
+                if spec is None:
+                    return None, None
+                new_env = dict(env)
+                new_env[stmt.targets[0].id] = spec
+                next_scopes.append((new_env, conditions))
+            scopes = next_scopes
+            continue
+        if isinstance(stmt, ast.If) and not stmt.orelse:
+            saw_branch = True
+            for env, conditions in scopes:
+                guard_spec, guard_refusal = _conditional_chain_guard_spec(
+                    stmt.test,
+                    params=params,
+                    env=env,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if guard_refusal is not None:
+                    return None, TranslateWalkRefusal(callee, guard_refusal)
+                if guard_spec is None:
+                    return None, None
+                truth = _conditional_chain_truth(guard_spec)
+                if truth is True:
+                    then_env = _conditional_chain_apply_assign_block(
+                        stmt.body,
+                        env,
+                        params=params,
+                        tree=tree,
+                        module_name=module_name,
+                        fn_name=fn_name,
+                    )
+                    if then_env is None:
+                        return None, None
+                    next_scopes.append((then_env, conditions))
+                    continue
+                if truth is False:
+                    next_scopes.append((dict(env), conditions))
+                    continue
+                then_env = _conditional_chain_apply_assign_block(
+                    stmt.body,
+                    env,
+                    params=params,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if then_env is None:
+                    return None, None
+                next_scopes.append((then_env, (*conditions, guard_spec)))
+                next_scopes.append((dict(env), (*conditions, ("not", guard_spec))))
+            scopes = next_scopes
+            continue
+        return None, None
+    if not saw_branch:
+        return None, None
+
+    branches = []
+    for env, conditions in scopes:
+        spec = env.get(ret.id)
+        if spec is None:
+            spec = _resolve_spec(ret, params, env)
+        if spec is None:
+            return None, None
+        branches.append(ConditionalChainBranch(conditions=conditions, expr_spec=spec))
+    return (
+        ConditionalChainUniverse(
+            kind="conditional-chain-expr",
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            branches=tuple(branches),
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _terminal_if_return_chain_universe(
+    callee: str,
+    body: list[ast.stmt],
+    *,
+    params: list[str],
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+    source_path: str,
+    source_memento: Optional[dict[str, Any]],
+) -> Tuple[Optional[ConditionalChainUniverse], Optional[TranslateWalkRefusal]]:
+    if len(body) < 2:
+        return None, None
+    branch = body[-2]
+    fallback = body[-1]
+    if (
+        not isinstance(branch, ast.If)
+        or branch.orelse
+        or len(branch.body) != 1
+        or not isinstance(branch.body[0], ast.Return)
+        or not isinstance(fallback, ast.Return)
+        or branch.body[0].value is None
+        or fallback.value is None
+    ):
+        return None, None
+
+    scopes: list[tuple[dict, tuple]] = [({}, ())]
+    for stmt in body[:-2]:
+        next_scopes: list[tuple[dict, tuple]] = []
+        if _conditional_chain_simple_assign(stmt):
+            for env, conditions in scopes:
+                spec, refusal = _conditional_chain_value_spec(
+                    stmt.value,
+                    params=params,
+                    env=env,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if refusal is not None:
+                    return None, TranslateWalkRefusal(callee, refusal)
+                if spec is None:
+                    return None, None
+                new_env = dict(env)
+                new_env[stmt.targets[0].id] = spec
+                next_scopes.append((new_env, conditions))
+            scopes = next_scopes
+            continue
+        if isinstance(stmt, ast.If) and not stmt.orelse:
+            for env, conditions in scopes:
+                guard_spec, guard_refusal = _conditional_chain_guard_spec(
+                    stmt.test,
+                    params=params,
+                    env=env,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if guard_refusal is not None:
+                    return None, TranslateWalkRefusal(callee, guard_refusal)
+                if guard_spec is None:
+                    return None, None
+                truth = _conditional_chain_truth(guard_spec)
+                if truth is True:
+                    then_env = _conditional_chain_apply_assign_block(
+                        stmt.body,
+                        env,
+                        params=params,
+                        tree=tree,
+                        module_name=module_name,
+                        fn_name=fn_name,
+                    )
+                    if then_env is None:
+                        return None, None
+                    next_scopes.append((then_env, conditions))
+                    continue
+                if truth is False:
+                    next_scopes.append((dict(env), conditions))
+                    continue
+                then_env = _conditional_chain_apply_assign_block(
+                    stmt.body,
+                    env,
+                    params=params,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if then_env is None:
+                    return None, None
+                next_scopes.append((then_env, (*conditions, guard_spec)))
+                next_scopes.append((dict(env), (*conditions, ("not", guard_spec))))
+            scopes = next_scopes
+            continue
+        return None, None
+
+    branches = []
+    for env, conditions in scopes:
+        guard_spec, guard_refusal = _conditional_chain_guard_spec(
+            branch.test,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if guard_refusal is not None:
+            return None, TranslateWalkRefusal(callee, guard_refusal)
+        if guard_spec is None:
+            return None, None
+        then_spec, then_refusal = _conditional_chain_value_spec(
+            branch.body[0].value,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        fallback_spec, fallback_refusal = _conditional_chain_value_spec(
+            fallback.value,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        refusal = then_refusal or fallback_refusal
+        if refusal is not None:
+            return None, TranslateWalkRefusal(callee, refusal)
+        if then_spec is None or fallback_spec is None:
+            return None, None
+        truth = _conditional_chain_truth(guard_spec)
+        if truth is True:
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=conditions,
+                    expr_spec=then_spec,
+                )
+            )
+        elif truth is False:
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=conditions,
+                    expr_spec=fallback_spec,
+                )
+            )
+        else:
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=(*conditions, guard_spec),
+                    expr_spec=then_spec,
+                )
+            )
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=(*conditions, ("not", guard_spec)),
+                    expr_spec=fallback_spec,
+                )
+            )
+
+    if not branches:
+        return None, None
+    return (
+        ConditionalChainUniverse(
+            kind="conditional-chain-expr",
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=source_path,
+            lineno=body[0].lineno if body else 0,
+            branches=tuple(branches),
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _conditional_chain_simple_assign(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.Assign)
+        and len(stmt.targets) == 1
+        and isinstance(stmt.targets[0], ast.Name)
+    )
+
+
+def _conditional_chain_apply_assign_block(
+    body: list[ast.stmt],
+    env: dict,
+    *,
+    params: list[str],
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+) -> Optional[dict]:
+    out = dict(env)
+    for stmt in body:
+        if not _conditional_chain_simple_assign(stmt):
+            return None
+        spec, refusal = _conditional_chain_value_spec(
+            stmt.value,
+            params=params,
+            env=out,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if refusal is not None or spec is None:
+            return None
+        out[stmt.targets[0].id] = spec
+    return out
+
+
+def _conditional_chain_value_spec(
+    node: ast.AST,
+    *,
+    params: list[str],
+    env: dict,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+) -> Tuple[Optional[tuple], Optional[str]]:
+    if isinstance(node, ast.Call):
+        stdlib_spec, stdlib_refusal = _stdlib_call_value_spec(
+            node,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if stdlib_refusal is not None or stdlib_spec is not None:
+            return stdlib_spec, stdlib_refusal
+    spec = _resolve_expr_spec(
+        node,
+        params,
+        env,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+    )
+    if spec == "REFUSE-OP":
+        return None, "conditional chain expression uses an unsupported operator"
+    return spec, None
+
+
+def _stdlib_call_value_spec(
+    node: ast.Call,
+    *,
+    params: list[str],
+    env: dict,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+) -> Tuple[Optional[tuple], Optional[str]]:
+    delegate = _stdlib_call_delegate(node, tree)
+    if delegate is None:
+        return None, None
+    delegate_q, _call_args = delegate
+    specs, specs_refusal = _delegate_call_specs_source_order(
+        node,
+        params,
+        env,
+        mirrored_kwargs=None,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        context="conditional stdlib bridge call",
+    )
+    if specs_refusal is not None:
+        return None, specs_refusal
+    return ("function-call", delegate_q, tuple(specs or ())), None
+
+
+def _conditional_chain_guard_spec(
+    node: ast.AST,
+    *,
+    params: list[str],
+    env: dict,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+) -> Tuple[Optional[tuple], Optional[str]]:
+    spec = _resolve_spec(node, params, env)
+    if spec is not None:
+        return spec, None
+    if isinstance(node, ast.Compare) and len(node.ops) == 1:
+        op = _CMP_SYMBOL.get(type(node.ops[0]))
+        if op is None:
+            return None, "conditional chain guard compare operator is unsupported"
+        left = _conditional_chain_guard_expr_spec(
+            node.left,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        right = _conditional_chain_guard_expr_spec(
+            node.comparators[0],
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if left in (None, "REFUSE-OP") or right in (None, "REFUSE-OP"):
+            return None, None
+        return ("compare", op, left, right), None
+    spec = _resolve_expr_spec(
+        node,
+        params,
+        env,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+    )
+    if spec == "REFUSE-OP":
+        return None, "conditional chain guard expression uses an unsupported operator"
+    if spec is not None:
+        return spec, None
+    return None, None
+
+
+def _conditional_chain_guard_expr_spec(
+    node: ast.AST,
+    *,
+    params: list[str],
+    env: dict,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+):
+    if isinstance(node, ast.BinOp):
+        op = _BINOP_SPEC_OPS.get(type(node.op))
+        if op is None:
+            return "REFUSE-OP"
+        left = _conditional_chain_guard_expr_spec(
+            node.left,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        right = _conditional_chain_guard_expr_spec(
+            node.right,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if left in (None, "REFUSE-OP") or right in (None, "REFUSE-OP"):
+            return left if left == "REFUSE-OP" else (
+                right if right == "REFUSE-OP" else None
+            )
+        return ("binop", op, left, right)
+    if isinstance(node, ast.Subscript):
+        base = _conditional_chain_guard_expr_spec(
+            node.value,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        index = _conditional_chain_guard_expr_spec(
+            node.slice,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if base in (None, "REFUSE-OP") or index in (None, "REFUSE-OP"):
+            return None
+        return ("subscript", base, index)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "len"
+        and not node.keywords
+        and len(node.args) == 1
+    ):
+        inner = _conditional_chain_guard_expr_spec(
+            node.args[0],
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if inner in (None, "REFUSE-OP"):
+            return None
+        return ("ctor-call", "str.len", (inner,))
+    return _resolve_expr_spec(
+        node,
+        params,
+        env,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+    )
+
+
+def _conditional_chain_truth(spec) -> Optional[bool]:
+    if isinstance(spec, tuple) and len(spec) == 3 and spec[0] == "lit":
+        if spec[2] == "bool":
+            return bool(spec[1])
+    return None
 
 
 @functools.lru_cache(maxsize=None)
@@ -3421,7 +4260,7 @@ def delegation_universe_for_callee(
     cast_inner = _transparent_typing_cast_inner(value, tree)
     if cast_inner is not None:
         value = cast_inner
-    if not isinstance(value, (ast.Name, ast.Call, ast.BinOp)):
+    if not isinstance(value, (ast.Name, ast.Call, ast.BinOp, ast.Subscript)):
         return None, None
     # SSA CHAIN (census return-fn-call, 53k bodies): leading simple
     # assigns are a substitution environment — `x = a; return g(x)`
@@ -3463,6 +4302,47 @@ def delegation_universe_for_callee(
                 "resolution order is no longer the statement order"
             )
         spec = _resolve_spec(stmt.value, params, env)
+        if spec is None and isinstance(stmt.value, ast.BinOp):
+            spec = _resolve_expr_spec(
+                stmt.value,
+                params,
+                env,
+                tree=tree,
+                module_name=module_name,
+                fn_name=fn_name,
+            )
+            if spec == "REFUSE-OP":
+                return refuse(
+                    "chain assign binop operator outside the lowered set "
+                    "(+ - * / %); the consumer side cannot build the term "
+                    "either"
+                )
+        if spec is None and isinstance(stmt.value, ast.Call):
+            call_spec, call_refusal = _function_call_value_spec(
+                stmt.value,
+                params=params,
+                env=env,
+                tree=tree,
+                module_name=module_name,
+                fn_name=fn_name,
+            )
+            if call_refusal is not None:
+                return refuse(call_refusal)
+            if call_spec is not None:
+                spec = call_spec
+        if spec is None and isinstance(stmt.value, ast.Call):
+            stdlib_spec, stdlib_refusal = _stdlib_call_value_spec(
+                stmt.value,
+                params=params,
+                env=env,
+                tree=tree,
+                module_name=module_name,
+                fn_name=fn_name,
+            )
+            if stdlib_refusal is not None:
+                return refuse(stdlib_refusal)
+            if stdlib_spec is not None:
+                spec = stdlib_spec
         if spec is None and isinstance(stmt.value, ast.Call):
             dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(
                 stmt.value,
@@ -3516,8 +4396,15 @@ def delegation_universe_for_callee(
     # The EMITTER additionally requires every mapped leaf to be an Int
     # constant: '+' on strings is CONCAT by dispatch, and a string leaf
     # under an arithmetic-lowered ctor would be the cross-sort mislower.
-    if isinstance(value, ast.BinOp):
-        expr_spec = _resolve_expr_spec(value, params, env)
+    if isinstance(value, (ast.BinOp, ast.Subscript)):
+        expr_spec = _resolve_expr_spec(
+            value,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
         if expr_spec == "REFUSE-OP":
             return refuse(
                 "binop operator outside the lowered set (+ - * / %); the "
@@ -3529,6 +4416,39 @@ def delegation_universe_for_callee(
                 "name; the computed value is not the callsite's"
             )
         return universe(kind="chain-expr", expr_spec=expr_spec)
+
+    if isinstance(value, ast.Call):
+        expr_spec = _resolve_expr_spec(
+            value,
+            params,
+            env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if expr_spec == "REFUSE-OP":
+            return refuse(
+                "call return expression uses an unsupported operator; the "
+                "consumer side cannot build the term either"
+            )
+        receiver_spec = None
+        if expr_spec is not None and expr_spec[0] == "method-call":
+            method_args = expr_spec[2]
+            if method_args:
+                receiver_spec = method_args[0]
+        if (
+            isinstance(receiver_spec, tuple)
+            and receiver_spec
+            and receiver_spec[0]
+            in {
+                "function-call",
+                "method-call",
+                "receiver-method-call",
+                "subscript",
+                "binop",
+            }
+        ):
+            return universe(kind="chain-expr", expr_spec=expr_spec)
 
     # identity: return <param>, possibly through the chain; a name that
     # chains to a LITERAL is a constant in forwarding clothes
@@ -3546,6 +4466,8 @@ def delegation_universe_for_callee(
             return universe(kind="identity", param_index=spec[1])
         if spec[0] == "lit":
             return universe(kind="chain-constant", args=(spec,))
+        if spec[0] in {"binop", "function-call", "method-call", "subscript"}:
+            return universe(kind="chain-expr", expr_spec=spec)
         return None, None
 
     # imported stdlib delegation: return json.loads(<params/literals>). The
