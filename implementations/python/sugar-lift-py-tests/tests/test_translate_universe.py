@@ -6182,6 +6182,105 @@ def test_pytest_raises_carries_raise_locus_source_warrant(vendor_path):
     ), audit
 
 
+def test_exception_handler_raise_universe_walks_try_return_except_raise(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_handler_raise_universe_for_callee,
+    )
+
+    exception_handler_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_raise_source",
+        """
+        class BadPayload(Exception):
+            pass
+
+        class Serializer:
+            def load_payload(self, payload):
+                try:
+                    return payload.decode("utf-8")
+                except Exception as e:
+                    raise BadPayload("bad", original_error=e) from e
+        """,
+    )
+    u, r = exception_handler_raise_universe_for_callee(
+        "vendtry_raise_source.Serializer.load_payload"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "BadPayload"
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "Serializer.load_payload"
+    assert u.source_memento["exception_handler_raise_type"] == "BadPayload"
+
+
+def test_pytest_raises_conjoins_exception_handler_raise_universe(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_handler_raise_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _ConstStr, _Ctor
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    exception_handler_raise_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_raise_l2",
+        """
+        class BadPayload(Exception):
+            pass
+
+        class Serializer:
+            def load_payload(self, payload):
+                try:
+                    return payload.decode("utf-8")
+                except Exception as e:
+                    raise BadPayload("bad", original_error=e) from e
+        """,
+    )
+    out = _lift(
+        """
+        import pytest
+        import vendtry_raise_l2
+
+        def test_bad_payload():
+            with pytest.raises(ValueError):
+                vendtry_raise_l2.Serializer.load_payload(None, b"bad")
+        """
+    )
+    decl = next(d for d in out.decls if d.name == "test_bad_payload")
+    raised = []
+    for atom in _iter_conjuncts(decl.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        lhs, rhs = getattr(atom, "args", ())
+        if isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1":
+            raised.append((lhs, rhs))
+    assert [rhs.value for _, rhs in raised if isinstance(rhs, _ConstStr)] == [
+        "ValueError",
+        "BadPayload",
+    ]
+    assert raised[0][0] == raised[1][0]
+    assert any(
+        warrant.get("role") == "python.exception-handler-raise-universe"
+        and warrant.get("source_function_name") == "Serializer.load_payload"
+        and warrant.get("exception_handler_raise_type") == "BadPayload"
+        for warrant in decl.source_warrants
+    ), decl.source_warrants
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.exception-handler-raise-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Try"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Raise"
+        for locus in audit["loci"]
+    ), audit
+
+
 # ---------------------------------------------------------------------------
 # chain-expr (census return-binop, 17k bodies): the returned arithmetic
 # expression as STRUCTURE — eq(subject, ctor("+", ...)) over the same

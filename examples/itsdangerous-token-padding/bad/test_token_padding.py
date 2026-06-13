@@ -78,3 +78,10 @@ def test_default_serializer_is_text():
 def test_serializer_default_signer_kwargs():
     ser = serializer_mod.Serializer("secret")
     assert ser.signer_kwargs != {}
+
+
+def test_serializer_load_payload_bad_payload():
+    with pytest.raises(ValueError):
+        serializer_mod.Serializer.load_payload(
+            serializer_mod.Serializer("secret"), b"bad"
+        )

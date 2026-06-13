@@ -335,6 +335,65 @@ if not any(
     for locus in serializer_kwargs_audit["loci"]
 ):
     raise SystemExit("FAIL: Serializer.signer_kwargs dict default was not warranted")
+load_payload_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.exception-handler-raise-universe"
+    and audit.get("source_memento", {}).get("source_function_name")
+    == "Serializer.load_payload"
+    and audit.get("source_memento", {}).get("exception_handler_raise_type")
+    == "BadPayload"
+]
+if len(load_payload_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one Serializer.load_payload exception-handler audit, "
+        f"got {len(load_payload_audits)}"
+    )
+load_payload_audit = load_payload_audits[0]
+load_payload_totals = load_payload_audit["totals"]
+load_payload_memento = load_payload_audit["source_memento"]
+if load_payload_audit.get("universe_kind") != "exception-handler-raise":
+    raise SystemExit(
+        "FAIL: expected exception-handler-raise audit, got "
+        f"{load_payload_audit.get('universe_kind')}"
+    )
+if load_payload_memento.get("source_function_name") != "Serializer.load_payload":
+    raise SystemExit(
+        "FAIL: load_payload source oracle should point at method body: "
+        f"{load_payload_memento!r}"
+    )
+if load_payload_memento.get("exception_handler_raise_type") != "BadPayload":
+    raise SystemExit(
+        "FAIL: load_payload source memento did not record BadPayload raise: "
+        f"{load_payload_memento!r}"
+    )
+if "body_text" in load_payload_memento or "ast_template" in load_payload_memento:
+    raise SystemExit("FAIL: load_payload source memento embeds source/template body")
+if load_payload_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: Serializer.load_payload source dig has unclassified source: "
+        f"totals={load_payload_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Try"
+    and locus.get("line") == 261
+    for locus in load_payload_audit["loci"]
+):
+    raise SystemExit("FAIL: Serializer.load_payload try path was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "ExceptHandler"
+    and locus.get("line") == 266
+    for locus in load_payload_audit["loci"]
+):
+    raise SystemExit("FAIL: Serializer.load_payload exception handler was not warranted")
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "Raise"
+    and locus.get("line") == 267
+    for locus in load_payload_audit["loci"]
+):
+    raise SystemExit("FAIL: Serializer.load_payload BadPayload raise was not warranted")
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -693,6 +752,15 @@ print(
     f"unclassified={serializer_kwargs_totals['unclassified_source']}",
 )
 print(
+    "source audit Serializer.load_payload:",
+    f"loci={load_payload_totals['source_loci']}",
+    f"warranted={load_payload_totals['source_warranted']}",
+    f"inactive={load_payload_totals['source_inactive']}",
+    f"support={load_payload_totals.get('source_support', 0)}",
+    f"refused={load_payload_totals['source_refused']}",
+    f"unclassified={load_payload_totals['unclassified_source']}",
+)
+print(
     "source audit SigningAlgorithm.get_signature:",
     f"loci={abstract_signature_totals['source_loci']}",
     f"warranted={abstract_signature_totals['source_warranted']}",
@@ -869,6 +937,27 @@ if not signer_kwargs_ok:
     print(
         f"FAIL({twin}): expected Serializer.signer_kwargs {expect}, "
         f"statuses={sorted(serializer_kwargs_statuses)}"
+    )
+    sys.exit(1)
+load_payload = [
+    (r.get("property", ""), r.get("status", ""))
+    for r in doc.get("rows", [])
+    if "test_serializer_load_payload_bad_payload" in str(r.get("property", ""))
+]
+if not load_payload:
+    print(f"FAIL({twin}): no Serializer.load_payload raises rows in receipt"); sys.exit(1)
+load_payload_statuses = {s for _, s in load_payload}
+print(f"Serializer.load_payload rows({twin}):")
+for n, s in load_payload:
+    print(f"  {s:14s} {n[:110]}")
+if expect == "discharged":
+    load_payload_ok = load_payload_statuses & ok_words and not (load_payload_statuses & bad_words)
+else:
+    load_payload_ok = bool(load_payload_statuses & bad_words)
+if not load_payload_ok:
+    print(
+        f"FAIL({twin}): expected Serializer.load_payload {expect}, "
+        f"statuses={sorted(load_payload_statuses)}"
     )
     sys.exit(1)
 print(f"OK({twin}): {expect}")

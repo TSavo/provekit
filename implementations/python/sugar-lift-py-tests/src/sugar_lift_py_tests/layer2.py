@@ -115,6 +115,7 @@ from .translate_universe import (
     constant_universe_for_callee,
     delegation_universe_for_callee,
     eval_predicate,
+    exception_handler_raise_universe_for_callee,
     guard_universe_for_callee,
     instance_field_universe_for_callee,
     list_adapter_universe_for_callee,
@@ -595,6 +596,8 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "branch_field_value_kind",
         "branch_return_param_name",
         "branch_return_adapter_callee",
+        "exception_handler_raise_type",
+        "exception_handler_try_line",
     ):
         if field_name not in warrant:
             continue
@@ -662,6 +665,7 @@ def _source_loci_for_memento(
         "python.branch-selected-universe",
         "python.instance-field-universe",
         "python.raise-locus-universe",
+        "python.exception-handler-raise-universe",
         "python.return-isinstance-universe",
     }:
         return [
@@ -888,6 +892,8 @@ def _classify_universe_source_node(
         return "support", "queued delegate dig for recursive universe walk"
     if role == "python.branch-selected-universe":
         return _classify_branch_selected_source_node(stmt, node, source_memento)
+    if role == "python.exception-handler-raise-universe":
+        return _classify_exception_handler_raise_source_node(stmt, node, source_memento)
     if (
         role == "python.return-isinstance-universe"
         and isinstance(stmt, ast.Return)
@@ -989,6 +995,8 @@ def _classify_universe_source_statement(
         if isinstance(stmt, (ast.Raise, ast.If)):
             return "warranted", "emitted into python.raise-locus-universe"
         return "support", "prelude support for raise-locus accounting"
+    if role == "python.exception-handler-raise-universe":
+        return _classify_exception_handler_raise_source_node(stmt, stmt, source_memento)
     if role == "python.return-isinstance-universe":
         if _is_docstring_stmt(stmt):
             return "support", "docstring metadata supports source accounting only"
@@ -996,6 +1004,67 @@ def _classify_universe_source_statement(
             return "warranted", "emitted into python.return-isinstance-universe"
         return "unclassified", "return-isinstance source not emitted"
     return "unclassified", "source warrant role has no source-audit classifier"
+
+
+def _classify_exception_handler_raise_source_node(
+    stmt: ast.stmt,
+    node: ast.AST,
+    source_memento: dict[str, Any],
+) -> Tuple[str, str]:
+    if _is_docstring_stmt(stmt):
+        return "support", "docstring metadata supports source accounting only"
+    if not isinstance(stmt, ast.Try):
+        return "support", "non-selected path support for exception-handler accounting"
+    raise_type = _string_field(source_memento, "exception_handler_raise_type")
+    if isinstance(node, ast.Try):
+        return "warranted", "try/except path emitted into python.exception-handler-raise-universe"
+    if isinstance(node, ast.ExceptHandler):
+        if _handler_raises_exception_type(node, raise_type):
+            return "warranted", "exception handler emitted into python.exception-handler-raise-universe"
+        return "support", "non-selected handler support for exception-handler accounting"
+    if isinstance(node, ast.Raise):
+        if _raise_node_exception_name(node) == raise_type:
+            return "warranted", "raised exception emitted into python.exception-handler-raise-universe"
+        return "support", "unrelated raise path supports exception-handler accounting"
+    if _node_inside_handler_raise(stmt, node, raise_type):
+        return "warranted", "raised exception expression emitted into python.exception-handler-raise-universe"
+    return "support", "try body value path support for exception-handler accounting"
+
+
+def _handler_raises_exception_type(handler: ast.ExceptHandler, raise_type: str) -> bool:
+    return any(
+        isinstance(child_stmt, ast.Raise)
+        and _raise_node_exception_name(child_stmt) == raise_type
+        for child_stmt in handler.body
+    )
+
+
+def _node_inside_handler_raise(stmt: ast.Try, node: ast.AST, raise_type: str) -> bool:
+    for handler in stmt.handlers:
+        for child_stmt in handler.body:
+            if not isinstance(child_stmt, ast.Raise):
+                continue
+            if _raise_node_exception_name(child_stmt) != raise_type:
+                continue
+            if any(
+                candidate is node
+                for candidate, _ast_path in _iter_ast_nodes_with_paths(child_stmt, "$")
+            ):
+                return True
+    return False
+
+
+def _raise_node_exception_name(node: ast.Raise) -> Optional[str]:
+    exc = node.exc
+    if exc is None:
+        return None
+    if isinstance(exc, ast.Call):
+        exc = exc.func
+    if isinstance(exc, ast.Name):
+        return exc.id
+    if isinstance(exc, ast.Attribute):
+        return exc.attr
+    return None
 
 
 def _classify_branch_selected_source_node(
@@ -6925,6 +6994,7 @@ def _lift_raises_block(
     # term.  Arity suffix "_a1" encodes arity=1 (one arg: the call term).
     raised_term = ctor("raised_exc_a1", [call_term])
     exc_const = str_const(exc_name)
+    formulas: List[Formula] = [eq(raised_term, exc_const)]
     source_warrants: List[dict] = []
     origin = _call_origin_from_expr(call_expr)
     if origin is not None:
@@ -6938,7 +7008,24 @@ def _lift_raises_block(
                     universe_kind="raise-locus",
                 ),
             )
-    return _RaisesBlockLift(eq(raised_term, exc_const), tuple(source_warrants))
+        handler_u, _handler_refusal = exception_handler_raise_universe_for_callee(
+            origin.callee
+        )
+        if handler_u is not None:
+            formulas.append(eq(raised_term, str_const(handler_u.exception_name)))
+            if handler_u.source_memento is not None:
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_universe(
+                        handler_u,
+                        role="python.exception-handler-raise-universe",
+                        universe_kind="exception-handler-raise",
+                    ),
+                )
+    return _RaisesBlockLift(
+        formulas[0] if len(formulas) == 1 else and_(formulas),
+        tuple(source_warrants),
+    )
 
 
 def _classify_raises_body(

@@ -2010,6 +2010,21 @@ class RaiseLocusUniverse:
     source_memento: Optional[dict[str, Any]] = None
 
 
+@dataclass(frozen=True)
+class ExceptionHandlerRaiseUniverse:
+    """A try/except path account: when the call is observed to raise, a
+    handler that catches the underlying exception and re-raises a concrete
+    exception type contributes the same raised-exception relation used by
+    pytest.raises, without claiming the whole function never returns."""
+
+    exception_name: str
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
 @functools.lru_cache(maxsize=None)
 def raise_locus_universe_for_callee(
     callee: str,
@@ -2048,6 +2063,98 @@ def raise_locus_universe_for_callee(
         ),
         None,
     )
+
+
+@functools.lru_cache(maxsize=None)
+def exception_handler_raise_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ExceptionHandlerRaiseUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    candidates: list[tuple[ast.Try, ast.ExceptHandler, ast.Raise, str]] = []
+    for stmt in body:
+        if not isinstance(stmt, ast.Try):
+            continue
+        for handler in stmt.handlers:
+            raised = _single_handler_raise(handler)
+            if raised is None:
+                continue
+            raise_stmt, exception_name = raised
+            candidates.append((stmt, handler, raise_stmt, exception_name))
+    if not candidates:
+        return None, None
+    exception_names = {exception_name for *_prefix, exception_name in candidates}
+    if len(exception_names) != 1:
+        return (
+            None,
+            TranslateWalkRefusal(
+                callee,
+                "exception-handler raise path has multiple raised exception "
+                f"types: {sorted(exception_names)!r}",
+            ),
+        )
+    try_stmt, _handler, _raise_stmt, exception_name = candidates[0]
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["exception_handler_raise_type"] = exception_name
+        source_memento["exception_handler_try_line"] = try_stmt.lineno
+    return (
+        ExceptionHandlerRaiseUniverse(
+            exception_name=exception_name,
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _single_handler_raise(
+    handler: ast.ExceptHandler,
+) -> Optional[tuple[ast.Raise, str]]:
+    body = [
+        stmt
+        for stmt in handler.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    if len(body) != 1 or not isinstance(body[0], ast.Raise):
+        return None
+    exception_name = _raised_exception_name(body[0])
+    if exception_name is None:
+        return None
+    return body[0], exception_name
+
+
+def _raised_exception_name(stmt: ast.Raise) -> Optional[str]:
+    exc = stmt.exc
+    if exc is None:
+        return None
+    if isinstance(exc, ast.Call):
+        exc = exc.func
+    if isinstance(exc, ast.Name):
+        return exc.id
+    if isinstance(exc, ast.Attribute):
+        return exc.attr
+    return None
 
 
 def _resolve_spec(node, params, env):

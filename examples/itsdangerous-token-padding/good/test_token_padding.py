@@ -6,6 +6,7 @@ import itsdangerous.exc as exc
 import itsdangerous._json as compact_json
 import itsdangerous.serializer as serializer_mod
 import itsdangerous.signer as signer
+from itsdangerous.exc import BadPayload
 import pytest
 
 
@@ -76,3 +77,10 @@ def test_default_serializer_is_text():
 def test_serializer_default_signer_kwargs():
     ser = serializer_mod.Serializer("secret")
     assert ser.signer_kwargs == {}
+
+
+def test_serializer_load_payload_bad_payload():
+    with pytest.raises(BadPayload):
+        serializer_mod.Serializer.load_payload(
+            serializer_mod.Serializer("secret"), b"bad"
+        )
