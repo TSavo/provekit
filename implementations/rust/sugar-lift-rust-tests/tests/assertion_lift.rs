@@ -5708,3 +5708,64 @@ fn emit_value_contract_value_term_composes_through_compiler() {
         );
     }
 }
+
+// ── Slice 4: bounded-output universe (clamp) -- a rust-native universe lift ──
+// The rust analog of Python's no-suffix universe: a total primitive (clamp)
+// whose source bounds the output for every input. The teeth are the verdict
+// flip -- an out-of-bound bad twin goes UNSAT against the walked bound.
+
+#[test]
+fn emit_value_contract_clamp_emits_bounded_output_universe() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str("fn f(x: i32) -> i32 { x.clamp(0, 10) }").unwrap();
+    let decl = emit_value_contract("f", &f.block).expect("clamp emits a bounded-output universe");
+    let inv = format!("{:?}", decl.inv.expect("inv"));
+    assert!(
+        inv.contains("out"),
+        "bound is over the return value `out`: {inv}"
+    );
+    assert!(
+        inv.contains('0') && inv.contains("10"),
+        "bounds 0 and 10 present: {inv}"
+    );
+}
+
+#[test]
+fn clamp_universe_refutes_out_of_bound_bad_twin() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let f: syn::ItemFn = syn::parse_str("fn f(x: i32) -> i32 { x.clamp(0, 10) }").unwrap();
+    let decl = emit_value_contract("f", &f.block).unwrap();
+    let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+    let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let universe = parsed[0]["inv"].clone();
+    let z3 = "/usr/local/bin/z3";
+    if !std::path::Path::new(z3).exists() {
+        return;
+    }
+    let eq_out = |v: i64| {
+        serde_json::json!({"kind":"atomic","name":"=","args":[
+            {"kind":"var","name":"out"},
+            {"kind":"const","value":v,"sort":{"kind":"primitive","name":"Int"}}]})
+    };
+    let verdict = |val: i64| -> String {
+        let conj = serde_json::json!({"kind":"and","operands":[universe.clone(), eq_out(val)]});
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&conj).expect("compile");
+        let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+        let path = std::env::temp_dir().join(format!("sugar_clamp_{val}.smt2"));
+        std::fs::write(&path, &script).unwrap();
+        let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    // GOOD twin: out == 5 is within [0,10] -> SAT (discharges).
+    let good = verdict(5);
+    assert!(
+        good.contains("sat") && !good.contains("unsat"),
+        "good twin (out=5) must discharge: {good}"
+    );
+    // BAD twin: out == 11 is out of bound -> UNSAT (statically refuted by the bound).
+    let bad = verdict(11);
+    assert!(
+        bad.contains("unsat"),
+        "bad twin (out=11) must be refuted: {bad}"
+    );
+}

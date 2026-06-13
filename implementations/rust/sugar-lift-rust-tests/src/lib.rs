@@ -4278,6 +4278,43 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
             return Some(source_value_contract(name, eq(make_var("out"), term)));
         }
     }
+    // (c) Slice 4 -- bounded-output UNIVERSE: a known TOTAL rust primitive whose
+    //     source guarantees a BOUND on the output for EVERY input (the rust analog
+    //     of Python's no-suffix universe -- different sugar, same thinking). It
+    //     does not pin `out`; it bounds it, which is exactly the teeth that refute
+    //     an out-of-bound bad twin. `x.clamp(lo, hi)` => lo <= out <= hi.
+    if let Some(universe) = bounded_output_universe(tail, &scope) {
+        return Some(source_value_contract(name, universe));
+    }
+    None
+}
+
+/// A bounded-output universe over `out` from a known TOTAL rust primitive in the
+/// tail: a UNIVERSAL over the output (not a pin). Today `recv.clamp(lo, hi)` =>
+/// `lo <= out <= hi`, when receiver and bounds are side-effect-free terms. The
+/// bound holds on every returning input regardless of the receiver -- the teeth
+/// that statically refute an out-of-bound twin.
+fn bounded_output_universe(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
+    let call = match expr {
+        Expr::MethodCall(c) => c,
+        Expr::Paren(p) => return bounded_output_universe(&p.expr, scope),
+        Expr::Group(g) => return bounded_output_universe(&g.expr, scope),
+        _ => return None,
+    };
+    if call.method == "clamp" && call.args.len() == 2 {
+        let recv = translate_term_in_scope(&call.receiver, scope).ok()?;
+        let lo = translate_term_in_scope(&call.args[0], scope).ok()?;
+        let hi = translate_term_in_scope(&call.args[1], scope).ok()?;
+        if term_is_side_effect_free(&recv)
+            && term_is_side_effect_free(&lo)
+            && term_is_side_effect_free(&hi)
+        {
+            return Some(and_(vec![
+                gte(make_var("out"), lo),
+                lte(make_var("out"), hi),
+            ]));
+        }
+    }
     None
 }
 
