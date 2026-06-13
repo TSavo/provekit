@@ -5853,3 +5853,54 @@ fn euf_value_decls_compose_across_diverse_shapes() {
         }
     }
 }
+
+// ── Slice 6: leading immutable-let prefix + EUF tail (multi-statement drain) ──
+
+#[test]
+fn emit_value_contract_let_prefix_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        "fn f(x: i32) -> i32 { let y = x * 2; y + 1 }",
+        "fn f(v: &[u8]) -> usize { let n = v.len(); n + 1 }",
+        "fn f(a: u32, b: u32) -> u32 { let m = a & 0xff; let k = b >> 2; m ^ k }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("let-prefix EUF body must warrant: {src}"));
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let inv = parsed[0]["inv"].clone();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&inv)
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_letprefix.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
+    }
+}
+
+#[test]
+fn emit_value_contract_let_prefix_refuses_mut_and_letelse() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    // mutation (let mut + compound assign) and let-else (divergence) are NOT this
+    // shape -> None -> routed to effect_refusal / unclassified, never warranted.
+    for src in [
+        "fn f(x: i32) -> i32 { let mut a = x; a += 1; a }",
+        "fn f(o: Option<i32>) -> i32 { let Some(y) = o else { return 0 }; y }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        assert!(
+            emit_value_contract("f", &f.block).is_none(),
+            "mut/let-else must not warrant via let-prefix: {src}"
+        );
+    }
+}

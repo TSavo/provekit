@@ -4247,47 +4247,101 @@ fn byte_range(byte: Rc<Term>, low: u8, high: u8) -> Rc<Formula> {
 // `out <-> membership` (encoded with `implies`/`and`, since the compiler has no
 // `iff`).
 pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDecl> {
-    // Strict start: the body is a single tail expression (no prefix statements);
-    // wider block shapes are later slices.
-    let tail = match block.stmts.as_slice() {
-        [Stmt::Expr(expr, None)] => expr,
-        _ => return None,
-    };
-    // (a) Slice 1 -- bool-predicate shape: out <-> membership, as
-    //     (out=true => m) ∧ (m => out=true) (the compiler has no `iff`).
-    if let Some(membership) = emit_bool_membership_formula(tail) {
-        let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
-        let inv = and_(vec![
-            implies(out_true.clone(), membership.clone()),
-            implies(membership, out_true),
-        ]);
-        return Some(source_value_contract(name, inv));
-    }
     let plan = temporal_plan_for_stmts(&block.stmts);
     let scope = TemporalScope::new("rust-source", plan);
-    // (b) Slice 4 -- bounded-output UNIVERSE: a known TOTAL rust primitive whose
-    //     source guarantees a BOUND on the output for EVERY input (the rust analog
-    //     of Python's no-suffix universe -- different sugar, same thinking). It
-    //     does not pin `out`; it bounds it, which is the teeth that refute an
-    //     out-of-bound bad twin. `x.clamp(lo, hi)` => lo <= out <= hi. Run BEFORE
-    //     the generic EUF path: the bound is STRONGER than an opaque
-    //     `out = clamp(..)`, so a recognized primitive must not be shadowed by it.
-    if let Some(universe) = bounded_output_universe(tail, &scope) {
-        return Some(source_value_contract(name, universe));
-    }
-    // (c) Slice 2/5 -- value-term + method-call-as-EUF: out = <euf term>. Mirrors
-    //     the Python source kit's `return_value = body`, reusing the kit's
-    //     expr->Term translation (same atoms the test path compiles to Z3 -- no new
-    //     semantic path). Value-position calls (method:/call:) are uninterpreted
-    //     deterministic functions (EUF); a known PANIC method, `await`, or a macro
-    //     is excluded -> the body falls to effect_refusal/unclassified.
-    if let Ok(term) = translate_term_in_scope(tail, &scope) {
-        if term_is_euf_value(&term) {
-            return Some(source_value_contract(name, eq(make_var("out"), term)));
+    if let [Stmt::Expr(tail, None)] = block.stmts.as_slice() {
+        // (a) Slice 1 -- bool-predicate shape: out <-> membership, as
+        //     (out=true => m) ∧ (m => out=true) (the compiler has no `iff`).
+        if let Some(membership) = emit_bool_membership_formula(tail) {
+            let out_true = atomic_("=", vec![make_var("out"), bool_const(true)]);
+            let inv = and_(vec![
+                implies(out_true.clone(), membership.clone()),
+                implies(membership, out_true),
+            ]);
+            return Some(source_value_contract(name, inv));
         }
+        // (b) Slice 4 -- bounded-output UNIVERSE: a known TOTAL rust primitive
+        //     whose source bounds the output for EVERY input (rust analog of
+        //     Python's no-suffix universe). `x.clamp(lo, hi)` => lo <= out <= hi.
+        //     Run BEFORE the generic EUF path so the bound (teeth) isn't shadowed.
+        if let Some(universe) = bounded_output_universe(tail, &scope) {
+            return Some(source_value_contract(name, universe));
+        }
+        // (c) Slice 2/5 -- value-term + method-call-as-EUF: out = <euf term>.
+        if let Ok(term) = translate_term_in_scope(tail, &scope) {
+            if term_is_euf_value(&term) {
+                return Some(source_value_contract(name, eq(make_var("out"), term)));
+            }
+        }
+        return None;
+    }
+    // (d) Slice 6 -- leading immutable-let prefix + EUF tail: `(let x = euf;)* euf`,
+    //     mirroring Python's `_Emitter.statements` (a binding sequence). The lets
+    //     are substituted into the tail (referential transparency over
+    //     deterministic EUF terms), yielding a flat EUF term -> out = <term>. A
+    //     `let mut`, let-else, intermediate effect-statement, or early return is
+    //     not this shape -> falls through to effect_refusal/unclassified.
+    if let Some(term) = let_prefix_euf_term(block, &scope) {
+        return Some(source_value_contract(name, eq(make_var("out"), term)));
     }
     None
 }
+
+/// Slice 6: a body `(let <ident> = <euf>;)* <euf tail>` reduced to the EUF tail
+/// with each immutable let substituted in (referential transparency over
+/// deterministic EUF terms). Returns the flat EUF term, or None if any statement
+/// is not an immutable simple-`let`-or-tail, any binding is `mut`/let-else/
+/// shadowing/non-EUF, or the tail is not EUF.
+fn let_prefix_euf_term(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Term>> {
+    let (last, prefix) = block.stmts.split_last()?;
+    let Stmt::Expr(tail_expr, None) = last else {
+        return None;
+    };
+    if prefix.is_empty() {
+        return None; // single-tail is handled above
+    }
+    let mut subst: Vec<(String, Rc<Term>)> = Vec::new();
+    for stmt in prefix {
+        let Stmt::Local(local) = stmt else {
+            return None;
+        };
+        let name = immutable_let_ident(&local.pat)?;
+        if subst.iter().any(|(n, _)| n == &name) {
+            return None; // shadowing breaks sequential substitution -- refuse
+        }
+        let init = local.init.as_ref()?;
+        if init.diverge.is_some() {
+            return None; // let-else (divergence) is not this shape
+        }
+        let mut rhs = translate_term_in_scope(&init.expr, scope).ok()?;
+        for (n, t) in &subst {
+            rhs = subst_var_in_term(&rhs, n, t);
+        }
+        if !term_is_euf_value(&rhs) {
+            return None;
+        }
+        subst.push((name, rhs));
+    }
+    let mut tail = translate_term_in_scope(tail_expr, scope).ok()?;
+    for (n, t) in &subst {
+        tail = subst_var_in_term(&tail, n, t);
+    }
+    term_is_euf_value(&tail).then_some(tail)
+}
+
+/// The bound name of an immutable simple `let` pattern (`let x` / `let x: T`),
+/// or None for `mut`/`ref`/destructuring/subpattern bindings.
+fn immutable_let_ident(pat: &Pat) -> Option<String> {
+    match pat {
+        Pat::Ident(p) if p.by_ref.is_none() && p.mutability.is_none() && p.subpat.is_none() => {
+            Some(p.ident.to_string())
+        }
+        Pat::Type(pt) => immutable_let_ident(&pt.pat),
+        _ => None,
+    }
+}
+
+// (substitution reuses the existing `subst_var_in_term` defined earlier.)
 
 /// A bounded-output universe over `out` from a known TOTAL rust primitive in the
 /// tail: a UNIVERSAL over the output (not a pin). Today `recv.clamp(lo, hi)` =>
