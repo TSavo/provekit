@@ -4249,14 +4249,16 @@ fn byte_range(byte: Rc<Term>, low: u8, high: u8) -> Rc<Formula> {
 pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDecl> {
     let plan = temporal_plan_for_stmts(&block.stmts);
     let scope = TemporalScope::new("rust-source", plan);
-    // Single tail expression: its inv directly.
+    block_inv(block, &scope).map(|inv| source_value_contract(name, inv))
+}
+
+/// The consistency `inv` for a block: a single tail expression (-> tail_inv) or a
+/// leading immutable-let prefix + any tail (-> let_prefix_inv).
+fn block_inv(block: &syn::Block, scope: &TemporalScope) -> Option<Rc<Formula>> {
     if let [Stmt::Expr(tail, None)] = block.stmts.as_slice() {
-        return tail_inv(tail, &scope).map(|inv| source_value_contract(name, inv));
+        return tail_inv(tail, scope);
     }
-    // Slice 6/11 -- leading immutable-let prefix + ANY tail (value / if / match /
-    // bool predicate): substitute the immutable lets into the tail's inv
-    // (referential transparency over deterministic EUF terms).
-    let_prefix_inv(block, &scope).map(|inv| source_value_contract(name, inv))
+    let_prefix_inv(block, scope)
 }
 
 /// The consistency `inv` for a SINGLE tail expression (no prefix). Tries, in
@@ -4264,6 +4266,21 @@ pub fn emit_value_contract(name: &str, block: &syn::Block) -> Option<ContractDec
 /// EUF value term (incl. method-call-as-EUF), value-if chain, scalar match, and
 /// bool predicate (comparison/&&/||). None if the tail is none of these.
 fn tail_inv(tail: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
+    // Slice 14 -- `unsafe { .. }` / plain `{ .. }` are VALUE-TRANSPARENT: the inv
+    // is the inner block's inv (unsafe is a compile-time obligation, not a value
+    // transform). Unwrap before the per-shape branches.
+    if let Expr::Unsafe(u) = tail {
+        return block_inv(&u.block, scope);
+    }
+    if let Expr::Block(b) = tail {
+        return block_inv(&b.block, scope);
+    }
+    if let Expr::Paren(p) = tail {
+        return tail_inv(&p.expr, scope);
+    }
+    if let Expr::Group(g) = tail {
+        return tail_inv(&g.expr, scope);
+    }
     // (a) Slice 1 -- matches! membership: out <-> m.
     if let Some(membership) = emit_bool_membership_formula(tail) {
         return Some(biconditional_out(membership));

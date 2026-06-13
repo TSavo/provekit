@@ -6139,3 +6139,39 @@ fn emit_value_contract_let_prefix_with_control_flow_tail() {
         }
     }
 }
+
+// ── Slice 14: unsafe/plain block is value-transparent ──
+
+#[test]
+fn emit_value_contract_unsafe_and_block_are_value_transparent() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    for src in [
+        "fn f(x: usize) -> usize { unsafe { id(x) } }",
+        "fn f(x: i32) -> i32 { unsafe { let y = x + 1; y * 2 } }",
+        "fn f(x: i32) -> i32 { { x + 1 } }",
+        "fn f(x: i32, a: i32, b: i32) -> i32 { unsafe { if x > 0 { a } else { b } } }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("unsafe/plain block must be value-transparent: {src}"));
+        // The unwrapped inner inv must still COMPOSE (the unsafe wrapper introduces
+        // no new shape -- it must inherit a composing inv).
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&parsed[0]["inv"])
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        let z3 = "/usr/local/bin/z3";
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_unsafe.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
+    }
+}
