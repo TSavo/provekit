@@ -88,7 +88,14 @@ pub fn source_memento_of(
 
 /// Convenience: build a memento for a free `fn` item.
 pub fn source_memento_of_item_fn(file_rel: &str, src: &str, item: &syn::ItemFn) -> SourceMemento {
-    source_memento_of(file_rel, src, item.span(), &item.sig.ident.to_string(), &item.sig, &item.block)
+    source_memento_of(
+        file_rel,
+        src,
+        item.span(),
+        &item.sig.ident.to_string(),
+        &item.sig,
+        &item.block,
+    )
 }
 
 /// The source fragment text for an inclusive 1-based line range. This is what a

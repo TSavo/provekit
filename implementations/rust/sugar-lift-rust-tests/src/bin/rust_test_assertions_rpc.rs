@@ -170,9 +170,10 @@ fn lift(params: &Value) -> Value {
                 source_oracle::source_memento_of(rel, src, fr.span, &fr.name, fr.sig, fr.block);
             let name = fr.name.clone();
             let is_test = fn_has_test_attr(fr.attrs);
-            let warning = out.warnings.iter().find(|w| {
-                w.item_name == name || w.item_name.ends_with(&format!("::{name}"))
-            });
+            let warning = out
+                .warnings
+                .iter()
+                .find(|w| w.item_name == name || w.item_name.ends_with(&format!("::{name}")));
             // TOTAL classifier (Phase 1 -- close the gate): every function exits
             // into warranted / support / refused-by-name. There is NO
             // `unclassified` fall-through: a function the kit cannot warrant is
@@ -379,7 +380,44 @@ fn expr_is_pure_formula(expr: &syn::Expr) -> bool {
                     .all(|a| a.guard.is_none() && expr_is_pure_formula(&a.body))
         }
         Expr::Block(b) => block_reduces_to_pure_formula(&b.block),
+        // `matches!(<pure>, <pat> [if <pure>])` is a pure boolean formula.
+        Expr::Macro(m) => macro_is_pure_formula(&m.mac),
         _ => false,
+    }
+}
+
+/// `matches!(<scrutinee>, <pattern> [if <guard>])` is a pure boolean formula: it
+/// desugars to `match <scrutinee> { <pattern> [if guard] => true, _ => false }`,
+/// sound to warrant when the scrutinee and any guard are themselves pure formulas
+/// (patterns carry no effects). This is core's `is_ascii_*` / character-class
+/// family -- the marquee predicate shape. Any other macro stays opaque.
+fn macro_is_pure_formula(mac: &syn::Macro) -> bool {
+    if !mac
+        .path
+        .segments
+        .last()
+        .is_some_and(|s| s.ident == "matches")
+    {
+        return false;
+    }
+    let parsed = mac.parse_body_with(|input: syn::parse::ParseStream| {
+        let scrutinee: syn::Expr = input.parse()?;
+        input.parse::<syn::Token![,]>()?;
+        let _pat = syn::Pat::parse_multi_with_leading_vert(input)?;
+        let guard = if input.peek(syn::Token![if]) {
+            input.parse::<syn::Token![if]>()?;
+            Some(input.parse::<syn::Expr>()?)
+        } else {
+            None
+        };
+        Ok::<_, syn::Error>((scrutinee, guard))
+    });
+    match parsed {
+        Ok((scrutinee, guard)) => {
+            expr_is_pure_formula(&scrutinee)
+                && guard.as_ref().is_none_or(|g| expr_is_pure_formula(g))
+        }
+        Err(_) => false,
     }
 }
 
@@ -702,10 +740,19 @@ mod tests {
         "#;
         let names: Vec<String> = fns_of(src).iter().map(|f| f.name.clone()).collect();
         assert!(names.contains(&"free_fn".to_string()));
-        assert!(names.contains(&"method".to_string()), "impl method must be enumerated: {names:?}");
-        assert!(names.contains(&"defaulted".to_string()), "trait default method must be enumerated: {names:?}");
+        assert!(
+            names.contains(&"method".to_string()),
+            "impl method must be enumerated: {names:?}"
+        );
+        assert!(
+            names.contains(&"defaulted".to_string()),
+            "trait default method must be enumerated: {names:?}"
+        );
         // a trait method WITHOUT a body declares no constructor -> not a locus.
-        assert!(!names.contains(&"decl_only".to_string()), "bodyless trait decl is not a locus: {names:?}");
+        assert!(
+            !names.contains(&"decl_only".to_string()),
+            "bodyless trait decl is not a locus: {names:?}"
+        );
     }
 
     fn block_of(src: &str) -> syn::Block {
@@ -730,12 +777,52 @@ mod tests {
     }
 
     #[test]
+    fn generalizable_warrants_pure_matches_char_class_predicates() {
+        // The marquee character-classification shape: `matches!(<pure>, <pat>)`
+        // desugars to a pure match-tree -> warrantable by construction. This is
+        // core's `is_ascii_*` family (and base64-alphabet predicates downstream).
+        for src in [
+            "fn f(c: char) -> bool { matches!(c, 'A'..='Z') }",
+            "fn f(c: char) -> bool { matches!(*&c, 'a'..='z' | 'A'..='Z') }",
+            // compound: three OR'd matches! (core's is_ascii_alphanumeric)
+            // cascades through the existing Binary arm once each matches! is pure.
+            "fn f(c: char) -> bool { matches!(c, '0'..='9') | matches!(c, 'A'..='Z') | matches!(c, 'a'..='z') }",
+            // a pure guard is fine.
+            "fn f(c: char) -> bool { matches!(c, x if x == 'q') }",
+        ] {
+            assert!(
+                is_generalizable_value_fn(&block_of(src)),
+                "matches! over a pure scrutinee is a pure boolean formula: {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn generalizable_refuses_matches_over_impure_scrutinee_or_guard() {
+        // matches! must not launder an opaque receiver: an impure scrutinee or
+        // guard (method call) keeps the body refused (bin-1), never a false
+        // warrant. A non-`matches!` macro stays opaque too.
+        for src in [
+            "fn f(s: &str) -> bool { matches!(s.len(), 0) }",
+            "fn f(c: char) -> bool { matches!(c.to_ascii_uppercase(), 'A'..='Z') }",
+            "fn f(v: Vec<i32>) -> bool { matches!(0, x if v.contains(&x)) }",
+            "fn f() -> i32 { vec![1, 2, 3].len() as i32 }",
+            "fn f(x: i32) -> i32 { some_other_macro!(x) }",
+        ] {
+            assert!(
+                !is_generalizable_value_fn(&block_of(src)),
+                "matches! must not launder an opaque/effectful scrutinee or guard: {src}"
+            );
+        }
+    }
+
+    #[test]
     fn generalizable_refuses_effectful_bodies() {
         for src in [
-            "fn f(v: Vec<i32>) -> usize { v.len() }",      // method call
-            "fn f() { for _ in 0..3 {} }",                  // loop
+            "fn f(v: Vec<i32>) -> usize { v.len() }", // method call
+            "fn f() { for _ in 0..3 {} }",            // loop
             "fn f(r: Result<i32, ()>) -> i32 { r.unwrap() }", // method call
-            "fn f() -> i32 { let mut x = 0; x = 1; x }",    // mutation (non-immutable let / assign)
+            "fn f() -> i32 { let mut x = 0; x = 1; x }", // mutation (non-immutable let / assign)
         ] {
             assert!(
                 !is_generalizable_value_fn(&block_of(src)),
@@ -747,11 +834,20 @@ mod tests {
     #[test]
     fn refusal_reason_categorizes_and_splits_bin2() {
         let io = refusal_reason(&block_of("fn f() { println!(\"x\"); }"));
-        assert!(io.contains("IO membrane (bin-2)"), "print is the IO floor: {io}");
+        assert!(
+            io.contains("IO membrane (bin-2)"),
+            "print is the IO floor: {io}"
+        );
         let lp = refusal_reason(&block_of("fn f() { for _ in 0..3 {} }"));
-        assert!(lp.contains("loop") && lp.contains("bin-1"), "loop is drainable bin-1: {lp}");
+        assert!(
+            lp.contains("loop") && lp.contains("bin-1"),
+            "loop is drainable bin-1: {lp}"
+        );
         let mc = refusal_reason(&block_of("fn f(v: Vec<i32>) -> usize { v.len() }"));
-        assert!(mc.contains("method call") && mc.contains("bin-1"), "method call is bin-1: {mc}");
+        assert!(
+            mc.contains("method call") && mc.contains("bin-1"),
+            "method call is bin-1: {mc}"
+        );
     }
 
     #[test]
