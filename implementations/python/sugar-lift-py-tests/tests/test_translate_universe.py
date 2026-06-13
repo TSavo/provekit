@@ -581,6 +581,76 @@ def test_lift_source_warrants_function_default_literals_as_compiler_facts(
     assert all("default literal" in locus.get("reason", "") for locus in default_loci)
 
 
+def test_lift_source_refuses_nondeterministic_time_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_nondet_time_refused"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            import time
+
+            def b64e(s):
+                return s.rstrip(b"=")
+
+            class Clock:
+                def get_timestamp(self):
+                    return int(time.time())
+
+                def sign(self, value):
+                    ts = self.get_timestamp()
+                    return value
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_nondet_time_refused.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    nondet_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_nondet_time_refused/encoding.py")
+        and locus.get("line") in {9, 12}
+    ]
+    assert nondet_loci
+    assert not [
+        locus for locus in nondet_loci if locus["status"] == "unclassified"
+    ], nondet_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 9
+        and locus.get("ast_kind") == "Return"
+        and "nondeterminism" in locus.get("reason", "")
+        for locus in nondet_loci
+    ), nondet_loci
+    assert any(
+        locus["status"] == "refused"
+        and locus.get("line") == 12
+        and locus.get("ast_kind") == "Assign"
+        and "nondeterminism" in locus.get("reason", "")
+        for locus in nondet_loci
+    ), nondet_loci
+
+
 def test_lift_source_classifies_package_signatures_and_docstrings_as_support(
     tmp_path, monkeypatch
 ):

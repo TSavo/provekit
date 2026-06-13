@@ -382,6 +382,7 @@ def _package_unclassified_loci(
                 ancestors,
                 call_aliases,
                 module_name,
+                tree,
             )
             loci.append(
                 _source_line_locus(
@@ -405,6 +406,7 @@ def _package_locus_classification(
     ancestors: tuple[ast.AST, ...],
     call_aliases: Dict[str, str],
     module_name: str,
+    tree: ast.Module,
 ) -> tuple[str, str]:
     overload_status = _overload_declaration_status(node, ancestors)
     if overload_status is not None:
@@ -444,6 +446,14 @@ def _package_locus_classification(
     dynamic_io_status = _dynamic_receiver_io_refusal_status(node, ancestors)
     if dynamic_io_status is not None:
         return dynamic_io_status
+    nondet_status = _nondeterministic_call_refusal_status(
+        node,
+        ancestors,
+        module_name,
+        tree,
+    )
+    if nondet_status is not None:
+        return nondet_status
     adapter_assignment_status = _local_adapter_assignment_status(
         node,
         ancestors,
@@ -969,6 +979,164 @@ def _dynamic_io_receiver_name(call: ast.Call) -> Optional[str]:
     ):
         return None
     return func.value.id
+
+
+_NONDET_CALL_ATTRS = frozenset(
+    {
+        "random",
+        "uniform",
+        "randint",
+        "randrange",
+        "choice",
+        "choices",
+        "token_hex",
+        "token_urlsafe",
+        "urandom",
+        "uuid1",
+        "uuid4",
+        "now",
+        "utcnow",
+        "today",
+        "time",
+        "monotonic",
+        "perf_counter",
+    }
+)
+_NONDET_CALL_ROOTS = frozenset({"random", "secrets", "uuid", "time"})
+
+
+def _nondeterministic_call_refusal_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+    tree: ast.Module,
+) -> Optional[tuple[str, str]]:
+    stmt = _nearest_statement(ancestors + (node,))
+    if stmt is None:
+        return None
+    chain = ancestors + (node,)
+    for call in (n for n in ast.walk(stmt) if isinstance(n, ast.Call)):
+        reason = _nondeterministic_call_reason(call, chain, module_name, tree)
+        if reason is None:
+            continue
+        if node is stmt or any(candidate is node for candidate in ast.walk(stmt)):
+            return "refused", reason
+    return None
+
+
+def _nondeterministic_call_reason(
+    call: ast.Call,
+    chain: tuple[ast.AST, ...],
+    module_name: str,
+    tree: ast.Module,
+) -> Optional[str]:
+    direct = _direct_nondeterministic_call_name(call)
+    if direct:
+        return (
+            "nondeterminism source refused: "
+            f"{direct} depends on runtime state"
+        )
+
+    if not (
+        isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id in {"self", "cls"}
+    ):
+        return None
+    class_qualname = _nearest_class_qualname(chain)
+    if not class_qualname:
+        return None
+    cls = _find_class_by_qualname(tree, class_qualname)
+    if cls is None:
+        return None
+    methods = {
+        item.name: item
+        for item in cls.body
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    method = methods.get(call.func.attr)
+    if method is None or not _method_body_reaches_nondeterminism(
+        method,
+        methods,
+        depth=3,
+        seen=set(),
+    ):
+        return None
+    callee = f"{module_name}.{class_qualname}.{call.func.attr}"
+    return (
+        "nondeterminism source refused: "
+        f"{callee} transitively depends on runtime state"
+    )
+
+
+def _direct_nondeterministic_call_name(call: ast.Call) -> str:
+    static_name = _static_call_name(call.func)
+    parts = static_name.split(".") if static_name else []
+    if not parts:
+        return ""
+    root = parts[0]
+    leaf = parts[-1]
+    if root in _NONDET_CALL_ROOTS and leaf in _NONDET_CALL_ATTRS:
+        return static_name
+    return ""
+
+
+def _find_class_by_qualname(
+    tree: ast.Module,
+    qualname: str,
+) -> Optional[ast.ClassDef]:
+    parts = [part for part in qualname.split(".") if part]
+    body: list[ast.stmt] = list(tree.body)
+    found: Optional[ast.ClassDef] = None
+    for part in parts:
+        found = next(
+            (
+                item
+                for item in body
+                if isinstance(item, ast.ClassDef) and item.name == part
+            ),
+            None,
+        )
+        if found is None:
+            return None
+        body = list(found.body)
+    return found
+
+
+def _method_body_reaches_nondeterminism(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef,
+    methods: Dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
+    *,
+    depth: int,
+    seen: set[str],
+) -> bool:
+    if fn.name in seen or depth <= 0:
+        return False
+    seen.add(fn.name)
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        if _direct_nondeterministic_call_name(node):
+            return True
+        if (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in {"self", "cls"}
+        ):
+            callee = methods.get(node.func.attr)
+            if callee is not None and _method_body_reaches_nondeterminism(
+                callee,
+                methods,
+                depth=depth - 1,
+                seen=seen,
+            ):
+                return True
+    return False
+
+
+def _nearest_class_qualname(chain: tuple[ast.AST, ...]) -> str:
+    names = [item.name for item in chain if isinstance(item, ast.ClassDef)]
+    return ".".join(names)
 
 
 def _local_adapter_assignment_status(
