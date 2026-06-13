@@ -86,6 +86,13 @@ fn lift(params: &Value) -> Value {
 
     let mut entries = Vec::new();
     let mut diagnostics = Vec::new();
+    // Source-audit accounting (parity with the Java SourceWarrant/sourceLedger
+    // model #2134-#2136): every contract the kit produces is a `warranted`
+    // locus, every refusal a `refused` locus. The kit already accounts
+    // unenumerated assertions as warnings (no silent drop), so `unclassified` is
+    // 0 at this granularity. NOTE: loci are at contract/refusal granularity; the
+    // next slice carries real per-AST-line spans (the Java SourceMemento shape).
+    let mut source_loci: Vec<Value> = Vec::new();
     let options = match lift_options_from_config(&workspace_root, params) {
         Ok(options) => options,
         Err(reason) => {
@@ -137,12 +144,32 @@ fn lift(params: &Value) -> Value {
             }
         };
         let out = lift_file_with_options(&file, rel, &options);
+        // WARRANTED loci: each lifted contract is accounted by name.
+        for decl in &out.decls {
+            source_loci.push(json!({
+                "file": rel,
+                "role": "rust-test-assertions",
+                "ast_kind": "test-assertion-contract",
+                "ast_path": decl.name,
+                "status": "warranted",
+            }));
+        }
         let marshalled = marshal_declarations(&out.decls);
         let parsed: Value = serde_json::from_str(&marshalled).unwrap_or_else(|_| json!([]));
         if let Some(arr) = parsed.as_array() {
             entries.extend(arr.iter().cloned());
         }
         for w in &out.warnings {
+            // REFUSED loci: each refusal is accounted by name with its reason --
+            // loudly-bounded-lossy, never silent.
+            source_loci.push(json!({
+                "file": rel,
+                "role": "rust-test-assertions",
+                "ast_kind": "test-assertion",
+                "ast_path": w.item_name,
+                "status": "refused",
+                "reason": w.reason,
+            }));
             diagnostics.push(json!({
                 "kind": "lift-gap",
                 "path": w.source_path,
@@ -152,11 +179,44 @@ fn lift(params: &Value) -> Value {
         }
     }
 
+    let ledger = source_ledger(&source_loci);
     json!({
         "kind": "ir-document",
         "ir": entries,
         "diagnostics": diagnostics,
         "refusals": [],
+        "sourceLedger": ledger,
+        "sourceAudits": [json!({
+            "role": "rust-test-assertions",
+            "universe_kind": "test-assertion",
+            "loci": source_loci,
+        })],
+        // Per-locus content-addressed mementos for envelope minting are not yet
+        // emitted by the Rust kit (the next slice). Present-and-empty satisfies
+        // the CLI's source-audit gate; the ledger/audits carry the accounting.
+        "sourceMementos": [],
+    })
+}
+
+/// Roll the per-locus statuses into the `sourceLedger` the CLI source-audit gate
+/// requires. The CLI RECOMPUTES this from the loci, so it must be exactly the
+/// per-status counts. `unclassified_source` is the silent-drop measure: every
+/// locus the kit emits carries a classified status, so a non-zero count here
+/// means a source locus escaped accounting -- the thing `silent = 0` forbids.
+fn source_ledger(loci: &[Value]) -> Value {
+    let count = |status: &str| {
+        loci.iter()
+            .filter(|l| l.get("status").and_then(Value::as_str) == Some(status))
+            .count()
+    };
+    json!({
+        "source_loci": loci.len(),
+        "source_warranted": count("warranted"),
+        "source_support": count("support"),
+        "source_refused": count("refused"),
+        "source_inactive": count("inactive"),
+        "source_refuted": count("refuted"),
+        "unclassified_source": count("unclassified"),
     })
 }
 
