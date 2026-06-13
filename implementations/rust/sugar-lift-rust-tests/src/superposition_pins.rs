@@ -3,42 +3,76 @@
 // Production seam (items 1+2 of the superposition residual): wire REAL lifted
 // body warrants + REAL vendor pins into the superposition report engine.
 //
-// A vendor pin is an `assert_eq!(SYMBOL(int_lits...), int_lit)` (or reversed):
-// the symbol under test, its integer argument literals, and the sworn output.
-// For each symbol with a body warrant, we instantiate the warrant at each pin
-// via `warrant_conjoined_with_vendor` (substitute params, conjoin the sworn
-// output), check the closed conjunction with z3, and apply the keystone: >=1 SAT
-// licenses the lift, its UNSAT pins are vendor findings; no SAT retracts it.
+// A vendor pin is an `assert_eq!(SYMBOL(scalar_lits...), scalar_lit)` (or
+// reversed): the symbol under test, its scalar argument literals, and the sworn
+// output. For each symbol with a body warrant, we instantiate the warrant at
+// each pin via `warrant_conjoined_with_vendor_terms` (substitute params, conjoin
+// the sworn output), check the closed conjunction with z3, and apply the
+// keystone: >=1 SAT licenses the lift, its UNSAT pins are vendor findings; no
+// SAT retracts it.
 //
-// This closes the body<->vendor-pin seam for the canonical integer-assertion
-// shape. Non-integer / non-literal-argument assertions are not extracted here
-// (surfaced as "no pins" -> no report, never a fake verdict).
+// Scalar coverage: int / bool / string literals (and negative ints). A
+// non-scalar / non-literal-argument assertion is not extracted here (surfaced
+// as "no pins" -> no report, never a fake verdict). Generalizing further means
+// consuming the lifter's already-translated assertion atoms (the natural next
+// step); literals cover the canonical vendor-test shape.
+
+use std::rc::Rc;
 
 use sugar_ir_symbolic::serialize::marshal_declarations;
-use sugar_ir_symbolic::ContractDecl;
+use sugar_ir_symbolic::{num, str_const, ConstValue, ContractDecl, Sort, Term};
 use sugar_walk::canonical::{cid_of_value, serde_to_canonical};
 use sugar_walk::superposition_engine::{
     apply_keystone, LiftVerdict, PinCheck, SatOracle, SuperpositionReport,
 };
 
-use crate::warrant_conjoined_with_vendor;
+use crate::warrant_conjoined_with_vendor_terms;
+
+/// A scalar literal appearing in a vendor assertion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScalarLit {
+    Int(i64),
+    Bool(bool),
+    Str(String),
+}
+
+impl ScalarLit {
+    fn to_term(&self) -> Rc<Term> {
+        match self {
+            ScalarLit::Int(i) => num(*i),
+            ScalarLit::Bool(b) => Rc::new(Term::Const {
+                value: ConstValue::Bool(*b),
+                sort: Sort::bool(),
+            }),
+            ScalarLit::Str(s) => str_const(s.clone()),
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        match self {
+            ScalarLit::Int(i) => serde_json::json!({"int": i}),
+            ScalarLit::Bool(b) => serde_json::json!({"bool": b}),
+            ScalarLit::Str(s) => serde_json::json!({"str": s}),
+        }
+    }
+}
 
 /// A vendor pin extracted from an `assert_eq!`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IntPin {
+pub struct Pin {
     pub symbol: String,
-    pub args: Vec<i64>,
-    pub expected: i64,
+    pub args: Vec<ScalarLit>,
+    pub expected: ScalarLit,
 }
 
-impl IntPin {
+impl Pin {
     /// Content-addressed identity of the pin.
     pub fn cid(&self) -> String {
         let j = serde_json::json!({
             "kind": "vendor-pin",
             "symbol": self.symbol,
-            "args": self.args,
-            "expected": self.expected,
+            "args": self.args.iter().map(ScalarLit::json).collect::<Vec<_>>(),
+            "expected": self.expected.json(),
         });
         cid_of_value(serde_to_canonical(j).as_ref())
     }
@@ -58,24 +92,22 @@ pub fn param_names(sig: &syn::Signature) -> Vec<String> {
         .collect()
 }
 
-/// Extract integer pins from a (test) function body. Walks top-level statements
-/// and one level of nesting for `assert_eq!`/`assert_ne!`-shaped macros.
-pub fn extract_int_pins(block: &syn::Block) -> Vec<IntPin> {
+/// Extract vendor pins from a (test) function body. Walks top-level statements
+/// and one level of block nesting for `assert_eq!`-shaped macros.
+pub fn extract_pins(block: &syn::Block) -> Vec<Pin> {
     let mut pins = Vec::new();
     for stmt in &block.stmts {
         match stmt {
             syn::Stmt::Macro(m) => collect_from_macro(&m.mac, &mut pins),
             syn::Stmt::Expr(syn::Expr::Macro(em), _) => collect_from_macro(&em.mac, &mut pins),
-            syn::Stmt::Expr(syn::Expr::Block(b), _) => {
-                pins.extend(extract_int_pins(&b.block));
-            }
+            syn::Stmt::Expr(syn::Expr::Block(b), _) => pins.extend(extract_pins(&b.block)),
             _ => {}
         }
     }
     pins
 }
 
-fn collect_from_macro(mac: &syn::Macro, out: &mut Vec<IntPin>) {
+fn collect_from_macro(mac: &syn::Macro, out: &mut Vec<Pin>) {
     let is_eq = mac
         .path
         .segments
@@ -100,16 +132,16 @@ fn collect_from_macro(mac: &syn::Macro, out: &mut Vec<IntPin>) {
 }
 
 /// `assert_eq!(SYMBOL(lits), lit)` or `assert_eq!(lit, SYMBOL(lits))`.
-fn pin_from_pair(a: &syn::Expr, b: &syn::Expr) -> Option<IntPin> {
-    if let (Some((symbol, args)), Some(expected)) = (as_symbol_call(a), as_int_literal(b)) {
-        return Some(IntPin {
+fn pin_from_pair(a: &syn::Expr, b: &syn::Expr) -> Option<Pin> {
+    if let (Some((symbol, args)), Some(expected)) = (as_symbol_call(a), as_scalar_literal(b)) {
+        return Some(Pin {
             symbol,
             args,
             expected,
         });
     }
-    if let (Some(expected), Some((symbol, args))) = (as_int_literal(a), as_symbol_call(b)) {
-        return Some(IntPin {
+    if let (Some(expected), Some((symbol, args))) = (as_scalar_literal(a), as_symbol_call(b)) {
+        return Some(Pin {
             symbol,
             args,
             expected,
@@ -118,24 +150,29 @@ fn pin_from_pair(a: &syn::Expr, b: &syn::Expr) -> Option<IntPin> {
     None
 }
 
-fn as_int_literal(expr: &syn::Expr) -> Option<i64> {
+fn as_scalar_literal(expr: &syn::Expr) -> Option<ScalarLit> {
     match expr {
-        syn::Expr::Lit(syn::ExprLit {
-            lit: syn::Lit::Int(i),
-            ..
-        }) => i.base10_parse::<i64>().ok(),
+        syn::Expr::Lit(syn::ExprLit { lit, .. }) => match lit {
+            syn::Lit::Int(i) => i.base10_parse::<i64>().ok().map(ScalarLit::Int),
+            syn::Lit::Bool(b) => Some(ScalarLit::Bool(b.value)),
+            syn::Lit::Str(s) => Some(ScalarLit::Str(s.value())),
+            _ => None,
+        },
         syn::Expr::Unary(syn::ExprUnary {
             op: syn::UnOp::Neg(_),
             expr,
             ..
-        }) => as_int_literal(expr).map(|v| -v),
-        syn::Expr::Group(g) => as_int_literal(&g.expr),
-        syn::Expr::Paren(p) => as_int_literal(&p.expr),
+        }) => match as_scalar_literal(expr)? {
+            ScalarLit::Int(v) => Some(ScalarLit::Int(-v)),
+            _ => None,
+        },
+        syn::Expr::Group(g) => as_scalar_literal(&g.expr),
+        syn::Expr::Paren(p) => as_scalar_literal(&p.expr),
         _ => None,
     }
 }
 
-fn as_symbol_call(expr: &syn::Expr) -> Option<(String, Vec<i64>)> {
+fn as_symbol_call(expr: &syn::Expr) -> Option<(String, Vec<ScalarLit>)> {
     match expr {
         syn::Expr::Call(call) => {
             let symbol = match &*call.func {
@@ -144,7 +181,7 @@ fn as_symbol_call(expr: &syn::Expr) -> Option<(String, Vec<i64>)> {
             };
             let mut args = Vec::with_capacity(call.args.len());
             for a in &call.args {
-                args.push(as_int_literal(a)?);
+                args.push(as_scalar_literal(a)?);
             }
             Some((symbol, args))
         }
@@ -182,10 +219,10 @@ pub fn symbol_report(
     symbol: &str,
     body_warrant: &ContractDecl,
     param_names: &[String],
-    pins: &[IntPin],
+    pins: &[Pin],
     oracle: &dyn SatOracle,
 ) -> Option<SuperpositionReport> {
-    let mine: Vec<&IntPin> = pins
+    let mine: Vec<&Pin> = pins
         .iter()
         .filter(|p| p.symbol == symbol && p.args.len() == param_names.len())
         .collect();
@@ -195,12 +232,13 @@ pub fn symbol_report(
 
     let mut checks: Vec<PinCheck> = Vec::with_capacity(mine.len());
     for p in &mine {
-        let bindings: Vec<(&str, i64)> = param_names
+        let arg_terms: Vec<Rc<Term>> = p.args.iter().map(ScalarLit::to_term).collect();
+        let bindings: Vec<(&str, Rc<Term>)> = param_names
             .iter()
             .map(|n| n.as_str())
-            .zip(p.args.iter().copied())
+            .zip(arg_terms.iter().cloned())
             .collect();
-        let conjoined = warrant_conjoined_with_vendor(body_warrant, &bindings, p.expected);
+        let conjoined = warrant_conjoined_with_vendor_terms(body_warrant, &bindings, p.expected.to_term());
         let inv = inv_json(&conjoined);
         checks.push(PinCheck {
             pin_cid: p.cid(),
@@ -242,21 +280,28 @@ mod tests {
     }
 
     #[test]
-    fn extracts_int_pins_from_assert_eq() {
-        let block =
-            test_block("fn t() { assert_eq!(double(3), 6); assert_eq!(8, double(4)); }");
-        let pins = extract_int_pins(&block);
-        assert_eq!(pins.len(), 2);
-        assert_eq!(pins[0], IntPin { symbol: "double".into(), args: vec![3], expected: 6 });
-        // reversed form recovered too
-        assert_eq!(pins[1], IntPin { symbol: "double".into(), args: vec![4], expected: 8 });
+    fn extracts_pins_of_each_scalar_kind() {
+        let block = test_block(
+            r#"fn t() {
+                assert_eq!(double(3), 6);
+                assert_eq!(8, double(4));
+                assert_eq!(is_even(4), true);
+                assert_eq!(name_of(0), "zero");
+            }"#,
+        );
+        let pins = extract_pins(&block);
+        assert_eq!(pins.len(), 4);
+        assert_eq!(pins[0], Pin { symbol: "double".into(), args: vec![ScalarLit::Int(3)], expected: ScalarLit::Int(6) });
+        assert_eq!(pins[1], Pin { symbol: "double".into(), args: vec![ScalarLit::Int(4)], expected: ScalarLit::Int(8) });
+        assert_eq!(pins[2], Pin { symbol: "is_even".into(), args: vec![ScalarLit::Int(4)], expected: ScalarLit::Bool(true) });
+        assert_eq!(pins[3], Pin { symbol: "name_of".into(), args: vec![ScalarLit::Int(0)], expected: ScalarLit::Str("zero".into()) });
     }
 
     #[test]
     fn consistent_pins_make_a_strong_report() {
         let (decl, params) = body_warrant("fn double(x: i32) -> i32 { x * 2 }");
         let block = test_block("fn t() { assert_eq!(double(3), 6); assert_eq!(double(4), 8); }");
-        let pins = extract_int_pins(&block);
+        let pins = extract_pins(&block);
         let report = symbol_report("double", &decl, &params, &pins, &Z3Oracle::default());
         if z3_present() {
             let report = report.expect("licensed by consistent pins");
@@ -270,12 +315,9 @@ mod tests {
     #[test]
     fn a_pin_the_body_contradicts_is_a_finding_weak() {
         // body: double(x)=x*2. Vendor swears double(3)==7 (it is 6) AND double(4)==8.
-        // double(3)==6 holds (licenses), double(3)==7 is the finding -> Weak.
         let (decl, params) = body_warrant("fn double(x: i32) -> i32 { x * 2 }");
-        let block = test_block(
-            "fn t() { assert_eq!(double(4), 8); assert_eq!(double(3), 7); }",
-        );
-        let pins = extract_int_pins(&block);
+        let block = test_block("fn t() { assert_eq!(double(4), 8); assert_eq!(double(3), 7); }");
+        let pins = extract_pins(&block);
         let report = symbol_report("double", &decl, &params, &pins, &Z3Oracle::default());
         if z3_present() {
             let report = report.expect("licensed by the correct pin");
@@ -283,7 +325,6 @@ mod tests {
             assert_eq!(report.findings.len(), 1, "the contradicting pin is a finding");
             assert_eq!(report.levers.len(), 2);
             assert!(report.verdict.contains("ordering, not logic"));
-            // recomputable
             assert_eq!(
                 sugar_canonicalizer::blake3_512_of(&report.member_bytes()),
                 report.cid()
@@ -292,10 +333,34 @@ mod tests {
     }
 
     #[test]
+    fn bool_and_string_pins_compose_through_z3() {
+        // Bool/string pins extract and compose through the closed check. Whether
+        // a wrong pin becomes a FINDING depends on the body warrant having
+        // structural teeth — `x % 2 == 0` lifts to the opaque functional warrant
+        // (out = call:is_even(x)), which coexists with any sworn output (weak
+        // teeth, by design). The point here: the bool path is well-sorted and
+        // composes (no crash, a report is produced), not a fake finding.
+        let (decl, params) = body_warrant("fn is_even(x: i32) -> bool { x % 2 == 0 }");
+        let block =
+            test_block("fn t() { assert_eq!(is_even(4), true); assert_eq!(is_even(6), true); }");
+        let pins = extract_pins(&block);
+        assert_eq!(pins.len(), 2);
+        assert!(matches!(pins[0].expected, ScalarLit::Bool(true)));
+        let report = symbol_report("is_even", &decl, &params, &pins, &Z3Oracle::default());
+        if z3_present() {
+            let report = report.expect("bool pins compose -> licensed");
+            // Opaque functional warrant coexists with the sworn outputs: Strong,
+            // no false finding.
+            assert_eq!(report.strength, Strength::Strong);
+            assert!(report.findings.is_empty());
+        }
+    }
+
+    #[test]
     fn no_pins_is_no_report_not_a_fake_verdict() {
         let (decl, params) = body_warrant("fn triple(x: i32) -> i32 { x * 3 }");
-        let block = test_block("fn t() { assert_eq!(double(3), 6); }"); // pins a different symbol
-        let pins = extract_int_pins(&block);
+        let block = test_block("fn t() { assert_eq!(double(3), 6); }");
+        let pins = extract_pins(&block);
         let report = symbol_report("triple", &decl, &params, &pins, &Z3Oracle::default());
         assert!(report.is_none(), "no pin for this symbol -> no report (silent)");
     }

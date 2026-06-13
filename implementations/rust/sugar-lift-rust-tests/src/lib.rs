@@ -4336,14 +4336,28 @@ pub fn warrant_conjoined_with_vendor(
     bindings: &[(&str, i64)],
     asserted_out: i64,
 ) -> ContractDecl {
+    let term_bindings: Vec<(&str, Rc<Term>)> =
+        bindings.iter().map(|(n, v)| (*n, num(*v))).collect();
+    warrant_conjoined_with_vendor_terms(decl, &term_bindings, num(asserted_out))
+}
+
+/// General form: instantiate the body warrant at arbitrary scalar argument TERMS
+/// (int / bool / string / ...), then conjoin the vendor's sworn output term. The
+/// `i64` form above is the int special case. Same closed check (substitute the
+/// params, conjoin `out == asserted_out`); the interior is an unopened EUF box.
+pub fn warrant_conjoined_with_vendor_terms(
+    decl: &ContractDecl,
+    bindings: &[(&str, Rc<Term>)],
+    asserted_out: Rc<Term>,
+) -> ContractDecl {
     let mut inv = decl
         .inv
         .clone()
         .unwrap_or_else(|| atomic_("true", Vec::new()));
     for (name, value) in bindings {
-        inv = subst_var_in_formula(&inv, name, &num(*value));
+        inv = subst_var_in_formula(&inv, name, value);
     }
-    let conjoined = and_(vec![inv, eq(make_var("out"), num(asserted_out))]);
+    let conjoined = and_(vec![inv, eq(make_var("out"), asserted_out)]);
     ContractDecl {
         inv: Some(conjoined),
         ..decl.clone()

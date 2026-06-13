@@ -446,36 +446,79 @@ fn enumerate_mss(
         return (vec![BTreeSet::new()], false);
     }
     if n > max_pool {
-        // Degraded: cannot brute-force. Check the full set; report capped.
+        // Too large to enumerate exactly. Stay SOUND, never fabricate a verdict:
+        // if the full set is SAT there is no conflict at all -> exactly one world
+        // (genuinely Strong). Otherwise conflicts exist but we cannot enumerate
+        // the worlds; every pool candidate is consistent with the pins ALONE (it
+        // passed the filter), so each is at least one world — return the
+        // singletons. That is an UPPER bound on ambiguity (never a false Strong,
+        // never a false Undecidable), and `capped` surfaces the degradation.
         let mut all: Vec<&Value> = pins.to_vec();
         for s in pool {
             all.push(&s.formula);
         }
-        let full: BTreeSet<usize> = (0..n).collect();
         if oracle.check(&all) != SatResult::Unsat {
-            return (vec![full], true);
+            return (vec![(0..n).collect()], true);
         }
-        return (Vec::new(), true);
+        let singletons = (0..n)
+            .map(|i| {
+                let mut s = BTreeSet::new();
+                s.insert(i);
+                s
+            })
+            .collect();
+        return (singletons, true);
     }
 
-    let mut masks: Vec<u32> = (0u32..(1u32 << n)).collect();
-    masks.sort_by_key(|m| std::cmp::Reverse(m.count_ones()));
-
+    // Exact enumeration, generated LAZILY by descending subset size (so the first
+    // SAT subset at each size is maximal and dominates its subsets). No 2^N mask
+    // vector is materialized, and no `1 << n` shift (which overflows for n >= 31).
     let mut mss: Vec<BTreeSet<usize>> = Vec::new();
-    for mask in masks {
-        let subset: BTreeSet<usize> = (0..n).filter(|i| mask & (1 << i) != 0).collect();
-        if mss.iter().any(|m| subset.is_subset(m)) {
-            continue; // dominated by a found (larger) MSS — not maximal.
-        }
-        let mut fs: Vec<&Value> = pins.to_vec();
-        for &i in &subset {
-            fs.push(&pool[i].formula);
-        }
-        if oracle.check(&fs) != SatResult::Unsat {
-            mss.push(subset);
+    for size in (0..=n).rev() {
+        for subset in subsets_of_size(n, size) {
+            if mss.iter().any(|m| subset.is_subset(m)) {
+                continue; // dominated by a found (larger) MSS — not maximal.
+            }
+            let mut fs: Vec<&Value> = pins.to_vec();
+            for &i in &subset {
+                fs.push(&pool[i].formula);
+            }
+            if oracle.check(&fs) != SatResult::Unsat {
+                mss.push(subset);
+            }
         }
     }
     (mss, false)
+}
+
+/// All index subsets of `{0..n}` of exactly `size` elements (lexicographic).
+fn subsets_of_size(n: usize, size: usize) -> Vec<BTreeSet<usize>> {
+    let mut out = Vec::new();
+    let mut combo: Vec<usize> = (0..size).collect();
+    if size > n {
+        return out;
+    }
+    loop {
+        out.push(combo.iter().copied().collect());
+        // advance to the next combination in colex order.
+        let mut i = size;
+        while i > 0 {
+            i -= 1;
+            if combo[i] != i + n - size {
+                combo[i] += 1;
+                for j in (i + 1)..size {
+                    combo[j] = combo[j - 1] + 1;
+                }
+                break;
+            }
+            if i == 0 {
+                return out;
+            }
+        }
+        if size == 0 {
+            return out;
+        }
+    }
 }
 
 // ── Slice 5: the keystone ───────────────────────────────────────────────────
@@ -1115,5 +1158,36 @@ mod tests {
         let cands: Vec<EngineStatement> = (0..6).map(|i| stmt(&format!("c{i}"))).collect();
         let r = walk(&pins, &cands, &oracle, 4); // pool 6 > cap 4
         assert!(r.capped, "exceeding the cap must be surfaced");
+        // No conflict -> full set SAT -> genuinely one world (sound Strong).
+        assert_eq!(r.strength(), Strength::Strong);
+    }
+
+    #[test]
+    fn capped_with_conflict_is_conservative_never_false_undecidable() {
+        // Pool exceeds the cap AND has a conflict (full set UNSAT). The sound
+        // fallback returns singletons (an upper bound on ambiguity) — Weak, NOT a
+        // false Undecidable (which would claim "no world" when worlds exist).
+        let oracle = MockOracle::new(&[&["c0", "c1"]]);
+        let pins = vec![stmt("pin")];
+        let cands: Vec<EngineStatement> = (0..6).map(|i| stmt(&format!("c{i}"))).collect();
+        let r = walk(&pins, &cands, &oracle, 4);
+        assert!(r.capped);
+        assert_eq!(r.worlds.len(), 6, "conservative: each candidate alone is a world");
+        assert_eq!(r.strength(), Strength::Weak);
+        assert_ne!(r.strength(), Strength::Undecidable);
+    }
+
+    #[test]
+    fn lazy_enumeration_handles_a_larger_exact_pool() {
+        // Three independent conflict pairs within the cap => 2^3 = 8 worlds, three
+        // fork groups. Exercises the lazy descending-size enumeration at n=6.
+        let oracle = MockOracle::new(&[&["a", "b"], &["c", "d"], &["e", "f"]]);
+        let pins = vec![stmt("pin")];
+        let cands = vec![stmt("a"), stmt("b"), stmt("c"), stmt("d"), stmt("e"), stmt("f")];
+        let r = walk(&pins, &cands, &oracle, 16);
+        assert_eq!(r.worlds.len(), 8, "2^3 independent conflicts");
+        assert!(r.factored);
+        assert_eq!(r.fork_groups.len(), 3);
+        assert_eq!(r.universe().world_count(), 8);
     }
 }

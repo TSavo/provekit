@@ -175,7 +175,7 @@ fn lift(params: &Value) -> Value {
         // Superposition seam: vendor pins (assert_eq! over int literals) and body
         // warrants (+ their param names) for this file, walked against each other
         // by z3 to emit per-symbol superposition reports.
-        let mut superposition_pins: Vec<sugar_lift_rust_tests::superposition_pins::IntPin> =
+        let mut superposition_pins: Vec<sugar_lift_rust_tests::superposition_pins::Pin> =
             Vec::new();
         let mut superposition_warrants: Vec<(String, sugar_ir_symbolic::ContractDecl, Vec<String>)> =
             Vec::new();
@@ -189,7 +189,7 @@ fn lift(params: &Value) -> Value {
             let is_test = fn_has_test_attr(fr.attrs);
             if is_test {
                 superposition_pins
-                    .extend(sugar_lift_rust_tests::superposition_pins::extract_int_pins(fr.block));
+                    .extend(sugar_lift_rust_tests::superposition_pins::extract_pins(fr.block));
             }
             let warning = out
                 .warnings
