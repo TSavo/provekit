@@ -174,14 +174,19 @@ fn lift(params: &Value) -> Value {
                 .warnings
                 .iter()
                 .find(|w| w.item_name == name || w.item_name.ends_with(&format!("::{name}")));
-            // TOTAL classifier (Phase 1 -- close the gate): every function exits
-            // into warranted / support / refused-by-name. There is NO
-            // `unclassified` fall-through: a function the kit cannot warrant is
-            // REFUSED with a named reason (loudly-bounded-lossy), never dark.
-            // `unclassified` can now only mean a classifier BUG, not a tuning
-            // number; the real meter is `refused` (= bin-1 to drain).
+            // TOTAL classifier. Every function exits into exactly one status, and
+            // `unclassified` is the HONEST dark -- a body the kit has not yet
+            // classified, the residual the campaign drives to 0 by real
+            // classification work. It is NOT a fall-through to avoid: forcing the
+            // catch-all to `refused` so `unclassified=0` is a FAKE ZERO -- it
+            // launders the dark into a verdict it never earned. `refused` is a
+            // CONSIDERED no (false-pass risk), here only the test-assertion lifter
+            // declining an assertion it understands. `unclassified=0` is the GOAL,
+            // earned by classifying -- never structural.
             let (status, reason): (&str, Option<String>) = if is_test {
                 match warning {
+                    // the lifter looked at this assertion and declined it: a real
+                    // refusal with teeth (false-pass risk), named.
                     Some(w) => ("refused", Some(w.reason.clone())),
                     None => ("warranted", None),
                 }
@@ -194,9 +199,10 @@ fn lift(params: &Value) -> Value {
                 // a warrant, so it is `support`.
                 ("support", None)
             } else {
-                // Refused BY NAME with a categorized reason (conjunct 4): the IO
-                // membrane (bin-2, the floor) split from drainable bin-1.
-                ("refused", Some(refusal_reason(fr.block)))
+                // the kit does not classify this body YET -> UNCLASSIFIED, the
+                // honest residual. The note records WHICH construct the walker
+                // doesn't speak yet (the next slice to drain) -- never a verdict.
+                ("unclassified", Some(unclassified_reason(fr.block)))
             };
             let mut locus = json!({
                 "file": rel,
@@ -457,9 +463,10 @@ fn fn_has_test_attr(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-/// Scan a refused body for the dominant blocker, so every `refused` carries a
-/// NAMED, CATEGORIZED reason -- and the IO membrane (bin-2, the floor) is split
-/// from drainable bin-1 (loop / `?` / method-call / macro).
+/// Scan an unclassified body for the dominant blocker, so every `unclassified`
+/// locus carries a NAMED, CATEGORIZED note of WHICH construct the walker doesn't
+/// speak yet -- the IO membrane (bin-2, the named floor) split from drainable
+/// bin-1 (loop / `?` / method-call / macro). This is a diagnostic, not a verdict.
 #[derive(Default)]
 struct BlockerScan {
     io: Option<String>,
@@ -553,10 +560,11 @@ fn is_io_path(path: &str) -> bool {
     .any(|m| path.contains(m))
 }
 
-/// The named, categorized refusal reason for a body the kit can't warrant.
-/// IO markers => bin-2 (the named floor); everything else => a bin-1 category
-/// (a future walker slice migrates it to `warranted`).
-fn refusal_reason(block: &syn::Block) -> String {
+/// The named, categorized note for an UNCLASSIFIED body: which construct the
+/// walker doesn't speak yet. IO markers => bin-2 (the named floor); everything
+/// else => a bin-1 category (a future walker slice classifies it). A diagnostic
+/// for the burndown, NOT a verdict -- the body is unclassified, not refused.
+fn unclassified_reason(block: &syn::Block) -> String {
     let mut s = BlockerScan::default();
     syn::visit::Visit::visit_block(&mut s, block);
     if let Some(io) = s.io {
@@ -894,18 +902,18 @@ mod tests {
     }
 
     #[test]
-    fn refusal_reason_categorizes_and_splits_bin2() {
-        let io = refusal_reason(&block_of("fn f() { println!(\"x\"); }"));
+    fn unclassified_reason_categorizes_and_splits_bin2() {
+        let io = unclassified_reason(&block_of("fn f() { println!(\"x\"); }"));
         assert!(
             io.contains("IO membrane (bin-2)"),
             "print is the IO floor: {io}"
         );
-        let lp = refusal_reason(&block_of("fn f() { for _ in 0..3 {} }"));
+        let lp = unclassified_reason(&block_of("fn f() { for _ in 0..3 {} }"));
         assert!(
             lp.contains("loop") && lp.contains("bin-1"),
             "loop is drainable bin-1: {lp}"
         );
-        let mc = refusal_reason(&block_of("fn f(v: Vec<i32>) -> usize { v.len() }"));
+        let mc = unclassified_reason(&block_of("fn f(v: Vec<i32>) -> usize { v.len() }"));
         assert!(
             mc.contains("method call") && mc.contains("bin-1"),
             "method call is bin-1: {mc}"
