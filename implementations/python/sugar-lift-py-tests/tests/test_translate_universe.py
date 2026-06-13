@@ -9322,3 +9322,120 @@ def dump_payload(obj):
         "python.delegation-universe",
         "base64_encode",
     ) in warranted
+
+
+def test_terminal_if_return_emits_receiver_field_branch_universe(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        conditional_chain_universe_for_callee,
+        constructor_field_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    conditional_chain_universe_for_callee.cache_clear()
+    constructor_field_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendterminal_return",
+        '''
+def want_bytes(value):
+    return value
+
+
+class Signer:
+    def sign(self, value):
+        return value
+
+
+class Serializer:
+    def __init__(self, is_text):
+        self.is_text_serializer = is_text
+
+    def make_signer(self, salt):
+        return Signer()
+
+    def dump_payload(self, obj):
+        return obj
+
+    def dumps(self, obj, salt=None):
+        payload = want_bytes(self.dump_payload(obj))
+        rv = self.make_signer(salt).sign(payload)
+
+        if self.is_text_serializer:
+            return rv.decode("utf-8")
+
+        return rv
+''',
+    )
+
+    universe, refusal = conditional_chain_universe_for_callee(
+        "vendterminal_return.Serializer.dumps"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "conditional-chain-expr"
+    assert len(universe.branches) == 2
+
+    out = _lift(
+        """
+        import vendterminal_return
+
+        def test_dumps():
+            serializer = vendterminal_return.Serializer(True)
+            assert serializer.dumps(b"payload", None) == "payload"
+        """
+    )
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendterminal_return.Serializer.dumps" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    def contains_ctor(term, name):
+        return getattr(term, "name", None) == name or any(
+            contains_ctor(arg, name) for arg in getattr(term, "args", ())
+        )
+
+    def walk_formula(formula):
+        yield formula
+        for operand in getattr(formula, "operands", ()):
+            yield from walk_formula(operand)
+
+    implies_atoms = [
+        atom
+        for atom in walk_formula(assertion.inv)
+        if getattr(atom, "kind", None) == "implies"
+    ]
+    assert implies_atoms
+    assert any(
+        contains_ctor(arg, "callval_decode_a2")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+    assert any(
+        contains_ctor(arg, "callval_sign_a2")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+    assert any(
+        contains_ctor(arg, "callval_dump_payload_a2")
+        for atom in implies_atoms
+        for arg in getattr(atom, "operands", ())
+    )
+
+    warranted = {
+        (warrant.get("role"), warrant.get("source_function_name"))
+        for warrant in assertion.source_warrants
+    }
+    assert (
+        "python.conditional-chain-universe",
+        "Serializer.dumps",
+    ) in warranted
+    assert (
+        "python.instance-field-universe",
+        "Serializer.__init__",
+    ) in warranted

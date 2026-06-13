@@ -3384,6 +3384,18 @@ def conditional_chain_universe_for_callee(
     source_memento = _source_memento_for_resolved_function(fn, spec_origin)
     params = [a.arg for a in (*fn.args.posonlyargs, *fn.args.args)]
     body = _body_without_docstring(fn.body)
+    tail_return = _terminal_if_return_chain_universe(
+        callee,
+        body,
+        params=params,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        source_path=spec_origin,
+        source_memento=source_memento,
+    )
+    if tail_return[0] is not None or tail_return[1] is not None:
+        return tail_return
     if not body or not isinstance(body[-1], ast.Return):
         return None, None
     ret = body[-1].value
@@ -3478,6 +3490,181 @@ def conditional_chain_universe_for_callee(
             qualname=f"{module_name}.{fn_name}",
             source_path=spec_origin,
             lineno=fn.lineno,
+            branches=tuple(branches),
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _terminal_if_return_chain_universe(
+    callee: str,
+    body: list[ast.stmt],
+    *,
+    params: list[str],
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+    source_path: str,
+    source_memento: Optional[dict[str, Any]],
+) -> Tuple[Optional[ConditionalChainUniverse], Optional[TranslateWalkRefusal]]:
+    if len(body) < 2:
+        return None, None
+    branch = body[-2]
+    fallback = body[-1]
+    if (
+        not isinstance(branch, ast.If)
+        or branch.orelse
+        or len(branch.body) != 1
+        or not isinstance(branch.body[0], ast.Return)
+        or not isinstance(fallback, ast.Return)
+        or branch.body[0].value is None
+        or fallback.value is None
+    ):
+        return None, None
+
+    scopes: list[tuple[dict, tuple]] = [({}, ())]
+    for stmt in body[:-2]:
+        next_scopes: list[tuple[dict, tuple]] = []
+        if _conditional_chain_simple_assign(stmt):
+            for env, conditions in scopes:
+                spec, refusal = _conditional_chain_value_spec(
+                    stmt.value,
+                    params=params,
+                    env=env,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if refusal is not None:
+                    return None, TranslateWalkRefusal(callee, refusal)
+                if spec is None:
+                    return None, None
+                new_env = dict(env)
+                new_env[stmt.targets[0].id] = spec
+                next_scopes.append((new_env, conditions))
+            scopes = next_scopes
+            continue
+        if isinstance(stmt, ast.If) and not stmt.orelse:
+            for env, conditions in scopes:
+                guard_spec, guard_refusal = _conditional_chain_guard_spec(
+                    stmt.test,
+                    params=params,
+                    env=env,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if guard_refusal is not None:
+                    return None, TranslateWalkRefusal(callee, guard_refusal)
+                if guard_spec is None:
+                    return None, None
+                truth = _conditional_chain_truth(guard_spec)
+                if truth is True:
+                    then_env = _conditional_chain_apply_assign_block(
+                        stmt.body,
+                        env,
+                        params=params,
+                        tree=tree,
+                        module_name=module_name,
+                        fn_name=fn_name,
+                    )
+                    if then_env is None:
+                        return None, None
+                    next_scopes.append((then_env, conditions))
+                    continue
+                if truth is False:
+                    next_scopes.append((dict(env), conditions))
+                    continue
+                then_env = _conditional_chain_apply_assign_block(
+                    stmt.body,
+                    env,
+                    params=params,
+                    tree=tree,
+                    module_name=module_name,
+                    fn_name=fn_name,
+                )
+                if then_env is None:
+                    return None, None
+                next_scopes.append((then_env, (*conditions, guard_spec)))
+                next_scopes.append((dict(env), (*conditions, ("not", guard_spec))))
+            scopes = next_scopes
+            continue
+        return None, None
+
+    branches = []
+    for env, conditions in scopes:
+        guard_spec, guard_refusal = _conditional_chain_guard_spec(
+            branch.test,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        if guard_refusal is not None:
+            return None, TranslateWalkRefusal(callee, guard_refusal)
+        if guard_spec is None:
+            return None, None
+        then_spec, then_refusal = _conditional_chain_value_spec(
+            branch.body[0].value,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        fallback_spec, fallback_refusal = _conditional_chain_value_spec(
+            fallback.value,
+            params=params,
+            env=env,
+            tree=tree,
+            module_name=module_name,
+            fn_name=fn_name,
+        )
+        refusal = then_refusal or fallback_refusal
+        if refusal is not None:
+            return None, TranslateWalkRefusal(callee, refusal)
+        if then_spec is None or fallback_spec is None:
+            return None, None
+        truth = _conditional_chain_truth(guard_spec)
+        if truth is True:
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=conditions,
+                    expr_spec=then_spec,
+                )
+            )
+        elif truth is False:
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=conditions,
+                    expr_spec=fallback_spec,
+                )
+            )
+        else:
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=(*conditions, guard_spec),
+                    expr_spec=then_spec,
+                )
+            )
+            branches.append(
+                ConditionalChainBranch(
+                    conditions=(*conditions, ("not", guard_spec)),
+                    expr_spec=fallback_spec,
+                )
+            )
+
+    if not branches:
+        return None, None
+    return (
+        ConditionalChainUniverse(
+            kind="conditional-chain-expr",
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=source_path,
+            lineno=body[0].lineno if body else 0,
             branches=tuple(branches),
             source_memento=source_memento,
         ),
@@ -3616,6 +3803,18 @@ def _conditional_chain_guard_spec(
         if left in (None, "REFUSE-OP") or right in (None, "REFUSE-OP"):
             return None, None
         return ("compare", op, left, right), None
+    spec = _resolve_expr_spec(
+        node,
+        params,
+        env,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+    )
+    if spec == "REFUSE-OP":
+        return None, "conditional chain guard expression uses an unsupported operator"
+    if spec is not None:
+        return spec, None
     return None, None
 
 

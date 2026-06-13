@@ -5576,7 +5576,11 @@ def _universe_conjuncts(
                         universe_kind=conditional_u.kind,
                     ),
                 )
-            call_args = _universe_call_args(subject_term, origin)
+            call_args = _conditional_chain_universe_call_args(
+                conditional_u,
+                subject_term,
+                origin,
+            )
             receiver_term = _receiver_term_for_callval_subject(subject_term)
             for branch in conditional_u.branches:
                 branch_formula = _conditional_chain_condition_formula(
@@ -5597,7 +5601,34 @@ def _universe_conjuncts(
                 if branch_formula is None or mapped_expr is None:
                     continue
                 term, nested_delegates, field_terms, _term_kind = mapped_expr
+                condition_field_terms = _conditional_chain_condition_field_terms(
+                    branch.conditions,
+                    origin,
+                    subject_term,
+                )
                 conjuncts.append(implies(branch_formula, eq(subject_term, term)))
+                for field_u, _field_term in condition_field_terms:
+                    if source_warrants is not None:
+                        _append_unique_source_warrant(
+                            source_warrants,
+                            _source_warrant_for_instance_field_universe(
+                                field_u,
+                                source_memento=field_u.constructor_source_memento,
+                                source_function_name=_local_qualname(
+                                    field_u.module,
+                                    field_u.constructor_qualname,
+                                ),
+                                constructor_default_params=tuple(
+                                    param
+                                    for param in (
+                                        origin.constructor_default_params
+                                        if origin is not None
+                                        else ()
+                                    )
+                                    if param == field_u.constructor_param_name
+                                ),
+                            ),
+                        )
                 for field_u, field_term in field_terms:
                     if source_warrants is not None:
                         _append_unique_source_warrant(
@@ -6250,6 +6281,23 @@ def _universe_call_args(
         if subject_term.name.startswith("callresult_"):
             return tuple(subject_term.args)
     return ()
+
+
+def _conditional_chain_universe_call_args(
+    universe,
+    subject_term: Term,
+    origin: Optional[_CallOrigin],
+) -> Tuple[Term, ...]:
+    source_memento = getattr(universe, "source_memento", None) or {}
+    param_names = source_memento.get("param_names") or ()
+    if (
+        param_names
+        and param_names[0] in {"self", "cls"}
+        and isinstance(subject_term, _Ctor)
+        and subject_term.name.startswith("callval_")
+    ):
+        return tuple(subject_term.args)
+    return _universe_call_args(subject_term, origin)
 
 
 def _universe_literal_term(value_kind: str, value: Any) -> Optional[Term]:
@@ -7103,6 +7151,60 @@ def _conditional_chain_single_condition_formula(
     if mapped is None:
         return None
     return eq(mapped[0], bool_const(True))
+
+
+def _conditional_chain_condition_field_terms(
+    conditions,
+    origin: Optional[_CallOrigin],
+    subject_term: Term,
+) -> List[Tuple[Any, Term]]:
+    fields: List[Tuple[Any, Term]] = []
+
+    def walk(condition) -> None:
+        if not (isinstance(condition, tuple) and condition):
+            return
+        if condition[0] == "not":
+            walk(condition[1])
+            return
+        if condition[0] == "compare":
+            walk(condition[2])
+            walk(condition[3])
+            return
+        if condition[0] == "receiver-field":
+            if (
+                origin is None
+                or origin.receiver_constructor is None
+                or origin.constructor_args is None
+            ):
+                return
+            field_u, field_refusal = constructor_field_universe_for_callee(
+                origin.receiver_constructor,
+                condition[1],
+            )
+            if (
+                field_refusal is not None
+                or field_u is None
+                or field_u.constructor_param_index >= len(origin.constructor_args)
+            ):
+                return
+            fields.append(
+                (
+                    field_u,
+                    _constructor_field_universe_value_term(
+                        subject_term,
+                        condition[1],
+                        field_u,
+                        origin,
+                    ),
+                )
+            )
+            return
+        for part in condition[1:]:
+            walk(part)
+
+    for condition in conditions:
+        walk(condition)
+    return fields
 
 
 def _chain_expr_is_structural_term(term: Term) -> bool:
