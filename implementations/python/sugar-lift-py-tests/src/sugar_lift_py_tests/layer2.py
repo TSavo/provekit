@@ -937,16 +937,32 @@ def _classify_universe_source_statement(
             return "support", "docstring metadata supports source accounting only"
         if _is_super_init_expr(stmt):
             return "support", "base constructor call supports construction accounting"
-        if _is_instance_field_default_if(stmt):
-            return "warranted", "emitted into python.instance-field-universe"
+        if _is_instance_field_validation_guard(stmt):
+            return "support", "constructor validation guard supports construction accounting"
+        default_params = _constructor_default_param_names(source_memento)
+        default_if_param = _instance_field_default_if_param(stmt)
+        if default_if_param is not None:
+            if not default_params or default_if_param in default_params:
+                return "warranted", "emitted into python.instance-field-universe"
+            return "support", "unrelated constructor default branch supports source accounting"
+        normalized_param = _instance_field_normalized_param(stmt)
+        if normalized_param is not None:
+            if normalized_param == _string_field(source_memento, "constructor_param_name"):
+                return "warranted", "constructor parameter normalization emitted into python.instance-field-universe"
+            return "support", "unrelated constructor parameter normalization supports source accounting"
         adapter_callee = _string_field(source_memento, "adapter_callee")
         helper_callee = _string_field(source_memento, "helper_callee")
-        if _is_instance_field_assign(stmt):
-            return "warranted", "emitted into python.instance-field-universe"
+        assign_param = _instance_field_assign_param(stmt)
+        if assign_param is not None:
+            if not default_params or assign_param in default_params:
+                return "warranted", "emitted into python.instance-field-universe"
+            return "support", "unrelated constructor field assignment supports source accounting"
         if adapter_callee and _is_instance_field_adapter_assign(stmt, adapter_callee):
             return "warranted", "emitted into python.instance-field-universe"
         if helper_callee and _is_instance_field_helper_assign(stmt, helper_callee):
             return "warranted", "emitted into python.instance-field-universe"
+        if _is_instance_field_call_assign(stmt):
+            return "support", "unrelated constructor field call assignment supports source accounting"
         if _is_instance_field_return(stmt):
             return "warranted", "emitted into python.instance-field-universe"
         return "unclassified", "instance-field source not emitted"
@@ -963,6 +979,13 @@ def _classify_universe_source_statement(
             return "warranted", "emitted into python.return-isinstance-universe"
         return "unclassified", "return-isinstance source not emitted"
     return "unclassified", "source warrant role has no source-audit classifier"
+
+
+def _constructor_default_param_names(source_memento: dict[str, Any]) -> Set[str]:
+    raw = source_memento.get("constructor_default_param_names")
+    if not isinstance(raw, list):
+        return set()
+    return {value for value in raw if isinstance(value, str)}
 
 
 def _classify_translate_source_statement(stmt: ast.stmt) -> Tuple[str, str]:
@@ -1033,22 +1056,28 @@ def _is_lstrip_return(stmt: ast.stmt) -> bool:
 
 
 def _is_instance_field_assign(stmt: ast.stmt) -> bool:
+    return _instance_field_assign_param(stmt) is not None
+
+
+def _instance_field_assign_param(stmt: ast.stmt) -> Optional[str]:
     if isinstance(stmt, ast.Assign):
         if len(stmt.targets) != 1:
-            return False
+            return None
         target = stmt.targets[0]
         value = stmt.value
     elif isinstance(stmt, ast.AnnAssign):
         target = stmt.target
         value = stmt.value
     else:
-        return False
-    return (
+        return None
+    if (
         isinstance(target, ast.Attribute)
         and isinstance(target.value, ast.Name)
         and target.value.id == "self"
         and isinstance(value, ast.Name)
-    )
+    ):
+        return value.id
+    return None
 
 
 def _is_instance_field_adapter_assign(stmt: ast.stmt, adapter_callee: str) -> bool:
@@ -1099,6 +1128,28 @@ def _is_instance_field_helper_assign(stmt: ast.stmt, helper_callee: str) -> bool
     )
 
 
+def _is_instance_field_call_assign(stmt: ast.stmt) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    return (
+        isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+        and isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+    )
+
+
 def _is_list_adapter_active_if(stmt: ast.stmt) -> bool:
     if not isinstance(stmt, ast.If) or stmt.orelse or len(stmt.body) != 1:
         return False
@@ -1139,20 +1190,111 @@ def _is_transparent_typing_cast_call(node: ast.AST) -> bool:
 
 
 def _is_instance_field_default_if(stmt: ast.stmt) -> bool:
+    return _instance_field_default_if_param(stmt) is not None
+
+
+def _instance_field_default_if_param(stmt: ast.stmt) -> Optional[str]:
     if not isinstance(stmt, ast.If) or stmt.orelse or len(stmt.body) != 1:
-        return False
-    if not _is_param_none_check(stmt.test):
-        return False
+        return None
+    param_name = _param_none_check(stmt.test)
+    if param_name is None:
+        return None
     body_stmt = stmt.body[0]
     if not isinstance(body_stmt, ast.Assign) or len(body_stmt.targets) != 1:
-        return False
+        return None
     target = body_stmt.targets[0]
     value = body_stmt.value
-    return (
+    if (
         isinstance(target, ast.Name)
+        and target.id == param_name
         and isinstance(value, ast.Attribute)
         and isinstance(value.value, ast.Name)
         and value.value.id == "self"
+    ):
+        return param_name
+    return None
+
+
+def _is_instance_field_validation_guard(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.If)
+        and not stmt.orelse
+        and len(stmt.body) == 1
+        and isinstance(stmt.body[0], ast.Raise)
+    )
+
+
+def _instance_field_normalized_param(stmt: ast.stmt) -> Optional[str]:
+    if not isinstance(stmt, ast.If) or len(stmt.body) != 1 or len(stmt.orelse) > 1:
+        return None
+    param_name = _param_not_none_check(stmt.test)
+    if param_name is None:
+        param_name = _param_none_check(stmt.test)
+    if param_name is None:
+        return None
+    if not _is_name_rebind(stmt.body[0], param_name):
+        return None
+    if stmt.orelse and not _is_name_rebind(stmt.orelse[0], param_name):
+        return None
+    return param_name
+
+
+def _param_none_check(node: ast.expr) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.Is)
+        or len(node.comparators) != 1
+    ):
+        return None
+    left = node.left
+    right = node.comparators[0]
+    if (
+        isinstance(left, ast.Name)
+        and isinstance(right, ast.Constant)
+        and right.value is None
+    ):
+        return left.id
+    if (
+        isinstance(right, ast.Name)
+        and isinstance(left, ast.Constant)
+        and left.value is None
+    ):
+        return right.id
+    return None
+
+
+def _param_not_none_check(node: ast.expr) -> Optional[str]:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or not isinstance(node.ops[0], ast.IsNot)
+        or len(node.comparators) != 1
+    ):
+        return None
+    left = node.left
+    right = node.comparators[0]
+    if (
+        isinstance(left, ast.Name)
+        and isinstance(right, ast.Constant)
+        and right.value is None
+    ):
+        return left.id
+    if (
+        isinstance(right, ast.Name)
+        and isinstance(left, ast.Constant)
+        and left.value is None
+    ):
+        return right.id
+    return None
+
+
+def _is_name_rebind(stmt: ast.stmt, name: str) -> bool:
+    return (
+        isinstance(stmt, ast.Assign)
+        and len(stmt.targets) == 1
+        and isinstance(stmt.targets[0], ast.Name)
+        and stmt.targets[0].id == name
     )
 
 

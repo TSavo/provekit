@@ -3116,6 +3116,111 @@ class HMACAlgorithm:
     ), audit
 
 
+def test_instance_field_universe_scans_later_constructor_defaults(vendor_path):
+    vendor_path(
+        "vendinst_later_default_attr",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class Signer:
+    _base64_alphabet = b"abcdefghijklmnopqrstuvwxyz"
+    default_key_derivation = "django-concat"
+
+    def __init__(
+        self,
+        secret_key,
+        salt=b"itsdangerous.Signer",
+        sep=b".",
+        key_derivation=None,
+    ):
+        self.secret_key = secret_key
+        self.sep = want_bytes(sep)
+
+        if self.sep in self._base64_alphabet:
+            raise ValueError("bad separator")
+
+        if salt is not None:
+            salt = want_bytes(salt)
+        else:
+            salt = b"itsdangerous.Signer"
+
+        self.salt = salt
+
+        if key_derivation is None:
+            key_derivation = self.default_key_derivation
+
+        self.key_derivation = key_derivation
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_later_default_attr
+
+        def test_default_key_derivation():
+            signer = vendinst_later_default_attr.Signer("secret")
+            assert signer.key_derivation == signer.default_key_derivation
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_later_default_attr.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    field_warrants = [
+        warrant
+        for warrant in assertion.source_warrants
+        if warrant.get("role") == "python.instance-field-universe"
+    ]
+    assert len(field_warrants) == 1
+    assert field_warrants[0].get("source_function_name") == "Signer.__init__"
+    assert field_warrants[0].get("constructor_default_param_names") == [
+        "key_derivation"
+    ]
+    assert (
+        field_warrants[0].get("constructor_default_attr_name")
+        == "default_key_derivation"
+    )
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.instance-field-universe"
+        and audit["source_memento"].get("source_function_name")
+        == "Signer.__init__"
+    )
+    assert audit["source_memento"].get("constructor_default_attr_name") == (
+        "default_key_derivation"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "support"
+        and locus.get("ast_kind") == "If"
+        for locus in audit["loci"]
+    ), audit
+    assert any(
+        locus["status"] == "warranted"
+        and locus.get("ast_kind") == "Assign"
+        for locus in audit["loci"]
+    ), audit
+
+
 def test_constant_vendor_vector_mismatch_refuses(vendor_path):
     from sugar_lift_py_tests.translate_universe import constant_universe_for_callee
 

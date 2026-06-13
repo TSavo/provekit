@@ -1132,14 +1132,24 @@ def _constructor_field_assignment(
     matched: Optional[_ConstructorFieldAssignment] = None
     default_attrs: dict[str, str] = {}
     call_aliases = _module_call_aliases(tree, module_name)
-    seen_field_assign = False
+    tainted_params: set[str] = set()
     for stmt in init_body:
-        if _is_super_init_expr(stmt) and not seen_field_assign:
+        if _is_super_init_expr(stmt):
+            continue
+        if _constructor_validation_guard_stmt(stmt):
             continue
         default_attr = _constructor_default_attr_stmt(stmt, init_params)
-        if default_attr is not None and not seen_field_assign:
+        if default_attr is not None:
             param_name, attr_name = default_attr
             default_attrs[param_name] = attr_name
+            continue
+        normalized_param = _constructor_param_normalizer_stmt(
+            stmt,
+            init_params,
+            call_aliases,
+        )
+        if normalized_param is not None:
+            tainted_params.add(normalized_param)
             continue
         field = _constructor_field_assignment_stmt(
             stmt,
@@ -1148,9 +1158,10 @@ def _constructor_field_assignment(
         )
         if field is None:
             return None
-        seen_field_assign = True
         assign, assigned_field, param_name, adapter_callee, helper_callee = field
         if assigned_field == field_name:
+            if param_name in tainted_params:
+                return None
             matched = _ConstructorFieldAssignment(
                 assign=assign,
                 param_name=param_name,
@@ -1159,6 +1170,102 @@ def _constructor_field_assignment(
                 helper_callee=helper_callee,
             )
     return matched
+
+
+def _constructor_validation_guard_stmt(stmt: ast.stmt) -> bool:
+    return (
+        isinstance(stmt, ast.If)
+        and not stmt.orelse
+        and len(stmt.body) == 1
+        and isinstance(stmt.body[0], ast.Raise)
+    )
+
+
+def _constructor_param_normalizer_stmt(
+    stmt: ast.stmt,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[str]:
+    if not isinstance(stmt, ast.If) or len(stmt.body) != 1 or len(stmt.orelse) > 1:
+        return None
+    param_name = _not_none_guarded_param_name(stmt.test, init_params)
+    if param_name is None:
+        param_name = _none_guarded_param_name(stmt.test, init_params)
+    if param_name is None:
+        return None
+    if not _constructor_param_rebinds_to_known_value(
+        stmt.body[0],
+        param_name,
+        init_params,
+        call_aliases,
+    ):
+        return None
+    if stmt.orelse and not _constructor_param_rebinds_to_known_value(
+        stmt.orelse[0],
+        param_name,
+        init_params,
+        call_aliases,
+    ):
+        return None
+    return param_name
+
+
+def _constructor_param_rebinds_to_known_value(
+    stmt: ast.stmt,
+    param_name: str,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> bool:
+    if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+        return False
+    target = stmt.targets[0]
+    if not isinstance(target, ast.Name) or target.id != param_name:
+        return False
+    value = stmt.value
+    if _literal_value_kind(value) is not None:
+        return True
+    if isinstance(value, ast.Name) and value.id == param_name:
+        return True
+    adapter = _constructor_adapter_call(value, init_params, call_aliases)
+    if adapter is not None and adapter[0] == param_name:
+        return True
+    return _constructor_param_default_call(value, init_params)
+
+
+def _constructor_param_default_call(
+    value: ast.expr,
+    init_params: list[str],
+) -> bool:
+    if not isinstance(value, ast.Call) or value.keywords:
+        return False
+    if isinstance(value.func, ast.Name):
+        pass
+    elif isinstance(value.func, ast.Attribute):
+        if not _constructor_arg_term(value.func.value, init_params):
+            return False
+    else:
+        return False
+    return all(
+        not isinstance(arg, ast.Starred)
+        and _constructor_arg_term(arg, init_params)
+        for arg in value.args
+    )
+
+
+def _constructor_arg_term(
+    value: ast.expr,
+    init_params: list[str],
+) -> bool:
+    if _literal_value_kind(value) is not None:
+        return True
+    if isinstance(value, ast.Name):
+        return value.id in init_params[1:]
+    if isinstance(value, ast.Attribute):
+        cur = value
+        while isinstance(cur, ast.Attribute):
+            cur = cur.value
+        return isinstance(cur, ast.Name) and cur.id == init_params[0]
+    return False
 
 
 def _constructor_field_assignment_stmt(
@@ -1269,6 +1376,30 @@ def _none_guarded_param_name(
         not isinstance(test, ast.Compare)
         or len(test.ops) != 1
         or not isinstance(test.ops[0], ast.Is)
+        or len(test.comparators) != 1
+    ):
+        return None
+    left = test.left
+    right = test.comparators[0]
+    if isinstance(left, ast.Name) and _is_none_literal(right):
+        param_name = left.id
+    elif isinstance(right, ast.Name) and _is_none_literal(left):
+        param_name = right.id
+    else:
+        return None
+    if param_name not in init_params[1:]:
+        return None
+    return param_name
+
+
+def _not_none_guarded_param_name(
+    test: ast.expr,
+    init_params: list[str],
+) -> Optional[str]:
+    if (
+        not isinstance(test, ast.Compare)
+        or len(test.ops) != 1
+        or not isinstance(test.ops[0], ast.IsNot)
         or len(test.comparators) != 1
     ):
         return None

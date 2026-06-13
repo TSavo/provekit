@@ -29,6 +29,11 @@ def test_hmac_algorithm_default_digest_method():
     assert alg.digest_method == alg.default_digest_method
 
 
+def test_signer_default_key_derivation():
+    alg = signer.Signer("secret")
+    assert alg.key_derivation == signer.Signer.default_key_derivation
+
+
 def test_signing_algorithm_get_signature_is_abstract():
     with pytest.raises(NotImplementedError):
         signer.SigningAlgorithm.get_signature(None, b"k", b"v")

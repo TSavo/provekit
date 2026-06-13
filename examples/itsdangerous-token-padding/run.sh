@@ -164,6 +164,56 @@ if not any(
     for locus in hmac_audit["loci"]
 ):
     raise SystemExit("FAIL: HMACAlgorithm digest-method default argument was not warranted")
+signer_key_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.instance-field-universe"
+    and "itsdangerous.signer.Signer"
+    in audit.get("contract", {}).get("name", "")
+    and audit.get("source_memento", {}).get("constructor_default_attr_name")
+    == "default_key_derivation"
+]
+if len(signer_key_audits) != 1:
+    raise SystemExit(
+        "FAIL: expected one Signer.key_derivation constructor-field audit, "
+        f"got {len(signer_key_audits)}"
+    )
+signer_key_audit = signer_key_audits[0]
+signer_key_totals = signer_key_audit["totals"]
+signer_key_memento = signer_key_audit["source_memento"]
+if signer_key_memento.get("source_function_name") != "Signer.__init__":
+    raise SystemExit(
+        "FAIL: Signer source oracle should point at constructor: "
+        f"{signer_key_memento!r}"
+    )
+if signer_key_memento.get("constructor_default_param_names") != ["key_derivation"]:
+    raise SystemExit(
+        "FAIL: Signer source memento did not record the defaulted param: "
+        f"{signer_key_memento!r}"
+    )
+if signer_key_memento.get("constructor_default_attr_name") != "default_key_derivation":
+    raise SystemExit(
+        "FAIL: Signer source memento did not record the default attr: "
+        f"{signer_key_memento!r}"
+    )
+if signer_key_totals.get("unclassified_source") != 0:
+    raise SystemExit(
+        "FAIL: Signer.key_derivation source dig has unclassified source: "
+        f"totals={signer_key_totals}"
+    )
+if not any(
+    locus.get("status") == "warranted"
+    and locus.get("ast_kind") == "If"
+    and locus.get("ast_path") == "$.body[5]"
+    for locus in signer_key_audit["loci"]
+):
+    raise SystemExit("FAIL: Signer key-derivation default branch was not warranted")
+if not any(
+    locus.get("status") == "support"
+    and locus.get("ast_kind") == "If"
+    and "validation guard" in locus.get("reason", "")
+    for locus in signer_key_audit["loci"]
+):
+    raise SystemExit("FAIL: Signer separator validation guard was not accounted as support")
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -493,6 +543,15 @@ print(
     f"support={hmac_totals.get('source_support', 0)}",
     f"refused={hmac_totals['source_refused']}",
     f"unclassified={hmac_totals['unclassified_source']}",
+)
+print(
+    "source audit Signer.key_derivation:",
+    f"loci={signer_key_totals['source_loci']}",
+    f"warranted={signer_key_totals['source_warranted']}",
+    f"inactive={signer_key_totals['source_inactive']}",
+    f"support={signer_key_totals.get('source_support', 0)}",
+    f"refused={signer_key_totals['source_refused']}",
+    f"unclassified={signer_key_totals['unclassified_source']}",
 )
 print(
     "source audit SigningAlgorithm.get_signature:",
