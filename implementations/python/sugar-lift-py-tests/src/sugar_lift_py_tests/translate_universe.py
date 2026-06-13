@@ -2063,6 +2063,34 @@ class ExceptionHandlerRaiseUniverse:
     source_memento: Optional[dict[str, Any]] = None
 
 
+@dataclass(frozen=True)
+class ExceptionBoolReturnUniverse:
+    """A validator wrapper over an exception-bearing inner call.
+
+    Shape:
+      try:
+          self.inner(...)
+          return True
+      except SomeException:
+          return False
+
+    The universe does not claim the inner call always raises or always returns.
+    It contributes the value relation between the wrapper's False result and
+    the existing raised-exception call surface for the inner call.
+    """
+
+    exception_name: str
+    success_value: bool
+    exception_value: bool
+    delegate: str
+    args: tuple
+    module: str
+    qualname: str
+    source_path: str
+    lineno: int
+    source_memento: Optional[dict[str, Any]] = None
+
+
 @functools.lru_cache(maxsize=None)
 def raise_locus_universe_for_callee(
     callee: str,
@@ -2160,6 +2188,139 @@ def exception_handler_raise_universe_for_callee(
         ),
         None,
     )
+
+
+@functools.lru_cache(maxsize=None)
+def exception_bool_return_universe_for_callee(
+    callee: str,
+) -> Tuple[Optional[ExceptionBoolReturnUniverse], Optional[TranslateWalkRefusal]]:
+    resolved = _resolve_vendor_function(callee, allow_methods=True)
+    if resolved is None:
+        return None, None
+    _tree, fn, spec_origin, module_name, fn_name = resolved
+    if "." not in fn_name:
+        return None, None
+    class_qualname, _method_name = fn_name.rsplit(".", 1)
+    source_memento = _source_memento_for_resolved_function(fn, spec_origin)
+    body = [
+        stmt
+        for stmt in fn.body
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+    ]
+    if len(body) != 1 or not isinstance(body[0], ast.Try):
+        return None, None
+    try_stmt = body[0]
+    if try_stmt.orelse or try_stmt.finalbody or len(try_stmt.handlers) != 1:
+        return None, None
+    if len(try_stmt.body) != 2:
+        return None, None
+    call_stmt, success_stmt = try_stmt.body
+    if not isinstance(call_stmt, ast.Expr) or not isinstance(call_stmt.value, ast.Call):
+        return None, None
+    delegate_call = call_stmt.value
+    if not (
+        isinstance(delegate_call.func, ast.Attribute)
+        and isinstance(delegate_call.func.value, ast.Name)
+        and fn.args.args
+        and delegate_call.func.value.id == fn.args.args[0].arg
+    ):
+        return None, None
+    success_value = _return_bool(success_stmt)
+    if success_value is None:
+        return None, None
+    handler = try_stmt.handlers[0]
+    exception_name = _exception_handler_type_name(handler)
+    if exception_name is None:
+        return None, None
+    if len(handler.body) != 1:
+        return None, None
+    exception_value = _return_bool(handler.body[0])
+    if exception_value is None or exception_value == success_value:
+        return None, None
+
+    params = [arg.arg for arg in fn.args.args]
+    specs = []
+    for arg in delegate_call.args:
+        spec = _resolve_spec(arg, params, {})
+        if spec is None:
+            return (
+                None,
+                TranslateWalkRefusal(
+                    callee,
+                    "exception-bool-return inner call argument is neither a "
+                    "parameter nor a literal",
+                ),
+            )
+        specs.append(spec)
+    for keyword in delegate_call.keywords:
+        if keyword.arg is None:
+            return (
+                None,
+                TranslateWalkRefusal(
+                    callee,
+                    "exception-bool-return inner call uses **kwargs forwarding; "
+                    "the keyword surface is runtime-selected",
+                ),
+            )
+        spec = _resolve_spec(keyword.value, params, {})
+        if spec is None:
+            return (
+                None,
+                TranslateWalkRefusal(
+                    callee,
+                    f"exception-bool-return keyword {keyword.arg!r} is not "
+                    "a parameter or literal",
+                ),
+            )
+        specs.append(("kw", keyword.arg, spec))
+
+    delegate = f"{module_name}.{class_qualname}.{delegate_call.func.attr}"
+    if source_memento is not None:
+        source_memento = dict(source_memento)
+        source_memento["source_function_name"] = fn_name
+        source_memento["exception_bool_return_exception_type"] = exception_name
+        source_memento["exception_bool_return_try_line"] = try_stmt.lineno
+        source_memento["exception_bool_return_delegate"] = delegate
+        source_memento["exception_bool_return_success_value"] = success_value
+        source_memento["exception_bool_return_exception_value"] = exception_value
+    return (
+        ExceptionBoolReturnUniverse(
+            exception_name=exception_name,
+            success_value=success_value,
+            exception_value=exception_value,
+            delegate=delegate,
+            args=tuple(specs),
+            module=module_name,
+            qualname=f"{module_name}.{fn_name}",
+            source_path=spec_origin,
+            lineno=fn.lineno,
+            source_memento=source_memento,
+        ),
+        None,
+    )
+
+
+def _return_bool(stmt: ast.stmt) -> Optional[bool]:
+    if (
+        isinstance(stmt, ast.Return)
+        and isinstance(stmt.value, ast.Constant)
+        and isinstance(stmt.value.value, bool)
+    ):
+        return bool(stmt.value.value)
+    return None
+
+
+def _exception_handler_type_name(handler: ast.ExceptHandler) -> Optional[str]:
+    typ = handler.type
+    if isinstance(typ, ast.Name):
+        return typ.id
+    if isinstance(typ, ast.Attribute):
+        return typ.attr
+    return None
 
 
 def _single_handler_raise(

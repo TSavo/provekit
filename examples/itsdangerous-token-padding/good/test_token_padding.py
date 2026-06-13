@@ -39,6 +39,11 @@ def test_signer_secret_key_property():
     assert alg.secret_key == b"secret"
 
 
+def test_signer_validate_rejects_bad_signature():
+    alg = signer.Signer("secret")
+    assert alg.validate(b"bad") == False
+
+
 def test_signer_none_key_derivation_returns_secret_key():
     alg = signer.Signer("secret", key_derivation="none")
     assert alg.derive_key(b"raaaa") == b"raaaa"
@@ -103,3 +108,8 @@ def test_timed_serializer_loads_unsafe_bad_payload():
         )
         == (False, None)
     )
+
+
+def test_timestamp_signer_validate_rejects_bad_signature():
+    alg = timed.TimestampSigner("secret")
+    assert alg.validate(b"bad") == False

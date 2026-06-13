@@ -6775,6 +6775,168 @@ def test_pytest_raises_conjoins_exception_handler_raise_universe(vendor_path):
     ), audit
 
 
+def test_exception_bool_return_universe_walks_validate_wrapper(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+    )
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_bool_source",
+        """
+        class BadSignature(Exception):
+            pass
+
+        class Signer:
+            def unsign(self, value):
+                raise BadSignature("bad")
+
+            def validate(self, value):
+                try:
+                    self.unsign(value)
+                    return True
+                except BadSignature:
+                    return False
+        """,
+    )
+    u, r = exception_bool_return_universe_for_callee(
+        "vendtry_bool_source.Signer.validate"
+    )
+    assert r is None and u is not None
+    assert u.exception_name == "BadSignature"
+    assert u.success_value is True
+    assert u.exception_value is False
+    assert u.delegate == "vendtry_bool_source.Signer.unsign"
+    assert u.args == (("param", 1),)
+    assert u.source_memento is not None
+    assert u.source_memento["source_function_name"] == "Signer.validate"
+    assert u.source_memento["exception_bool_return_exception_type"] == "BadSignature"
+
+
+def test_exception_bool_return_conjoins_raised_exception_relation(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+    )
+    from sugar_lift_py_tests.ir import _Atomic, _Connective, _ConstBool, _ConstStr, _Ctor
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_bool_l2",
+        """
+        class BadSignature(Exception):
+            pass
+
+        class Signer:
+            def unsign(self, value):
+                raise BadSignature("bad")
+
+            def validate(self, value):
+                try:
+                    self.unsign(value)
+                    return True
+                except BadSignature:
+                    return False
+        """,
+    )
+    out = _lift(
+        """
+        import vendtry_bool_l2
+
+        def test_validate():
+            signer = vendtry_bool_l2.Signer()
+            assert signer.validate(b"bad") == False
+        """
+    )
+    decl = next(
+        d
+        for d in out.decls
+        if d.name.endswith("::assertion")
+        and "vendtry_bool_l2.Signer.validate" in d.name
+    )
+    false_links = []
+    raised_terms = []
+    atoms = []
+
+    def walk_formula(formula):
+        if isinstance(formula, _Atomic):
+            atoms.append(formula)
+            return
+        if isinstance(formula, _Connective):
+            for operand in formula.operands:
+                walk_formula(operand)
+
+    walk_formula(decl.inv)
+    for atom in atoms:
+        if getattr(atom, "name", None) != "=":
+            continue
+        lhs, rhs = getattr(atom, "args", ())
+        if isinstance(lhs, _Ctor) and lhs.name == "raised_exc_a1":
+            raised_terms.append((lhs, rhs))
+        if isinstance(rhs, _ConstBool) and rhs.value is False:
+            false_links.append(atom)
+
+    assert any(
+        isinstance(rhs, _ConstStr) and rhs.value == "BadSignature"
+        for _, rhs in raised_terms
+    )
+    assert false_links
+    assert any(
+        warrant.get("role") == "python.exception-bool-return-universe"
+        and warrant.get("source_function_name") == "Signer.validate"
+        and warrant.get("exception_bool_return_exception_type") == "BadSignature"
+        for warrant in decl.source_warrants
+    ), decl.source_warrants
+
+
+def test_exception_bool_return_source_accounting(vendor_path):
+    from sugar_lift_py_tests.translate_universe import (
+        exception_bool_return_universe_for_callee,
+        raise_locus_universe_for_callee,
+    )
+
+    exception_bool_return_universe_for_callee.cache_clear()
+    raise_locus_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendtry_bool_audit",
+        """
+        class BadSignature(Exception):
+            pass
+
+        class Signer:
+            def unsign(self, value):
+                raise BadSignature("bad")
+
+            def validate(self, value):
+                try:
+                    self.unsign(value)
+                    return True
+                except BadSignature:
+                    return False
+        """,
+    )
+    out = _lift(
+        """
+        import vendtry_bool_audit
+
+        def test_validate():
+            signer = vendtry_bool_audit.Signer()
+            assert signer.validate(b"bad") == False
+        """
+    )
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.exception-bool-return-universe"
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    warranted_lines = {
+        locus["line"]
+        for locus in audit["loci"]
+        if locus["status"] == "warranted"
+    }
+    assert warranted_lines == set(range(9, 15)), audit
+
+
 # ---------------------------------------------------------------------------
 # chain-expr (census return-binop, 17k bodies): the returned arithmetic
 # expression as STRUCTURE — eq(subject, ctor("+", ...)) over the same

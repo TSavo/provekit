@@ -510,6 +510,75 @@ if not any(
     for locus in timed_loads_unsafe_audit["loci"]
 ):
     raise SystemExit("FAIL: TimedSerializer.loads_unsafe delegate call was not queued as support")
+validate_audits = [
+    audit for audit in result.get("sourceAudits", [])
+    if audit.get("role") == "python.exception-bool-return-universe"
+]
+
+
+def require_validate_audit(function_name, delegate_name, expected_lines):
+    matches = [
+        audit for audit in validate_audits
+        if audit.get("source_memento", {}).get("source_function_name")
+        == function_name
+    ]
+    if len(matches) != 1:
+        raise SystemExit(
+            f"FAIL: expected one {function_name} exception-bool-return audit, "
+            f"got {len(matches)}"
+        )
+    audit = matches[0]
+    totals = audit["totals"]
+    memento = audit["source_memento"]
+    if audit.get("universe_kind") != "exception-bool-return":
+        raise SystemExit(
+            f"FAIL: expected exception-bool-return audit for {function_name}, "
+            f"got {audit.get('universe_kind')}"
+        )
+    if memento.get("exception_bool_return_exception_type") != "BadSignature":
+        raise SystemExit(
+            f"FAIL: {function_name} memento did not record BadSignature: "
+            f"{memento!r}"
+        )
+    if memento.get("exception_bool_return_delegate") != delegate_name:
+        raise SystemExit(
+            f"FAIL: {function_name} memento did not record delegate "
+            f"{delegate_name}: {memento!r}"
+        )
+    if memento.get("exception_bool_return_success_value") is not True:
+        raise SystemExit(f"FAIL: {function_name} success return was not True")
+    if memento.get("exception_bool_return_exception_value") is not False:
+        raise SystemExit(f"FAIL: {function_name} exception return was not False")
+    if "body_text" in memento or "ast_template" in memento:
+        raise SystemExit(f"FAIL: {function_name} source memento embeds source/template body")
+    if totals.get("unclassified_source") != 0:
+        raise SystemExit(
+            f"FAIL: {function_name} source dig has unclassified source: "
+            f"totals={totals}"
+        )
+    warranted_lines = {
+        locus.get("line")
+        for locus in audit["loci"]
+        if locus.get("status") == "warranted"
+    }
+    if warranted_lines != set(expected_lines):
+        raise SystemExit(
+            f"FAIL: {function_name} warranted lines mismatch: "
+            f"got={sorted(warranted_lines)} expected={list(expected_lines)}"
+        )
+    return audit, totals
+
+
+signer_validate_audit, signer_validate_totals = require_validate_audit(
+    "Signer.validate",
+    "itsdangerous.signer.Signer.unsign",
+    range(258, 267),
+)
+timestamp_validate_audit, timestamp_validate_totals = require_validate_audit(
+    "TimestampSigner.validate",
+    "itsdangerous.timed.TimestampSigner.unsign",
+    range(160, 168),
+)
 abstract_signature_audits = [
     audit for audit in result.get("sourceAudits", [])
     if audit.get("role") == "python.raise-locus-universe"
@@ -935,6 +1004,24 @@ print(
     f"unclassified={timed_loads_unsafe_totals['unclassified_source']}",
 )
 print(
+    "source audit Signer.validate:",
+    f"loci={signer_validate_totals['source_loci']}",
+    f"warranted={signer_validate_totals['source_warranted']}",
+    f"inactive={signer_validate_totals['source_inactive']}",
+    f"support={signer_validate_totals.get('source_support', 0)}",
+    f"refused={signer_validate_totals['source_refused']}",
+    f"unclassified={signer_validate_totals['unclassified_source']}",
+)
+print(
+    "source audit TimestampSigner.validate:",
+    f"loci={timestamp_validate_totals['source_loci']}",
+    f"warranted={timestamp_validate_totals['source_warranted']}",
+    f"inactive={timestamp_validate_totals['source_inactive']}",
+    f"support={timestamp_validate_totals.get('source_support', 0)}",
+    f"refused={timestamp_validate_totals['source_refused']}",
+    f"unclassified={timestamp_validate_totals['unclassified_source']}",
+)
+print(
     "source audit SigningAlgorithm.get_signature:",
     f"loci={abstract_signature_totals['source_loci']}",
     f"warranted={abstract_signature_totals['source_warranted']}",
@@ -1141,6 +1228,24 @@ if not load_payload_ok:
     print(
         f"FAIL({twin}): expected Serializer.load_payload {expect}, "
         f"statuses={sorted(load_payload_statuses)}"
+    )
+    sys.exit(1)
+validate_rows = [
+    (r.get("property", ""), r.get("status", ""))
+    for r in doc.get("rows", [])
+    if ".validate@test_token_padding.py" in str(r.get("property", ""))
+]
+if len(validate_rows) != 2:
+    print(f"FAIL({twin}): expected two validate rows, got {len(validate_rows)}")
+    sys.exit(1)
+validate_statuses = {s for _, s in validate_rows}
+print(f"validate rows({twin}):")
+for n, s in validate_rows:
+    print(f"  {s:14s} {n[:110]}")
+if not (validate_statuses & ok_words) or (validate_statuses & bad_words):
+    print(
+        f"FAIL({twin}): expected validate rows to discharge, "
+        f"statuses={sorted(validate_statuses)}"
     )
     sys.exit(1)
 print(f"OK({twin}): {expect}")

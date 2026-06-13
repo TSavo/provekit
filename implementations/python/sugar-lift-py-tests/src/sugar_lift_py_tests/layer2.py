@@ -115,6 +115,7 @@ from .translate_universe import (
     constant_universe_for_callee,
     delegation_universe_for_callee,
     eval_predicate,
+    exception_bool_return_universe_for_callee,
     exception_handler_raise_universe_for_callee,
     guard_universe_for_callee,
     instance_field_universe_for_callee,
@@ -599,6 +600,11 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "branch_return_adapter_callee",
         "exception_handler_raise_type",
         "exception_handler_try_line",
+        "exception_bool_return_exception_type",
+        "exception_bool_return_try_line",
+        "exception_bool_return_delegate",
+        "exception_bool_return_success_value",
+        "exception_bool_return_exception_value",
     ):
         if field_name not in warrant:
             continue
@@ -897,6 +903,8 @@ def _classify_universe_source_node(
         return _classify_branch_selected_source_node(stmt, node, source_memento)
     if role == "python.exception-handler-raise-universe":
         return _classify_exception_handler_raise_source_node(stmt, node, source_memento)
+    if role == "python.exception-bool-return-universe":
+        return _classify_exception_bool_return_source_node(stmt, node, source_memento)
     if (
         role == "python.return-isinstance-universe"
         and isinstance(stmt, ast.Return)
@@ -1000,6 +1008,8 @@ def _classify_universe_source_statement(
         return "support", "prelude support for raise-locus accounting"
     if role == "python.exception-handler-raise-universe":
         return _classify_exception_handler_raise_source_node(stmt, stmt, source_memento)
+    if role == "python.exception-bool-return-universe":
+        return _classify_exception_bool_return_source_node(stmt, stmt, source_memento)
     if role == "python.return-isinstance-universe":
         if _is_docstring_stmt(stmt):
             return "support", "docstring metadata supports source accounting only"
@@ -1048,6 +1058,73 @@ def _node_inside_handler_raise(stmt: ast.Try, node: ast.AST, raise_type: str) ->
             if not isinstance(child_stmt, ast.Raise):
                 continue
             if _raise_node_exception_name(child_stmt) != raise_type:
+                continue
+            if any(
+                candidate is node
+                for candidate, _ast_path in _iter_ast_nodes_with_paths(child_stmt, "$")
+            ):
+                return True
+    return False
+
+
+def _classify_exception_bool_return_source_node(
+    stmt: ast.stmt,
+    node: ast.AST,
+    source_memento: dict[str, Any],
+) -> Tuple[str, str]:
+    if _is_docstring_stmt(stmt):
+        return "support", "docstring metadata supports source accounting only"
+    if not isinstance(stmt, ast.Try):
+        return "support", "non-wrapper path support for exception-bool-return accounting"
+    raise_type = _string_field(
+        source_memento,
+        "exception_bool_return_exception_type",
+    )
+    if isinstance(node, ast.Try):
+        return "warranted", "try/except path emitted into python.exception-bool-return-universe"
+    if isinstance(node, ast.ExceptHandler):
+        if _exception_handler_catches_type(node, raise_type):
+            return "warranted", "exception handler emitted into python.exception-bool-return-universe"
+        return "support", "non-selected handler support for exception-bool-return accounting"
+    if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant):
+        if isinstance(node.value.value, bool):
+            return "warranted", "boolean return emitted into python.exception-bool-return-universe"
+    if _node_inside_try_body_call(stmt, node):
+        return "warranted", "inner call emitted into python.exception-bool-return-universe"
+    if _node_inside_exception_bool_return(stmt, node):
+        return "warranted", "caught exception return path emitted into python.exception-bool-return-universe"
+    return "support", "wrapper context support for exception-bool-return accounting"
+
+
+def _exception_handler_catches_type(handler: ast.ExceptHandler, raise_type: str) -> bool:
+    typ = handler.type
+    if isinstance(typ, ast.Name):
+        return typ.id == raise_type
+    if isinstance(typ, ast.Attribute):
+        return typ.attr == raise_type
+    return False
+
+
+def _node_inside_try_body_call(stmt: ast.Try, node: ast.AST) -> bool:
+    if not stmt.body:
+        return False
+    first = stmt.body[0]
+    if not isinstance(first, ast.Expr) or not isinstance(first.value, ast.Call):
+        return False
+    return any(
+        candidate is node
+        for candidate, _ast_path in _iter_ast_nodes_with_paths(first.value, "$")
+    )
+
+
+def _node_inside_exception_bool_return(stmt: ast.Try, node: ast.AST) -> bool:
+    for handler in stmt.handlers:
+        for child_stmt in handler.body:
+            if (
+                not isinstance(child_stmt, ast.Return)
+                or not isinstance(child_stmt.value, ast.Constant)
+                or not isinstance(child_stmt.value.value, bool)
+            ):
                 continue
             if any(
                 candidate is node
@@ -5464,6 +5541,56 @@ def _universe_conjuncts(
                     if _euf_args_all_concrete(term):
                         conjuncts.append(eq(subject_term, term))
 
+        exception_bool_u, exception_bool_refusal = (
+            exception_bool_return_universe_for_callee(callee)
+        )
+        if exception_bool_refusal is not None:
+            out.warnings.append(
+                LiftWarning(
+                    source_path=source_path,
+                    item_name=f"{test_name}::exception-bool-return-universe",
+                    reason=(
+                        f"{exception_bool_refusal.callee}: "
+                        f"{exception_bool_refusal.reason}"
+                    ),
+                )
+            )
+        elif exception_bool_u is not None:
+            if (
+                source_warrants is not None
+                and exception_bool_u.source_memento is not None
+            ):
+                _append_unique_source_warrant(
+                    source_warrants,
+                    _source_warrant_for_universe(
+                        exception_bool_u,
+                        role="python.exception-bool-return-universe",
+                        universe_kind="exception-bool-return",
+                    ),
+                )
+            inner_call_term = _exception_bool_inner_call_term(
+                exception_bool_u,
+                subject_term,
+            )
+            if inner_call_term is not None:
+                raised_term = ctor("raised_exc_a1", [inner_call_term])
+                caught = eq(raised_term, str_const(exception_bool_u.exception_name))
+                exception_result = eq(
+                    subject_term,
+                    bool_const(exception_bool_u.exception_value),
+                )
+                success_result = eq(
+                    subject_term,
+                    bool_const(exception_bool_u.success_value),
+                )
+                conjuncts.extend(
+                    [
+                        implies(exception_result, caught),
+                        implies(caught, exception_result),
+                        implies(success_result, not_(caught)),
+                    ]
+                )
+
         # INSTANCE FIELD GETTER: the source pair
         # ``__init__: self.a = value`` and ``get: return self.a`` maps the
         # method result to the observed constructor argument at this callsite.
@@ -6219,6 +6346,23 @@ def _receiver_delegate_origin(
         arg_terms=tuple(mapped_args),
         result_term=delegate_term,
     )
+
+
+def _exception_bool_inner_call_term(universe, subject_term: Term) -> Optional[Term]:
+    if not isinstance(subject_term, _Ctor) or not subject_term.args:
+        return None
+    call_args = tuple(subject_term.args)
+    mapped = _mapped_delegate_args(universe.args, call_args)
+    if mapped is None:
+        return None
+    source_memento = getattr(universe, "source_memento", None) or {}
+    param_names = source_memento.get("param_names") or ()
+    if param_names and param_names[0] in {"self", "cls"}:
+        receiver_term = call_args[0]
+        method_name = universe.delegate.rsplit(".", 1)[-1]
+        delegate_args = [receiver_term, *mapped]
+        return ctor(_callval_head(method_name, len(delegate_args)), delegate_args)
+    return ctor(_call_result_head(universe.delegate, len(mapped)), mapped)
 
 
 def _mapped_delegate_args(specs, call_args):
