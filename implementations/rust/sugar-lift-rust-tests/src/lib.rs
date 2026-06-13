@@ -49,7 +49,7 @@ pub struct AdapterOutput {
     /// the reducer at least once. Used to avoid double-counting: asserts in these
     /// fns are already credited under assertions_lifted and must not also appear
     /// in assertions_refused.
-    pub(crate) reduced_helpers: HashSet<String>,
+    pub reduced_helpers: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Default)]

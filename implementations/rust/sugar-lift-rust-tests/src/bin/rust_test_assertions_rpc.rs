@@ -179,8 +179,18 @@ fn lift(params: &Value) -> Value {
                 } else {
                     "warranted"
                 }
+            } else if is_generalizable_value_fn(f) {
+                // A non-test fn whose body is a single pure formula over its
+                // params: its contract is `result = <body>`, constructible and
+                // recompute-verifiable from the memento -- WARRANTED.
+                "warranted"
+            } else if out.reduced_helpers.contains(&name) {
+                // A non-test fn the reducer INLINED to discharge a test: it backs
+                // a warrant, so it is `support` -- accounted, not dark.
+                "support"
             } else {
-                // The kit does not yet speak non-test functions -- the dark.
+                // The kit does not yet speak this function -- the dark. Driving
+                // this to 0 (generalizing such fns into warrants) is the burndown.
                 "unclassified"
             };
             source_loci.push(json!({
@@ -227,6 +237,40 @@ fn collect_item_fns<'a>(items: &'a [syn::Item], out: &mut Vec<&'a syn::ItemFn>) 
             }
             _ => {}
         }
+    }
+}
+
+/// True iff the function body is a single non-diverging tail expression that is
+/// a PURE FORMULA over params/literals -- its contract is `result = <body>`,
+/// warrantable by construction. (The narrow, sound shape; widens slice by slice.)
+fn is_generalizable_value_fn(f: &syn::ItemFn) -> bool {
+    match f.block.stmts.as_slice() {
+        [syn::Stmt::Expr(e, None)] => expr_is_pure_formula(e),
+        _ => false,
+    }
+}
+
+/// A pure formula over params and literals: literals, paths, arithmetic/bit ops,
+/// casts, references, field/index, tuples/arrays, and pure named calls. A method
+/// call, macro, `?`, await, or closure is opaque/effectful -> not a pure formula.
+fn expr_is_pure_formula(expr: &syn::Expr) -> bool {
+    use syn::Expr;
+    match expr {
+        Expr::Lit(_) | Expr::Path(_) => true,
+        Expr::Paren(p) => expr_is_pure_formula(&p.expr),
+        Expr::Group(g) => expr_is_pure_formula(&g.expr),
+        Expr::Reference(r) => expr_is_pure_formula(&r.expr),
+        Expr::Cast(c) => expr_is_pure_formula(&c.expr),
+        Expr::Unary(u) => expr_is_pure_formula(&u.expr),
+        Expr::Binary(b) => expr_is_pure_formula(&b.left) && expr_is_pure_formula(&b.right),
+        Expr::Field(f) => expr_is_pure_formula(&f.base),
+        Expr::Index(i) => expr_is_pure_formula(&i.expr) && expr_is_pure_formula(&i.index),
+        Expr::Tuple(t) => t.elems.iter().all(expr_is_pure_formula),
+        Expr::Array(a) => a.elems.iter().all(expr_is_pure_formula),
+        Expr::Call(call) => {
+            matches!(&*call.func, Expr::Path(_)) && call.args.iter().all(expr_is_pure_formula)
+        }
+        _ => false,
     }
 }
 
