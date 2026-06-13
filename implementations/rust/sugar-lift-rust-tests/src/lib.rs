@@ -8,7 +8,6 @@
 // invariants with raw SAT: SAT => consistent/discharged; UNSAT => refused.
 
 pub mod source_oracle;
-pub mod superposition_pins;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
