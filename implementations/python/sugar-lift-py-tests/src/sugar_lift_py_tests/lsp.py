@@ -1507,6 +1507,15 @@ def _unhandled_raise_path_refusal_status(
     node: ast.AST,
     ancestors: tuple[ast.AST, ...],
 ) -> Optional[tuple[str, str]]:
+    guarded_raise = _raise_guard_for_locus(node, ancestors)
+    if guarded_raise is not None:
+        return (
+            "refused",
+            (
+                "raise path refused: guard selects an unmodeled no-return "
+                "raise relation"
+            ),
+        )
     chain = ancestors + (node,)
     raise_stmt = next(
         (item for item in reversed(chain) if isinstance(item, ast.Raise)),
@@ -1523,6 +1532,42 @@ def _unhandled_raise_path_refusal_status(
             ),
         )
     return None
+
+
+def _raise_guard_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[ast.If]:
+    chain = ancestors + (node,)
+    for item in reversed(chain):
+        if not isinstance(item, ast.If):
+            continue
+        if node is item or any(candidate is node for candidate in ast.walk(item.test)):
+            if _stmt_list_eventually_raises(item.body):
+                return item
+        return None
+    return None
+
+
+def _stmt_list_eventually_raises(stmts: list[ast.stmt]) -> bool:
+    for stmt in stmts:
+        if isinstance(stmt, ast.Return):
+            return False
+        if _stmt_always_raises(stmt):
+            return True
+    return False
+
+
+def _stmt_always_raises(stmt: ast.stmt) -> bool:
+    if isinstance(stmt, ast.Raise):
+        return True
+    if isinstance(stmt, ast.If):
+        if not stmt.orelse:
+            return False
+        return _stmt_list_eventually_raises(stmt.body) and _stmt_list_eventually_raises(
+            stmt.orelse
+        )
+    return False
 
 
 def _generator_flow_refusal_status(

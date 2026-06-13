@@ -1937,6 +1937,16 @@ def test_lift_source_refuses_unhandled_raise_path_package_accounting(
         and "raise path" in locus.get("reason", "")
         for locus in raise_loci
     ), raise_loci
+    guard_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_unhandled_raise_path/encoding.py")
+        and locus.get("line") == 3
+        and locus.get("ast_kind") in {"If", "Name"}
+    ]
+    assert guard_loci
+    assert {locus["status"] for locus in guard_loci} == {"refused"}
+    assert all("raise path" in locus.get("reason", "") for locus in guard_loci)
 
 
 def test_lift_source_classifies_typing_cast_wrapper_as_package_warranted(
