@@ -306,17 +306,18 @@ fn collect_fns<'a>(items: &'a [syn::Item], out: &mut Vec<FnRef<'a>>) {
 /// a PURE FORMULA over params/literals -- its contract is `result = <body>`,
 /// warrantable by construction. (The narrow, sound shape; widens slice by slice.)
 fn is_generalizable_value_fn(block: &syn::Block) -> bool {
-    // The body must be: zero or more immutable `let <ident> = <pure formula>;`
-    // bindings, followed by a single pure-formula tail expression. The contract
-    // is `result = <tail with the lets substituted>` -- still a pure formula, so
-    // still sound. (Slice: pure-tail + leading-let.)
+    block_reduces_to_pure_formula(block)
+}
+
+/// A block whose VALUE is a pure formula: zero or more immutable
+/// `let <ident> = <pure formula>;` bindings, then a single pure-formula tail
+/// expression. The contract is `result = <tail, lets substituted>` -- still a
+/// pure formula, so still sound.
+fn block_reduces_to_pure_formula(block: &syn::Block) -> bool {
     let Some((syn::Stmt::Expr(tail, None), prefix)) = block.stmts.split_last() else {
         return false;
     };
-    if !expr_is_pure_formula(tail) {
-        return false;
-    }
-    prefix.iter().all(is_immutable_pure_let)
+    expr_is_pure_formula(tail) && prefix.iter().all(is_immutable_pure_let)
 }
 
 /// `let <immutable ident> = <pure formula>;` with no `else` arm.
@@ -358,6 +359,22 @@ fn expr_is_pure_formula(expr: &syn::Expr) -> bool {
         Expr::Call(call) => {
             matches!(&*call.func, Expr::Path(_)) && call.args.iter().all(expr_is_pure_formula)
         }
+        // Control-flow as a VALUE: an ite / match-tree over pure formulas is
+        // itself a pure formula (result = ite(cond, then, else) / match-tree).
+        Expr::If(e) => {
+            expr_is_pure_formula(&e.cond)
+                && block_reduces_to_pure_formula(&e.then_branch)
+                && e.else_branch
+                    .as_ref()
+                    .is_some_and(|(_, els)| expr_is_pure_formula(els))
+        }
+        Expr::Match(m) => {
+            expr_is_pure_formula(&m.expr)
+                && m.arms
+                    .iter()
+                    .all(|a| a.guard.is_none() && expr_is_pure_formula(&a.body))
+        }
+        Expr::Block(b) => block_reduces_to_pure_formula(&b.block),
         _ => false,
     }
 }
