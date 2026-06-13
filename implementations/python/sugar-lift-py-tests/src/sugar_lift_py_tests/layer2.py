@@ -581,6 +581,7 @@ def _lean_source_memento(warrant: dict[str, Any]) -> dict[str, Any]:
         "param_names",
         "constructor_default_param_names",
         "constructor_default_attr_name",
+        "adapter_callee",
     ):
         if field_name not in warrant:
             continue
@@ -689,6 +690,7 @@ def _source_loci_for_memento(
                 universe_kind,
                 stmt,
                 node,
+                source_memento,
             )
             loci.append(
                 _source_line_locus(
@@ -853,6 +855,7 @@ def _classify_universe_source_node(
     universe_kind: str,
     stmt: ast.stmt,
     node: ast.AST,
+    source_memento: dict[str, Any],
 ) -> Tuple[str, str]:
     if role == "python.delegation-universe" and isinstance(stmt, ast.Assign):
         return (
@@ -871,12 +874,13 @@ def _classify_universe_source_node(
         and node.func.id == "isinstance"
     ):
         return "warranted", "isinstance predicate emitted into python.return-isinstance-universe"
-    return _classify_universe_source_statement(role, stmt)
+    return _classify_universe_source_statement(role, stmt, source_memento)
 
 
 def _classify_universe_source_statement(
     role: str,
     stmt: ast.stmt,
+    source_memento: dict[str, Any],
 ) -> Tuple[str, str]:
     if role == "python.translate-universe":
         return _classify_translate_source_statement(stmt)
@@ -913,7 +917,10 @@ def _classify_universe_source_statement(
             return "support", "base constructor call supports construction accounting"
         if _is_instance_field_default_if(stmt):
             return "warranted", "emitted into python.instance-field-universe"
+        adapter_callee = _string_field(source_memento, "adapter_callee")
         if _is_instance_field_assign(stmt):
+            return "warranted", "emitted into python.instance-field-universe"
+        if adapter_callee and _is_instance_field_adapter_assign(stmt, adapter_callee):
             return "warranted", "emitted into python.instance-field-universe"
         if _is_instance_field_return(stmt):
             return "warranted", "emitted into python.instance-field-universe"
@@ -1016,6 +1023,30 @@ def _is_instance_field_assign(stmt: ast.stmt) -> bool:
         and isinstance(target.value, ast.Name)
         and target.value.id == "self"
         and isinstance(value, ast.Name)
+    )
+
+
+def _is_instance_field_adapter_assign(stmt: ast.stmt, adapter_callee: str) -> bool:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return False
+        target = stmt.targets[0]
+        value = stmt.value
+    elif isinstance(stmt, ast.AnnAssign):
+        target = stmt.target
+        value = stmt.value
+    else:
+        return False
+    return (
+        isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+        and isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id == adapter_callee.rsplit(".", 1)[-1]
+        and not value.keywords
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
     )
 
 
@@ -4744,6 +4775,19 @@ def _universe_conjuncts(
                         ),
                     )
                 conjuncts.append(eq(subject_term, value_term))
+                adapter_callee = getattr(inst_u, "adapter_callee", None)
+                if adapter_callee and isinstance(value_term, _Ctor):
+                    conjuncts.extend(
+                        _universe_conjuncts(
+                            adapter_callee,
+                            value_term,
+                            out,
+                            source_path,
+                            test_name,
+                            source_warrants=source_warrants,
+                            _seen=seen,
+                        )
+                    )
     if (
         subject_field_name is not None
         and origin is not None
@@ -4807,6 +4851,19 @@ def _universe_conjuncts(
                         ),
                     )
             conjuncts.append(eq(subject_term, value_term))
+            adapter_callee = getattr(field_u, "adapter_callee", None)
+            if adapter_callee and isinstance(value_term, _Ctor):
+                conjuncts.extend(
+                    _universe_conjuncts(
+                        adapter_callee,
+                        value_term,
+                        out,
+                        source_path,
+                        test_name,
+                        source_warrants=source_warrants,
+                        _seen=seen,
+                    )
+                )
     return conjuncts
 
 
@@ -4869,19 +4926,26 @@ def _constructor_field_universe_value_term(
     arg_term = origin.constructor_args[universe.constructor_param_index]
     default_attr_name = getattr(universe, "constructor_default_attr_name", None)
     if not default_attr_name:
-        return arg_term
+        return _constructor_field_adapter_term(universe, arg_term)
     if (
         universe.constructor_param_name not in origin.constructor_default_params
         and not _is_none_term(arg_term)
     ):
-        return arg_term
+        return _constructor_field_adapter_term(universe, arg_term)
     receiver_name = _receiver_name_for_constructor_field_subject(
         subject_term,
         field_name,
     )
     if receiver_name is None:
-        return arg_term
+        return _constructor_field_adapter_term(universe, arg_term)
     return make_var(f"{receiver_name}.{default_attr_name}")
+
+
+def _constructor_field_adapter_term(universe, arg_term: Term) -> Term:
+    adapter_callee = getattr(universe, "adapter_callee", None)
+    if not adapter_callee:
+        return arg_term
+    return ctor(_call_result_head(adapter_callee, 1), [arg_term])
 
 
 def _receiver_name_for_constructor_field_subject(
@@ -4944,6 +5008,9 @@ def _source_warrant_for_instance_field_universe(
     default_attr_name = getattr(universe, "constructor_default_attr_name", None)
     if default_attr_name:
         warrant["constructor_default_attr_name"] = default_attr_name
+    adapter_callee = getattr(universe, "adapter_callee", None)
+    if adapter_callee:
+        warrant["adapter_callee"] = adapter_callee
     if constructor_default_params:
         warrant["constructor_default_param_names"] = list(constructor_default_params)
     return warrant

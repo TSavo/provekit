@@ -321,6 +321,7 @@ class InstanceFieldUniverse:
     source_memento: Optional[dict[str, Any]] = None
     constructor_source_memento: Optional[dict[str, Any]] = None
     constructor_default_attr_name: Optional[str] = None
+    adapter_callee: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -347,6 +348,7 @@ class ConstructorFieldUniverse:
     constructor_default_attr_name: Optional[str] = None
     forwarder_constructor_qualname: Optional[str] = None
     forwarder_source_memento: Optional[dict[str, Any]] = None
+    adapter_callee: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -354,6 +356,7 @@ class _ConstructorFieldAssignment:
     assign: ast.Assign | ast.AnnAssign
     param_name: str
     default_attr_name: Optional[str] = None
+    adapter_callee: Optional[str] = None
 
 
 _GUARD_TAINTED = object()
@@ -881,7 +884,13 @@ def instance_field_universe_for_callee(
     init_params = _positional_param_names(init_fn)
     if not init_params or init_params[0] != "self":
         return None, None
-    field = _constructor_field_assignment(init_fn, returned_field, init_params)
+    field = _constructor_field_assignment(
+        init_fn,
+        returned_field,
+        init_params,
+        tree,
+        module_name,
+    )
     if field is None:
         return None, None
     param_name = field.param_name
@@ -907,6 +916,7 @@ def instance_field_universe_for_callee(
             source_memento=source_memento,
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
+            adapter_callee=field.adapter_callee,
         ),
         None,
     )
@@ -926,7 +936,13 @@ def constructor_field_universe_for_callee(
     init_params = _positional_param_names(init_fn)
     if not init_params or init_params[0] != "self":
         return None, None
-    field = _constructor_field_assignment(init_fn, field_name, init_params)
+    field = _constructor_field_assignment(
+        init_fn,
+        field_name,
+        init_params,
+        tree,
+        module_name,
+    )
     if field is None:
         inherited = _constructor_field_from_super_init(
             tree,
@@ -960,6 +976,7 @@ def constructor_field_universe_for_callee(
             lineno=assign.lineno,
             constructor_source_memento=constructor_source_memento,
             constructor_default_attr_name=field.default_attr_name,
+            adapter_callee=field.adapter_callee,
         ),
         None,
     )
@@ -1024,6 +1041,7 @@ def _constructor_field_from_super_init(
         constructor_default_attr_name=base_universe.constructor_default_attr_name,
         forwarder_constructor_qualname=f"{module_name}.{fn_name}",
         forwarder_source_memento=forwarder_source_memento,
+        adapter_callee=base_universe.adapter_callee,
     )
 
 
@@ -1046,6 +1064,39 @@ def _single_constructor_super_init(
     return super_stmt
 
 
+def _module_call_aliases(tree: ast.Module, module_name: str) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            aliases[stmt.name] = f"{module_name}.{stmt.name}"
+        elif isinstance(stmt, ast.ImportFrom):
+            imported_module = _resolved_import_from_module(module_name, stmt)
+            if imported_module is None:
+                continue
+            for alias in stmt.names:
+                if alias.name == "*":
+                    continue
+                aliases[alias.asname or alias.name] = (
+                    f"{imported_module}.{alias.name}"
+                )
+    return aliases
+
+
+def _resolved_import_from_module(
+    module_name: str,
+    stmt: ast.ImportFrom,
+) -> Optional[str]:
+    if stmt.level == 0:
+        return stmt.module
+    parts = module_name.split(".")
+    base = parts[:-stmt.level]
+    if not base and parts:
+        base = parts[:1]
+    if stmt.module:
+        base = [*base, *stmt.module.split(".")]
+    return ".".join(part for part in base if part)
+
+
 def _same_module_base_constructor_callee(
     tree: ast.Module,
     cls: ast.ClassDef,
@@ -1066,12 +1117,15 @@ def _constructor_field_assignment(
     init_fn: ast.FunctionDef,
     field_name: str,
     init_params: list[str],
+    tree: ast.Module,
+    module_name: str,
 ) -> Optional[_ConstructorFieldAssignment]:
     if init_fn.decorator_list:
         return None
     init_body = _body_without_docstring(init_fn.body)
     matched: Optional[_ConstructorFieldAssignment] = None
     default_attrs: dict[str, str] = {}
+    call_aliases = _module_call_aliases(tree, module_name)
     seen_field_assign = False
     for stmt in init_body:
         if _is_super_init_expr(stmt) and not seen_field_assign:
@@ -1081,16 +1135,21 @@ def _constructor_field_assignment(
             param_name, attr_name = default_attr
             default_attrs[param_name] = attr_name
             continue
-        field = _constructor_field_assignment_stmt(stmt, init_params)
+        field = _constructor_field_assignment_stmt(
+            stmt,
+            init_params,
+            call_aliases,
+        )
         if field is None:
             return None
         seen_field_assign = True
-        assign, assigned_field, param_name = field
+        assign, assigned_field, param_name, adapter_callee = field
         if assigned_field == field_name:
             matched = _ConstructorFieldAssignment(
                 assign=assign,
                 param_name=param_name,
                 default_attr_name=default_attrs.get(param_name),
+                adapter_callee=adapter_callee,
             )
     return matched
 
@@ -1098,7 +1157,8 @@ def _constructor_field_assignment(
 def _constructor_field_assignment_stmt(
     stmt: ast.stmt,
     init_params: list[str],
-) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str]]:
+    call_aliases: Optional[dict[str, str]] = None,
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, str, str, Optional[str]]]:
     if isinstance(stmt, ast.Assign):
         if len(stmt.targets) != 1:
             return None
@@ -1110,11 +1170,39 @@ def _constructor_field_assignment_stmt(
     else:
         return None
     assigned_field = _self_attribute_name(target, init_params[0])
-    if not isinstance(value, ast.Name) or value.id not in init_params[1:]:
-        return None
     if assigned_field is None:
         return None
-    return stmt, assigned_field, value.id
+    if isinstance(value, ast.Name) and value.id in init_params[1:]:
+        return stmt, assigned_field, value.id, None
+    adapter = _constructor_adapter_call(value, init_params, call_aliases or {})
+    if adapter is not None:
+        param_name, adapter_callee = adapter
+        return stmt, assigned_field, param_name, adapter_callee
+    return None
+
+
+def _constructor_adapter_call(
+    value: ast.expr,
+    init_params: list[str],
+    call_aliases: dict[str, str],
+) -> Optional[tuple[str, str]]:
+    if not (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and not value.keywords
+        and len(value.args) == 1
+        and not isinstance(value.args[0], ast.Starred)
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id in init_params[1:]
+    ):
+        return None
+    callee = call_aliases.get(value.func.id)
+    if callee is None:
+        return None
+    universe, refusal = bytes_identity_universe_for_callee(callee)
+    if refusal is not None or universe is None:
+        return None
+    return value.args[0].id, callee
 
 
 def _constructor_default_attr_stmt(

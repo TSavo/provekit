@@ -810,10 +810,10 @@ def _local_adapter_assignment_status(
     ancestors: tuple[ast.AST, ...],
     call_aliases: Dict[str, str],
 ) -> Optional[tuple[str, str]]:
-    stmt = _local_name_binding_statement_for_locus(node, ancestors)
+    stmt = _adapter_assignment_statement_for_locus(node, ancestors)
     if stmt is None:
         return None
-    assign_stmt, _target, value = stmt
+    assign_stmt, value = stmt
     if not isinstance(value, ast.Call):
         return None
     if not any(descendant is node for descendant in ast.walk(assign_stmt)):
@@ -834,6 +834,43 @@ def _local_adapter_assignment_status(
     return (
         "warranted",
         "source-backed adapter assignment emitted as recursive universe dig",
+    )
+
+
+def _adapter_assignment_statement_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, ast.expr | None]]:
+    chain = ancestors + (node,)
+    stmt_index: Optional[int] = None
+    stmt: Optional[ast.Assign | ast.AnnAssign] = None
+    for index in range(len(chain) - 1, -1, -1):
+        item = chain[index]
+        if isinstance(item, (ast.Assign, ast.AnnAssign)):
+            stmt_index = index
+            stmt = item
+            break
+    if stmt is None or stmt_index is None:
+        return None
+    owner = _nearest_enclosing_function(chain[:stmt_index])
+    if owner is None:
+        return None
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1 or not _is_adapter_assignment_target(stmt.targets[0]):
+            return None
+        return stmt, stmt.value
+    if not _is_adapter_assignment_target(stmt.target):
+        return None
+    return stmt, stmt.value
+
+
+def _is_adapter_assignment_target(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return True
+    return (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
     )
 
 

@@ -729,6 +729,10 @@ def test_lift_source_warrants_local_adapter_assignment_accounting(
                 nested = want_bytes(helper(value))
                 return value
 
+            class Holder:
+                def __init__(self, sep):
+                    self.sep = want_bytes(sep)
+
             def b64e(s):
                 return s.rstrip(b"=")
             '''
@@ -768,6 +772,18 @@ def test_lift_source_warrants_local_adapter_assignment_accounting(
     assert any(
         locus["status"] == "warranted"
         and locus["line"] == 9
+        and locus.get("ast_kind") == "Call"
+        and "adapter assignment" in locus.get("reason", "")
+        for locus in local_loci
+    ), local_loci
+    assert not [
+        locus
+        for locus in local_loci
+        if locus["line"] == 15 and locus["status"] == "unclassified"
+    ], local_loci
+    assert any(
+        locus["status"] == "warranted"
+        and locus["line"] == 15
         and locus.get("ast_kind") == "Call"
         and "adapter assignment" in locus.get("reason", "")
         for locus in local_loci
@@ -2404,6 +2420,95 @@ class PayloadError(BaseError):
         and locus.get("ast_kind") == "Expr"
         for locus in audits["PayloadError.__init__"]["loci"]
     ), audits["PayloadError.__init__"]
+
+
+def test_constructor_field_universe_maps_adapter_field_assignment(vendor_path):
+    from sugar_lift_py_tests.translate_universe import bytes_identity_universe_for_callee
+
+    bytes_identity_universe_for_callee.cache_clear()
+    vendor_path(
+        "vendinst_adapter_field",
+        '''
+def want_bytes(s, encoding="utf-8", errors="strict"):
+    if isinstance(s, str):
+        s = s.encode(encoding, errors)
+
+    return s
+
+
+class Signer:
+    def __init__(self, sep=b"."):
+        self.sep: bytes = want_bytes(sep)
+''',
+    )
+    out = _lift(
+        """
+        import vendinst_adapter_field
+
+        def test_sep():
+            signer = vendinst_adapter_field.Signer(sep=b".")
+            assert signer.sep == b"wrong"
+        """
+    )
+
+    assertion = next(
+        (
+            d
+            for d in out.decls
+            if d.name.endswith("::assertion")
+            and "vendinst_adapter_field.Signer" in d.name
+        ),
+        None,
+    )
+    assert assertion is not None, [d.name for d in out.decls]
+
+    from sugar_lift_py_tests.ir import ctor, str_const
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    sep_term = ctor("python:bytes", [str_const(".")])
+    adapter_terms = []
+    field_eqs = []
+    identity_eqs = []
+    for atom in _iter_conjuncts(assertion.inv):
+        if getattr(atom, "name", None) != "=":
+            continue
+        args = getattr(atom, "args", ())
+        adapter_side = next(
+            (
+                side
+                for side in args
+                if "callresult_vendinst_adapter_field_want_bytes_a1"
+                in getattr(side, "name", "")
+            ),
+            None,
+        )
+        if adapter_side is not None:
+            adapter_terms.append(adapter_side)
+        if adapter_side is not None and any(
+            getattr(side, "name", "") == "signer$0.sep" for side in args
+        ):
+            field_eqs.append(atom)
+        if adapter_side is not None and sep_term in args:
+            identity_eqs.append(atom)
+
+    assert field_eqs
+    assert identity_eqs
+    assert adapter_terms
+
+    roles = {
+        warrant.get("role")
+        for warrant in assertion.source_warrants
+    }
+    assert {"python.instance-field-universe", "python.bytes-identity-universe"} <= roles
+
+    audits = {
+        audit["role"]: audit
+        for audit in out.source_audits
+        if audit["role"] in {"python.instance-field-universe", "python.bytes-identity-universe"}
+        and "vendinst_adapter_field.Signer" in audit["contract"]["name"]
+    }
+    assert audits["python.instance-field-universe"]["totals"]["unclassified_source"] == 0
+    assert audits["python.bytes-identity-universe"]["totals"]["unclassified_source"] == 0
 
 
 def test_instance_field_universe_maps_default_constructor_field(vendor_path):
