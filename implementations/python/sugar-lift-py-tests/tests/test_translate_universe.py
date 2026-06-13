@@ -462,6 +462,66 @@ def test_lift_source_classifies_imports_as_package_support(tmp_path, monkeypatch
     assert lifted["sourceLedger"]["source_support"] >= len(import_loci)
 
 
+def test_lift_source_warrants_constructor_field_assignments_in_package_accounting(
+    tmp_path, monkeypatch
+):
+    pkg = tmp_path / "vendpkg_constructor_accounting"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    (pkg / "exc.py").write_text(
+        textwrap.dedent(
+            """
+            class BadTimeSignature(Exception):
+                def __init__(self, message, payload=None, date_signed=None):
+                    super().__init__(message, payload)
+                    self.date_signed = date_signed
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_constructor_accounting.encoding as enc
+
+        def test_token():
+            assert enc.b64e("abc") == "abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    constructor_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_constructor_accounting/exc.py")
+        and locus.get("line") == 5
+        and locus.get("ast_kind") in {"Assign", "Attribute", "Name"}
+    ]
+    assert constructor_loci
+    assert {locus["status"] for locus in constructor_loci} == {"warranted"}
+    assert all(
+        "constructor field assignment" in locus.get("reason", "")
+        for locus in constructor_loci
+    )
+
+
 def test_lift_source_refuses_dynamic_receiver_io_package_accounting(
     tmp_path, monkeypatch
 ):

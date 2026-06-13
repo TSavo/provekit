@@ -45,6 +45,7 @@ from .cpython_ctypes_resolver import resolve_ctypes_calls
 from .translate_universe import (
     bytes_identity_universe_for_callee,
     branch_selected_raise_universe_for_callee,
+    constructor_field_universe_for_callee,
     delegation_universe_for_callee,
     exception_bool_return_universe_for_callee,
     exception_handler_raise_universe_for_callee,
@@ -450,6 +451,13 @@ def _package_locus_classification(
     super_init_status = _super_init_support_status(node, ancestors)
     if super_init_status is not None:
         return super_init_status
+    constructor_field_status = _constructor_field_assignment_status(
+        node,
+        ancestors,
+        module_name,
+    )
+    if constructor_field_status is not None:
+        return constructor_field_status
     dynamic_io_status = _dynamic_receiver_io_refusal_status(node, ancestors)
     if dynamic_io_status is not None:
         return dynamic_io_status
@@ -977,6 +985,72 @@ def _is_super_init_support_arg(node: ast.AST) -> bool:
     if isinstance(node, (ast.Tuple, ast.List)):
         return all(_is_super_init_support_arg(value) for value in node.elts)
     return False
+
+
+def _constructor_field_assignment_status(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+    module_name: str,
+) -> Optional[tuple[str, str]]:
+    stmt = _constructor_field_assignment_for_locus(node, ancestors)
+    if stmt is None:
+        return None
+    assign_stmt, owner, field_name = stmt
+    if not any(descendant is node for descendant in ast.walk(assign_stmt)):
+        return None
+    owner_callee = _owner_callee(module_name, owner, ancestors + (node,))
+    if not owner_callee.endswith(".__init__"):
+        return None
+    constructor_callee = owner_callee[: -len(".__init__")]
+    universe, refusal = constructor_field_universe_for_callee(
+        constructor_callee,
+        field_name,
+    )
+    if refusal is not None or universe is None:
+        return None
+    return (
+        "warranted",
+        "constructor field assignment emitted as constructor-field universe fact",
+    )
+
+
+def _constructor_field_assignment_for_locus(
+    node: ast.AST,
+    ancestors: tuple[ast.AST, ...],
+) -> Optional[tuple[ast.Assign | ast.AnnAssign, ast.FunctionDef, str]]:
+    chain = ancestors + (node,)
+    stmt: Optional[ast.Assign | ast.AnnAssign] = None
+    stmt_index: Optional[int] = None
+    for index in range(len(chain) - 1, -1, -1):
+        item = chain[index]
+        if isinstance(item, (ast.Assign, ast.AnnAssign)):
+            stmt = item
+            stmt_index = index
+            break
+    if stmt is None or stmt_index is None:
+        return None
+    owner = _nearest_enclosing_function(chain[:stmt_index])
+    if not isinstance(owner, ast.FunctionDef) or owner.name != "__init__":
+        return None
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1:
+            return None
+        target = stmt.targets[0]
+        value = stmt.value
+    else:
+        target = stmt.target
+        value = stmt.value
+    if value is None or not isinstance(value, ast.Name):
+        return None
+    if value.id not in {arg.arg for arg in owner.args.args[1:]}:
+        return None
+    if not (
+        isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+    ):
+        return None
+    return stmt, owner, target.attr
 
 
 def _dynamic_receiver_io_refusal_status(
