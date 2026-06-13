@@ -1681,6 +1681,12 @@ class DelegationUniverse:
 
 
 @dataclass(frozen=True)
+class _ReceiverMethodDelegate:
+    delegate: str
+    args: tuple
+
+
+@dataclass(frozen=True)
 class BytesIdentityUniverse:
     """`want_bytes`-style adapter for concrete bytes callsites.
 
@@ -1815,6 +1821,8 @@ def _receiver_context_spec(spec):
     call_args[N-1]."""
     if spec is None:
         return None
+    if spec[0] == "receiver-method-call":
+        return None
     if spec[0] != "param":
         return spec
     index = spec[1]
@@ -1825,6 +1833,138 @@ def _receiver_context_spec(spec):
 
 def _resolve_receiver_context_spec(node, params, env):
     return _receiver_context_spec(_resolve_spec(node, params, env))
+
+
+def _receiver_method_delegate_for_call(
+    value: ast.Call,
+    *,
+    tree: ast.Module,
+    module_name: str,
+    fn_name: str,
+    params: list[str],
+    env: dict,
+) -> Tuple[Optional[_ReceiverMethodDelegate], Optional[str]]:
+    if not isinstance(value.func, ast.Attribute):
+        return None, None
+    class_qualname: Optional[str] = None
+    if "." in fn_name:
+        class_qualname, current_method = fn_name.rsplit(".", 1)
+    else:
+        current_method = fn_name
+    self_param = params[0] if params else None
+    if not (
+        class_qualname is not None
+        and self_param is not None
+        and isinstance(value.func.value, ast.Name)
+        and value.func.value.id == self_param
+    ):
+        return None, None
+
+    delegate_name = value.func.attr
+    if delegate_name == current_method:
+        return None, "self-delegation: the equality would be vacuous"
+    if value.keywords:
+        return (
+            None,
+            "keyword arguments in receiver-method delegate call are not yet "
+            "walked (positional mapping only)",
+        )
+    cls = _find_class_path(tree.body, class_qualname.split("."))
+    if cls is None:
+        return (
+            None,
+            f"receiver-method delegate class {class_qualname} is not a stable "
+            "undecorated class in the vendor module",
+        )
+    delegate_fn = next(
+        (
+            stmt
+            for stmt in cls.body
+            if isinstance(stmt, ast.FunctionDef) and stmt.name == delegate_name
+        ),
+        None,
+    )
+    if delegate_fn is None:
+        if any(
+            isinstance(stmt, ast.AsyncFunctionDef)
+            and stmt.name == delegate_name
+            for stmt in cls.body
+        ):
+            return (
+                None,
+                f"receiver-method delegate {delegate_name} is async: the call "
+                "term is a coroutine, not the awaited value",
+            )
+        return (
+            None,
+            f"receiver-method delegate {delegate_name} is not a method in the "
+            "current vendor class",
+        )
+    if delegate_fn.decorator_list:
+        return (
+            None,
+            f"receiver-method delegate {delegate_name} is decorated; its def "
+            "body is not the runtime callable, so determinism evidence cannot "
+            "be read from it",
+        )
+    if _class_member_binding_count(cls, delegate_name) != 1:
+        return (
+            None,
+            f"receiver-method delegate {delegate_name} is rebound in the class "
+            "body; the name does not stably denote the def",
+        )
+    specs = []
+    for arg in value.args:
+        spec = _resolve_receiver_context_spec(arg, params, env)
+        if spec is None:
+            return (
+                None,
+                "receiver-method delegate argument is neither a parameter, "
+                "literal, nor chain name; the forwarded value is not the "
+                "callsite's",
+            )
+        specs.append(spec)
+    return (
+        _ReceiverMethodDelegate(
+            delegate=f"{module_name}.{class_qualname}.{delegate_name}",
+            args=tuple(specs),
+        ),
+        None,
+    )
+
+
+def _dynamic_receiver_dispatch_reason(
+    value: ast.Call,
+    params: list[str],
+) -> Optional[str]:
+    self_param = params[0] if params else None
+    if self_param is None or not isinstance(value.func, ast.Call):
+        return None
+    dispatch = value.func
+    if (
+        isinstance(dispatch.func, ast.Name)
+        and dispatch.func.id == "getattr"
+        and dispatch.args
+        and isinstance(dispatch.args[0], ast.Name)
+        and dispatch.args[0].id == self_param
+    ):
+        return (
+            "dynamic receiver dispatch via getattr(self, ...); the target "
+            "method is runtime-selected and cannot be read as a stable "
+            "same-class delegate"
+        )
+    if (
+        isinstance(dispatch.func, ast.Attribute)
+        and dispatch.func.attr in {"__getattribute__", "__getattr__"}
+        and isinstance(dispatch.func.value, ast.Name)
+        and dispatch.func.value.id == self_param
+    ):
+        return (
+            f"dynamic receiver dispatch via self.{dispatch.func.attr}(...); "
+            "the target method is runtime-selected and cannot be read as a "
+            "stable same-class delegate"
+        )
+    return None
 
 
 _BINOP_SPEC_OPS = {
@@ -1923,6 +2063,29 @@ def delegation_universe_for_callee(
                 "resolution order is no longer the statement order"
             )
         spec = _resolve_spec(stmt.value, params, env)
+        if spec is None and isinstance(stmt.value, ast.Call):
+            dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(
+                stmt.value,
+                params,
+            )
+            if dynamic_receiver_refusal is not None:
+                return refuse(dynamic_receiver_refusal)
+            receiver_delegate, receiver_refusal = _receiver_method_delegate_for_call(
+                stmt.value,
+                tree=tree,
+                module_name=module_name,
+                fn_name=fn_name,
+                params=params,
+                env=env,
+            )
+            if receiver_refusal is not None:
+                return refuse(receiver_refusal)
+            if receiver_delegate is not None:
+                spec = (
+                    "receiver-method-call",
+                    receiver_delegate.delegate,
+                    receiver_delegate.args,
+                )
         if spec is None:
             return refuse(
                 "chain value is computed (not a parameter, literal, or "
@@ -1973,9 +2136,17 @@ def delegation_universe_for_callee(
         spec = _resolve_spec(value, params, env)
         if spec is None:
             return None, None  # free name: not a forwarding body
+        if spec[0] == "receiver-method-call":
+            return universe(
+                kind="delegation-receiver-method",
+                delegate=spec[1],
+                args=spec[2],
+            )
         if spec[0] == "param":
             return universe(kind="identity", param_index=spec[1])
-        return universe(kind="chain-constant", args=(spec,))
+        if spec[0] == "lit":
+            return universe(kind="chain-constant", args=(spec,))
+        return None, None
 
     # imported stdlib delegation: return json.loads(<params/literals>). The
     # vendor source owns the forwarding relation, while the stdlib target is a
@@ -2006,82 +2177,25 @@ def delegation_universe_for_callee(
     # self.g(x). The target body is concrete (same class), but the value remains
     # receiver-dependent, so the emitter uses callval_g(receiver, args...) and
     # queues a recursive source walk over C.g with the same receiver context.
-    if isinstance(value.func, ast.Attribute):
-        class_qualname: Optional[str] = None
-        if "." in fn_name:
-            class_qualname, current_method = fn_name.rsplit(".", 1)
-        else:
-            current_method = fn_name
-        self_param = params[0] if params else None
-        if (
-            class_qualname is not None
-            and self_param is not None
-            and isinstance(value.func.value, ast.Name)
-            and value.func.value.id == self_param
-        ):
-            delegate_name = value.func.attr
-            if delegate_name == current_method:
-                return refuse("self-delegation: the equality would be vacuous")
-            if value.keywords:
-                return refuse(
-                    "keyword arguments in receiver-method delegate call are "
-                    "not yet walked (positional mapping only)"
-                )
-            cls = _find_class_path(tree.body, class_qualname.split("."))
-            if cls is None:
-                return refuse(
-                    f"receiver-method delegate class {class_qualname} is not "
-                    "a stable undecorated class in the vendor module"
-                )
-            delegate_fn = next(
-                (
-                    stmt
-                    for stmt in cls.body
-                    if isinstance(stmt, ast.FunctionDef)
-                    and stmt.name == delegate_name
-                ),
-                None,
-            )
-            if delegate_fn is None:
-                if any(
-                    isinstance(stmt, ast.AsyncFunctionDef)
-                    and stmt.name == delegate_name
-                    for stmt in cls.body
-                ):
-                    return refuse(
-                        f"receiver-method delegate {delegate_name} is async: "
-                        "the call term is a coroutine, not the awaited value"
-                    )
-                return refuse(
-                    f"receiver-method delegate {delegate_name} is not a "
-                    "method in the current vendor class"
-                )
-            if delegate_fn.decorator_list:
-                return refuse(
-                    f"receiver-method delegate {delegate_name} is decorated; "
-                    "its def body is not the runtime callable, so determinism "
-                    "evidence cannot be read from it"
-                )
-            if _class_member_binding_count(cls, delegate_name) != 1:
-                return refuse(
-                    f"receiver-method delegate {delegate_name} is rebound in "
-                    "the class body; the name does not stably denote the def"
-                )
-            specs = []
-            for arg in value.args:
-                spec = _resolve_receiver_context_spec(arg, params, env)
-                if spec is None:
-                    return refuse(
-                        "receiver-method delegate argument is neither a "
-                        "parameter, literal, nor chain name; the forwarded "
-                        "value is not the callsite's"
-                    )
-                specs.append(spec)
-            return universe(
-                kind="delegation-receiver-method",
-                delegate=f"{module_name}.{class_qualname}.{delegate_name}",
-                args=tuple(specs),
-            )
+    dynamic_receiver_refusal = _dynamic_receiver_dispatch_reason(value, params)
+    if dynamic_receiver_refusal is not None:
+        return refuse(dynamic_receiver_refusal)
+    receiver_delegate, receiver_refusal = _receiver_method_delegate_for_call(
+        value,
+        tree=tree,
+        module_name=module_name,
+        fn_name=fn_name,
+        params=params,
+        env=env,
+    )
+    if receiver_refusal is not None:
+        return refuse(receiver_refusal)
+    if receiver_delegate is not None:
+        return universe(
+            kind="delegation-receiver-method",
+            delegate=receiver_delegate.delegate,
+            args=receiver_delegate.args,
+        )
 
     # method delegation: return <param|literal>.method(<params|literals>)
     # (census return-method-call, 113k bodies). Unlike a function

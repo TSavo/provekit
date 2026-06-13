@@ -3992,6 +3992,115 @@ def test_receiver_method_delegation_composes_with_receiver_context(vendor_path):
     assert audits["python.constant-universe"]["totals"]["unclassified_source"] == 0
 
 
+def test_receiver_method_delegation_composes_through_local_alias(vendor_path):
+    from sugar_lift_py_tests.ir import str_const
+    from sugar_lift_py_tests.translate_universe import (
+        constant_universe_for_callee,
+        delegation_universe_for_callee,
+    )
+
+    constant_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_alias",
+        """
+        class Router:
+            def g(self, seed):
+                return "fixed"
+
+            def f(self, seed):
+                value = self.g(seed)
+                return value
+        """,
+    )
+
+    universe, refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_alias.Router.f"
+    )
+    assert refusal is None
+    assert universe is not None
+    assert universe.kind == "delegation-receiver-method"
+    assert universe.delegate == "venddeleg_receiver_alias.Router.g"
+    assert universe.args == (("param", 0),)
+
+    out = _lift(
+        """
+        import venddeleg_receiver_alias
+
+        def test_route():
+            router = venddeleg_receiver_alias.Router()
+            assert router.f("raaaa") == "fixed"
+        """
+    )
+
+    atoms = _delegation_eq_atoms(out, "callval_g_a2")
+    assert atoms, [d.name for d in out.decls]
+    assert any(
+        any("callval_f_a2" in getattr(side, "name", "") for side in atom.args)
+        for atom in atoms
+    ), atoms
+
+    from sugar_lift_py_tests.layer2 import _iter_conjuncts
+
+    fixed_atoms = [
+        atom
+        for d in out.decls
+        if d.name.endswith("::assertion") and d.inv is not None
+        for atom in _iter_conjuncts(d.inv)
+        if getattr(atom, "name", None) == "="
+        and str_const("fixed") in getattr(atom, "args", ())
+        and any(
+            "callval_g_a2" in getattr(side, "name", "")
+            for side in getattr(atom, "args", ())
+        )
+    ]
+    assert fixed_atoms, [d.name for d in out.decls]
+
+    audit = next(
+        audit
+        for audit in out.source_audits
+        if audit["role"] == "python.delegation-universe"
+        and "venddeleg_receiver_alias.Router.f" in audit["contract"]["name"]
+    )
+    assert audit["totals"]["unclassified_source"] == 0
+    assert any(
+        locus["status"] == "warranted" and locus.get("ast_kind") == "Assign"
+        for locus in audit["loci"]
+    ), audit
+
+
+def test_receiver_runtime_dispatch_refuses(vendor_path):
+    from sugar_lift_py_tests.translate_universe import delegation_universe_for_callee
+
+    delegation_universe_for_callee.cache_clear()
+    vendor_path(
+        "venddeleg_receiver_dynamic",
+        """
+        class Router:
+            def direct(self, method_name, seed):
+                return getattr(self, method_name)(seed)
+
+            def alias(self, method_name, seed):
+                value = getattr(self, method_name)(seed)
+                return value
+        """,
+    )
+
+    direct_universe, direct_refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_dynamic.Router.direct"
+    )
+    assert direct_universe is None
+    assert direct_refusal is not None
+    assert "dynamic receiver dispatch" in direct_refusal.reason
+
+    alias_universe, alias_refusal = delegation_universe_for_callee(
+        "venddeleg_receiver_dynamic.Router.alias"
+    )
+    assert alias_universe is None
+    assert alias_refusal is not None
+    assert "dynamic receiver dispatch" in alias_refusal.reason
+
+
 def test_delegation_unwraps_typing_cast_and_carries_source_warrants(vendor_path):
     from sugar_lift_py_tests.ir import str_const
     from sugar_lift_py_tests.translate_universe import (
