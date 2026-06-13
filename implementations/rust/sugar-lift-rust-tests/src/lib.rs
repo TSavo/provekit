@@ -4402,14 +4402,21 @@ fn is_bool_shaped_expr(expr: &Expr) -> bool {
     }
 }
 
-/// A value-position `match` on a scalar (int/char) scrutinee with literal / range
-/// / or / `_` arms and NO arm guards, EXHAUSTIVE via a final `_`. Encoded as the
-/// ite via the existing implies/and atoms: `and_i implies(guard_i, out = term_i)`,
-/// guard_i = the i-th arm's pattern-membership over the scrutinee conjoined with
-/// the negations of earlier arms; the `_` arm is the negation of all earlier.
-/// None if the scrutinee isn't an EUF term, any arm has a guard, any pattern is
-/// not a scalar membership (e.g. enum variant), any body isn't EUF, or there is
-/// no final `_`.
+/// A value-position `match` (no arm guards) over a scalar OR enum scrutinee,
+/// encoded as the ite via the existing implies/and atoms:
+/// `and_i implies(guard_i, out = term_i)`, guard_i = the arm's discriminant
+/// conjoined with the negations of earlier arms. Arm discriminants:
+///   - scalar literal/range/or -> pattern-membership over the scrutinee;
+///   - enum variant (Path / TupleStruct / Struct, all-wild or 1-field binding) ->
+///     `variant_of(scrutinee) == "variant::<tag>"`, the panic-locus form, with a
+///     single field binding mapped to the uninterpreted `payload:<tag>(scrutinee)`
+///     accessor (substituted into the arm body);
+///   - `_` or a bare `Pat::Ident` -> CATCH-ALL: guard = ¬earlier (terminal). A
+///     bare ident is sound whether it is a unit variant or a binding -- for an
+///     exhaustive match `¬earlier` IS the residual case, and the binding (if any)
+///     is substituted to the scrutinee (a no-op for a unit variant).
+/// None if the scrutinee isn't EUF, any arm has a guard, any arm pattern is
+/// unsupported (multi-field binding, nested), or any body isn't EUF.
 fn emit_match_value(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
     let m = match expr {
         Expr::Match(m) => m,
@@ -4423,34 +4430,48 @@ fn emit_match_value(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
     }
     let mut negated: Vec<Rc<Formula>> = Vec::new();
     let mut clauses: Vec<(Rc<Formula>, Rc<Term>)> = Vec::new();
-    let mut saw_catchall = false;
     for arm in &m.arms {
         if arm.guard.is_some() {
             return None;
         }
-        let body = arm_body_euf_term(&arm.body, scope)?;
-        if matches!(&arm.pat, Pat::Wild(_)) {
-            let guard = match negated.len() {
-                0 => atomic_("true", vec![]),
-                1 => negated[0].clone(),
-                _ => and_(negated.clone()),
-            };
-            clauses.push((guard, body));
-            saw_catchall = true;
-            break;
+        let (atom, bindings) = match_arm_discriminant(&scrutinee, &arm.pat)?;
+        let mut body = arm_body_euf_term(&arm.body, scope)?;
+        for (n, t) in &bindings {
+            body = subst_var_in_term(&body, n, t);
         }
-        let membership = pattern_membership_formula(&scrutinee, &arm.pat)?;
-        let mut gp = negated.clone();
-        gp.push(membership.clone());
-        let guard = if gp.len() == 1 {
-            gp.remove(0)
-        } else {
-            and_(gp)
-        };
-        clauses.push((guard, body));
-        negated.push(not_(membership));
+        match atom {
+            // Catch-all (`_` / bare ident): guard = ¬earlier, terminal.
+            None => {
+                let guard = match negated.len() {
+                    0 => atomic_("true", vec![]),
+                    1 => negated[0].clone(),
+                    _ => and_(negated.clone()),
+                };
+                clauses.push((guard, body));
+                let out = make_var("out");
+                return Some(and_(
+                    clauses
+                        .into_iter()
+                        .map(|(g, t)| implies(g, eq(out.clone(), t)))
+                        .collect(),
+                ));
+            }
+            Some(a) => {
+                let mut gp = negated.clone();
+                gp.push(a.clone());
+                let guard = if gp.len() == 1 {
+                    gp.remove(0)
+                } else {
+                    and_(gp)
+                };
+                clauses.push((guard, body));
+                negated.push(not_(a));
+            }
+        }
     }
-    if !saw_catchall || clauses.is_empty() {
+    // No catch-all: an exhaustive variant match -- the conditional clauses are
+    // sound regardless of completeness (each is `if discriminant then out=term`).
+    if clauses.is_empty() {
         return None;
     }
     let out = make_var("out");
@@ -4460,6 +4481,72 @@ fn emit_match_value(expr: &Expr, scope: &TemporalScope) -> Option<Rc<Formula>> {
             .map(|(g, t)| implies(g, eq(out.clone(), t)))
             .collect(),
     ))
+}
+
+/// Classify a match-arm pattern over `scrutinee`: returns (discriminant atom or
+/// None for a catch-all, payload bindings to substitute into the arm body). None
+/// (the outer Option) for an unsupported pattern -> the whole match refuses.
+#[allow(clippy::type_complexity)]
+fn match_arm_discriminant(
+    scrutinee: &Rc<Term>,
+    pat: &Pat,
+) -> Option<(Option<Rc<Formula>>, Vec<(String, Rc<Term>)>)> {
+    let variant_eq = |tag: &str| {
+        eq(
+            Rc::new(Term::Ctor {
+                name: "variant_of".to_string(),
+                args: vec![scrutinee.clone()],
+            }),
+            str_const(format!("variant::{tag}")),
+        )
+    };
+    match pat {
+        Pat::Wild(_) => Some((None, vec![])),
+        Pat::Ident(id) if id.subpat.is_none() && id.mutability.is_none() && id.by_ref.is_none() => {
+            // catch-all binding (or unit variant): bind name -> scrutinee.
+            Some((None, vec![(id.ident.to_string(), scrutinee.clone())]))
+        }
+        Pat::Lit(_) | Pat::Range(_) | Pat::Or(_) | Pat::Paren(_) => {
+            Some((Some(pattern_membership_formula(scrutinee, pat)?), vec![]))
+        }
+        Pat::Path(p) => Some((Some(variant_eq(&path_to_variant_string(&p.path))), vec![])),
+        Pat::TupleStruct(ts) => {
+            let tag = path_to_variant_string(&ts.path);
+            if ts
+                .elems
+                .iter()
+                .all(|e| matches!(e, Pat::Wild(_) | Pat::Rest(_)))
+            {
+                Some((Some(variant_eq(&tag)), vec![]))
+            } else if ts.elems.len() == 1 {
+                match &ts.elems[0] {
+                    Pat::Ident(id)
+                        if id.subpat.is_none()
+                            && id.mutability.is_none()
+                            && id.by_ref.is_none() =>
+                    {
+                        let payload = Rc::new(Term::Ctor {
+                            name: format!("payload:{tag}"),
+                            args: vec![scrutinee.clone()],
+                        });
+                        Some((
+                            Some(variant_eq(&tag)),
+                            vec![(id.ident.to_string(), payload)],
+                        ))
+                    }
+                    Pat::Wild(_) | Pat::Rest(_) => Some((Some(variant_eq(&tag)), vec![])),
+                    _ => None,
+                }
+            } else {
+                None // multi-field binding: payload accessors deferred
+            }
+        }
+        Pat::Struct(s) if s.fields.iter().all(|f| matches!(&*f.pat, Pat::Wild(_))) => {
+            Some((Some(variant_eq(&path_to_variant_string(&s.path))), vec![]))
+        }
+        Pat::Reference(r) => match_arm_discriminant(scrutinee, &r.pat),
+        _ => None,
+    }
 }
 
 /// A match arm's body as an EUF term (a block via block_euf_term, else a direct

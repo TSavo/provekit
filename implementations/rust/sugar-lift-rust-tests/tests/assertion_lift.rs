@@ -6024,19 +6024,56 @@ fn emit_value_contract_scalar_match_warrants_and_composes() {
 }
 
 #[test]
-fn emit_value_contract_match_refuses_non_exhaustive_and_guarded() {
+fn emit_value_contract_match_refuses_guarded_and_multifield() {
     use sugar_lift_rust_tests::emit_value_contract;
-    // no `_` catch-all (enum match -> not scalar membership) and an arm guard are
-    // NOT this shape -> None.
+    // an arm guard and a multi-field tuple-variant binding (payload accessors
+    // deferred) are NOT this shape -> None.
     for src in [
-        "fn f(o: Option<i32>) -> i32 { match o { Some(x) => x, None => 0 } }",
         "fn f(x: i32) -> i32 { match x { n if n > 0 => 1, _ => 0 } }",
+        "fn f(p: Pair) -> i32 { match p { Pair(a, b) => a, _ => 0 } }",
     ] {
         let f: syn::ItemFn = syn::parse_str(src).unwrap();
         assert!(
             emit_value_contract("f", &f.block).is_none(),
-            "enum/guarded match must not warrant via scalar-match: {src}"
+            "guarded / multi-field-binding match must not warrant: {src}"
         );
+    }
+}
+
+#[test]
+fn emit_value_contract_enum_match_warrants_and_composes() {
+    use sugar_lift_rust_tests::emit_value_contract;
+    let z3 = "/usr/local/bin/z3";
+    for src in [
+        // Option payload binding: Some(x) -> variant_of==Some & out=payload:Some(o); None -> ¬earlier.
+        "fn f(o: Option<i32>) -> i32 { match o { Some(x) => x, None => 0 } }",
+        // ignored payload + qualified unit variant.
+        "fn f(r: Result<i32, ()>) -> i32 { match r { Ok(_) => 1, Err(_) => 0 } }",
+    ] {
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let decl = emit_value_contract("f", &f.block)
+            .unwrap_or_else(|| panic!("enum match must warrant: {src}"));
+        let inv = format!("{:?}", decl.inv.clone().expect("inv"));
+        assert!(
+            inv.contains("variant_of"),
+            "uses variant_of discriminant: {src}"
+        );
+        let doc = sugar_ir_symbolic::serialize::marshal_declarations(std::slice::from_ref(&decl));
+        let parsed: serde_json::Value = serde_json::from_str(&doc).unwrap();
+        let parts = sugar_ir_compiler_smt_lib::compile_asserted_to_parts(&parsed[0]["inv"])
+            .unwrap_or_else(|e| panic!("must compile: {src}: {e:?}"));
+        if std::path::Path::new(z3).exists() {
+            let script = format!("{}{}\n(check-sat)\n", parts.preamble, parts.body);
+            let path = std::env::temp_dir().join("sugar_enummatch.smt2");
+            std::fs::write(&path, &script).unwrap();
+            let out = std::process::Command::new(z3).arg(&path).output().unwrap();
+            let so = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                !so.contains("unknown constant") && !so.to_lowercase().contains("error"),
+                "well-sorted: {src}:\n{so}"
+            );
+            assert!(so.contains("sat"), "satisfiable: {src}:\n{so}");
+        }
     }
 }
 
