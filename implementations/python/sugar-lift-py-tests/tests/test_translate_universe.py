@@ -1225,6 +1225,78 @@ def test_lift_source_classifies_delegation_body_as_package_warranted(
     ), helper_loci
 
 
+def test_lift_source_classifies_receiver_method_delegation_body_as_package_warranted(
+    tmp_path,
+    monkeypatch,
+):
+    from sugar_lift_py_tests.translate_universe import (
+        delegation_universe_for_callee,
+    )
+
+    pkg = tmp_path / "vendpkg_receiver_delegation_body"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "encoding.py").write_text(
+        textwrap.dedent(
+            """
+            class Base:
+                def inherited(self, value):
+                    return value
+
+            class C(Base):
+                def helper(self, value):
+                    return value
+
+                def inherited_call(self, value):
+                    return self.inherited(value)
+
+                def same_class_call(self, value):
+                    return self.helper(value)
+
+            def b64e(s):
+                return s.rstrip(b"=")
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    translate_universe_for_callee.cache_clear()
+    delegation_universe_for_callee.cache_clear()
+
+    lifted = _lift_source_from_disk(
+        tmp_path,
+        "test_mod.py",
+        """
+        import vendpkg_receiver_delegation_body.encoding as enc
+
+        def test_token():
+            assert enc.b64e(b"abc") == b"abc"
+        """,
+    )
+
+    audit = next(
+        audit
+        for audit in lifted["sourceAudits"]
+        if audit.get("role") == "python.package-source"
+    )
+    receiver_loci = [
+        locus
+        for locus in audit["loci"]
+        if locus["file"].endswith("vendpkg_receiver_delegation_body/encoding.py")
+        and locus.get("line") in {11, 14}
+    ]
+    assert receiver_loci
+    assert not [
+        locus for locus in receiver_loci if locus["status"] == "unclassified"
+    ], receiver_loci
+    assert all(
+        locus["status"] == "warranted"
+        and "delegation" in locus.get("reason", "")
+        for locus in receiver_loci
+        if locus.get("ast_kind") == "Return"
+    ), receiver_loci
+
+
 def test_lift_source_classifies_typing_cast_wrapper_as_package_warranted(
     tmp_path,
     monkeypatch,
@@ -1545,7 +1617,8 @@ def test_lift_source_classifies_overload_declarations_as_type_metadata(
     assert any(
         locus["file"].endswith("vendpkg_overload_metadata/encoding.py")
         and locus.get("ast_path") == "$.module.body[1].body[2].body[0]"
-        and locus["status"] == "unclassified"
+        and locus["status"] == "warranted"
+        and "delegation" in locus.get("reason", "")
         for locus in audit["loci"]
     ), audit
 

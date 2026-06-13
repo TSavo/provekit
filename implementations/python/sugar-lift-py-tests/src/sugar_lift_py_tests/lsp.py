@@ -1276,7 +1276,9 @@ def _list_adapter_body_status(
         return "support", "docstring metadata supports source accounting only"
     if not _node_is_in_function_body(node, owner):
         return None
-    universe, refusal = list_adapter_universe_for_callee(f"{module_name}.{owner.name}")
+    universe, refusal = list_adapter_universe_for_callee(
+        _owner_callee(module_name, owner, ancestors + (node,))
+    )
     if refusal is not None or universe is None:
         return None
     return (
@@ -1297,7 +1299,9 @@ def _delegation_body_status(
         return "support", "docstring metadata supports source accounting only"
     if not _node_is_in_function_body(node, owner):
         return None
-    universe, refusal = delegation_universe_for_callee(f"{module_name}.{owner.name}")
+    universe, refusal = delegation_universe_for_callee(
+        _owner_callee(module_name, owner, ancestors + (node,))
+    )
     if refusal is not None or universe is None:
         return None
     return (
@@ -1405,6 +1409,17 @@ def _nearest_enclosing_function(
         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             return item
     return None
+
+
+def _owner_callee(
+    module_name: str,
+    owner: ast.FunctionDef | ast.AsyncFunctionDef,
+    chain: tuple[ast.AST, ...],
+) -> str:
+    class_qualname = _nearest_class_qualname(chain)
+    if class_qualname:
+        return f"{module_name}.{class_qualname}.{owner.name}"
+    return f"{module_name}.{owner.name}"
 
 
 def _is_local_literal_binding_value(node: ast.AST) -> bool:
